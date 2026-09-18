@@ -4,5 +4,6 @@ import 'dotenv/config';
 import { pool, query } from '../src/db.js';
 await query(`DELETE FROM books`);
 await query(`DELETE FROM books_history`);
+await query(`DELETE FROM shop_orders`).catch(() => {});   // website orders (table exists once the site has been used)
 console.log('Books cleared — the next sign-in seeds the demo shop again.');
 await pool.end();

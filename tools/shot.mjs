@@ -7,7 +7,8 @@ const out = process.argv[2] || 'till.png', W = +(process.argv[3] || 1366), H = +
 const exe = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
 const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['--no-sandbox'] });
 const pg = await b.newPage(); await pg.setViewport({ width: W, height: H });
-await pg.goto(BASE + '/', { waitUntil: 'networkidle2' });
+await pg.goto(BASE + (process.argv[5] === 'shop' ? '/' : '/pos'), { waitUntil: 'networkidle2' });
+if (process.argv[5] === 'shop') { await new Promise(r => setTimeout(r, 800)); await pg.screenshot({ path: out }); await b.close(); console.log('wrote ' + out); process.exit(0); }
 await pg.waitForSelector('#lockScreen', { timeout: 15000 });
 await pg.click('[data-user="Afridh"]'); await pg.waitForSelector('#lockPw');
 await pg.type('#lockPw', 'afridh123'); await pg.click('#lockGo');

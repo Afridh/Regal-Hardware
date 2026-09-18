@@ -16,9 +16,9 @@ async function openTill(label, token) {
   const vc = new VirtualConsole();
   vc.on('jsdomError', e => { if (!/not implemented/i.test(e.message)) errors.push(e.message); });
   vc.on('error', m => errors.push(String(m)));
-  const html = await (await fetch(BASE + '/')).text();
+  const html = await (await fetch(BASE + '/pos')).text();
   const dom = new JSDOM(html, {
-    url: BASE + '/', runScripts: 'dangerously', resources: { interceptors: [localOnly] }, pretendToBeVisual: true, virtualConsole: vc,
+    url: BASE + '/pos', runScripts: 'dangerously', resources: { interceptors: [localOnly] }, pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(window) {
       window.fetch = (u, o) => fetch(new URL(String(u), BASE), o);
       window.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {} });
@@ -186,6 +186,56 @@ ok('A: vouchers + transfers + points in the saved books', saved.data.S.vouchers.
 ok('A: per-till state stripped from the shared books', saved.data.S.user === undefined && saved.data.S.pos === undefined && saved.data.S.locId === undefined && saved.data.S.terminal === undefined);
 ok('A: no script errors so far', A.errors.length === 0, A.errors.slice(0, 2).join(' | '));
 
+// ---------------------------------------------------------------- the public shop site (regalhw.lk)
+let webNo = null;
+{
+  const j = async (path, opts = {}) => { const r = await fetch(BASE + path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined }); return { status: r.status, ...(await r.json().catch(() => ({}))) }; };
+  const home = await (await fetch(BASE + '/')).text();
+  ok('W: / is the customer shop page', /Regal Hardware/.test(home) && /api\/shop/.test(home) && !/csQ/.test(home));
+  const pos = await (await fetch(BASE + '/pos')).text();
+  ok('W: /pos is the staff system', /csQ|shopLock/.test(pos));
+  const cat = await j('/api/shop/catalog');
+  ok('W: catalogue is public and has no cost figures', cat.status === 200 && cat.products.length > 10 && cat.products.every(p => p.cost === undefined) && cat.settings.open === true, `${cat.products.length} products`);
+  const noAuth = await j('/api/shop/order', { method: 'POST', body: { lines: [] } });
+  ok('W: ordering needs a mobile sign-in', noAuth.status === 401);
+  const otp = await j('/api/shop/otp', { method: 'POST', body: { phone: '0771234567' } });
+  ok('W: code issued (returned because SMS is off)', otp.status === 200 && otp.sent === false && /^\d{6}$/.test(otp.code), otp.code);
+  const badLogin = await j('/api/shop/login', { method: 'POST', body: { phone: '0771234567', code: '000000' } });
+  ok('W: wrong code refused', badLogin.status === 401);
+  const first = await j('/api/shop/login', { method: 'POST', body: { phone: '0771234567', code: otp.code } });
+  ok('W: new customer is asked for a name', first.status === 200 && first.needName === true);
+  const login = await j('/api/shop/login', { method: 'POST', body: { phone: '0771234567', code: otp.code, name: 'Sunil Perera' } });
+  ok('W: signed in with mobile + code', login.status === 200 && !!login.token && login.name === 'Sunil Perera');
+  const H = { Authorization: 'Bearer ' + login.token };
+  const p1 = cat.products.find(p => p.stock > 2);
+  const order = await j('/api/shop/order', { method: 'POST', headers: H, body: { lines: [{ pid: p1.id, qty: 2 }], deliver: true, address: '12 Temple Road', note: 'call first' } });
+  webNo = order.no;
+  ok('W: order placed', order.status === 200 && /^ONL-\d{5}$/.test(order.no || '') && Math.abs(order.total - (2 * p1.price + (2 * p1.price < cat.settings.freeOver ? cat.settings.delivery : 0))) < 0.01, `${order.no} ${order.total}`);
+  const me = await j('/api/shop/me', { headers: H });
+  ok('W: my orders shows it, with the shop', me.status === 200 && me.orders.some(o => o.no === order.no && o.status === 'placed'));
+  const askP = await j('/api/shop/ask', { method: 'POST', body: { q: 'price of ' + p1.name.split(' ')[0].toLowerCase() } });
+  ok('W: ask-us answers a price question', askP.status === 200 && askP.answer.includes(p1.name));
+  const askO = await j('/api/shop/ask', { method: 'POST', headers: H, body: { q: 'where is my order' } });
+  ok('W: ask-us tracks the order when signed in', askO.status === 200 && askO.answer.includes(order.no));
+  // the till sees it: rev unchanged but inbox > 0, the next poll pulls it and saves
+  const rv = await j('/api/books/regal/rev', { headers: { Authorization: 'Bearer ' + tok } });
+  ok('W: till is told about the inbox', rv.inbox === 1, `inbox ${rv.inbox}`);
+  const onA = await until(() => A.w.S.web.orders.some(o => o.no === order.no), 20000, 500);
+  ok('A: online order arrived in Online orders by polling', !!onA);
+  const cust = A.w.S.customers.find(c => c.phone === '0771234567');
+  ok('A: customer created from the website order', !!cust && cust.name === 'Sunil Perera' && A.w.S.web.orders.find(o => o.no === order.no).cid === cust.id);
+  ok('A: bell rang for it', A.w.S.notif.some(n => n.kind === 'order' && n.text.includes('Sunil')));
+  await sleep(1200);
+  const rv2 = await j('/api/books/regal/rev', { headers: { Authorization: 'Bearer ' + tok } });
+  ok('W: inbox cleared once the till saved the books', rv2.inbox === 0, `inbox ${rv2.inbox}`);
+  // the shop accepts it; the customer sees the new status
+  A.w.S.web.orders.find(o => o.no === order.no).status = 'accepted'; A.w.persist(); await sleep(900);
+  const me2 = await j('/api/shop/me', { headers: H });
+  ok('W: customer sees the shop\'s status change', me2.orders.find(o => o.no === order.no).status === 'accepted');
+  const cat2 = await j('/api/shop/catalog');
+  ok('W: accepted order holds stock on the site', cat2.products.find(p => p.id === p1.id).stock === p1.stock - 2);
+}
+
 // ---------------------------------------------------------------- till B: another PC, same books
 const B = await openTill('B');
 const lockB = await until(() => B.d.getElementById('lockScreen'));
@@ -197,6 +247,7 @@ B.d.getElementById('lockPw').value = 'kasun123'; B.d.getElementById('lockGo').cl
 ok('B: cashier signed in', !!(await until(() => !B.d.getElementById('lockScreen'))), `${B.w.S.user.name} Â· ${B.w.S.user.role} Â· ${B.w.S.user.perms.length} perms`);
 await sleep(300);
 ok('B: sees till A\'s voucher, transfer and bills', B.w.S.vouchers.length === 1 && B.w.S.transfers.length === 1 && B.w.S.sales.some(s => s.no === inv1.no), `${B.w.S.sales.length} bills`);
+ok('B: sees the website order once, not twice', B.w.S.web.orders.filter(o => o.no === webNo).length === 1);
 ok('B: keeps its own signed-in user (not A\'s)', B.w.S.user.name === 'Kasun');
 ok('B: cashier cannot open Users', !B.w.allowed('users') && B.w.allowed('pos'));
 // B makes a sale; A should pick it up on its next poll

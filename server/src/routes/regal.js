@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { query, withTransaction } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { matches, demoPassword } from '../services/regalHash.js';
+import { injectInbox, markImported, pendingCount } from './shop.js';
 
 const r = Router();
 const BOOKS_KEY = 'regal';
@@ -71,15 +72,19 @@ r.get('/books/users', asyncHandler(async (_req, res) => {
 }));
 
 // ---------------------------------------------------------------- books document
+// Online orders from the public site wait in their own table until a till has saved them into the
+// books: a read hands them over (inbox), a save that contains them marks them done (see shop.js).
 r.get('/books/:key/rev', regalAuth, asyncHandler(async (req, res) => {
   const row = await loadBooks(req.params.key);
-  res.json({ rev: row ? Number(row.rev) : 0, updated_at: row?.updated_at || null, updated_by: row?.updated_by || null });
+  const inbox = req.params.key === BOOKS_KEY ? await pendingCount() : 0;
+  res.json({ rev: row ? Number(row.rev) : 0, updated_at: row?.updated_at || null, updated_by: row?.updated_by || null, inbox });
 }));
 
 r.get('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   const row = await loadBooks(req.params.key);
   if (!row || !row.data) return res.json({ rev: 0, data: null });
-  res.json({ rev: Number(row.rev), data: row.data, updated_at: row.updated_at, updated_by: row.updated_by });
+  const inbox = req.params.key === BOOKS_KEY ? await injectInbox(row.data) : 0;
+  res.json({ rev: Number(row.rev), data: row.data, updated_at: row.updated_at, updated_by: row.updated_by, inbox });
 }));
 
 /** Save.  body: { data, rev }  — rev is the revision the client loaded; a mismatch returns 409 with the newer copy. */
@@ -104,7 +109,11 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
     await client.query(`DELETE FROM books_history WHERE key = $1 AND id NOT IN (SELECT id FROM books_history WHERE key = $1 ORDER BY id DESC LIMIT ${HISTORY_KEEP})`, [key]);
     return { conflict: false, rev: next };
   });
-  if (out.conflict) return res.status(409).json({ error: 'Someone else saved first', rev: out.rev, data: out.data });
+  if (out.conflict) {
+    const inbox = key === BOOKS_KEY ? await injectInbox(out.data) : 0;
+    return res.status(409).json({ error: 'Someone else saved first', rev: out.rev, data: out.data, inbox });
+  }
+  if (key === BOOKS_KEY) await markImported(data);
   res.json({ ok: true, rev: out.rev });
 }));
 

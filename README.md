@@ -30,6 +30,17 @@ sepos-web/
 └── client/                 the earlier React UI — retired; served at /react only if built
 ```
 
+## Two front doors
+
+| Address | Who | What |
+|---|---|---|
+| **`/`** (regalhw.lk) | customers | `app/shop.html` — the shop site: browse and search the live catalogue, basket, checkout with delivery or collection, sign in by mobile + SMS code, track orders, "Ask us". Talks only to `/api/shop/*`; never sees the books. |
+| **`/pos`** (regalhw.lk/pos) | staff | `app/index.html` — the whole system behind the lock screen. The site's header and footer carry a **Staff sign in →** link here. |
+
+**How an online order reaches the shop.** The site writes it to its own table (`shop_orders`, number `ONL-00001`…). Every till already polls the server; when the server reports orders waiting, the till pulls the books with the orders merged in (new customer created from the mobile number if needed, bell rings, *Online orders* lists it) and saves — that save is what marks the order imported. So the shared books are still only ever written by a till, and an order can't be lost to a save conflict. The shop then accepts / picks / despatches it in *Online orders* exactly as before, and the customer sees each status on the site. Accepted orders hold their stock on the site.
+
+**Sign-in codes.** `POST /api/shop/otp` texts a 6-digit code through the provider set under *Settings → Messaging*. Until that is switched on, the code comes back in the reply and the site shows it on screen — fine for testing, so turn SMS on before going live.
+
 ## Run it (this PC)
 
 Node is at `C:\Program Files\nodejs` (add to PATH: `$env:Path = "C:\Program Files\nodejs;$env:Path"`).
@@ -46,7 +57,7 @@ cd server; npm run db:setup         # tables + Shift Board logins
 cd server; npm run dev              # http://localhost:4000
 ```
 
-Open **http://localhost:4000**. The first browser to sign in seeds the demo shop and pushes the books to the server.
+Open **http://localhost:4000/pos** (the shop site is at **http://localhost:4000**). The first browser to sign in seeds the demo shop and pushes the books to the server.
 
 **Signing in** — the lock screen lists the staff. Demo passwords are the first name + `123`
 (`afridh123`, `asaathkp123`, `raslan123`, `kasun123`, `fathima123`). Change them under *Users and what they may do*.

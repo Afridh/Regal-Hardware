@@ -816,6 +816,20 @@ CREATE TABLE IF NOT EXISTS shift_users (
   created_at    TIMESTAMPTZ DEFAULT now()
 );
 
+-- orders placed on the public shop site (app/shop.html); a till pulls each one into the books
+-- (S.web.orders) and imported_at is set once a save containing it lands.  Also created on demand.
+CREATE TABLE IF NOT EXISTS shop_orders (
+  id          BIGSERIAL PRIMARY KEY,
+  no          VARCHAR(20) UNIQUE NOT NULL,
+  phone       VARCHAR(20) NOT NULL,
+  name        VARCHAR(120) NOT NULL,
+  data        JSONB NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  imported_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS shop_orders_phone ON shop_orders (phone);
+CREATE INDEX IF NOT EXISTS shop_orders_pending ON shop_orders (imported_at) WHERE imported_at IS NULL;
+
 -- ---------------------------------------------------------------- helpful views
 CREATE OR REPLACE VIEW v_item_stock AS
 SELECT i.id AS item_id, i.company_id, i.code, i.barcode, i.name, i.unit, i.active,

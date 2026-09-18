@@ -22,6 +22,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import adminRoutes from './routes/admin.js';
 import regalRoutes from './routes/regal.js';
 import shiftApi, { reportsDir } from './routes/shiftApi.js';
+import shopRoutes from './routes/shop.js';
 
 if (!process.env.JWT_SECRET) console.error('JWT_SECRET is not set (copy .env.example to .env, or set it in the host\'s environment)');
 
@@ -49,16 +50,20 @@ app.use('/api/admin', authenticate, adminRoutes);
 // Regal front-end: books store + SMS relay, and the shift board's PHP-style endpoint
 app.use('/api', regalRoutes);
 app.use('/', shiftApi);
+// the public shop site's API — no sign-in, sees only the catalogue and its own orders
+app.use('/api/shop', shopRoutes);
 // day sheets the Shift Board publishes (on Vercel these live in /tmp, so only until the function is recycled)
 app.use('/reports', express.static(reportsDir));
 
-// The primary UI is the Regal app in ../../app (index.html + regal-bridge.js + reports/).
+// Pages: the customer's shop at /, the staff system at /pos (vercel.json does the same on Vercel).
 // The older React client (client/dist) stays reachable under /react if it has been built.
 // (On Vercel the static files are served by the platform itself, not by this app.)
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(here, '../../app');
 if (!process.env.VERCEL && fs.existsSync(appDir)) {
-  app.use(express.static(appDir, { index: 'index.html', extensions: ['html'] }));
+  app.get('/', (_req, res) => res.sendFile(path.join(appDir, 'shop.html')));
+  app.get(['/pos', '/pos/'], (_req, res) => res.sendFile(path.join(appDir, 'index.html')));
+  app.use(express.static(appDir, { index: false, extensions: ['html'] }));
 }
 const dist = path.resolve(here, '../../client/dist');
 if (!process.env.VERCEL && fs.existsSync(dist)) {

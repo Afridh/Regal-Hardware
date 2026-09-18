@@ -62,7 +62,13 @@
     if (!token) return false;
     var j = await call('GET', '/books/' + KEY);
     if (j.__status !== 200) return false;
-    if (j.data) { rev = j.rev; applyRemote(j.data); if (!quiet) say('Books picked up from the server'); return true; }
+    if (j.data) {
+      rev = j.rev; applyRemote(j.data);
+      if (!quiet) say('Books picked up from the server');
+      // orders from the shop site ride in with the books; saving is what hands them to the shop for good
+      if (j.inbox > 0) { say(j.inbox === 1 ? 'A new order from the website' : j.inbox + ' new orders from the website'); if (typeof window.persist === 'function') window.persist(); }
+      return true;
+    }
     rev = j.rev || 0; return false;
   }
 
@@ -131,10 +137,10 @@
     if (Date.now() - lastPushAt < 3000) return;          // our own save is still settling
     var j = await call('GET', '/books/' + KEY + '/rev');
     if (j.__status !== 200) return;
-    if (j.rev > rev) {
+    if (j.rev > rev || j.inbox > 0) {
       if (typing() || tillBusy()) return;                  // never pull the rug while someone is keying a bill
-      var who = j.updated_by ? ' by ' + j.updated_by : '';
-      if (await pull(true)) say('Books updated' + who);
+      var who = j.updated_by ? ' by ' + j.updated_by : '', newer = j.rev > rev;
+      if (await pull(true) && newer) say('Books updated' + who);
     }
   }
   function startPolling() { stopPolling(); pollTimer = setInterval(poll, POLL_MS); }
