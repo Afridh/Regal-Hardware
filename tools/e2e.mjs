@@ -57,6 +57,48 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   w.go(v); await sleep(30);
   ok(`A: view ${v} renders`, d.getElementById('main').innerHTML.length > 500 && !A.errors.length, A.errors[0] || '');
 }
+// ---------------------------------------------------------------- customers page
+{
+  const key = (el, k) => el.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const type = (v) => { const q = d.getElementById('custQ'); q.value = v; q.dispatchEvent(new w.Event('input')); };
+  const rows = () => [...d.querySelectorAll('.cu-row')].map(r => r.querySelector('.nm b').textContent);
+  const selName = () => (d.querySelector('.cu-row.sel .nm b') || {}).textContent;
+  w.go('customers'); await sleep(30);
+  ok('C: list shows every customer with avatar and balance', rows().length === w.S.customers.filter(c => c.id !== 1).length && d.querySelectorAll('.cu-row .av').length === rows().length);
+  ok('C: search box is focused on opening', d.activeElement && d.activeElement.id === 'custQ');
+  type('gf'); ok('C: initials find "Green Field"', rows().length === 1 && rows()[0].startsWith('Green Field'), rows().join(', '));
+  type('0765'); ok('C: digits find by mobile', rows().length === 1 && /Fernando/.test(rows()[0]), rows().join(', '));
+  type('n c'); ok('C: word starts find "Nimal Constructions"', rows().some(r => r.startsWith('Nimal')), rows().join(', '));
+  type(''); const all = rows(); key(d.getElementById('custQ'), 'ArrowDown'); await sleep(20);
+  ok('C: ↓ moves the selection', selName() === all[1], selName());
+  key(d.getElementById('custQ'), 'ArrowUp'); await sleep(20); ok('C: ↑ moves back', selName() === all[0]);
+  const c2 = w.eval('C')(2); w.eval('custSel=2'); w.render(); await sleep(20);
+  ok('C: header shows the customer with actions', /Nimal Constructions/.test(d.querySelector('.cu-head h2').textContent) && !!d.querySelector('[data-act="custEdit"]') && !!d.querySelector('[data-act="custBill"]'));
+  ok('C: outstanding KPI matches the ledger', d.querySelector('.kpi .v').textContent.replace(/[^\d.]/g, '') === w.partyBal('C', 2).toFixed(2).replace(/[^\d.]/g, ''));
+  for (const t of ['bills', 'payments', 'statement', 'details']) { d.querySelector(`[data-custtab="${t}"]`).click(); await sleep(20); ok(`C: ${t} tab renders`, d.querySelector('.cu-tabs button.on').dataset.custtab === t && d.querySelectorAll('.cu-tbl').length > 0 && !A.errors.length, A.errors[0] || ''); }
+  d.querySelector('[data-custtab="statement"]').click(); await sleep(20);
+  d.querySelector('[data-custrange="all"]').click(); await sleep(20);
+  const last = [...d.querySelectorAll('.cu-tbl.stmt tr')].pop();
+  ok('C: statement running balance ends at what they owe', !!last && last.textContent.replace(/[^\d.]/g, '').endsWith(w.partyBal('C', 2).toFixed(2).replace(/[^\d.]/g, '')), last && last.textContent.trim().slice(-30));
+  const ledger = w.custLedger(2);
+  ok('C: ledger debits − credits = balance', Math.abs(ledger.reduce((a, r) => a + r.dr - r.cr, 0) - w.partyBal('C', 2)) < 0.01);
+  // add a customer from the page
+  d.querySelector('[data-act="custNew"]').click(); await sleep(20);
+  d.getElementById('cmName').value = 'Test Builders'; d.getElementById('cmPhone').value = '0711111111'; d.getElementById('cmLimit').value = '50000'; d.getElementById('cmLevel').value = 'wholesale';
+  d.getElementById('cmOk').click(); await sleep(30);
+  const nc = w.S.customers.find(c => c.name === 'Test Builders');
+  ok('C: new customer added and selected', !!nc && nc.limit === 50000 && nc.level === 'wholesale' && w.eval('custSel') === nc.id && !d.querySelector('.modal'));
+  d.querySelector('[data-act="custEdit"]').click(); await sleep(20);
+  d.getElementById('cmAddr').value = 'Hingurakgoda'; d.getElementById('cmOk').click(); await sleep(20);
+  ok('C: edit saves', nc.address === 'Hingurakgoda' && !d.querySelector('.modal'));
+  d.querySelector('[data-act="custNew"]').click(); await sleep(20);
+  d.getElementById('cmName').value = 'Dup'; d.getElementById('cmPhone').value = '0711111111'; d.getElementById('cmOk').click(); await sleep(20);
+  ok('C: duplicate mobile refused', /already has/.test(d.getElementById('cmMsg').textContent)); w.closeModals();
+  d.querySelector('[data-act="custBill"]').click(); await sleep(30);
+  ok('C: "New bill" opens the till with the customer on it', w.S.view === 'pos' && w.S.pos.customer === nc.id);
+  w.S.pos.customer = null;
+}
+
 // ---------------------------------------------------------------- classic till keyboard flow
 {
   const key = (el, k) => el.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));

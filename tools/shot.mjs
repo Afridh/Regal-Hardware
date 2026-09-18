@@ -18,6 +18,12 @@ await pg.evaluate(() => { go('pos'); csStart(1); csCommit(); csStart(2); csCommi
 await new Promise(r => setTimeout(r, 300));
 if (process.argv[5] === 'hits') { await pg.focus('#csQ'); await pg.keyboard.type('ce'); await new Promise(r => setTimeout(r, 300)); }
 if (process.argv[5] === 'edit') { await pg.evaluate(() => csLineEdit(1)); await new Promise(r => setTimeout(r, 300)); }
+if ((process.argv[5] || '').startsWith('view:')) {           // any other page, e.g. view:customers
+  const v = process.argv[5].slice(5);
+  await pg.evaluate(v => { S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill }; const [view, tab] = v.split('/'); if (tab && view === 'customers') custTab = tab; go(view); }, v);
+  await new Promise(r => setTimeout(r, 500));
+  await pg.screenshot({ path: out, fullPage: process.argv[6] === 'full' }); await b.close(); console.log('wrote ' + out); process.exit(0);
+}
 const m = await pg.evaluate(() => ({ pageScroll: document.documentElement.scrollHeight > window.innerHeight, mainScroll: document.getElementById('main').scrollHeight > document.getElementById('main').clientHeight, list: (() => { const l = document.querySelector('.till-lines'); return l ? l.scrollHeight + '/' + l.clientHeight : '-' })(), sum: document.querySelector('.till-sum')?.getBoundingClientRect().width, header: getComputedStyle(document.querySelector('header')).display }));
 console.log(JSON.stringify(m));
 await pg.screenshot({ path: out }); await b.close();
