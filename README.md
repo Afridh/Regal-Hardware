@@ -82,6 +82,21 @@ npm run shot -- out.png 1366 768 [hits]   # screenshot of the till in Chrome/Edg
 cd server; npm run db:clear-books   # wipe the books (next sign-in seeds the demo shop again)
 ```
 
+## Deploy to Vercel
+
+`vercel.json` serves `app/` as the static site and runs the Express API as one serverless function
+(`api/index.js` → `server/src/app.js`) behind `/api/*`, `/shift-api.php` and `/reports/*`.
+Vercel has no PostgreSQL of its own, so the books need a hosted database:
+
+1. Create a PostgreSQL database — e.g. **Neon** (free tier) or Vercel Marketplace → Neon/Supabase. It must be UTF-8 (they are by default). Copy its connection string (`postgresql://…?sslmode=require`).
+2. Create the tables and Shift Board logins from this PC, once:
+   `cd server; $env:DATABASE_URL="<that string>"; npm run db:setup`
+3. In the Vercel project → Settings → Environment Variables set
+   `DATABASE_URL`, `JWT_SECRET` (long random string), `SEED_ADMIN_PASSWORD` (first sign-in / Shift Board admin), `CORS_ORIGIN` (your Vercel URL), and optionally `PUBLIC_URL`.
+4. Import the GitHub repo (framework preset: *Other*) and deploy. The first browser to sign in seeds the demo shop into the database.
+
+Limits on Vercel: the Shift Board's published day sheets are written to `/tmp` and disappear when the function is recycled (use the on-screen reports instead); the background SMS worker does not run — texts are still sent, on request, through `/api/sms/send`.
+
 ## Production notes
 
 * Put the server behind HTTPS (nginx/IIS), set a long `JWT_SECRET`, restrict `CORS_ORIGIN`, set `PUBLIC_URL` (used in Shift Board report links).

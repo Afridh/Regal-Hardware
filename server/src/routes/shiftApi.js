@@ -22,7 +22,8 @@ import { sendViaProvider } from './regal.js';
 const r = Router();
 const KEY = 'shiftboard';
 const here = path.dirname(fileURLToPath(import.meta.url));
-const reportsDir = path.resolve(here, '../../../app/reports');
+// on a serverless host the code directory is read-only; /tmp is the only writable place
+export const reportsDir = process.env.VERCEL ? '/tmp/regal-reports' : path.resolve(here, '../../../app/reports');
 
 const fail = (res, status, error) => res.status(status).json({ ok: false, error });
 
