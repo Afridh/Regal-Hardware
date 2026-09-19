@@ -160,7 +160,9 @@ const bankByName = new Map(banks.map(b => [title(b.name.split(' – ')[0]).toUpp
 
 // ---------------------------------------------------------------- staff and logins
 const employees = oldEmps.map((e, i) => ({ id: i + 1, code: s(e.EmpCode), name: title(e.EmpName).replace(/^MR\.?\s*/i, m => m.toUpperCase().replace(/MR\.?\s*/, 'Mr. ')), position: 'Staff', basis: s(e.SalaryPaymentType) === 'DAY' ? 'daily' : 'monthly', rate: n(e.BasicSalary), otMult: 1.5, days: 26, ot: 0, advance: 0, active: s(e.ActiveEmployee) !== '0' }));
-const users = (S.users || []).slice();
+// logins: keep only the people who exist in the old system (the demo staff go); Afridh keeps his current password
+const oldNames = new Set(oldUsers.map(u => title(u.CName).toLowerCase().replace(/\s+/g, '')));
+const users = (S.users || []).filter(u => oldNames.has(String(u.name).toLowerCase().replace(/\s+/g, '')));
 const ROLE = { Admin: 'Owner', Manager: 'Manager' };
 const perms = { Owner: ['sell', 'discount', 'cancelBill', 'cost', 'profit', 'adjustInvoice', 'overLimit', 'belowCost', 'paySupplier', 'receive', 'products', 'payroll', 'settings', 'users', 'approve'], Manager: ['sell', 'discount', 'cancelBill', 'cost', 'profit', 'adjustInvoice', 'overLimit', 'belowCost', 'receive', 'products'] };
 let newUsers = 0;
@@ -278,7 +280,7 @@ console.log(`\nPrevious books saved to ${bfile}`);
 const NS = { ...S };
 Object.assign(NS, { customers, suppliers, products, banks, employees, users, sales, purchases, cheques, movements, journal,
   payments: [], expenses: [], damages: [], docs: [], orders: [], prns: [], stocktakes: [], counts: [], serials: [], notices: [], payruns: [], advances: [], vouchers: [], transfers: [],
-  notif: [], approvals: [], messages: (S.messages || []).slice(0, 50), web: { ...(S.web || {}), settings: { ...((S.web || {}).settings || {}), showOutOfStock: true }, orders: [], cart: [], session: null },
+  notif: [], approvals: [], messages: [], shift: { ...(S.shift || {}), days: {}, imported: null }, web: { ...(S.web || {}), settings: { ...((S.web || {}).settings || {}), showOutOfStock: true }, orders: [], cart: [], session: null },
   seq: { PRN: 1, STK: 1, WEB: 1, PO: 1, QTN: 1, DN: 1, INV: 1, PUR: 1, PAY: 1, RCT: 1, VCH: 1, EXP: 1, DMG: 1, JE: journal.length + 1 }, seqBy: {},
   locations: [{ id: 1, name: 'Main shop', till: true }], imported: { from: MSDB, at: new Date().toISOString(), days: DAYS, cutoff: CUT } });
 delete NS.user; delete NS.pos; delete NS.view; delete NS.terminal; delete NS.held; delete NS.locId;
