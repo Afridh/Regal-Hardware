@@ -16,6 +16,16 @@ await pg.waitForFunction(() => !document.getElementById('lockScreen'), { timeout
 await new Promise(r => setTimeout(r, 800));
 await pg.evaluate(() => { go('pos'); csStart(1); csCommit(); csStart(2); csCommit(); csStart(3); csCommit(); });
 await new Promise(r => setTimeout(r, 300));
+if ((process.argv[5] || '').startsWith('key:')) {            // key a code at the till, show the matches, press Enter, report what landed
+  const code = process.argv[5].slice(4);
+  await pg.evaluate(() => { S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill }; go('pos'); });
+  await new Promise(r => setTimeout(r, 300));
+  await pg.focus('#csQ'); await pg.keyboard.type(code); await new Promise(r => setTimeout(r, 300));
+  await pg.screenshot({ path: out });
+  await pg.keyboard.press('Enter'); await new Promise(r => setTimeout(r, 300));
+  console.log(JSON.stringify(await pg.evaluate(() => ({ picked: CS.pid ? P(CS.pid).name : null, num: CS.pid ? P(CS.pid).num : null, price: CS.price, focus: document.activeElement.id }))));
+  await b.close(); console.log('wrote ' + out); process.exit(0);
+}
 if (process.argv[5] === 'hits') { await pg.focus('#csQ'); await pg.keyboard.type('ce'); await new Promise(r => setTimeout(r, 300)); }
 if (process.argv[5] === 'edit') { await pg.evaluate(() => csLineEdit(1)); await new Promise(r => setTimeout(r, 300)); }
 if (process.argv[5] === 'approvals') {                      // the owner's approvals page with a couple of requests waiting

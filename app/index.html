@@ -9298,8 +9298,11 @@ function posClassic(){
 
 function csFind(v){
   const q=v.toLowerCase();
-  const exact=S.products.filter(p=>String(p.num||'')===q||(p.short||'').toLowerCase()===q||p.barcode===q);
-  const rest=S.products.filter(p=>!exact.includes(p)&&(p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||String(p.num||'').startsWith(q)));
+  // an exact short code (20ss), item number or barcode comes first — that is what Enter takes
+  const exact=S.products.filter(p=>p.active!==false&&(String(p.num||'')===q||(p.short||'').toLowerCase()===q||(p.short2||'').toLowerCase()===q||p.barcode===q||(p.barcode2||'')===q));
+  const rest=S.products.filter(p=>p.active!==false&&!exact.includes(p)&&((p.short||'').toLowerCase().startsWith(q)||(p.short2||'').toLowerCase().startsWith(q)||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||String(p.num||'').startsWith(q)));
+  // short codes that begin with what was typed sit above name matches
+  rest.sort((a,b)=>((b.short||'').toLowerCase().startsWith(q)?1:0)-((a.short||'').toLowerCase().startsWith(q)?1:0));
   return [...exact,...rest];
 }
 /* ---- editing a line in place ----
@@ -9499,13 +9502,13 @@ function bindClassic(){
       const showCost=CFG.cost.atTill&&can('cost');
       const who=S.pos.customer;
       box.innerHTML=hits.length?`<table><thead><tr><th>CODE</th><th>DESCRIPTION</th>${showCost?'<th>COST</th>':''}
-         <th class="n">STOCK</th><th class="n">MRP</th><th class="n">PRICE</th>${who?`<th class="n">${C(who).name.split(' ')[0].toUpperCase()} PAID</th>`:''}<th>SUPPLIER</th></tr></thead><tbody>
+         ${CFG.stock.track===false?'':'<th class="n">STOCK</th>'}<th class="n">MRP</th><th class="n">PRICE</th>${who?`<th class="n">${C(who).name.split(' ')[0].toUpperCase()} PAID</th>`:''}<th>SUPPLIER</th></tr></thead><tbody>
         ${hits.slice(0,12).map(p=>{const sp=lastSupplier(p.id);
           return `<tr data-act="csPick" data-id="${p.id}">
-          <td class="c">${p.num||p.code}</td>
+          <td class="c">${p.short?`<b style="color:var(--chip-blue)">${p.short.toUpperCase()}</b> · `:''}${p.num||p.code}</td>
           <td class="d">${p.name.toUpperCase()}</td>
           ${showCost?`<td class="cc">${costCode(p.cost)}</td>`:''}
-          <td class="n ${p.stock<=0?'neg':p.stock<=p.min?'low':''}">${fq(p.stock)}</td>
+          ${CFG.stock.track===false?'':`<td class="n ${p.stock<=0?'neg':p.stock<=p.min?'low':''}">${fq(p.stock)}</td>`}
           <td class="n">${money2(p.mrp)}</td>
           <td class="p">${money2(priceFor(p,1))}</td>
           ${who?(()=>{const was=lastPriceFor(p.id,who);

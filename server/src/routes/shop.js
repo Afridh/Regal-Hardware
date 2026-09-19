@@ -56,7 +56,7 @@ function catalogOf(data, pending = []) {
   for (const o of (S.web?.orders || [])) if (o.status === 'accepted') for (const l of (o.lines || [])) held[l.pid] = (held[l.pid] || 0) + (+l.qty || 0);
   const tracked = !(CFG.stock && CFG.stock.track === false);       // a shop that does not count stock sells everything it lists
   const products = (S.products || []).filter(p => p.active !== false && !p.hidden).map(p => ({
-    id: p.id, code: p.code, num: p.num || '', name: p.name, cat: p.cat || 'Other', unit: p.unit || '',
+    id: p.id, code: p.code, num: p.num || '', short: p.short || '', name: p.name, cat: p.cat || 'Other', unit: p.unit || '',
     mrp: +p.mrp || 0, price: +(w.level === 'wholesale' ? p.wholesale : p.retail) || 0,
     stock: tracked ? Math.max(0, (+p.stock || 0) - (held[p.id] || 0)) : null,
   }));

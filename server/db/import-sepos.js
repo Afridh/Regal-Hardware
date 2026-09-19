@@ -59,7 +59,7 @@ const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - DAYS); const CUT = 
 const T0 = Date.now();
 const oldCus = sql(`SELECT CusCode, CusName, CusSureName, CusMob1, CusMob2, CusPhone, CusAddress, CusAddress2, CusAddress3, CusPriceCategory, CreditLimit, CreditTerm, CusPoints, DueAmount, CusRemark, ActiveCustomer, CONVERT(varchar(10),CreateDate,120) CreateDate FROM tbl_CusDet`);
 const oldSup = sql(`SELECT SupCode, SupName, SupCPerson, SupMob1, SupPhone, SupCPersonMob1, SupAddress, SupAddress2, SupAddress3, CreditTerm, DueAmount, SupRemark, ActiveSupplier, CONVERT(varchar(10),CreateDate,120) CreateDate FROM tbl_SupDet`);
-const oldItems = sql(`SELECT ItemCode, ItemBarcode, ItemName, ItemUnit, ItemCatName, ItemSupCode, ActiveItem, chkInventory, WarrantyPeriod FROM tbl_ItemDet`);
+const oldItems = sql(`SELECT ItemCode, ItemBarcode, ItemBarcode1, ItemBarcode2, ItemName, ItemUnit, ItemCatName, ItemSupCode, ActiveItem, chkInventory, WarrantyPeriod FROM tbl_ItemDet`);
 const oldLinks = sql(`SELECT ItemCode, ItemUPrice, ItemSPrice, ItemDPrice, ItemWPrice, QtyRemain, QtyMin, ItemAvgCost, CONVERT(varchar(10),CreateDate,120) CreateDate, IDx FROM tbl_PriceLink1`);
 const oldBanks = sql(`SELECT BnkCode, BnkName, BranchName, ACNo, ACType, BalanceAmount FROM tbl_BankDet`);
 const oldEmps = sql(`SELECT EmpCode, EmpName, EmpMob1, BasicSalary, SalaryPaymentType, ActiveEmployee FROM tbl_EmpDet`);
@@ -121,6 +121,10 @@ oldSup.forEach((x, i) => {
 const linksBy = new Map();
 for (const l of oldLinks) { const k = s(l.ItemCode); if (!linksBy.has(k)) linksBy.set(k, []); linksBy.get(k).push(l); }
 const products = []; const prodId = new Map(); const cats = new Map();
+// the old item number (ItemBarcode, e.g. 6465) is what the counter keys — keep it as the product number when it is a clean, unique figure
+const numUsed = new Map(); for (const it of oldItems) { const b = s(it.ItemBarcode); if (/^\d{1,8}$/.test(b)) numUsed.set(b, (numUsed.get(b) || 0) + 1); }
+let nextFree = 1000 + Math.max(0, ...[...numUsed.keys()].map(Number)); let shortCount = 0;
+const shortUsed = new Set();
 let stockVal = 0, negStock = 0, noPrice = 0;
 oldItems.forEach((it, i) => {
   const code = s(it.ItemCode), links = (linksBy.get(code) || []).slice().sort((a, b) => (b.CreateDate || '').localeCompare(a.CreateDate || '') || (+b.IDx - +a.IDx));
@@ -130,8 +134,17 @@ oldItems.forEach((it, i) => {
   const mrp = n(+latest.ItemSPrice || 0), retail = n(+latest.ItemDPrice || +latest.ItemSPrice || 0), wholesale = n(+latest.ItemWPrice || 0) || retail;
   if (!retail) noPrice++;
   const cat = title(it.ItemCatName) || 'Other'; cats.set(cat, (cats.get(cat) || 0) + 1);
-  const rec = { id: i + 1, code, num: String(1000 + i), barcode: s(it.ItemBarcode), name: title(it.ItemName) || code, cat, unit: s(it.ItemUnit) && s(it.ItemUnit) !== '-' ? s(it.ItemUnit) : 'pcs',
+  const oldNum = s(it.ItemBarcode);
+  const num = (/^\d{1,8}$/.test(oldNum) && numUsed.get(oldNum) === 1) ? oldNum : String(nextFree++);
+  // the short codes the counter knows by heart (20SS, 25VSS, PBMB …) — lower-cased, first one wins if two items share it
+  const shorts = [s(it.ItemBarcode1), s(it.ItemBarcode2)].map(x => x.toLowerCase()).filter(x => x && x !== '-' && !/^\d+$/.test(x));
+  let short = ''; const alt = [];
+  for (const sc of shorts) { if (!short && !shortUsed.has(sc)) { short = sc; shortUsed.add(sc); } else if (sc !== short) alt.push(sc); }
+  if (short) shortCount++;
+  const rec = { id: i + 1, code, num, barcode: oldNum, name: title(it.ItemName) || code, cat, unit: s(it.ItemUnit) && s(it.ItemUnit) !== '-' ? s(it.ItemUnit) : 'pcs',
     cost, mrp: mrp || retail, retail, wholesale, stock, min: +latest.QtyMin || 0, active: s(it.ActiveItem) !== '0', supplierId: supId.get(s(it.ItemSupCode)) || null, sepos: code };
+  if (short) rec.short = short;
+  if (alt.length) rec.short2 = alt[0];
   const wm = parseInt(s(it.WarrantyPeriod), 10); if (wm > 0) rec.warrantyMonths = wm;
   products.push(rec); prodId.set(code, rec.id);
   if (stock > 0) stockVal += stock * cost;
@@ -247,7 +260,7 @@ const fmt = v => 'Rs ' + n(v).toLocaleString('en-LK', { minimumFractionDigits: 2
 console.log(`
 Customers   ${customers.length - 1} (${openCus} owe ${fmt(cusOwing)}${cusCredit ? `, ${fmt(cusCredit)} held as credit` : ''})
 Suppliers   ${suppliers.length} (${openSup} owed ${fmt(supOwing)})
-Products    ${products.length} in ${cats.size} categories · ${noPrice} without a price · stock starts at zero (the shop is marked as not tracking stock)
+Products    ${products.length} in ${cats.size} categories · ${shortCount} with a short code (e.g. ${products.filter(p => p.short).slice(0, 3).map(p => p.short + ' = ' + p.name).join(', ')}) · old item numbers kept · ${noPrice} without a price · stock starts at zero (the shop is marked as not tracking stock)
 Banks       ${banks.map(b => b.name).join(' · ')}${BANK_OPENING ? '' : ' (balances not brought across — enter them from the bank statements)'}
 Cheques     ${cheques.length} pending, ${fmt(chqTotal)}
 Bills       ${histCount} from the last ${DAYS} days as history · ${linkedCount} unpaid credit bills carrying ${fmt(linkedAmt)} of what customers owe${cusOpenBills ? ` · ${cusOpenBills} balances brought forward for ${fmt(bfAmt)} the bills could not explain` : ''} · ${histLines} lines (${skippedLines} on unknown items skipped)
