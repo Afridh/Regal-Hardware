@@ -94,6 +94,23 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   d.querySelector('[data-act="custNew"]').click(); await sleep(20);
   d.getElementById('cmName').value = 'Dup'; d.getElementById('cmPhone').value = '0711111111'; d.getElementById('cmOk').click(); await sleep(20);
   ok('C: duplicate mobile refused', /already has/.test(d.getElementById('cmMsg').textContent)); w.closeModals();
+  // taking a payment happens in place, not on another page
+  w.eval('custSel=2; custTab="overview"'); w.render(); await sleep(20);
+  const owedBefore = w.partyBal('C', 2), payN = w.S.payments.length;
+  d.querySelector('.cu-acts [data-act="custPay"]').click(); await sleep(30);
+  ok('C: Take a payment opens the window on the customers page', !!d.querySelector('.modal #ra') && w.S.view === 'customers');
+  d.getElementById('ra').value = '5000'; d.getElementById('ra').dispatchEvent(new w.Event('input'));
+  const tick = d.querySelector('[data-pick]'); tick.checked = true; tick.dispatchEvent(new w.Event('change')); await sleep(20);
+  ok('C: ticking a bill keeps the typed amount', d.getElementById('ra').value === '5000');
+  d.getElementById('rok').click(); await sleep(50); w.closeModals();
+  ok('C: payment recorded and still on the customers page', w.S.payments.length === payN + 1 && Math.abs(w.partyBal('C', 2) - (owedBefore - 5000)) < 0.01 && w.S.view === 'customers' && /Nimal/.test(d.querySelector('.cu-head h2').textContent));
+  // clicking a customer shows a short "opening" beat, then the panel
+  w.eval('custSel=2'); w.render(); await sleep(20);
+  const row3 = d.querySelector('.cu-row[data-id="3"]'), name3 = row3.querySelector('.nm b').textContent; row3.click();
+  ok('C: a loading spinner shows while switching customer', !!d.querySelector('.cu-loading'));
+  await sleep(250);
+  ok('C: then the chosen customer opens', w.eval('custSel') === 3 && !d.querySelector('.cu-loading') && d.querySelector('.cu-head h2').textContent.includes(name3), `sel ${w.eval('custSel')} head "${d.querySelector('.cu-head h2')?.textContent}" want "${name3}"`);
+  w.eval('custSel=' + nc.id); w.render(); await sleep(20);
   d.querySelector('[data-act="custBill"]').click(); await sleep(30);
   ok('C: "New bill" opens the till with the customer on it', w.S.view === 'pos' && w.S.pos.customer === nc.id);
   w.S.pos.customer = null;

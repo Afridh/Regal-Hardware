@@ -1338,6 +1338,9 @@ tr.rowlink button{cursor:pointer}
 .cu-tabs button.on{color:var(--ink);border-bottom-color:var(--chip-yellow)}
 .cu-tabs button i{font-style:normal;background:var(--line2);border-radius:99px;padding:0 6px;font-size:11px;margin-left:5px;color:var(--steel)}
 .cu-tabs button.on i{background:var(--tint-yellow);color:#8A5D06}
+.cu-loading{display:flex;align-items:center;justify-content:center;gap:10px;min-height:260px;color:var(--steel);font-size:13px}
+.cu-loading i{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--chip-yellow);border-radius:50%;animation:cuspin .7s linear infinite}
+@keyframes cuspin{to{transform:rotate(360deg)}}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
 @media (max-width:900px){.two-col{grid-template-columns:1fr}}
 .cu-tbl{width:100%;border-collapse:collapse}
@@ -10604,7 +10607,7 @@ function customers(){
        <div class="bal ${over?'over':o>0?'':'clear'}"><b>${o>0?fmt(o):'clear'}</b>${o>0?`<i>${ag.n} bill${ag.n===1?'':'s'} · ${ag.oldest}d</i>`:''}</div></div>`}).join('')
       ||`<div class="muted" style="padding:16px 8px">Nobody matches that.${custQ?` <a href="#" data-act="custNew" data-q="${custQ.replace(/"/g,'&quot;')}">Add “${custQ}”</a>`:''}</div>`}</div>
    </div>
-   <div class="card flex1" style="min-width:0">${c?customerPanel(c):'<div class="muted">No customers yet — add the first one.</div>'}</div>
+   <div class="card flex1 cu-panel" style="min-width:0">${c?customerPanel(c):'<div class="muted">No customers yet — add the first one.</div>'}</div>
   </div>`;
 }
 function customerPanel(c){
@@ -10624,7 +10627,7 @@ function customerPanel(c){
      <div class="muted" style="margin-top:2px">${c.phone?`<a href="tel:${c.phone}" style="border:0">📞 ${c.phone}</a>`:'<span class="tag warn">no mobile</span>'}${c.address?' · '+c.address:''}</div>
      <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag ${c.level==='wholesale'?'blue':'ok'}">${c.level} prices</span>${overLimit?'<span class="tag bad">over the limit</span>':''}${ag.old>0?'<span class="tag bad">has 60+ day debt</span>':''}${c.portal?'<span class="tag ok">portal on</span>':''}${c.online?'<span class="tag warn">from the website</span>':''}${first?`<span class="muted" style="font-size:12px;align-self:center">customer since ${first}</span>`:''}</div></div>
     <div class="cu-acts">
-     <button class="btn tape" data-act="recGo" data-id="${c.id}">Take a payment</button>
+     <button class="btn tape" data-act="custPay" data-id="${c.id}">Take a payment</button>
      <button class="btn ghost" data-act="custBill" data-id="${c.id}">New bill</button>
      <button class="btn ghost" data-act="stmtPrint" data-id="${c.id}">Print statement</button>
      <button class="btn ghost" data-act="stmtSms" data-id="${c.id}" ${c.phone?'':'disabled'}>Text statement</button>
@@ -10840,7 +10843,7 @@ function adjustPurchaseModal(no,after){
 
 /* ---- taking a payment: search the customer, pick the bills ---- */
 function custPayModal(id){
-  const c=C(id); let sel=new Set(), q='';
+  const c=C(id); let sel=new Set(), q='', typed=null, method='CASH';   // what was keyed survives a redraw
   const m=modal(`<h2>Payment from ${c.name}</h2>
    <div class="muted">Owes ${fmt(partyBal('C',id))}</div>
    <div id="payBody"></div>`);
@@ -10851,8 +10854,8 @@ function custPayModal(id){
     const auto=picked.reduce((a,s)=>a+s.balance,0);
     m.querySelector('#payBody').innerHTML=`
      <div class="grid3" style="margin-top:10px">
-      <div class="f"><label>Amount</label><input id="ra" type="number" value="${auto||partyBal('C',id)}"></div>
-      <div class="f"><label>Method</label><select id="rm"><option>CASH</option><option>BANK</option><option>CHEQUE</option></select></div>
+      <div class="f"><label>Amount</label><input id="ra" type="number" value="${typed!==null?typed:(auto||partyBal('C',id))}"></div>
+      <div class="f"><label>Method</label><select id="rm">${['CASH','BANK','CHEQUE'].map(x=>`<option ${method===x?'selected':''}>${x}</option>`).join('')}</select></div>
       <div class="f"><label>Bank / cheque number</label><select id="rb">${S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select><input id="rr" placeholder="Cheque no" style="margin-top:4px"></div></div>
      <label>Which bills is this against?</label>
      <input id="iq" value="${q}" placeholder="Search invoice number or date… (leave the ticks empty to settle oldest first)" style="margin-bottom:8px">
@@ -10866,6 +10869,8 @@ function custPayModal(id){
       <label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="rsms" checked style="width:auto"> text the receipt</label>
       <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="rok">Record payment</button></div></div>`;
     m.querySelector('#iq').oninput=ev=>{q=ev.target.value;draw()};
+    m.querySelector('#ra').oninput=ev=>{typed=ev.target.value};
+    m.querySelector('#rm').onchange=ev=>{method=ev.target.value};
     m.querySelectorAll('[data-pick]').forEach(cb=>cb.onchange=()=>{cb.checked?sel.add(cb.dataset.pick):sel.delete(cb.dataset.pick);draw()});
     m.querySelectorAll('[data-adj]').forEach(b=>b.onclick=()=>adjustSaleModal(b.dataset.adj,()=>{sel.delete(b.dataset.adj);draw()}));
     m.querySelector('#rok').onclick=()=>{
@@ -12595,7 +12600,12 @@ document.addEventListener('click',e=>{
     invoice:()=>showInvoice(S.sales.find(s=>s.no===a.dataset.no)), showInv:()=>{closeModals();showInvoice(S.sales.find(s=>s.no===a.dataset.no),a.dataset.f)}, closeModal:closeModals,
     doPrint:()=>{ try{ window.print() }catch(e){ toast("The preview is open — use the browser's own print, or pop the window out first") } },
     proofA5:()=>proofBill('a5'), proof80:()=>proofBill('r80'),
-    cust:()=>{custSel=+a.dataset.id;render()}, custPay:()=>custPayModal(+a.dataset.id), stmt:()=>{const c=C(+a.dataset.id);sms(c.phone,`Regal Hardware statement: outstanding ${fmt(partyBal('C',c.id))} across ${S.sales.filter(s=>s.customerId===c.id&&s.balance>0).length} invoices. Please settle by month end.`);toast('Statement SMS queued')},
+    cust:()=>{ const id=+a.dataset.id; if(id===custSel&&S.view==='customers') return;
+      // a beat of "opening" so the click is seen to land before the panel changes
+      const panel=document.querySelector('.cu-panel');
+      if(panel){ document.querySelectorAll('.cu-row').forEach(r=>r.classList.toggle('sel',+r.dataset.id===id)); panel.innerHTML='<div class="cu-loading"><i></i>Opening…</div>'; setTimeout(()=>{ custSel=id; render() },160) }
+      else { custSel=id; render() } },
+    custPay:()=>custPayModal(+a.dataset.id), stmt:()=>{const c=C(+a.dataset.id);sms(c.phone,`Regal Hardware statement: outstanding ${fmt(partyBal('C',c.id))} across ${S.sales.filter(s=>s.customerId===c.id&&s.balance>0).length} invoices. Please settle by month end.`);toast('Statement SMS queued')},
     sup:()=>{supSel=+a.dataset.id;render()}, supPay:()=>supPayModal(+a.dataset.id), newPur:()=>newPurModal(+a.dataset.id),
     newDmg:dmgModal, newExp:expModal, voucher:()=>voucher(a.dataset.no), printChq:()=>printChq(a.dataset.no),
     chq:()=>{const c=S.cheques.find(x=>x.no===a.dataset.no&&x.dir===a.dataset.dir); if(c.dir==='RECEIVED'&&a.dataset.st==='DEPOSITED'){const m=modal(`<h2>Deposit cheque ${c.no}</h2><div class="f"><label>Into account</label><select id="dep">${S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select></div><button class="btn tape" id="dok">Deposit</button>`);m.querySelector('#dok').onclick=()=>{c.depositTo=+m.querySelector('#dep').value;chequeStatus(c,'DEPOSITED');m.remove();render();toast('Deposited')};return} closeModals();try{chequeStatus(c,a.dataset.st)}catch(e){return toast(e.message)}render();toast(`Cheque ${c.no} → ${a.dataset.st}${['BOUNCED','CANCELLED'].includes(a.dataset.st)?' — supplier balance reinstated':''}`)},
