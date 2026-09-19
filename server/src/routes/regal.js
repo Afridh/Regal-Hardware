@@ -80,7 +80,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../app');
 export function appBuild() {
-  try { return String(Math.max(...['index.html', 'regal-bridge.js', 'regal-ext.js'].map(f => fs.statSync(path.join(appDir, f)).mtimeMs | 0))); }
+  try { return String(Math.max(...['index.html', 'regal-bridge.js', 'regal-ext.js'].map(f => Math.floor(fs.statSync(path.join(appDir, f)).mtimeMs)))); }
   catch { return process.env.VERCEL_GIT_COMMIT_SHA || 'static'; }
 }
 
