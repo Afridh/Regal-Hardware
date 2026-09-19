@@ -5822,7 +5822,7 @@ const CFG={
  print:{agent:'http://localhost:4100'},               // the print helper on the till PC (tools/print-agent); empty = browser print
  pos:{discFromMrp:true,repriceToLast:true},          // a discount typed as a percentage comes off the maker's price
 
- msg:{provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'',apiKey:'',userId:'',autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,
+ msg:{provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',timeout:30,autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,
    quietFrom:'21:00',quietTo:'07:00'},
  tpl:{
   cashSale:{label:'Cash bill',vars:'{shop} {invoice} {total} {link} {customer}',
@@ -6173,7 +6173,9 @@ function settings(){
   if(setTab==='msg') body=`<div class="card note" style="margin-bottom:10px"><b>Sending for real</b>
       <div class="muted">Off, messages queue on the Messages page and go nowhere. On, each one is posted to the provider the moment it is raised. On the live system the backend worker does this, so the key never sits in a browser.</div>
       <div class="grid3" style="margin-top:8px">${fld('msg.live','','Send messages through the provider','check')}${fld('msg.apiUrl','Provider API URL','e.g. https://smslenz.lk/api/send-sms')}${fld('msg.userId','Provider user ID')}</div>
-      ${fld('msg.apiKey','API key','kept in settings only')}</div>
+      ${fld('msg.apiKey','API key','kept in settings only')}
+      <div class="grid3">${fld('msg.testOnly','Test mode — send only to these numbers','Comma-separated. While this is filled in, every other number is held (shown as Held on the Messages page). Empty it to go live for everyone.')}${fld('msg.timeout','Provider timeout, seconds','','number')}
+       <div class="f"><label>Send a test text</label><div style="display:flex;gap:6px"><input id="smsTestTo" value="${(CFG.msg.testOnly||CFG.shop.owner||'').split(',')[0].trim()}" placeholder="07…"><button class="btn tape" data-act="smsTest">Send</button></div><div class="muted" id="smsTestOut">Goes through the provider now, whatever the switch above says.</div></div></div></div>
     <div class="grid3">${fld('msg.provider','SMS provider')}${fld('msg.sender','Sender name shown on the phone')}
     <div class="f"><label>Messages sent so far</label><input value="${S.messages.length}" readonly></div></div>
     <div class="grid2">${fld('msg.quietFrom','Hold messages from','Nothing goes out between these times')}${fld('msg.quietTo','until')}</div>
@@ -13495,6 +13497,9 @@ document.addEventListener('click',e=>{
     payslip:()=>{const e=S.employees.find(x=>x.id===+a.dataset.id);
       const mk=payMonth||D(today).slice(0,7); salaryVoucher(e,payFor(e,mk),mk)},
     settab:()=>{}, tplReset:()=>{CFG.tpl[a.dataset.k].text=TPL_ORIG[a.dataset.k].text; render(); toast('Original wording restored')},
+    smsTest:()=>{ const to=($('#smsTestTo')||{}).value||''; const out=$('#smsTestOut'); if(!/^0\d{9}$/.test(to.replace(/\D/g,''))) return toast('Enter a mobile like 0777849964'); if(out) out.textContent='Sending…';
+      fetch('/api/sms/send',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+(window.regalBridge?regalBridge.token():'')},body:JSON.stringify({to,message:`${CFG.shop.name}: test message from the new till at ${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}.`,test:true})})
+       .then(r=>r.json()).then(j=>{ if(out) out.textContent=(j.ok?'Sent ✓ ':'')+(j.status||'')+(j.response?' · '+j.response:''); toast(j.ok?'Test text sent to '+to:j.status) }).catch(e=>{ if(out) out.textContent='Failed — '+e.message }) },
     tplTest:()=>{sms(CFG.shop.owner,tplPreview(a.dataset.k).replace(/<\/?i>/g,'')); render(); toast('Test message queued to '+CFG.shop.owner)},
     billEdit:()=>billToTill(a.dataset.no),
     billTill:()=>billToTill(a.dataset.no),

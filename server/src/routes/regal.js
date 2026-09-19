@@ -149,15 +149,34 @@ r.post('/books/:key/restore/:rev', regalAuth, asyncHandler(async (req, res) => {
 }));
 
 // ---------------------------------------------------------------- SMS relay (keeps the provider call off the browser)
+/** Sri Lankan mobile as the gateways want it: 94XXXXXXXXX. */
+export function intlPhone(to) {
+  let d = String(to || '').replace(/\D/g, '');
+  if (d.startsWith('0')) d = '94' + d.slice(1);
+  if (d.length === 9) d = '94' + d;
+  return d;
+}
+/** Only these numbers get texts while the shop is trying the system out (Settings → Messaging → test mode). */
+export function heldByTestMode(cfg, to) {
+  const list = String(cfg?.testOnly || '').split(/[,\s;]+/).map(intlPhone).filter(Boolean);
+  return list.length ? !list.includes(intlPhone(to)) : false;
+}
 export async function sendViaProvider(cfg, to, message) {
   if (!cfg || !cfg.apiUrl || !cfg.apiKey) throw new HttpError(400, 'SMS provider is not set up (Settings → Messaging)');
-  const contact = String(to).replace(/[^\d+]/g, '').replace(/^0/, '94');
-  const body = cfg.provider === 'smslenz.lk'
+  if (heldByTestMode(cfg, to)) throw new HttpError(400, `Held — test mode: texts only go to ${cfg.testOnly}`);
+  const contact = intlPhone(to);
+  if (!/^94\d{9}$/.test(contact)) throw new HttpError(400, `Not a Sri Lankan mobile: ${to}`);
+  const isLenz = /smslenz/i.test(cfg.provider || '') || /smslenz/i.test(cfg.apiUrl);
+  let url = String(cfg.apiUrl).trim().replace(/\/+$/, '');
+  if (isLenz && !/send-sms$/i.test(url)) url += '/send-sms';                 // the base URL alone was given
+  const fields = isLenz
     ? { user_id: cfg.userId || '', api_key: cfg.apiKey, sender_id: cfg.sender, contact, message }
     : { to: contact, from: cfg.sender, text: message, key: cfg.apiKey };
-  const resp = await fetch(cfg.apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: new URLSearchParams(fields).toString(), signal: AbortSignal.timeout((+cfg.timeout || 30) * 1000) });
   const text = await resp.text();
   if (!resp.ok) throw new HttpError(502, `Provider ${resp.status}: ${text.slice(0, 200)}`);
+  let j = null; try { j = JSON.parse(text); } catch {}
+  if (j && (j.status === 'error' || j.success === false || /fail|error|invalid/i.test(String(j.status || j.message || '')))) throw new HttpError(502, 'Provider: ' + (j.message || j.error || text.slice(0, 200)));
   return text;
 }
 
@@ -166,7 +185,8 @@ r.post('/sms/send', regalAuth, asyncHandler(async (req, res) => {
   if (!to || !message) throw new HttpError(400, 'to and message required');
   const row = await loadBooks();
   const cfg = row?.data?.CFG?.msg;
-  if (!cfg?.live) return res.json({ ok: false, status: 'Queued (sending is off in Settings → Messaging)' });
+  if (!cfg?.live && !req.body.test) return res.json({ ok: false, status: 'Queued (sending is off in Settings → Messaging)' });
+  if (heldByTestMode(cfg, to)) return res.json({ ok: false, held: true, status: `Held — test mode, only ${cfg.testOnly} gets texts` });
   try {
     const out = await sendViaProvider(cfg, to, message);
     res.json({ ok: true, status: 'Sent', response: out.slice(0, 200) });

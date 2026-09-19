@@ -352,6 +352,17 @@ ok('A: vouchers + transfers + points in the saved books', saved.data.S.vouchers.
 ok('A: per-till state stripped from the shared books', saved.data.S.user === undefined && saved.data.S.pos === undefined && saved.data.S.locId === undefined && saved.data.S.terminal === undefined);
 ok('A: no script errors so far', A.errors.length === 0, A.errors.slice(0, 2).join(' | '));
 
+// ---------------------------------------------------------------- SMS: test mode holds every number but the listed ones
+{
+  const j = async (path, opts = {}) => { const r = await fetch(BASE + path, { ...opts, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: opts.body ? JSON.stringify(opts.body) : undefined }); return { status: r.status, ...(await r.json().catch(() => ({}))) }; };
+  w.eval("CFG.msg.live=true; CFG.msg.apiUrl='https://smslenz.lk/api'; CFG.msg.apiKey='not-a-real-key'; CFG.msg.userId='0'; CFG.msg.testOnly='0777849964'"); w.persist(true); await sleep(900);
+  const held = await j('/api/sms/send', { method: 'POST', body: { to: '0771234501', message: 'x' } });
+  ok('M: a number outside test mode is held, nothing sent', held.held === true && /Held/.test(held.status));
+  const tried = await j('/api/sms/send', { method: 'POST', body: { to: '0777849964', message: 'x' } });
+  ok('M: the listed number is sent to the provider (refused here: fake key)', tried.ok === false && /Provider|Failed/.test(tried.status) && !tried.held, tried.status);
+  w.eval("CFG.msg.live=false; CFG.msg.apiKey=''; CFG.msg.testOnly=''"); w.persist(true); await sleep(900);
+}
+
 // ---------------------------------------------------------------- the public shop site (regalhw.lk)
 let webNo = null;
 {
