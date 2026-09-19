@@ -35,7 +35,17 @@ async function render(format, html) {
     await page.setViewport({ width: f.widthPx, height: 800, deviceScaleFactor: f.scale || 2 });
     await page.setContent(html, { waitUntil: 'load' });
     await page.emulateMediaType('print');
-    await page.evaluate(() => { document.body.classList.add('direct-print'); document.body.style.margin = '0'; document.body.style.background = '#fff'; });
+    await page.evaluate((f, format) => {
+      document.body.classList.add('direct-print'); document.body.style.margin = '0'; document.body.style.background = '#fff';
+      const p = document.querySelector('#printArea .print'); if (!p) return;
+      if (format === 'r80') {
+        // one CSS pixel per printer dot: the receipt is designed 302px wide, the roll is `dots` wide → scale it up,
+        // no border, hardly any side padding, and pure black on white so the printer does not dither the text
+        p.style.width = '302px'; p.style.border = '0'; p.style.padding = '2px 4px'; p.style.boxSizing = 'border-box';
+        p.style.zoom = String((f.dots || 576) / 302); p.style.filter = 'contrast(400%)';
+        document.body.style.width = (f.dots || 576) + 'px';
+      }
+    }, f, format);
     await new Promise(r => setTimeout(r, 150));
     const file = path.join(tmp, `bill-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.png`);
     const target = await page.$('#printArea .print') || await page.$('body');
@@ -50,7 +60,7 @@ function printImage(format, file) {
   const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(here, 'print-image.ps1'), '-Printer', f.printer, '-Image', file];
   if (f.paper) args.push('-Paper', f.paper);
   if (f.landscape) args.push('-Landscape');
-  if (format === 'r80') args.push('-Roll');
+  if (format === 'r80') args.push('-Roll', '-Dpi', String(f.dpi || 203));
   return new Promise((resolve, reject) => {
     const ps = spawn('powershell.exe', args, { windowsHide: true });
     let out = '', err = '';
@@ -66,6 +76,12 @@ let busy = Promise.resolve();
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   if (req.method === 'GET' && req.url === '/status') return send(res, 200, { ok: true, printers: { r80: cfg.r80.printer, a5: cfg.a5.printer }, renderer: path.basename(chrome) });
+  if (req.method === 'POST' && req.url === '/preview') {            // the rendered image, for checking — nothing is printed
+    let body = ''; req.on('data', d => { body += d; }); req.on('end', async () => {
+      try { const job = JSON.parse(body); const file = await render(job.format, job.html); const png = fs.readFileSync(file); fs.unlink(file, () => {}); res.writeHead(200, { ...HEADERS, 'Content-Type': 'image/png' }); res.end(png); }
+      catch (e) { send(res, 500, { ok: false, error: e.message }); } });
+    return;
+  }
   if (req.method === 'POST' && req.url === '/print') {
     let body = ''; req.on('data', d => { body += d; if (body.length > 8e6) req.destroy(); });
     req.on('end', async () => {
