@@ -40,7 +40,8 @@
     return k;
   }
   function restoreLocal(k) { if (k && window.S) Object.keys(k).forEach(function (n) { window.S[n] = k[n]; }); }
-  function typing() { var a = document.activeElement; return a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); }
+  // someone is mid-entry when the focused box holds something (an empty search box a page focused by itself does not count)
+  function typing() { var a = document.activeElement; return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && (a.tagName === 'SELECT' || a.type === 'checkbox' || String(a.value || '').length > 0)); }
   function tillBusy() { var S = window.S; return !!(document.querySelector('.modal') || document.querySelector('.lock') || (S && S.pos && S.pos.lines && S.pos.lines.length)); }
   function say(msg) { if (typeof window.toast === 'function') window.toast(msg); }
   function badge(txt) { ['savedAt', 'csSync'].forEach(function (id) { var el = document.getElementById(id); if (el) el.textContent = txt; }); }
