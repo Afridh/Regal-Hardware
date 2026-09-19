@@ -6,9 +6,11 @@
 //
 // What comes across
 //   customers, suppliers, products (prices + stock), bank accounts, staff, users
-//   each customer's / supplier's outstanding balance, as one "Balance brought forward" bill
+//   each supplier's outstanding balance as one "Balance brought forward" bill
 //   pending cheques written to suppliers
 //   the last N days of bills with their lines (default 90) — as history, already settled
+//   each customer's balance tied to their newest open credit invoices (payments in the old
+//   system settled the oldest first), which come across as real unpaid bills
 //   opening ledger entries so every balance in the new books agrees with the old system
 //
 // What stays behind (still in SQL Server for lookups): older bills, purchase history, the
@@ -66,6 +68,8 @@ const oldChq = sql(`SELECT ChqNo, VenCode, VenName, TotalAmount, CONVERT(varchar
 const oldInv = sql(`SELECT InvoiceNo, CONVERT(varchar(10),CreateDate,120) CreateDate, CONVERT(varchar(19),CreateTime,120) CreateTime, CusCode, PayMode, GTotal, DiscountForTot, ItemDiscount, StaffDiscount, CusDiscount, NTotal, CreateBy, UnitNo, InvoiceStatus FROM tbl_InvSummery WHERE CreateDate >= '${CUT}' AND InvoiceStatus <> 'UNDO'`);
 const oldLines = sql(`SELECT SerialNo AS InvoiceNo, ItemCode, Qty, ItemUPrice, ItemSPrice, ItemDPrice, TPrice, ItemDis1, ItemDis2 FROM tbl_InvDet WHERE CreateDate >= '${CUT}'`);
 const company = sql(`SELECT CompName, CompAddress1, CompAddress2, CompContact1 FROM tbl_CompanyDet`)[0] || {};
+// every credit invoice the old system still shows something owing on, newest first per customer
+const oldOpenInv = sql(`SELECT InvoiceNo, CusCode, CONVERT(varchar(10),CreateDate,120) CreateDate, CONVERT(varchar(19),CreateTime,120) CreateTime, GTotal, NTotal, ISNULL(CreditSettlement,0) CreditSettlement, CreateBy, UnitNo FROM tbl_InvSummery WHERE PayMode='CREDIT' AND InvoiceStatus<>'UNDO' AND NTotal-ISNULL(CreditSettlement,0)>0.005 ORDER BY CusCode, CreateDate DESC, InvoiceNo DESC`);
 console.log(`  read in ${((Date.now() - T0) / 1000).toFixed(1)}s: ${oldCus.length} customers, ${oldSup.length} suppliers, ${oldItems.length} items / ${oldLinks.length} price links, ${oldBanks.length} banks, ${oldInv.length} bills / ${oldLines.length} lines since ${CUT}, ${oldChq.length} pending cheques`);
 
 // ---------------------------------------------------------------- the books as they are
@@ -121,14 +125,10 @@ let stockVal = 0, negStock = 0, noPrice = 0;
 oldItems.forEach((it, i) => {
   const code = s(it.ItemCode), links = (linksBy.get(code) || []).slice().sort((a, b) => (b.CreateDate || '').localeCompare(a.CreateDate || '') || (+b.IDx - +a.IDx));
   const latest = links[0] || {};
-  const rawStock = q3(links.reduce((a, l) => a + (+l.QtyRemain || 0), 0));
-  const stock = Math.max(0, rawStock);                 // the old system sold past zero for years: a minus figure is noise, not stock
-  // the cost is the average over what is actually on the shelf; failing that the latest link's cost
-  const pos = links.filter(l => +l.QtyRemain > 0), posQty = pos.reduce((a, l) => a + +l.QtyRemain, 0);
-  const cost = n(posQty > 0 ? pos.reduce((a, l) => a + +l.QtyRemain * (+l.ItemUPrice || 0), 0) / posQty : (+latest.ItemUPrice || +latest.ItemAvgCost || 0));
+  const stock = 0;                                     // the old system never kept stock (it sold past zero for years) — start clean, count later
+  const cost = n(+latest.ItemUPrice || +latest.ItemAvgCost || 0);
   const mrp = n(+latest.ItemSPrice || 0), retail = n(+latest.ItemDPrice || +latest.ItemSPrice || 0), wholesale = n(+latest.ItemWPrice || 0) || retail;
   if (!retail) noPrice++;
-  if (rawStock < 0) negStock++;
   const cat = title(it.ItemCatName) || 'Other'; cats.set(cat, (cats.get(cat) || 0) + 1);
   const rec = { id: i + 1, code, num: String(1000 + i), barcode: s(it.ItemBarcode), name: title(it.ItemName) || code, cat, unit: s(it.ItemUnit) && s(it.ItemUnit) !== '-' ? s(it.ItemUnit) : 'pcs',
     cost, mrp: mrp || retail, retail, wholesale, stock, min: +latest.QtyMin || 0, active: s(it.ActiveItem) !== '0', supplierId: supId.get(s(it.ItemSupCode)) || null, sepos: code };
@@ -159,20 +159,41 @@ for (const u of oldUsers) {
   newUsers++;
 }
 
-// ---------------------------------------------------------------- opening balances → bills + ledger
+// ---------------------------------------------------------------- what each customer owes, tied to their invoices
+// The old system took payments "customer-wise", settling the oldest bills first, so what is
+// still owed sits on the NEWEST open credit invoices.  Walk them newest-first until the
+// customer's balance is covered; those invoices come across as real unpaid bills.  Anything the
+// invoices cannot explain (rare) becomes a "Balance brought forward" bill.
 const sales = [], purchases = [], cheques = [], movements = [];
-let cusOpenBills = 0;
+const openBy = new Map();
+for (const inv of oldOpenInv) { const k = s(inv.CusCode); if (!openBy.has(k)) openBy.set(k, []); openBy.get(k).push(inv); }
+const linked = new Map();                    // InvoiceNo → balance still owed on it
+let cusOpenBills = 0, linkedCount = 0, linkedAmt = 0, bfAmt = 0;
 for (const c of customers.slice(1)) {
   const due = n(oldCus[c.id - 2].DueAmount);
   if (due > 0.005) {
-    const no = 'OPEN-' + c.code;
-    sales.push({ no, date: OPEN_DATE, type: 'CREDIT', customerId: c.id, lines: [], sub: due, billDisc: 0, total: due, paid: 0, balance: due, pays: [], by: 'SePOS', terminal: 'SEPOS', time: '', note: 'Balance brought forward from SePOS', opening: true, link: '' });
-    post(OPEN_DATE, `Balance brought forward from SePOS — ${c.name}`, no, [{ ac: '1100', dr: due, party: { type: 'C', id: c.id } }, { ac: '3100', cr: due }]);
-    cusOpenBills++;
+    let left = due;
+    for (const inv of (openBy.get(c.code) || [])) {                    // already newest first
+      if (left <= 0.005) break;
+      const rem = n(inv.NTotal - inv.CreditSettlement); if (rem <= 0.005) continue;
+      const take = n(Math.min(rem, left)); linked.set(s(inv.InvoiceNo), { inv, balance: take, cid: c.id }); left = n(left - take); linkedCount++; linkedAmt += take;
+    }
+    if (left > 0.005) {
+      const no = 'OPEN-' + c.code;
+      sales.push({ no, date: OPEN_DATE, type: 'CREDIT', customerId: c.id, lines: [], sub: left, billDisc: 0, total: left, paid: 0, balance: left, pays: [], by: 'SePOS', terminal: 'SEPOS', time: '', note: 'Balance brought forward from SePOS (older than the bills on record)', opening: true, link: '' });
+      post(OPEN_DATE, `Balance brought forward from SePOS — ${c.name}`, no, [{ ac: '1100', dr: left, party: { type: 'C', id: c.id } }, { ac: '3100', cr: left }]);
+      cusOpenBills++; bfAmt += left;
+    }
   } else if (due < -0.005) {
     post(OPEN_DATE, `Credit held from SePOS — ${c.name}`, 'OPEN-' + c.code, [{ ac: '3100', dr: -due }, { ac: '2050', cr: -due, party: { type: 'C', id: c.id } }]);
   }
 }
+// lines for the linked invoices that are older than the history window
+const histNos = new Set(oldInv.map(i => s(i.InvoiceNo)));
+const extraNos = [...linked.keys()].filter(no => !histNos.has(no));
+const extraLines = [];
+for (let i = 0; i < extraNos.length; i += 400) extraLines.push(...sql(`SELECT SerialNo AS InvoiceNo, ItemCode, Qty, ItemUPrice, ItemSPrice, ItemDPrice, TPrice, ItemDis1, ItemDis2 FROM tbl_InvDet WHERE SerialNo IN (${extraNos.slice(i, i + 400).map(x => `'${x.replace(/'/g, "''")}'`).join(',')})`));
+oldLines.push(...extraLines);
 for (const x of suppliers) {
   const due = n(oldSup[x.id - 1].DueAmount);
   if (due > 0.005) {
@@ -181,8 +202,6 @@ for (const x of suppliers) {
     post(OPEN_DATE, `Balance brought forward from SePOS — ${x.name}`, no, [{ ac: '3100', dr: due }, { ac: '2100', cr: due, party: { type: 'S', id: x.id } }]);
   }
 }
-if (stockVal > 0.005) post(OPEN_DATE, 'Stock on hand brought forward from SePOS', 'OPEN-STOCK', [{ ac: '1200', dr: n(stockVal) }, { ac: '3100', cr: n(stockVal) }]);
-for (const p of products) if (Math.abs(p.stock) > 1e-9) movements.push({ date: OPEN_DATE, pid: p.id, qty: p.stock, type: 'OPENING', ref: 'SePOS', cost: p.cost, after: p.stock });
 for (const b of banks) if (BANK_OPENING && Math.abs(b.opening) > 0.005) post(OPEN_DATE, `Bank balance brought forward — ${b.name}`, 'OPEN-BANK', b.opening > 0 ? [{ ac: b.ac, dr: b.opening }, { ac: '3100', cr: b.opening }] : [{ ac: '3100', dr: -b.opening }, { ac: b.ac, cr: -b.opening }]);
 let chqTotal = 0;
 for (const c of oldChq) {
@@ -193,11 +212,14 @@ for (const c of oldChq) {
 }
 if (chqTotal > 0.005) post(OPEN_DATE, 'Cheques written before the changeover, not yet cleared', 'OPEN-CHQ', [{ ac: '3100', dr: n(chqTotal) }, { ac: '2110', cr: n(chqTotal) }]);
 
-// ---------------------------------------------------------------- recent bills as history (settled; the balances live in the opening bills)
+// ---------------------------------------------------------------- bills: the recent ones as history, plus every linked unpaid one
 const linesBy = new Map();
 for (const l of oldLines) { const k = s(l.InvoiceNo); if (!linesBy.has(k)) linesBy.set(k, []); linesBy.get(k).push(l); }
-let histLines = 0, skippedLines = 0;
-for (const inv of oldInv.slice().sort((a, b) => (a.CreateDate + a.CreateTime).localeCompare(b.CreateDate + b.CreateTime))) {
+let histLines = 0, skippedLines = 0, histCount = 0;
+const allInv = new Map();
+for (const inv of oldInv) allInv.set(s(inv.InvoiceNo), { ...inv, PayMode: inv.PayMode });
+for (const [no, x] of linked) if (!allInv.has(no)) allInv.set(no, { ...x.inv, PayMode: 'CREDIT' });
+for (const inv of [...allInv.values()].sort((a, b) => (a.CreateDate + a.CreateTime).localeCompare(b.CreateDate + b.CreateTime))) {
   const no = s(inv.InvoiceNo);
   const lines = [];
   for (const l of (linesBy.get(no) || [])) {
@@ -209,20 +231,26 @@ for (const inv of oldInv.slice().sort((a, b) => (a.CreateDate + a.CreateTime).lo
   histLines += lines.length;
   const total = n(inv.NTotal), sub = n(inv.GTotal) || total;
   const credit = s(inv.PayMode).toUpperCase() === 'CREDIT';
-  sales.push({ no, date: inv.CreateDate, time: hhmm(inv.CreateTime), type: credit ? 'CREDIT' : 'CASH', customerId: cusId.get(s(inv.CusCode)) || 1, lines, sub, billDisc: n(Math.max(0, sub - total)), total, paid: total, balance: 0,
-    pays: [{ method: credit ? 'CREDIT' : 'CASH', amount: total }], by: title(inv.CreateBy) || 'SePOS', terminal: s(inv.UnitNo) || 'SePOS', imported: true, note: credit ? 'From SePOS — what is still owed on it is carried in the balance brought forward' : 'From SePOS', link: '' });
+  const link = linked.get(no);
+  const balance = link ? link.balance : 0, cid = link ? link.cid : (cusId.get(s(inv.CusCode)) || 1);
+  const rec = { no, date: inv.CreateDate, time: hhmm(inv.CreateTime), type: credit ? 'CREDIT' : 'CASH', customerId: cid, lines, sub, billDisc: n(Math.max(0, sub - total)), total, paid: n(total - balance), balance,
+    pays: [{ method: credit ? 'CREDIT' : 'CASH', amount: total }], by: title(inv.CreateBy) || 'SePOS', terminal: s(inv.UnitNo) || 'SePOS', imported: true, note: link ? (balance < total - 0.005 ? `From SePOS — ${fmt0(total - balance)} of it paid there` : 'From SePOS') : 'From SePOS', link: '' };
+  sales.push(rec);
+  if (link) post(inv.CreateDate, `Owing on bill ${no} brought forward from SePOS`, no, [{ ac: '1100', dr: balance, party: { type: 'C', id: cid } }, { ac: '3100', cr: balance }]);
+  else histCount++;
 }
 sales.sort((a, b) => a.date.localeCompare(b.date) || a.no.localeCompare(b.no));
+function fmt0(v) { return 'Rs ' + n(v).toLocaleString('en-LK', { minimumFractionDigits: 2 }); }
 
 // ---------------------------------------------------------------- report
 const fmt = v => 'Rs ' + n(v).toLocaleString('en-LK', { minimumFractionDigits: 2 });
 console.log(`
 Customers   ${customers.length - 1} (${openCus} owe ${fmt(cusOwing)}${cusCredit ? `, ${fmt(cusCredit)} held as credit` : ''})
 Suppliers   ${suppliers.length} (${openSup} owed ${fmt(supOwing)})
-Products    ${products.length} in ${cats.size} categories · stock value ${fmt(stockVal)} · ${negStock} with negative stock · ${noPrice} without a price
+Products    ${products.length} in ${cats.size} categories · ${noPrice} without a price · stock starts at zero (the shop is marked as not tracking stock)
 Banks       ${banks.map(b => b.name).join(' · ')}${BANK_OPENING ? '' : ' (balances not brought across — enter them from the bank statements)'}
 Cheques     ${cheques.length} pending, ${fmt(chqTotal)}
-Bills       ${sales.length - cusOpenBills} from the last ${DAYS} days (${histLines} lines, ${skippedLines} lines on unknown items skipped) + ${cusOpenBills} opening-balance bills
+Bills       ${histCount} from the last ${DAYS} days as history · ${linkedCount} unpaid credit bills carrying ${fmt(linkedAmt)} of what customers owe${cusOpenBills ? ` · ${cusOpenBills} balances brought forward for ${fmt(bfAmt)} the bills could not explain` : ''} · ${histLines} lines (${skippedLines} on unknown items skipped)
 Staff       ${employees.length} · logins ${users.length} (${newUsers} added: ${users.slice(-newUsers).map(u => u.name).join(', ') || 'none'})
 Ledger      ${journal.length} opening entries`);
 

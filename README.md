@@ -81,11 +81,12 @@ The **Shift Board** (Attendance & pay → Open the Shift Board app) has its own 
 `npm run import:sepos` reads the old SePOS database (SQL Server `Semicolans_Regalhardware` on this PC, Windows
 authentication) and reports what it would bring; `npm run import:sepos -- --write` replaces the business data in the
 books with it (the previous books are saved under `server/db/backups/` first). It brings customers, suppliers,
-products with prices and stock, bank accounts, staff and logins, each customer's and supplier's outstanding balance
-as a *Balance brought forward* bill, pending cheques, and the last 90 days of bills (`--days 180` for more) as
-settled history. Older bills stay in SQL Server. The old system never kept stock (2,820 items below zero), so stock
-is set to what is actually positive and the shop is marked as not tracking stock; bank balances are not brought
-across (they were never reconciled) — enter them from the statements. Runs again any time; each run replaces the
+products with prices (no stock — the old system never kept it, so stock starts at zero and the shop is marked as not
+tracking it), bank accounts, staff and logins, pending cheques, the last 90 days of bills (`--days 180` for more) as
+settled history, and **what each customer owes tied to their actual invoices**: the old till settled the oldest bills
+first, so the balance is laid on the newest open credit invoices, which come across as real unpaid bills with their
+dates and lines (any part-payment noted). Each supplier's balance comes as one *Balance brought forward* bill. Older
+bills stay in SQL Server. Bank balances are not brought across (never reconciled) — enter them from the statements. Runs again any time; each run replaces the
 previous import.
 
 ## Approvals
