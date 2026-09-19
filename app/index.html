@@ -1316,9 +1316,10 @@ tr.rowlink button{cursor:pointer}
 .cu-row .bal i{font-style:normal;font-size:10.5px;color:var(--steel)}
 .cu-row .bal.over b{color:var(--chip-rust)}
 .cu-row .bal.clear b{color:var(--chip-green);font-weight:700;font-size:12px}
-.cu-head{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+.cu-head{display:flex;flex-direction:column;gap:12px}
 .cu-head h2{margin:0;font-size:22px;line-height:1.15}
-.cu-acts{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;align-self:center}
+.cu-acts{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px dashed var(--line)}
+.cu-id{display:flex;gap:14px;align-items:flex-start}
 .cu-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin:14px 0 12px}
 .kpi{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:9px 12px 10px;box-shadow:var(--shadow);border-top:3px solid var(--line);min-width:0}
 .kpi .l{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--steel);font-weight:700}
@@ -1358,7 +1359,7 @@ tr.rowlink button{cursor:pointer}
 .tl .ev .t{flex:1;min-width:0}
 .tl .ev .a{font-family:Archivo,sans-serif;font-weight:700;white-space:nowrap}
 .tl .ev.in .a{color:var(--chip-green)}
-@media (max-width:640px){.cu-list{position:static;max-height:none}.cu-acts{margin-left:0}.cu-head h2{font-size:19px}.tl .ev{flex-wrap:wrap}}
+@media (max-width:640px){.cu-list{position:static;max-height:none}.cu-head h2{font-size:19px}.tl .ev{flex-wrap:wrap}}
 
 /* ---- approvals ---- */
 .nbadge{font-style:normal;background:var(--chip-rust);color:#fff;font-size:10px;font-weight:700;border-radius:99px;padding:0 6px;line-height:16px;margin-left:6px;font-family:Archivo,sans-serif}
@@ -7640,13 +7641,21 @@ function dispatchModal(oid){
 function supplierStatement(sid){
   const s2=SU(sid), pur=S.purchases.filter(p=>p.supplierId===sid).sort((a,b)=>a.date.localeCompare(b.date));
   const owed=partyBal('S',sid);
+  const rows=typeof supLedger==='function'?supLedger(sid):[], from=typeof supStmtFrom==='function'?supStmtFrom():'';
+  const before=rows.filter(r=>from&&r.date<from), shown=rows.filter(r=>!from||r.date>=from);
+  const opening=before.length?before[before.length-1].run:0;
+  const open=pur.filter(p=>p.total-p.paid>0.005);
   modal(`<div class="print"><div style="display:flex;justify-content:space-between">
-    <div><b style="font-size:16px">REGAL HARDWARE</b><br>748 Main Street, Kaduruwela, Polonnaruwa<br>077 222 22 59</div>
-    <div><span class="strip">SUPPLIER STATEMENT</span><br>${D(today)}</div></div>
-   <div style="margin:10px 0"><b>${s2.name}</b><br>${s2.contact} · ${s2.phone} · terms ${s2.days} days</div>
-   <table width="100%"><tr><th align="left">Their invoice</th><th align="left">Our GRN</th><th align="left">Date</th><th align="right">Amount</th><th align="right">Paid</th><th align="right">Owing</th></tr>
-   ${pur.map(p=>`<tr><td>${p.supInv}</td><td>${p.no}</td><td>${p.date}</td><td align="right">${p.total.toFixed(2)}</td><td align="right">${p.paid.toFixed(2)}</td><td align="right">${(p.total-p.paid).toFixed(2)}</td></tr>`).join('')}
+    <div><b style="font-size:16px">${CFG.shop.name||'REGAL HARDWARE'}</b><br>${CFG.shop.addr||''}<br>${CFG.shop.phone||''}</div>
+    <div style="text-align:right"><span class="strip">SUPPLIER STATEMENT</span><br>${D(today)}<br><span class="muted">${from?'from '+from:'whole account'}</span></div></div>
+   <div style="margin:10px 0"><b>${s2.name}</b> · ${s2.code}<br>${s2.contact||''}${s2.contact&&s2.phone?' · ':''}${s2.phone||''} · terms ${s2.days||0} days</div>
+   <table width="100%" style="font-size:12.5px"><tr><th align="left">Date</th><th align="left">Particulars</th><th align="left">Ref</th><th align="right">Billed</th><th align="right">Paid</th><th align="right">Balance</th></tr>
+   ${from?`<tr><td>${from}</td><td colspan="4">Balance brought forward</td><td align="right"><b>${opening.toFixed(2)}</b></td></tr>`:''}
+   ${shown.map(r=>`<tr><td>${r.date}</td><td>${r.desc}</td><td>${r.ref||''}</td><td align="right">${r.billed?r.billed.toFixed(2):''}</td><td align="right">${r.paid?r.paid.toFixed(2):''}</td><td align="right">${r.run.toFixed(2)}</td></tr>`).join('')||'<tr><td colspan="6">No movement in this period.</td></tr>'}
    <tr><td colspan="5" align="right"><b>Balance owed</b></td><td align="right"><b>${owed.toFixed(2)}</b></td></tr></table>
+   ${open.length?`<div style="margin-top:12px"><b>Unpaid bills</b></div>
+   <table width="100%" style="font-size:12.5px"><tr><th align="left">Their invoice</th><th align="left">Our GRN</th><th align="left">Date</th><th align="right">Amount</th><th align="right">Paid</th><th align="right">Owing</th></tr>
+   ${open.map(p=>`<tr><td>${p.supInv}</td><td>${p.no}</td><td>${p.date}</td><td align="right">${p.total.toFixed(2)}</td><td align="right">${p.paid.toFixed(2)}</td><td align="right">${(p.total-p.paid).toFixed(2)}</td></tr>`).join('')}</table>`:''}
    <div style="margin-top:10px">Amount in words: <i>${words(owed)} rupees only</i></div></div>
    <div style="text-align:right;margin-top:10px"><button class="btn ghost" data-act="closeModal">Close</button> <button class="btn" onclick="window.print()">Print</button></div>`);
 }
@@ -7939,8 +7948,19 @@ function renderNow(){ if(S.view!=='board') document.body.classList.remove('board
   document.querySelectorAll('[data-custrange]').forEach(b=>b.onclick=()=>{custStmtRange=b.dataset.custrange;render()});
   document.querySelectorAll('[data-supfilter]').forEach(b=>b.onclick=()=>{supFilter=b.dataset.supfilter;render()});
   document.querySelectorAll('[data-supsort]').forEach(b=>b.onclick=()=>{supSort=b.dataset.supsort;render()});
-  const sq=$('#supQ'); if(sq){ sq.oninput=e=>{supQ=e.target.value;render();const n=$('#supQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
-    if(document.activeElement===document.body&&supQ)sq.focus() }
+  document.querySelectorAll('[data-suptab]').forEach(b=>b.onclick=()=>{supTab=b.dataset.suptab;render()});
+  document.querySelectorAll('[data-supbills]').forEach(b=>b.onclick=()=>{supBillsF=b.dataset.supbills;render()});
+  document.querySelectorAll('[data-suprange]').forEach(b=>b.onclick=()=>{supStmtRange=b.dataset.suprange;render()});
+  const sq=$('#supQ'); if(sq){
+    sq.oninput=e=>{ supQ=e.target.value; const l=supList(); if(l.length&&!l.some(x=>x.id===supSel)) supSel=l[0].id; render(); const n=$('#supQ'); n.focus(); n.setSelectionRange(n.value.length,n.value.length) };
+    sq.onkeydown=e=>{ const l=supList(); const i=l.findIndex(x=>x.id===supSel);
+      const mv=(d)=>{ if(!l.length) return; supSel=l[Math.max(0,Math.min(l.length-1,i+d))].id; render(); $('#supQ').focus(); const r=document.querySelector('.cu-row.sel'); if(r&&r.scrollIntoView) r.scrollIntoView({block:'nearest'}) };
+      if(e.key==='ArrowDown'){ e.preventDefault(); mv(1); return }
+      if(e.key==='ArrowUp'){ e.preventDefault(); mv(-1); return }
+      if(e.key==='Escape'){ e.preventDefault(); supQ=''; render(); $('#supQ').focus(); return }
+      if(e.key==='Enter'){ e.preventDefault(); if(!l.length&&supQ.trim()) return supModal(null,supQ); const r=document.querySelector('.cu-row.sel'); if(r) r.focus(); return }
+    };
+    if(document.activeElement===document.body&&(supQ||S.view==='suppliers'))sq.focus() }
   if(S.view==='settings'){ const ps=$('#prefStart'); if(ps) ps.onchange=e=>{setPref('start',e.target.value); toast('You will land there next time')} }
   if(S.view==='payroll'){
     const pm=$('#payMonth'); if(pm) pm.onchange=e=>{payMonth=e.target.value;render()};
@@ -10740,7 +10760,7 @@ let custSel=2, custQ='', custFilter='all', custSort='owed', custTab='overview', 
    statement with a running balance, and their details (editable). */
 const AV_COLOURS=['#16799B','#1E8A5A','#C0442C','#8A5D06','#5B4B9A','#0E6E70','#A2402F','#2F6B8F'];
 const avatarOf=(c,big)=>{ let h=0; for(const ch of (c.name||'')) h=(h*31+ch.charCodeAt(0))>>>0;
-  const ini=(c.name||'?').split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase()||'?';
+  const ini=(c.name||'?').split(/\s+/).filter(w=>/^[a-z0-9]/i.test(w)).slice(0,2).map(w=>w[0]).join('').toUpperCase()||'?';
   return `<span class="av ${big?'big':''}" style="background:${AV_COLOURS[h%AV_COLOURS.length]}">${ini}</span>` };
 const daysAgo=(d)=>Math.round((today-new Date(d))/864e5);
 const agoTxt=(d)=>{ if(!d) return 'never'; const n=daysAgo(d); return n<=0?'today':n===1?'yesterday':n<30?n+' days ago':n<365?Math.round(n/30)+' months ago':Math.round(n/365)+' years ago' };
@@ -10762,7 +10782,7 @@ function custMatch(c,q){
   if(!q) return true;
   const v=q.toLowerCase().trim(), digits=v.replace(/\D/g,'');
   const name=(c.name||'').toLowerCase();
-  if(name.includes(v)||(c.code||'').toLowerCase().includes(v)||(c.address||'').toLowerCase().includes(v)) return true;
+  if(name.includes(v)||(c.code||'').toLowerCase().includes(v)||(c.address||'').toLowerCase().includes(v)||(c.contact||'').toLowerCase().includes(v)) return true;
   if(digits.length>=3&&(c.phone||'').replace(/\D/g,'').includes(digits)) return true;
   const words=name.split(/\s+/).filter(Boolean);                       // "gf" finds Green Field, "n c" finds Nimal Constructions
   const parts=v.split(/\s+/).filter(Boolean);
@@ -10832,17 +10852,17 @@ function customerPanel(c){
   const notices=S.notices.filter(n=>n.kind==='customer'&&n.cid===c.id&&n.status==='open');
   const tabs=[['overview','Overview'],['bills','Bills',inv.length],['payments','Payments',rc.length],['statement','Statement'],['details','Details']];
   return `<div class="cu-head">
-    ${avatarOf(c,true)}
-    <div style="min-width:0"><h2>${c.name} <span class="muted" style="font-size:13px;font-weight:400">${c.code}</span></h2>
-     <div class="muted" style="margin-top:2px">${c.phone?`<a href="tel:${c.phone}" style="border:0">📞 ${c.phone}</a>`:'<span class="tag warn">no mobile</span>'}${c.address?' · '+c.address:''}</div>
-     <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag ${c.level==='wholesale'?'blue':'ok'}">${c.level} prices</span>${overLimit?'<span class="tag bad">over the limit</span>':''}${ag.old>0?'<span class="tag bad">has 60+ day debt</span>':''}${c.portal?'<span class="tag ok">portal on</span>':''}${c.online?'<span class="tag warn">from the website</span>':''}${first?`<span class="muted" style="font-size:12px;align-self:center">customer since ${first}</span>`:''}</div></div>
     <div class="cu-acts">
      <button class="btn tape" data-act="custPay" data-id="${c.id}">Take a payment <i class="kbd">F7</i></button>
      <button class="btn ghost" data-act="custBill" data-id="${c.id}">New bill <i class="kbd">F6</i></button>
      <button class="btn ghost" data-act="stmtPrint" data-id="${c.id}">Statement <i class="kbd">F8</i></button>
      <button class="btn ghost" data-act="stmtSms" data-id="${c.id}" ${c.phone?'':'disabled'}>Text it</button>
      <button class="btn ghost" data-act="custEdit" data-id="${c.id}">Edit <i class="kbd">Ctrl+E</i></button>
-    </div></div>
+    </div>
+    <div class="cu-id">${avatarOf(c,true)}
+    <div style="min-width:0"><h2>${c.name} <span class="muted" style="font-size:13px;font-weight:400">${c.code}</span></h2>
+     <div class="muted" style="margin-top:2px">${c.phone?`<a href="tel:${c.phone}" style="border:0">📞 ${c.phone}</a>`:'<span class="tag warn">no mobile</span>'}${c.address?' · '+c.address:''}</div>
+     <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag ${c.level==='wholesale'?'blue':'ok'}">${c.level} prices</span>${overLimit?'<span class="tag bad">over the limit</span>':''}${ag.old>0?'<span class="tag bad">has 60+ day debt</span>':''}${c.portal?'<span class="tag ok">portal on</span>':''}${c.online?'<span class="tag warn">from the website</span>':''}${first?`<span class="muted" style="font-size:12px;align-self:center">customer since ${first}</span>`:''}</div></div></div></div>
 
    <div class="cu-kpis">
     <div class="kpi ${overLimit?'r':owed>0?'y':'g'}"><div class="l">Outstanding</div><div class="v ${fmt(owed).length>14?'small':''}">${fmt(owed)}</div><div class="s">${open.length?`${open.length} unpaid bill${open.length===1?'':'s'} · oldest ${ag.oldest} days`:'nothing owing'}</div>
@@ -11491,85 +11511,233 @@ function words(n){ n=Math.floor(n); if(n===0)return 'zero'; const a=['','one','t
 
 /* ---- customers ---- */
 /* ---- suppliers ---- */
-let supSel=1, supQ='', supFilter='all', supSort='owed';
+let supSel=1, supQ='', supFilter='all', supSort='owed', supTab='overview', supBillsF='all', supStmtRange='3m';
+/* ====================== SUPPLIERS ======================
+   The same shape as Customers: find them fast, see what we owe and how old it
+   is, then everything about one supplier under tabs. */
+function supLedger(id){
+  const rows=[];
+  for(const j of S.journal){ let dr=0,cr=0; for(const l of j.lines) if(l.ac==='2100'&&l.party&&l.party.type==='S'&&l.party.id===id){dr+=l.dr;cr+=l.cr}
+    if(dr||cr) rows.push({date:j.date,desc:j.desc,ref:j.ref,billed:cr,paid:dr,no:j.no}) }
+  rows.sort((a,b)=>a.date.localeCompare(b.date)||a.no.localeCompare(b.no));
+  let run=0; for(const r of rows){ run=+(run+r.billed-r.paid).toFixed(2); r.run=run }
+  return rows;
+}
+function supAge(id){
+  const a=supAgeing(id); a.oldest=0; a.n=a.count;
+  S.purchases.filter(p=>p.supplierId===id&&p.paid<p.total).forEach(p=>{ const d=daysAgo(p.date); if(d>a.oldest) a.oldest=d });
+  return a;
+}
+const supLastSeen=(id)=>{ const b=S.purchases.filter(p=>p.supplierId===id).map(p=>p.date), p=S.payments.filter(x=>!x.dir&&x.supplierId===id).map(x=>x.date); return [...b,...p].sort().pop()||null };
+const supChequesOut=(s)=>S.cheques.filter(c=>c.dir==='ISSUED'&&c.party===s.name&&['ISSUED','PRINTED'].includes(c.status));
+function supList(){
+  let list=S.suppliers.filter(x=>x.active!==false&&custMatch(x,supQ));
+  const bal=x=>partyBal('S',x.id);
+  if(supFilter==='owing') list=list.filter(x=>bal(x)>0);
+  if(supFilter==='overdue') list=list.filter(x=>supAge(x.id).old>0);
+  if(supFilter==='clear') list=list.filter(x=>bal(x)<=0);
+  if(supFilter==='cheques') list=list.filter(x=>supChequesOut(x).length);
+  if(supFilter==='portal') list=list.filter(x=>x.enabled);
+  if(supFilter==='orders') list=list.filter(x=>S.orders.some(o=>o.sid===x.id&&(o.status==='pending'||o.unreadShop)));
+  list.sort((x,y)=> supSort==='name'?x.name.localeCompare(y.name)
+    : supSort==='oldest'?(supAge(y.id).oldest-supAge(x.id).oldest)
+    : supSort==='recent'?String(supLastSeen(y.id)||'').localeCompare(String(supLastSeen(x.id)||''))
+    : bal(y)-bal(x));
+  return list;
+}
 function suppliers(){
-  const q=supQ.trim().toLowerCase();
-  let list=S.suppliers.filter(x=>!q||x.name.toLowerCase().includes(q)||(x.phone||'').includes(q)||(x.contact||'').toLowerCase().includes(q)||x.code.toLowerCase().includes(q));
-  if(supFilter==='owing') list=list.filter(x=>partyBal('S',x.id)>0);
-  if(supFilter==='clear') list=list.filter(x=>partyBal('S',x.id)<=0);
-  if(supFilter==='cheques') list=list.filter(x=>S.cheques.some(c=>c.dir==='ISSUED'&&c.party===x.name&&['ISSUED','PRINTED'].includes(c.status)));
-  list.sort((x,y)=> supSort==='name'?x.name.localeCompare(y.name):partyBal('S',y.id)-partyBal('S',x.id));
+  const list=supList();
   if(!list.some(x=>x.id===supSel)&&list.length) supSel=list[0].id;
-  const s=SU(supSel)||list[0]||S.suppliers[0];
-  const pur=S.purchases.filter(p=>p.supplierId===s.id).reverse();
-  const pay=S.payments.filter(p=>!p.dir&&p.supplierId===s.id).reverse();
-  const chq=S.cheques.filter(c=>c.dir==='ISSUED'&&c.party===s.name);
-  const pendChq=chq.filter(c=>['ISSUED','PRINTED'].includes(c.status));
-  const age=supAgeing(s.id);
-  const owed=partyBal('S',s.id);
-  const totalOwed=S.suppliers.reduce((a,x)=>a+Math.max(0,partyBal('S',x.id)),0);
-  return `<h1>Suppliers</h1>
-  <div class="row" style="margin-bottom:12px">
-   ${stat('Owed to all suppliers',fmt(totalOwed),`${S.suppliers.filter(x=>partyBal('S',x.id)>0).length} with a balance`,'r')}
-   ${stat('Cheques out there',fmt(S.cheques.filter(c=>c.dir==='ISSUED'&&['ISSUED','PRINTED'].includes(c.status)).reduce((a,c)=>a+c.amount,0)),'not yet cleared','b')}
-   ${stat('Bought this month',fmt(S.purchases.filter(p=>p.date.slice(0,7)===D(today).slice(0,7)).reduce((a,p)=>a+p.total,0)),'','y')}
-   ${stat('Orders waiting',S.orders.filter(o=>o.status==='pending'||o.unreadShop).length,'from reps','g')}
-  </div>
-  <div class="row" style="align-items:flex-start">
-   <div class="card" style="min-width:300px;flex:0 0 300px">
-    <input id="supQ" value="${supQ}" placeholder="Search name, contact, phone or code…" style="margin-bottom:8px">
-    <div class="chips">${[['all','All'],['owing','Owing'],['clear','Settled'],['cheques','Cheques out']]
+  const s=SU(supSel)||list[0]||null;
+  const all=S.suppliers.filter(x=>x.active!==false);
+  const totOwed=all.reduce((a,x)=>a+Math.max(0,partyBal('S',x.id)),0);
+  const chqOut=S.cheques.filter(c=>c.dir==='ISSUED'&&['ISSUED','PRINTED'].includes(c.status)).reduce((a,c)=>a+c.amount,0);
+  const nLate=all.filter(x=>supAge(x.id).old>0).length;
+  const compact=v=>v>=1e6?'Rs '+(v/1e6).toFixed(2)+'M':v>=1e5?'Rs '+Math.round(v/1e3)+'k':fmt(v);
+  return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Suppliers
+    <span style="display:flex;gap:6px"><button class="btn tape" data-act="supNew">+ New supplier <i class="kbd">Ctrl+N</i></button></span></h1>
+  <div class="cu-wrap">
+   <div class="card cu-list">
+    <div class="cu-strip">
+     <div>Suppliers<b>${all.length}</b></div>
+     <div>We owe<b title="${fmt(totOwed)}" style="color:${totOwed>0?'var(--chip-rust)':'var(--chip-green)'}">${compact(totOwed)}</b></div>
+     <div>${nLate?'Over 60 days':'Cheques out'}<b title="${fmt(chqOut)}">${nLate||compact(chqOut)}</b></div>
+    </div>
+    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+     <input id="supQ" value="${supQ}" placeholder="Name, contact, phone, code…" autocomplete="off"><span class="search-k"><i class="kbd">↑↓</i><i class="kbd">Enter</i></span></div>
+    <div class="chips">${[['all','All'],['owing','We owe'],['overdue','60+ days'],['cheques','Cheques out'],['orders','Orders waiting'],['portal','Portal'],['clear','Settled']]
       .map(f=>`<button class="${supFilter===f[0]?'on':''}" data-supfilter="${f[0]}">${f[1]}</button>`).join('')}</div>
-    <div class="chips" style="margin-bottom:8px"><span class="muted" style="align-self:center">Sort</span>
-     ${[['owed','By what we owe'],['name','By name']].map(f=>`<button class="${supSort===f[0]?'on':''}" data-supsort="${f[0]}">${f[1]}</button>`).join('')}</div>
-    <table>${list.map(x=>{const o=partyBal('S',x.id), pc=S.cheques.filter(c=>c.dir==='ISSUED'&&c.party===x.name&&['ISSUED','PRINTED'].includes(c.status)).length;
-      return `<tr class="rowlink ${x.id===supSel?'sel':''}" data-act="sup" data-id="${x.id}"><td><b>${x.name}</b>
-       <div class="muted">${x.contact} · ${x.phone}${pc?` · ${pc} cheque${pc===1?'':'s'} out`:''}</div></td>
-       <td class="n">${o>0?fmt(o):'<span class="muted">settled</span>'}</td></tr>`}).join('')||'<tr><td class="muted">Nobody matches that.</td></tr>'}</table>
+    <div class="chips" style="margin-bottom:6px"><span class="muted" style="align-self:center">Sort</span>
+     ${[['owed','We owe'],['oldest','Oldest bill'],['recent','Recent'],['name','Name']].map(f=>`<button class="${supSort===f[0]?'on':''}" data-supsort="${f[0]}">${f[1]}</button>`).join('')}</div>
+    <div class="muted" style="margin:0 0 4px 4px">${list.length} of ${all.length}</div>
+    <div class="cu-rows">${list.map(x=>{const o=partyBal('S',x.id), ag=supAge(x.id), seen=supLastSeen(x.id), pc=supChequesOut(x).length, ord=S.orders.filter(od=>od.sid===x.id&&(od.status==='pending'||od.unreadShop)).length;
+      return `<div class="cu-row ${x.id===supSel?'sel':''}" data-act="sup" data-id="${x.id}" tabindex="-1">
+       ${avatarOf(x)}
+       <div class="nm"><b>${x.name}</b><span>${x.contact||''}${x.contact&&x.phone?' · ':''}${x.phone||''}${seen?' · '+agoTxt(seen):''}</span>
+        <div class="cu-tags">${ag.old>0?'<span class="tag bad">60+ days</span>':ag.mid>0?'<span class="tag warn">31–60 days</span>':''}${pc?`<span class="tag blue">${pc} cheque${pc===1?'':'s'} out</span>`:''}${ord?`<span class="tag warn">${ord} order${ord===1?'':'s'}</span>`:''}${x.enabled?'<span class="tag ok">portal</span>':''}</div></div>
+       <div class="bal ${o>0?'over':'clear'}"><b>${o>0?fmt(o):'settled'}</b>${o>0?`<i>${ag.n} bill${ag.n===1?'':'s'} · ${ag.oldest}d</i>`:''}</div></div>`}).join('')
+      ||`<div class="muted" style="padding:16px 8px">Nobody matches that.${supQ?` <a href="#" data-act="supNew" data-q="${supQ.replace(/"/g,'&quot;')}">Add “${supQ}”</a>`:''}</div>`}</div>
    </div>
-   <div class="card flex1">
-    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
-     <div><h2 style="font-size:19px">${s.name}</h2>
-      <div class="muted">${s.contact} · ${s.phone} · terms ${s.days} days · ${s.code}</div></div>
-     <div style="display:flex;gap:6px;flex-wrap:wrap">
-      <button class="btn tape" data-act="supPay" data-id="${s.id}">Pay supplier</button>
-      <button class="btn ghost" data-act="newPur" data-id="${s.id}">New purchase</button>
-      <button class="btn ghost" data-act="supStmt" data-id="${s.id}">Statement</button>
-      <button class="btn ghost" data-act="prn" data-id="${s.id}">Goods back to them</button>
-      <button class="btn ghost" data-act="phoneToggle">Show the rep's phone</button>
-     </div></div>
-    <div class="row" style="margin:12px 0">
-     ${stat('Outstanding',fmt(owed),`${age.count} unpaid bill${age.count===1?'':'s'}`,'r')}
-     ${stat('Total purchases',fmt(pur.reduce((a,p)=>a+p.total,0)),`${pur.length} GRN${pur.length===1?'':'s'}`,'b')}
-     ${stat('Total paid',fmt(pay.reduce((a,p)=>a+p.total,0)),'','g')}
-     ${stat('Cheques pending',fmt(pendChq.reduce((a,c)=>a+c.amount,0)),`${pendChq.length} cheque${pendChq.length===1?'':'s'}`,'y')}
+   <div class="card flex1 cu-panel" style="min-width:0">${s?supplierPanel(s):'<div class="muted">No suppliers yet — add the first one.</div>'}</div>
+  </div>`;
+}
+function supplierPanel(s){
+  const pur=S.purchases.filter(p=>p.supplierId===s.id).sort((a,b)=>b.date.localeCompare(a.date)||b.no.localeCompare(a.no));
+  const open=pur.filter(p=>p.total-p.paid>0.005);
+  const pay=S.payments.filter(p=>!p.dir&&p.supplierId===s.id).sort((a,b)=>b.date.localeCompare(a.date));
+  const chq=S.cheques.filter(c=>c.dir==='ISSUED'&&c.party===s.name);
+  const pend=chq.filter(c=>['ISSUED','PRINTED'].includes(c.status));
+  const owed=partyBal('S',s.id), ag=supAge(s.id);
+  const bought=pur.reduce((a,p)=>a+p.total,0), paidTot=pay.reduce((a,p)=>a+p.total,0);
+  const first=pur.length?pur[pur.length-1].date:null, lastPay=pay[0]||null;
+  const orders=S.orders.filter(o=>o.sid===s.id), waiting=orders.filter(o=>o.status==='pending'||o.unreadShop).length;
+  const tabs=[['overview','Overview'],['bills','Their bills',pur.length],['payments','Payments',pay.length],['cheques','Cheques',chq.length],['statement','Statement'],['details','Details']];
+  return `<div class="cu-head">
+    <div class="cu-acts">
+     <button class="btn tape" data-act="supPay" data-id="${s.id}">Pay supplier <i class="kbd">F7</i></button>
+     <button class="btn ghost" data-act="newPur" data-id="${s.id}">New purchase <i class="kbd">F6</i></button>
+     <button class="btn ghost" data-act="supStmt" data-id="${s.id}">Statement <i class="kbd">F8</i></button>
+     <button class="btn ghost" data-act="prn" data-id="${s.id}">Goods back</button>
+     <button class="btn ghost" data-act="phoneToggle">${S.phoneOpen&&S.phoneMode==='supplier'?'Hide':'Show'} the rep's phone</button>
+     <button class="btn ghost" data-act="supEdit" data-id="${s.id}">Edit <i class="kbd">Ctrl+E</i></button>
     </div>
-    <div class="ageing">
-     <div><span class="muted">Up to 30 days</span><b>${fmt(age.now)}</b></div>
-     <div><span class="muted">31–60 days</span><b>${fmt(age.mid)}</b></div>
-     <div class="late"><span class="muted">Over 60 days</span><b>${fmt(age.old)}</b></div>
-    </div>
+    <div class="cu-id">${avatarOf(s,true)}
+    <div style="min-width:0"><h2>${s.name} <span class="muted" style="font-size:13px;font-weight:400">${s.code}</span></h2>
+     <div class="muted" style="margin-top:2px">${s.contact?s.contact+' · ':''}${s.phone?`<a href="tel:${s.phone}" style="border:0">📞 ${s.phone}</a>`:'<span class="tag warn">no phone</span>'}${s.address?' · '+s.address:''}</div>
+     <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag blue">terms ${s.days||0} days</span>${ag.old>0?'<span class="tag bad">bills over 60 days</span>':''}${pend.length?`<span class="tag warn">${pend.length} cheque${pend.length===1?'':'s'} out</span>`:''}${s.enabled?'<span class="tag ok">portal on</span>':''}${waiting?`<span class="tag warn">${waiting} order${waiting===1?'':'s'} waiting</span>`:''}${first?`<span class="muted" style="font-size:12px;align-self:center">supplier since ${first}</span>`:''}</div></div></div></div>
+
+   <div class="cu-kpis">
+    <div class="kpi ${ag.old>0?'r':owed>0?'y':'g'}"><div class="l">We owe</div><div class="v ${fmt(owed).length>14?'small':''}">${fmt(owed)}</div><div class="s">${open.length?`${open.length} unpaid bill${open.length===1?'':'s'} · oldest ${ag.oldest} days`:'nothing owing'}</div>
+     ${owed>0?`<div class="agebars" title="up to 30 · 31–60 · over 60 days"><i style="width:${ag.now/owed*100}%;background:var(--chip-green)"></i><i style="width:${ag.mid/owed*100}%;background:var(--chip-yellow)"></i><i style="width:${ag.old/owed*100}%;background:var(--chip-rust)"></i></div>`:''}</div>
+    <div class="kpi y"><div class="l">Cheques out</div><div class="v ${fmt(pend.reduce((a,c)=>a+c.amount,0)).length>14?'small':''}">${fmt(pend.reduce((a,c)=>a+c.amount,0))}</div><div class="s">${pend.length?`${pend.length} not yet cleared`:'none pending'}</div></div>
+    <div class="kpi g"><div class="l">Last payment</div><div class="v ${lastPay&&fmt(lastPay.total).length>14?'small':''}">${lastPay?fmt(lastPay.total):'—'}</div><div class="s">${lastPay?`${lastPay.date} · ${lastPay.lines.map(l=>l.method.toLowerCase()).join('+')} · ${agoTxt(lastPay.date)}`:'nothing paid yet'}</div></div>
+    <div class="kpi b"><div class="l">Bought in all</div><div class="v ${fmt(bought).length>14?'small':''}">${fmt(bought)}</div><div class="s">${pur.length} GRN${pur.length===1?'':'s'} · paid ${fmt(paidTot)}</div></div>
+   </div>
+
+   <div class="cu-tabs">${tabs.map(t=>`<button class="${supTab===t[0]?'on':''}" data-suptab="${t[0]}">${t[1]}${t[2]!==undefined?`<i>${t[2]}</i>`:''}</button>`).join('')}</div>
+   <div class="cu-tab-body">${({overview:()=>supOverview(s,pur,open,pay,chq,orders,owed),bills:()=>supBills(s,pur),payments:()=>supPayments(s,pay),cheques:()=>supCheques(s,chq),statement:()=>supStatement(s),details:()=>supDetails(s,orders)})[supTab]()}</div>`;
+}
+function supOverview(s,pur,open,pay,chq,orders,owed){
+  const ev=[
+    ...pur.map(p=>({date:p.date,k:'bill',t:`Their bill ${p.supInv} (${p.no})${p.total-p.paid>0.005?` — ${fmt(p.total-p.paid)} still owing`:''}`,a:fmt(p.total)})),
+    ...pur.flatMap(p=>(p.adjustments||[]).map(a=>({date:a.date,k:'adj',t:`${ADJ_REASONS.find(r=>r[0]===a.why)?.[1]||a.why} on ${p.supInv}${a.note?' — '+a.note:''}`,a:'− '+fmt(a.amount)}))),
+    ...pay.map(p=>({date:p.date,k:'in',t:`Paid ${p.voucher} · ${p.lines.map(l=>l.method.toLowerCase()+(l.no?' #'+l.no:'')).join(', ')}`,a:fmt(p.total),no:p.no,act:'supVoucher'})),
+    ...chq.filter(c=>['CLEARED','BOUNCED','CANCELLED'].includes(c.status)).map(c=>({date:c.changed||c.date,k:c.status==='CLEARED'?'in':'adj',t:`Cheque ${c.no} ${c.status.toLowerCase()}`,a:fmt(c.amount)})),
+    ...orders.map(o=>({date:o.events&&o.events[0]?new Date(o.events[0].at).toISOString().slice(0,10):D(today),k:'web',t:`Order ${o.id||''} — ${OLABEL[o.status]||o.status}`,a:''})),
+  ].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,12);
+  return `<div class="two-col">
+   <div>
+    <h2 style="font-size:15px">Unpaid bills</h2>
+    ${open.length?`<table class="cu-tbl"><tr><th>Their invoice</th><th>Date</th><th class="n">Owing</th><th>Age</th></tr>
+     ${open.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(p=>{const d=daysAgo(p.date), due=Math.max(0,(s.days||0)-d);return `<tr><td>${p.supInv}<div class="muted">${p.no}</div></td><td>${p.date}</td><td class="n"><b>${fmt(p.total-p.paid)}</b>${p.paid?`<div class="muted">of ${fmt(p.total)}</div>`:''}</td><td><span class="tag ${d>60?'bad':d>(s.days||30)?'warn':'ok'}">${d}d</span>${due?`<div class="muted">${due}d to terms</div>`:''}</td></tr>`}).join('')}
+     <tr><td colspan="2"><b>Total</b></td><td class="n"><b>${fmt(owed)}</b></td><td></td></tr></table>`
+     :'<div class="card note" style="background:var(--tint-green);border-color:var(--chip-green)"><b>Settled.</b> <span class="muted">Nothing owing to them.</span></div>'}
     <div class="card note" style="margin-top:12px"><b>Supplier portal</b>
-     <div class="muted">The rep signs in with a code texted to <b>${s.phone||'— no number on file —'}</b>.</div>
+     <div class="muted">The rep signs in with a code texted to <b>${s.phone||'— no number on file —'}</b>.${s.lastLogin?' Last signed in '+s.lastLogin+'.':' Never signed in.'}${s.pin?' Backup PIN set.':''}</div>
      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;align-items:center">
       <label class="chk" style="flex:1;min-width:220px"><input type="checkbox" ${s.showAccounts?'checked':''} data-act="supShow" data-id="${s.id}"> Let them see bills, payments and cheques</label>
-      <label class="chk" style="flex:1;min-width:180px"><input type="checkbox" ${s.enabled?'checked':''} data-act="supEnable" data-id="${s.id}"> Link is active</label>
-      <button class="btn ghost" data-act="openPortal" data-id="${s.id}">Open their phone</button></div>
-     <div class="muted" style="margin-top:6px">${s.lastLogin?'Last signed in '+s.lastLogin:'Never signed in'}${s.pin?' · backup PIN set':''}</div></div>
-    <div class="grid2" style="margin-top:14px">
-     <div><h2>Purchases</h2><table><tr><th>GRN</th><th>Date</th><th>Their invoice</th><th class="n">Total</th><th class="n">Owing</th><th></th></tr>
-      ${pur.map(p=>`<tr><td>${p.no}</td><td>${p.date}</td><td>${p.supInv}${(p.edits||[]).length?'<div class="muted">changed</div>':''}</td>
-       <td class="n">${fmt(p.total)}</td>
-       <td class="n">${p.total-p.paid>0.005?`<b>${fmt(p.total-p.paid)}</b>`:'—'}</td>
-       <td>${can('adjustInvoice')?`<button class="btn ghost sm" data-act="purEdit" data-no="${p.no}">Change</button>`:''}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">None</td></tr>'}</table></div>
-     <div><h2>Payments</h2><table><tr><th>Voucher</th><th>Date</th><th>How</th><th class="n">Amount</th></tr>
-      ${pay.map(p=>`<tr><td><a href="#" data-act="supVoucher" data-no="${p.no}">${p.voucher}</a></td><td>${p.date}</td>
-       <td>${p.lines.map(l=>l.method.toLowerCase()+(l.no?' #'+l.no:'')).join('<br>')}</td><td class="n">${fmt(p.total)}</td></tr>`).join('')||'<tr><td colspan="4" class="muted">None</td></tr>'}</table></div></div>
-    <h2 style="margin-top:14px">Cheques issued to them</h2>
-    <table><tr><th>Cheque</th><th>Bank</th><th>Dated</th><th class="n">Amount</th><th>State</th><th></th></tr>
-    ${chq.map(c=>`<tr><td>${c.no}</td><td>${c.bank}</td><td>${c.date}</td><td class="n">${fmt(c.amount)}</td><td>${tagFor(c.status)}</td>
-     <td><button class="btn ghost sm" data-act="printChq" data-no="${c.no}">Print</button></td></tr>`).join('')||'<tr><td colspan="6" class="muted">None</td></tr>'}</table>
-   </div></div>`;
+      <label class="chk" style="flex:1;min-width:160px"><input type="checkbox" ${s.enabled?'checked':''} data-act="supEnable" data-id="${s.id}"> Link is active</label>
+      <button class="btn ghost sm" data-act="openPortal" data-id="${s.id}">Open their phone</button></div></div>
+   </div>
+   <div><h2 style="font-size:15px">What has been happening</h2>
+    ${ev.length?`<div class="tl">${ev.map(e=>`<div class="ev ${e.k}"><span class="d">${e.date}</span><span class="t">${e.act?`<a href="#" data-act="${e.act}" data-no="${e.no}" style="border:0">${e.t}</a>`:e.t}</span><span class="a">${e.a}</span></div>`).join('')}</div>`
+     :'<div class="muted">Nothing yet.</div>'}</div>
+  </div>`;
+}
+function supBills(s,pur){
+  const list=pur.filter(p=>supBillsF==='all'||(supBillsF==='unpaid'?p.total-p.paid>0.005:p.total-p.paid<=0.005));
+  return `<div class="chips" style="margin-bottom:8px">${[['all','All'],['unpaid','Unpaid'],['paid','Paid']].map(f=>`<button class="${supBillsF===f[0]?'on':''}" data-supbills="${f[0]}">${f[1]}</button>`).join('')}
+    <span class="muted" style="align-self:center;margin-left:auto">${list.length} bill${list.length===1?'':'s'} · ${fmt(list.reduce((a,p)=>a+p.total,0))}</span></div>
+   <table class="cu-tbl"><tr><th>Their invoice</th><th>GRN</th><th>Date</th><th>Items</th><th class="n">Total</th><th class="n">Paid</th><th class="n">Owing</th><th>Status</th><th></th></tr>
+   ${list.map(p=>{const d=daysAgo(p.date), ow=p.total-p.paid;return `<tr><td><b>${p.supInv}</b>${(p.adjustments||[]).length?`<div class="muted">${p.adjustments.map(a=>(ADJ_REASONS.find(r=>r[0]===a.why)?.[1]||a.why).toLowerCase()+' '+fmt(a.amount)).join(', ')}</div>`:''}${(p.edits||[]).length?'<div class="muted">changed</div>':''}</td>
+     <td>${p.no}</td><td>${p.date}<div class="muted">${agoTxt(p.date)}</div></td><td class="muted">${(p.lines||[]).length} line${(p.lines||[]).length===1?'':'s'}</td>
+     <td class="n">${fmt(p.total)}</td><td class="n">${fmt(p.paid)}</td><td class="n">${ow>0.005?`<b style="color:${d>60?'var(--chip-rust)':'inherit'}">${fmt(ow)}</b>`:'—'}</td>
+     <td>${ow>0.005?`<span class="tag ${d>60?'bad':d>(s.days||30)?'warn':'ok'}">${d>(s.days||30)?'past terms':'owing'} · ${d}d</span>`:'<span class="tag ok">paid</span>'}</td>
+     <td>${can('adjustInvoice')?`<button class="btn ghost sm" data-act="purEdit" data-no="${p.no}">Change</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="9" class="muted">No bills here.</td></tr>'}</table>`;
+}
+function supPayments(s,pay){
+  const byMethod={}; pay.forEach(p=>p.lines.forEach(l=>{byMethod[l.method]=(byMethod[l.method]||0)+l.amount}));
+  return `<div class="chips" style="margin-bottom:8px">${Object.entries(byMethod).map(([m,v])=>`<span class="tag blue">${m.toLowerCase()} ${fmt(v)}</span>`).join(' ')}
+    <span class="muted" style="align-self:center;margin-left:auto">${pay.length} payment${pay.length===1?'':'s'} · ${fmt(pay.reduce((a,p)=>a+p.total,0))}</span></div>
+   <table class="cu-tbl"><tr><th>Voucher</th><th>Date</th><th>How</th><th class="n">Amount</th><th>Against</th><th>By</th><th></th></tr>
+   ${pay.map(p=>`<tr><td><b>${p.voucher}</b><div class="muted">${p.no}</div></td><td>${p.date}<div class="muted">${agoTxt(p.date)}</div></td>
+     <td>${p.lines.map(l=>{const c=l.method==='CHEQUE'?S.cheques.find(x=>x.dir==='ISSUED'&&x.no===l.no):null;return `${l.method.toLowerCase()}${l.no?' #'+l.no:''}${l.bank?' · '+B(l.bank).name:''}${c?` <span class="tag ${c.status==='CLEARED'?'ok':c.status==='BOUNCED'||c.status==='CANCELLED'?'bad':'warn'}">${c.status.toLowerCase()}</span>`:''}`}).join('<br>')}</td>
+     <td class="n"><b>${fmt(p.total)}</b></td><td class="muted">${(p.against||[]).map(n=>{const x=S.purchases.find(y=>y.no===n);return x?x.supInv:n}).join(', ')||'oldest bills first'}</td><td class="muted">${p.by||''}</td>
+     <td><button class="btn ghost sm" data-act="supVoucher" data-no="${p.no}">Print voucher</button></td></tr>`).join('')||'<tr><td colspan="7" class="muted">Nothing paid yet.</td></tr>'}</table>`;
+}
+function supCheques(s,chq){
+  return `<table class="cu-tbl"><tr><th>Cheque</th><th>Bank</th><th>Dated</th><th class="n">Amount</th><th>State</th><th></th></tr>
+   ${chq.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(c=>`<tr><td><b>${c.no}</b></td><td>${c.bank}</td><td>${c.date}<div class="muted">${agoTxt(c.date)}</div></td><td class="n"><b>${fmt(c.amount)}</b></td><td>${tagFor(c.status)}</td>
+     <td><button class="btn ghost sm" data-act="printChq" data-no="${c.no}">Print</button></td></tr>`).join('')||'<tr><td colspan="6" class="muted">No cheques written to them.</td></tr>'}</table>`;
+}
+function supStmtFrom(){ const d=new Date(today); if(supStmtRange==='1m') d.setMonth(d.getMonth()-1); else if(supStmtRange==='3m') d.setMonth(d.getMonth()-3); else if(supStmtRange==='12m') d.setFullYear(d.getFullYear()-1); else return ''; return D(d) }
+function supStatement(s){
+  const rows=supLedger(s.id), from=supStmtFrom();
+  const before=rows.filter(r=>from&&r.date<from), shown=rows.filter(r=>!from||r.date>=from);
+  const opening=before.length?before[before.length-1].run:0;
+  const billed=shown.reduce((a,r)=>a+r.billed,0), paid=shown.reduce((a,r)=>a+r.paid,0);
+  return `<div class="chips" style="margin-bottom:8px">${[['1m','This month'],['3m','3 months'],['12m','12 months'],['all','Everything']].map(f=>`<button class="${supStmtRange===f[0]?'on':''}" data-suprange="${f[0]}">${f[1]}</button>`).join('')}
+    <span style="margin-left:auto"><button class="btn ghost sm" data-act="supStmt" data-id="${s.id}">Print</button></span></div>
+   <div class="cu-strip" style="grid-template-columns:repeat(4,1fr)">
+    <div>Opening<b>${fmt(opening)}</b></div><div>They billed<b>${fmt(billed)}</b></div><div>We paid / took off<b>${fmt(paid)}</b></div><div>Closing<b style="color:${rows.length&&rows[rows.length-1].run>0?'var(--chip-rust)':'var(--chip-green)'}">${fmt(rows.length?rows[rows.length-1].run:0)}</b></div></div>
+   <table class="cu-tbl stmt"><tr><th>Date</th><th>What</th><th>Ref</th><th class="n">Billed</th><th class="n">Paid</th><th class="n">Balance</th></tr>
+   ${from?`<tr><td>${from}</td><td class="muted" colspan="4">Balance brought forward</td><td class="n"><b>${fmt(opening)}</b></td></tr>`:''}
+   ${shown.map(r=>{const isPay=S.payments.some(p=>!p.dir&&p.no===r.ref);
+     return `<tr><td>${r.date}</td><td>${r.desc}</td><td>${isPay?`<a href="#" data-act="supVoucher" data-no="${r.ref}" style="border:0">${r.ref}</a>`:r.ref||''}</td>
+     <td class="n">${r.billed?fmt(r.billed):''}</td><td class="n" style="color:var(--chip-green)">${r.paid?fmt(r.paid):''}</td><td class="n"><b>${fmt(r.run)}</b></td></tr>`}).join('')||'<tr><td colspan="6" class="muted">Nothing in this period.</td></tr>'}</table>`;
+}
+function supDetails(s,orders){
+  return `<div class="two-col">
+   <div><h2 style="font-size:15px">Details</h2>
+    <table class="cu-tbl kv">
+     <tr><th>Name</th><td>${s.name}</td></tr><tr><th>Code</th><td>${s.code}</td></tr>
+     <tr><th>Contact</th><td>${s.contact||'<span class="muted">none</span>'}</td></tr>
+     <tr><th>Phone</th><td>${s.phone||'<span class="muted">none</span>'}</td></tr>
+     <tr><th>Address</th><td>${s.address||'<span class="muted">none</span>'}</td></tr>
+     <tr><th>Terms</th><td>${s.days||0} days</td></tr>
+     <tr><th>Notes</th><td>${s.notes?s.notes.replace(/\n/g,'<br>'):'<span class="muted">none</span>'}</td></tr>
+     <tr><th>Portal</th><td>${s.enabled?'active':'off'} · account details ${s.showAccounts?'shown':'hidden'}${s.lastLogin?' · last signed in '+s.lastLogin:''}</td></tr>
+     ${orders.length?`<tr><th>Orders</th><td>${orders.length} sent to them</td></tr>`:''}
+    </table>
+    <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap"><button class="btn tape" data-act="supEdit" data-id="${s.id}">Edit details</button>
+     ${S.user.role==='Owner'?`<button class="btn ghost" data-act="supRemove" data-id="${s.id}" ${partyBal('S',s.id)>0.005?'disabled title="Settle the account first"':''}>Remove supplier</button>`:''}</div></div>
+   <div><h2 style="font-size:15px">Messages sent</h2>
+    ${(S.messages||[]).filter(m=>s.phone&&m.to===s.phone).slice(0,8).map(m=>`<div style="padding:6px 0;border-bottom:1px solid var(--line2)"><div class="muted" style="font-size:12px">${m.at||''} · ${m.status||''}</div><div style="font-size:13px">${m.body||''}</div></div>`).join('')||'<div class="muted">No texts to this supplier yet.</div>'}</div>
+  </div>`;
+}
+/* add or change a supplier */
+function supModal(id,preset){
+  const s=id?SU(id):null;
+  const q=(preset||'').trim(), qIsPhone=/^0\d{6,9}$/.test(q);
+  const m=modal(`<h2>${s?'Edit '+s.name:'New supplier'}</h2>
+   <div class="grid2" style="margin-top:8px">
+    <div class="f"><label>Supplier name</label><input id="smName" value="${s?s.name.replace(/"/g,'&quot;'):(qIsPhone?'':q.replace(/"/g,'&quot;'))}" placeholder="e.g. Tokyo Cement Distributor"></div>
+    <div class="f"><label>Contact person (the rep)</label><input id="smContact" value="${s?(s.contact||'').replace(/"/g,'&quot;'):''}" placeholder="e.g. Mr. Silva"></div></div>
+   <div class="grid2">
+    <div class="f"><label>Phone</label><input id="smPhone" value="${s?(s.phone||''):(qIsPhone?q:'')}" placeholder="07XXXXXXXX" inputmode="tel"></div>
+    <div class="f"><label>Payment terms (days)</label><input id="smDays" type="number" value="${s?(s.days||30):30}"></div></div>
+   <div class="f"><label>Address</label><input id="smAddr" value="${s?(s.address||'').replace(/"/g,'&quot;'):''}" placeholder="Town, road"></div>
+   <div class="f"><label>Notes for the desk</label><textarea id="smNotes" rows="2" placeholder="e.g. lorry comes Tuesdays · ask for Sunil">${s?(s.notes||''):''}</textarea></div>
+   <div class="muted" id="smMsg"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="smOk">${s?'Save':'Add supplier'}</button></div>`);
+  const g=id2=>m.querySelector('#'+id2);
+  const save=()=>{
+    const name=g('smName').value.trim(), contact=g('smContact').value.trim(), phone=g('smPhone').value.trim(), days=Math.max(0,+g('smDays').value||0), addr=g('smAddr').value.trim(), notes=g('smNotes').value.trim();
+    if(!name){ g('smMsg').textContent='A name is needed.'; g('smName').focus(); return }
+    if(phone&&!/^0\d{6,9}$/.test(phone)){ g('smMsg').textContent='Enter a phone like 0771234567, or leave it empty.'; g('smPhone').focus(); return }
+    const dup=S.suppliers.find(x=>x.name.toLowerCase()===name.toLowerCase()&&x.id!==(s?s.id:-1));
+    if(dup){ g('smMsg').textContent=`${dup.name} is already on the list.`; return }
+    if(s){ const oldName=s.name; Object.assign(s,{name,contact,phone,days,address:addr,notes});
+      if(oldName!==name) S.cheques.forEach(c=>{ if(c.dir==='ISSUED'&&c.party===oldName) c.party=name });   // cheques are filed by name
+      m.remove(); render(); toast('Saved'); return }
+    const ns={id:Math.max(0,...S.suppliers.map(x=>x.id))+1,code:'S'+String(S.suppliers.length+1).padStart(4,'0'),name,contact,phone,days,address:addr,notes,pin:'',showAccounts:false,enabled:false,lastLogin:null};
+    S.suppliers.push(ns); supSel=ns.id; supQ=''; supFilter='all'; supTab='overview'; m.remove(); render(); toast(`${name} added`);
+  };
+  g('smOk').onclick=save;
+  const order=['smName','smContact','smPhone','smDays','smAddr','smNotes'];
+  order.forEach((id2,i)=>{ g(id2).addEventListener('keydown',e=>{ if(e.key!=='Enter'||(id2==='smNotes'&&e.shiftKey)) return; e.preventDefault(); e.stopPropagation();
+    const nx=order[i+1]; if(!nx) return save(); const el=g(nx); el.focus(); if(el.select) el.select() }) });
+  g('smName').focus();
 }
 
 /* paying a supplier — cash, transfer, or split over any number of cheques */
@@ -12924,7 +13092,14 @@ document.addEventListener('click',e=>{
       if(panel){ document.querySelectorAll('.cu-row').forEach(r=>r.classList.toggle('sel',+r.dataset.id===id)); panel.innerHTML='<div class="cu-loading"><i></i>Opening…</div>'; setTimeout(()=>{ custSel=id; render() },160) }
       else { custSel=id; render() } },
     custPay:()=>custPayModal(+a.dataset.id), stmt:()=>{const c=C(+a.dataset.id);sms(c.phone,`Regal Hardware statement: outstanding ${fmt(partyBal('C',c.id))} across ${S.sales.filter(s=>s.customerId===c.id&&s.balance>0).length} invoices. Please settle by month end.`);toast('Statement SMS queued')},
-    sup:()=>{supSel=+a.dataset.id;render()}, supPay:()=>supPayModal(+a.dataset.id), newPur:()=>newPurModal(+a.dataset.id),
+    sup:()=>{ const id=+a.dataset.id; if(id===supSel&&S.view==='suppliers') return;
+      const panel=document.querySelector('.cu-panel');
+      if(panel&&S.view==='suppliers'){ document.querySelectorAll('.cu-row').forEach(r=>r.classList.toggle('sel',+r.dataset.id===id)); panel.innerHTML='<div class="cu-loading"><i></i>Opening…</div>'; setTimeout(()=>{ supSel=id; render() },160) }
+      else { supSel=id; render() } },
+    supNew:()=>supModal(null,a.dataset.q||supQ), supEdit:()=>supModal(+a.dataset.id),
+    supRemove:()=>{ const s=SU(+a.dataset.id); if(partyBal('S',s.id)>0.005) return toast('Settle the account first');
+      if(!confirm(`Remove ${s.name} from the supplier list? Their bills stay on the books.`)) return; s.active=false; supSel=0; render(); toast(`${s.name} removed`) },
+    supPay:()=>supPayModal(+a.dataset.id), newPur:()=>newPurModal(+a.dataset.id),
     newDmg:dmgModal, newExp:expModal, voucher:()=>voucher(a.dataset.no), printChq:()=>printChq(a.dataset.no),
     chq:()=>{const c=S.cheques.find(x=>x.no===a.dataset.no&&x.dir===a.dataset.dir); if(c.dir==='RECEIVED'&&a.dataset.st==='DEPOSITED'){const m=modal(`<h2>Deposit cheque ${c.no}</h2><div class="f"><label>Into account</label><select id="dep">${S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select></div><button class="btn tape" id="dok">Deposit</button>`);m.querySelector('#dok').onclick=()=>{c.depositTo=+m.querySelector('#dep').value;chequeStatus(c,'DEPOSITED');m.remove();render();toast('Deposited')};return} closeModals();try{chequeStatus(c,a.dataset.st)}catch(e){return toast(e.message)}render();toast(`Cheque ${c.no} → ${a.dataset.st}${['BOUNCED','CANCELLED'].includes(a.dataset.st)?' — supplier balance reinstated':''}`)},
     noticeTake:()=>{const n=S.notices.find(x=>x.id===a.dataset.id); n.status='confirmed';
@@ -13200,6 +13375,17 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){
     if((e.ctrlKey||e.metaKey)&&(e.key==='e'||e.key==='E')&&c){ e.preventDefault(); custModal(c.id); return }
     if(e.key==='Enter'&&onRow&&c){ e.preventDefault(); custPayModal(c.id); return }
     if((e.key==='ArrowDown'||e.key==='ArrowUp')&&onRow){ e.preventDefault(); const l=custList(), i=l.findIndex(x=>x.id===custSel); const n=l[Math.max(0,Math.min(l.length-1,i+(e.key==='ArrowDown'?1:-1)))]; if(n&&n.id!==custSel){ custSel=n.id; render(); const r=document.querySelector('.cu-row.sel'); if(r){ r.focus(); if(r.scrollIntoView) r.scrollIntoView({block:'nearest'}) } } return }
+  }
+  // the suppliers page: the same keys, for the supplier on the screen
+  if(S.view==='suppliers'&&!document.querySelector('.modal')&&typeof supSel!=='undefined'){
+    const s=SU(supSel); const onRow=(document.activeElement||{}).classList&&document.activeElement.classList.contains('cu-row');
+    if(e.key==='F7'&&s){ e.preventDefault(); supPayModal(s.id); return }
+    if(e.key==='F6'&&s){ e.preventDefault(); newPurModal(s.id); return }
+    if(e.key==='F8'&&s){ e.preventDefault(); supplierStatement(s.id); return }
+    if((e.ctrlKey||e.metaKey)&&(e.key==='n'||e.key==='N')){ e.preventDefault(); supModal(null,supQ); return }
+    if((e.ctrlKey||e.metaKey)&&(e.key==='e'||e.key==='E')&&s){ e.preventDefault(); supModal(s.id); return }
+    if(e.key==='Enter'&&onRow&&s){ e.preventDefault(); supPayModal(s.id); return }
+    if((e.key==='ArrowDown'||e.key==='ArrowUp')&&onRow){ e.preventDefault(); const l=supList(), i=l.findIndex(x=>x.id===supSel); const n=l[Math.max(0,Math.min(l.length-1,i+(e.key==='ArrowDown'?1:-1)))]; if(n&&n.id!==supSel){ supSel=n.id; render(); const r=document.querySelector('.cu-row.sel'); if(r){ r.focus(); if(r.scrollIntoView) r.scrollIntoView({block:'nearest'}) } } return }
   }
   if(e.key==='F2'){ if(S.view==='pos'&&pref('till')==='classic'&&typeof CS!=='undefined'&&CS.pid){e.preventDefault();priceHistory(CS.pid);return} e.preventDefault();go('dashboard')} if(e.key==='F3'){e.preventDefault();go('pos')} if(e.key==='F9'){e.preventDefault();go(pref('till')==='classic'?'recall':'bills')}
   if((e.ctrlKey||e.metaKey)&&(e.key==='p'||e.key==='P')&&S.view==='pos'&&S.pos.lines.length&&!document.querySelector('.modal')){ e.preventDefault(); proofBill(); return }

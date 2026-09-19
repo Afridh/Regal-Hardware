@@ -154,6 +154,46 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   w.S.pos.customer = null;
 }
 
+// ---------------------------------------------------------------- suppliers page (same shape as customers)
+{
+  const key = (el, k) => el.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const keyDoc = (k, extra = {}) => d.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...extra }));
+  const type = (v) => { const q = d.getElementById('supQ'); q.value = v; q.dispatchEvent(new w.Event('input')); };
+  const rows = () => [...d.querySelectorAll('.cu-row')].map(r => r.querySelector('.nm b').textContent);
+  w.go('suppliers'); await sleep(30);
+  ok('S: list shows every supplier with avatar and balance', rows().length === w.S.suppliers.length && d.querySelectorAll('.cu-row .av').length === rows().length);
+  ok('S: buttons sit above the details', (() => { const h = d.querySelector('.cu-head'); return h && h.children[0].classList.contains('cu-acts') && h.children[1].classList.contains('cu-id'); })());
+  ok('S: search box focused on opening', d.activeElement && d.activeElement.id === 'supQ');
+  const rep = w.S.suppliers[1].contact.split(' ').pop().toLowerCase();
+  type(rep); ok('S: finds by the rep\'s name', rows().length >= 1 && rows().some(r => r === w.S.suppliers[1].name), rows().join(', '));
+  type(''); const iSel = rows().indexOf(d.querySelector('.cu-row.sel .nm b').textContent); key(d.getElementById('supQ'), 'ArrowDown'); await sleep(20);
+  ok('S: ↓ moves the selection', d.querySelector('.cu-row.sel .nm b').textContent === rows()[Math.min(rows().length - 1, iSel + 1)], `from row ${iSel}`);
+  w.eval('supSel=1'); w.render(); await sleep(20);
+  ok('S: KPI matches the ledger', d.querySelector('.kpi .v').textContent.replace(/[^\d.]/g, '') === w.partyBal('S', 1).toFixed(2).replace(/[^\d.]/g, ''));
+  for (const t of ['bills', 'payments', 'cheques', 'statement', 'details']) { d.querySelector(`[data-suptab="${t}"]`).click(); await sleep(20); ok(`S: ${t} tab renders`, d.querySelector('.cu-tabs button.on').dataset.suptab === t && d.querySelectorAll('.cu-tbl').length > 0 && !A.errors.length, A.errors[0] || ''); }
+  d.querySelector('[data-suptab="statement"]').click(); await sleep(20); d.querySelector('[data-suprange="all"]').click(); await sleep(20);
+  const last = [...d.querySelectorAll('.cu-tbl.stmt tr')].pop();
+  ok('S: statement running balance ends at what we owe', !!last && last.textContent.replace(/[^\d.]/g, '').endsWith(w.partyBal('S', 1).toFixed(2).replace(/[^\d.]/g, '')));
+  ok('S: ledger billed − paid = balance', Math.abs(w.supLedger(1).reduce((a, r) => a + r.billed - r.paid, 0) - w.partyBal('S', 1)) < 0.01);
+  keyDoc('F7'); await sleep(30); ok('S: F7 opens Pay supplier', !!d.querySelector('.modal #pl') && /Pay /.test(d.querySelector('.modal h2').textContent)); w.closeModals();
+  keyDoc('F8'); await sleep(30); ok('S: F8 prints the statement with a running balance', /SUPPLIER STATEMENT/.test(d.querySelector('.modal').innerHTML) && /Balance brought forward|Particulars/.test(d.querySelector('.modal').innerHTML)); w.closeModals();
+  keyDoc('n', { ctrlKey: true }); await sleep(30);
+  ok('S: Ctrl+N opens the new supplier form', !!d.getElementById('smName'));
+  d.getElementById('smName').value = 'Lanka Tiles'; key(d.getElementById('smName'), 'Enter'); ok('S: Enter steps to the contact', d.activeElement.id === 'smContact');
+  d.getElementById('smContact').value = 'Mr. Perera'; d.getElementById('smPhone').value = '0112223344'; d.getElementById('smDays').value = '45';
+  d.getElementById('smOk').click(); await sleep(30);
+  const ns = w.S.suppliers.find(s => s.name === 'Lanka Tiles');
+  ok('S: supplier added and selected', !!ns && ns.days === 45 && ns.code === 'S' + String(w.S.suppliers.length).padStart(4, '0') && w.eval('supSel') === ns.id && !d.querySelector('.modal'));
+  d.querySelector('[data-act="supEdit"]').click(); await sleep(20); d.getElementById('smAddr').value = 'Kaduruwela'; d.getElementById('smOk').click(); await sleep(20);
+  ok('S: edit saves', ns.address === 'Kaduruwela');
+  w.eval('supSel=1'); w.render(); await sleep(20);
+  const r2 = d.querySelector('.cu-row[data-id="2"]'); r2.click();
+  ok('S: loading beat on switching', !!d.querySelector('.cu-loading')); await sleep(250);
+  ok('S: then the supplier opens', w.eval('supSel') === 2 && !d.querySelector('.cu-loading'));
+  w.go('customers'); await sleep(20);
+  ok('C: customer buttons sit above the details too', (() => { const h = d.querySelector('.cu-head'); return h && h.children[0].classList.contains('cu-acts'); })());
+}
+
 // ---------------------------------------------------------------- classic till keyboard flow
 {
   const key = (el, k) => el.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
@@ -354,7 +394,8 @@ ok('B: cashier cannot open Users', !B.w.allowed('users') && B.w.allowed('pos'));
   const wasPortal = !!CB(2).portal;
   B.w.eval('custSel=2; custTab="overview"'); B.w.go('customers'); await sleep(30);
   B.d.querySelector('[data-act="custPortal"][data-id="2"]').click(); await sleep(30);
-  ok('B: cashier cannot switch a portal — a request is made instead', !!CB(2).portal === wasPortal && B.w.S.approvals.length === 1 && B.w.S.approvals[0].status === 'pending' && B.w.S.approvals[0].by === 'Kasun' && B.w.S.approvals[0].kind === 'custPortal');
+  const req0 = (B.w.S.approvals || []).find(a => a.status === 'pending' && a.by === 'Kasun' && a.kind === 'custPortal');
+  ok('B: cashier cannot switch a portal — a request is made instead', !!CB(2).portal === wasPortal && !!req0 && (B.w.S.approvals || []).filter(a => a.status === 'pending').length === 1, JSON.stringify((B.w.S.approvals||[]).map(a=>[a.kind,a.status,a.by])));
   ok('B: menu shows the waiting badge', /nbadge/.test(B.d.querySelector('[data-view="approvals"]').innerHTML));
   B.w.go('approvals'); await sleep(30);
   ok('B: cashier sees their request waiting, with no approve button', /Waiting for the owner/.test(B.d.getElementById('main').innerHTML) && !B.d.querySelector('[data-act="apOk"]'));
@@ -366,10 +407,10 @@ ok('B: cashier cannot open Users', !B.w.allowed('users') && B.w.allowed('pos'));
   ok('A: bell entry is not shown to the cashier', !B.w.eval('notifMine')(A.w.S.notif.find(n => n.kind === 'approval')));
   A.w.go('approvals'); await sleep(30);
   ok('A: owner sees Approve / Turn down', !!A.d.querySelector('[data-act="apOk"]') && !!A.d.querySelector('[data-act="apNo"]'));
-  const reqId = A.w.S.approvals[0].id;
+  const reqId = A.w.S.approvals.find(a => a.status === 'pending' && a.by === 'Kasun').id, reqA = () => A.w.S.approvals.find(a => a.id === reqId);
   A.d.getElementById('apn-' + reqId).value = 'fine, but watch the balance';
-  A.d.querySelector('[data-act="apOk"]').click(); await sleep(50);
-  ok('A: approved — the change is applied', !!CA(2).portal === !wasPortal && A.w.S.approvals[0].status === 'approved' && A.w.S.approvals[0].decidedBy === 'Afridh' && A.w.S.approvals[0].note === 'fine, but watch the balance');
+  A.d.querySelector('[data-act="apOk"][data-id="' + reqId + '"]').click(); await sleep(50);
+  ok('A: approved — the change is applied', !!CA(2).portal === !wasPortal && reqA().status === 'approved' && reqA().decidedBy === 'Afridh' && reqA().note === 'fine, but watch the balance');
   A.w.go('dashboard');
   const backB = await until(() => B.w.S.approvals.some(a => a.id === reqId && a.status === 'approved'), 25000, 500);
   ok('B: cashier sees the decision and the change', !!backB && !!CB(2).portal === !wasPortal);
