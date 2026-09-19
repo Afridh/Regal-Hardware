@@ -9431,9 +9431,18 @@ function csCommit(){
   const pctGiven=(d>0&&CFG.pos.discFromMrp)?d:null;
   const net=(qty*price-disc)/qty;
   const put=(by,serials)=>{
-    S.pos.lines.push({pid:p.id,qty,price,disc,discPct:pctGiven||undefined,warranty:CS.warranty,serials:serials||undefined,
-      auto:Math.abs(price-priceFor(p,qty))<0.005,...(by?{belowCost:by}:{})});
-    S.pos.sel=S.pos.lines.length-1;
+    // the same item keyed again joins its line on the bill (same price, same warranty, no serial numbers)
+    const same=(!serials||!serials.length)?S.pos.lines.findIndex(l=>l.pid===p.id&&Math.abs(l.price-price)<0.005&&(l.warranty||'0')===(CS.warranty||'0')&&!(l.serials&&l.serials.length)&&(l.discPct||0)===(pctGiven||0)):-1;
+    if(same>=0){
+      const l=S.pos.lines[same]; l.qty=+(l.qty+qty).toFixed(3);
+      l.disc=+((l.disc||0)+disc).toFixed(2);          // same price and same % means the same discount per piece, so the rupees simply add up
+      if(by) l.belowCost=by; l.auto=Math.abs(price-priceFor(p,l.qty))<0.005;
+      S.pos.sel=same; toast(`${p.name} — now ${fq(l.qty)} ${p.unit} on the bill`);
+    } else {
+      S.pos.lines.push({pid:p.id,qty,price,disc,discPct:pctGiven||undefined,warranty:CS.warranty,serials:serials||undefined,
+        auto:Math.abs(price-priceFor(p,qty))<0.005,...(by?{belowCost:by}:{})});
+      S.pos.sel=S.pos.lines.length-1;
+    }
     CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null};
     if(!CFG.stock.allowNegative&&CFG.stock.track!==false){ const on=S.pos.lines.filter(l=>l.pid===p.id).reduce((a,l)=>a+l.qty,0);
       if(on>p.stock+1e-9) toast(`Only ${fq(p.stock)} ${p.unit} of ${p.name} on the floor`) }

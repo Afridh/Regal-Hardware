@@ -213,6 +213,12 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   w.csStart(2); await sleep(20); key(d.getElementById('csDisc'), 'Enter'); await sleep(20);
   w.csStart(3); await sleep(20); key(d.getElementById('csDisc'), 'Enter'); await sleep(20);
   ok('K: three lines on the bill', w.S.pos.lines.length === 3);
+  // the same item again joins its line instead of making a new one
+  w.csStart(2); await sleep(20); d.getElementById('csQty').value = '3'; d.getElementById('csQty').dispatchEvent(new w.Event('input')); key(d.getElementById('csDisc'), 'Enter'); await sleep(20);
+  ok('K: same item keyed again is one line with the quantities added', w.S.pos.lines.length === 3 && w.S.pos.lines.filter(l => l.pid === 2).length === 1 && w.S.pos.lines.find(l => l.pid === 2).qty === 4 && w.S.pos.sel === w.S.pos.lines.findIndex(l => l.pid === 2));
+  w.csStart(2); await sleep(20); d.getElementById('csPrice').value = String(w.eval('P')(2).retail - 50); d.getElementById('csPrice').dispatchEvent(new w.Event('input')); key(d.getElementById('csDisc'), 'Enter'); await sleep(20);
+  ok('K: … but a different price stays a separate line', w.S.pos.lines.length === 4 && w.S.pos.lines.filter(l => l.pid === 2).length === 2);
+  w.S.pos.lines.pop(); w.S.pos.sel = 2; w.render(); await sleep(20);
   key(d.getElementById('csQ'), 'ArrowDown'); await sleep(20);
   ok('K: ↓ from the item row lands on the bill (on the highlighted last line)', active() === 'till-lines' && w.S.pos.sel === 2, `sel ${w.S.pos.sel}`);
   key(d.activeElement, 'ArrowDown'); await sleep(20); ok('K: ↓ stops at the last line', w.S.pos.sel === 2 && d.querySelectorAll('.till-tbl tr.on').length === 1);
