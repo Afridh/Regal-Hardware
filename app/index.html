@@ -1359,6 +1359,44 @@ tr.rowlink button{cursor:pointer}
 .tl .ev .a{font-family:Archivo,sans-serif;font-weight:700;white-space:nowrap}
 .tl .ev.in .a{color:var(--chip-green)}
 @media (max-width:640px){.cu-list{position:static;max-height:none}.cu-acts{margin-left:0}.cu-head h2{font-size:19px}.tl .ev{flex-wrap:wrap}}
+
+/* ---- motion & polish: things arrive, keys are visible, buttons answer the hand ---- */
+@keyframes cuFadeUp{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+@keyframes cuPop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+@keyframes cuSlideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+@keyframes cuGlow{0%{box-shadow:0 0 0 0 rgba(240,168,30,.45)}100%{box-shadow:0 0 0 10px rgba(240,168,30,0)}}
+.cu-panel{animation:cuFadeUp .24s ease-out}
+.cu-tab-body{animation:cuFadeUp .2s ease-out}
+.cu-row{animation:cuSlideIn .22s ease-out both}
+.cu-row:nth-child(2){animation-delay:.03s}.cu-row:nth-child(3){animation-delay:.06s}.cu-row:nth-child(4){animation-delay:.09s}.cu-row:nth-child(5){animation-delay:.12s}
+.cu-row:nth-child(6){animation-delay:.15s}.cu-row:nth-child(7){animation-delay:.18s}.cu-row:nth-child(8){animation-delay:.21s}.cu-row:nth-child(n+9){animation-delay:.24s}
+.cu-row{transition:background .12s,transform .12s}
+.cu-row:hover{transform:translateX(2px)}
+.cu-row.sel .av{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--chip-yellow);animation:cuGlow .6s ease-out}
+.kpi{animation:cuPop .26s ease-out both;transition:transform .14s,box-shadow .14s}
+.kpi:nth-child(2){animation-delay:.05s}.kpi:nth-child(3){animation-delay:.1s}.kpi:nth-child(4){animation-delay:.15s}.kpi:nth-child(5){animation-delay:.2s}.kpi:nth-child(6){animation-delay:.25s}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(16,30,34,.10)}
+.cu-head{background:linear-gradient(135deg,var(--tint-yellow) 0%,#fff 60%);margin:-14px -14px 0;padding:16px 14px 14px;border-radius:var(--r) var(--r) 0 0;border-bottom:1px solid var(--line)}
+.cu-head .av.big{box-shadow:0 6px 16px rgba(16,30,34,.18)}
+.cu-tabs button{transition:color .12s,background .12s}
+.cu-tabs button:hover{background:var(--panel)}
+.tl .ev{animation:cuFadeUp .25s ease-out both}
+.tl .ev:nth-child(2){animation-delay:.04s}.tl .ev:nth-child(3){animation-delay:.08s}.tl .ev:nth-child(4){animation-delay:.12s}.tl .ev:nth-child(n+5){animation-delay:.16s}
+.cu-tbl tbody tr,.cu-tbl tr{transition:background .1s}
+.cu-tbl tr:hover td{background:var(--tint-yellow)}
+.kbd{font-style:normal;font-family:Archivo,sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.03em;background:rgba(16,30,34,.08);color:inherit;border-radius:3px;padding:1px 5px;margin-left:6px;vertical-align:1px;opacity:.8}
+.btn.tape .kbd{background:rgba(16,30,34,.14)}
+.search-k{position:absolute;right:9px;top:13px;display:flex;gap:3px;pointer-events:none}
+.search-k .kbd{margin:0;background:var(--line2);color:var(--steel)}
+.search input:focus~.search-k{opacity:.5}
+.btn{transition:transform .12s ease,box-shadow .12s ease,background .12s ease,filter .12s ease}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:translateY(0) scale(.98)}
+.btn.tape:hover{box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 5px 14px rgba(240,168,30,.45)}
+.btn:disabled{transform:none}
+.modal .box{animation:cuPop .18s ease-out}
+.toast{animation:cuFadeUp .2s ease-out}
+@media (prefers-reduced-motion:reduce){.cu-panel,.cu-tab-body,.cu-row,.kpi,.tl .ev,.modal .box,.toast,.cu-row.sel .av{animation:none}.btn:hover,.cu-row:hover,.kpi:hover{transform:none}}
 .ageing div{background:var(--white);padding:9px 12px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .ageing b{font-family:Archivo,sans-serif;font-size:16px}
 .ageing .late{background:var(--tint-rust)}
@@ -10584,7 +10622,7 @@ function customers(){
   const totOwed=all.reduce((a,x)=>a+Math.max(0,partyBal('C',x.id)),0);
   const nOver=all.filter(x=>partyBal('C',x.id)>x.limit).length, nLate=all.filter(x=>custAge(x.id).old>0).length;
   return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Customers
-    <span style="display:flex;gap:6px"><button class="btn tape" data-act="custNew">+ New customer</button></span></h1>
+    <span style="display:flex;gap:6px"><button class="btn tape" data-act="custNew">+ New customer <i class="kbd">Ctrl+N</i></button></span></h1>
   <div class="cu-wrap">
    <div class="card cu-list">
     <div class="cu-strip">
@@ -10593,7 +10631,7 @@ function customers(){
      <div>${nLate?'Over 60 days':'Over limit'}<b style="color:${(nLate||nOver)?'var(--chip-rust)':'var(--chip-green)'}">${nLate||nOver||'none'}</b></div>
     </div>
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-     <input id="custQ" value="${custQ}" placeholder="Name, mobile, code, address… ↑↓ Enter" autocomplete="off"></div>
+     <input id="custQ" value="${custQ}" placeholder="Name, mobile, code, address…" autocomplete="off"><span class="search-k"><i class="kbd">↑↓</i><i class="kbd">Enter</i></span></div>
     <div class="chips">${[['all','All'],['owing','Owing'],['overdue','60+ days'],['over','Over limit'],['wholesale','Wholesale'],['online','Website'],['portal','Portal'],['nophone','No mobile']]
       .map(f=>`<button class="${custFilter===f[0]?'on':''}" data-custfilter="${f[0]}">${f[1]}</button>`).join('')}</div>
     <div class="chips" style="margin-bottom:6px"><span class="muted" style="align-self:center">Sort</span>
@@ -10627,11 +10665,11 @@ function customerPanel(c){
      <div class="muted" style="margin-top:2px">${c.phone?`<a href="tel:${c.phone}" style="border:0">📞 ${c.phone}</a>`:'<span class="tag warn">no mobile</span>'}${c.address?' · '+c.address:''}</div>
      <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag ${c.level==='wholesale'?'blue':'ok'}">${c.level} prices</span>${overLimit?'<span class="tag bad">over the limit</span>':''}${ag.old>0?'<span class="tag bad">has 60+ day debt</span>':''}${c.portal?'<span class="tag ok">portal on</span>':''}${c.online?'<span class="tag warn">from the website</span>':''}${first?`<span class="muted" style="font-size:12px;align-self:center">customer since ${first}</span>`:''}</div></div>
     <div class="cu-acts">
-     <button class="btn tape" data-act="custPay" data-id="${c.id}">Take a payment</button>
-     <button class="btn ghost" data-act="custBill" data-id="${c.id}">New bill</button>
-     <button class="btn ghost" data-act="stmtPrint" data-id="${c.id}">Print statement</button>
-     <button class="btn ghost" data-act="stmtSms" data-id="${c.id}" ${c.phone?'':'disabled'}>Text statement</button>
-     <button class="btn ghost" data-act="custEdit" data-id="${c.id}">Edit</button>
+     <button class="btn tape" data-act="custPay" data-id="${c.id}">Take a payment <i class="kbd">F7</i></button>
+     <button class="btn ghost" data-act="custBill" data-id="${c.id}">New bill <i class="kbd">F6</i></button>
+     <button class="btn ghost" data-act="stmtPrint" data-id="${c.id}">Statement <i class="kbd">F8</i></button>
+     <button class="btn ghost" data-act="stmtSms" data-id="${c.id}" ${c.phone?'':'disabled'}>Text it</button>
+     <button class="btn ghost" data-act="custEdit" data-id="${c.id}">Edit <i class="kbd">Ctrl+E</i></button>
     </div></div>
 
    <div class="cu-kpis">
@@ -10650,7 +10688,7 @@ function customerPanel(c){
        <div style="display:flex;gap:6px"><button class="btn tape" data-act="noticeTake" data-id="${n.id}">Record it</button><button class="btn ghost" data-act="noticeDrop" data-id="${n.id}">Dismiss</button></div></div></div>`).join('')}
 
    <div class="cu-tabs">${tabs.map(t=>`<button class="${custTab===t[0]?'on':''}" data-custtab="${t[0]}">${t[1]}${t[2]!==undefined?`<i>${t[2]}</i>`:''}</button>`).join('')}</div>
-   ${({overview:()=>custOverview(c,inv,open,rc,webOrders,ag,owed),bills:()=>custBills(c,inv),payments:()=>custPayments(c,rc),statement:()=>custStatement(c),details:()=>custDetails(c)})[custTab]()}`;
+   <div class="cu-tab-body" key="${custTab}">${({overview:()=>custOverview(c,inv,open,rc,webOrders,ag,owed),bills:()=>custBills(c,inv),payments:()=>custPayments(c,rc),statement:()=>custStatement(c),details:()=>custDetails(c)})[custTab]()}</div>`;
 }
 function custOverview(c,inv,open,rc,webOrders,ag,owed){
   const ev=[
@@ -10764,7 +10802,10 @@ function custModal(id,preset){
     S.customers.push(nc); custSel=nc.id; custQ=''; custFilter='all'; custTab='overview'; m.remove(); render(); toast(`${name} added`);
   };
   g('cmOk').onclick=save;
-  m.querySelectorAll('input').forEach(i=>i.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();save()} });
+  // Enter goes to the next box; on the last one it saves
+  const order=['cmName','cmPhone','cmAddr','cmLevel','cmLimit','cmNotes'];
+  order.forEach((id2,i)=>{ g(id2).addEventListener('keydown',e=>{ if(e.key!=='Enter'||(id2==='cmNotes'&&e.shiftKey)) return; e.preventDefault(); e.stopPropagation();
+    const nx=order[i+1]; if(!nx) return save(); const el=g(nx); el.focus(); if(el.select) el.select() }) });
   g(c?'cmName':(qIsPhone?'cmName':'cmPhone')).focus();
 }
 
@@ -10843,7 +10884,7 @@ function adjustPurchaseModal(no,after){
 
 /* ---- taking a payment: search the customer, pick the bills ---- */
 function custPayModal(id){
-  const c=C(id); let sel=new Set(), q='', typed=null, method='CASH';   // what was keyed survives a redraw
+  const c=C(id); let sel=new Set(), q='', typed=null, method='CASH', focusedOnce=false;   // what was keyed survives a redraw
   const m=modal(`<h2>Payment from ${c.name}</h2>
    <div class="muted">Owes ${fmt(partyBal('C',id))}</div>
    <div id="payBody"></div>`);
@@ -10867,10 +10908,17 @@ function custPayModal(id){
        ||'<tr><td colspan="6" class="muted">Nothing outstanding.</td></tr>'}</table>
      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:8px;flex-wrap:wrap">
       <label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="rsms" checked style="width:auto"> text the receipt</label>
-      <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="rok">Record payment</button></div></div>`;
-    m.querySelector('#iq').oninput=ev=>{q=ev.target.value;draw()};
+      <div style="display:flex;gap:8px;align-items:center"><span class="muted" style="font-size:11.5px"><i class="kbd">Enter</i> next box · records on the last</span><button class="btn ghost" data-act="closeModal">Cancel <i class="kbd">Esc</i></button><button class="btn tape" id="rok">Record payment</button></div></div>`;
+    m.querySelector('#iq').oninput=ev=>{q=ev.target.value;draw();const n=m.querySelector('#iq');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     m.querySelector('#ra').oninput=ev=>{typed=ev.target.value};
     m.querySelector('#rm').onchange=ev=>{method=ev.target.value};
+    // Enter walks the boxes: amount → method → (bank, cheque no) → record
+    const step=(from)=>{ const order=['ra','rm',...(m.querySelector('#rm').value==='CASH'?[]:['rb','rr']),'rok'];
+      const nx=order[order.indexOf(from)+1]; if(!nx) return;
+      if(nx==='rok') return m.querySelector('#rok').click();
+      const el=m.querySelector('#'+nx); el.focus(); if(el.select) el.select() };
+    ['ra','rm','rb','rr','iq'].forEach(id2=>{ const el=m.querySelector('#'+id2); el.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); step(id2==='iq'?'rr':id2) } }) });
+    if(!focusedOnce){ focusedOnce=true; const ra=m.querySelector('#ra'); ra.focus(); ra.select() }
     m.querySelectorAll('[data-pick]').forEach(cb=>cb.onchange=()=>{cb.checked?sel.add(cb.dataset.pick):sel.delete(cb.dataset.pick);draw()});
     m.querySelectorAll('[data-adj]').forEach(b=>b.onclick=()=>adjustSaleModal(b.dataset.adj,()=>{sel.delete(b.dataset.adj);draw()}));
     m.querySelector('#rok').onclick=()=>{
@@ -12864,6 +12912,18 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){
       S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
       CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null}; render() }
     return}
+  // the customers page: F7 takes a payment from the one on the screen, F6 starts a bill for them,
+  // F8 prints their statement, Ctrl+N adds a customer, Ctrl+E edits; Enter on a list row takes a payment
+  if(S.view==='customers'&&!document.querySelector('.modal')&&typeof custSel!=='undefined'){
+    const c=C(custSel); const onRow=(document.activeElement||{}).classList&&document.activeElement.classList.contains('cu-row');
+    if(e.key==='F7'&&c){ e.preventDefault(); custPayModal(c.id); return }
+    if(e.key==='F6'&&c){ e.preventDefault(); S.pos.customer=c.id; if(typeof repriceToCustomer==='function') repriceToCustomer(c.id); go('pos'); toast(`New bill for ${c.name}`); return }
+    if(e.key==='F8'&&c){ e.preventDefault(); statement(c.id,'print'); return }
+    if((e.ctrlKey||e.metaKey)&&(e.key==='n'||e.key==='N')){ e.preventDefault(); custModal(null,custQ); return }
+    if((e.ctrlKey||e.metaKey)&&(e.key==='e'||e.key==='E')&&c){ e.preventDefault(); custModal(c.id); return }
+    if(e.key==='Enter'&&onRow&&c){ e.preventDefault(); custPayModal(c.id); return }
+    if((e.key==='ArrowDown'||e.key==='ArrowUp')&&onRow){ e.preventDefault(); const l=custList(), i=l.findIndex(x=>x.id===custSel); const n=l[Math.max(0,Math.min(l.length-1,i+(e.key==='ArrowDown'?1:-1)))]; if(n&&n.id!==custSel){ custSel=n.id; render(); const r=document.querySelector('.cu-row.sel'); if(r){ r.focus(); if(r.scrollIntoView) r.scrollIntoView({block:'nearest'}) } } return }
+  }
   if(e.key==='F2'){ if(S.view==='pos'&&pref('till')==='classic'&&typeof CS!=='undefined'&&CS.pid){e.preventDefault();priceHistory(CS.pid);return} e.preventDefault();go('dashboard')} if(e.key==='F3'){e.preventDefault();go('pos')} if(e.key==='F9'){e.preventDefault();go(pref('till')==='classic'?'recall':'bills')}
   if((e.ctrlKey||e.metaKey)&&(e.key==='p'||e.key==='P')&&S.view==='pos'&&S.pos.lines.length&&!document.querySelector('.modal')){ e.preventDefault(); proofBill(); return }
     if(S.view==='pos'&&pref('till')==='classic'&&!document.querySelector('.modal')){

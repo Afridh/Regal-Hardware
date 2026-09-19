@@ -104,6 +104,25 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   ok('C: ticking a bill keeps the typed amount', d.getElementById('ra').value === '5000');
   d.getElementById('rok').click(); await sleep(50); w.closeModals();
   ok('C: payment recorded and still on the customers page', w.S.payments.length === payN + 1 && Math.abs(w.partyBal('C', 2) - (owedBefore - 5000)) < 0.01 && w.S.view === 'customers' && /Nimal/.test(d.querySelector('.cu-head h2').textContent));
+  // keys: F7 takes a payment, Enter walks amount → method → record; Ctrl+N new customer with Enter stepping
+  const keyDoc = (k, extra = {}) => d.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...extra }));
+  const owed2 = w.partyBal('C', 2), payN2 = w.S.payments.length;
+  keyDoc('F7'); await sleep(30);
+  ok('C: F7 opens the payment window for the customer on screen', !!d.querySelector('.modal #ra') && /Nimal/.test(d.querySelector('.modal h2').textContent) && d.activeElement.id === 'ra');
+  d.getElementById('ra').value = '2500'; d.getElementById('ra').dispatchEvent(new w.Event('input'));
+  key(d.getElementById('ra'), 'Enter'); ok('C: Enter on amount goes to method', d.activeElement.id === 'rm');
+  key(d.getElementById('rm'), 'Enter'); await sleep(50); w.closeModals();
+  ok('C: Enter on method (cash) records the payment', w.S.payments.length === payN2 + 1 && Math.abs(w.partyBal('C', 2) - (owed2 - 2500)) < 0.01 && w.S.payments.at(-1).method === 'CASH');
+  keyDoc('F7'); await sleep(30); d.getElementById('rm').value = 'BANK'; d.getElementById('rm').dispatchEvent(new w.Event('change'));
+  key(d.getElementById('rm'), 'Enter'); ok('C: Enter on method (bank) goes to the bank box', d.activeElement.id === 'rb');
+  key(d.getElementById('rb'), 'Enter'); ok('C: Enter on bank goes to the reference box', d.activeElement.id === 'rr'); w.closeModals();
+  keyDoc('n', { ctrlKey: true }); await sleep(30);
+  ok('C: Ctrl+N opens the new customer form', !!d.getElementById('cmName'));
+  d.getElementById('cmName').value = 'Enter Stepper'; key(d.getElementById('cmName'), 'Enter'); ok('C: Enter steps name → mobile', d.activeElement.id === 'cmPhone');
+  d.getElementById('cmPhone').value = '0722222222'; key(d.getElementById('cmPhone'), 'Enter'); key(d.getElementById('cmAddr'), 'Enter'); key(d.getElementById('cmLevel'), 'Enter');
+  ok('C: … through to the limit box', d.activeElement.id === 'cmLimit');
+  key(d.getElementById('cmLimit'), 'Enter'); key(d.getElementById('cmNotes'), 'Enter'); await sleep(30);
+  ok('C: Enter on the last box saves the customer', !d.querySelector('.modal') && w.S.customers.some(c => c.name === 'Enter Stepper'));
   // clicking a customer shows a short "opening" beat, then the panel
   w.eval('custSel=2'); w.render(); await sleep(20);
   const row3 = d.querySelector('.cu-row[data-id="3"]'), name3 = row3.querySelector('.nm b').textContent; row3.click();
@@ -241,7 +260,7 @@ w.extUseLocation(1);
 w.persist(); await sleep(900);
 const saved = await (await fetch(BASE + '/api/books/regal', { headers: { Authorization: 'Bearer ' + tok } })).json();
 ok('A: books saved to server', saved.rev > rev.rev, `rev ${saved.rev}`);
-ok('A: vouchers + transfers + points in the saved books', saved.data.S.vouchers.length === 1 && saved.data.S.transfers.length === 1 && saved.data.S.customers.find(c => c.id === 2).points === nimal.points);
+ok('A: vouchers + transfers + points in the saved books', saved.data.S.vouchers.length === 1 && saved.data.S.transfers.length === 1 && saved.data.S.customers.find(c => c.id === 2).points === nimal.points, `vouchers ${saved.data.S.vouchers.length} transfers ${saved.data.S.transfers.length} points ${saved.data.S.customers.find(c => c.id === 2).points}/${nimal.points} local vouchers ${S.vouchers.length}`);
 ok('A: per-till state stripped from the shared books', saved.data.S.user === undefined && saved.data.S.pos === undefined && saved.data.S.locId === undefined && saved.data.S.terminal === undefined);
 ok('A: no script errors so far', A.errors.length === 0, A.errors.slice(0, 2).join(' | '));
 
