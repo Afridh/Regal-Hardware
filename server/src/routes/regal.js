@@ -74,10 +74,20 @@ r.get('/books/users', asyncHandler(async (_req, res) => {
 // ---------------------------------------------------------------- books document
 // Online orders from the public site wait in their own table until a till has saved them into the
 // books: a read hands them over (inbox), a save that contains them marks them done (see shop.js).
+/** A stamp that changes whenever the app's files change, so an open till knows a newer version is on the server. */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../app');
+export function appBuild() {
+  try { return String(Math.max(...['index.html', 'regal-bridge.js', 'regal-ext.js'].map(f => fs.statSync(path.join(appDir, f)).mtimeMs | 0))); }
+  catch { return process.env.VERCEL_GIT_COMMIT_SHA || 'static'; }
+}
+
 r.get('/books/:key/rev', regalAuth, asyncHandler(async (req, res) => {
   const row = await loadBooks(req.params.key);
   const inbox = req.params.key === BOOKS_KEY ? await pendingCount() : 0;
-  res.json({ rev: row ? Number(row.rev) : 0, updated_at: row?.updated_at || null, updated_by: row?.updated_by || null, inbox });
+  res.json({ rev: row ? Number(row.rev) : 0, updated_at: row?.updated_at || null, updated_by: row?.updated_by || null, inbox, build: appBuild() });
 }));
 
 r.get('/books/:key', regalAuth, asyncHandler(async (req, res) => {

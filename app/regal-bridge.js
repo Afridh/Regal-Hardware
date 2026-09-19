@@ -13,7 +13,7 @@
   // per-device state that must never travel between tills
   var LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'held', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId'];
 
-  var rev = 0, token = localStorage.getItem(TOKEN_KEY) || '', busy = false, lastPushAt = 0, pollTimer = null, offlineSince = 0;
+  var rev = 0, token = localStorage.getItem(TOKEN_KEY) || '', busy = false, lastPushAt = 0, pollTimer = null, offlineSince = 0, build = '', toldBuild = false;
 
   function headers(json) {
     var h = {};
@@ -139,6 +139,14 @@
     if (Date.now() - lastPushAt < 3000) return;          // our own save is still settling
     var j = await call('GET', '/books/' + KEY + '/rev');
     if (j.__status !== 200) return;
+    // a newer version of the app on the server: reload as soon as the till is idle
+    if (j.build) {
+      if (!build) build = j.build;
+      else if (j.build !== build) {
+        if (!typing() && !tillBusy()) { say('A newer version is ready — reloading'); setTimeout(function () { location.reload(); }, 900); return; }
+        if (!toldBuild) { toldBuild = true; say('A newer version is ready — it will load when the bill is done, or press F5'); }
+      }
+    }
     if (j.rev > rev || j.inbox > 0) {
       if (typing() || tillBusy()) return;                  // never pull the rug while someone is keying a bill
       var who = j.updated_by ? ' by ' + j.updated_by : '', newer = j.rev > rev;

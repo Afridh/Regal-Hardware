@@ -61,9 +61,11 @@ app.use('/reports', express.static(reportsDir));
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(here, '../../app');
 if (!process.env.VERCEL && fs.existsSync(appDir)) {
-  app.get('/', (_req, res) => res.sendFile(path.join(appDir, 'shop.html')));
-  app.get(['/pos', '/pos/'], (_req, res) => res.sendFile(path.join(appDir, 'index.html')));
-  app.use(express.static(appDir, { index: false, extensions: ['html'] }));
+  // the pages and scripts change often: never let a browser show a stale copy
+  const fresh = (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); };
+  app.get('/', fresh, (_req, res) => res.sendFile(path.join(appDir, 'shop.html')));
+  app.get(['/pos', '/pos/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'index.html')));
+  app.use(express.static(appDir, { index: false, extensions: ['html'], setHeaders: (res, p) => { if (/\.(html|js)$/.test(p)) res.set('Cache-Control', 'no-store'); } }));
 }
 const dist = path.resolve(here, '../../client/dist');
 if (!process.env.VERCEL && fs.existsSync(dist)) {
