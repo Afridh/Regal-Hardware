@@ -1515,6 +1515,14 @@ tr.rowlink button{cursor:pointer}
 /* 80mm receipt */
 .print.sb80{width:302px;padding:8px 10px;font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff;font-size:11px;line-height:1.25;text-align:center;border:1px solid #000}
 .sb80 .sb-top{display:flex;justify-content:space-between;font-size:9px;font-style:italic;border-bottom:1px solid #000;padding-bottom:2px;margin-bottom:4px}
+.sb80 .sb-logo{display:flex;justify-content:center;margin:2px 0 3px}
+.sba5 .sb-words{font-size:10px;margin-top:4px}.sba5 .sb-words span{color:#444}
+.logo-row{display:flex;gap:12px;align-items:center;margin-bottom:10px}
+.logo-box{width:130px;height:74px;border:1px dashed var(--line);border-radius:var(--r);display:flex;align-items:center;justify-content:center;background:#fff;flex:0 0 130px}
+.logo-box img{max-width:120px;max-height:64px}
+.billprev{overflow:auto;background:#e6e9e8;padding:8px;border-radius:var(--r)}
+.billprev.r80 .print{margin:0 auto;zoom:.9}
+.billprev.a5 .print{zoom:.48;width:800px;min-height:0}
 .sb80 .sb-name{font-size:19px;font-weight:800;letter-spacing:.02em;line-height:1.1}
 .sb80 .sb-sin{font-size:16px;font-weight:700;background:#000;color:#fff;display:inline-block;padding:0 8px;margin:3px 0}
 .sb80 .sb-addr{font-size:11px;font-weight:700;margin-top:3px}
@@ -5794,7 +5802,7 @@ function addDamage({pid,qty,reason,date=D(today)}){
 
 /* ================== SETTINGS, TEMPLATES, VOUCHERS ================== */
 const CFG={
- shop:{name:'REGAL HARDWARE',sinhala:'රීගල් හාඩ්වෙයාර්',addr:'748, Main Street, Kaduruwela',
+ shop:{logo:'',web:'regalhw.lk',name:'REGAL HARDWARE',sinhala:'රීගල් හාඩ්වෙයාර්',addr:'748, Main Street, Kaduruwela',
    near:'(Near Hatton National Bank)',phone:'077 222 22 59',land:'027 222 22 59',
    tags:'Hardware · Paints · Electrical · PVC · Motor Items',
    line1:'Your trusted one-stop shop in Polonnaruwa for all Hardware, Paints, Electrical, PVC & Motor items.',
@@ -5803,7 +5811,7 @@ const CFG={
  bill:{prefix:'INVM-',warrantyNote:'Covers manufacturing faults only. Misuse, water damage and normal wear are not covered. Bring this card with the machine.',returnDays:7,quoteDays:14,showMrp:true,showSaving:true,defaultFormat:'a5',
    title:'INVOICE',creditTitle:'CREDIT INVOICE',showLogo:true,showSinhala:true,showStrap:true,
    showCode:true,showUom:true,showQr:true,showWords:true,showCashier:true,showOutstanding:true,
-   showSign:true,signLeft:'AUTHORISED BY',signRight:'RECEIVED BY',showItemCount:true,
+   showSign:true,signLeft:'Authorised By',signRight:'Received By',showItemCount:true,showBarcode:true,t80Sign:true,showWeb:true,
    t80Logo:true,t80Qr:true,t80Thanks:'Thank you, come again!',t80Footer:true,
    footer:'Only returns will be accepted within {days} days with the original invoice. Goods once sold are checked and accepted by the customer.',
    blankLines:9,summaryTime:'19:30'},
@@ -5966,7 +5974,7 @@ function settings(){
     const [g,k]=path.split('.'); const val=g==='web'?S.web.settings[k]:CFG[g][k];
     return `<div class="f"><label>${label}</label>
       ${type==='check'?`<label class="chk"><input type="checkbox" data-set="${path}" ${val?'checked':''}> ${hint}</label>`
-      :`<input data-set="${path}" ${type==='number'?'type="number"':''} value="${String(val).replace(/"/g,'&quot;')}">${hint?`<div class="muted">${hint}</div>`:''}`}</div>`};
+      :`<input data-set="${path}" ${type==='number'?'type="number"':''} value="${String(val??'').replace(/"/g,'&quot;')}">${hint?`<div class="muted">${hint}</div>`:''}`}</div>`};
   let body='';
   if(setTab==='shop') body=`<div class="grid2">${fld('shop.name','Shop name, as printed')}${fld('shop.sinhala','Sinhala name')}</div>
     <div class="grid2">${fld('shop.addr','Address')}${fld('shop.near','Landmark line','Printed under the address')}</div>
@@ -6080,47 +6088,59 @@ function settings(){
      <div class="card note" style="margin-top:12px">Switch the question and the animation off and a cash bill goes: Enter, printed. That is the fastest the counter can run.</div>`;
   }
   if(setTab==='layout'){
-    const sample=S.sales.slice().reverse().find(x=>x.balance>0)||S.sales.at(-1);
-    body=`<div class="muted" style="margin-bottom:10px">Tick what your bills carry. The sample on the right redraws as you change it — print it to check the fit before a busy day.</div>
-     <div class="row" style="align-items:flex-start">
-      <div style="flex:1;min-width:300px">
-       <h2>Wording</h2>
-       <div class="grid2">${fld('bill.title','What a cash bill is called')}${fld('bill.creditTitle','What a credit bill is called')}</div>
+    const sample=S.sales.slice().reverse().find(x=>x.lines.length>=2)||S.sales.at(-1);
+    const prev=(f)=>sample?billHtml({...sample,proof:false},f):'<div class="muted">No bills yet — the sample appears after the first bill.</div>';
+    body=`<div class="muted" style="margin-bottom:10px">Everything on the printed bill is set here. The two samples on the right redraw as you change things — use the test buttons to print them.</div>
+     <div class="row" style="align-items:flex-start;gap:16px">
+      <div style="flex:1;min-width:320px">
+       <h2>Logo and name</h2>
+       <div class="logo-row">
+        <div class="logo-box">${CFG.shop.logo?`<img src="${CFG.shop.logo}" alt="logo">`:mark(52)}</div>
+        <div style="flex:1">
+         <input type="file" id="logoFile" accept="image/png,image/jpeg,image/svg+xml,image/webp" style="padding:6px">
+         <div class="muted">PNG or JPG with a plain white or clear background prints best. It is scaled to fit; the default mark is used when none is set.</div>
+         ${CFG.shop.logo?'<button class="btn ghost sm" data-act="logoClear" style="margin-top:6px">Use the default mark instead</button>':''}
+        </div></div>
+       <div class="grid2">${fld('shop.name','Shop name, as printed')}${fld('shop.sinhala','Sinhala name','Leave empty for none')}</div>
+       ${fld('shop.line1','Strapline, first line')}${fld('shop.line2','Strapline, second line')}
+       <div class="grid2">${fld('shop.addr','Address line')}${fld('shop.near','Landmark','Printed small after the address')}</div>
+       <div class="grid2">${fld('shop.phone','Phone numbers, as printed')}${fld('shop.web','Website line on the receipt','e.g. regalhw.lk')}</div>
+       <h2 style="margin-top:14px">Wording</h2>
+       <div class="grid2">${fld('bill.title','What a cash bill is headed')}${fld('bill.creditTitle','What a credit bill is headed')}</div>
        <div class="grid2">${fld('bill.signLeft','Left signature line')}${fld('bill.signRight','Right signature line')}</div>
-       <h2 style="margin-top:12px">The A5 bill</h2>
+       ${fld('bill.footer','Footer note','Use {days} for the return window')}
+       ${fld('bill.t80Thanks','Closing line on the receipt','Leave it empty for none')}
+       <h2 style="margin-top:14px">On the A5 bill</h2>
        <div class="permgrid">
-        ${fld('bill.showLogo','','Logo mark','check')}
-        ${fld('bill.showSinhala','','Sinhala shop name','check')}
-        ${fld('bill.showStrap','','The two strapline sentences','check')}
-        ${fld('bill.showQr','','QR code by the invoice number','check')}
+        ${fld('bill.showLogo','','Logo','check')}
+        ${fld('bill.showSinhala','','Sinhala name','check')}
+        ${fld('bill.showStrap','','Strapline','check')}
+        ${fld('bill.showQr','','QR codes by the invoice box','check')}
         ${fld('bill.showCashier','','Who took the bill','check')}
         ${fld('bill.showCode','','Item code column','check')}
         ${fld('bill.showUom','','Unit column','check')}
-        ${fld('bill.showMrp','','MRP column beside your price','check')}
-        ${fld('bill.showWords','','Amount in words','check')}
-        ${fld('bill.showItemCount','','Item and quantity count','check')}
-        ${fld('bill.showOutstanding','','Previous and total outstanding boxes','check')}
+        ${fld('bill.showMrp','','MRP column beside the price','check')}
+        ${fld('bill.showOutstanding','','Outstanding boxes on a credit bill','check')}
         ${fld('bill.showSign','','Signature lines','check')}
+        ${fld('bill.showWords','','Amount in words','check')}
        </div>
-       <h2 style="margin-top:12px">The 80mm till receipt</h2>
+       <h2 style="margin-top:14px">On the 80mm receipt</h2>
        <div class="permgrid">
-        ${fld('bill.t80Logo','','Logo mark','check')}
-        ${fld('bill.t80Qr','','Facebook and Instagram QR codes','check')}
-        ${fld('bill.t80Footer','','Printed date and time at the foot','check')}
-        ${fld('bill.showSaving','','What the customer saved per item','check')}
+        ${fld('bill.t80Logo','','Logo above the name','check')}
+        ${fld('bill.showBarcode','','Barcode of the bill number','check')}
+        ${fld('bill.t80Sign','','Signature lines','check')}
+        ${fld('bill.showWeb','','Website line at the foot','check')}
+        ${fld('bill.showSaving','','MRP and D.Price columns','check')}
        </div>
-       ${fld('bill.t80Thanks','Closing line on the receipt','Leave it empty for none')}
-       <div class="grid2">${fld('bill.blankLines','Ruled blank lines on the A5 bill','Keeps a short bill looking full','number')}
-        ${fld('bill.prefix','Invoice number prefix')}</div>
-       ${fld('bill.footer','Footer note','Use {days} for the return window')}
+       <div class="grid2" style="margin-top:8px">${fld('bill.prefix','Invoice number prefix')}${fld('bill.returnDays','Return window in days','','number')}</div>
       </div>
-      <div class="card" style="flex:0 0 360px">
-       <h2>Sample</h2>
-       <div class="muted" style="margin-bottom:8px">${sample?`Bill ${sample.no}`:'No bills yet'}</div>
-       <div style="display:flex;gap:6px;margin-bottom:8px">
-        <button class="btn ghost sm" data-act="showInv" data-no="${sample?sample.no:''}" data-f="a5">Open the A5</button>
-        <button class="btn ghost sm" data-act="showInv" data-no="${sample?sample.no:''}" data-f="r80">Open the 80mm</button></div>
-       <div class="billmini">${sample?labelSampleBill(sample):''}</div>
+      <div style="flex:0 0 420px;max-width:100%">
+       <div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h2 style="margin:0">80mm receipt</h2>
+         <span><button class="btn ghost sm" data-act="showInv" data-no="${sample?sample.no:''}" data-f="r80">Open</button> <button class="btn ghost sm" data-act="printTest" data-f="r80">Print a test</button></span></div>
+        <div class="billprev r80">${prev('r80')}</div></div>
+       <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h2 style="margin:0">A5 bill</h2>
+         <span><button class="btn ghost sm" data-act="showInv" data-no="${sample?sample.no:''}" data-f="a5">Open</button> <button class="btn ghost sm" data-act="printTest" data-f="a5">Print a test</button></span></div>
+        <div class="billprev a5">${prev('a5')}</div></div>
       </div>
      </div>`;
   }
@@ -8147,6 +8167,10 @@ function renderNow(){ if(S.view!=='board') document.body.classList.remove('board
     document.querySelectorAll('[data-tpl]').forEach(el=>{
       el.onchange=()=>{ CFG.tpl[el.dataset.tpl].text=el.value; render(); toast('Wording saved') } });
     document.querySelectorAll('[data-apk]').forEach(el=>{ el.onchange=()=>{ CFG.approvals=CFG.approvals||{}; CFG.approvals[el.dataset.apk]=el.checked; toast(el.checked?'Needs approval from now on':'No approval needed') } });
+    const lf=$('#logoFile'); if(lf) lf.onchange=()=>{ const file=lf.files[0]; if(!file) return; const rd=new FileReader();
+      rd.onload=()=>{ const img=new Image(); img.onload=()=>{ const sc=Math.min(1,360/img.width,180/img.height); const cv=document.createElement('canvas'); cv.width=Math.max(1,Math.round(img.width*sc)); cv.height=Math.max(1,Math.round(img.height*sc));
+        const cx=cv.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,cv.width,cv.height); cx.drawImage(img,0,0,cv.width,cv.height); CFG.shop.logo=cv.toDataURL('image/png'); render(); toast('Logo set — it is on every bill now') };
+        img.onerror=()=>toast('That file could not be read as an image'); img.src=rd.result }; rd.readAsDataURL(file) };
     const st=$('#agentStatus'); if(st){ const url=printAgentUrl();
       if(!url) st.textContent='Browser print box (no helper set)';
       else fetch(url+'/status').then(r=>r.json()).then(j=>{ st.innerHTML=`<span class="tag ok">helper running</span> 80mm → <b>${j.printers.r80}</b> · A5 → <b>${j.printers.a5}</b>` }).catch(()=>{ st.innerHTML='<span class="tag warn">helper not running</span> bills will use the browser\'s print box. Start it with the "Regal print helper" shortcut.' }) }
@@ -11398,22 +11422,31 @@ function billHtml(inv,f='a5'){
   const discPct=gross>0?(disc/gross*100):0;
   const pays=(inv.pays||[]).filter(p=>p.method!=='CREDIT');
   const payWord=pays.length===1?({CASH:'Cash',CARD:'Card',BANK:'Bank',CHEQUE:'Cheque',POINTS:'Points',VOUCHER:'Voucher'}[pays[0].method]||pays[0].method):pays.length>1?'Paid':'Cash';
-  const copy=inv.proof?'PROOF — NOT A BILL':(inv.reprint?'Invoice-Copy':'Invoice');
+  const B=CFG.bill, SH=CFG.shop;
+  const heading=credit?(B.creditTitle||'Credit Invoice'):(B.title||'Invoice');
+  const copy=inv.proof?'PROOF — NOT A BILL':(inv.reprint?heading+'-Copy':heading);
+  const logo=(h)=>SH.logo?`<img src="${SH.logo}" alt="" style="height:${h}px;max-width:${Math.round(h*2.4)}px;object-fit:contain;display:block">`:mark(h);
+  const phones=SH.phone||SHOP.phones;
   if(f==='r80') return `<div class="print r80 sb80">
    <div class="sb-top"><span>${copy}</span><span>On ${billWhen(inv)}</span></div>
-   <div class="sb-name">${CFG.shop.name||'REGAL HARDWARE'}</div>
-   ${CFG.bill.showSinhala&&CFG.shop.sinhala?`<div class="sb-sin">${CFG.shop.sinhala}</div>`:''}
-   <div class="sb-addr">${(CFG.shop.addr||SHOP.addr).toUpperCase()}</div>
-   <div class="sb-phone">${CFG.shop.phone||SHOP.phones}</div>
+   ${B.t80Logo?`<div class="sb-logo">${logo(46)}</div>`:''}
+   <div class="sb-name">${SH.name||'REGAL HARDWARE'}</div>
+   ${B.showSinhala&&SH.sinhala?`<div class="sb-sin">${SH.sinhala}</div>`:''}
+   <div class="sb-addr">${(SH.addr||SHOP.addr).toUpperCase()}${SH.near?` <span style="font-weight:400">${SH.near}</span>`:''}</div>
+   <div class="sb-phone">${phones}</div>
    <div class="sb-rule"></div>
    <div class="sb-kv"><span>Invoice No :</span><b>${inv.no}</b><span>${billDate(inv)}</span></div>
-   <div class="sb-kv"><span>Invoice by :</span><b>${(inv.by||'').toUpperCase()}</b><span>${timeOf(inv)}</span></div>
+   ${B.showCashier!==false?`<div class="sb-kv"><span>Invoice by :</span><b>${(inv.by||'').toUpperCase()}</b><span>${timeOf(inv)}</span></div>`:`<div class="sb-kv"><span>Time :</span><b></b><span>${timeOf(inv)}</span></div>`}
    ${walk?'':`<div class="sb-kv"><span>Customer :</span><b>${c.name.toUpperCase()}</b><span>${c.phone||''}</span></div>`}
    <div class="sb-rule"></div>
-   <table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>MRP</th><th>D.Price</th><th>Amount</th></tr>
+   ${B.showSaving!==false?`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>MRP</th><th>D.Price</th><th>Amount</th></tr>
    ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${p.name.toUpperCase()}</td></tr>
      <tr class="qt"><td class="l">${l.qty.toFixed(3)}</td><td>${money2(p.mrp)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}
-   </table>
+   </table>`
+   :`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>Qty</th><th>Price</th><th>Amount</th></tr>
+   ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${p.name.toUpperCase()}</td></tr>
+     <tr class="qt"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}
+   </table>`}
    <div class="sb-rule"></div>
    <div class="sb-tot"><span>Gross Total Rs.</span><b>${money2(gross)}</b></div>
    ${disc>0?`<div class="sb-tot"><span>- Line Discount ${discPct.toFixed(2)} % :</span><b>${money2(disc)}</b></div>`:''}
@@ -11423,44 +11456,47 @@ function billHtml(inv,f='a5'){
    ${credit?`<div class="sb-tot"><span>Credit Rs. :</span><b>${money2(inv.balance)}</b></div>${inv.paid>0?`<div class="sb-tot"><span>Paid Rs. :</span><b>${money2(inv.paid)}</b></div>`:''}
      ${CFG.bill.showOutstanding?`<div class="sb-tot"><span>Previous Outstanding :</span><b>${money2(prev)}</b></div><div class="sb-tot"><span>Total Outstanding Rs. :</span><b>${money2(prev+inv.balance)}</b></div>`:''}`
      :`<div class="sb-tot"><span>${payWord} Payment Rs. :</span><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div class="sb-tot"><span>Change Rs. :</span><b>${money2(inv.paid-inv.total)}</b></div>`:''}`}
-   <div class="sb-bc">${barcode128(inv.no,40)}</div>
-   <div class="sb-sign"><span>Authorized By</span><span>Checked By</span></div>
+   ${B.showBarcode!==false?`<div class="sb-bc">${barcode128(inv.no,40)}</div>`:''}
+   ${B.t80Sign!==false?`<div class="sb-sign"><span>${B.signLeft||'Authorised By'}</span><span>${B.signRight||'Received By'}</span></div>`:''}
    <div class="sb-cnt">No of Item / Qty - &nbsp; ${inv.lines.length.toFixed(2)} &nbsp;/&nbsp; ${qty.toFixed(2)}</div>
-   <div class="sb-foot">${CFG.bill.footer.replace('{days}',CFG.bill.returnDays)}</div>
-   ${CFG.bill.t80Thanks?`<div class="sb-thanks">${CFG.bill.t80Thanks}</div>`:''}
-   <div class="sb-web">${(S.web&&S.web.settings&&S.web.settings.domain)||'regalhw.lk'}</div>
+   ${B.footer?`<div class="sb-foot">${B.footer.replace('{days}',B.returnDays)}</div>`:''}
+   ${B.t80Thanks?`<div class="sb-thanks">${B.t80Thanks}</div>`:''}
+   ${B.showWeb!==false&&(SH.web||(S.web&&S.web.settings&&S.web.settings.domain))?`<div class="sb-web">${SH.web||S.web.settings.domain}</div>`:''}
   </div>`;
   // ---------- A5 landscape ----------
-  const rows=inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr><td>${i+1})</td><td>${p.num||p.code}</td><td class="d">${p.name.toUpperCase()}</td>
-    <td class="n">${l.qty.toFixed(2)}</td><td class="u">${(p.unit||'').toUpperCase()}</td><td class="n">${money2(p.mrp)}</td><td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('');
+  const showCode=B.showCode!==false, showUom=B.showUom!==false, showMrp=B.showMrp!==false;
+  const rows=inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr><td>${i+1})</td>${showCode?`<td>${p.num||p.code}</td>`:''}<td class="d">${p.name.toUpperCase()}</td>
+    <td class="n">${l.qty.toFixed(2)}</td>${showUom?`<td class="u">${(p.unit||'').toUpperCase()}</td>`:''}${showMrp?`<td class="n">${money2(p.mrp)}</td>`:''}<td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('');
+  const nm=(SH.name||'REGAL HARDWARE');
   return `<div class="print a5 sba5">
    <div class="sb-top"><span>${copy}</span><span>Printed on ${billWhen({date:D(today),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})})}</span></div>
    <div class="sb-head">
     <div class="sb-brand">
-     <div class="sb-mark">${mark(44)}<div class="sb-markw">REGAL HARDWARE</div></div>
+     ${B.showLogo!==false?`<div class="sb-mark">${logo(44)}${SH.logo?'':`<div class="sb-markw">${nm.toUpperCase()}</div>`}</div>`:''}
      <div class="sb-brandtxt">
-      <div class="sb-bname"><span class="blk">${(CFG.shop.name||'REGAL HARDWARE').split(' ')[0]}</span> ${(CFG.shop.name||'REGAL HARDWARE').split(' ').slice(1).join(' ')}</div>
-      ${CFG.bill.showSinhala&&CFG.shop.sinhala?`<div class="sb-bsin">${CFG.shop.sinhala}</div>`:''}
-      ${CFG.bill.showStrap?`<div class="sb-strap">${CFG.shop.line1||SHOP.line1} ${CFG.shop.line2||SHOP.line2}</div>`:''}
+      <div class="sb-bname"><span class="blk">${nm.split(' ')[0]}</span> ${nm.split(' ').slice(1).join(' ')}</div>
+      ${B.showSinhala&&SH.sinhala?`<div class="sb-bsin">${SH.sinhala}</div>`:''}
+      ${B.showStrap&&(SH.line1||SH.line2)?`<div class="sb-strap">${SH.line1||''} ${SH.line2||''}</div>`:''}
      </div>
     </div>
-    <div class="sb-qrs">${CFG.bill.showQr?`${qr(inv.no,44)}${qr('c'+inv.no,44)}`:''}</div>
+    <div class="sb-qrs">${B.showQr?`${qr(inv.no,44)}${qr('c'+inv.no,44)}`:''}</div>
     <div class="sb-meta">
-     <div class="sb-box"><div><span>Invoice No</span><b>${inv.no}</b></div><div><span>Invoice By</span><b>${(inv.by||'').toUpperCase()} /</b></div><div><span>Date</span><b>${billDate(inv)} &nbsp; ${timeOf(inv)}</b></div></div>
+     <div class="sb-box"><div><span>Invoice No</span><b>${inv.no}</b></div>${B.showCashier!==false?`<div><span>Invoice By</span><b>${(inv.by||'').toUpperCase()} /</b></div>`:''}<div><span>Date</span><b>${billDate(inv)} &nbsp; ${timeOf(inv)}</b></div></div>
      <div class="sb-box cust"><div><span>Customer</span><b>${walk?'Null':c.name.toUpperCase()}</b></div>${walk?'':`<div><span>&nbsp;</span><b>${c.phone||''}${c.address?' · '+c.address:''}</b></div>`}</div>
     </div>
    </div>
-   <div class="sb-addrline"><b>${CFG.shop.addr||SHOP.addr}</b> <i>${SHOP.near}</i><span>${CFG.shop.phone||SHOP.phones}</span></div>
+   <div class="sb-addrline"><b>${SH.addr||SHOP.addr}</b> <i>${SH.near||''}</i><span>${phones}</span></div>
    <table class="sb-tbl">
-    <tr><th>#</th><th>Code</th><th class="d">Description</th><th class="n">Qty</th><th>UOM</th><th class="n">MRP</th><th class="n">D.Price</th><th class="n">Amount</th></tr>
+    <tr><th>#</th>${showCode?'<th>Code</th>':''}<th class="d">Description</th><th class="n">Qty</th>${showUom?'<th>UOM</th>':''}${showMrp?'<th class="n">MRP</th>':''}<th class="n">${showMrp?'D.Price':'Price'}</th><th class="n">Amount</th></tr>
     ${rows}
    </table>
+   ${B.showWords?`<div class="sb-words"><span>Amount in words :</span> <b>${words(inv.total)} Rupees Only</b></div>`:''}
    <div class="sb-fill"></div>
    <div class="sb-bottom">
     <div class="sb-left">
-     ${credit&&CFG.bill.showOutstanding?`<div class="sb-out"><div><span>Previous Outstanding</span><b>${money2(prev)}</b></div><div><span>This Invoice Credit</span><b>${money2(inv.balance)}</b></div><div class="tot"><span>Total Outstanding Rs.</span><b>${money2(prev+inv.balance)}</b></div></div>`:''}
-     <div class="sb-signs"><div>Authorised By</div><div>Received By</div></div>
-     <div class="sb-note">${CFG.bill.footer.replace('{days}',CFG.bill.returnDays)}</div>
+     ${credit&&B.showOutstanding?`<div class="sb-out"><div><span>Previous Outstanding</span><b>${money2(prev)}</b></div><div><span>This Invoice Credit</span><b>${money2(inv.balance)}</b></div><div class="tot"><span>Total Outstanding Rs.</span><b>${money2(prev+inv.balance)}</b></div></div>`:''}
+     ${B.showSign!==false?`<div class="sb-signs"><div>${B.signLeft||'Authorised By'}</div><div>${B.signRight||'Received By'}</div></div>`:''}
+     ${B.footer?`<div class="sb-note">${B.footer.replace('{days}',B.returnDays)}</div>`:''}
     </div>
     <table class="sb-sum">
      <tr><td>Gross Total</td><td class="n">${money2(gross)}</td></tr>
@@ -13232,6 +13268,7 @@ document.addEventListener('click',e=>{
   ({ del:()=>{S.pos.lines.splice(+a.dataset.i,1);render()}, pay:openPay, pickCust:pickCustomer, clear:()=>{S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()}, hold:()=>{toast('Bill held — recall with Ctrl+R (demo keeps one)');S.held=S.pos;S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()},
     invoice:()=>showInvoice(S.sales.find(s=>s.no===a.dataset.no)), showInv:()=>{closeModals();showInvoice(S.sales.find(s=>s.no===a.dataset.no),a.dataset.f)}, closeModal:closeModals,
     doPrint:()=>{ try{ window.print() }catch(e){ toast("The preview is open — use the browser's own print, or pop the window out first") } },
+    logoClear:()=>{ CFG.shop.logo=''; render(); toast('Back to the default mark') },
     printTest:()=>{ const last=S.sales.slice().reverse().find(x=>x.lines.length)||S.sales.at(-1); if(!last) return toast('No bill to print yet'); toast('Sending a test bill…'); printBill({...last,proof:true},a.dataset.f) },
     printNow:()=>{ const inv=window._shownBill&&window._shownBill.no===a.dataset.no?window._shownBill:S.sales.find(x=>x.no===a.dataset.no); if(!inv) return toast('No such bill'); closeModals(); printBill({...inv,reprint:!inv.proof},a.dataset.f||'a5') },
     proofA5:()=>proofBill('a5'), proof80:()=>proofBill('r80'),
