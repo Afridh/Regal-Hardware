@@ -41,6 +41,12 @@ if (process.argv[5] === 'approvals') {                      // the owner's appro
   await new Promise(r => setTimeout(r, 400));
   await pg.screenshot({ path: out }); await b.close(); console.log('wrote ' + out); process.exit(0);
 }
+if ((process.argv[5] || '').startsWith('bill:')) {           // bill:a5 or bill:r80 — the printed bill for the latest real sale with lines
+  const f = process.argv[5].slice(5);
+  await pg.evaluate(f => { const inv = S.sales.slice().reverse().find(s => s.lines.length >= 3) || S.sales.at(-1); document.body.innerHTML = '<div style="padding:16px;background:#888">' + billHtml(inv, f) + '</div>'; }, f);
+  await new Promise(r => setTimeout(r, 300));
+  await pg.screenshot({ path: out, fullPage: true }); await b.close(); console.log('wrote ' + out); process.exit(0);
+}
 if (process.argv[5] === 'pay') {                             // the customer payment window with a cash part and the cheque form open
   await pg.evaluate(() => { S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill }; custSel = 2; go('customers'); custPayModal(2); });
   await new Promise(r => setTimeout(r, 300));

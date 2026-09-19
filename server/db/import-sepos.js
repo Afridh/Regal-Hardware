@@ -241,14 +241,14 @@ for (const inv of [...allInv.values()].sort((a, b) => (a.CreateDate + a.CreateTi
     const pid = prodId.get(s(l.ItemCode)); if (!pid) { skippedLines++; continue; }
     const qty = q3(l.Qty); if (!qty) continue;
     const price = n(+l.ItemDPrice || (+l.TPrice || 0) / qty);
-    lines.push({ pid, qty, price, disc: n((+l.ItemDis1 || 0) + (+l.ItemDis2 || 0)), cost: n(l.ItemUPrice), mrp: n(l.ItemSPrice) });
+    lines.push({ pid, qty, price, disc: 0, cost: n(l.ItemUPrice), mrp: n(l.ItemSPrice) });   // the discount is MRP → D.Price, already in the price
   }
   histLines += lines.length;
-  const total = n(inv.NTotal), sub = n(inv.GTotal) || total;
+  const total = n(inv.NTotal), sub = total, mrpGross = n(inv.GTotal);   // GTotal is the bill at MRP; the lines already carry the selling price
   const credit = s(inv.PayMode).toUpperCase() === 'CREDIT';
   const link = linked.get(no);
   const balance = link ? link.balance : 0, cid = link ? link.cid : (cusId.get(s(inv.CusCode)) || 1);
-  const rec = { no, date: inv.CreateDate, time: hhmm(inv.CreateTime), type: credit ? 'CREDIT' : 'CASH', customerId: cid, lines, sub, billDisc: n(Math.max(0, sub - total)), total, paid: n(total - balance), balance,
+  const rec = { no, date: inv.CreateDate, time: hhmm(inv.CreateTime), type: credit ? 'CREDIT' : 'CASH', customerId: cid, lines, sub, billDisc: 0, mrpGross, total, paid: n(total - balance), balance,
     pays: [{ method: credit ? 'CREDIT' : 'CASH', amount: total }], by: title(inv.CreateBy) || 'SePOS', terminal: s(inv.UnitNo) || 'SePOS', imported: true, note: link ? (balance < total - 0.005 ? `From SePOS — ${fmt0(total - balance)} of it paid there` : 'From SePOS') : 'From SePOS', link: '' };
   sales.push(rec);
   if (link) post(inv.CreateDate, `Owing on bill ${no} brought forward from SePOS`, no, [{ ac: '1100', dr: balance, party: { type: 'C', id: cid } }, { ac: '3100', cr: balance }]);

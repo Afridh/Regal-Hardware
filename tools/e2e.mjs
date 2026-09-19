@@ -277,6 +277,18 @@ ok('A: stock moved', cement.stock === before.stock - 2);
 let tooMany = null; try { w.completeSale({ lines: [{ pid: 1, qty: 1, price: cement.retail, disc: 0 }], customerId: 2, pays: [{ method: 'POINTS', amount: 99999 }] }); } catch (e) { tooMany = e.message; }
 ok('A: cannot spend more points than held', /only has/.test(tooMany || ''), tooMany);
 
+// the printed bill, both layouts, as the old till printed them
+{
+  const h80 = w.billHtml(inv1, 'r80'), ha5 = w.billHtml(inv1, 'a5');
+  ok('P: 80mm receipt has the old layout', /Invoice No :/.test(h80) && /Gross Total Rs\./.test(h80) && /Invoice Total Rs\./.test(h80) && /Payment Rs\./.test(h80) && /<svg class="bc"/.test(h80) && /No of Item \/ Qty/.test(h80) && /Authorized By/.test(h80));
+  ok('P: A5 invoice has the old layout', /Invoice No/.test(ha5) && /Invoice By/.test(ha5) && /<th>Code<\/th>/.test(ha5) && /D\.Price/.test(ha5) && /Gross Total/.test(ha5) && /- Inv\.Discount/.test(ha5) && /Net Total/.test(ha5) && /Amount Paid/.test(ha5) && /CHANGE RS\.|CREDIT RS\./.test(ha5) && /Authorised By/.test(ha5) && /Received By/.test(ha5));
+  ok('P: bill date is the local date', w.D(w.today) === new Date().toLocaleDateString('en-CA'));
+  let printed = 0; w.print = () => { printed++; }; w.printBill(inv1, 'r80'); await sleep(150);
+  ok('P: printBill goes straight to print with the receipt page size', printed === 1 && /size:80mm auto/.test(d.getElementById('printPage')?.textContent || '') && d.body.classList.contains('direct-print'));
+  w.dispatchEvent(new w.Event('afterprint')); await sleep(20);
+  ok('P: … and clears up after printing', !d.getElementById('printArea') && !d.body.classList.contains('direct-print'));
+}
+
 // trial balance still balances
 const tb = Object.keys(w.GL).map(k => w.bal(k)); const dr = tb.filter(v => v > 0).reduce((a, v) => a + v, 0), cr = tb.filter(v => v < 0).reduce((a, v) => a - v, 0);
 ok('A: ledger balanced after points sale', Math.abs(dr - cr) < 0.01, `${dr.toFixed(2)} / ${cr.toFixed(2)}`);
