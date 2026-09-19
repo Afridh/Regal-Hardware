@@ -211,7 +211,7 @@ function shop(){
   const w=st.cat.settings;
   if(!w.open) return hero()+`<div class="closed"><b>The shop is not taking online orders just now.</b><div class="muted">${esc(w.hours||'')}${st.cat.shop.phone?' · Call '+esc(st.cat.shop.phone):''}</div></div>`;
   const q=st.q.toLowerCase();
-  const list=st.cat.products.filter(p=>(st.category==='all'||p.cat===st.category)&&(!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||String(p.num).includes(q))&&(w.showOutOfStock||p.stock>0));
+  const list=st.cat.products.filter(p=>(st.category==='all'||p.cat===st.category)&&(!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||String(p.num).includes(q))&&(w.showOutOfStock||p.stock===null||p.stock>0));
   return hero()+`
    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
     <input id="q" value="${esc(st.q)}" placeholder="Search — cement, wire, paint…" autocomplete="off"></div>
@@ -221,8 +221,8 @@ function shop(){
      <div class="n">${esc(p.name)}</div>
      <div class="c">${esc(p.code)} · per ${esc(p.unit)}</div>
      <div class="pr">${save>0?`<s>${money(p.mrp)}</s>`:''}<b>${money(p.price)}</b>${save>0?`<i>save ${money(save)}</i>`:''}</div>
-     <div class="st ${p.stock>0?'':'out'}">${p.stock>0?`${fq(p.stock)} ${esc(p.unit)} in stock`:'out of stock — ask us'}</div>
-     ${p.stock>0?`<div class="add"><input type="number" min="1" step="any" value="1" data-q="${p.id}" inputmode="decimal"><button class="btn tape" data-add="${p.id}">Add</button></div>`
+     ${p.stock===null?'':`<div class="st ${p.stock>0?'':'out'}">${p.stock>0?`${fq(p.stock)} ${esc(p.unit)} in stock`:'out of stock — ask us'}</div>`}
+     ${p.stock===null||p.stock>0?`<div class="add"><input type="number" min="1" step="any" value="1" data-q="${p.id}" inputmode="decimal"><button class="btn tape" data-add="${p.id}">Add</button></div>`
        :`<div class="add"><button class="btn" data-ask="${p.id}">Ask when it is back</button></div>`}
     </div>`}).join('')||'<div class="card muted">Nothing matches that.</div>'}</div>`;
 }
@@ -235,7 +235,7 @@ function cart(){
      <div style="display:flex;gap:8px;justify-content:center;margin-top:18px;flex-wrap:wrap"><button class="btn tape" data-v="mine">Track it</button><button class="btn" data-v="shop" data-clearplaced="1">Keep shopping</button></div></div>` }
   if(!st.cart.length) return `<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px">🧺</div><h2>Your basket is empty</h2><button class="btn tape" data-v="shop">Go to the shop</button></div>`;
   return `<div class="two"><div class="card"><h2>Your basket</h2>
-     ${st.cart.map((l,i)=>{const p=P(l.pid); if(!p) return ''; return `<div class="bl"><div class="n"><b>${esc(p.name)}</b><span class="muted">${money(p.price)} per ${esc(p.unit)}${p.stock<l.qty?` · <span class="tag warn">only ${fq(p.stock)} in stock</span>`:''}</span></div>
+     ${st.cart.map((l,i)=>{const p=P(l.pid); if(!p) return ''; return `<div class="bl"><div class="n"><b>${esc(p.name)}</b><span class="muted">${money(p.price)} per ${esc(p.unit)}${p.stock!==null&&p.stock<l.qty?` · <span class="tag warn">only ${fq(p.stock)} in stock</span>`:''}</span></div>
        <input type="number" min="1" step="any" value="${l.qty}" data-cq="${i}" inputmode="decimal"><div class="amt">${money(l.qty*p.price)}</div><button class="x" data-cx="${i}" title="Take it out">✕</button></div>`}).join('')}
      <div class="sum"><div><span>Goods</span><b>${money(t.goods)}</b></div>
       <label class="chk"><input type="checkbox" id="deliver" ${st.deliver?'checked':''}> Deliver it — ${money(w.delivery)}, free over ${money(w.freeOver)}</label>

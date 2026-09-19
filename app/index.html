@@ -5490,7 +5490,7 @@ const next=(k)=>{
   if(k==='INV'){ const uid=userUid(); S.seqBy=S.seqBy||{}; const key=S.terminal+'-'+uid; S.seqBy[key]=(S.seqBy[key]||0)+1;
     return `${CFG.bill.prefix||'INVM-'}${S.terminal}-${uid}-${String(S.seqBy[key]).padStart(5,'0')}` }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',JE:'JE-'}[k];return p+String(S.seq[k]++).padStart(5,'0')};
 
-const GL = {'2050':'Customer advances','1010':'Cash in hand','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other'};
+const GL = {'2050':'Customer advances','1010':'Cash in hand','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1023':'Bank account 4','1024':'Bank account 5','1025':'Bank account 6','1026':'Bank account 7','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other'};
 function post(date,desc,ref,lines){ // lines: [{ac,dr,cr,party}]
   const dr=lines.reduce((a,l)=>a+(l.dr||0),0), cr=lines.reduce((a,l)=>a+(l.cr||0),0);
   if(Math.abs(dr-cr)>0.005) throw new Error('Unbalanced journal '+desc+' '+dr+'/'+cr);
@@ -9198,7 +9198,7 @@ function posClassic(){
      <input id="csQ" value="${CS.q}" placeholder="code, short code or barcode" autocomplete="off"></label>
     <div class="f-item"><span>ITEM</span>
      <div class="till-item ${sel?'has':''}">${sel
-       ? `<b>${sel.name.toUpperCase()}</b><em>${sel.code}${sel.short?' · '+sel.short:''} · ${fq(sel.stock)} ${sel.unit} on the floor${CFG.cost.atTill&&can('cost')?' · '+costCode(sel.cost):''}${sel.serialised?' · serial asked on Enter':''}${CS.last?` · <b class="lastp">last time ${money2(CS.last.price)} on ${CS.last.no}</b>`:''}</em>`
+       ? `<b>${sel.name.toUpperCase()}</b><em>${sel.code}${sel.short?' · '+sel.short:''}${CFG.stock.track===false?'':' · '+fq(sel.stock)+' '+sel.unit+' on the floor'}${CFG.cost.atTill&&can('cost')?' · '+costCode(sel.cost):''}${sel.serialised?' · serial asked on Enter':''}${CS.last?` · <b class="lastp">last time ${money2(CS.last.price)} on ${CS.last.no}</b>`:''}</em>`
        : '<i>scan or key a code — F1</i>'}</div></div>
     <label class="f-warr"><span>WARRANTY</span>
      <select id="csWarr">${['0','3 MONTHS','6 MONTHS','1 YEAR','2 YEARS','3 YEARS'].map(x=>`<option ${CS.warranty===x?'selected':''}>${x}</option>`).join('')}</select></label>
@@ -9224,7 +9224,7 @@ function posClassic(){
          <td class="d"><b>${p.name.toUpperCase()}</b>
           <em>${p.code}${sp?' · '+sp.name.split(/[–(]/)[0].trim().toUpperCase():''}${l.serials&&l.serials.length?' · serial '+l.serials.join(', '):''}</em>
           ${l.fromLast?`<span class="tag blue">their last price · ${l.fromLast}</span>`:''}
-          ${l.qty>p.stock+1e-9?'<span class="tag bad">short on the floor</span>':''}
+          ${l.qty>p.stock+1e-9&&CFG.stock.track!==false?'<span class="tag bad">short on the floor</span>':''}
           ${l.belowCost?'<span class="tag bad">under cost</span>':''}</td>
          <td>${l.warranty&&l.warranty!=='0'?l.warranty:'—'}</td>
          <td class="n">${ed?`<input class="ln-in" id="lnQty" type="number" step="any" value="${l.qty}">`:fq(l.qty)}</td>
@@ -9432,7 +9432,7 @@ function csCommit(){
       auto:Math.abs(price-priceFor(p,qty))<0.005,...(by?{belowCost:by}:{})});
     S.pos.sel=S.pos.lines.length-1;
     CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null};
-    if(!CFG.stock.allowNegative){ const on=S.pos.lines.filter(l=>l.pid===p.id).reduce((a,l)=>a+l.qty,0);
+    if(!CFG.stock.allowNegative&&CFG.stock.track!==false){ const on=S.pos.lines.filter(l=>l.pid===p.id).reduce((a,l)=>a+l.qty,0);
       if(on>p.stock+1e-9) toast(`Only ${fq(p.stock)} ${p.unit} of ${p.name} on the floor`) }
     render(); const f=$('#csQ'); if(f) f.focus();
   };

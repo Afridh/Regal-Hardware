@@ -3,7 +3,7 @@
 import jsdom from 'jsdom';
 const { JSDOM, VirtualConsole, requestInterceptor } = jsdom;
 
-const BASE = 'http://localhost:4000';
+const BASE = process.env.E2E_BASE || 'http://localhost:4000';
 let failures = 0;
 const ok = (name, cond, extra = '') => { console.log((cond ? 'PASS ' : 'FAIL ') + name + (extra ? '  ' + extra : '')); if (!cond) failures++; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));

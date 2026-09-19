@@ -76,6 +76,18 @@ The **Shift Board** (Attendance & pay → Open the Shift Board app) has its own 
 | Shift Board | `/shift-api.php?action=…` implemented in Node (`shift_users` table, state in `books` key `shiftboard`, day sheets published under `/reports/`). The board inside the frame points itself at the parent's server. |
 | Offline | The browser keeps a local copy; if the server is unreachable the till keeps working and the header says so. |
 
+## Bringing the old SePOS data across
+
+`npm run import:sepos` reads the old SePOS database (SQL Server `Semicolans_Regalhardware` on this PC, Windows
+authentication) and reports what it would bring; `npm run import:sepos -- --write` replaces the business data in the
+books with it (the previous books are saved under `server/db/backups/` first). It brings customers, suppliers,
+products with prices and stock, bank accounts, staff and logins, each customer's and supplier's outstanding balance
+as a *Balance brought forward* bill, pending cheques, and the last 90 days of bills (`--days 180` for more) as
+settled history. Older bills stay in SQL Server. The old system never kept stock (2,820 items below zero), so stock
+is set to what is actually positive and the shop is marked as not tracking stock; bank balances are not brought
+across (they were never reconciled) — enter them from the statements. Runs again any time; each run replaces the
+previous import.
+
 ## Approvals
 
 Some changes need the owner's say-so before they happen: switching a customer's or supplier's portal on/off, changing a
@@ -98,7 +110,7 @@ Not carried across: SePOS' FIFO price-link batches. Regal keeps one moving-avera
 
 ```powershell
 npm run check       # every script in app/index.html parses
-npm run test:e2e    # server must be running; drives three tills end to end (sign-in, till keyboard, points, vouchers, transfers, sync)
+npm run test:e2e    # in its OWN database (sepos_e2e) and port (4010) — never touches the real books; needs db:local running
 npm run shot -- out.png 1366 768 [hits]   # screenshot of the till in Chrome/Edge (needs the server; add "hits" to open the match list)
 cd server; npm run db:clear-books   # wipe the books (next sign-in seeds the demo shop again)
 ```

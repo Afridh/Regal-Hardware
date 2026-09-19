@@ -54,14 +54,15 @@ function catalogOf(data, pending = []) {
   const w = { open: true, name: 'Regal Hardware Online', domain: 'regalhw.lk', staffPath: '/pos', hours: '', delivery: 0, freeOver: 0, minOrder: 0, payNote: '', level: 'retail', showOutOfStock: false, ...(S.web?.settings || {}) };
   const held = {};
   for (const o of (S.web?.orders || [])) if (o.status === 'accepted') for (const l of (o.lines || [])) held[l.pid] = (held[l.pid] || 0) + (+l.qty || 0);
+  const tracked = !(CFG.stock && CFG.stock.track === false);       // a shop that does not count stock sells everything it lists
   const products = (S.products || []).filter(p => p.active !== false && !p.hidden).map(p => ({
     id: p.id, code: p.code, num: p.num || '', name: p.name, cat: p.cat || 'Other', unit: p.unit || '',
     mrp: +p.mrp || 0, price: +(w.level === 'wholesale' ? p.wholesale : p.retail) || 0,
-    stock: Math.max(0, (+p.stock || 0) - (held[p.id] || 0)),
+    stock: tracked ? Math.max(0, (+p.stock || 0) - (held[p.id] || 0)) : null,
   }));
   return {
     shop: { name: CFG.shop?.name || 'Regal Hardware', addr: CFG.shop?.addr || '', phone: CFG.shop?.phone || '', tags: CFG.shop?.tags || '' },
-    settings: { open: !!w.open, name: w.name, domain: w.domain, staffPath: w.staffPath || '/pos', hours: w.hours, delivery: +w.delivery || 0, freeOver: +w.freeOver || 0, minOrder: +w.minOrder || 0, payNote: w.payNote, showOutOfStock: !!w.showOutOfStock },
+    settings: { open: !!w.open, name: w.name, domain: w.domain, staffPath: w.staffPath || '/pos', hours: w.hours, delivery: +w.delivery || 0, freeOver: +w.freeOver || 0, minOrder: +w.minOrder || 0, payNote: w.payNote, showOutOfStock: !!w.showOutOfStock || !tracked, tracked },
     categories: [...new Set(products.map(p => p.cat))],
     products,
     pendingOnline: pending.length,
@@ -207,7 +208,7 @@ r.post('/order', shopAuth, asyncHandler(async (req, res) => {
   if (goods < cat.settings.minOrder) throw new HttpError(400, `Smallest online order is ${money(cat.settings.minOrder)}`);
   const deliver = !!req.body?.deliver;
   const del = (deliver && goods < cat.settings.freeOver) ? cat.settings.delivery : 0;
-  const short = lines.filter(l => byId.get(l.pid).stock < l.qty).map(l => l.name);
+  const short = lines.filter(l => byId.get(l.pid).stock !== null && byId.get(l.pid).stock < l.qty).map(l => l.name);
   const address = String(req.body?.address || '').trim().slice(0, 300);
   const note = String(req.body?.note || '').trim().slice(0, 300);
   await ensureShopTables();
@@ -256,6 +257,7 @@ r.post('/ask', optionalAuth, asyncHandler(async (req, res) => {
   if (/deliver/.test(q)) return res.json({ answer: `Delivery in town is ${money(cat.settings.delivery)}, free over ${money(cat.settings.freeOver)}. ${cat.settings.payNote || ''}`.trim() });
   if (/open|hours|time|close/.test(q)) return res.json({ answer: `${cat.settings.hours || 'See the foot of the page for hours.'}${phone}` });
   if (hit) {
+    if (hit.stock === null) return res.json({ answer: `${hit.name} is ${money(hit.price)} per ${hit.unit}${hit.mrp > hit.price ? ` (MRP ${money(hit.mrp)})` : ''}. Order it on the site, or call the shop to check it is on the shelf.` });
     if (/stock|have|available|got/.test(q)) return res.json({ answer: hit.stock > 0 ? `Yes — ${hit.name} is ${money(hit.price)} per ${hit.unit}, ${hit.stock} in stock.` : `${hit.name} is out of stock at the moment.${phone}` });
     return res.json({ answer: `${hit.name} is ${money(hit.price)} per ${hit.unit}${hit.mrp > hit.price ? ` (MRP ${money(hit.mrp)}, you save ${money(hit.mrp - hit.price)})` : ''}. ${hit.stock > 0 ? hit.stock + ' in stock.' : 'Out of stock just now.'}` });
   }
