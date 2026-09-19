@@ -18,6 +18,19 @@ await pg.evaluate(() => { go('pos'); csStart(1); csCommit(); csStart(2); csCommi
 await new Promise(r => setTimeout(r, 300));
 if (process.argv[5] === 'hits') { await pg.focus('#csQ'); await pg.keyboard.type('ce'); await new Promise(r => setTimeout(r, 300)); }
 if (process.argv[5] === 'edit') { await pg.evaluate(() => csLineEdit(1)); await new Promise(r => setTimeout(r, 300)); }
+if (process.argv[5] === 'approvals') {                      // the owner's approvals page with a couple of requests waiting
+  await pg.evaluate(() => { S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill };
+    const t = D(today) + ' 09:41';
+    S.approvals = [
+      { id: 'ap1', kind: 'custPortal', title: 'Switch on the outstanding page for Green Field Electricals', detail: 'Green Field Electricals · 0779876505 · owes Rs 40,800.00', data: { cid: 3, on: true }, by: 'Kasun', at: t, status: 'pending' },
+      { id: 'ap2', kind: 'billAdjust', title: 'Take Rs 2,000.00 off bill INVM-T1-AF-00013 for Nimal Constructions — goods returned', detail: '2 bags torn · bill Rs 67,000.00, Rs 67,000.00 owing', data: { no: 'INVM-T1-AF-00013', amount: 2000, why: 'return', note: '2 bags torn' }, by: 'Raslan', at: t, status: 'pending' },
+      { id: 'ap3', kind: 'custTerms', title: "Change R. Fernando's terms: limit Rs 25,000.00 → Rs 100,000.00, retail → wholesale prices", detail: 'owes Rs 9,150.00 now', data: { cid: 4, limit: 100000, level: 'wholesale' }, by: 'Kasun', at: D(today) + ' 08:12', status: 'approved', decidedBy: 'Afridh', decidedAt: D(today) + ' 08:30', note: 'ok for this month' },
+    ];
+    notify('approval', 'Kasun asks: Switch on the outstanding page for Green Field Electricals', 'approvals', { forApprovers: true });
+    go('approvals'); });
+  await new Promise(r => setTimeout(r, 400));
+  await pg.screenshot({ path: out }); await b.close(); console.log('wrote ' + out); process.exit(0);
+}
 if (process.argv[5] === 'pay') {                             // the customer payment window with a cash part and the cheque form open
   await pg.evaluate(() => { S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill }; custSel = 2; go('customers'); custPayModal(2); });
   await new Promise(r => setTimeout(r, 300));

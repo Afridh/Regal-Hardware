@@ -1360,6 +1360,16 @@ tr.rowlink button{cursor:pointer}
 .tl .ev.in .a{color:var(--chip-green)}
 @media (max-width:640px){.cu-list{position:static;max-height:none}.cu-acts{margin-left:0}.cu-head h2{font-size:19px}.tl .ev{flex-wrap:wrap}}
 
+/* ---- approvals ---- */
+.nbadge{font-style:normal;background:var(--chip-rust);color:#fff;font-size:10px;font-weight:700;border-radius:99px;padding:0 6px;line-height:16px;margin-left:6px;font-family:Archivo,sans-serif}
+.ap-card{margin-bottom:10px;border-left:4px solid var(--chip-yellow);animation:cuFadeUp .22s ease-out both}
+.ap-card.approved{border-left-color:var(--chip-green)}.ap-card.rejected,.ap-card.failed{border-left-color:var(--chip-rust)}
+.ap-h{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start}
+.ap-h b{font-family:Archivo,sans-serif;font-size:15px}
+.ap-d{font-size:13px;color:var(--steel);margin-top:3px}
+.ap-acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.ap-acts input{flex:1;min-width:200px}
+
 /* ---- the payment window ---- */
 .modal.wide .box{max-width:1040px;width:calc(100vw - 32px)}
 .pay-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;margin-bottom:10px}
@@ -5863,7 +5873,7 @@ function salaryVoucher(e,p,mk){
 /* ---- settings ---- */
 let setTab='shop';
 function settings(){
-  const tabs=[['screen','My screen'],['done','Finishing a bill'],['site','The shop site'],['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  const tabs=[['screen','My screen'],['done','Finishing a bill'],['site','The shop site'],['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['approvals','Approvals'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
   const fld=(path,label,hint='',type='text')=>{
     const [g,k]=path.split('.'); const val=g==='web'?S.web.settings[k]:CFG[g][k];
     return `<div class="f"><label>${label}</label>
@@ -6069,6 +6079,11 @@ function settings(){
       <div style="display:flex;gap:6px;margin-top:6px">
        <button class="btn ghost sm" data-act="tplReset" data-k="${k}">Put the original back</button>
        <button class="btn ghost sm" data-act="tplTest" data-k="${k}">Send it to me as a test</button></div></div>`).join('')}`;
+  if(setTab==='approvals'){ const cfg=CFG.approvals||{};
+    body=`<div class="card note" style="margin-bottom:10px"><b>Who decides</b><div class="muted">The owner, and anyone given the <i>Approve requests</i> right under Users, can make these changes straight away and decide other people's requests. Everyone else asks, and the change waits on the Approvals page until it is approved.</div></div>
+     <div class="muted" style="margin-bottom:6px">These changes need the owner's approval:</div>
+     ${APPROVAL_KINDS.map(([k,l])=>`<label class="chk" style="display:flex;padding:7px 0;border-bottom:1px solid var(--line2)"><input type="checkbox" data-apk="${k}" ${cfg[k]!==false?'checked':''}> ${l}</label>`).join('')}
+     <div class="muted" style="margin-top:8px">${apPending().length?`<b>${apPending().length}</b> request${apPending().length===1?'':'s'} waiting now.`:'Nothing waiting.'} <a href="#" data-view="approvals">Open Approvals</a></div>` }
   if(!body&&typeof extSettingsBody==='function') body=extSettingsBody(setTab);
   return `<h1>Settings</h1>
    <div class="tabs">${tabs.map(t=>`<button class="${setTab===t[0]?'on':''}" data-settab="${t[0]}">${t[1]}</button>`).join('')}</div>
@@ -6816,12 +6831,20 @@ const store={
   async clear(){ try{ if(window.storage) await window.storage.delete(STORE_KEY) }catch(e){} try{ localStorage.removeItem(STORE_KEY) }catch(e){} }
 };
 const TRANSIENT=['phoneOpen','notifOpen','signedOut'];
-let saveTimer=null, lastSaved=null;
-function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(async()=>{
-  const snap={}; Object.keys(S).forEach(k=>{ if(!TRANSIENT.includes(k)) snap[k]=S[k] });
-  const ok=await store.set({v:1,at:new Date().toISOString(),S:snap,CFG});
+let saveTimer=null, lastSaved=null, lastSavedTxt='';
+/* the books as they would be saved; the text leaves out this till's own screen
+   state so keying a bill does not count as a change to the shared books */
+function snapshot(){ const snap={}; Object.keys(S).forEach(k=>{ if(!TRANSIENT.includes(k)) snap[k]=S[k] }); return snap }
+function snapshotTxt(){ const local=(window.regalBridge&&regalBridge.localKeys)||[]; const snap=snapshot(); const cmp={}; Object.keys(snap).forEach(k=>{ if(!local.includes(k)) cmp[k]=snap[k] }); return JSON.stringify({S:cmp,CFG}) }
+/* every render saves — but only when something in the shared books actually changed */
+function persist(force){ clearTimeout(saveTimer); saveTimer=setTimeout(async()=>{
+  const txt=snapshotTxt(); if(!force&&txt===lastSavedTxt) return;
+  lastSavedTxt=txt;
+  const ok=await store.set({v:1,at:new Date().toISOString(),S:snapshot(),CFG});
+  if(!ok) lastSavedTxt='';                       // so the next change tries again
   lastSaved=ok?new Date():null; ['savedAt','csSync'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=ok?'saved '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'not saved' });
 },400) }
+window.markSaved=()=>{ lastSavedTxt=snapshotTxt() };   // books just came from the server: nothing to push back
 function applyKept(kept){
   Object.assign(S,kept.S); Object.keys(kept.CFG||{}).forEach(k=>{ CFG[k]={...(CFG[k]||{}),...(kept.CFG[k]||{})} });
   S.phoneOpen=false; S.notifOpen=false;
@@ -7771,7 +7794,7 @@ const views=[
  ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['weborders','Online orders'],
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['purchases','Purchases'],
  ['grp','Stock'],['products','Products'],['inventory','Inventory & ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
- ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],['grp','People'],['payroll','Attendance & pay'],['users','Users & permissions'],['grp','Out'],['site','The shop site'],['messages','Messages'],['reports','Reports'],['grp','System'],['settings','Settings']];
+ ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],['grp','People'],['approvals','Approvals'],['payroll','Attendance & pay'],['users','Users & permissions'],['grp','Out'],['site','The shop site'],['messages','Messages'],['reports','Reports'],['grp','System'],['settings','Settings']];
 const VIEW_PERM={users:'users',settings:'settings',payroll:'payroll',products:'products'};   // the board itself is open to everyone who signs in
 function allowed(v){ const p=VIEW_PERM[v]; return !p||can(p) }
 /* ================== HOW THE SCREEN IS LAID OUT ==================
@@ -7811,6 +7834,7 @@ const ICONS={
   payroll:'M12 3a4 4 0 100 8 4 4 0 000-8zM4 21a8 8 0 0116 0M12 13v3M10.5 14.5h3',
   board:'M12 7v5l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
   users:'M8 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM2 20a6 6 0 0112 0M16 11a3 3 0 100-6 3 3 0 000 6zM15 14a6 6 0 017 6',
+  approvals:'M9 12l2 2 4-4M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z',
   messages:'M4 5h16v11H8l-4 4z',
   reports:'M4 20V6M9 20V10M14 20V4M19 20v-8M3 20h18',
   settings:'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7 1.1V21a2 2 0 11-4 0v-.1A1.6 1.6 0 006.6 19.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.6 1.6 0 003 15H3a2 2 0 110-4h.1A1.6 1.6 0 004.6 9.4l-.1-.1a2 2 0 112.8-2.8l.1.1A1.6 1.6 0 009 6.6V6a2 2 0 114 0v.1a1.6 1.6 0 002.7 1.1l.1-.1a2 2 0 112.8 2.8l-.1.1A1.6 1.6 0 0021 12v0a2 2 0 110 4h-.1z'
@@ -7831,11 +7855,11 @@ function renderNav(){
       items.map(v=>v[0]==='grp'
         ? `<div class="grp"><span>${v[1]}</span><i>${v[1]}</i></div>`
         : `<button class="${S.view===v[0]?'on':''}" data-view="${v[0]}" title="${v[1]}">
-            ${icon(v[0])}<span>${v[1]}</span>${v[2]?`<em class="k">${v[2]}</em>`:''}<i class="tip">${v[1]}${v[2]?' · '+v[2]:''}</i></button>`).join('')
+            ${icon(v[0])}<span>${v[1]}</span>${v[2]?`<em class="k">${v[2]}</em>`:''}${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}<i class="tip">${v[1]}${v[2]?' · '+v[2]:''}</i></button>`).join('')
     : items.map(v=>v[0]==='grp'
         ? `<div class="grp"><span>${v[1]}</span></div>`
         : `<button class="${S.view===v[0]?'on':''}" data-view="${v[0]}" title="${v[1]}${v[2]?' · '+v[2]:''}">
-            ${icon(v[0])}<span>${v[1]}</span></button>`).join('');
+            ${icon(v[0])}<span>${v[1]}</span>${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}</button>`).join('');
   $('#hdr').innerHTML=`${S.user.name}, ${S.user.role.toLowerCase()} &nbsp;|&nbsp; till ${S.terminal}, drawer open since ${S.drawer.opened}<br>${today.toDateString()}`;
 }
 
@@ -7847,27 +7871,30 @@ function go(v){ if(!allowed(v)){toast('That is not open to '+S.user.name);return
   if(S.phoneOpen && !(supplierTab||(customerTab&&S.phoneMode==='customer'))) closePhone();
   render(); drawPhone(); }
 /* a running note of anything that changed while you were looking elsewhere */
-function notify(kind,text,view){
+function notify(kind,text,view,opts){
+  // forUser: only that person sees it; forApprovers: only those who can approve
   S.notif.unshift({id:'n'+Math.random().toString(36).slice(2,7),kind,text,view,
-    at:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),read:false});
-  S.notif=S.notif.slice(0,40);
+    at:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),read:false,...(opts||{})});
+  S.notif=S.notif.slice(0,60);
   drawBell();
   // the ring goes on after the bell is redrawn, or it would be wiped straight off
   const b=document.getElementById('bellBtn');
   if(b){ b.classList.remove('ring'); void b.offsetWidth; b.classList.add('ring') }
 }
-const NKIND={order:'📦',money:'₨',cheque:'🧾',stock:'📉',people:'👤',warn:'⚠'};
+const NKIND={order:'📦',money:'₨',cheque:'🧾',stock:'📉',people:'👤',warn:'⚠',approval:'✅'};
+const notifMine=(n)=>!(n.forUser&&n.forUser!==(S.user||{}).name)&&!(n.forApprovers&&typeof canApprove==='function'&&!canApprove());
 function drawBell(){
   const wrap=document.getElementById('bell'); if(!wrap) return;
-  const unread=S.notif.filter(n=>!n.read).length;
+  const mine=S.notif.filter(notifMine);
+  const unread=mine.filter(n=>!n.read).length;
   wrap.innerHTML=`<button class="bell" id="bellBtn" data-act="bellOpen" title="What has changed">
      <svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
       <path d="M18 8a6 6 0 10-12 0c0 7-3 8-3 8h18s-3-1-3-8M13.7 21a2 2 0 01-3.4 0"/></svg>
      ${unread?`<i class="bdot">${unread>9?'9+':unread}</i>`:''}</button>
    ${S.notifOpen?`<div class="bellpanel">
      <div class="bp-h"><b>What has changed</b>
-      ${S.notif.length?`<button class="btn ghost sm" data-act="bellClear">Mark all read</button>`:''}</div>
-     ${S.notif.length?S.notif.map(n=>`<button class="bp-i ${n.read?'':'new'}" data-act="bellGo" data-id="${n.id}">
+      ${mine.length?`<button class="btn ghost sm" data-act="bellClear">Mark all read</button>`:''}</div>
+     ${mine.length?mine.map(n=>`<button class="bp-i ${n.read?'':'new'}" data-act="bellGo" data-id="${n.id}">
        <span class="bp-k">${NKIND[n.kind]||'•'}</span><span class="bp-t">${n.text}</span><span class="bp-w">${n.at}</span></button>`).join('')
       :'<div class="muted" style="padding:14px">Nothing yet today.</div>'}</div>`:''}`;
 }
@@ -7894,8 +7921,8 @@ function billSaved(inv){
 function modal(html){ const m=document.createElement('div');m.className='modal';m.innerHTML=`<div class="box">${html}</div>`;m.addEventListener('click',e=>{if(e.target===m)m.remove()});document.body.appendChild(m);const f=m.querySelector('input,select,button');f&&f.focus();return m }
 function closeModals(){document.querySelectorAll('.modal').forEach(m=>m.remove())}
 let _rendering=false;
-function render(){ if(_rendering) return; _rendering=true; try{ renderNow() } finally { _rendering=false } }
-function renderNow(){ if(S.view!=='board') document.body.classList.remove('boardview'); renderNav(); const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),customers,suppliers,orders,inventory,labels,purchases,chequesIn,chequesOut,expenses,accounting,payroll,board,users,messages,reports,settings}[S.view]; $('#main').innerHTML=r(); document.body.classList.toggle('csfull',pref('till')==='classic'&&(S.view==='pos'||S.view==='recall')); if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() } if(S.view==='recall') recallAfter(); if(S.view==='stocktake') stockTakeAfter();
+function render(){ if(_rendering) return; _rendering=true; try{ renderNow() } finally { _rendering=false } if(typeof persist==='function'&&S.user&&!S.signedOut) persist() }
+function renderNow(){ if(S.view!=='board') document.body.classList.remove('boardview'); renderNav(); const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,chequesIn,chequesOut,expenses,accounting,payroll,board,users,messages,reports,settings}[S.view]; $('#main').innerHTML=r(); document.body.classList.toggle('csfull',pref('till')==='classic'&&(S.view==='pos'||S.view==='recall')); if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() } if(S.view==='recall') recallAfter(); if(S.view==='stocktake') stockTakeAfter();
   if(S.view==='serials'){ const sq=$('#srQ'); if(sq){ sq.oninput=e=>{srQ=e.target.value;render();const n=$('#srQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body) sq.focus() } } if(S.view==='labels') labelsAfter(); if(S.view==='receipts') receiptsAfter(); if(S.view==='dashboard') dashboardAfter();
 
@@ -8006,6 +8033,7 @@ function renderNow(){ if(S.view!=='board') document.body.classList.remove('board
     const cc=$('#costCheck'); if(cc) cc.oninput=()=>{ $('#costCheckOut').textContent=cc.value.trim()?costDecode(cc.value):'\u00a0' };
     document.querySelectorAll('[data-tpl]').forEach(el=>{
       el.onchange=()=>{ CFG.tpl[el.dataset.tpl].text=el.value; render(); toast('Wording saved') } });
+    document.querySelectorAll('[data-apk]').forEach(el=>{ el.onchange=()=>{ CFG.approvals=CFG.approvals||{}; CFG.approvals[el.dataset.apk]=el.checked; toast(el.checked?'Needs approval from now on':'No approval needed') } });
     if(typeof extBindSettings==='function') extBindSettings();
   }
   const pq=$('#prodQ'); if(pq){ pq.value=prodQ; pq.oninput=e=>{prodQ=e.target.value;render();$('#prodQ').focus()};
@@ -10600,6 +10628,110 @@ function billCopy(no){
 }
 
 /* ---- customers: search, credit at a glance, statements, portal link ---- */
+/* ====================== APPROVALS ======================
+   Some changes are too easy to make and too hard to notice: switching a
+   customer's or supplier's portal on, raising a credit limit, writing part of
+   a bill off, changing a price, removing a customer. Anyone without the
+   approve right can only ask. The request waits on the Approvals page, the
+   owner is told, and nothing changes until they say yes. The owner chooses
+   under Settings → Approvals which changes need asking. */
+const APPROVAL_KINDS=[
+  ['custPortal','Customer portal switched on or off'],
+  ['supPortal','Supplier portal switched on or off, or shown their account'],
+  ['custTerms','Customer credit limit or price level changed'],
+  ['custRemove','Customer removed'],
+  ['billAdjust','Amount taken off a customer bill (return, discount, write-off)'],
+  ['purAdjust','Amount taken off a supplier bill'],
+  ['prodPrice','Product prices or cost changed']];
+const APKIND=Object.fromEntries(APPROVAL_KINDS);
+const canApprove=()=>!!(S.user&&(S.user.role==='Owner'||can('approve')));
+const needsApproval=(kind)=>{ const cfg=CFG.approvals||{}; return cfg[kind]!==false&&!canApprove() };
+const apPending=()=>(S.approvals||[]).filter(a=>a.status==='pending');
+const apMine=()=>apPending().filter(a=>canApprove()||a.by===(S.user||{}).name);   // what the badge counts: to decide, or waiting on my behalf
+const apStamp=()=>D(today)+' '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+function requestApproval(kind,title,detail,data){
+  S.approvals=S.approvals||[];
+  const a={id:'ap'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),kind,title,detail:detail||'',data:data||{},by:S.user.name,at:apStamp(),status:'pending'};
+  S.approvals.unshift(a); S.approvals=S.approvals.slice(0,300);
+  notify('approval',`${S.user.name} asks: ${title}`,'approvals',{forApprovers:true});
+  toast('Sent to the owner for approval');
+  closeModals(); render(); return a;
+}
+/* the change itself, done only once someone with the right has said yes */
+function applyApproval(a){
+  const d=a.data||{};
+  switch(a.kind){
+    case 'custPortal':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); custPortalSet(c,!!d.on); break }
+    case 'supPortal':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supPortalSet(s,d.field,!!d.value); break }
+    case 'custTerms':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); if(d.limit!==undefined) c.limit=+d.limit; if(d.level) c.level=d.level; break }
+    case 'custRemove':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); if(partyBal('C',c.id)>0.005) throw new Error('They still owe money'); c.active=false; break }
+    case 'billAdjust': applySaleAdjust(d.no,+d.amount,d.why,d.note,a.by); break;
+    case 'purAdjust': applyPurAdjust(d.no,+d.amount,d.why,d.note,a.by); break;
+    case 'prodPrice':{ const p=P(d.pid); if(!p) throw new Error('Product no longer exists'); Object.assign(p,d.prices); break }
+    default: throw new Error('Unknown kind of request');
+  }
+}
+function decideApproval(id,ok,note){
+  const a=(S.approvals||[]).find(x=>x.id===id); if(!a||a.status!=='pending') return;
+  if(!canApprove()) return toast('Only the owner can decide this');
+  a.status=ok?'approved':'rejected'; a.decidedBy=S.user.name; a.decidedAt=apStamp(); a.note=(note||'').trim();
+  if(ok){ try{ applyApproval(a) }catch(e){ a.status='failed'; a.note=(a.note?a.note+' · ':'')+e.message } }
+  notify('approval',`${a.status==='approved'?'Approved':a.status==='failed'?'Could not apply':'Turned down'}: ${a.title}${a.note?' — '+a.note:''}`,'approvals',{forUser:a.by});
+  render(); toast(a.status==='approved'?'Approved and applied':a.status==='failed'?'Approved but could not be applied — '+a.note:'Turned down');
+}
+let apTab='pending';
+function approvals(){
+  const list=S.approvals||[], mine=!canApprove();
+  const vis=list.filter(a=>!mine||a.by===S.user.name);
+  const pend=vis.filter(a=>a.status==='pending'), done=vis.filter(a=>a.status!=='pending');
+  const shown=apTab==='pending'?pend:done;
+  const badge=(st)=>`<span class="tag ${st==='approved'?'ok':st==='pending'?'warn':st==='failed'?'bad':'bad'}">${({pending:'waiting',approved:'approved',rejected:'turned down',failed:'could not apply'})[st]||st}</span>`;
+  return `<h1>Approvals <span class="muted" style="font-size:13px;font-weight:400">${mine?'what you have asked the owner for':'changes waiting on you'}</span></h1>
+   <div class="row" style="margin-bottom:12px">
+    ${stat('Waiting',pend.length,pend.length?'need a decision':'nothing waiting',pend.length?'y':'g')}
+    ${stat('Approved',done.filter(a=>a.status==='approved').length,'','g')}
+    ${stat('Turned down',done.filter(a=>a.status==='rejected').length,'','r')}
+    ${mine?'':stat('Asking',[...new Set(pend.map(a=>a.by))].length,'people','b')}
+   </div>
+   <div class="tabs"><button class="${apTab==='pending'?'on':''}" data-aptab="pending">Waiting${pend.length?` <i class="nbadge">${pend.length}</i>`:''}</button><button class="${apTab==='done'?'on':''}" data-aptab="done">Decided</button></div>
+   ${shown.length?shown.map(a=>`<div class="card ap-card ${a.status}">
+     <div class="ap-h"><div><b>${a.title}</b><div class="muted">${APKIND[a.kind]||a.kind} · asked by <b>${a.by}</b> · ${a.at}</div>${a.detail?`<div class="ap-d">${a.detail}</div>`:''}</div>${badge(a.status)}</div>
+     ${a.status==='pending'?(mine?'<div class="muted" style="margin-top:8px">Waiting for the owner.</div>'
+       :`<div class="ap-acts"><input id="apn-${a.id}" placeholder="A note back to ${a.by.split(' ')[0]} (optional)">
+         <button class="btn tape" data-act="apOk" data-id="${a.id}">Approve</button><button class="btn ghost" data-act="apNo" data-id="${a.id}">Turn down</button></div>`)
+       :`<div class="muted" style="margin-top:8px">${a.status==='approved'?'Approved':a.status==='failed'?'Approved, but it could not be applied':'Turned down'} by ${a.decidedBy} · ${a.decidedAt}${a.note?` · “${a.note}”`:''}</div>`}
+    </div>`).join('')
+    :`<div class="card muted">${apTab==='pending'?(mine?'You have nothing waiting.':'Nothing is waiting on you.'):'Nothing decided yet.'}</div>`}`;
+}
+/* the doing of each change, shared by the request path and the direct path */
+function custPortalSet(c,on){
+  c.portal=on;
+  if(!on&&S.cportal&&S.cportal.session===c.id){S.cportal.session=null;S.cportal.err='The shop has switched this page off.'}
+  if(on&&c.phone) sms(c.phone,tpl('portalInvite',{customer:c.name,link:'regalhw.lk/my/'+c.code.toLowerCase()}));
+}
+function supPortalSet(s,field,value){
+  s[field]=value;
+  if(field==='enabled'&&!value&&S.portal.session===s.id){S.portal.session=null;S.portal.err='This supplier link has been switched off by the shop.'}
+}
+function applySaleAdjust(no,v,why,note,by){
+  const inv=S.sales.find(x=>x.no===no); if(!inv) throw new Error('Bill '+no+' not found');
+  if(v>inv.balance+0.005) throw new Error('More than is owing on '+no);
+  const c=C(inv.customerId);
+  inv.balance=+(inv.balance-v).toFixed(2);
+  inv.adjustments=(inv.adjustments||[]).concat([{amount:v,why,note,date:D(today),by:by||S.user.name}]);
+  post(D(today),`${ADJ_REASONS.find(r=>r[0]===why)[1]} on ${inv.no}${note?' — '+note:''}`,inv.no,
+    [{ac:'4110',dr:v},{ac:'1100',cr:v,party:{type:'C',id:c.id}}]);
+  if(c.phone&&CFG.msg.autoReceipt) sms(c.phone,`Regal Hardware: ${fmt(v)} has been taken off bill ${inv.no} (${ADJ_REASONS.find(r=>r[0]===why)[1].toLowerCase()}). You now owe ${fmt(partyBal('C',c.id))}.`);
+}
+function applyPurAdjust(no,v,why,note,by){
+  const pur=S.purchases.find(x=>x.no===no); if(!pur) throw new Error('Purchase '+no+' not found');
+  const sp=SU(pur.supplierId), owing=pur.total-pur.paid;
+  if(v>owing+0.005) throw new Error('More than is owing on '+pur.supInv);
+  pur.total=+(pur.total-v).toFixed(2);
+  pur.adjustments=(pur.adjustments||[]).concat([{amount:v,why,note,date:D(today),by:by||S.user.name}]);
+  post(D(today),`${ADJ_REASONS.find(r=>r[0]===why)[1]} on ${pur.supInv}${note?' — '+note:''}`,pur.no,
+    [{ac:'2100',dr:v,party:{type:'S',id:sp.id}},{ac:'1200',cr:v}]);
+}
 let custSel=2, custQ='', custFilter='all', custSort='owed', custTab='overview', custBillsF='all', custStmtRange='3m';
 /* ====================== CUSTOMERS ======================
    Find them fast (name, mobile, code, address, first letters — arrows and Enter
@@ -10837,7 +10969,12 @@ function custModal(id,preset){
     if(phone&&!/^0\d{6,9}$/.test(phone)){ g('cmMsg').textContent='Enter a mobile like 0771234567, or leave it empty.'; g('cmPhone').focus(); return }
     const dup=phone&&S.customers.find(x=>x.phone===phone&&x.id!==(c?c.id:-1));
     if(dup){ g('cmMsg').textContent=`${dup.name} already has that number.`; return }
-    if(c){ Object.assign(c,{name,phone,address:addr,level,limit,notes}); m.remove(); render(); toast('Saved'); return }
+    if(c){
+      const termsChanged=limit!==c.limit||level!==c.level;
+      Object.assign(c,{name,phone,address:addr,notes});
+      if(termsChanged&&needsApproval('custTerms')){
+        return requestApproval('custTerms',`Change ${c.name}'s terms: limit ${fmt(c.limit)} → ${fmt(limit)}, ${c.level} → ${level} prices`,`owes ${fmt(partyBal('C',c.id))} now`,{cid:c.id,limit,level}) }
+      Object.assign(c,{level,limit}); m.remove(); render(); toast('Saved'); return }
     const nc={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),name,phone,address:addr,level,limit,notes,portal:false,lastLogin:null,points:0};
     S.customers.push(nc); custSel=nc.id; custQ=''; custFilter='all'; custTab='overview'; m.remove(); render(); toast(`${name} added`);
   };
@@ -10881,11 +11018,8 @@ function adjustSaleModal(no,after){
     if(!(v>0))return toast('Enter how much to take off');
     if(v>inv.balance+0.005)return toast('That is more than is owing on this bill');
     const why=m.querySelector('#ajWhy').value, note=(m.querySelector('#ajNote').value||'').trim();
-    inv.balance=+(inv.balance-v).toFixed(2);
-    inv.adjustments=(inv.adjustments||[]).concat([{amount:v,why,note,date:D(today),by:S.user.name}]);
-    post(D(today),`${ADJ_REASONS.find(r=>r[0]===why)[1]} on ${inv.no}${note?' — '+note:''}`,inv.no,
-      [{ac:'4110',dr:v},{ac:'1100',cr:v,party:{type:'C',id:c.id}}]);
-    if(c.phone&&CFG.msg.autoReceipt) sms(c.phone,`Regal Hardware: ${fmt(v)} has been taken off bill ${inv.no} (${ADJ_REASONS.find(r=>r[0]===why)[1].toLowerCase()}). You now owe ${fmt(partyBal('C',c.id))}.`);
+    if(needsApproval('billAdjust')) return requestApproval('billAdjust',`Take ${fmt(v)} off bill ${inv.no} for ${c.name} — ${ADJ_REASONS.find(r=>r[0]===why)[1].toLowerCase()}`,`${note?note+' · ':''}bill ${fmt(inv.total)}, ${fmt(inv.balance)} owing`,{no:inv.no,amount:v,why,note});
+    applySaleAdjust(inv.no,v,why,note,S.user.name);
     m.remove(); render(); toast(`${fmt(v)} off ${inv.no}`);
     if(after) after();
   };
@@ -10913,10 +11047,8 @@ function adjustPurchaseModal(no,after){
     if(!(v>0))return toast('Enter how much to take off');
     if(v>owing+0.005)return toast('That is more than is owing on this bill');
     const why=m.querySelector('#apWhy').value, note=(m.querySelector('#apNote').value||'').trim();
-    pur.total=+(pur.total-v).toFixed(2);
-    pur.adjustments=(pur.adjustments||[]).concat([{amount:v,why,note,date:D(today),by:S.user.name}]);
-    post(D(today),`${ADJ_REASONS.find(r=>r[0]===why)[1]} on ${pur.supInv}${note?' — '+note:''}`,pur.no,
-      [{ac:'2100',dr:v,party:{type:'S',id:sp.id}},{ac:'1200',cr:v}]);
+    if(needsApproval('purAdjust')) return requestApproval('purAdjust',`Take ${fmt(v)} off ${sp.name}'s bill ${pur.supInv} — ${ADJ_REASONS.find(r=>r[0]===why)[1].toLowerCase()}`,`${note?note+' · ':''}bill ${fmt(pur.total)}, ${fmt(owing)} owing`,{no:pur.no,amount:v,why,note});
+    applyPurAdjust(pur.no,v,why,note,S.user.name);
     m.remove(); render(); toast(`${fmt(v)} off ${pur.supInv}`);
     if(after) after();
   };
@@ -11300,7 +11432,14 @@ function productModal(pid){
       retail:g('pretail'),wholesale:g('pwhole')||g('pretail'),min:g('pmin'),short,num:p?p.num:nextNum(),
       warrantyMonths:g('pwar'),serialised:m.querySelector('#pser').checked,
       tiers:tiers.filter(t=>+t.min>0&&+t.price>0).map(t=>({min:+t.min,price:+t.price,label:(t.label||'').trim()}))};
-    if(p){ Object.assign(p,data); m.remove(); render(); toast(`${p.name} updated`) }
+    if(p){
+      const priceKeys=['mrp','cost','retail','wholesale','tiers'];
+      const priceChanged=priceKeys.some(k=>JSON.stringify(p[k]??null)!==JSON.stringify(data[k]??null));
+      if(priceChanged&&needsApproval('prodPrice')){
+        const rest={...data}; const prices={}; priceKeys.forEach(k=>{prices[k]=data[k]; delete rest[k]});
+        Object.assign(p,rest);
+        return requestApproval('prodPrice',`Change prices of ${p.name}: MRP ${money2(p.mrp)} → ${money2(prices.mrp)}, cost ${money2(p.cost)} → ${money2(prices.cost)}, price ${money2(p.retail)} → ${money2(prices.retail)}, wholesale ${money2(p.wholesale)} → ${money2(prices.wholesale)}`,`${p.code} · ${fq(p.stock)} ${p.unit} in stock`,{pid:p.id,prices}) }
+      Object.assign(p,data); m.remove(); render(); toast(`${p.name} updated`) }
     else{ const np={id:Math.max(...S.products.map(x=>x.id))+1,stock:0,...data}; S.products.push(np);
       const op=g('popen'); if(op>0){ move(np.id,op,'OPENING','New item',np.cost);
         post(D(today),'Opening stock '+np.code,np.code,[{ac:'1200',dr:+(op*np.cost).toFixed(2)},{ac:'3100',cr:+(op*np.cost).toFixed(2)}]) }
@@ -12579,7 +12718,8 @@ const PERMS=[
   ['products','Add and price products'],
   ['payroll','See wages and run payroll'],
   ['settings','Change settings'],
-  ['users','Manage users']];
+  ['users','Manage users'],
+  ['approve','Approve requests: portals, credit limits, write-offs, price changes']];
 const ROLE_DEFAULTS={
   Owner:PERMS.map(p=>p[0]),
   Manager:['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products'],
@@ -12687,7 +12827,7 @@ async function checkPass(u,given){
       const r=await regalBridge.login(u.name,given);
       if(r.ok){ if(r.user&&r.user.perms&&r.user.perms.length){ u.role=r.user.role; u.perms=[...r.user.perms] } u.active=true;
         const fresh=S.users.find(x=>x.name===u.name); if(fresh&&fresh!==u){ u.perms=[...fresh.perms]; u.role=fresh.role; u.prefs=fresh.prefs; u.pin=fresh.pin }
-        if(r.bootstrap&&typeof persist==='function') setTimeout(persist,50);   // first ever sign-in: push the books up so other tills can sign in
+        if(r.bootstrap&&typeof persist==='function') setTimeout(()=>persist(true),50);   // first ever sign-in: push the books up so other tills can sign in
         return true }
       if(r.error&&!/reach|network|fetch/i.test(r.error)) return false;
     }catch(e){ /* server unreachable: fall through to the local check */ }
@@ -13009,16 +13149,19 @@ document.addEventListener('click',e=>{
     custBill:()=>{ const c=C(+a.dataset.id); S.pos.customer=c.id; if(typeof repriceToCustomer==='function') repriceToCustomer(c.id); go('pos'); toast(`New bill for ${c.name}`) },
     custRemove:()=>{ const c=C(+a.dataset.id); if(partyBal('C',c.id)>0.005) return toast('Settle the account first');
       if(!confirm(`Remove ${c.name} from the customer list? Their bills stay on the books.`)) return;
+      if(needsApproval('custRemove')) return requestApproval('custRemove',`Remove ${c.name} from the customer list`,`${c.phone||'no mobile'} · ${S.sales.filter(s=>s.customerId===c.id).length} bills on record`,{cid:c.id});
       c.active=false; custSel=0; render(); toast(`${c.name} removed`) },
     billSms:()=>{const inv=S.sales.find(x=>x.no===a.dataset.no), c=C(inv.customerId);
       if(!c.phone)return toast('No mobile number for '+c.name);
       sms(c.phone,tpl('billLink',{invoice:inv.no,total:fmt(inv.total),balance:fmt(inv.balance),
         balancePart:inv.balance?', '+fmt(inv.balance)+' still to pay':'',link:inv.link}));
       render(); toast('Bill link texted to '+c.phone)},
-    custPortal:()=>{const c=C(+a.dataset.id); c.portal=!c.portal;
-      if(!c.portal&&S.cportal.session===c.id){S.cportal.session=null;S.cportal.err='The shop has switched this page off.'}
-      if(c.portal&&c.phone)sms(c.phone,tpl('portalInvite',{customer:c.name,link:'regalhw.lk/my/'+c.code.toLowerCase()}));
+    custPortal:()=>{const c=C(+a.dataset.id);
+      if(needsApproval('custPortal')) return requestApproval('custPortal',`Switch ${c.portal?'off':'on'} the outstanding page for ${c.name}`,`${c.name} · ${c.phone||'no mobile'} · owes ${fmt(partyBal('C',c.id))}`,{cid:c.id,on:!c.portal});
+      custPortalSet(c,!c.portal);
       render(); drawPhone(); toast(c.portal?'Outstanding page switched on and the link texted':'Outstanding page switched off')},
+    apOk:()=>decideApproval(a.dataset.id,true,($('#apn-'+a.dataset.id)||{}).value),
+    apNo:()=>decideApproval(a.dataset.id,false,($('#apn-'+a.dataset.id)||{}).value),
     custLink:()=>{const c=C(+a.dataset.id); if(!c.phone)return toast('No mobile number for '+c.name);
       sms(c.phone,tpl('portalInvite',{customer:c.name,link:'regalhw.lk/my/'+c.code.toLowerCase()}));
       render(); toast('Link texted to '+c.phone)},
@@ -13028,9 +13171,12 @@ document.addEventListener('click',e=>{
     ordPurchase:()=>{const o=S.orders.find(x=>x.id===a.dataset.no); newPurModal(o.sid,o)},
     zoom:()=>{const o=S.orders.find(x=>x.id===a.dataset.no); const src=o.files[+a.dataset.i];
       const m=modal(`<img src="${src}" style="width:100%;border-radius:6px"><div style="text-align:right;margin-top:8px"><button class="btn ghost" data-act="closeModal">Close</button></div>`)},
-    supShow:()=>{const s=SU(+a.dataset.id); s.showAccounts=!s.showAccounts; drawPhone(); render()},
-    supEnable:()=>{const s=SU(+a.dataset.id); s.enabled=!s.enabled;
-      if(!s.enabled&&S.portal.session===s.id){S.portal.session=null;S.portal.err='This supplier link has been switched off by the shop.'} drawPhone(); render()},
+    supShow:()=>{const s=SU(+a.dataset.id);
+      if(needsApproval('supPortal')) return requestApproval('supPortal',`${s.showAccounts?'Hide':'Show'} bills, payments and cheques to ${s.name} on their portal`,s.name,{sid:s.id,field:'showAccounts',value:!s.showAccounts});
+      supPortalSet(s,'showAccounts',!s.showAccounts); drawPhone(); render()},
+    supEnable:()=>{const s=SU(+a.dataset.id);
+      if(needsApproval('supPortal')) return requestApproval('supPortal',`Switch ${s.enabled?'off':'on'} the supplier portal for ${s.name}`,s.name,{sid:s.id,field:'enabled',value:!s.enabled});
+      supPortalSet(s,'enabled',!s.enabled); drawPhone(); render()},
     openPortal:()=>{const s=SU(+a.dataset.id); S.portal.pick=s.id; S.portal.session=s.id; S.portal.tab='new';
       S.phoneOpen=true; document.body.classList.add('withPhone'); s.lastLogin=D(today); drawPhone(); render()},
     payrollApprove:()=>{toast('Payroll approval is wired in the full build (posts Dr Salaries / Cr Salaries payable). Demo keeps the ledger as-is.')},

@@ -70,11 +70,21 @@ The **Shift Board** (Attendance & pay → Open the Shift Board app) has its own 
 |---|---|
 | Where the books live | PostgreSQL table `books` (key `regal`), one JSON document with `S` (data) and `CFG` (settings). Every save is a new revision; the last 200 are kept in `books_history` (owner can restore: `POST /api/books/regal/restore/:rev`). |
 | Sign-in | `POST /api/books/login` checks the password against the users inside the books — the same hashes the browser makes (`'regal|'+password`, SHA-256 or FNV-1a fallback). Before any books exist it accepts the demo convention / `SEED_ADMIN_PASSWORD` once, so the first till can push the seed. Returns a JWT (12 h). |
-| Several tills | `regal-bridge.js` replaces `localStorage` with the API. It saves after every change (debounced), polls `/api/books/regal/rev` every 12 s and pulls newer books — never while a bill is being keyed or a dialog is open. A save against a stale revision gets **409** and the newer copy is loaded. Per-till state (signed-in user, the bill on the screen, the till's location, which page is open) never enters the shared books. |
+| Several tills | `regal-bridge.js` replaces `localStorage` with the API. Every change saves itself (400 ms after the last one, and only when the shared books actually changed), polls `/api/books/regal/rev` every 12 s and pulls newer books — never while a bill is being keyed or a dialog is open. A save against a stale revision gets **409** and the newer copy is loaded. Per-till state (signed-in user, the bill on the screen, the till's location, which page is open) never enters the shared books. |
 | Bill numbers | unchanged from Regal: `INVM-<till>-<cashier id>-<running number>`, so two tills never issue the same number. |
 | SMS | `POST /api/sms/send` — the server makes the smslenz.lk call with the settings from Settings → Messaging, so the browser never talks to the provider. |
 | Shift Board | `/shift-api.php?action=…` implemented in Node (`shift_users` table, state in `books` key `shiftboard`, day sheets published under `/reports/`). The board inside the frame points itself at the parent's server. |
 | Offline | The browser keeps a local copy; if the server is unreachable the till keeps working and the header says so. |
+
+## Approvals
+
+Some changes need the owner's say-so before they happen: switching a customer's or supplier's portal on/off, changing a
+customer's credit limit or price level, removing a customer, taking an amount off a customer or supplier bill (returns,
+discounts, write-offs), and changing product prices/cost. The owner — and anyone given the *Approve requests* right
+under Users — makes these changes straight away. Everyone else's attempt becomes a **request**: it appears under
+*People → Approvals* (with a badge), rings the owner's bell, and nothing changes until the owner approves it (a note can
+go back either way; the person who asked is told in their bell). *Settings → Approvals* chooses which changes need asking.
+Requests travel with the books, so a cashier can ask from one till and the owner decide on another.
 
 ## Features brought across from SePOS
 

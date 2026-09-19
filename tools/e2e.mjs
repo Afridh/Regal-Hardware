@@ -347,6 +347,55 @@ ok('B: sees till A\'s voucher, transfer and bills', B.w.S.vouchers.length === 1 
 ok('B: sees the website order once, not twice', B.w.S.web.orders.filter(o => o.no === webNo).length === 1);
 ok('B: keeps its own signed-in user (not A\'s)', B.w.S.user.name === 'Kasun');
 ok('B: cashier cannot open Users', !B.w.allowed('users') && B.w.allowed('pos'));
+
+// ---------------------------------------------------------------- approvals: the cashier asks, the owner decides
+{
+  const CB = B.w.eval('C'), CA = A.w.eval('C');
+  const wasPortal = !!CB(2).portal;
+  B.w.eval('custSel=2; custTab="overview"'); B.w.go('customers'); await sleep(30);
+  B.d.querySelector('[data-act="custPortal"][data-id="2"]').click(); await sleep(30);
+  ok('B: cashier cannot switch a portal — a request is made instead', !!CB(2).portal === wasPortal && B.w.S.approvals.length === 1 && B.w.S.approvals[0].status === 'pending' && B.w.S.approvals[0].by === 'Kasun' && B.w.S.approvals[0].kind === 'custPortal');
+  ok('B: menu shows the waiting badge', /nbadge/.test(B.d.querySelector('[data-view="approvals"]').innerHTML));
+  B.w.go('approvals'); await sleep(30);
+  ok('B: cashier sees their request waiting, with no approve button', /Waiting for the owner/.test(B.d.getElementById('main').innerHTML) && !B.d.querySelector('[data-act="apOk"]'));
+  B.w.go('dashboard'); A.w.go('dashboard'); await sleep(30);
+  // nobody calls persist(): every change now saves itself, and the other till picks it up by polling
+  const seenA = await until(() => A.w.S.approvals && A.w.S.approvals.some(a => a.by === 'Kasun' && a.status === 'pending'), 25000, 500);
+  ok('A: request reached the owner by itself (auto-save + poll)', !!seenA);
+  ok('A: owner is told in the bell', A.w.S.notif.some(n => n.kind === 'approval' && /Kasun asks/.test(n.text)) && !!A.d.querySelector('#bell .bdot'));
+  ok('A: bell entry is not shown to the cashier', !B.w.eval('notifMine')(A.w.S.notif.find(n => n.kind === 'approval')));
+  A.w.go('approvals'); await sleep(30);
+  ok('A: owner sees Approve / Turn down', !!A.d.querySelector('[data-act="apOk"]') && !!A.d.querySelector('[data-act="apNo"]'));
+  const reqId = A.w.S.approvals[0].id;
+  A.d.getElementById('apn-' + reqId).value = 'fine, but watch the balance';
+  A.d.querySelector('[data-act="apOk"]').click(); await sleep(50);
+  ok('A: approved — the change is applied', !!CA(2).portal === !wasPortal && A.w.S.approvals[0].status === 'approved' && A.w.S.approvals[0].decidedBy === 'Afridh' && A.w.S.approvals[0].note === 'fine, but watch the balance');
+  A.w.go('dashboard');
+  const backB = await until(() => B.w.S.approvals.some(a => a.id === reqId && a.status === 'approved'), 25000, 500);
+  ok('B: cashier sees the decision and the change', !!backB && !!CB(2).portal === !wasPortal);
+  ok('B: cashier is told in their bell, with the note', B.w.S.notif.some(n => n.kind === 'approval' && /Approved/.test(n.text) && /watch the balance/.test(n.text) && n.forUser === 'Kasun'));
+  // the owner does the same thing without asking anyone
+  A.w.eval('custSel=2; custTab="overview"'); A.w.go('customers'); await sleep(30);
+  A.d.querySelector('[data-act="custPortal"][data-id="2"]').click(); await sleep(30);
+  ok('A: owner switches it straight away, no request', !!CA(2).portal === wasPortal && A.w.S.approvals.filter(a => a.status === 'pending').length === 0);
+  A.w.go('dashboard');
+  // a request the owner turns down changes nothing
+  await until(() => !!CB(2).portal === wasPortal, 25000, 500);
+  B.w.eval('custSel=2; custTab="details"'); B.w.go('customers'); await sleep(30);
+  B.d.querySelector('[data-act="custEdit"]').click(); await sleep(20);
+  B.d.getElementById('cmLimit').value = '99999999'; B.d.getElementById('cmAddr').value = 'New Town, by the tank'; B.d.getElementById('cmOk').click(); await sleep(30);
+  ok('B: limit change becomes a request, address change applies at once', CB(2).limit !== 99999999 && CB(2).address === 'New Town, by the tank' && B.w.S.approvals.some(a => a.kind === 'custTerms' && a.status === 'pending') && !B.d.querySelector('.modal'));
+  B.w.go('dashboard');
+  const termsA = await until(() => A.w.S.approvals.find(a => a.kind === 'custTerms' && a.status === 'pending'), 25000, 500);
+  ok('A: terms request arrived', !!termsA);
+  A.w.go('approvals'); await sleep(30);
+  A.d.getElementById('apn-' + termsA.id).value = 'too high'; A.d.querySelector(`[data-act="apNo"][data-id="${termsA.id}"]`).click(); await sleep(50);
+  ok('A: turned down — limit unchanged', CA(2).limit !== 99999999 && A.w.S.approvals.find(a => a.id === termsA.id).status === 'rejected');
+  A.w.go('dashboard');
+  const rejB = await until(() => B.w.S.approvals.some(a => a.id === termsA.id && a.status === 'rejected'), 25000, 500);
+  ok('B: cashier sees it was turned down, with the reason', !!rejB && B.w.S.notif.some(n => /Turned down/.test(n.text) && /too high/.test(n.text)));
+  ok('no script errors during approvals', !A.errors.length && !B.errors.length, [...A.errors, ...B.errors][0] || '');
+}
 // B makes a sale; A should pick it up on its next poll
 const inv4 = B.w.completeSale({ lines: [{ pid: 3, qty: 1, price: B.w.eval('P')(3).retail, disc: 0 }], customerId: 1, pays: [{ method: 'CASH', amount: B.w.eval('P')(3).retail }] });
 B.w.persist(); await sleep(900);

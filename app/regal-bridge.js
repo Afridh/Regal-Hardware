@@ -51,6 +51,7 @@
     var local = keepLocal();
     window.applyKept(doc);
     restoreLocal(local);
+    if (typeof window.markSaved === 'function') window.markSaved();   // what we hold now is what the server holds
     if (window.S) { window.S._fromStore = true; window.S.terminal = localStorage.getItem(TERMINAL_KEY) || window.S.terminal || 'T1'; }
     if (typeof window.applyLayout === 'function') window.applyLayout();
     if (typeof window.render === 'function') window.render();
@@ -66,7 +67,7 @@
       rev = j.rev; applyRemote(j.data);
       if (!quiet) say('Books picked up from the server');
       // orders from the shop site ride in with the books; saving is what hands them to the shop for good
-      if (j.inbox > 0) { say(j.inbox === 1 ? 'A new order from the website' : j.inbox + ' new orders from the website'); if (typeof window.persist === 'function') window.persist(); }
+      if (j.inbox > 0) { say(j.inbox === 1 ? 'A new order from the website' : j.inbox + ' new orders from the website'); if (typeof window.persist === 'function') window.persist(true); }
       return true;
     }
     rev = j.rev || 0; return false;
@@ -155,6 +156,7 @@
 
   window.regalBridge = {
     online: function () { return !!token; },
+    localKeys: LOCAL_KEYS,
     token: function () { return token; },
     rev: function () { return rev; },
     login: login, logout: logout, pull: pull, sms: sms, serverUsers: serverUsers,
