@@ -41,6 +41,16 @@ if (process.argv[5] === 'approvals') {                      // the owner's appro
   await new Promise(r => setTimeout(r, 400));
   await pg.screenshot({ path: out }); await b.close(); console.log('wrote ' + out); process.exit(0);
 }
+if ((process.argv[5] || '').startsWith('printpdf:')) {       // printpdf:r80 or printpdf:a5 — what the printer would get, as a PDF next to the png
+  const f = process.argv[5].slice(9);
+  await pg.evaluate(() => { window.__ap = 0; window.addEventListener('afterprint', () => window.__ap++); window.addEventListener('beforeprint', () => window.__bp = (window.__bp || 0) + 1); });
+  console.log(await pg.evaluate(f => { try { window.print = () => {}; const inv = S.sales.slice().reverse().find(s => s.lines.length >= 3) || S.sales.at(-1); printBill(inv, f); return 'printBill ok ' + inv.no + ' area=' + !!document.getElementById('printArea'); } catch (e) { return 'ERR ' + e.message + '\n' + e.stack; } }, f));
+  await new Promise(r => setTimeout(r, 400)); await pg.emulateMediaType('print');
+  await pg.screenshot({ path: out, fullPage: true });
+  await pg.pdf({ path: out.replace(/\.png$/, '.pdf'), preferCSSPageSize: true, printBackground: true });
+  console.log(JSON.stringify(await pg.evaluate(() => ({ page: (document.getElementById('printPage') || {}).textContent, area: !!document.getElementById('printArea'), visible: !!document.querySelector('#printArea .print') && getComputedStyle(document.querySelector('#printArea')).display, afterprint: window.__ap, beforeprint: window.__bp, directClass: document.body.classList.contains('direct-print') }))));
+  await b.close(); console.log('wrote ' + out + ' and .pdf'); process.exit(0);
+}
 if ((process.argv[5] || '').startsWith('bill:')) {           // bill:a5 or bill:r80 — the printed bill for the latest real sale with lines
   const f = process.argv[5].slice(5);
   await pg.evaluate(f => { const inv = S.sales.slice().reverse().find(s => s.lines.length >= 3) || S.sales.at(-1); document.body.innerHTML = '<div style="padding:16px;background:#888">' + billHtml(inv, f) + '</div>'; }, f);

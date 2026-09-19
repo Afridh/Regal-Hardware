@@ -284,9 +284,11 @@ ok('A: cannot spend more points than held', /only has/.test(tooMany || ''), tooM
   ok('P: A5 invoice has the old layout', /Invoice No/.test(ha5) && /Invoice By/.test(ha5) && /<th>Code<\/th>/.test(ha5) && /D\.Price/.test(ha5) && /Gross Total/.test(ha5) && /- Inv\.Discount/.test(ha5) && /Net Total/.test(ha5) && /Amount Paid/.test(ha5) && /CHANGE RS\.|CREDIT RS\./.test(ha5) && /Authorised By/.test(ha5) && /Received By/.test(ha5));
   ok('P: bill date is the local date', w.D(w.today) === new Date().toLocaleDateString('en-CA'));
   let printed = 0; w.print = () => { printed++; }; w.printBill(inv1, 'r80'); await sleep(150);
-  ok('P: printBill goes straight to print with the receipt page size', printed === 1 && /size:80mm auto/.test(d.getElementById('printPage')?.textContent || '') && d.body.classList.contains('direct-print'));
-  w.dispatchEvent(new w.Event('afterprint')); await sleep(20);
-  ok('P: … and clears up after printing', !d.getElementById('printArea') && !d.body.classList.contains('direct-print'));
+  ok('P: printBill goes straight to print with the receipt page size', printed === 1 && /size:80mm \d+mm/.test(d.getElementById('printPage')?.textContent || '') && d.body.classList.contains('direct-print'));
+  w.dispatchEvent(new w.Event('afterprint')); await sleep(400);
+  ok('P: … stays while the print box is open', !!d.getElementById('printArea'));
+  w.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'F3', bubbles: true })); await sleep(20);
+  ok('P: … and clears up once you are back at the till', !d.getElementById('printArea') && !d.body.classList.contains('direct-print'));
 }
 
 // trial balance still balances

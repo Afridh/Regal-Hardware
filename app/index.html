@@ -1589,11 +1589,12 @@ tr.rowlink button{cursor:pointer}
 /* sent straight to the printer: only the bill is on the page, at its own paper size */
 .printArea{position:absolute;left:-10000px;top:0}
 @media print{
+ html,body.direct-print{height:auto!important;overflow:visible!important;background:#fff!important}
  body.direct-print>*:not(.printArea){display:none!important}
- body.direct-print .printArea{position:static;display:block}
- body.direct-print .printArea .print{border:0;box-shadow:none;margin:0;width:auto}
+ body.direct-print>.printArea{position:static!important;left:auto!important;display:block!important}
+ body.direct-print .printArea .print{border:0!important;box-shadow:none;margin:0;width:auto;zoom:1!important;transform:none!important}
  body.direct-print .printArea.r80 .print{width:72mm;padding:0}
- body.direct-print .printArea.a5 .print{min-height:0;height:auto}
+ body.direct-print .printArea.a5 .print{min-height:132mm;height:auto;aspect-ratio:auto}
 }
 
 /* --- 80mm till roll --- */
@@ -11470,11 +11471,20 @@ function printBill(inv,f='a5'){
   const html=billHtml(inv,f);
   const old=document.getElementById('printArea'); if(old) old.remove();
   const el=document.createElement('div'); el.id='printArea'; el.className='printArea '+f;
-  el.innerHTML=`<style id="printPage">@page{size:${f==='r80'?'80mm auto':'A5 landscape'};margin:${f==='r80'?'2mm 3mm':'6mm 8mm'}}</style>${html}`;
+  el.innerHTML=`<style id="printPage"></style>${html}`;
   document.body.appendChild(el); document.body.classList.add('direct-print');
-  const done=()=>{ document.body.classList.remove('direct-print'); el.remove(); window.removeEventListener('afterprint',done) };
-  window.addEventListener('afterprint',done);
-  setTimeout(()=>{ try{ window.print() }catch(e){ done(); showInvoice(inv,f) } setTimeout(done,60000) },60);
+  // the page size follows the format: A5 landscape, or an 80mm roll cut to the length of this receipt
+  const page=el.querySelector('#printPage');
+  if(f==='r80'){ const px=el.querySelector('.print').offsetHeight||600; const mm=Math.min(1000,Math.ceil(px*25.4/96*1.06)+8); page.textContent=`@page{size:80mm ${mm}mm;margin:2mm 3mm}` }
+  else page.textContent='@page{size:A5 landscape;margin:6mm 8mm}';
+  // Chrome fires afterprint as soon as print() returns, while its preview is still being drawn — so the
+  // bill stays until the person is back at the till (any click or key means the print box has closed)
+  let cleaned=false;
+  const done=()=>{ if(cleaned) return; cleaned=true; document.body.classList.remove('direct-print'); el.remove();
+    ['pointerdown','keydown'].forEach(ev=>window.removeEventListener(ev,done,true)) };
+  const arm=()=>{ ['pointerdown','keydown'].forEach(ev=>window.addEventListener(ev,done,true)); setTimeout(done,10*60*1000) };
+  window.addEventListener('afterprint',()=>setTimeout(arm,300),{once:true});
+  setTimeout(()=>{ try{ window.print() }catch(e){ done(); showInvoice(inv,f) } },60);
 }
 function showInvoice(inv,f='a5'){
   window._shownBill=inv;
