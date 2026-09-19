@@ -280,7 +280,7 @@ ok('A: cannot spend more points than held', /only has/.test(tooMany || ''), tooM
 // the printed bill, both layouts, as the old till printed them
 {
   const h80 = w.billHtml(inv1, 'r80'), ha5 = w.billHtml(inv1, 'a5');
-  ok('P: 80mm receipt has the old layout', /Invoice No :/.test(h80) && /Gross Total Rs\./.test(h80) && /Invoice Total Rs\./.test(h80) && /Payment Rs\./.test(h80) && /<svg class="bc"/.test(h80) && /No of Item \/ Qty/.test(h80) && /Authorized By/.test(h80));
+  ok('P: 80mm receipt has the old layout', /Invoice No :/.test(h80) && /Gross Total Rs\./.test(h80) && /Invoice Total Rs\./.test(h80) && /Payment Rs\./.test(h80) && /<svg class="bc"/.test(h80) && /No of Item \/ Qty/.test(h80) && /Authori[sz]ed By/i.test(h80));
   ok('P: A5 invoice has the old layout', /Invoice No/.test(ha5) && /Invoice By/.test(ha5) && /<th>Code<\/th>/.test(ha5) && /D\.Price/.test(ha5) && /Gross Total/.test(ha5) && /- Inv\.Discount/.test(ha5) && /Net Total/.test(ha5) && /Amount Paid/.test(ha5) && /CHANGE RS\.|CREDIT RS\./.test(ha5) && /Authorised By/.test(ha5) && /Received By/.test(ha5));
   ok('P: bill date is the local date', w.D(w.today) === new Date().toLocaleDateString('en-CA'));
   // the bill is set up under Settings → What the bill shows: logo, names, wording, what appears
@@ -288,7 +288,7 @@ ok('A: cannot spend more points than held', /only has/.test(tooMany || ''), tooM
   ok('P: bill design tab shows both live samples and the logo box', d.querySelectorAll('.billprev .print').length === 2 && !!d.getElementById('logoFile') && !!d.querySelector('[data-set="shop.name"]') && !!d.querySelector('[data-set="bill.footer"]'));
   w.eval("CFG.shop.logo='data:image/png;base64,iVBORw0KGgo='; CFG.shop.name='TEST STORES'; CFG.bill.showBarcode=false; CFG.bill.signLeft='Cashier'; CFG.bill.t80Thanks='Come back soon'");
   const h80b = w.billHtml(inv1, 'r80'), ha5b = w.billHtml(inv1, 'a5');
-  ok('P: logo, name, wording and toggles all reach the printed bill', /<img src="data:image\/png/.test(h80b) && /TEST STORES/.test(h80b) && !/<svg class="bc"/.test(h80b) && /Cashier/.test(h80b) && /Come back soon/.test(h80b) && /<img src="data:image\/png/.test(ha5b) && /TEST STORES/.test(ha5b) && /Cashier/.test(ha5b));
+  ok('P: logo, name, wording and toggles all reach the printed bill', /<img src="data:image\/png/.test(h80b) && /TEST STORES/.test(h80b) && !/<svg class="bc"/.test(h80b) && /Cashier/.test(h80b) && /Come back soon/.test(h80b) && /<img src="data:image\/png/.test(ha5b) && /TEST<\/span> STORES/.test(ha5b) && /Cashier/.test(ha5b));
   w.eval("CFG.bill.showCode=false; CFG.bill.showMrp=false");
   ok('P: A5 columns follow the toggles', !/<th>Code<\/th>/.test(w.billHtml(inv1, 'a5')) && !/>MRP</.test(w.billHtml(inv1, 'a5')) && />Price</.test(w.billHtml(inv1, 'a5')));
   w.eval("CFG.shop.logo=''; CFG.shop.name='REGAL HARDWARE'; CFG.bill.showBarcode=true; CFG.bill.signLeft='Authorised By'; CFG.bill.showCode=true; CFG.bill.showMrp=true; CFG.bill.t80Thanks='Thank you, come again!'");
