@@ -5811,6 +5811,7 @@ const CFG={
  done:{askSize:true,cashDefault:'r80',creditDefault:'a5',rememberPick:true,notice:true,noticeMs:3200,
    printAnim:true,animMs:1000,creditStamp:true,creditWord:'CREDIT BILL',cashWord:'PAID',sound:false},
  stock:{allowNegative:false},
+ print:{agent:'http://localhost:4100'},               // the print helper on the till PC (tools/print-agent); empty = browser print
  pos:{discFromMrp:true,repriceToLast:true},          // a discount typed as a percentage comes off the maker's price
 
  msg:{provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'',apiKey:'',userId:'',autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,
@@ -6072,7 +6073,10 @@ function settings(){
       <div class="f"><label>&nbsp;</label>${fld('done.creditStamp','','Stamp a credit bill while it prints','check')}</div></div>
      <h2 style="margin-top:14px">Printing</h2>
      ${fld('done.preview','','Show the bill on the screen first instead of printing it straight away','check')}
-     <div class="muted">Off: the bill goes straight to the printer — the 80mm receipt on the till roll, the A5 invoice on A5 landscape; the paper size is set on the page so the printer picks it up. To skip the browser's print box entirely, start Chrome with <b>--kiosk-printing</b> (it prints to the default printer without asking).</div>
+     <div class="grid2" style="margin-top:8px">${fld('print.agent','Print helper on this PC','Leave as it is when the helper runs here (tools/print-agent). Empty it to use the browser\'s print box.')}
+      <div class="f"><label>Where bills go</label><div id="agentStatus" class="muted">checking…</div>
+       <div style="display:flex;gap:6px;margin-top:6px"><button class="btn ghost sm" data-act="printTest" data-f="r80">Test the 80mm receipt</button><button class="btn ghost sm" data-act="printTest" data-f="a5">Test the A5 bill</button></div></div></div>
+     <div class="muted">With the helper running, every bill prints by itself on the printer for its size — no print box. Without it, the browser's print box opens with the page already sized (80mm roll or A5 landscape).</div>
      <div class="card note" style="margin-top:12px">Switch the question and the animation off and a cash bill goes: Enter, printed. That is the fastest the counter can run.</div>`;
   }
   if(setTab==='layout'){
@@ -8143,6 +8147,9 @@ function renderNow(){ if(S.view!=='board') document.body.classList.remove('board
     document.querySelectorAll('[data-tpl]').forEach(el=>{
       el.onchange=()=>{ CFG.tpl[el.dataset.tpl].text=el.value; render(); toast('Wording saved') } });
     document.querySelectorAll('[data-apk]').forEach(el=>{ el.onchange=()=>{ CFG.approvals=CFG.approvals||{}; CFG.approvals[el.dataset.apk]=el.checked; toast(el.checked?'Needs approval from now on':'No approval needed') } });
+    const st=$('#agentStatus'); if(st){ const url=printAgentUrl();
+      if(!url) st.textContent='Browser print box (no helper set)';
+      else fetch(url+'/status').then(r=>r.json()).then(j=>{ st.innerHTML=`<span class="tag ok">helper running</span> 80mm → <b>${j.printers.r80}</b> · A5 → <b>${j.printers.a5}</b>` }).catch(()=>{ st.innerHTML='<span class="tag warn">helper not running</span> bills will use the browser\'s print box. Start it with the "Regal print helper" shortcut.' }) }
     if(typeof extBindSettings==='function') extBindSettings();
   }
   const pq=$('#prodQ'); if(pq){ pq.value=prodQ; pq.oninput=e=>{prodQ=e.target.value;render();$('#prodQ').focus()};
@@ -11465,9 +11472,28 @@ function billHtml(inv,f='a5'){
    </div>
   </div>`;
 }
-/* straight to the printer: the page size follows the format, nothing else on the page prints */
-let printQueue=null;
+/* ---- printing ----
+   With the print helper running on the PC (tools/print-agent) the bill goes to the printer set
+   for its format — 80mm receipts to one, A5 bills to another — with no print box at all.
+   Without it, the browser's own print is used, page size set to suit. */
+function billDocument(inv,f){
+  const css=[...document.querySelectorAll('style')].map(s=>s.textContent).join('\n');
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body class="direct-print"><div id="printArea" class="printArea ${f}">${billHtml(inv,f)}</div></body></html>`;
+}
+const printAgentUrl=()=>(CFG.print&&CFG.print.agent!==undefined)?String(CFG.print.agent||'').replace(/\/$/,''):'http://localhost:4100';
+async function agentPrint(inv,f){
+  const url=printAgentUrl(); if(!url) return false;
+  try{
+    const r=await fetch(url+'/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({format:f,no:inv.no,html:billDocument(inv,f)})});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok&&j.ok){ toast(`${inv.no} printed on ${j.printer}`); return true }
+    toast('Print helper could not print: '+(j.error||r.status)+' — using the browser instead'); return false;
+  }catch(e){ return false }   // helper not running: the browser prints
+}
 function printBill(inv,f='a5'){
+  agentPrint(inv,f).then(done=>{ if(!done) browserPrint(inv,f) });
+}
+function browserPrint(inv,f='a5'){
   const html=billHtml(inv,f);
   const old=document.getElementById('printArea'); if(old) old.remove();
   const el=document.createElement('div'); el.id='printArea'; el.className='printArea '+f;
@@ -13206,6 +13232,7 @@ document.addEventListener('click',e=>{
   ({ del:()=>{S.pos.lines.splice(+a.dataset.i,1);render()}, pay:openPay, pickCust:pickCustomer, clear:()=>{S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()}, hold:()=>{toast('Bill held — recall with Ctrl+R (demo keeps one)');S.held=S.pos;S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()},
     invoice:()=>showInvoice(S.sales.find(s=>s.no===a.dataset.no)), showInv:()=>{closeModals();showInvoice(S.sales.find(s=>s.no===a.dataset.no),a.dataset.f)}, closeModal:closeModals,
     doPrint:()=>{ try{ window.print() }catch(e){ toast("The preview is open — use the browser's own print, or pop the window out first") } },
+    printTest:()=>{ const last=S.sales.slice().reverse().find(x=>x.lines.length)||S.sales.at(-1); if(!last) return toast('No bill to print yet'); toast('Sending a test bill…'); printBill({...last,proof:true},a.dataset.f) },
     printNow:()=>{ const inv=window._shownBill&&window._shownBill.no===a.dataset.no?window._shownBill:S.sales.find(x=>x.no===a.dataset.no); if(!inv) return toast('No such bill'); closeModals(); printBill({...inv,reprint:!inv.proof},a.dataset.f||'a5') },
     proofA5:()=>proofBill('a5'), proof80:()=>proofBill('r80'),
     cust:()=>{ const id=+a.dataset.id; if(id===custSel&&S.view==='customers') return;

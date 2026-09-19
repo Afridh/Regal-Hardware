@@ -89,6 +89,15 @@ dates and lines (any part-payment noted). Each supplier's balance comes as one *
 bills stay in SQL Server. Bank balances are not brought across (never reconciled) — enter them from the statements. Runs again any time; each run replaces the
 previous import.
 
+## Printing without a print box
+
+`tools/print-agent` is a small helper that runs on the till PC (`start.cmd`, also in the Startup folder as *Regal
+print helper*). The till sends each bill to it (`http://localhost:4100/print`) and it prints on the printer set for
+that format in `config.json` — 80mm receipts on the EPSON TM-T82, A5 bills on the Canon LBP6030w — rendering the
+bill with the Chrome on the PC and handing the image to Windows, so no print box ever appears. If the helper is not
+running the browser's print box opens instead, page already sized. *Settings → Finishing a bill → Printing* shows
+whether the helper is up and has test buttons for both sizes.
+
 ## Approvals
 
 Some changes need the owner's say-so before they happen: switching a customer's or supplier's portal on/off, changing a
