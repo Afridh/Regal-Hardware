@@ -1360,6 +1360,44 @@ tr.rowlink button{cursor:pointer}
 .tl .ev.in .a{color:var(--chip-green)}
 @media (max-width:640px){.cu-list{position:static;max-height:none}.cu-acts{margin-left:0}.cu-head h2{font-size:19px}.tl .ev{flex-wrap:wrap}}
 
+/* ---- the payment window ---- */
+.modal.wide .box{max-width:1040px;width:calc(100vw - 32px)}
+.pay-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;margin-bottom:10px}
+.pay-keys{display:flex;gap:4px 10px;flex-wrap:wrap;font-size:11.5px;color:var(--steel);align-items:center}
+.pay-keys span{white-space:nowrap}.pay-keys .kbd{margin:0 4px 0 0}
+.pay-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(300px,.85fr);gap:14px;align-items:start}
+@media (max-width:820px){.pay-grid{grid-template-columns:1fr}}
+.pay-h{font-family:Archivo,sans-serif;font-weight:700;font-size:14px;margin-bottom:6px}
+.pay-h .muted{font-family:'IBM Plex Sans',sans-serif;font-weight:400;font-size:12px}
+.pay-list{max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:var(--r);margin-top:6px}
+.pay-list table{width:100%;border-collapse:collapse}
+.pay-list th{position:sticky;top:0;background:var(--panel);z-index:1}
+.pay-list tr.on td{background:var(--tint-yellow)}
+.pay-sum{display:flex;justify-content:space-between;padding:8px 10px;font-size:13px;color:var(--steel)}
+.pay-sum b{font-family:Archivo,sans-serif;font-size:16px;color:var(--ink)}
+.pay-side{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px}
+.pay-side #ra,.pay-side #sfAmt{font-family:Archivo,sans-serif;font-weight:800;font-size:26px;text-align:right;height:52px;color:var(--chip-rust)}
+.pay-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:4px 0 10px}
+.pay-btns .btn{padding:11px 8px;font-weight:700;text-align:center}
+.pay-parts{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:4px 10px;min-height:64px}
+.pay-part{display:flex;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);animation:cuSlideIn .18s ease-out}
+.pay-part:last-child{border-bottom:0}
+.pay-part .pm{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-radius:3px;padding:2px 6px;background:var(--line2);color:var(--steel);flex:0 0 auto}
+.pay-part .pm.cash{background:var(--tint-green);color:#12613D}.pay-part .pm.cheque{background:var(--tint-yellow);color:#8A5D06}.pay-part .pm.card{background:var(--tint-blue);color:#0E5B76}.pay-part .pm.bank{background:var(--tint-blue);color:#0E5B76}
+.pay-part .t{flex:1;min-width:0;font-size:12.5px;color:var(--steel);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pay-part b{font-family:Archivo,sans-serif;white-space:nowrap}
+.pay-part .x{background:none;border:0;color:var(--faint);cursor:pointer;font-size:15px;padding:2px 4px}
+.pay-part .x:hover{color:var(--chip-rust)}
+.pay-tot{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:10px 0}
+.pay-tot>div{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:6px 9px}
+.pay-tot span{display:block;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--steel);font-weight:700}
+.pay-tot b{display:block;font-family:Archivo,sans-serif;font-size:15px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pay-tot .due{border-color:var(--chip-rust)}.pay-tot .due b{color:var(--chip-rust)}
+.pay-tot .ok{border-color:var(--chip-green);background:var(--tint-green)}.pay-tot .ok b{color:var(--chip-green)}
+.pay-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.pay-sub{animation:cuFadeUp .18s ease-out}
+.pay-subacts{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+
 /* ---- motion & polish: things arrive, keys are visible, buttons answer the hand ---- */
 @keyframes cuFadeUp{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 @keyframes cuPop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
@@ -5597,15 +5635,17 @@ function paySupplier({supplierId,date=D(today),lines,notes='',against=[]}){
   for(const p of [...picked,...rest]){ const a=Math.min(rem,p.total-p.paid); p.paid+=a; rem-=a; if(rem<=0)break }
   return pv;
 }
-function receiveCustomer({customerId,amount,method,bank,ref,against=[],date=D(today)}){
+function receiveCustomer({customerId,amount,method,bank,ref,against=[],date=D(today),chq}){
   if(!(amount>0)) throw new Error('A payment needs an amount above zero');
   const owed=Math.max(0,partyBal('C',customerId));
   const onBills=+Math.min(amount,owed).toFixed(2), advance=+(amount-onBills).toFixed(2);
-  const rv={no:next('RCT'),date,customerId,amount,method,against,voucher:next('VCH'),by:S.user.name,advance}; S.payments.push({...rv,dir:'IN'});
+  // card and bank transfer both land in one of our bank accounts (the card machine settles there)
+  if((method==='BANK'||method==='CARD')&&!B(bank)) bank=S.banks[0].id;
+  const rv={no:next('RCT'),date,customerId,amount,method,against,voucher:next('VCH'),by:S.user.name,advance,ref:ref||'',bank:(method==='BANK'||method==='CARD')?bank:null,chq:chq||null}; S.payments.push({...rv,dir:'IN'});
   // what covers bills comes off what they owe; anything over is held as their credit
   const jl=[]; if(onBills>0) jl.push({ac:'1100',cr:onBills,party:{type:'C',id:customerId}});
   if(advance>0){ jl.push({ac:'2050',cr:advance,party:{type:'C',id:customerId}}); const cc=C(customerId); cc.advance=+((cc.advance||0)+advance).toFixed(2) }
-  if(method==='CASH')jl.push({ac:'1010',dr:amount}); else if(method==='BANK')jl.push({ac:B(bank).ac,dr:amount}); else {jl.push({ac:'1030',dr:amount}); S.cheques.push({dir:'RECEIVED',no:ref||'—',bank:'Customer bank',date,recvDate:date,payee:'Regal Hardware',amount,status:'RECEIVED',party:C(customerId).name,customerId,ref:rv.no})}
+  if(method==='CASH')jl.push({ac:'1010',dr:amount}); else if(method==='BANK'||method==='CARD')jl.push({ac:B(bank).ac,dr:amount}); else {jl.push({ac:'1030',dr:amount}); S.cheques.push({dir:'RECEIVED',no:ref||'—',bank:(chq&&chq.bank)||'Customer bank',date,recvDate:date,chqDate:(chq&&chq.date)||date,payee:'Regal Hardware',amount,status:'RECEIVED',party:C(customerId).name,customerId,ref:rv.no})}
   post(date,'Receipt '+rv.no,rv.no,jl);
   let rem=amount;
  const chosen=S.sales.filter(s=>against.includes(s.no)&&s.balance>0);
@@ -10694,7 +10734,7 @@ function custOverview(c,inv,open,rc,webOrders,ag,owed){
   const ev=[
     ...inv.map(s=>({date:s.date,k:'bill',t:`Bill ${s.no}${s.type==='CREDIT'?' on account':''}${s.balance>0?` — ${fmt(s.balance)} still owing`:''}`,a:fmt(s.total),no:s.no,act:'invoice'})),
     ...inv.flatMap(s=>(s.adjustments||[]).map(a=>({date:a.date,k:'adj',t:`${ADJ_REASONS.find(r=>r[0]===a.why)?.[1]||a.why} on ${s.no}${a.note?' — '+a.note:''}`,a:'− '+fmt(a.amount)}))),
-    ...rc.map(p=>({date:p.date,k:'in',t:`Payment ${p.no} · ${p.method.toLowerCase()}${p.ref?' '+p.ref:''}${(p.against||[]).length?' against '+p.against.join(', '):''}${p.advance>0?' · '+fmt(p.advance)+' held as credit':''}`,a:fmt(p.amount),no:p.voucher,act:'voucher'})),
+    ...rc.map(p=>({date:p.date,k:'in',t:`Payment ${p.no} · ${p.method.toLowerCase()}${p.ref?' '+p.ref:''}${(p.against||[]).length?' against '+p.against.join(', '):''}${p.advance>0?' · '+fmt(p.advance)+' held as credit':''}`,a:fmt(p.amount),no:p.no,act:'rcpt'})),
     ...webOrders.map(o=>({date:o.date,k:'web',t:`Website order ${o.no} — ${({placed:'with the shop',accepted:'being picked',ready:'ready',despatched:'on the way',done:'delivered',collected:'collected',rejected:'not accepted',cancelled:'cancelled'})[o.status]||o.status}${o.invoice?' · billed as '+o.invoice:''}`,a:fmt(o.total)})),
   ].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,12);
   return `<div class="two-col">
@@ -10738,7 +10778,7 @@ function custPayments(c,rc){
      <td>${p.method.toLowerCase()}${p.ref?` <span class="muted">${p.ref}</span>`:''}${chq?` <span class="tag ${chq.status==='CLEARED'?'ok':chq.status==='BOUNCED'?'bad':'warn'}">${chq.status.toLowerCase()}</span>`:''}</td>
      <td class="n"><b>${fmt(p.amount)}</b>${p.advance>0?`<div class="muted">${fmt(p.advance)} held as credit</div>`:''}</td>
      <td class="muted">${(p.against||[]).join(', ')||'oldest bills first'}</td><td class="muted">${p.by||''}</td>
-     <td><div class="rowacts"><button class="btn ghost sm" data-act="voucher" data-no="${p.voucher}">Receipt ${p.voucher}</button></div></td></tr>`}).join('')||'<tr><td colspan="7" class="muted">Nothing received yet.</td></tr>'}</table>`;
+     <td><div class="rowacts"><button class="btn ghost sm" data-act="rcpt" data-no="${p.no}">Print receipt</button></div></td></tr>`}).join('')||'<tr><td colspan="7" class="muted">Nothing received yet.</td></tr>'}</table>`;
 }
 function custStmtFrom(){ const d=new Date(today); if(custStmtRange==='1m') d.setMonth(d.getMonth()-1); else if(custStmtRange==='3m') d.setMonth(d.getMonth()-3); else if(custStmtRange==='12m') d.setFullYear(d.getFullYear()-1); else return ''; return D(d) }
 function custStatement(c){
@@ -10753,7 +10793,7 @@ function custStatement(c){
    <table class="cu-tbl stmt"><tr><th>Date</th><th>What</th><th>Ref</th><th class="n">Billed</th><th class="n">Paid</th><th class="n">Balance</th></tr>
    ${from?`<tr><td>${from}</td><td class="muted" colspan="4">Balance brought forward</td><td class="n"><b>${fmt(opening)}</b></td></tr>`:''}
    ${shown.map(r=>{const isBill=S.sales.some(s=>s.no===r.ref), isRct=S.payments.some(p=>p.no===r.ref);
-     return `<tr><td>${r.date}</td><td>${r.desc}</td><td>${isBill?`<a href="#" data-act="invoice" data-no="${r.ref}">${r.ref}</a>`:isRct?`<a href="#" data-act="voucher" data-no="${(S.payments.find(p=>p.no===r.ref)||{}).voucher}" style="border:0">${r.ref}</a>`:r.ref||''}</td>
+     return `<tr><td>${r.date}</td><td>${r.desc}</td><td>${isBill?`<a href="#" data-act="invoice" data-no="${r.ref}">${r.ref}</a>`:isRct?`<a href="#" data-act="rcpt" data-no="${r.ref}" style="border:0">${r.ref}</a>`:r.ref||''}</td>
      <td class="n">${r.dr?fmt(r.dr):''}</td><td class="n" style="color:var(--chip-green)">${r.cr?fmt(r.cr):''}</td><td class="n"><b>${fmt(r.run)}</b></td></tr>`}).join('')||'<tr><td colspan="6" class="muted">Nothing in this period.</td></tr>'}</table>`;
 }
 function custDetails(c){
@@ -10882,54 +10922,144 @@ function adjustPurchaseModal(no,after){
   };
 }
 
-/* ---- taking a payment: search the customer, pick the bills ---- */
+/* ---- taking a payment from a customer ----
+   Like the old till: the money can come in several parts — cash, cheque, card,
+   bank transfer — and they add up to what is being paid. Cash needs nothing but
+   the amount; a cheque asks for its number, date and bank; card and bank
+   transfer ask which of our accounts it lands in.  Keys: Enter = cash for the
+   amount in the box, F8 cheque, F9 card, B bank, Del takes the last part off,
+   F12 completes. */
 function custPayModal(id){
-  const c=C(id); let sel=new Set(), q='', typed=null, method='CASH', focusedOnce=false;   // what was keyed survives a redraw
-  const m=modal(`<h2>Payment from ${c.name}</h2>
-   <div class="muted">Owes ${fmt(partyBal('C',id))}</div>
-   <div id="payBody"></div>`);
+  const c=C(id);
+  let sel=new Set(), q='', parts=[], mode=null, typed=null, firstFocus=true;
+  const m=modal(`<div class="pay-win">
+   <div class="pay-top"><div><h2 style="margin:0">Payment from ${c.name}</h2><div class="muted">${c.phone||'no mobile'} · ${c.code} · owes <b>${fmt(partyBal('C',id))}</b></div></div>
+    <div class="pay-keys"><span><i class="kbd">Enter</i>cash</span><span><i class="kbd">F8</i>cheque</span><span><i class="kbd">F9</i>card</span><span><i class="kbd">B</i>bank</span><span><i class="kbd">Del</i>undo</span><span><i class="kbd">F12</i>complete</span><span><i class="kbd">Esc</i>close</span></div></div>
+   <div id="payBody"></div></div>`);
+  m.classList.add('wide');
   const open=()=>S.sales.filter(s=>s.customerId===id&&s.balance>0).sort((a,b)=>a.date.localeCompare(b.date));
-  const draw=()=>{
+  const owed=()=>Math.max(0,partyBal('C',id));
+  const picked=()=>[...sel].map(no=>open().find(s=>s.no===no)).filter(Boolean);
+  const target=()=>{ const p=picked().reduce((a,s)=>a+s.balance,0); return p||owed() };
+  const paid=()=>parts.reduce((a,p)=>a+p.amount,0);
+  const left=()=>Math.max(0,+(target()-paid()).toFixed(2));
+  const g=(sel2)=>m.querySelector(sel2);
+  const METHODS={CASH:'Cash',CHEQUE:'Cheque',CARD:'Card',BANK:'Bank transfer'};
+  const partLine=(p)=>p.method==='CASH'?'Cash'
+    :p.method==='CHEQUE'?`Cheque <b>${p.ref}</b> · ${p.chq.bank||'bank not given'} · dated ${p.chq.date}`
+    :p.method==='CARD'?`Card${p.ref?' · '+p.ref:''} → ${B(p.bank).name}`
+    :`Bank transfer${p.ref?' · '+p.ref:''} → ${B(p.bank).name}`;
+
+  const draw=(focus)=>{
     const list=open().filter(s=>!q||s.no.toLowerCase().includes(q.toLowerCase())||s.date.includes(q));
-    const picked=[...sel].map(no=>open().find(s=>s.no===no)).filter(Boolean);
-    const auto=picked.reduce((a,s)=>a+s.balance,0);
-    m.querySelector('#payBody').innerHTML=`
-     <div class="grid3" style="margin-top:10px">
-      <div class="f"><label>Amount</label><input id="ra" type="number" value="${typed!==null?typed:(auto||partyBal('C',id))}"></div>
-      <div class="f"><label>Method</label><select id="rm">${['CASH','BANK','CHEQUE'].map(x=>`<option ${method===x?'selected':''}>${x}</option>`).join('')}</select></div>
-      <div class="f"><label>Bank / cheque number</label><select id="rb">${S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select><input id="rr" placeholder="Cheque no" style="margin-top:4px"></div></div>
-     <label>Which bills is this against?</label>
-     <input id="iq" value="${q}" placeholder="Search invoice number or date… (leave the ticks empty to settle oldest first)" style="margin-bottom:8px">
-     <table><tr><th></th><th>Invoice</th><th>Date</th><th class="n">Billed</th><th class="n">Still owed</th><th></th></tr>
-      ${list.map(s=>`<tr><td><input type="checkbox" data-pick="${s.no}" ${sel.has(s.no)?'checked':''} style="width:auto"></td>
-       <td>${s.no}${(s.adjustments||[]).length?`<div class="muted">${s.adjustments.map(a=>ADJ_REASONS.find(r=>r[0]===a.why)[1].toLowerCase()+' '+fmt(a.amount)).join(', ')}</div>`:''}</td>
-       <td>${s.date}</td><td class="n muted">${fmt(s.total)}</td><td class="n"><b>${fmt(s.balance)}</b></td>
-       <td>${can('adjustInvoice')?`<button class="btn ghost sm" data-adj="${s.no}">Change it</button>`:''}</td></tr>`).join('')
-       ||'<tr><td colspan="6" class="muted">Nothing outstanding.</td></tr>'}</table>
-     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:8px;flex-wrap:wrap">
-      <label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="rsms" checked style="width:auto"> text the receipt</label>
-      <div style="display:flex;gap:8px;align-items:center"><span class="muted" style="font-size:11.5px"><i class="kbd">Enter</i> next box · records on the last</span><button class="btn ghost" data-act="closeModal">Cancel <i class="kbd">Esc</i></button><button class="btn tape" id="rok">Record payment</button></div></div>`;
-    m.querySelector('#iq').oninput=ev=>{q=ev.target.value;draw();const n=m.querySelector('#iq');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
-    m.querySelector('#ra').oninput=ev=>{typed=ev.target.value};
-    m.querySelector('#rm').onchange=ev=>{method=ev.target.value};
-    // Enter walks the boxes: amount → method → (bank, cheque no) → record
-    const step=(from)=>{ const order=['ra','rm',...(m.querySelector('#rm').value==='CASH'?[]:['rb','rr']),'rok'];
-      const nx=order[order.indexOf(from)+1]; if(!nx) return;
-      if(nx==='rok') return m.querySelector('#rok').click();
-      const el=m.querySelector('#'+nx); el.focus(); if(el.select) el.select() };
-    ['ra','rm','rb','rr','iq'].forEach(id2=>{ const el=m.querySelector('#'+id2); el.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); step(id2==='iq'?'rr':id2) } }) });
-    if(!focusedOnce){ focusedOnce=true; const ra=m.querySelector('#ra'); ra.focus(); ra.select() }
-    m.querySelectorAll('[data-pick]').forEach(cb=>cb.onchange=()=>{cb.checked?sel.add(cb.dataset.pick):sel.delete(cb.dataset.pick);draw()});
-    m.querySelectorAll('[data-adj]').forEach(b=>b.onclick=()=>adjustSaleModal(b.dataset.adj,()=>{sel.delete(b.dataset.adj);draw()}));
-    m.querySelector('#rok').onclick=()=>{
-      const amt=+m.querySelector('#ra').value; if(!(amt>0))return toast('Enter an amount');
-      const rv=receiveCustomer({customerId:id,amount:amt,method:m.querySelector('#rm').value,
-        bank:+m.querySelector('#rb').value,ref:m.querySelector('#rr').value,against:[...sel]});
-      if(!m.querySelector('#rsms').checked) S.messages.shift();
-      m.remove(); render(); receiptVoucher(rv);
-    };
+    const amt=typed!==null?typed:(left()||'');
+    g('#payBody').innerHTML=`<div class="pay-grid">
+     <div class="pay-bills">
+      <div class="pay-h">Unpaid bills <span class="muted">tick the ones this pays — none ticked settles the oldest first</span></div>
+      <input id="iq" value="${q}" placeholder="Find a bill by number or date…" autocomplete="off">
+      <div class="pay-list"><table><tr><th></th><th>Invoice</th><th>Date</th><th class="n">Billed</th><th class="n">Still owed</th><th></th></tr>
+       ${list.map(s=>{const d=Math.round((today-new Date(s.date))/864e5);return `<tr class="${sel.has(s.no)?'on':''}"><td><input type="checkbox" data-pick="${s.no}" ${sel.has(s.no)?'checked':''} style="width:auto"></td>
+        <td>${s.no}${(s.adjustments||[]).length?`<div class="muted">${s.adjustments.map(a=>ADJ_REASONS.find(r=>r[0]===a.why)[1].toLowerCase()+' '+fmt(a.amount)).join(', ')}</div>`:''}</td>
+        <td>${s.date}<div class="muted">${d}d</div></td><td class="n muted">${fmt(s.total)}</td><td class="n"><b>${fmt(s.balance)}</b></td>
+        <td>${can('adjustInvoice')?`<button class="btn ghost sm" data-adj="${s.no}">Change</button>`:''}</td></tr>`}).join('')
+        ||'<tr><td colspan="6" class="muted">Nothing outstanding — anything taken now is held as their credit.</td></tr>'}</table></div>
+      <div class="pay-sum"><span>${sel.size?`${sel.size} ticked`:'All unpaid'}</span><b>${fmt(target())}</b></div>
+     </div>
+     <div class="pay-side">
+      ${mode?subForm():`
+      <div class="f"><label>Amount</label><input id="ra" type="number" step="any" value="${amt}" placeholder="0.00"></div>
+      <div class="pay-btns">
+       <button class="btn tape" data-pm="CASH">Cash <i class="kbd">Enter</i></button>
+       <button class="btn" data-pm="CHEQUE">Cheque <i class="kbd">F8</i></button>
+       <button class="btn" data-pm="CARD">Card <i class="kbd">F9</i></button>
+       <button class="btn" data-pm="BANK">Bank transfer <i class="kbd">B</i></button>
+      </div>`}
+      <div class="pay-parts">
+       ${parts.length?parts.map((p,i)=>`<div class="pay-part"><span class="pm ${p.method.toLowerCase()}">${METHODS[p.method]}</span><span class="t">${partLine(p)}</span><b>${fmt(p.amount)}</b><button class="x" data-px="${i}" title="Take this off (Del removes the last)">✕</button></div>`).join('')
+        :'<div class="muted" style="padding:10px 0">Nothing added yet — key the amount and press Enter for cash, or pick another way.</div>'}
+      </div>
+      <div class="pay-tot">
+       <div><span>To pay</span><b>${fmt(target())}</b></div>
+       <div><span>Added</span><b>${fmt(paid())}</b></div>
+       <div class="${left()>0?'due':'ok'}"><span>${left()>0?'Still to add':paid()>target()+0.005?'Over — held as credit':'Covered'}</span><b>${left()>0?fmt(left()):paid()>target()+0.005?fmt(paid()-target()):'✓'}</b></div>
+      </div>
+      <div class="pay-foot">
+       <label style="margin:0;display:flex;gap:6px;align-items:center;font-size:12.5px"><input type="checkbox" id="rsms" checked style="width:auto"> text the receipt</label>
+       <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="rok" ${parts.length?'':'disabled'}>Complete <i class="kbd">F12</i></button></div>
+      </div>
+     </div></div>`;
+    bind(); if(focus) focus();
   };
+  const subForm=()=>{
+    const banks=S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('');
+    const amtF=`<div class="f"><label>Amount</label><input id="sfAmt" type="number" step="any" value="${left()||''}"></div>`;
+    if(mode==='CHEQUE') return `<div class="pay-sub"><div class="pay-h">Cheque</div>${amtF}
+      <div class="grid2"><div class="f"><label>Cheque number</label><input id="sfNo" placeholder="e.g. 556201" autocomplete="off"></div>
+       <div class="f"><label>Cheque date</label><input id="sfDate" type="date" value="${D(today)}"></div></div>
+      <div class="f"><label>Drawn on (their bank)</label><input id="sfBank" placeholder="e.g. HNB Kaduruwela" list="sfBanks" autocomplete="off"><datalist id="sfBanks">${[...new Set(S.cheques.filter(x=>x.dir==='RECEIVED').map(x=>x.bank).filter(Boolean))].map(b=>`<option value="${b}">`).join('')}</datalist></div>
+      <div class="pay-subacts"><button class="btn ghost" id="sfBack">Back <i class="kbd">Esc</i></button><button class="btn tape" id="sfOk">Add cheque <i class="kbd">Enter</i></button></div></div>`;
+    if(mode==='CARD') return `<div class="pay-sub"><div class="pay-h">Card</div>${amtF}
+      <div class="grid2"><div class="f"><label>Settles into</label><select id="sfInto">${banks}</select></div>
+       <div class="f"><label>Slip / approval no</label><input id="sfNo" placeholder="optional" autocomplete="off"></div></div>
+      <div class="pay-subacts"><button class="btn ghost" id="sfBack">Back <i class="kbd">Esc</i></button><button class="btn tape" id="sfOk">Add card payment <i class="kbd">Enter</i></button></div></div>`;
+    return `<div class="pay-sub"><div class="pay-h">Bank transfer</div>${amtF}
+      <div class="grid2"><div class="f"><label>Into our account</label><select id="sfInto">${banks}</select></div>
+       <div class="f"><label>Reference</label><input id="sfNo" placeholder="transfer ref, optional" autocomplete="off"></div></div>
+      <div class="pay-subacts"><button class="btn ghost" id="sfBack">Back <i class="kbd">Esc</i></button><button class="btn tape" id="sfOk">Add transfer <i class="kbd">Enter</i></button></div></div>`;
+  };
+  const addCash=()=>{ const v=+(g('#ra')||{}).value||0; if(!(v>0)) return toast('Enter an amount'); parts.push({method:'CASH',amount:+v.toFixed(2)}); typed=null; draw(()=>{ if(left()>0){ g('#ra').focus(); g('#ra').select() } else g('#rok').focus() }) };
+  const start=(pm)=>{ if(pm==='CASH') return addCash(); mode=pm; draw(()=>{ const f=g(mode==='CHEQUE'?'#sfNo':'#sfAmt'); if(f){f.focus(); if(f.select) f.select()} }) };
+  const addSub=()=>{
+    const v=+g('#sfAmt').value||0; if(!(v>0)) return toast('Enter an amount');
+    if(mode==='CHEQUE'){ const no=g('#sfNo').value.trim(); if(!no) { toast('Enter the cheque number'); return g('#sfNo').focus() }
+      parts.push({method:'CHEQUE',amount:+v.toFixed(2),ref:no,chq:{no,date:g('#sfDate').value||D(today),bank:g('#sfBank').value.trim()}}) }
+    else parts.push({method:mode,amount:+v.toFixed(2),ref:g('#sfNo').value.trim(),bank:+g('#sfInto').value});
+    mode=null; typed=null; draw(()=>{ if(left()>0){ g('#ra').focus(); g('#ra').select() } else g('#rok').focus() });
+  };
+  const complete=()=>{
+    if(!parts.length) return toast('Nothing to record');
+    const msgsBefore=S.messages.length;
+    const rvs=parts.map(p=>receiveCustomer({customerId:id,amount:p.amount,method:p.method,bank:p.bank,ref:p.ref,chq:p.chq,against:[...sel]}));
+    if(!g('#rsms').checked) S.messages.splice(0,S.messages.length-msgsBefore);
+    m.remove(); render(); receiptVoucherCombined(rvs);
+  };
+  const bind=()=>{
+    const iq=g('#iq'); iq.oninput=ev=>{q=ev.target.value;draw(()=>{const n=g('#iq');n.focus();n.setSelectionRange(n.value.length,n.value.length)})};
+    m.querySelectorAll('[data-pick]').forEach(cb=>cb.onchange=()=>{cb.checked?sel.add(cb.dataset.pick):sel.delete(cb.dataset.pick); typed=null; draw(()=>{ const r=g('#ra'); if(r){r.focus();r.select()} })});
+    m.querySelectorAll('[data-adj]').forEach(b=>b.onclick=()=>adjustSaleModal(b.dataset.adj,()=>{sel.delete(b.dataset.adj);draw()}));
+    m.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>start(b.dataset.pm));
+    m.querySelectorAll('[data-px]').forEach(b=>b.onclick=()=>{ parts.splice(+b.dataset.px,1); draw(()=>{ const r=g('#ra'); if(r){r.focus();r.select()} }) });
+    const ra=g('#ra'); if(ra){ ra.oninput=()=>{typed=ra.value}; ra.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();e.stopPropagation();addCash()} } }
+    const ok=g('#rok'); ok.onclick=complete;
+    const sfOk=g('#sfOk'); if(sfOk){ sfOk.onclick=addSub; g('#sfBack').onclick=()=>{ mode=null; draw(()=>{g('#ra').focus()}) };
+      // Enter walks the boxes of the sub-form, then adds
+      const order=[...m.querySelectorAll('.pay-sub input,.pay-sub select')];
+      order.forEach((el,i)=>el.addEventListener('keydown',e=>{ if(e.key!=='Enter') return; e.preventDefault(); e.stopPropagation(); const nx=order[i+1]; if(nx){ nx.focus(); if(nx.select) nx.select() } else addSub() })) }
+    if(firstFocus){ firstFocus=false; const r=g('#ra'); if(r){ r.focus(); r.select() } }
+  };
+  // window-wide keys
+  m.addEventListener('keydown',e=>{
+    const tag=(e.target||{}).tagName, textBox=/^(INPUT|TEXTAREA|SELECT)$/.test(tag)&&e.target.type!=='number'&&e.target.type!=='checkbox';
+    if(e.key==='F12'){ e.preventDefault(); e.stopPropagation(); return complete() }
+    if(e.key==='F8'&&!mode){ e.preventDefault(); e.stopPropagation(); return start('CHEQUE') }
+    if(e.key==='F9'&&!mode){ e.preventDefault(); e.stopPropagation(); return start('CARD') }
+    if((e.key==='b'||e.key==='B')&&!mode&&!textBox){ e.preventDefault(); e.stopPropagation(); return start('BANK') }
+    if(e.key==='Delete'&&!mode&&!textBox&&parts.length){ e.preventDefault(); e.stopPropagation(); parts.pop(); return draw(()=>{ const r=g('#ra'); if(r){r.focus();r.select()} }) }
+    if(e.key==='Escape'&&mode){ e.preventDefault(); e.stopPropagation(); mode=null; return draw(()=>{g('#ra').focus()}) }
+  },true);
   draw();
+}
+/* one voucher for a payment that came in parts */
+function receiptVoucherCombined(rvs){
+  if(rvs.length===1) return receiptVoucher(rvs[0]);
+  const first=rvs[0], c=C(first.customerId), total=rvs.reduce((a,r)=>a+r.amount,0);
+  voucherPrint({title:'Receipt Voucher',no:first.voucher,date:first.date,payee:c.name,payeeLabel:'RECEIVED FROM',
+    payeeSub:`${c.phone||''}${c.code?' · account '+c.code:''}`,amount:total,totalLabel:'AMOUNT RECEIVED',
+    rows:[['Receipt numbers',rvs.map(r=>r.no).join(', ')],['Against',(first.against&&first.against.length)?first.against.join(', '):'oldest bills first'],
+      ['Balance after this payment',fmt(partyBal('C',c.id))],['Received by',first.by||S.user.name]],
+    linesLabel:'How it was paid',
+    lines:rvs.map(r=>[`${r.method}${r.ref?` · ${r.method==='CHEQUE'?'cheque #':''}${r.ref}`:''}${r.chq&&r.chq.bank?` · ${r.chq.bank}`:''}${r.chq&&r.chq.date?` · dated ${r.chq.date}`:''}${r.bank&&r.method!=='CHEQUE'?` → ${B(r.bank).name}`:''}`,r.amount]),
+    thirdSign:'CUSTOMER'});
 }
 function statement(id,mode){
   const c=C(id), open=S.sales.filter(s=>s.customerId===id&&s.balance>0).sort((a,b)=>a.date.localeCompare(b.date));
@@ -12875,6 +13005,7 @@ document.addEventListener('click',e=>{
     newProd:()=>productModal(), editProd:()=>{closeModals();productModal(+a.dataset.id)}, prodHist:()=>productHistory(+a.dataset.id),
     custQ:()=>{}, stmtPrint:()=>statement(+a.dataset.id,'print'), stmtSms:()=>statement(+a.dataset.id,'sms'),
     custNew:()=>custModal(null,a.dataset.q||custQ), custEdit:()=>custModal(+a.dataset.id),
+    rcpt:()=>{ const rv=S.payments.find(p=>p.no===a.dataset.no&&p.dir==='IN'); if(rv) receiptVoucher(rv); else toast('No such receipt') },
     custBill:()=>{ const c=C(+a.dataset.id); S.pos.customer=c.id; if(typeof repriceToCustomer==='function') repriceToCustomer(c.id); go('pos'); toast(`New bill for ${c.name}`) },
     custRemove:()=>{ const c=C(+a.dataset.id); if(partyBal('C',c.id)>0.005) return toast('Settle the account first');
       if(!confirm(`Remove ${c.name} from the customer list? Their bills stay on the books.`)) return;

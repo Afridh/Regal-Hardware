@@ -18,6 +18,15 @@ await pg.evaluate(() => { go('pos'); csStart(1); csCommit(); csStart(2); csCommi
 await new Promise(r => setTimeout(r, 300));
 if (process.argv[5] === 'hits') { await pg.focus('#csQ'); await pg.keyboard.type('ce'); await new Promise(r => setTimeout(r, 300)); }
 if (process.argv[5] === 'edit') { await pg.evaluate(() => csLineEdit(1)); await new Promise(r => setTimeout(r, 300)); }
+if (process.argv[5] === 'pay') {                             // the customer payment window with a cash part and the cheque form open
+  await pg.evaluate(() => { S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill }; custSel = 2; go('customers'); custPayModal(2); });
+  await new Promise(r => setTimeout(r, 300));
+  await pg.evaluate(() => { const ra = document.getElementById('ra'); ra.value = '50000'; ra.dispatchEvent(new Event('input')); ra.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+  await new Promise(r => setTimeout(r, 200));
+  await pg.evaluate(() => document.getElementById('ra').dispatchEvent(new KeyboardEvent('keydown', { key: 'F8', bubbles: true })));
+  await new Promise(r => setTimeout(r, 300));
+  await pg.screenshot({ path: out }); await b.close(); console.log('wrote ' + out); process.exit(0);
+}
 if ((process.argv[5] || '').startsWith('view:')) {           // any other page, e.g. view:customers
   const v = process.argv[5].slice(5);
   await pg.evaluate(v => { S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill }; const [view, tab] = v.split('/'); if (tab && view === 'customers') custTab = tab; go(view); }, v);
