@@ -41,8 +41,14 @@ h2{font-family:Archivo,sans-serif;font-weight:700;font-size:15px;letter-spacing:
 #app{display:grid;height:100vh;grid-template-columns:226px 1fr;grid-template-rows:52px 1fr;
  grid-template-areas:"head head" "nav main"}
 header{grid-area:head}
-nav{grid-area:nav}
-main{grid-area:main}
+nav{grid-area:nav;min-height:0}
+main{grid-area:main;overflow:auto;min-height:0}
+/* with the menu down the side the header is not needed on a desk: the menu carries the brand, the bell and sign out */
+@media (min-width:901px){
+ body:not(.navtop) header{display:none}
+ body:not(.navtop) #app{grid-template-rows:1fr;grid-template-areas:"nav main"}
+ body:not(.navtop).withPhone #app{grid-template-areas:"nav main phone"}
+}
 #phoneWrap{grid-area:phone}
 body.withPhone #app{grid-template-columns:226px 1fr 392px;grid-template-areas:"head head head" "nav main phone"}
 header{grid-column:1/-1;background:var(--ink);color:#fff;display:flex;align-items:center;gap:16px;padding:0 16px;
@@ -69,6 +75,16 @@ nav .navmin{width:26px;height:26px;flex:0 0 26px;border-radius:50%;background:rg
  display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s}
 nav .navmin .nvi{width:14px;height:14px;flex:0 0 14px}
 nav .navmin:hover{background:var(--chip-yellow);color:#101E22;border-color:var(--chip-yellow)}
+nav .navtop2{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.08)}
+nav .navtop2 .bellwrap .bell{width:32px;height:32px;padding:0;display:flex;align-items:center;justify-content:center;border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.05);border-radius:9px}
+nav .navtop2 .bellwrap .bell:hover{background:rgba(255,255,255,.12)}
+nav .navtop2 .bellpanel{position:fixed;left:236px;right:auto;top:64px;z-index:60;box-shadow:var(--shadow-lift)}
+body.navmini nav .navtop2 .bellpanel{left:76px}
+nav .navsaved{flex:1;font-size:11px;color:#8DA09A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+nav .navsignout{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#E6ECEA;border-radius:9px;
+ padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s}
+nav .navsignout .nvi{width:14px;height:14px;flex:0 0 14px}
+nav .navsignout:hover{background:var(--chip-rust);border-color:var(--chip-rust);color:#fff}
 nav .navlist{flex:1;overflow-y:auto;overflow-x:hidden;padding:6px 8px 12px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent}
 nav .navlist::-webkit-scrollbar{width:6px}nav .navlist::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:99px}
 nav .grp{display:flex;align-items:center;gap:8px;font-family:Archivo,sans-serif;font-size:10px;font-weight:700;
@@ -109,6 +125,9 @@ body.navmini #app{grid-template-columns:66px 1fr}
 body.navmini.withPhone #app{grid-template-columns:66px 1fr 392px}
 body.navmini nav .navbrand{flex-direction:column;gap:8px;padding:12px 8px 10px}
 body.navmini nav .navbrand .bname{display:none}
+body.navmini nav .navtop2{flex-direction:column;padding:8px 6px}
+body.navmini nav .navsaved,body.navmini nav .navsignout span{display:none}
+body.navmini nav .navsignout{padding:6px}
 body.navmini nav .navlist{padding:6px 10px 12px}
 body.navmini nav button[data-view]{justify-content:center;padding:4px 0;gap:0}
 body.navmini nav button[data-view] span,body.navmini nav .k{display:none}
@@ -7031,7 +7050,7 @@ function persist(force){ clearTimeout(saveTimer); saveTimer=setTimeout(async()=>
   lastSavedTxt=txt;
   const ok=await store.set({v:1,at:new Date().toISOString(),S:snapshot(),CFG});
   if(!ok) lastSavedTxt='';                       // so the next change tries again
-  lastSaved=ok?new Date():null; ['savedAt','csSync'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=ok?'saved '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'not saved' });
+  lastSaved=ok?new Date():null; ['savedAt','savedAtNav','csSync'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=ok?'saved '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'not saved' });
 },400) }
 window.markSaved=()=>{ lastSavedTxt=snapshotTxt() };   // books just came from the server: nothing to push back
 function applyKept(kept){
@@ -8154,19 +8173,21 @@ function renderNav(){
         <button class="navmin" data-act="navMin" title="${pref('collapsed')?'Widen the menu':'Narrow the menu'}">
          <svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="${pref('collapsed')?'M9 6l6 6-6 6':'M15 6l-6 6 6 6'}"/></svg></button>
        </div>
+       <div class="navtop2"><div class="bellwrap"></div><span class="navsaved" id="savedAtNav">${lastSaved?'saved '+lastSaved.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):''}</span>
+        <button class="navsignout" data-act="navSignOut"><svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17l5-5-5-5M15 12H3M21 4v16"/></svg><span>Sign out</span></button></div>
        <div class="navlist">` +
       items.map(v=>v[0]==='grp'
         ? `<div class="grp"><span>${v[1]}</span><i>${v[1]}</i></div>`
         : `<button class="${S.view===v[0]?'on':''}" data-view="${v[0]}" title="${v[1]}">
             <i class="ic">${icon(v[0])}</i><span>${v[1]}</span>${v[2]?`<em class="k">${v[2]}</em>`:''}${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}<i class="tip">${v[1]}${v[2]?' · '+v[2]:''}</i></button>`).join('')
       +`</div>
-       <div class="navuser"><span class="avatar">${initial}</span><span class="who"><b>${S.user.name}</b><small>${S.user.role} · ${S.drawer&&S.drawer.opened?'drawer since '+S.drawer.opened:'signed in'}</small></span>
-        <button class="navout" data-act="navSignOut" title="Sign out"><svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17l5-5-5-5M15 12H3M21 4v16"/></svg></button></div>`
+       <div class="navuser"><span class="avatar">${initial}</span><span class="who"><b>${S.user.name}</b><small>${S.user.role} · ${S.drawer&&S.drawer.opened?'drawer since '+S.drawer.opened:'signed in'} · ${today.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</small></span></div>`
     : items.map(v=>v[0]==='grp'
         ? `<div class="grp"><span>${v[1]}</span></div>`
         : `<button class="${S.view===v[0]?'on':''}" data-view="${v[0]}" title="${v[1]}${v[2]?' · '+v[2]:''}">
             ${icon(v[0])}<span>${v[1]}</span>${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}</button>`).join('');
   $('#hdr').innerHTML=`${S.user.name}, ${S.user.role.toLowerCase()} &nbsp;|&nbsp; till ${S.terminal}, drawer open since ${S.drawer.opened}<br>${today.toDateString()}`;
+  if(side&&S.notif) drawBell();                       // the menu has its own bell now that the header is out of the way
 }
 
 function go(v){ if(!allowed(v)){toast('That is not open to '+S.user.name);return} document.body.classList.remove('drawer');
@@ -8184,16 +8205,15 @@ function notify(kind,text,view,opts){
   S.notif=S.notif.slice(0,60);
   drawBell();
   // the ring goes on after the bell is redrawn, or it would be wiped straight off
-  const b=document.getElementById('bellBtn');
-  if(b){ b.classList.remove('ring'); void b.offsetWidth; b.classList.add('ring') }
+  document.querySelectorAll('.bell').forEach(b=>{ b.classList.remove('ring'); void b.offsetWidth; b.classList.add('ring') });
 }
 const NKIND={order:'📦',money:'₨',cheque:'🧾',stock:'📉',people:'👤',warn:'⚠',approval:'✅'};
 const notifMine=(n)=>!(n.forUser&&n.forUser!==(S.user||{}).name)&&!(n.forApprovers&&typeof canApprove==='function'&&!canApprove());
 function drawBell(){
-  const wrap=document.getElementById('bell'); if(!wrap) return;
+  const wraps=[...document.querySelectorAll('.bellwrap')]; if(!wraps.length) return;
   const mine=S.notif.filter(notifMine);
   const unread=mine.filter(n=>!n.read).length;
-  wrap.innerHTML=`<button class="bell" id="bellBtn" data-act="bellOpen" title="What has changed">
+  wraps.forEach((wrap,i)=>wrap.innerHTML=`<button class="bell" ${i===0?'id="bellBtn"':''} data-act="bellOpen" title="What has changed">
      <svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
       <path d="M18 8a6 6 0 10-12 0c0 7-3 8-3 8h18s-3-1-3-8M13.7 21a2 2 0 01-3.4 0"/></svg>
      ${unread?`<i class="bdot">${unread>9?'9+':unread}</i>`:''}</button>
@@ -8202,7 +8222,7 @@ function drawBell(){
       ${mine.length?`<button class="btn ghost sm" data-act="bellClear">Mark all read</button>`:''}</div>
      ${mine.length?mine.map(n=>`<button class="bp-i ${n.read?'':'new'}" data-act="bellGo" data-id="${n.id}">
        <span class="bp-k">${NKIND[n.kind]||'•'}</span><span class="bp-t">${n.text}</span><span class="bp-w">${n.at}</span></button>`).join('')
-      :'<div class="muted" style="padding:14px">Nothing yet today.</div>'}</div>`:''}`;
+      :'<div class="muted" style="padding:14px">Nothing yet today.</div>'}</div>`:''}`);
 }
 function toast(m){ const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2600) }
 /* the moment a bill is in the books — a tick draws itself, the number counts up */
@@ -8352,7 +8372,7 @@ function renderNow(){ if(S.view!=='board') document.body.classList.remove('board
     const pr=$('#sitePrevReload'); if(pr) pr.onclick=()=>{ const f=$('#sitePrev'); f.src=f.src };
   }
   if(S.view==='settings'||S.view==='site'){
-    document.querySelectorAll('[data-settab]').forEach(b=>b.onclick=()=>{setTab=b.dataset.settab;render()});
+    document.querySelectorAll('[data-settab]').forEach(b=>b.onclick=()=>{setTab=b.dataset.settab;render();$('#main').scrollTop=0});
     document.querySelectorAll('[data-set]').forEach(el=>{
       const [g,k]=el.dataset.set.split('.');
       if(g==='web'){ el.onchange=()=>{ const cur=S.web.settings[k];
@@ -13489,7 +13509,7 @@ function shopLock(){
 
 /* ---- events ---- */
 document.addEventListener('click',e=>{
-  if(S.notifOpen&&!e.target.closest('#bell')){ S.notifOpen=false; drawBell() }
+  if(S.notifOpen&&!e.target.closest('.bellwrap')){ S.notifOpen=false; drawBell() }
   const nb=e.target.closest('[data-view]'); if(nb){go(nb.dataset.view);return}
   const tb=e.target.closest('[data-tab]'); if(tb){invTab=tb.dataset.tab;render();return} const ab=e.target.closest('[data-acc]'); if(ab){accTab=ab.dataset.acc;render();return}
   const a=e.target.closest('[data-act]'); if(!a)return; e.preventDefault(); const act=a.dataset.act;
@@ -13573,7 +13593,7 @@ document.addEventListener('click',e=>{
     webOpenSite:()=>go('site'),
     webSettings:()=>{go('site'); siteTab='overview'; render()},
     navSignOut:()=>{ const b=document.getElementById('logoutBtn'); if(b) b.click() },
-    siteTab:()=>{siteTab=a.dataset.t;render()},
+    siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
     siteShow:()=>{siteShow=a.dataset.v;render()},
     siteFeat:()=>{const p=P(+a.dataset.id); p.featured=!p.featured; render()},
     prodEditSite:()=>productModal(+a.dataset.id),
