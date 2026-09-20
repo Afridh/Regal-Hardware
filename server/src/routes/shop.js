@@ -12,13 +12,16 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { query } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
-import { sendViaProvider } from './regal.js';
+import { sendViaProvider, regalAuth } from './regal.js';
 
 const r = Router();
 const TZ = process.env.SHOP_TZ || 'Asia/Colombo';
 const OTP_WINDOW_MS = 5 * 60 * 1000;
 
-// ---------------------------------------------------------------- table
+// ---------------------------------------------------------------- tables
+// shop_media holds the pictures the site shows — product photos (p:<id>), category pictures
+// (c:<name>), the slides and banners on the home page (s:1…, b:1…) and the site logo.  They are
+// uploaded from the till and never go into the books document, which stays small.
 let ready = null;
 export function ensureShopTables() {
   if (!ready) ready = query(`
@@ -32,8 +35,24 @@ export function ensureShopTables() {
       imported_at timestamptz
     );
     CREATE INDEX IF NOT EXISTS shop_orders_phone ON shop_orders (phone);
-    CREATE INDEX IF NOT EXISTS shop_orders_pending ON shop_orders (imported_at) WHERE imported_at IS NULL;`).catch(e => { ready = null; throw e; });
+    CREATE INDEX IF NOT EXISTS shop_orders_pending ON shop_orders (imported_at) WHERE imported_at IS NULL;
+    CREATE TABLE IF NOT EXISTS shop_media (
+      key         varchar(80) PRIMARY KEY,
+      mime        varchar(40) NOT NULL,
+      data        bytea NOT NULL,
+      link        varchar(300),
+      updated_at  timestamptz NOT NULL DEFAULT now()
+    );`).catch(e => { ready = null; throw e; });
   return ready;
+}
+
+/** Every picture the site has, keyed, with a version stamp so browsers can cache them hard. */
+async function mediaIndex() {
+  await ensureShopTables();
+  const { rows } = await query(`SELECT key, link, extract(epoch from updated_at)::bigint AS v FROM shop_media`);
+  const m = {};
+  for (const r of rows) m[r.key] = { v: r.v, link: r.link || '' };
+  return m;
 }
 
 // ---------------------------------------------------------------- helpers
@@ -49,21 +68,36 @@ async function books() {
 }
 
 /** What the storefront may know: settings, the shop's contact line, and the sellable list. */
-function catalogOf(data, pending = []) {
+function catalogOf(data, pending = [], media = {}) {
   const S = data?.S || {}, CFG = data?.CFG || {};
-  const w = { open: true, name: 'Regal Hardware Online', domain: 'regalhw.lk', staffPath: '/pos', hours: '', delivery: 0, freeOver: 0, minOrder: 0, payNote: '', level: 'retail', showOutOfStock: false, ...(S.web?.settings || {}) };
+  const w = { open: true, name: 'Regal Hardware Online', domain: 'regalhw.lk', staffPath: '/pos', hours: '', delivery: 0, freeOver: 0, minOrder: 0, payNote: '', level: 'retail', showOutOfStock: false,
+    tagline: '', about: '', email: '', whatsapp: '', facebook: '', instagram: '', youtube: '', color: '', featured: '', ...(S.web?.settings || {}) };
   const held = {};
   for (const o of (S.web?.orders || [])) if (o.status === 'accepted') for (const l of (o.lines || [])) held[l.pid] = (held[l.pid] || 0) + (+l.qty || 0);
   const tracked = !(CFG.stock && CFG.stock.track === false);       // a shop that does not count stock sells everything it lists
+  // what sold in the last 90 days, so the site can show its best sellers
+  const since = new Date(Date.now() - 90 * 864e5).toLocaleDateString('en-CA', { timeZone: TZ });
+  const sold = {};
+  for (const s of (S.sales || [])) if ((s.date || '') >= since) for (const l of (s.lines || [])) sold[l.pid] = (sold[l.pid] || 0) + (+l.qty || 0);
+  const pic = key => media[key] ? `/api/shop/media/${encodeURIComponent(key)}?v=${media[key].v}` : '';
+  const featured = new Set(String(w.featured || '').split(/[,\s]+/).filter(Boolean).map(Number));
   const products = (S.products || []).filter(p => p.active !== false && !p.hidden).map(p => ({
     id: p.id, code: p.code, num: p.num || '', short: p.short || '', name: p.name, cat: p.cat || 'Other', unit: p.unit || '',
     mrp: +p.mrp || 0, price: +(w.level === 'wholesale' ? p.wholesale : p.retail) || 0,
     stock: tracked ? Math.max(0, (+p.stock || 0) - (held[p.id] || 0)) : null,
+    img: pic('p:' + p.id), desc: p.desc || '', warranty: +p.warrantyMonths || 0, sold: sold[p.id] || 0, featured: featured.has(+p.id),
+    tiers: Array.isArray(p.tiers) && p.tiers.length ? p.tiers.map(t => ({ min: +t.min, price: +t.price, label: t.label || '' })) : undefined,
   }));
+  const counts = {};
+  for (const p of products) counts[p.cat] = (counts[p.cat] || 0) + 1;
+  const categories = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).map(c => ({ name: c, count: counts[c], img: pic('c:' + c) }));
+  const strip = prefix => Object.keys(media).filter(k => k.startsWith(prefix)).sort().map(k => ({ src: pic(k), link: media[k].link || '' }));
   return {
-    shop: { name: CFG.shop?.name || 'Regal Hardware', addr: CFG.shop?.addr || '', phone: CFG.shop?.phone || '', tags: CFG.shop?.tags || '' },
-    settings: { open: !!w.open, name: w.name, domain: w.domain, staffPath: w.staffPath || '/pos', hours: w.hours, delivery: +w.delivery || 0, freeOver: +w.freeOver || 0, minOrder: +w.minOrder || 0, payNote: w.payNote, showOutOfStock: !!w.showOutOfStock || !tracked, tracked },
-    categories: [...new Set(products.map(p => p.cat))],
+    shop: { name: CFG.shop?.name || 'Regal Hardware', addr: CFG.shop?.addr || '', phone: CFG.shop?.phone || '', land: CFG.shop?.land || '', tags: CFG.shop?.tags || '', hours: CFG.shop?.hours || '', logo: pic('logo') || CFG.shop?.logo || '' },
+    settings: { open: !!w.open, name: w.name, domain: w.domain, staffPath: w.staffPath || '/pos', hours: w.hours, delivery: +w.delivery || 0, freeOver: +w.freeOver || 0, minOrder: +w.minOrder || 0, payNote: w.payNote, showOutOfStock: !!w.showOutOfStock || !tracked, tracked,
+      tagline: w.tagline, about: w.about, email: w.email, whatsapp: w.whatsapp, facebook: w.facebook, instagram: w.instagram, youtube: w.youtube, color: w.color },
+    categories,
+    slides: strip('s:'), banners: strip('b:'),
     products,
     pendingOnline: pending.length,
   };
@@ -142,9 +176,56 @@ export async function pendingCount() {
 // ---------------------------------------------------------------- public API
 r.get('/catalog', asyncHandler(async (_req, res) => {
   const data = await books();
-  if (!data) return res.json({ shop: { name: 'Regal Hardware' }, settings: { open: false, name: 'Regal Hardware Online', hours: 'The shop has not opened its books yet.' }, categories: [], products: [] });
+  if (!data) return res.json({ shop: { name: 'Regal Hardware' }, settings: { open: false, name: 'Regal Hardware Online', hours: 'The shop has not opened its books yet.' }, categories: [], products: [], slides: [], banners: [] });
   res.set('Cache-Control', 'no-store');
-  res.json(catalogOf(data));
+  res.json(catalogOf(data, [], await mediaIndex()));
+}));
+
+// ---------------------------------------------------------------- pictures
+const MEDIA_KEY = /^(p:\d+|c:.{1,60}|s:[1-9]|b:[1-9]|logo)$/;
+
+/** A picture, cached for a year — the catalogue changes the ?v= when it is replaced. */
+r.get('/media/:key', asyncHandler(async (req, res) => {
+  await ensureShopTables();
+  const { rows: [row] } = await query(`SELECT mime, data FROM shop_media WHERE key = $1`, [req.params.key]);
+  if (!row) return res.status(404).end();
+  res.set('Content-Type', row.mime);
+  res.set('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'no-cache');
+  res.send(row.data);
+}));
+
+/** Staff put a picture up from the till: { dataUrl: 'data:image/jpeg;base64,…', link? }. */
+r.post('/media/:key', regalAuth, asyncHandler(async (req, res) => {
+  const key = req.params.key;
+  if (!MEDIA_KEY.test(key)) throw new HttpError(400, 'Not a picture the site uses');
+  const m = /^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(String(req.body?.dataUrl || ''));
+  if (!m) throw new HttpError(400, 'Send a JPEG, PNG or WebP picture');
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > 1.5e6) throw new HttpError(400, 'The picture is too big — keep it under 1.5 MB');
+  const link = String(req.body?.link || '').slice(0, 300);
+  await ensureShopTables();
+  await query(`INSERT INTO shop_media (key, mime, data, link, updated_at) VALUES ($1, $2, $3, $4, now())
+               ON CONFLICT (key) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data, link = EXCLUDED.link, updated_at = now()`, [key, m[1], buf, link]);
+  res.json({ ok: true, key, bytes: buf.length });
+}));
+
+r.delete('/media/:key', regalAuth, asyncHandler(async (req, res) => {
+  await ensureShopTables();
+  const { rowCount } = await query(`DELETE FROM shop_media WHERE key = $1`, [req.params.key]);
+  res.json({ ok: true, removed: rowCount });
+}));
+
+/** Where an order is, for someone who has the order number and the mobile it was placed with. */
+r.post('/track', asyncHandler(async (req, res) => {
+  const no = String(req.body?.no || '').trim().toUpperCase();
+  const phone = digits(req.body?.phone);
+  if (!no || !phone) throw new HttpError(400, 'Enter the order number and the mobile it was placed with');
+  await ensureShopTables();
+  const { rows: [row] } = await query(`SELECT no, data FROM shop_orders WHERE no = $1 AND phone = $2`, [no, phone]);
+  if (!row) throw new HttpError(404, 'No order with that number for that mobile');
+  const data = await books();
+  const b = (data?.S?.web?.orders || []).find(o => o.no === row.no);
+  res.json({ ok: true, order: { no: row.no, date: row.data.date, time: row.data.time, lines: row.data.lines, total: row.data.total, del: row.data.del, deliver: row.data.deliver, status: b?.status || 'placed', invoice: b?.invoice || null, reason: b?.note || '', events: b?.events || row.data.events || [] } });
 }));
 
 /** Step 1 of signing in: a code by SMS. If SMS is not set up, the code comes back in the reply so the site still works. */
@@ -182,12 +263,13 @@ r.get('/me', shopAuth, asyncHandler(async (req, res) => {
   const inBooks = new Map((S.web?.orders || []).map(o => [o.no, o]));
   await ensureShopTables();
   const { rows } = await query(`SELECT no, data, created_at, imported_at FROM shop_orders WHERE phone = $1 ORDER BY id DESC LIMIT 50`, [phone]);
-  const orders = rows.map(row => { const b = inBooks.get(row.no); return { no: row.no, date: row.data.date, time: row.data.time, lines: row.data.lines, total: row.data.total, del: row.data.del, deliver: row.data.deliver, note: row.data.note, status: b?.status || 'placed', invoice: b?.invoice || null, reason: b?.note || '' }; });
+  const orders = rows.map(row => { const b = inBooks.get(row.no); return { no: row.no, date: row.data.date, time: row.data.time, lines: row.data.lines, total: row.data.total, del: row.data.del, deliver: row.data.deliver, address: row.data.address || '', note: row.data.note, status: b?.status || 'placed', invoice: b?.invoice || null, reason: b?.note || '', events: b?.events || row.data.events || [] }; });
   // orders the shop keyed for this customer at the counter show too
   for (const o of (S.web?.orders || [])) if (c && o.cid === c.id && !rows.some(x => x.no === o.no)) orders.push({ no: o.no, date: o.date, time: o.time, lines: o.lines, total: o.total, del: o.del, deliver: o.deliver, note: o.note, status: o.status, invoice: o.invoice || null });
   const owing = c ? (S.sales || []).filter(s => s.customerId === c.id).reduce((a, s) => a + (+s.balance || 0), 0) : 0;
   const bills = c ? (S.sales || []).filter(s => s.customerId === c.id).length : 0;
-  res.json({ ok: true, name: c?.name || name, phone, known: !!c, owing: round2(owing), bills, points: c?.points || 0, orders });
+  const spent = round2(orders.filter(o => !['rejected', 'cancelled'].includes(o.status)).reduce((a, o) => a + (+o.total || 0), 0));
+  res.json({ ok: true, name: c?.name || name, phone, known: !!c, owing: round2(owing), bills, points: c?.points || 0, address: c?.address || '', spent, orders });
 }));
 
 r.post('/order', shopAuth, asyncHandler(async (req, res) => {
@@ -211,14 +293,15 @@ r.post('/order', shopAuth, asyncHandler(async (req, res) => {
   const short = lines.filter(l => byId.get(l.pid).stock !== null && byId.get(l.pid).stock < l.qty).map(l => l.name);
   const address = String(req.body?.address || '').trim().slice(0, 300);
   const note = String(req.body?.note || '').trim().slice(0, 300);
+  const pay = { cod: 'cash on delivery', counter: 'pays at the counter', bank: 'bank transfer' }[req.body?.pay] || '';
   await ensureShopTables();
   const { rows: [{ id }] } = await query(`INSERT INTO shop_orders (no, phone, name, data) VALUES ('pending', $1, $2, '{}') RETURNING id`, [phone, name]);
   const no = 'ONL-' + String(id).padStart(5, '0');
   const order = {
     date: localDate(), time: localTime(),
     lines: lines.map(l => ({ pid: l.pid, qty: l.qty, price: l.price })),
-    del, total: round2(goods + del), deliver, address,
-    note: [address, note, short.length ? 'may be short: ' + short.join(', ') : ''].filter(Boolean).join(' · '),
+    del, total: round2(goods + del), deliver, address, pay: req.body?.pay || '',
+    note: [address, pay, note, short.length ? 'may be short: ' + short.join(', ') : ''].filter(Boolean).join(' · '),
     events: [{ by: name, at: localTime(), what: 'Order placed on the website' }],
   };
   await query(`UPDATE shop_orders SET no = $2, data = $3 WHERE id = $1`, [id, no, JSON.stringify(order)]);

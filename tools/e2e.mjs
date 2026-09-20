@@ -411,6 +411,23 @@ let webNo = null;
   ok('W: customer sees the shop\'s status change', me2.orders.find(o => o.no === order.no).status === 'accepted');
   const cat2 = await j('/api/shop/catalog');
   ok('W: accepted order holds stock on the site', cat2.products.find(p => p.id === p1.id).stock === p1.stock - 2);
+  // pictures: staff put them up, the site gets a cacheable link, nobody else may write
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const noStaff = await j('/api/shop/media/p:' + p1.id, { method: 'POST', body: { dataUrl: png } });
+  ok('W: a picture needs a staff sign-in', noStaff.status === 401);
+  const up = await j('/api/shop/media/p:' + p1.id, { method: 'POST', headers: { Authorization: 'Bearer ' + tok }, body: { dataUrl: png } });
+  const cat3 = await j('/api/shop/catalog');
+  const img = cat3.products.find(p => p.id === p1.id).img;
+  const got = await fetch(BASE + img);
+  ok('W: product photo is on the site', up.status === 200 && /^\/api\/shop\/media\/p%3A\d+\?v=\d+$/.test(img) && got.status === 200 && got.headers.get('content-type') === 'image/png' && /immutable/.test(got.headers.get('cache-control')), img);
+  const bad = await j('/api/shop/media/x:1', { method: 'POST', headers: { Authorization: 'Bearer ' + tok }, body: { dataUrl: png } });
+  ok('W: only known picture slots are accepted', bad.status === 400);
+  const rm = await j('/api/shop/media/p:' + p1.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + tok } });
+  const cat4 = await j('/api/shop/catalog');
+  ok('W: photo taken down again', rm.removed === 1 && cat4.products.find(p => p.id === p1.id).img === '' && cat4.categories.length > 0 && typeof cat4.products[0].sold === 'number');
+  const track = await j('/api/shop/track', { method: 'POST', body: { no: order.no, phone: '0771234567' } });
+  const trackBad = await j('/api/shop/track', { method: 'POST', body: { no: order.no, phone: '0770000000' } });
+  ok('W: order tracked by number + mobile, not by number alone', track.status === 200 && track.order.status === 'accepted' && trackBad.status === 404);
 }
 
 // ---------------------------------------------------------------- till B: another PC, same books

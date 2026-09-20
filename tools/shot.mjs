@@ -7,8 +7,22 @@ const out = process.argv[2] || 'till.png', W = +(process.argv[3] || 1366), H = +
 const exe = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
 const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['--no-sandbox'] });
 const pg = await b.newPage(); await pg.setViewport({ width: W, height: H });
-await pg.goto(BASE + (process.argv[5] === 'shop' ? '/' : '/pos'), { waitUntil: 'networkidle2' });
-if (process.argv[5] === 'shop') { await new Promise(r => setTimeout(r, 800)); await pg.screenshot({ path: out }); await b.close(); console.log('wrote ' + out); process.exit(0); }
+const pageErrs = []; pg.on('pageerror', e => pageErrs.push(e.message));
+const shopMode = /^shop(cart)?(#.*)?$/.exec(process.argv[5] || '');   // shop, shop#/search?q=nail, shopcart#/checkout (cart seeded with 3 items)
+await pg.goto(BASE + (shopMode ? '/' : '/pos'), { waitUntil: 'networkidle2' });
+if (shopMode) {
+  if (shopMode[1]) {                                                    // seed a basket and a signed-in customer so cart/checkout/account pages have something to show
+    const cat = await (await fetch(BASE + '/api/shop/catalog')).json();
+    const ids = cat.products.filter(p => p.stock === null || p.stock > 0).slice(0, 3).map(p => p.id);
+    const otp = await (await fetch(BASE + '/api/shop/otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: '0771234567' }) })).json();
+    const login = await (await fetch(BASE + '/api/shop/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: '0771234567', code: otp.code, name: 'Sunil Perera' }) })).json();
+    await pg.evaluate((ids, login) => { localStorage.setItem('rh_cart', JSON.stringify(ids.map((pid, i) => ({ pid, qty: i + 1, sel: true })))); localStorage.setItem('rh_wish', JSON.stringify(ids.slice(0, 2)));
+      if (login.token) { localStorage.setItem('rh_token', JSON.stringify(login.token)); localStorage.setItem('rh_name', JSON.stringify(login.name)); localStorage.setItem('rh_phone', JSON.stringify(login.phone)); } }, ids, login);
+  }
+  if (shopMode[2]) { await pg.goto(BASE + '/' + shopMode[2], { waitUntil: 'networkidle2' }); await pg.reload({ waitUntil: 'networkidle2' }); }   // a hash-only change does not reload, and the seeded storage must be read at boot
+  await new Promise(r => setTimeout(r, 1200));
+  await pg.screenshot({ path: out, fullPage: process.argv[6] === 'full' }); await b.close(); console.log('wrote ' + out + (pageErrs.length ? ' ERRORS ' + pageErrs.join(' | ') : '')); process.exit(0);
+}
 await pg.waitForSelector('#lockScreen', { timeout: 15000 });
 await pg.click('[data-user="Afridh"]'); await pg.waitForSelector('#lockPw');
 await pg.type('#lockPw', 'afridh123'); await pg.click('#lockGo');

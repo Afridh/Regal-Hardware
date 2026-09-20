@@ -1522,6 +1522,9 @@ tr.rowlink button{cursor:pointer}
 .logo-box img{max-width:120px;max-height:64px}
 .billprev{overflow:auto;background:#e6e9e8;padding:8px;border-radius:var(--r)}
 .billprev.r80{zoom:.9}.billprev.r80 .print{margin:0 auto}
+.mediagrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px 16px}
+.mediapic{width:120px;height:72px;border:1px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none;border-radius:4px}
+.mediapic img{max-width:100%;max-height:100%}.mediapic.empty{background:repeating-linear-gradient(45deg,#f4f4f4 0 8px,#fff 8px 16px)}
 .billprev.a5{zoom:.48;width:830px;max-width:none}.billprev.a5 .print{min-height:0!important}
 .sb80 .sb-name{font-size:21px;font-weight:800;letter-spacing:.02em;line-height:1.1}
 .sb80 .sb-sin{font-size:16px;font-weight:700;background:#000;color:#fff;display:inline-block;padding:0 8px;margin:3px 0}
@@ -5968,6 +5971,10 @@ function salaryVoucher(e,p,mk){
 
 /* ---- settings ---- */
 let setTab='shop';
+const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediakey="${key}"><label>${label}</label>
+  <div style="display:flex;gap:10px;align-items:flex-start"><div class="mediapic"><img src="/api/shop/media/${encodeURIComponent(key)}?v=${Date.now()}" onerror="this.parentNode.classList.add('empty');this.remove()"></div>
+   <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
+    <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
 function settings(){
   const tabs=[['screen','My screen'],['done','Finishing a bill'],['site','The shop site'],['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['approvals','Approvals'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
   const fld=(path,label,hint='',type='text')=>{
@@ -6018,7 +6025,23 @@ function settings(){
       ${fld('web.open','','taking orders — untick to close the site','check')}
       ${fld('web.showOutOfStock','','show items that are out of stock, so people can ask','check')}
      </div>
-     <div class="card note" style="margin-top:10px"><b>Stock is held when you accept an order</b>, not when someone puts it in a basket — so the counter never loses a sale to an order nobody has confirmed. The site shows what is left after everything accepted.</div>`;
+     <div class="card note" style="margin-top:10px"><b>Stock is held when you accept an order</b>, not when someone puts it in a basket — so the counter never loses a sale to an order nobody has confirmed. The site shows what is left after everything accepted.</div>
+     <h2 style="margin-top:18px">How the site looks</h2>
+     <div class="grid3">
+      ${fld('web.tagline','Line in the top bar','e.g. Everything for the build, delivered')}
+      ${fld('web.color','Site colour','A hex colour like #d43533 — empty for the standard red')}
+      ${fld('web.featured','Featured product numbers','Product numbers separated by commas — shown first on the home page')}
+     </div>
+     ${fld('web.about','About the shop, in the footer')}
+     <div class="grid3">${fld('web.email','Email')}${fld('web.whatsapp','WhatsApp number')}${fld('web.facebook','Facebook page link')}</div>
+     <div class="grid2">${fld('web.instagram','Instagram link')}${fld('web.youtube','YouTube link')}</div>
+     <h2 style="margin-top:18px">Pictures on the site</h2>
+     <div class="muted" style="margin-bottom:8px">Pictures go straight to the site when chosen — they are kept on the server, not in the books. Product photos are on each product's form.</div>
+     <div class="mediagrid">
+      ${mediaSlot('logo','Site logo','Shown in the header and footer; a wide PNG works best')}
+      ${[1,2,3,4,5].map(i=>mediaSlot('s:'+i,'Home slide '+i,'About 1200 × 460, one after another',true)).join('')}
+      ${[1,2,3].map(i=>mediaSlot('b:'+i,'Banner '+i,'Wide picture under the categories',true)).join('')}
+     </div>`;
   }
   if(setTab==='shop'){
     body=(body||'')+`<div class="card note" style="margin-top:14px"><b>Where the books are kept</b>
@@ -6837,7 +6860,8 @@ const WEB_DEFAULTS={
   level:'retail',showOutOfStock:true,delivery:600,freeOver:25000,minOrder:1000,
   reserveOn:'accept',   // stock is held when the shop accepts, not at checkout
   hours:'Orders taken any time · picked 8.00 am – 6.00 pm',
-  payNote:'Pay on delivery, or at the shop when you collect.'};
+  payNote:'Pay on delivery, or at the shop when you collect.',
+  tagline:'',about:'',email:'',whatsapp:'',facebook:'',instagram:'',youtube:'',color:'',featured:''};   // the storefront's own dressing
 
 /* ---- seed ---- */
 function seed(){
@@ -8178,6 +8202,10 @@ function renderNow(){ if(S.view!=='board') document.body.classList.remove('board
     const st=$('#agentStatus'); if(st){ const url=printAgentUrl();
       if(!url) st.textContent='Browser print box (no helper set)';
       else fetch(url+'/status').then(r=>r.json()).then(j=>{ st.innerHTML=`<span class="tag ok">helper running</span> 80mm → <b>${j.printers.r80}</b> · A5 → <b>${j.printers.a5}</b>` }).catch(()=>{ st.innerHTML='<span class="tag warn">helper not running</span> bills will use the browser\'s print box. Start it with the "Regal print helper" shortcut.' }) }
+    document.querySelectorAll('[data-mediafile]').forEach(el=>{ el.onchange=()=>{ const file=el.files[0]; if(!file) return; const key=el.dataset.mediafile, link=($(`[data-medialink="${key}"]`)||{}).value||'';
+      const pic=el.closest('.mediaslot').querySelector('.mediapic'); pic.classList.remove('empty'); pic.innerHTML=`<img src="${URL.createObjectURL(file)}">`;
+      shopMediaUpload(key,file,key==='logo'?600:1600,link).then(()=>toast('Picture is on the site')).catch(e=>toast('Not saved: '+e.message)) } });
+    document.querySelectorAll('[data-mediarm]').forEach(el=>{ el.onclick=()=>shopMediaDelete(el.dataset.mediarm).then(()=>{ const pic=el.closest('.mediaslot').querySelector('.mediapic'); pic.innerHTML=''; pic.classList.add('empty'); toast('Taken off the site') }).catch(e=>toast(e.message)) });
     if(typeof extBindSettings==='function') extBindSettings();
   }
   const pq=$('#prodQ'); if(pq){ pq.value=prodQ; pq.oninput=e=>{prodQ=e.target.value;render();$('#prodQ').focus()};
@@ -11603,6 +11631,12 @@ function productModal(pid){
    <div class="muted" style="margin-bottom:6px">For goods that are dearer in small pieces — wire off the roll, pipe by the length. Leave it empty and the ordinary price is used.</div>
    <table id="ptiers"></table>
    <button class="btn ghost sm" id="ptAdd" style="margin-top:6px">Add a break</button>
+   <h2 style="margin-top:14px;font-size:14px">On the website</h2>
+   <div class="grid2" style="align-items:start">
+    <div class="f"><label>Photo</label><div style="display:flex;gap:10px;align-items:center"><div id="pphoto" style="width:72px;height:72px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;background:#fff;overflow:hidden;flex:none">${p?`<img src="/api/shop/media/p:${p.id}?v=${Date.now()}" style="max-width:100%;max-height:100%" onerror="this.remove()">`:''}</div>
+     <div><input type="file" id="pphotoFile" accept="image/*" style="padding:6px"><div class="muted">Shown on the shop site. JPEG or PNG; it is shrunk to fit.</div>${p?`<button class="btn ghost sm" id="pphotoClear" style="margin-top:4px">Remove photo</button>`:''}</div></div></div>
+    <div class="f"><label>Description for customers</label><textarea id="pdesc" rows="4" style="width:100%;border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;font:inherit">${(p&&p.desc?String(p.desc):'').replace(/</g,'&lt;')}</textarea><div class="muted">Sizes, brand, what it is for — appears under the product on the site.</div></div>
+   </div>
    ${p?'':`<div class="grid2" style="margin-top:8px">${f('popen','Opening stock',0,'number','Goes into the stock ledger as an opening entry')}</div>`}
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
     <button class="btn ghost" data-act="closeModal">Cancel</button>
@@ -11624,6 +11658,8 @@ function productModal(pid){
   };
   drawTiers();
   m.querySelector('#ptAdd').onclick=()=>{tiers.push({min:'',price:'',label:''});drawTiers()};
+  m.querySelector('#pphotoFile').onchange=()=>{ const f=m.querySelector('#pphotoFile').files[0]; if(f) m.querySelector('#pphoto').innerHTML=`<img src="${URL.createObjectURL(f)}" style="max-width:100%;max-height:100%">` };
+  const pc=m.querySelector('#pphotoClear'); if(pc) pc.onclick=()=>shopMediaDelete('p:'+p.id).then(()=>{ m.querySelector('#pphoto').innerHTML=''; toast('Photo taken off the site') }).catch(e=>toast(e.message));
   const marg=()=>{const cost=g('pcost'),ret=g('pretail'),wh=g('pwhole'),mrp=g('pmrp');
     m.querySelector('#pmarg').innerHTML=cost&&ret
       ? `Counter margin ${fmt(ret-cost)} (${((ret-cost)/ret*100).toFixed(1)}%)${wh?` · wholesale margin ${fmt(wh-cost)} (${((wh-cost)/wh*100).toFixed(1)}%)`:''}${mrp>ret?` · customer saves ${fmt(mrp-ret)} against MRP`:''}`
@@ -11640,9 +11676,12 @@ function productModal(pid){
     const data={code,name,cat:m.querySelector('#pcat').value,unit:m.querySelector('#punit').value,
       barcode:m.querySelector('#pbar').value.trim(),mrp:g('pmrp')||g('pretail'),cost:g('pcost'),
       retail:g('pretail'),wholesale:g('pwhole')||g('pretail'),min:g('pmin'),short,num:p?p.num:nextNum(),
-      warrantyMonths:g('pwar'),serialised:m.querySelector('#pser').checked,
+      warrantyMonths:g('pwar'),serialised:m.querySelector('#pser').checked,desc:m.querySelector('#pdesc').value.trim(),
       tiers:tiers.filter(t=>+t.min>0&&+t.price>0).map(t=>({min:+t.min,price:+t.price,label:(t.label||'').trim()}))};
+    const photo=m.querySelector('#pphotoFile').files[0];
+    const sendPhoto=pid=>{ if(photo) shopMediaUpload('p:'+pid,photo,900).then(()=>toast('Photo is on the site')).catch(e=>toast('Photo not saved: '+e.message)) };
     if(p){
+      sendPhoto(p.id);
       const priceKeys=['mrp','cost','retail','wholesale','tiers'];
       const priceChanged=priceKeys.some(k=>JSON.stringify(p[k]??null)!==JSON.stringify(data[k]??null));
       if(priceChanged&&needsApproval('prodPrice')){
@@ -11650,12 +11689,21 @@ function productModal(pid){
         Object.assign(p,rest);
         return requestApproval('prodPrice',`Change prices of ${p.name}: MRP ${money2(p.mrp)} → ${money2(prices.mrp)}, cost ${money2(p.cost)} → ${money2(prices.cost)}, price ${money2(p.retail)} → ${money2(prices.retail)}, wholesale ${money2(p.wholesale)} → ${money2(prices.wholesale)}`,`${p.code} · ${fq(p.stock)} ${p.unit} in stock`,{pid:p.id,prices}) }
       Object.assign(p,data); m.remove(); render(); toast(`${p.name} updated`) }
-    else{ const np={id:Math.max(...S.products.map(x=>x.id))+1,stock:0,...data}; S.products.push(np);
+    else{ const np={id:Math.max(0,...S.products.map(x=>x.id))+1,stock:0,...data}; S.products.push(np); sendPhoto(np.id);
       const op=g('popen'); if(op>0){ move(np.id,op,'OPENING','New item',np.cost);
         post(D(today),'Opening stock '+np.code,np.code,[{ac:'1200',dr:+(op*np.cost).toFixed(2)},{ac:'3100',cr:+(op*np.cost).toFixed(2)}]) }
       m.remove(); render(); toast(`${name} added${op>0?` with ${fq(op)} ${np.unit} in stock`:''}`) }
   };
 }
+/* pictures for the shop site live in the server's shop_media table, never in the books */
+function shopMediaUpload(key,file,maxPx=900,link=''){
+  return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{ const sc=Math.min(1,maxPx/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
+      const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src);
+      const png=/png|gif|webp/.test(file.type)&&file.size<400000; res(c.toDataURL(png?'image/png':'image/jpeg',0.86)) }; img.onerror=()=>rej(new Error('That file is not a picture')); img.src=URL.createObjectURL(file) })
+    .then(dataUrl=>fetch('/api/shop/media/'+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(window.regalBridge?regalBridge.token():'')},body:JSON.stringify({dataUrl,link})}))
+    .then(async r=>{ const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'upload failed'); return j });
+}
+function shopMediaDelete(key){ return fetch('/api/shop/media/'+encodeURIComponent(key),{method:'DELETE',headers:{'Authorization':'Bearer '+(window.regalBridge?regalBridge.token():'')}}).then(async r=>{ const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'could not remove'); return j }) }
 function productHistory(pid){
   const p=P(pid);
   const sold=[]; S.sales.forEach(s=>s.lines.forEach(l=>{ if(l.pid===pid) sold.push({s,l}) }));
