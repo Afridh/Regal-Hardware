@@ -4,7 +4,12 @@ import jwt from 'jsonwebtoken';
 import { query, withTransaction } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { matches, demoPassword } from '../services/regalHash.js';
-import { injectInbox, markImported, pendingCount } from './shop.js';
+import { injectInbox as injectShopInbox, markImported as markShopImported, pendingCount as pendingShopCount } from './shop.js';
+import { injectSupplierInbox, markSupplierImported, pendingSupplierCount } from './supplier.js';
+// everything that arrived from outside the tills — the website's orders and the suppliers' — in one go
+const injectInbox = async data => (await injectShopInbox(data)) + (await injectSupplierInbox(data));
+const markImported = async data => (await markShopImported(data)) + (await markSupplierImported(data));
+const pendingCount = async () => (await pendingShopCount()) + (await pendingSupplierCount());
 
 const r = Router();
 const BOOKS_KEY = 'regal';

@@ -23,6 +23,7 @@ import adminRoutes from './routes/admin.js';
 import regalRoutes from './routes/regal.js';
 import shiftApi, { reportsDir } from './routes/shiftApi.js';
 import shopRoutes from './routes/shop.js';
+import supplierRoutes from './routes/supplier.js';
 
 if (!process.env.JWT_SECRET) console.error('JWT_SECRET is not set (copy .env.example to .env, or set it in the host\'s environment)');
 
@@ -52,6 +53,8 @@ app.use('/api', regalRoutes);
 app.use('/', shiftApi);
 // the public shop site's API — no sign-in, sees only the catalogue and its own orders
 app.use('/api/shop', shopRoutes);
+// the suppliers' page — reps sign in with the mobile on file, answer the shop's orders, upload the ones they took by hand
+app.use('/api/sup', supplierRoutes);
 // day sheets the Shift Board publishes (on Vercel these live in /tmp, so only until the function is recycled)
 app.use('/reports', express.static(reportsDir));
 
@@ -65,6 +68,7 @@ if (!process.env.VERCEL && fs.existsSync(appDir)) {
   const fresh = (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); };
   app.get('/', fresh, (_req, res) => res.sendFile(path.join(appDir, 'shop.html')));
   app.get(['/pos', '/pos/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'index.html')));
+  app.get(['/supplier', '/supplier/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'supplier.html')));
   app.use(express.static(appDir, { index: false, extensions: ['html'], setHeaders: (res, p) => { if (/\.(html|js)$/.test(p)) res.set('Cache-Control', 'no-store'); } }));
 }
 const dist = path.resolve(here, '../../client/dist');

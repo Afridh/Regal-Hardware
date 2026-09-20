@@ -442,6 +442,50 @@ let webNo = null;
   ok('W: order tracked by number + mobile, not by number alone', track.status === 200 && track.order.status === 'accepted' && trackBad.status === 404);
 }
 
+// ---------------------------------------------------------------- the suppliers' page
+{
+  const j = async (path, opts = {}) => { const r = await fetch(BASE + path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined }); return { status: r.status, ...(await r.json().catch(() => ({}))) }; };
+  const page = await (await fetch(BASE + '/supplier')).text();
+  ok('S: /supplier is the suppliers\' page', /api\/sup/.test(page) && /Send an order/.test(page));
+  const sup = A.w.S.suppliers.find(s => /^0\d{9}$/.test((s.phone || '').replace(/\D/g, '')));
+  const phone = sup.phone.replace(/\D/g, '');
+  const stranger = await j('/api/sup/otp', { method: 'POST', body: { phone: '0700000000' } });
+  ok('S: a mobile not on any supplier is refused', stranger.status === 404);
+  const otp = await j('/api/sup/otp', { method: 'POST', body: { phone } });
+  const login = await j('/api/sup/login', { method: 'POST', body: { phone, code: otp.code, rep: 'Silva' } });
+  ok('S: rep signs in with the supplier\'s mobile', otp.status === 200 && login.status === 200 && login.sid === sup.id && login.rep === 'Silva', login.supplier);
+  const H = { Authorization: 'Bearer ' + login.token };
+  // 1. the rep took an order by hand: photo + note → waits for the owner
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const up = await j('/api/sup/order', { method: 'POST', headers: H, body: { text: '20 bags cement, 10 lengths 25mm PVC', photos: [png, png] } });
+  ok('S: hand-written order uploaded with photos', up.status === 200 && up.photos === 2, JSON.stringify(up));
+  const me1 = await j('/api/sup/me', { headers: H });
+  ok('S: rep sees it as reaching the shop', me1.sent.some(o => o.waiting && o.photos === 2));
+  const landed = await until(() => A.w.S.orders.find(o => o.id === 'sp' + up.id), 20000, 500);
+  ok('A: it landed in Supplier orders by polling, pending, with photo links', !!landed && landed.status === 'pending' && landed.files.length === 2 && /\/api\/sup\/photo\/\d+\?k=/.test(landed.files[0]) && landed.src === 'portal');
+  const pic = await fetch(BASE + landed.files[0]);
+  ok('A: photo opens from its signed link, not without it', pic.status === 200 && pic.headers.get('content-type') === 'image/png' && (await fetch(BASE + landed.files[0].split('?')[0])).status === 404);
+  ok('A: approvers are told', A.w.S.notif.some(n => n.forApprovers && /needs the owner/.test(n.text)));
+  A.w.ordAct('sp' + up.id, 'accepted', 'ok — Thursday'); A.w.persist(); await sleep(1000);
+  const me2 = await j('/api/sup/me', { headers: H });
+  ok('S: rep sees the owner\'s approval', me2.sent.some(o => o.id === 'sp' + up.id && o.status === 'accepted' && /Thursday/.test(o.note)));
+  // 2. the shop writes an order with an item it has never carried; the rep confirms and dispatches it
+  A.w.eval(`poDraft={sid:${sup.id},lines:[{pid:null,desc:'Galvanised bucket 15L',unit:'pcs',qty:12,est:450,known:false}],note:'with the Thursday lorry',want:'',q:''}; sendPO(); closeModals()`);
+  const po = A.w.S.orders.find(o => o.dir === 'OUT' && o.sid === sup.id);
+  ok('A: order to the supplier written with an item not on the system', !!po && po.lines[0].known === false && po.status === 'sent', po && po.no);
+  A.w.persist(); await sleep(1000);
+  const me3 = await j('/api/sup/me', { headers: H });
+  ok('S: rep sees the shop\'s order with the new item', me3.pos.some(o => o.no === po.no && o.lines[0].desc === 'Galvanised bucket 15L' && !o.lines[0].known));
+  const acc = await j('/api/sup/po/' + po.no + '/respond', { method: 'POST', headers: H, body: { action: 'accepted', note: 'Thursday it is' } });
+  const disp = await j('/api/sup/po/' + po.no + '/respond', { method: 'POST', headers: H, body: { action: 'dispatched', invoice: 'INV-4521', eta: '2026-09-25' } });
+  ok('S: rep confirms and marks it dispatched with their invoice number', acc.status === 200 && disp.status === 200);
+  const arrived = await until(() => { const o = A.w.S.orders.find(x => x.no === po.no); return o && o.status === 'dispatched' ? o : null; }, 20000, 500);
+  ok('A: the order shows dispatched with the invoice number and both events', !!arrived && arrived.invoiceNo === 'INV-4521' && arrived.events.filter(e => e.actor === 'supplier').length === 2, arrived && JSON.stringify(arrived.events.map(e => e.action)));
+  A.w.persist(); await sleep(900);
+  const pending = await j('/api/sup/me', { headers: H });
+  ok('S: nothing left pending once the till has saved', !pending.sent.some(o => o.waiting) && !pending.pos.find(o => o.no === po.no).events.some(e => e.pending));
+}
+
 // ---------------------------------------------------------------- till B: another PC, same books
 const B = await openTill('B');
 const lockB = await until(() => B.d.getElementById('lockScreen'));

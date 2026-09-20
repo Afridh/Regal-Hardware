@@ -8,6 +8,19 @@ const exe = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Progra
 const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['--no-sandbox'] });
 const pg = await b.newPage(); await pg.setViewport({ width: W, height: H });
 const pageErrs = []; pg.on('pageerror', e => pageErrs.push(e.message));
+if (/^supplier(:\w+)?$/.test(process.argv[5] || '')) {                 // the suppliers' page, signed in as the first supplier with a mobile; supplier:send / supplier:sent for the other tabs
+  const tok = (await (await fetch(BASE + '/api/books/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: 'Afridh', password: 'afridh123' }) })).json()).token;
+  const books = await (await fetch(BASE + '/api/books/regal', { headers: { Authorization: 'Bearer ' + tok } })).json();
+  const sup = books.data.S.suppliers.find(s => /^0\d{9}$/.test((s.phone || '').replace(/\D/g, '')));
+  const phone = sup.phone.replace(/\D/g, '');
+  const otp = await (await fetch(BASE + '/api/sup/otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone }) })).json();
+  const login = await (await fetch(BASE + '/api/sup/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, code: otp.code, rep: 'Silva' }) })).json();
+  await pg.goto(BASE + '/supplier', { waitUntil: 'networkidle2' });
+  await pg.evaluate((t, p) => { localStorage.setItem('rs_token', JSON.stringify(t)); localStorage.setItem('rs_phone', JSON.stringify(p)); localStorage.setItem('rs_rep', JSON.stringify('Silva')); }, login.token, phone);
+  await pg.reload({ waitUntil: 'networkidle2' }); await new Promise(r => setTimeout(r, 800));
+  const tab = (process.argv[5].split(':')[1]) || ''; if (tab) { await pg.evaluate(t => { st.tab = t; render(); }, tab); await new Promise(r => setTimeout(r, 300)); }
+  await pg.screenshot({ path: out, fullPage: process.argv[6] === 'full' }); await b.close(); console.log('wrote ' + out + (pageErrs.length ? ' ERRORS ' + pageErrs.join(' | ') : '')); process.exit(0);
+}
 const shopMode = /^shop(cart)?(#.*)?$/.exec(process.argv[5] || '');   // shop, shop#/search?q=nail, shopcart#/checkout (cart seeded with 3 items)
 await pg.goto(BASE + (shopMode ? '/' : '/pos'), { waitUntil: 'networkidle2' });
 if (shopMode) {
