@@ -198,32 +198,138 @@ r.post('/sms/send', regalAuth, asyncHandler(async (req, res) => {
 // ---------------------------------------------------------------- WhatsApp (Meta Business Cloud API)
 // The till's WhatsApp buttons open a chat on the PC unless Settings → Messaging chooses the Cloud API;
 // then the message comes here and goes out through Meta with the token kept on the server.
-export async function sendViaWhatsApp(cfg, to, message) {
+const GRAPH = 'https://graph.facebook.com/v20.0';
+async function graph(cfg, path, opts = {}) {
+  const resp = await fetch(GRAPH + path, { ...opts, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + cfg.waToken, ...(opts.headers || {}) }, signal: AbortSignal.timeout((+cfg.timeout || 30) * 1000) });
+  const j = await resp.json().catch(() => ({}));
+  if (!resp.ok || j.error) throw new HttpError(502, 'WhatsApp: ' + (j.error?.message || ('HTTP ' + resp.status)) + (j.error?.error_user_msg ? ' — ' + j.error.error_user_msg : ''));
+  return j;
+}
+/**
+ * Free text, or an approved template ({ name, lang, params:[…] }).  Free text only reaches a customer
+ * who has messaged the shop in the last 24 hours; everything else — a bill after a sale, a statement —
+ * has to be a template Meta has approved (Settings → Messaging → WhatsApp → Templates).
+ */
+export async function sendViaWhatsApp(cfg, to, message, template) {
   if (!cfg?.waPhoneId || !cfg?.waToken) throw new HttpError(400, 'WhatsApp Cloud API is not set up (Settings → Messaging → WhatsApp)');
   if (heldByTestMode(cfg, to)) throw new HttpError(400, `Held — test mode: messages only go to ${cfg.testOnly}`);
   const contact = intlPhone(to);
   if (!/^94\d{9}$/.test(contact)) throw new HttpError(400, `Not a Sri Lankan mobile: ${to}`);
-  const resp = await fetch(`https://graph.facebook.com/v20.0/${encodeURIComponent(cfg.waPhoneId)}/messages`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + cfg.waToken },
-    body: JSON.stringify({ messaging_product: 'whatsapp', to: contact, type: 'text', text: { preview_url: true, body: message } }),
-    signal: AbortSignal.timeout((+cfg.timeout || 30) * 1000) });
-  const j = await resp.json().catch(() => ({}));
-  if (!resp.ok || j.error) throw new HttpError(502, 'WhatsApp: ' + (j.error?.message || resp.status));
+  const body = template && template.name
+    ? { messaging_product: 'whatsapp', to: contact, type: 'template', template: { name: template.name, language: { code: template.lang || 'en' },
+        components: (template.params || []).length ? [{ type: 'body', parameters: template.params.map(p => ({ type: 'text', text: String(p ?? '') })) }] : [] } }
+    : { messaging_product: 'whatsapp', to: contact, type: 'text', text: { preview_url: true, body: message } };
+  const j = await graph(cfg, `/${encodeURIComponent(cfg.waPhoneId)}/messages`, { method: 'POST', body: JSON.stringify(body) });
   return j.messages?.[0]?.id || 'ok';
 }
 
 r.post('/wa/send', regalAuth, asyncHandler(async (req, res) => {
-  const { to, message } = req.body || {};
-  if (!to || !message) throw new HttpError(400, 'to and message required');
+  const { to, message, template } = req.body || {};
+  if (!to || (!message && !template?.name)) throw new HttpError(400, 'to and a message or template required');
   const row = await loadBooks();
   const cfg = row?.data?.CFG?.msg;
   if (heldByTestMode(cfg, to)) return res.json({ ok: false, held: true, status: `Held — test mode, only ${cfg.testOnly} gets messages` });
   try {
-    const id = await sendViaWhatsApp(cfg, to, message);
-    res.json({ ok: true, status: 'Sent on WhatsApp', id });
+    const id = await sendViaWhatsApp(cfg, to, message, template);
+    res.json({ ok: true, status: 'Sent on WhatsApp' + (template?.name ? ' (template ' + template.name + ')' : ''), id });
   } catch (e) {
     res.json({ ok: false, status: 'Failed — ' + e.message, error: e.message });
   }
+}));
+
+/** Is the token + phone number ID good?  Shows what Meta knows about the number. */
+r.get('/wa/status', regalAuth, asyncHandler(async (_req, res) => {
+  const cfg = (await loadBooks())?.data?.CFG?.msg;
+  if (!cfg?.waPhoneId || !cfg?.waToken) throw new HttpError(400, 'Phone number ID and token are needed first');
+  const j = await graph(cfg, `/${encodeURIComponent(cfg.waPhoneId)}?fields=verified_name,display_phone_number,quality_rating,code_verification_status,name_status,messaging_limit_tier`);
+  res.json({ ok: true, number: j });
+}));
+
+/** The WhatsApp Business Account the token belongs to (from the token itself), unless one is set. */
+async function wabaId(cfg) {
+  if (cfg.waWabaId) return String(cfg.waWabaId).trim();
+  const j = await graph(cfg, `/debug_token?input_token=${encodeURIComponent(cfg.waToken)}`);
+  const scopes = j.data?.granular_scopes || [];
+  const s = scopes.find(x => x.scope === 'whatsapp_business_management' || x.scope === 'whatsapp_business_messaging');
+  const id = s?.target_ids?.[0];
+  if (!id) throw new HttpError(400, 'Could not work out the WhatsApp Business Account ID from the token — paste it in Settings (WhatsApp Manager → Business settings → WhatsApp accounts)');
+  return id;
+}
+
+/** Every template on the account, with its approval state — the till maps them onto its messages. */
+r.get('/wa/templates', regalAuth, asyncHandler(async (_req, res) => {
+  const cfg = (await loadBooks())?.data?.CFG?.msg;
+  if (!cfg?.waToken) throw new HttpError(400, 'Token is needed first');
+  const id = await wabaId(cfg);
+  const j = await graph(cfg, `/${encodeURIComponent(id)}/message_templates?fields=name,status,language,category,components&limit=200`);
+  const templates = (j.data || []).map(t => ({ name: t.name, status: t.status, lang: t.language, category: t.category,
+    body: (t.components || []).find(c => c.type === 'BODY')?.text || '', params: ((t.components || []).find(c => c.type === 'BODY')?.text || '').match(/\{\{\d+\}\}/g)?.length || 0 }));
+  res.json({ ok: true, wabaId: id, templates });
+}));
+
+/** Create the shop's standard templates on the account in one go (they then wait for Meta's approval). */
+r.post('/wa/templates/create', regalAuth, asyncHandler(async (req, res) => {
+  const cfg = (await loadBooks())?.data?.CFG?.msg;
+  if (!cfg?.waToken) throw new HttpError(400, 'Token is needed first');
+  const id = await wabaId(cfg);
+  const wanted = Array.isArray(req.body?.templates) ? req.body.templates : [];
+  const out = [];
+  for (const t of wanted) {
+    try {
+      const j = await graph(cfg, `/${encodeURIComponent(id)}/message_templates`, { method: 'POST', body: JSON.stringify({ name: t.name, language: t.lang || 'en', category: t.category || 'UTILITY',
+        components: [{ type: 'BODY', text: t.body, example: { body_text: [t.example || []] } }] }) });
+      out.push({ name: t.name, ok: true, status: j.status || 'PENDING' });
+    } catch (e) { out.push({ name: t.name, ok: false, error: e.message }); }
+  }
+  res.json({ ok: true, results: out });
+}));
+
+// ---------------------------------------------------------------- incoming WhatsApp (webhook)
+// Meta calls this when a customer writes to the shop's number (and with delivery/read receipts).
+// Replies are kept in wa_inbox so the Messages page shows them and staff can answer within the
+// 24-hour window when free text is allowed.  Set the same verify token here and in Meta.
+let waReady = null;
+function ensureWaTable() {
+  if (!waReady) waReady = query(`CREATE TABLE IF NOT EXISTS wa_inbox (
+    id bigserial PRIMARY KEY, wa_id varchar(80) UNIQUE, from_no varchar(20) NOT NULL, name varchar(120), body text, kind varchar(20) NOT NULL DEFAULT 'text',
+    at timestamptz NOT NULL DEFAULT now(), read_at timestamptz);
+    CREATE TABLE IF NOT EXISTS wa_status (msg_id varchar(80) PRIMARY KEY, status varchar(20), at timestamptz NOT NULL DEFAULT now())`).catch(e => { waReady = null; throw e; });
+  return waReady;
+}
+r.get('/wa/webhook', asyncHandler(async (req, res) => {
+  const cfg = (await loadBooks())?.data?.CFG?.msg;
+  const expect = cfg?.waVerifyToken || process.env.WA_VERIFY_TOKEN || '';
+  if (req.query['hub.mode'] === 'subscribe' && expect && req.query['hub.verify_token'] === expect) return res.status(200).send(req.query['hub.challenge']);
+  res.status(403).send('verify token does not match');
+}));
+r.post('/wa/webhook', asyncHandler(async (req, res) => {
+  res.sendStatus(200);                                          // Meta wants a quick 200; the work happens after
+  try {
+    await ensureWaTable();
+    for (const entry of (req.body?.entry || [])) for (const ch of (entry.changes || [])) {
+      const v = ch.value || {};
+      const names = {}; for (const c of (v.contacts || [])) names[c.wa_id] = c.profile?.name || '';
+      for (const m of (v.messages || [])) {
+        const body = m.type === 'text' ? m.text?.body : m.type === 'button' ? m.button?.text : m.type === 'interactive' ? (m.interactive?.button_reply?.title || m.interactive?.list_reply?.title) : `[${m.type}]`;
+        await query(`INSERT INTO wa_inbox (wa_id, from_no, name, body, kind, at) VALUES ($1,$2,$3,$4,$5,to_timestamp($6)) ON CONFLICT (wa_id) DO NOTHING`,
+          [m.id, m.from, names[m.from] || '', body || '', m.type || 'text', +m.timestamp || Date.now() / 1000]);
+      }
+      for (const s of (v.statuses || [])) await query(`INSERT INTO wa_status (msg_id, status, at) VALUES ($1,$2,now()) ON CONFLICT (msg_id) DO UPDATE SET status = EXCLUDED.status, at = now()`, [s.id, s.status]);
+    }
+  } catch (e) { console.error('wa webhook', e.message); }
+}));
+/** What customers have written, newest first, plus delivery states for what the till sent. */
+r.get('/wa/inbox', regalAuth, asyncHandler(async (req, res) => {
+  await ensureWaTable();
+  const { rows } = await query(`SELECT id, from_no, name, body, kind, at, read_at FROM wa_inbox ORDER BY at DESC LIMIT 200`);
+  const ids = String(req.query.ids || '').split(',').filter(Boolean).slice(0, 200);
+  const st = ids.length ? (await query(`SELECT msg_id, status FROM wa_status WHERE msg_id = ANY($1::varchar[])`, [ids])).rows : [];
+  res.json({ ok: true, inbox: rows, statuses: Object.fromEntries(st.map(r => [r.msg_id, r.status])), unread: rows.filter(r => !r.read_at).length });
+}));
+r.post('/wa/inbox/read', regalAuth, asyncHandler(async (_req, res) => {
+  await ensureWaTable();
+  await query(`UPDATE wa_inbox SET read_at = now() WHERE read_at IS NULL`);
+  res.json({ ok: true });
 }));
 
 export default r;

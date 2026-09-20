@@ -286,6 +286,10 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .chq .d{position:absolute}
 
 /* ---- tabs ---- */
+.wa-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin:8px 0 14px}
+.wa-step{display:flex;gap:10px;background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:10px 12px;font-size:13px}
+.wa-step>b{width:26px;height:26px;flex:0 0 26px;border-radius:50%;background:#25D366;color:#fff;display:flex;align-items:center;justify-content:center;font-family:Archivo,sans-serif}
+.wa-step .muted{font-size:12px;margin-top:2px}.wa-step code{background:#fff;border:1px solid var(--line);border-radius:3px;padding:0 4px;font-size:11px}
 .btn.wa{color:#128C7E;border-color:#B7E0C9}.btn.wa:hover{background:#25D366;color:#fff;border-color:#25D366}.btn.wa:disabled{color:var(--faint);border-color:var(--line)}
 /* online products: a wall of cards */
 .wp-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
@@ -5772,6 +5776,27 @@ function sms(to,body){
   const m={id:'m'+Math.random().toString(36).slice(2,8),to,body,at:D(today)+' '+new Date().toTimeString().slice(0,5),status:CFG.msg.live?'Sending':'Queued (demo)'};
   S.messages.unshift(m);
   if(CFG.msg.live) smsSend(m);
+  // the same message on WhatsApp, as the template mapped to it (Settings → Messaging → WhatsApp)
+  if(CFG.msg.waMode==='cloud'&&CFG.msg.waAuto&&tpl.last&&tpl.last.body===body) waTemplate(to,tpl.last.key,tpl.last.vars);
+  return m;
+}
+/* the standard templates the shop registers with Meta, and which of the till's messages each one carries */
+const WA_STD_TEMPLATES=[
+  {name:'regal_bill',category:'UTILITY',lang:'en',body:'{{1}}: your bill {{2}} for {{3}} — see it at {{4}}',example:['Regal Hardware','INVM-T1-AF-00031','Rs 4,890.00','regalhw.lk/b/abc123'],params:'shop,invoice,total,link',keys:['cashSale','creditSale','billLink']},
+  {name:'regal_payment',category:'UTILITY',lang:'en',body:'{{1}}: payment of {{2}} received, receipt {{3}}. Your balance is now {{4}}. Thank you.',example:['Regal Hardware','Rs 10,000.00','RCP-00012','Rs 5,000.00'],params:'shop,amount,receipt,outstanding',keys:['paymentReceived']},
+  {name:'regal_statement',category:'UTILITY',lang:'en',body:'{{1}} statement for {{2}}: {{3}} unpaid bill(s), total {{4}}. See them at {{5}}',example:['Regal Hardware','Nimal Constructions','3','Rs 45,000.00','regalhw.lk/my/c0012'],params:'shop,customer,count,outstanding,link',keys:['statement']},
+  {name:'regal_portal',category:'UTILITY',lang:'en',body:'{{1}}: check what you owe any time at {{2}} — sign in with a code we text you.',example:['Regal Hardware','regalhw.lk/my/c0012'],params:'shop,link',keys:['portalInvite']},
+  {name:'regal_order',category:'UTILITY',lang:'en',body:'{{1}}: your order {{2}} for {{3}} is {{4}}.',example:['Regal Hardware','ONL-00012','Rs 12,500.00','on the way to you'],params:'shop,order,total,status',keys:['webOrder']}];
+function waTemplateFor(key){ const map=CFG.msg.waTemplates||{}; if(map[key]&&map[key].name) return map[key]; const std=WA_STD_TEMPLATES.find(t=>t.keys.includes(key)); return std?{name:std.name,lang:std.lang,params:std.params}:null }
+function waTemplate(to,key,vars){
+  const t=waTemplateFor(key); if(!t) return null;
+  const params=String(t.params||'').split(/[,\s]+/).filter(Boolean).map(k=>vars[k]!==undefined?String(vars[k]):'');
+  const m={id:'w'+Math.random().toString(36).slice(2,8),to,body:`[WhatsApp template ${t.name}] `+params.join(' · '),at:D(today)+' '+new Date().toTimeString().slice(0,5),status:'Sending on WhatsApp',via:'wa'};
+  S.messages.unshift(m);
+  if(!(window.regalBridge&&regalBridge.online())){ m.status='Not sent — needs the shop server'; return m }
+  fetch('/api/wa/send',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify({to,template:{name:t.name,lang:t.lang||'en',params}})})
+    .then(async r=>{ const j=await r.json().catch(()=>({})); m.status=j.status||(r.ok?'Sent on WhatsApp':'WhatsApp failed'); if(j.id) m.waId=j.id })
+    .catch(e=>{ m.status='WhatsApp failed — '+e.message }).finally(()=>{ persist(); if(S.view==='messages') render() });
   return m;
 }
 /* WhatsApp. Two ways, chosen in Settings → Messaging:
@@ -5780,9 +5805,18 @@ function sms(to,body){
    - cloud: the server posts it through Meta's WhatsApp Business Cloud API (needs a Meta business
      account, a phone number ID and a token; messages outside a 24-hour customer conversation must
      be approved templates). */
+let waTplList=null, waInbox={rows:[],unread:0,at:0};
+function loadWaInbox(force){ if(!(window.regalBridge&&regalBridge.online())||CFG.msg.waMode!=='cloud') return; if(!force&&Date.now()-waInbox.at<30000) return; waInbox.at=Date.now();
+  const ids=S.messages.filter(m=>m.waId).map(m=>m.waId).slice(0,100).join(',');
+  fetch('/api/wa/inbox?ids='+encodeURIComponent(ids),{headers:{Authorization:'Bearer '+regalBridge.token()}}).then(r=>r.json()).then(j=>{ if(!j.ok) return; const had=waInbox.unread; waInbox.rows=j.inbox; waInbox.unread=j.unread;
+    S.messages.forEach(m=>{ if(m.waId&&j.statuses[m.waId]) m.status={sent:'Sent on WhatsApp',delivered:'Delivered on WhatsApp',read:'Read on WhatsApp',failed:'WhatsApp failed'}[j.statuses[m.waId]]||m.status });
+    if(j.unread>had&&j.unread) notify('people',`${j.unread} WhatsApp repl${j.unread===1?'y':'ies'} waiting`,'messages'); if(S.view==='messages') render() }).catch(()=>{}) }
+setInterval(()=>{ try{ if(window.S&&S.user&&window.CFG) loadWaInbox() }catch(e){} },60000);
 const WA_ICON='<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="vertical-align:-2px"><path d="M13.6 2.3A7.9 7.9 0 0 0 1.1 11.8L0 16l4.3-1.1A7.9 7.9 0 0 0 13.6 2.3zM8 14.5a6.6 6.6 0 0 1-3.4-.9l-.2-.1-2.5.7.7-2.5-.2-.3A6.6 6.6 0 1 1 8 14.5zm3.6-4.9c-.2-.1-1.2-.6-1.4-.6s-.3-.1-.4.1-.5.6-.6.7-.2.2-.4.1a5.4 5.4 0 0 1-2.7-2.3c-.2-.4.2-.3.6-1.1v-.4l-.6-1.5c-.2-.4-.3-.3-.4-.3h-.4a.7.7 0 0 0-.5.2 2.2 2.2 0 0 0-.7 1.6 3.8 3.8 0 0 0 .8 2 8.7 8.7 0 0 0 3.3 2.9c1.2.5 1.7.6 2.3.5a2 2 0 0 0 1.3-.9 1.6 1.6 0 0 0 .1-.9c-.1-.1-.2-.1-.3-.1z"/></svg>';
 const waIntl=(p)=>{ const d=String(p||'').replace(/\D/g,''); return d.startsWith('94')?d:d.startsWith('0')?'94'+d.slice(1):d };
-function wa(to,body){
+function wa(to,body,key,vars){
+  // through the Cloud API a customer who has not written in the last 24 h can only get a template — use it when there is one
+  if(CFG.msg.waMode==='cloud'&&key&&waTemplateFor(key)) return waTemplate(to,key,{shop:CFG.shop.name.replace(/^REGAL HARDWARE$/,'Regal Hardware'),...(vars||{})});
   const m={id:'w'+Math.random().toString(36).slice(2,8),to,body,at:D(today)+' '+new Date().toTimeString().slice(0,5),status:'WhatsApp',via:'wa'};
   S.messages.unshift(m);
   if(CFG.msg.waMode==='cloud'&&window.regalBridge&&regalBridge.online()){
@@ -6010,7 +6044,7 @@ const CFG={
  pos:{discFromMrp:true,repriceToLast:true},          // a discount typed as a percentage comes off the maker's price
 
  msg:{provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',timeout:30,autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,
-  waMode:'chat',waPhoneId:'',waToken:'',waNumber:'',
+  waMode:'chat',waPhoneId:'',waToken:'',waWabaId:'',waVerifyToken:'',waAuto:true,waTemplates:{},
    quietFrom:'21:00',quietTo:'07:00'},
  tpl:{
   cashSale:{label:'Cash bill',vars:'{shop} {invoice} {total} {link} {customer}',
@@ -6078,7 +6112,9 @@ function costWordProblem(){
 function tpl(key,vars={}){
   let t=CFG.tpl[key]?CFG.tpl[key].text:'';
   const all={shop:CFG.shop.name.replace(/^REGAL HARDWARE$/,'Regal Hardware'),phone:CFG.shop.phone,...vars};
-  return t.replace(/\{(\w+)\}/g,(m,k)=>all[k]!==undefined?all[k]:m);
+  const body=t.replace(/\{(\w+)\}/g,(m,k)=>all[k]!==undefined?all[k]:m);
+  tpl.last={key,vars:all,body};                 // sms() looks at this to send the matching WhatsApp template too
+  return body;
 }
 
 /* ---- one voucher, A5 landscape, used by every kind of payment ---- */
@@ -6364,8 +6400,7 @@ function settings(){
      <label class="chk"><input type="radio" name="waMode" data-set="msg.waMode" value="chat" ${CFG.msg.waMode!=='cloud'?'checked':''}> <span><b>Open WhatsApp on this PC</b><br><span class="muted">Nothing to set up. The message is typed in for you on the customer's number in WhatsApp Desktop or WhatsApp Web — press Send. Works today.</span></span></label>
      <label class="chk"><input type="radio" name="waMode" data-set="msg.waMode" value="cloud" ${CFG.msg.waMode==='cloud'?'checked':''}> <span><b>Send automatically (WhatsApp Business Cloud API)</b><br><span class="muted">Needs a Meta business account with a verified WhatsApp number. Messages to a customer who has not written to you in the last 24 hours must use a template Meta has approved.</span></span></label>
     </div>
-    ${CFG.msg.waMode==='cloud'?`<div class="grid3">${fld('msg.waPhoneId','Phone number ID','From Meta → WhatsApp → API setup')}${fld('msg.waToken','Access token','A permanent system-user token; kept in settings only')}
-      <div class="f"><label>Send a test WhatsApp</label><div style="display:flex;gap:6px"><input id="waTestTo" value="${(CFG.msg.testOnly||CFG.shop.owner||'').split(',')[0].trim()}" placeholder="07…"><button class="btn tape" data-act="waTest">Send</button></div><div class="muted" id="waTestOut">Test mode above applies to WhatsApp too.</div></div></div>`:''}`;
+    ${CFG.msg.waMode==='cloud'?waSetup(fld):''}`;
   if(setTab==='tpl') body=`<div class="muted" style="margin-bottom:10px">Edit the wording. Anything in curly brackets is filled in when the message goes out.</div>
     ${Object.entries(CFG.tpl).map(([k,t])=>`<div class="card" style="margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
@@ -6386,6 +6421,34 @@ function settings(){
     cost:['The code that hides cost on labels',ICONS.labels],msg:['The SMS gateway and who gets texts',ICONS.messages],tpl:['Wording of every text that goes out','M4 6h16M4 12h10M4 18h7'],
     approvals:['What needs the owner’s nod',ICONS.approvals]};
   return subnavPage('Settings','How the till behaves for everyone',tabs.map(t=>[t[0],t[1],(meta[t[0]]||['',ICONS.settings])[0],(meta[t[0]]||['',ICONS.settings])[1]]),setTab,'data-settab',body);
+}
+/* Settings → Messaging → WhatsApp: the whole set-up on one screen, in the order Meta wants it done */
+function waSetup(fld){
+  const m=CFG.msg, hook=location.origin+'/api/wa/webhook', std=WA_STD_TEMPLATES;
+  const tplKeys=[['cashSale','Cash bill after a sale'],['creditSale','Credit bill after a sale'],['billLink','Bill sent again'],['paymentReceived','Payment received'],['statement','Customer statement'],['portalInvite','Invite to their page'],['webOrder','Online order update']];
+  const list=waTplList||[]; const approved=list.filter(t=>t.status==='APPROVED');
+  return `<div class="wa-steps">
+   <div class="wa-step"><b>1</b><div><b>Make the accounts</b><div class="muted">Business portfolio at <a href="https://business.facebook.com" target="_blank">business.facebook.com</a> → app at <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com</a> (type <i>Business</i>) → add the <b>WhatsApp</b> product. Verify the business under Security Centre (registration document + address).</div></div></div>
+   <div class="wa-step"><b>2</b><div><b>Add the number</b><div class="muted">WhatsApp → API Setup → Add phone number → 0772222259 → code by SMS. The number must not be on the WhatsApp app — delete that account first, or use a new SIM for the API.</div></div></div>
+   <div class="wa-step"><b>3</b><div><b>Token + IDs</b><div class="muted">Business Settings → System users → add one (Admin) → Generate token for the app with <code>whatsapp_business_messaging</code> and <code>whatsapp_business_management</code>. The Phone number ID is on the API Setup page. Paste both below and press <b>Check</b>.</div></div></div>
+   <div class="wa-step"><b>4</b><div><b>Templates</b><div class="muted">A bill after a sale goes to someone who has not written to you, so it must be an approved template. Press <b>Register the standard templates</b> once; when Meta approves them (minutes to a day) press <b>Fetch</b> and they show as approved below.</div></div></div>
+   <div class="wa-step"><b>5</b><div><b>Replies</b><div class="muted">So customers' answers land on the Messages page: app → WhatsApp → Configuration → Webhook: URL <code>${hook}</code>, verify token = the one below, subscribe to <b>messages</b>. Needs the till reachable on https (Vercel is).</div></div></div>
+  </div>
+  <div class="grid3">${fld('msg.waPhoneId','Phone number ID','Digits, from API Setup — not the phone number')}${fld('msg.waToken','Access token','Permanent system-user token; kept in settings only')}
+   <div class="f"><label>Connection</label><button class="btn ghost" data-act="waCheck" ${window.regalBridge&&regalBridge.online()?'':'disabled'}>Check the number</button><div class="muted" id="waCheckOut">Asks Meta about the number with this token.</div></div></div>
+  <div class="grid3">${fld('msg.waWabaId','WhatsApp Business Account ID','Optional — found from the token when empty')}${fld('msg.waVerifyToken','Webhook verify token','Any word you choose; type the same in Meta')}
+   <div class="f"><label>Send a test</label><div style="display:flex;gap:6px"><input id="waTestTo" value="${(m.testOnly||CFG.shop.owner||'').split(',')[0].trim()}" placeholder="07…"><button class="btn tape" data-act="waHello">hello_world</button><button class="btn ghost" data-act="waTest">Text</button></div><div class="muted" id="waTestOut">hello_world is Meta's built-in template; "Text" only reaches a number that wrote to you in the last 24 h.</div></div></div>
+  ${fld('msg.waAuto','','Also send every automatic text (bill, receipt, statement…) on WhatsApp, as its template','check')}
+  <h2 style="margin-top:12px">Templates <span class="muted" style="font-size:12px;font-weight:400">${list.length?`${approved.length} approved of ${list.length} on the account`:'not fetched yet'}</span></h2>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"><button class="btn ghost sm" data-act="waTemplates">Fetch from Meta</button><button class="btn ghost sm" data-act="waCreate">Register the standard templates</button></div>
+  <div id="waTplOut" class="muted" style="margin-bottom:8px"></div>
+  <table class="tbl"><tr><th>Message from the till</th><th>WhatsApp template</th><th>Parameters, in order</th><th></th></tr>
+   ${tplKeys.map(([k,label])=>{ const cur=waTemplateFor(k)||{name:'',params:''}; const s=std.find(t=>t.keys.includes(k)); const found=list.find(t=>t.name===cur.name);
+     return `<tr><td>${label}<div class="muted">${(CFG.tpl[k]||{}).vars||(s?s.params.split(',').map(x=>'{'+x+'}').join(' '):'')}</div></td>
+      <td>${list.length?`<select data-wamap="${k}"><option value="">— none —</option>${list.map(t=>`<option value="${t.name}" ${t.name===cur.name?'selected':''}>${t.name} (${t.status.toLowerCase()}, ${t.lang})</option>`).join('')}</select>`:`<input data-wamap="${k}" value="${cur.name}" placeholder="${s?s.name:''}">`}
+       ${found?`<div class="muted" style="font-size:11px">${found.body}</div>`:s?`<div class="muted" style="font-size:11px">${s.body}</div>`:''}</td>
+      <td><input data-waparams="${k}" value="${cur.params||''}" placeholder="${s?s.params:''}"></td><td><button class="btn ghost sm" data-act="waMap" data-k="${k}">Save</button></td></tr>` }).join('')}</table>
+  <div class="muted" style="margin-top:6px">Parameters are the {curly} names from the till's message, in the order the template's {{1}} {{2}}… expect them. The standard templates already match.</div>`;
 }
 /* a page with its own menu down the left — settings, the shop site */
 function subnavPage(title,sub,items,cur,attr,body){
@@ -12992,8 +13055,18 @@ function accounting(){ const tabs=[['tb','Trial balance'],['pl','Profit & loss']
   return `<h1>Accounting</h1><div class="tabs">${tabs.map(t=>`<button class="${accTab===t[0]?'on':''}" data-acc="${t[0]}">${t[1]}</button>`).join('')}</div><div class="card">${body}</div>` }
 
 /* ---- messages ---- */
-function messages(){ return `<h1>Messages</h1><div class="muted" style="margin-bottom:10px">Provider: smslenz.lk (sender RegalHW). Every invoice, receipt and the day-end summary queues here; the cron worker sends them.</div><div class="card"><table><tr><th>Time</th><th>To</th><th>Message</th><th>Status</th></tr>${S.messages.map(m=>`<tr><td>${m.at}</td><td>${m.to||'—'}</td><td>${m.body}</td><td><span class="tag blue">${m.status}</span></td></tr>`).join('')}</table></div>
-  <div class="card" style="margin-top:12px"><h2>Templates</h2><table><tr><th>Key</th><th>Text</th></tr><tr><td>cash_sale</td><td>Thank you for shopping at Regal Hardware. Invoice {INVOICE} {TOTAL}: {LINK}</td></tr><tr><td>credit_sale</td><td>Regal Hardware: your credit invoice {INVOICE} for {TOTAL} is at {LINK}. Outstanding: {OUTSTANDING}</td></tr><tr><td>payment_received</td><td>Regal Hardware: payment of {AMOUNT} received ({RECEIPT}). Outstanding balance {OUTSTANDING}. Thank you.</td></tr><tr><td>daily_summary</td><td>See Reports → Daily owner summary</td></tr></table></div>` }
+function messages(){ loadWaInbox();
+  const held=S.messages.filter(m=>/^Held/.test(m.status||'')).length, waOn=CFG.msg.waMode==='cloud';
+  const tagOf=st=>/sent|delivered|read/i.test(st)?'ok':/fail|held|not sent/i.test(st)?'bad':/queued|sending|opened/i.test(st)?'warn':'blue';
+  const ago=(t)=>{ const d=(Date.now()-new Date(t).getTime())/60000; return d<1?'just now':d<60?Math.round(d)+' min ago':d<1440?Math.round(d/60)+' h ago':new Date(t).toLocaleDateString('en-GB') };
+  return `<h1>Messages</h1>
+  <div class="muted" style="margin-bottom:10px">Texts go through ${CFG.msg.provider||'the SMS gateway'}${CFG.msg.live?'':' — <b>sending is off</b> (Settings → Messaging)'}${CFG.msg.testOnly?` · <b>test mode</b>: only ${CFG.msg.testOnly} gets them${held?` (${held} held)`:''}`:''}${waOn?' · WhatsApp through the Cloud API':' · WhatsApp buttons open WhatsApp on this PC'}.</div>
+  ${waOn?`<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">${WA_ICON} WhatsApp replies ${waInbox.unread?`<span class="nbadge">${waInbox.unread} new</span>`:''}</h2>
+     <span style="display:flex;gap:6px"><button class="btn ghost sm" data-act="waInboxRefresh">Refresh</button>${waInbox.unread?`<button class="btn ghost sm" data-act="waInboxRead">Mark all read</button>`:''}</span></div>
+    ${waInbox.rows.length?`<table style="margin-top:8px"><tr><th>When</th><th>From</th><th>Message</th><th></th></tr>${waInbox.rows.slice(0,60).map(r=>{ const c=S.customers.find(x=>(x.phone||'').replace(/\D/g,'').replace(/^0/,'94')===r.from_no); return `<tr class="${r.read_at?'':'new'}"><td>${ago(r.at)}</td><td><b>${c?c.name:(r.name||'')}</b><div class="muted">${r.from_no.replace(/^94/,'0')}</div></td><td>${r.body}</td><td><button class="btn ghost sm wa" data-act="waReply" data-to="${r.from_no}" data-name="${(c?c.name:r.name||'').replace(/"/g,'&quot;')}">${WA_ICON} Reply</button>${c?` <button class="btn ghost sm" data-act="cust" data-id="${c.id}">Account</button>`:''}</td></tr>`}).join('')}</table>`
+     :`<div class="muted" style="margin-top:6px">Nothing yet. Replies arrive here once the webhook is set in Meta (Settings → Messaging → WhatsApp, step 5).</div>`}</div>`:''}
+  <div class="card"><table><tr><th>Time</th><th>To</th><th>Message</th><th>Status</th></tr>${S.messages.slice(0,300).map(m=>`<tr><td>${m.at}</td><td>${m.to||'—'}</td><td>${m.via==='wa'?WA_ICON+' ':''}${m.body}</td><td><span class="tag ${tagOf(m.status||'')}">${m.status}</span></td></tr>`).join('')||'<tr><td colspan="4" class="muted">No messages yet.</td></tr>'}</table>
+   ${S.messages.length>300?`<div class="muted" style="margin-top:6px">Showing the latest 300 of ${S.messages.length}.</div>`:''}</div>` }
 
 /* ---- reports ---- */
 /* ====================== REPORTS ====================== */
@@ -13916,12 +13989,28 @@ document.addEventListener('click',e=>{
     waTest:()=>{ const to=($('#waTestTo')||{}).value||''; const out=$('#waTestOut'); if(!/^0\d{9}$/.test(to.replace(/\D/g,''))) return toast('Enter a mobile like 0777849964'); if(out) out.textContent='Sending…';
       fetch('/api/wa/send',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+(window.regalBridge?regalBridge.token():'')},body:JSON.stringify({to,message:`${CFG.shop.name}: test WhatsApp from the till at ${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}.`,test:true})})
        .then(r=>r.json()).then(j=>{ if(out) out.textContent=(j.ok?'Sent ✓ ':'')+(j.status||j.error||''); toast(j.ok?'Test WhatsApp sent to '+to:(j.status||j.error)) }).catch(e=>{ if(out) out.textContent='Failed — '+e.message }) },
-    billWa:()=>{ const inv=S.sales.find(x=>x.no===a.dataset.no), c=C(inv.customerId); if(!c||!c.phone) return toast('No mobile on file'); wa(c.phone,tpl('billLink',{no:inv.no,total:fmt(inv.total),link:inv.link||''})); render(); toast(CFG.msg.waMode==='cloud'?'Sent on WhatsApp':'WhatsApp opened with the bill') },
+    billWa:()=>{ const inv=S.sales.find(x=>x.no===a.dataset.no), c=C(inv.customerId); if(!c||!c.phone) return toast('No mobile on file'); const v={invoice:inv.no,no:inv.no,total:fmt(inv.total),balance:fmt(inv.balance),balancePart:inv.balance>0?` (${fmt(inv.balance)} outstanding)`:'',link:inv.link||''};
+      wa(c.phone,tpl('billLink',v),'billLink',v); render(); toast(CFG.msg.waMode==='cloud'?'Sent on WhatsApp':'WhatsApp opened with the bill') },
     custWa:()=>{ const c=C(+a.dataset.id); if(!c||!c.phone) return toast('No mobile on file'); const owed=partyBal('C',c.id);
-      wa(c.phone,owed>0?tpl('statement',{customer:c.name,count:S.sales.filter(s=>s.customerId===c.id&&s.balance>0).length,outstanding:fmt(owed),link:'regalhw.lk/my/'+(c.code||'').toLowerCase()}):`Hello ${c.name}, this is ${CFG.shop.name}. `); render() },
+      const v={customer:c.name,count:S.sales.filter(s=>s.customerId===c.id&&s.balance>0).length,outstanding:fmt(owed),link:'regalhw.lk/my/'+(c.code||'').toLowerCase()};
+      if(owed>0) wa(c.phone,tpl('statement',v),'statement',v); else wa(c.phone,`Hello ${c.name}, this is ${CFG.shop.name}. `); render() },
     orderWa:()=>{ const o=S.web.orders.find(x=>x.no===a.dataset.no); if(!o) return; const c=C(o.cid); if(!c||!c.phone) return toast('No mobile on file');
       const st={placed:'we have it and will confirm shortly',accepted:'accepted — we are picking it now',picking:'being picked now',ready:o.deliver?'ready, the lorry will bring it':'ready to collect at the counter',despatched:'on the way to you',done:'delivered',collected:'collected',invoiced:'billed',rejected:'not accepted'+(o.note?' — '+o.note:''),cancelled:'cancelled'}[o.status]||o.status;
-      wa(c.phone,`${S.web.settings.name}: your order ${o.no} for ${fmt(o.total)} is ${st}.`); render() },
+      wa(c.phone,`${S.web.settings.name}: your order ${o.no} for ${fmt(o.total)} is ${st}.`,'webOrder',{order:o.no,total:fmt(o.total),status:st}); render() },
+    waCheck:async()=>{ const out=$('#waCheckOut'); out.textContent='Checking…'; try{ const r=await fetch('/api/wa/status',{headers:{Authorization:'Bearer '+regalBridge.token()}}); const j=await r.json(); if(!j.ok) throw new Error(j.error||j.status||'failed');
+      const n=j.number; out.innerHTML=`<span class="tag ok">connected</span> <b>${n.verified_name||'(no name yet)'}</b> · ${n.display_phone_number||''} · name ${n.name_status||'?'} · quality ${n.quality_rating||'?'} · limit ${n.messaging_limit_tier||'?'}`; toast('WhatsApp number is connected') }catch(e){ out.innerHTML=`<span class="tag bad">not connected</span> ${e.message}` } },
+    waTemplates:async()=>{ const out=$('#waTplOut'); out.textContent='Fetching…'; try{ const r=await fetch('/api/wa/templates',{headers:{Authorization:'Bearer '+regalBridge.token()}}); const j=await r.json(); if(!j.ok) throw new Error(j.error||'failed');
+      CFG.msg.waWabaId=CFG.msg.waWabaId||j.wabaId; waTplList=j.templates; render(); toast(j.templates.length+' templates on the account') }catch(e){ out.innerHTML=`<span class="tag bad">could not fetch</span> ${e.message}` } },
+    waCreate:async()=>{ if(!confirm('Register the 5 standard Regal templates on your WhatsApp account? Meta reviews them (minutes to a day).')) return; const out=$('#waTplOut'); out.textContent='Registering…';
+      try{ const r=await fetch('/api/wa/templates/create',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+regalBridge.token()},body:JSON.stringify({templates:WA_STD_TEMPLATES.map(t=>({name:t.name,lang:t.lang,category:t.category,body:t.body,example:t.example}))})}); const j=await r.json(); if(!j.ok) throw new Error(j.error||'failed');
+        out.innerHTML=j.results.map(x=>`<div>${x.ok?'<span class="tag ok">'+x.status+'</span>':'<span class="tag bad">failed</span>'} ${x.name}${x.error?' — '+x.error:''}</div>`).join(''); toast('Templates sent to Meta for approval') }catch(e){ out.innerHTML=`<span class="tag bad">failed</span> ${e.message}` } },
+    waHello:async()=>{ const to=($('#waTestTo')||{}).value||''; const out=$('#waTestOut'); if(!/^0\d{9}$/.test(to.replace(/\D/g,''))) return toast('Enter a mobile like 0777849964'); out.textContent='Sending hello_world…';
+      try{ const r=await fetch('/api/wa/send',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+regalBridge.token()},body:JSON.stringify({to,template:{name:'hello_world',lang:'en_US',params:[]}})}); const j=await r.json(); out.textContent=(j.ok?'Sent ✓ ':'')+(j.status||j.error||''); toast(j.ok?'hello_world sent to '+to:(j.status||j.error)) }catch(e){ out.textContent='Failed — '+e.message } },
+    waMap:()=>{ const k=a.dataset.k, sel=$(`[data-wamap="${k}"]`); CFG.msg.waTemplates=CFG.msg.waTemplates||{}; const name=sel?sel.value:''; const found=(waTplList||[]).find(t=>t.name===name);
+      CFG.msg.waTemplates[k]={name,lang:found?found.lang:'en',params:($(`[data-waparams="${k}"]`)||{}).value||''}; toast('Saved') },
+    waInboxRefresh:()=>{ loadWaInbox(true); toast('Checking WhatsApp…') },
+    waInboxRead:()=>{ fetch('/api/wa/inbox/read',{method:'POST',headers:{Authorization:'Bearer '+regalBridge.token()}}).then(()=>{ waInbox.unread=0; waInbox.rows.forEach(r=>r.read_at=r.read_at||1); render() }) },
+    waReply:()=>{ const to=a.dataset.to; const body=prompt('Reply on WhatsApp to '+to+(a.dataset.name?' ('+a.dataset.name+')':'')); if(body&&body.trim()) { wa(to.replace(/^94/,'0'),body.trim()); render() } },
     tplTest:()=>{sms(CFG.shop.owner,tplPreview(a.dataset.k).replace(/<\/?i>/g,'')); render(); toast('Test message queued to '+CFG.shop.owner)},
     billEdit:()=>billToTill(a.dataset.no),
     billTill:()=>billToTill(a.dataset.no),

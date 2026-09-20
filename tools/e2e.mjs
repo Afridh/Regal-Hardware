@@ -360,7 +360,19 @@ ok('A: no script errors so far', A.errors.length === 0, A.errors.slice(0, 2).joi
   ok('M: a number outside test mode is held, nothing sent', held.held === true && /Held/.test(held.status));
   const tried = await j('/api/sms/send', { method: 'POST', body: { to: '0777849964', message: 'x' } });
   ok('M: the listed number is sent to the provider (refused here: fake key)', tried.ok === false && /Provider|Failed/.test(tried.status) && !tried.held, tried.status);
-  w.eval("CFG.msg.live=false; CFG.msg.apiKey=''; CFG.msg.testOnly=''"); w.persist(true); await sleep(900);
+  // WhatsApp: held by the same test mode, and the webhook that brings replies in
+  const waHeld = await j('/api/wa/send', { method: 'POST', body: { to: '0771234501', message: 'x' } });
+  ok('M: WhatsApp respects test mode', waHeld.held === true);
+  const waNo = await j('/api/wa/send', { method: 'POST', body: { to: '0777849964', template: { name: 'hello_world', lang: 'en_US' } } });
+  ok('M: WhatsApp without credentials says what is missing', waNo.ok === false && /not set up/.test(waNo.status), waNo.status);
+  w.eval("CFG.msg.waVerifyToken='e2e-verify'"); w.persist(true); await sleep(900);
+  const bad = await fetch(BASE + '/api/wa/webhook?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=abc');
+  const good = await fetch(BASE + '/api/wa/webhook?hub.mode=subscribe&hub.verify_token=e2e-verify&hub.challenge=abc123');
+  ok('M: webhook verifies only with the shop\'s token', bad.status === 403 && good.status === 200 && (await good.text()) === 'abc123');
+  const hook = await fetch(BASE + '/api/wa/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entry: [{ changes: [{ value: { contacts: [{ wa_id: '94771234501', profile: { name: 'Nimal' } }], messages: [{ id: 'wamid.e2e.' + Date.now(), from: '94771234501', timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: 'Is my order ready?' } }] } }] }] }) });
+  const inbox = await j('/api/wa/inbox');
+  ok('M: a customer\'s WhatsApp reply lands in the inbox', hook.status === 200 && inbox.ok && inbox.inbox.some(r => r.from_no === '94771234501' && /order ready/.test(r.body)) && inbox.unread >= 1);
+  w.eval("CFG.msg.live=false; CFG.msg.apiKey=''; CFG.msg.testOnly=''; CFG.msg.waVerifyToken=''"); w.persist(true); await sleep(900);
 }
 
 // ---------------------------------------------------------------- the public shop site (regalhw.lk)
