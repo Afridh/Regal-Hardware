@@ -5673,9 +5673,14 @@ function post(date,desc,ref,lines){ // lines: [{ac,dr,cr,party}]
   S.journal.push(je); return je;
 }
 function bal(ac,upto){ let d=0,c=0; for(const j of S.journal){ if(upto&&j.date>upto)continue; for(const l of j.lines) if(l.ac===ac){d+=l.dr;c+=l.cr} } return d-c }
-function partyBal(type,id){ const ac=type==='C'?'1100':'2100'; let d=0,c=0;
-  for(const j of S.journal) for(const l of j.lines) if(l.ac===ac&&l.party&&l.party.type===type&&l.party.id===id){d+=l.dr;c+=l.cr}
-  return type==='C'?d-c:c-d }
+/* balances for every customer and supplier in one pass over the journal — the customer list asks for
+   hundreds of them per draw; the journal only grows through post(), so identity + length say when to redo it */
+let _pbArr=null,_pbLen=-1,_pbMap=new Map();
+function partyBalMap(){ const J=S.journal; if(J===_pbArr&&J.length===_pbLen) return _pbMap;
+  const m=new Map();
+  for(const j of J) for(const l of j.lines){ if(!l.party||l.ac!==(l.party.type==='C'?'1100':'2100')) continue; const k=l.party.type+l.party.id; const v=m.get(k)||[0,0]; v[0]+=l.dr; v[1]+=l.cr; m.set(k,v) }
+  _pbArr=J; _pbLen=J.length; _pbMap=m; return m }
+function partyBal(type,id){ const v=partyBalMap().get(type+id); if(!v) return 0; return type==='C'?v[0]-v[1]:v[1]-v[0] }
 /* what a customer has paid ahead, held in 2050 until a bill uses it */
 function custCredit(id){ let d=0,c=0; for(const j of S.journal) for(const l of j.lines) if(l.ac==='2050'&&l.party&&l.party.type==='C'&&l.party.id===id){d+=l.dr;c+=l.cr} return +(c-d).toFixed(2) }
 function move(pid,qty,type,ref,cost,date,loc){ const p=P(pid); p.stock=+(p.stock+qty).toFixed(3);
@@ -5683,7 +5688,14 @@ function move(pid,qty,type,ref,cost,date,loc){ const p=P(pid); p.stock=+(p.stock
   if(typeof extMove==='function'&&Array.isArray(S.locations)&&S.locations.length) extMove(p,qty,loc);
   S.movements.push({date:date||D(today),pid,qty,type,ref,cost,after:p.stock,loc:loc||S.locId||undefined}) }
 window.S=S; // exposed so the workflow can be scripted end to end
-const P=(id)=>S.products.find(p=>p.id===id), C=(id)=>S.customers.find(c=>c.id===id), SU=(id)=>S.suppliers.find(s=>s.id===id), B=(id)=>S.banks.find(b=>b.id===id);
+/* id lookups are everywhere (every bill line, every stock figure); with thousands of products a linear find
+   on each one adds up, so keep a map per list and rebuild it when the list is swapped or grows */
+const indexed=(get)=>{ let arr=null, len=-1, map=new Map(), retried=false;
+  const build=()=>{ arr=get(); len=arr.length; map=new Map(); for(const x of arr) map.set(x.id,x) };
+  return (id)=>{ const a=get(); if(a!==arr||a.length!==len){ build(); retried=false }
+    let x=map.get(id); if(x===undefined&&!retried){ build(); retried=true; x=map.get(id) }   // a miss rebuilds once, in case an item was swapped in place
+    return x } };
+const P=indexed(()=>S.products), C=indexed(()=>S.customers), SU=(id)=>S.suppliers.find(s=>s.id===id), B=(id)=>S.banks.find(b=>b.id===id);
 function sms(to,body){
   const m={id:'m'+Math.random().toString(36).slice(2,8),to,body,at:D(today)+' '+new Date().toTimeString().slice(0,5),status:CFG.msg.live?'Sending':'Queued (demo)'};
   S.messages.unshift(m);
@@ -7262,8 +7274,14 @@ function webStock(pid){                    // what is really available to sell o
 /* ---------- the storefront, as the customer sees it ---------- */
 let siteTab='overview', siteQ='', siteCat='all', siteShow='all';
 const webListed=p=>S.web.settings.listMode==='selected'?p.web===true:p.web!==false;
+/* which pictures the site has — fetched once, so a list of 300 products is not 300 requests for photos that are not there */
+let shopMedia=null, shopMediaAt=0;
+function loadShopMedia(){ if(shopMedia&&Date.now()-shopMediaAt<60000) return; shopMediaAt=Date.now();
+  fetch('/api/shop/media').then(r=>r.json()).then(j=>{ shopMedia=new Set(j.keys||[]); if(S.view==='site') render() }).catch(()=>{ shopMedia=shopMedia||new Set() }) }
+const hasPic=key=>!!(shopMedia&&shopMedia.has(key));
 function site(){
   const w=S.web.settings, T=webTheme();
+  if(siteTab==='products') loadShopMedia();
   const tabs=[['overview','Overview'],['products','Products online'],['look','Look & layout'],['text','Words & contact'],['pictures','Pictures'],['orders','Orders & delivery'],['preview','Preview']];
   const fld=(k,label,hint='',type='text')=>`<div class="f"><label>${label}</label>${type==='check'?`<label class="chk"><input type="checkbox" data-set="web.${k}" ${w[k]?'checked':''}> ${hint}</label>`
     :type==='area'?`<textarea data-set="web.${k}" rows="3" style="width:100%;border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;font:inherit">${String(w[k]??'').replace(/</g,'&lt;')}</textarea>${hint?`<div class="muted">${hint}</div>`:''}`
@@ -7310,7 +7328,7 @@ function site(){
       ${shown.map(p=>`<tr class="${webListed(p)?'':'dim'}">
         <td><label class="chk" style="margin:0"><input type="checkbox" data-siteon="${p.id}" ${webListed(p)?'checked':''}></label></td>
         <td><button class="btn ghost sm" data-act="siteFeat" data-id="${p.id}" title="Featured items come first on the home page" style="${p.featured?'color:#c98a00':''}">${p.featured?'★':'☆'}</button></td>
-        <td><div class="mediapic" style="width:44px;height:44px"><img src="/api/shop/media/p:${p.id}" loading="lazy" onerror="this.parentNode.classList.add('empty');this.remove()"></div></td>
+        <td><div class="mediapic ${hasPic('p:'+p.id)?'':'empty'}" style="width:44px;height:44px">${hasPic('p:'+p.id)?`<img src="/api/shop/media/p:${p.id}" loading="lazy">`:''}</div></td>
         <td><b>${p.name}</b><div class="muted">${p.code}${p.short?' · '+p.short:''}${p.desc?' · <span title="has a description">✎</span>':''}</div></td>
         <td>${p.cat}</td><td class="n">${fmt(w.level==='wholesale'?p.wholesale:p.retail)}</td><td class="n">${CFG.stock&&CFG.stock.track===false?'—':fq(p.stock)}</td>
         <td><button class="btn ghost sm" data-act="prodEditSite" data-id="${p.id}">Photo & text</button></td></tr>`).join('')||'<tr><td colspan="8" class="muted">Nothing matches.</td></tr>'}</table>`;
@@ -7510,7 +7528,8 @@ function webOrders(){
    ${stat('Waiting on you',fmt(val(nw)),`${nw.length} order${nw.length===1?'':'s'} just in`,'y')}
    ${stat('Being picked',fmt(val(work)),`${work.length} in hand`,'b')}
    ${stat('Done this month',os.filter(o=>['done','collected','despatched'].includes(o.status)).length,'','g')}
-   ${stat('Stock held for orders',fmt(S.products.reduce((a,p)=>a+(p.stock-webStock(p.id))*p.cost,0)),'at cost','r')}
+   ${stat('Stock held for orders',fmt((()=>{ const held={}; S.web.orders.forEach(o=>{ if(o.status==='accepted') o.lines.forEach(l=>{ held[l.pid]=(held[l.pid]||0)+l.qty }) });
+      return Object.entries(held).reduce((a,[pid,q])=>{ const p=P(+pid); return p?a+Math.min(q,Math.max(0,p.stock))*p.cost:a },0) })()),'at cost','r')}
   </div>
   <div class="card note" style="margin-bottom:12px">
    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
@@ -8347,7 +8366,7 @@ function renderNow(){ if(S.view!=='board') document.body.classList.remove('board
       const q=(ask.value||'').trim(); if(!q)return; webChat.push({who:'you',text:q});
       webChat.push({who:'bot',text:webAnswer(q)}); render(); } };
   }
-  if(S.view==='products'){ const pq=$('#prodQ'); if(pq){ pq.oninput=e=>{prodQ=e.target.value;render();const n=$('#prodQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)} } }
+  if(S.view==='products'){ const pq=$('#prodQ'); if(pq){ pq.oninput=e=>{prodQ=e.target.value;invLimit=200;render();const n=$('#prodQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)} } }
   if(S.view==='docs'){ const dq=$('#docQ'); if(dq){ dq.oninput=e=>{docQ=e.target.value;render();
       const n=$('#docQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body&&docQ)dq.focus() } }
@@ -8406,7 +8425,7 @@ function renderNow(){ if(S.view!=='board') document.body.classList.remove('board
     document.querySelectorAll('[data-mediarm]').forEach(el=>{ el.onclick=()=>shopMediaDelete(el.dataset.mediarm).then(()=>{ const pic=el.closest('.mediaslot').querySelector('.mediapic'); pic.innerHTML=''; pic.classList.add('empty'); toast('Taken off the site') }).catch(e=>toast(e.message)) });
     if(typeof extBindSettings==='function') extBindSettings();
   }
-  const pq=$('#prodQ'); if(pq){ pq.value=prodQ; pq.oninput=e=>{prodQ=e.target.value;render();$('#prodQ').focus()};
+  const pq=$('#prodQ'); if(pq){ pq.value=prodQ; pq.oninput=e=>{prodQ=e.target.value;invLimit=200;render();const n=$('#prodQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body&&prodQ)pq.focus() }
   const cq=$('#custQ'); if(cq){ cq.value=custQ;
     cq.oninput=e=>{ custQ=e.target.value; const l=custList(); if(l.length&&!l.some(c=>c.id===custSel)) custSel=l[0].id; render(); const n=$('#custQ'); n.focus(); n.setSelectionRange(n.value.length,n.value.length) };
@@ -11135,11 +11154,19 @@ function custLedger(id){
   let run=0; for(const r of rows){ run=+(run+r.dr-r.cr).toFixed(2); r.run=run }
   return rows;
 }
-function custAge(id){
-  const open=S.sales.filter(s=>s.customerId===id&&s.balance>0);
-  return open.reduce((a,s)=>{const d=daysAgo(s.date); if(d<=30)a.now+=s.balance; else if(d<=60)a.mid+=s.balance; else a.old+=s.balance; a.n++; if(d>a.oldest)a.oldest=d; return a},{now:0,mid:0,old:0,n:0,oldest:0});
-}
-const custLastSeen=(id)=>{ const b=S.sales.filter(s=>s.customerId===id).map(s=>s.date), p=S.payments.filter(x=>x.dir==='IN'&&x.customerId===id).map(x=>x.date); return [...b,...p].sort().pop()||null };
+/* ageing and last-seen for every customer in one pass — the list asks for all of them on every draw.
+   Balances only move through a journal entry, so sales/payments/journal identity + length is the version. */
+let _caKey='',_caMap=new Map();
+function custAggMap(){ const key=[S.sales.length,S.payments.length,S.journal.length,D(today)].join('|');
+  if(key===_caKey&&_caMap.sales===S.sales&&_caMap.pay===S.payments) return _caMap;
+  const m=new Map(); m.sales=S.sales; m.pay=S.payments;
+  const get=id=>{ let v=m.get(id); if(!v){ v={now:0,mid:0,old:0,n:0,oldest:0,seen:null}; m.set(id,v) } return v };
+  for(const s of S.sales){ if(!s.customerId) continue; const v=get(s.customerId); if(s.date>(v.seen||'')) v.seen=s.date;
+    if(s.balance>0){ const d=daysAgo(s.date); if(d<=30)v.now+=s.balance; else if(d<=60)v.mid+=s.balance; else v.old+=s.balance; v.n++; if(d>v.oldest)v.oldest=d } }
+  for(const x of S.payments){ if(x.dir==='IN'&&x.customerId){ const v=get(x.customerId); if(x.date>(v.seen||'')) v.seen=x.date } }
+  _caKey=key; _caMap=m; return m }
+function custAge(id){ const v=custAggMap().get(id); return v?{now:v.now,mid:v.mid,old:v.old,n:v.n,oldest:v.oldest}:{now:0,mid:0,old:0,n:0,oldest:0} }
+const custLastSeen=(id)=>{ const v=custAggMap().get(id); return v?v.seen:null };
 function custMatch(c,q){
   if(!q) return true;
   const v=q.toLowerCase().trim(), digits=v.replace(/\D/g,'');
@@ -11899,9 +11926,9 @@ function shopMediaUpload(key,file,maxPx=900,link=''){
       const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src);
       const png=/png|gif|webp/.test(file.type)&&file.size<400000; res(c.toDataURL(png?'image/png':'image/jpeg',0.86)) }; img.onerror=()=>rej(new Error('That file is not a picture')); img.src=URL.createObjectURL(file) })
     .then(dataUrl=>fetch('/api/shop/media/'+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(window.regalBridge?regalBridge.token():'')},body:JSON.stringify({dataUrl,link})}))
-    .then(async r=>{ const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'upload failed'); return j });
+    .then(async r=>{ const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'upload failed'); if(shopMedia) shopMedia.add(key); return j });
 }
-function shopMediaDelete(key){ return fetch('/api/shop/media/'+encodeURIComponent(key),{method:'DELETE',headers:{'Authorization':'Bearer '+(window.regalBridge?regalBridge.token():'')}}).then(async r=>{ const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'could not remove'); return j }) }
+function shopMediaDelete(key){ return fetch('/api/shop/media/'+encodeURIComponent(key),{method:'DELETE',headers:{'Authorization':'Bearer '+(window.regalBridge?regalBridge.token():'')}}).then(async r=>{ const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'could not remove'); if(shopMedia) shopMedia.delete(key); return j }) }
 function productHistory(pid){
   const p=P(pid);
   const sold=[]; S.sales.forEach(s=>s.lines.forEach(l=>{ if(l.pid===pid) sold.push({s,l}) }));
@@ -12258,24 +12285,31 @@ function newPurModal(sid,ord){
    render();toast(`${pur.no} received · stock, supplier account and ledger updated${ord?' · order closed':''}`)} }
 
 /* ---- inventory ---- */
-let invTab='products', prodQ='';
+let invTab='products', prodQ='', invLimit=200;
+/* long lists are drawn a page at a time — thousands of rows in one go is what makes a screen feel stuck */
+const moreRows=(shown,total,act)=>shown<total?`<div style="display:flex;gap:10px;align-items:center;margin-top:8px"><span class="muted">Showing ${shown} of ${total}.</span><button class="btn ghost sm" data-act="${act}">Show 200 more</button><span class="muted">or search to narrow it down</span></div>`:'';
 function inventory(){ const tabs=[['products','Products'],['stock','Stock'],['ledger','Stock ledger'],['damage','Damaged goods']];
   let body='';
-  if(invTab==='products'){ const list=S.products.filter(p=>!prodQ||p.name.toLowerCase().includes(prodQ.toLowerCase())||p.code.toLowerCase().includes(prodQ.toLowerCase())||(p.short||'').toLowerCase()===prodQ.toLowerCase()||String(p.num||'')===prodQ||p.barcode===prodQ);
-    body=`<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-      <input id="prodQ" value="${prodQ}" placeholder="Search item name, code or barcode…" style="max-width:340px">
-      <button class="btn tape" data-act="newProd">Add a product</button></div>
+  if(invTab==='products'){ const q=prodQ.toLowerCase().trim(); const list=S.products.filter(p=>!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||(p.short||'').toLowerCase()===q||String(p.num||'')===q||p.barcode===q||(p.cat||'').toLowerCase().includes(q));
+    if(q) list.sort((a,b)=>((a.short||'').toLowerCase()===q||a.name.toLowerCase().startsWith(q)?0:1)-((b.short||'').toLowerCase()===q||b.name.toLowerCase().startsWith(q)?0:1));
+    const shown=list.slice(0,invLimit);
+    body=`<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+      <input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search item name, code, short code, barcode or category…" style="max-width:380px">
+      <button class="btn tape" data-act="newProd">Add a product</button><span class="muted" style="margin-left:auto">${list.length} of ${S.products.length} products</span></div>
      <table><tr><th>No.</th><th>Code</th><th>Short</th><th>Item</th><th>Unit</th><th class="n">MRP</th><th class="n">Cost${CFG.cost.inProducts&&can('cost')?' code':''}</th><th class="n">Discounted</th><th class="n">Wholesale</th><th class="n">Margin</th><th class="n">In stock</th><th></th></tr>
-     ${list.map(p=>`<tr class="rowlink" data-act="prodHist" data-id="${p.id}"><td><span class="pnum">${p.num||''}</span></td><td>${p.code}<div class="muted">${p.barcode}</div></td>
+     ${shown.map(p=>`<tr class="rowlink" data-act="prodHist" data-id="${p.id}"><td><span class="pnum">${p.num||''}</span></td><td>${p.code}<div class="muted">${p.barcode}</div></td>
       <td>${p.short?`<span class="shortcode">${p.short}</span>`:'<span class="muted">—</span>'}</td>
       <td><b>${p.name}</b><div class="muted">${p.cat}</div></td><td>${p.unit}</td>
       <td class="n">${money2(p.mrp)}</td><td class="n">${CFG.cost.inProducts&&can('cost')?`<span class="cc">${costCode(p.cost)}</span>`:money2(p.cost)}</td><td class="n"><b>${money2(p.retail)}</b></td><td class="n">${money2(p.wholesale)}</td>
       <td class="n">${((p.retail-p.cost)/p.retail*100).toFixed(1)}%</td>
       <td class="n">${p.stock<=p.min?`<span class="tag bad">${fq(p.stock)}</span>`:fq(p.stock)}</td>
       <td><button class="btn ghost sm" data-act="editProd" data-id="${p.id}">Edit</button></td></tr>`).join('')||'<tr><td colspan="12" class="muted">Nothing matches that.</td></tr>'}</table>
+     ${moreRows(shown.length,list.length,'invMore')}
      <div class="muted" style="margin-top:8px">Click an item to see every bill it has been sold on.</div>`}
-  if(invTab==='stock') body=`<table><tr><th>Code</th><th>Product</th><th>Category</th><th class="n">In stock</th><th class="n">Min</th><th class="n">Cost (avg)</th><th class="n">Retail</th><th class="n">Wholesale</th><th class="n">Value</th></tr>${S.products.map(p=>`<tr><td>${p.code}<div class="muted">${p.barcode}</div></td><td>${p.name}</td><td>${p.cat}</td><td class="n">${p.stock<=p.min?'<span class="tag bad">':''}${fq(p.stock)} ${p.unit}${p.stock<=p.min?'</span>':''}</td><td class="n">${p.min}</td><td class="n">${p.cost.toFixed(2)}</td><td class="n">${p.retail.toFixed(2)}</td><td class="n">${p.wholesale.toFixed(2)}</td><td class="n">${fmt(p.stock*p.cost)}</td></tr>`).join('')}<tr><td colspan=8><b>Total stock value</b></td><td class="n"><b>${fmt(S.products.reduce((a,p)=>a+p.stock*p.cost,0))}</b></td></tr></table>`;
-  if(invTab==='ledger') body=`<div class="muted" style="margin-bottom:6px">Every movement has a source document. Nothing changes stock silently.</div><table><tr><th>Date</th><th>Product</th><th>Type</th><th class="n">Qty</th><th class="n">After</th><th class="n">Unit cost</th><th>Reference</th></tr>${S.movements.slice().reverse().map(m=>`<tr><td>${m.date}</td><td>${P(m.pid).name}</td><td><span class="tag ${m.type==='PURCHASE_VOID'?'warn':m.qty>0?'ok':'bad'}">${m.type==='PURCHASE_VOID'?'ENTRY VOIDED':m.type}</span></td><td class="n">${m.qty>0?'+':''}${fq(m.qty)}</td><td class="n">${fq(m.after)}</td><td class="n">${m.cost.toFixed(2)}</td><td>${m.ref}</td></tr>`).join('')}</table>`;
+  if(invTab==='stock'){ const q=prodQ.toLowerCase().trim(); const list=S.products.filter(p=>!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||(p.cat||'').toLowerCase().includes(q)); const shown=list.slice(0,invLimit);
+   body=`<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search name, code or category…" style="max-width:380px"><span class="muted" style="margin-left:auto">${list.length} products</span></div>
+   <table><tr><th>Code</th><th>Product</th><th>Category</th><th class="n">In stock</th><th class="n">Min</th><th class="n">Cost (avg)</th><th class="n">Retail</th><th class="n">Wholesale</th><th class="n">Value</th></tr>${shown.map(p=>`<tr><td>${p.code}<div class="muted">${p.barcode}</div></td><td>${p.name}</td><td>${p.cat}</td><td class="n">${p.stock<=p.min?'<span class="tag bad">':''}${fq(p.stock)} ${p.unit}${p.stock<=p.min?'</span>':''}</td><td class="n">${p.min}</td><td class="n">${p.cost.toFixed(2)}</td><td class="n">${p.retail.toFixed(2)}</td><td class="n">${p.wholesale.toFixed(2)}</td><td class="n">${fmt(p.stock*p.cost)}</td></tr>`).join('')}<tr><td colspan=8><b>Total stock value${q?' of these':''}</b></td><td class="n"><b>${fmt(list.reduce((a,p)=>a+p.stock*p.cost,0))}</b></td></tr></table>${moreRows(shown.length,list.length,'invMore')}` }
+  if(invTab==='ledger') body=`<div class="muted" style="margin-bottom:6px">Every movement has a source document. Nothing changes stock silently.</div><table><tr><th>Date</th><th>Product</th><th>Type</th><th class="n">Qty</th><th class="n">After</th><th class="n">Unit cost</th><th>Reference</th></tr>${S.movements.slice().reverse().slice(0,invLimit).map(m=>`<tr><td>${m.date}</td><td>${P(m.pid).name}</td><td><span class="tag ${m.type==='PURCHASE_VOID'?'warn':m.qty>0?'ok':'bad'}">${m.type==='PURCHASE_VOID'?'ENTRY VOIDED':m.type}</span></td><td class="n">${m.qty>0?'+':''}${fq(m.qty)}</td><td class="n">${fq(m.after)}</td><td class="n">${m.cost.toFixed(2)}</td><td>${m.ref}</td></tr>`).join('')}</table>${moreRows(Math.min(invLimit,S.movements.length),S.movements.length,'invMore')}`;
   if(invTab==='damage') body=`<button class="btn tape" data-act="newDmg" style="margin-bottom:10px">Record damaged goods</button><table><tr><th>No</th><th>Date</th><th>Product</th><th class="n">Qty</th><th class="n">Value</th><th>Reason</th><th>User</th></tr>${S.damages.map(d=>`<tr><td>${d.no}</td><td>${d.date}</td><td>${P(d.pid).name}</td><td class="n">${d.qty}</td><td class="n">${fmt(d.value)}</td><td>${d.reason}</td><td>${d.by}</td></tr>`).join('')}</table>`;
   return `<h1>Inventory</h1><div class="tabs">${tabs.map(t=>`<button class="${invTab===t[0]?'on':''}" data-tab="${t[0]}">${t[1]}</button>`).join('')}</div><div class="card">${body}</div>` }
 function barcodeSvg(code){ let s='<svg width="180" height="40" viewBox="0 0 180 40">'; let x=4; for(const ch of code+'X'){ const n=(ch.charCodeAt(0)*7)%5+1; s+=`<rect x="${x}" y="0" width="${n}" height="40" fill="#000"/>`; x+=n+((ch.charCodeAt(0)*3)%3+1); if(x>172)break } return s+'</svg>' }
@@ -13516,7 +13550,7 @@ function shopLock(){
 document.addEventListener('click',e=>{
   if(S.notifOpen&&!e.target.closest('.bellwrap')){ S.notifOpen=false; drawBell() }
   const nb=e.target.closest('[data-view]'); if(nb){go(nb.dataset.view);return}
-  const tb=e.target.closest('[data-tab]'); if(tb){invTab=tb.dataset.tab;render();return} const ab=e.target.closest('[data-acc]'); if(ab){accTab=ab.dataset.acc;render();return}
+  const tb=e.target.closest('[data-tab]'); if(tb){invTab=tb.dataset.tab;invLimit=200;render();return} const ab=e.target.closest('[data-acc]'); if(ab){accTab=ab.dataset.acc;render();return}
   const a=e.target.closest('[data-act]'); if(!a)return; e.preventDefault(); const act=a.dataset.act;
   ({ del:()=>{S.pos.lines.splice(+a.dataset.i,1);render()}, pay:openPay, pickCust:pickCustomer, clear:()=>{S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()}, hold:()=>{toast('Bill held — recall with Ctrl+R (demo keeps one)');S.held=S.pos;S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()},
     invoice:()=>showInvoice(S.sales.find(s=>s.no===a.dataset.no)), showInv:()=>{closeModals();showInvoice(S.sales.find(s=>s.no===a.dataset.no),a.dataset.f)}, closeModal:closeModals,
@@ -13598,6 +13632,7 @@ document.addEventListener('click',e=>{
     webOpenSite:()=>go('site'),
     webSettings:()=>{go('site'); siteTab='overview'; render()},
     navSignOut:()=>{ const b=document.getElementById('logoutBtn'); if(b) b.click() },
+    invMore:()=>{ invLimit+=200; const keep=$('#main').scrollTop; render(); $('#main').scrollTop=keep },
     siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
     siteShow:()=>{siteShow=a.dataset.v;render()},
     siteFeat:()=>{const p=P(+a.dataset.id); p.featured=!p.featured; render()},

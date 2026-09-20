@@ -186,6 +186,13 @@ r.get('/catalog', asyncHandler(async (_req, res) => {
 // ---------------------------------------------------------------- pictures
 const MEDIA_KEY = /^(p:\d+|c:.{1,60}|s:[1-9]|b:[1-9]|logo)$/;
 
+/** Just the keys that have a picture — the till asks once instead of trying every product's photo. */
+r.get('/media', asyncHandler(async (_req, res) => {
+  const m = await mediaIndex();
+  res.set('Cache-Control', 'no-store');
+  res.json({ keys: Object.keys(m) });
+}));
+
 /** A picture, cached for a year — the catalogue changes the ?v= when it is replaced. */
 r.get('/media/:key', asyncHandler(async (req, res) => {
   await ensureShopTables();
