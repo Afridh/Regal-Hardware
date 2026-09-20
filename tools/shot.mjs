@@ -44,7 +44,7 @@ if (process.argv[5] === 'approvals') {                      // the owner's appro
 if ((process.argv[5] || '').startsWith('printpdf:')) {       // printpdf:r80 or printpdf:a5 — what the printer would get, as a PDF next to the png
   const f = process.argv[5].slice(9);
   await pg.evaluate(() => { window.__ap = 0; window.addEventListener('afterprint', () => window.__ap++); window.addEventListener('beforeprint', () => window.__bp = (window.__bp || 0) + 1); });
-  console.log(await pg.evaluate(f => { try { window.print = () => {}; const inv = S.sales.slice().reverse().find(s => s.lines.length >= 3) || S.sales.at(-1); printBill(inv, f); return 'printBill ok ' + inv.no + ' area=' + !!document.getElementById('printArea'); } catch (e) { return 'ERR ' + e.message + '\n' + e.stack; } }, f));
+  console.log(await pg.evaluate(f => { try { window.print = () => {}; CFG.print.agent = ''; const inv = S.sales.slice().reverse().find(s => s.lines.length >= 3) || S.sales.at(-1); printBill(inv, f); return 'printBill ok ' + inv.no + ' area=' + !!document.getElementById('printArea'); } catch (e) { return 'ERR ' + e.message + '\n' + e.stack; } }, f));
   await new Promise(r => setTimeout(r, 400)); await pg.emulateMediaType('print');
   await pg.screenshot({ path: out, fullPage: true });
   await pg.pdf({ path: out.replace(/\.png$/, '.pdf'), preferCSSPageSize: true, printBackground: true });

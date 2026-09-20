@@ -41,8 +41,9 @@ async function render(format, html) {
       if (format === 'r80') {
         // one CSS pixel per printer dot: the receipt is designed 302px wide, the roll is `dots` wide → scale it up,
         // no border, hardly any side padding, and pure black on white so the printer does not dither the text
-        p.style.width = '302px'; p.style.border = '0'; p.style.padding = '2px 4px'; p.style.boxSizing = 'border-box';
-        p.style.zoom = String((f.dots || 576) / 302); p.style.filter = 'contrast(400%)';
+        const sc = +p.dataset.scale || 1;                    // text size chosen in Settings
+        p.style.width = (302 / sc) + 'px'; p.style.border = '0'; p.style.padding = '2px 4px'; p.style.boxSizing = 'border-box';
+        p.style.zoom = String((f.dots || 576) / 302 * sc); p.style.filter = 'contrast(400%)';
         document.body.style.width = (f.dots || 576) + 'px';
       }
     }, f, format);
