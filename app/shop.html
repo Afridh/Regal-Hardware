@@ -163,8 +163,16 @@ header.hdr{position:sticky;top:0;z-index:1020;background:#fff;box-shadow:0 1px 0
 .aiz-carousel .arrow:hover{background:var(--primary);color:#fff}
 .aiz-carousel .arrow.l{left:-16px}.aiz-carousel .arrow.r{right:-16px}
 .pgrid{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--soft-light);border-left:1px solid var(--soft-light)}
-.pgrid.six{grid-template-columns:repeat(6,1fr)}
+.pgrid.six,.pgrid.per6{grid-template-columns:repeat(6,1fr)}.pgrid.per5{grid-template-columns:repeat(5,1fr)}
 .pgrid>*{border-right:1px solid var(--soft-light);border-bottom:1px solid var(--soft-light)}
+/* theme switches set at the till */
+body.light-header .menu-bar{background:#fff;box-shadow:inset 0 -1px 0 var(--soft-light)}
+body.light-header .all-category,body.light-header .nav-cart-box{background:var(--light);color:var(--dark)}
+body.light-header .menu-links a{color:var(--dark)}body.light-header .menu-links a:hover,body.light-header .menu-links a.on{background:var(--soft-secondary-base)}
+body.light-header .top-navbar{background:var(--light);color:var(--dark)}body.light-header .top-navbar a{color:var(--dark)}
+body.cards-shadow .pgrid,body.cards-shadow .aiz-carousel .track{border:0;gap:16px}
+body.cards-shadow .pgrid>*,body.cards-shadow .aiz-carousel .track>*{border:0;box-shadow:0 2px 12px rgba(0,0,0,.08);border-radius:6px;overflow:hidden}
+body.cards-shadow .aiz-carousel .track>*{flex-basis:calc(20% - 13px)}
 .delivery-band{background:var(--dark);color:#fff;padding:36px 0;margin:24px 0}
 .delivery-band .container{display:flex;align-items:center;gap:36px;flex-wrap:wrap}
 .delivery-band h5{font-size:32px;font-weight:400}.delivery-band p{color:var(--gray);font-size:18px;margin:8px 0 0}
@@ -397,7 +405,7 @@ footer.ft{background:var(--dark);color:#fff;margin-top:30px}
  .filter-side{position:fixed;left:0;top:0;bottom:0;width:300px;background:#fff;z-index:1060;overflow:auto;padding:16px;transform:translateX(-100%);transition:.3s;box-shadow:0 0 40px rgba(0,0,0,.3)}
  .filter-side.show{transform:none}.filter-thumb{display:inline-flex}
  .home-slider{height:320px}.home-slider .promo h2{font-size:32px}
- .pgrid{grid-template-columns:repeat(3,1fr)}.pgrid.six{grid-template-columns:repeat(4,1fr)}
+ .pgrid{grid-template-columns:repeat(3,1fr)}.pgrid.six,.pgrid.per5,.pgrid.per6{grid-template-columns:repeat(4,1fr)}
  .aiz-carousel .track>*{flex-basis:25%}
  .feat-cats{grid-template-columns:repeat(2,1fr)}
  .dash-grid{grid-template-columns:1fr}
@@ -416,7 +424,7 @@ footer.ft{background:var(--dark);color:#fff;margin-top:30px}
  .delivery-band h5{font-size:24px}.delivery-band .btn{margin-left:0}
 }
 @media (max-width:575px){
- .pgrid,.pgrid.six{grid-template-columns:repeat(2,1fr)}.aiz-carousel .track>*{flex-basis:50%}
+ .pgrid,.pgrid.six,.pgrid.per5,.pgrid.per6{grid-template-columns:repeat(2,1fr)}.aiz-carousel .track>*{flex-basis:50%}
  .aiz-card-box .pic{height:150px}.aiz-card-box .price del{opacity:1;margin-right:0}.aiz-card-box .aiz-p-hov-icon a,.aiz-card-box .cart-btn{transform:none}.aiz-card-box .cart-btn{position:static;height:32px;opacity:1}.aiz-card-box .cart-btn .t{margin:0}.aiz-card-box .cart-btn svg{display:none}
  .feat-cats{grid-template-columns:1fr}.feat-cats .fc{padding:16px}.feat-cats .fc .th{width:80px;height:80px}
  .home-slider{height:240px}.home-slider .promo{padding:0 20px}.home-slider .promo small{display:none}.home-slider .promo h2{font-size:22px;margin:0 0 8px}.home-slider .promo p{font-size:13px;margin-bottom:12px}.home-slider .promo .btn{padding:8px 16px}
@@ -522,11 +530,11 @@ function categoryMenu(limit=12){ const cats=st.cat.categories; return `<div clas
   ${cats.length>limit?`<li class="more"><a href="#/categories">See all ${cats.length} categories</a></li>`:''}</ul></div>` }
 function header(){
   const s=st.cat.shop, w=st.cat.settings, n=cartN(), t=totals(st.cart.filter(l=>P(l.pid)));
-  const links=[['','Home'],['search','All products'],['categories','Categories'],['track','Track order'],['contact','Contact us']];
-  const cur=st.route.parts[0]||'';
-  return `<div class="top-navbar"><div class="container">
+  const cur='#/'+(st.route.path||'');
+  const menu=T.menu.map(m=>{ const ext=/^https?:/i.test(m.href); const on=!ext&&(m.href==='#/'?cur==='#/':cur.startsWith(m.href.split('?')[0])&&m.href!=='#/'); return `<a href="${esc(m.href||'#/')}" class="${on?'on':''}" ${ext?'target="_blank" rel="noopener"':''}>${esc(m.label)}</a>` }).join('');
+  return `${T.topbar!==false?`<div class="top-navbar"><div class="container">
      <div>${w.tagline?`<span class="tagline">${esc(w.tagline)}</span>`:`<span class="tagline">${esc(s.tags||'Everything for the build, delivered')}</span>`}</div>
-     <div>${s.phone?`<a href="tel:${esc(s.phone)}">Helpline: ${esc(s.phone)}</a>`:''}${st.token?`<span style="margin-left:18px;opacity:.85">Hi, ${esc(st.name)}</span>`:`<a href="#" data-login style="margin-left:18px">Login</a>`}</div></div></div>
+     <div>${s.phone?`<a href="tel:${esc(s.phone)}">Helpline: ${esc(s.phone)}</a>`:''}${st.token?`<span style="margin-left:18px;opacity:.85">Hi, ${esc(st.name)}</span>`:`<a href="#" data-login style="margin-left:18px">Login</a>`}</div></div></div>`:''}
    <header class="hdr"><div class="logo-bar"><div class="container">
      <button class="menu-btn" data-drawer>${I.bars}</button>
      <a class="logo" href="#/">${s.logo?`<img src="${esc(s.logo)}" alt="${esc(s.name)}">`:`<span class="mark">RH</span>`}<span><b>${esc((s.name||'Regal Hardware').replace(/ hardware$/i,''))} <span>${/hardware/i.test(s.name||'')?'HARDWARE':''}</span></b><small>${esc(w.domain||'')}</small></span></a>
@@ -542,7 +550,7 @@ function header(){
      </div></div></div>
     <div class="menu-bar"><div class="container">
      <div class="all-category ${st.catOpen?'open':''}" id="catBtn"><div><b>Categories</b><span>(See All)</span></div>${I.down}</div>
-     <div class="menu-links">${links.map(l=>`<a href="#/${l[0]}" class="${cur===l[0]?'on':''}">${l[1]}</a>`).join('')}</div>
+     <div class="menu-links">${menu}</div>
      <div class="nav-cart-box" id="navCart"><span class="cart-icon">${I.cart}<i id="cartN">${n}</i></span><span class="txt">Cart<b id="cartT">${money(t.goods)}</b></span>
       <div class="cart-dropdown" id="cartDrop">${cartDropdown()}</div></div>
     </div>
@@ -569,7 +577,7 @@ function footer(){ const s=st.cat.shop, w=st.cat.settings; const soc=[['facebook
    <div class="bottom"><div class="container"><span>© ${new Date().getFullYear()} ${esc(s.name||'Regal Hardware')}. All rights reserved.</span><span>Cash on delivery · Pay at the counter · Bank transfer</span></div></div></footer>` }
 function drawer(){ return `<div class="side-drawer ${st.drawer?'show':''}" id="drawer"><div class="ov" data-drawerclose></div><div class="pane">
    <div class="hd"><span class="circle" style="width:40px;height:40px;border-radius:50%;border:1px solid var(--soft-light);display:flex;align-items:center;justify-content:center;color:var(--secondary)">${I.user}</span>${st.token?`<b>${esc(st.name)}</b>`:`<a href="#" data-login class="fs-12 text-secondary">Login</a> <span class="opacity-50">|</span> <a href="#" data-login class="fs-12 text-secondary">Registration</a>`}</div>
-   <a class="lnk" href="#/">Home</a><a class="lnk" href="#/search">All products</a><a class="lnk" href="#/track">Track order</a><a class="lnk" href="#/contact">Contact us</a>
+   ${T.menu.map(m=>`<a class="lnk" href="${esc(m.href||'#/')}" ${/^https?:/i.test(m.href)?'target="_blank" rel="noopener"':''}>${esc(m.label)}</a>`).join('')}
    ${st.token?`<a class="lnk" href="#/account">My account</a><a class="lnk" href="#/account/orders">Purchase history</a><a class="lnk" href="#/account/wishlist">Wishlist</a><a class="lnk text-primary" href="#" data-logout>Logout</a>`:''}
    <div style="padding:12px 20px 4px;font-weight:700;font-size:13px;color:var(--secondary)">CATEGORIES</div>${categoryMenu(40)}</div></div>` }
 
@@ -581,7 +589,8 @@ function productBox(p){ const d=discPct(p), out=p.stock!==null&&p.stock<=0;
     <div class="aiz-p-hov-icon"><a href="#" data-wish="${p.id}" class="${st.wish.includes(p.id)?'on':''}" title="Add to wishlist">${I.heartO}</a></div>
     ${out?'<div class="oos">Out of stock</div>':`<button class="cart-btn" data-add="${p.id}"><span class="t">Add to Cart</span>${I.cart}</button>`}
     <div class="body"><h3><a href="${url('product/'+p.id)}" title="${esc(p.name)}">${esc(p.name)}</a></h3>
-     <div class="price">${p.mrp>p.price?`<del>${money(p.mrp)}</del>`:''}<b>${money(p.price)}</b></div></div></div>` }
+     <div class="price">${T.showMrp!==false&&p.mrp>p.price?`<del>${money(p.mrp)}</del>`:''}<b>${money(p.price)}</b></div>
+     ${T.showStock!==false&&p.stock!==null&&!out?`<div class="fs-12 text-secondary" style="margin-top:4px">${fq(p.stock)} ${esc(p.unit)} in stock</div>`:''}</div></div>` }
 function carousel(id,items){ return `<div class="aiz-carousel" id="${id}"><button class="arrow l" data-scroll="${id}" data-dir="-1">${I.left}</button><div class="track">${items.map(p=>productBox(p)).join('')}</div><button class="arrow r" data-scroll="${id}" data-dir="1">${I.right}</button></div>` }
 
 /* ---------- pages ---------- */
@@ -593,19 +602,24 @@ function home(){
   const newest=prods.slice().sort((a,b)=>b.id-a.id).slice(0,12);
   const cats=st.cat.categories;
   const slides=st.cat.slides.length?st.cat.slides:[null];
-  const promo=`<div class="promo"><small>${esc(w.tagline||s.tags||'Hardware · Building materials')}</small><h2>${esc(w.name.replace(/ Online$/,''))} — everything for the build</h2><p>${w.delivery?`Delivery in town from ${money(w.delivery)}, free over ${money(w.freeOver)}. `:''}Order online, pay on delivery or at the counter.</p><a class="btn btn-primary" href="#/search">Shop now</a></div>`;
+  const H=T.hero, Bd=T.band;
+  const promo=`<div class="promo"><small>${esc(w.tagline||s.tags||'Hardware · Building materials')}</small><h2>${esc(H.title||(w.name.replace(/ Online$/,'')+' — everything for the build'))}</h2><p>${esc(H.text||((w.delivery?`Delivery in town from ${money(w.delivery)}, free over ${money(w.freeOver)}. `:'')+'Order online, pay on delivery or at the counter.'))}</p><a class="btn btn-primary" href="#/search">${esc(H.button||'Shop now')}</a></div>`;
+  const per=+T.perRow||6, grid=`pgrid per${per}`;
+  const section={
+    featured:t=>featured.length?`<section class="sec"><div class="container"><div class="section-top"><h3>${esc(t||'Featured Products')}</h3><a href="#/search?sort=best">View All Products</a></div>${carousel('feat',featured)}</div></section>`:'',
+    categories:t=>`<section class="sec"><div class="container"><div class="section-top"><h3>${esc(t||'Featured Categories')}</h3><a href="#/categories">View All Categories</a></div>
+      <div class="feat-cats">${cats.slice(0,6).map(c=>`<div class="fc">${catThumb(c)}<div><h6><a href="${url('search',{cat:c.name})}">${esc(c.name)}</a></h6>${prods.filter(p=>p.cat===c.name).slice(0,4).map(p=>`<p><a href="${url('product/'+p.id)}">${esc(p.name)}</a></p>`).join('')}<p><a href="${url('search',{cat:c.name})}" class="text-blue fw-700">${c.count} products →</a></p></div></div>`).join('')}</div></div></section>`,
+    banners:()=>st.cat.banners.length?`<section class="sec"><div class="container"><div class="banners">${st.cat.banners.map(b=>`<a href="${esc(b.link||'#/search')}"><img src="${esc(b.src)}" alt="promo"></a>`).join('')}</div></div></section>`:'',
+    best:t=>best.length?`<section class="sec"><div class="container"><div class="section-top"><h3>${esc(t||'Best Selling')}</h3><a href="#/search?sort=best">View All Products</a></div>${carousel('best',best)}</div></section>`:'',
+    newest:t=>`<section class="sec"><div class="container"><div class="section-top"><h3>${esc(t||'New Products')}</h3><a href="#/search?sort=newest">View All Products</a></div><div class="${grid}">${newest.slice(0,per*2).map(productBox).join('')}</div></div></section>`,
+    band:()=>`<div class="delivery-band"><div class="container"><div>${I.cart.replace('class="i"','class="i" style="width:60px;height:60px;opacity:.9"')}</div><div><h5>${esc(Bd.title||(w.delivery?`Delivery in town ${money(w.delivery)} — free over ${money(w.freeOver)}`:'Free delivery on every order in town'))}</h5><p>${esc(Bd.text||((w.payNote||'Cash on delivery, pay at the counter or bank transfer.')+(w.hours?' · '+w.hours:'')))}</p></div><a class="btn" href="#/search">${esc(Bd.button||'Start shopping')}</a></div></div>`,
+    catwise:()=>cats.slice(0,Math.max(0,+T.catwise||0)).map(c=>{ const list=prods.filter(p=>p.cat===c.name).slice(0,per); return list.length?`<section class="sec"><div class="container"><div class="section-top"><h3>${esc(c.name)}</h3><a href="${url('search',{cat:c.name})}">View All ${c.count} Products</a></div><div class="${grid}">${list.map(productBox).join('')}</div></div></section>`:'' }).join(''),
+  };
   return `<div class="home-banner-area"><div class="container">${categoryMenu()}
     <div class="home-slider" id="slider">${slides.map((sl,i)=>`<div class="slide ${i===st.slide?'on':''}">${sl?`<a href="${esc(sl.link||'#/search')}"><img src="${esc(sl.src)}" alt="promo"></a>`:promo}</div>`).join('')}
      ${slides.length>1?`<button class="arr l" data-slide="-1">‹</button><button class="arr r" data-slide="1">›</button><div class="dots">${slides.map((_,i)=>`<i class="${i===st.slide?'on':''}" data-slideto="${i}"></i>`).join('')}</div>`:''}</div></div></div>
    ${!w.open?`<div class="container"><div class="closed-note"><b>The shop is not taking online orders just now.</b> ${esc(w.hours||'')}${s.phone?' · Call '+esc(s.phone):''}</div></div>`:''}
-   ${featured.length?`<section class="sec"><div class="container"><div class="section-top"><h3>Featured Products</h3><a href="#/search?sort=best">View All Products</a></div>${carousel('feat',featured)}</div></section>`:''}
-   <section class="sec"><div class="container"><div class="section-top"><h3>Featured Categories</h3><a href="#/categories">View All Categories</a></div>
-    <div class="feat-cats">${cats.slice(0,6).map(c=>`<div class="fc">${catThumb(c)}<div><h6><a href="${url('search',{cat:c.name})}">${esc(c.name)}</a></h6>${prods.filter(p=>p.cat===c.name).slice(0,4).map(p=>`<p><a href="${url('product/'+p.id)}">${esc(p.name)}</a></p>`).join('')}<p><a href="${url('search',{cat:c.name})}" class="text-blue fw-700">${c.count} products →</a></p></div></div>`).join('')}</div></div></section>
-   ${st.cat.banners.length?`<section class="sec"><div class="container"><div class="banners">${st.cat.banners.map(b=>`<a href="${esc(b.link||'#/search')}"><img src="${esc(b.src)}" alt="promo"></a>`).join('')}</div></div></section>`:''}
-   ${best.length?`<section class="sec"><div class="container"><div class="section-top"><h3>Best Selling</h3><a href="#/search?sort=best">View All Products</a></div>${carousel('best',best)}</div></section>`:''}
-   <section class="sec"><div class="container"><div class="section-top"><h3>New Products</h3><a href="#/search?sort=newest">View All Products</a></div><div class="pgrid six">${newest.map(productBox).join('')}</div></div></section>
-   <div class="delivery-band"><div class="container"><div>${I.cart.replace('class="i"','class="i" style="width:60px;height:60px;opacity:.9"')}</div><div><h5>${w.delivery?`Delivery in town ${money(w.delivery)} — free over ${money(w.freeOver)}`:'Free delivery on every order in town'}</h5><p>${esc(w.payNote||'Cash on delivery, pay at the counter or bank transfer.')}${w.hours?' · '+esc(w.hours):''}</p></div><a class="btn" href="#/search">Start shopping</a></div></div>
-   ${cats.slice(0,4).map(c=>{ const list=prods.filter(p=>p.cat===c.name).slice(0,6); return list.length?`<section class="sec"><div class="container"><div class="section-top"><h3>${esc(c.name)}</h3><a href="${url('search',{cat:c.name})}">View All ${c.count} Products</a></div><div class="pgrid six">${list.map(productBox).join('')}</div></div></section>`:'' }).join('')}`;
+   ${T.sections.filter(x=>x.on!==false&&section[x.k]).map(x=>section[x.k](x.t)).join('')}`;
 }
 function categoriesPage(){ return `<div class="container"><ul class="breadcrumb"><li><a href="#/">Home</a></li>${I.right}<li><b>All Categories</b></li></ul><h1 class="fs-20" style="margin-bottom:14px">All Categories</h1>
   <div class="feat-cats">${st.cat.categories.map(c=>`<div class="fc">${catThumb(c)}<div><h6><a href="${url('search',{cat:c.name})}">${esc(c.name)}</a></h6>${st.cat.products.filter(p=>p.cat===c.name).slice(0,4).map(p=>`<p><a href="${url('product/'+p.id)}">${esc(p.name)}</a></p>`).join('')}<p><a href="${url('search',{cat:c.name})}" class="text-blue fw-700">${c.count} products →</a></p></div></div>`).join('')}</div></div>` }
@@ -645,7 +659,7 @@ function productPage(){
      <div class="actions"><button data-wish="${p.id}" class="${st.wish.includes(p.id)?'text-primary':''}">${I.heartO} Wishlist</button><button data-share>${I.share} Share</button></div>
      <h1>${esc(p.name)}</h1>
      <div class="meta"><div><span class="text-gray">Category</span> <a href="${url('search',{cat:p.cat})}">${esc(p.cat)}</a></div><div class="sku"><span class="text-gray">SKU</span> <b>${esc(p.code)}</b><button data-copy="${esc(p.code)}" title="Copy">${I.copy}</button></div></div>
-     ${p.sold?`<div class="fs-14"><span class="text-gray">Sold recently</span> <b>${fq(p.sold)} ${esc(p.unit)}</b></div>`:''}
+     ${p.sold&&T.showSold!==false?`<div class="fs-14"><span class="text-gray">Sold recently</span> <b>${fq(p.sold)} ${esc(p.unit)}</b></div>`:''}
      <h5 class="sub">Pricing</h5>
      <div class="pricing"><div><h6>${money(p.price)} <span>/${esc(p.unit||'pcs')}</span>${p.mrp>p.price?`<del>${money(p.mrp)}</del>`:''}</h6>${d>0?`<div style="margin-top:8px"><span class="discount-badge">-${d}%</span> <span class="fs-12 text-gray" style="margin-left:6px">you save ${money(p.mrp-p.price)}</span></div>`:''}</div></div>
      ${p.tiers?`<div class="tiers"><table><tr><th>Min Qty</th><th>Unit Price</th><th></th></tr>${p.tiers.map(t=>`<tr><td>${fq(t.min)} ${esc(p.unit)}</td><td>${money(t.price)}</td><td class="text-gray">${esc(t.label||'')}</td></tr>`).join('')}</table></div>`:''}
@@ -860,11 +874,31 @@ function signIn(then){
 }
 
 /* ---------- boot ---------- */
+/* the look is set at the till (The shop site → Look & layout); these are the defaults it starts from */
+const THEME_DEFAULTS={preset:'classic',color:'#d43533',accent:'#ffc519',font:'Public Sans',headerDark:true,topbar:true,cardStyle:'bordered',perRow:6,showSold:true,showMrp:true,showStock:true,catwise:4,
+  hero:{title:'',text:'',button:'Shop now'},band:{title:'',text:'',button:'Start shopping'},
+  sections:[{k:'featured',on:true,t:'Featured Products'},{k:'categories',on:true,t:'Featured Categories'},{k:'banners',on:true,t:''},{k:'best',on:true,t:'Best Selling'},{k:'newest',on:true,t:'New Products'},{k:'band',on:true,t:''},{k:'catwise',on:true,t:''}],
+  menu:[{label:'Home',href:'#/'},{label:'All products',href:'#/search'},{label:'Categories',href:'#/categories'},{label:'Track order',href:'#/track'},{label:'Contact us',href:'#/contact'}]};
+let T=THEME_DEFAULTS;
+function applyTheme(){
+  const t=st.cat.settings.theme||{}; T={...THEME_DEFAULTS,...t,hero:{...THEME_DEFAULTS.hero,...(t.hero||{})},band:{...THEME_DEFAULTS.band,...(t.band||{})}};
+  if(!Array.isArray(T.sections)||!T.sections.length) T.sections=THEME_DEFAULTS.sections; if(!Array.isArray(T.menu)||!T.menu.length) T.menu=THEME_DEFAULTS.menu;
+  const root=document.documentElement.style, hex=c=>/^#[0-9a-f]{6}$/i.test(c||''), rgb=c=>[1,3,5].map(i=>parseInt(c.slice(i,i+2),16));
+  const main=hex(T.color)?T.color:hex(st.cat.settings.color)?st.cat.settings.color:THEME_DEFAULTS.color, [r,g,b]=rgb(main);
+  root.setProperty('--primary',main); root.setProperty('--hov-primary',`rgb(${r*.72|0} ${g*.72|0} ${b*.72|0})`); root.setProperty('--soft-primary',`rgba(${r},${g},${b},.15)`);
+  const acc=hex(T.accent)?T.accent:THEME_DEFAULTS.accent, [ar,ag,ab]=rgb(acc);
+  root.setProperty('--secondary-base',acc); root.setProperty('--soft-secondary-base',`rgba(${ar},${ag},${ab},.15)`);
+  const font=['Public Sans','Inter','Roboto','Poppins','Nunito'].includes(T.font)?T.font:'Public Sans';
+  if(font!=='Public Sans'&&!document.getElementById('fontX')){ const l=document.createElement('link'); l.id='fontX'; l.rel='stylesheet'; l.href=`https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@300;400;500;600;700;800&display=swap`; document.head.appendChild(l) }
+  document.body.style.fontFamily=`'${font}',sans-serif`;
+  document.body.classList.toggle('light-header',T.headerDark===false); document.body.classList.toggle('cards-shadow',T.cardStyle==='shadow');
+  root.setProperty('--per-row',String(+T.perRow||6));
+}
 async function loadCatalog(){
   try{ st.cat=await api('/catalog'); }
   catch(e){ st.cat={shop:{name:'Regal Hardware'},settings:{open:false,name:'Regal Hardware Online',hours:'The site cannot reach the shop right now — '+e.message},categories:[],products:[],slides:[],banners:[]} }
   st.cat.slides=st.cat.slides||[]; st.cat.banners=st.cat.banners||[];
-  if(st.cat.settings.color&&/^#[0-9a-f]{6}$/i.test(st.cat.settings.color)){ const c=st.cat.settings.color, r=parseInt(c.slice(1,3),16),g=parseInt(c.slice(3,5),16),b=parseInt(c.slice(5,7),16); document.documentElement.style.setProperty('--primary',c); document.documentElement.style.setProperty('--hov-primary',`rgb(${r*.7|0} ${g*.7|0} ${b*.7|0})`); document.documentElement.style.setProperty('--soft-primary',`rgba(${r},${g},${b},.15)`) }
+  applyTheme();
 }
 (async()=>{ st.route=parseRoute(); render(); await loadCatalog(); render();
   setInterval(()=>{ if(st.cat&&st.cat.slides.length>1&&$('#slider')) slideTo(st.slide+1) },5000);

@@ -1523,6 +1523,7 @@ tr.rowlink button{cursor:pointer}
 .billprev{overflow:auto;background:#e6e9e8;padding:8px;border-radius:var(--r)}
 .billprev.r80{zoom:.9}.billprev.r80 .print{margin:0 auto}
 .mediagrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px 16px}
+tr.dim td{opacity:.55}tr.dim td:first-child{opacity:1}
 .mediapic{width:120px;height:72px;border:1px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none;border-radius:4px}
 .mediapic img{max-width:100%;max-height:100%}.mediapic.empty{background:repeating-linear-gradient(45deg,#f4f4f4 0 8px,#fff 8px 16px)}
 .billprev.a5{zoom:.48;width:830px;max-width:none}.billprev.a5 .print{min-height:0!important}
@@ -5976,12 +5977,13 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
 function settings(){
-  const tabs=[['screen','My screen'],['done','Finishing a bill'],['site','The shop site'],['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['approvals','Approvals'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  const tabs=[['screen','My screen'],['done','Finishing a bill'],['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['approvals','Approvals'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
   const fld=(path,label,hint='',type='text')=>{
     const [g,k]=path.split('.'); const val=g==='web'?S.web.settings[k]:CFG[g][k];
     return `<div class="f"><label>${label}</label>
       ${type==='check'?`<label class="chk"><input type="checkbox" data-set="${path}" ${val?'checked':''}> ${hint}</label>`
       :`<input data-set="${path}" ${type==='number'?'type="number"':''} value="${String(val??'').replace(/"/g,'&quot;')}">${hint?`<div class="muted">${hint}</div>`:''}`}</div>`};
+  if(setTab==='site') setTab='shop';        // the site has its own page now
   let body='';
   if(setTab==='shop') body=`<div class="grid2">${fld('shop.name','Shop name, as printed')}${fld('shop.sinhala','Sinhala name')}</div>
     <div class="grid2">${fld('shop.addr','Address')}${fld('shop.near','Landmark line','Printed under the address')}</div>
@@ -6004,45 +6006,6 @@ function settings(){
     ${fld('bill.footer','Footer note on bills','Use {days} for the return window')}
     ${fld('bill.summaryTime','Time the owner summary goes out')}
     <div class="card note" style="margin-top:10px">Vouchers — supplier payments, expenses, receipts and salaries — all print A5 landscape on the same layout as the bill.</div>`;
-  if(setTab==='site'){
-    const w=S.web.settings;
-    body=`<div class="muted" style="margin-bottom:10px">The site sells what the shop stocks, at the shop's own prices. On the real thing it sits on its own domain and reads the same database — nothing is kept twice.</div>
-     <div class="grid3">
-      ${fld('web.name','What the site is called')}
-      ${fld('web.staffPath','Where the shop signs in','Added to the address above — regalhw.lk/pos')}
-      ${fld('web.domain','Its address','Point the domain at the site; the shop keeps its own')}
-      <div class="f"><label>Prices shown</label><select data-set="web.level">
-       ${[['retail','Counter prices'],['wholesale','Wholesale prices']].map(o=>`<option value="${o[0]}" ${w.level===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>
-     </div>
-     <div class="grid3">
-      ${fld('web.delivery','Delivery charge','','number')}
-      ${fld('web.freeOver','Free delivery over','','number')}
-      ${fld('web.minOrder','Smallest order taken','','number')}
-     </div>
-     ${fld('web.hours','When orders are picked')}
-     ${fld('web.payNote','What it says about paying')}
-     <div class="grid2" style="margin-top:8px">
-      ${fld('web.open','','taking orders — untick to close the site','check')}
-      ${fld('web.showOutOfStock','','show items that are out of stock, so people can ask','check')}
-     </div>
-     <div class="card note" style="margin-top:10px"><b>Stock is held when you accept an order</b>, not when someone puts it in a basket — so the counter never loses a sale to an order nobody has confirmed. The site shows what is left after everything accepted.</div>
-     <h2 style="margin-top:18px">How the site looks</h2>
-     <div class="grid3">
-      ${fld('web.tagline','Line in the top bar','e.g. Everything for the build, delivered')}
-      ${fld('web.color','Site colour','A hex colour like #d43533 — empty for the standard red')}
-      ${fld('web.featured','Featured product numbers','Product numbers separated by commas — shown first on the home page')}
-     </div>
-     ${fld('web.about','About the shop, in the footer')}
-     <div class="grid3">${fld('web.email','Email')}${fld('web.whatsapp','WhatsApp number')}${fld('web.facebook','Facebook page link')}</div>
-     <div class="grid2">${fld('web.instagram','Instagram link')}${fld('web.youtube','YouTube link')}</div>
-     <h2 style="margin-top:18px">Pictures on the site</h2>
-     <div class="muted" style="margin-bottom:8px">Pictures go straight to the site when chosen — they are kept on the server, not in the books. Product photos are on each product's form.</div>
-     <div class="mediagrid">
-      ${mediaSlot('logo','Site logo','Shown in the header and footer; a wide PNG works best')}
-      ${[1,2,3,4,5].map(i=>mediaSlot('s:'+i,'Home slide '+i,'About 1200 × 460, one after another',true)).join('')}
-      ${[1,2,3].map(i=>mediaSlot('b:'+i,'Banner '+i,'Wide picture under the categories',true)).join('')}
-     </div>`;
-  }
   if(setTab==='shop'){
     body=(body||'')+`<div class="card note" style="margin-top:14px"><b>Where the books are kept</b>
      <div class="muted">${window.regalBridge&&regalBridge.online()
@@ -6861,7 +6824,21 @@ const WEB_DEFAULTS={
   reserveOn:'accept',   // stock is held when the shop accepts, not at checkout
   hours:'Orders taken any time · picked 8.00 am – 6.00 pm',
   payNote:'Pay on delivery, or at the shop when you collect.',
-  tagline:'',about:'',email:'',whatsapp:'',facebook:'',instagram:'',youtube:'',color:'',featured:''};   // the storefront's own dressing
+  listMode:'all',       // 'all' = everything not switched off goes online; 'selected' = only ticked items
+  tagline:'',about:'',email:'',whatsapp:'',facebook:'',instagram:'',youtube:'',color:''};   // the storefront's own dressing
+/* how the site is laid out — every bit of it can be changed under The shop site → Look */
+const WEB_THEME_DEFAULTS={
+  preset:'classic',color:'#d43533',accent:'#ffc519',font:'Public Sans',headerDark:true,topbar:true,cardStyle:'bordered',perRow:6,
+  showSold:true,showMrp:true,showStock:true,catwise:4,
+  hero:{title:'',text:'',button:'Shop now'},band:{title:'',text:'',button:'Start shopping'},
+  sections:[{k:'featured',on:true,t:'Featured Products'},{k:'categories',on:true,t:'Featured Categories'},{k:'banners',on:true,t:''},{k:'best',on:true,t:'Best Selling'},{k:'newest',on:true,t:'New Products'},{k:'band',on:true,t:''},{k:'catwise',on:true,t:''}],
+  menu:[{label:'Home',href:'#/'},{label:'All products',href:'#/search'},{label:'Categories',href:'#/categories'},{label:'Track order',href:'#/track'},{label:'Contact us',href:'#/contact'}]};
+const WEB_PRESETS={classic:{color:'#d43533',accent:'#ffc519',headerDark:true,font:'Public Sans'},regal:{color:'#101E22',accent:'#F0A81E',headerDark:true,font:'Public Sans'},blue:{color:'#1f5fbf',accent:'#ffb400',headerDark:false,font:'Inter'},green:{color:'#1e8a5a',accent:'#f4c542',headerDark:true,font:'Roboto'},orange:{color:'#e8611a',accent:'#2b2b36',headerDark:false,font:'Public Sans'}};
+function webTheme(){ const t=S.web.theme=S.web.theme&&typeof S.web.theme==='object'?S.web.theme:{};
+  for(const k in WEB_THEME_DEFAULTS){ if(t[k]===undefined) t[k]=JSON.parse(JSON.stringify(WEB_THEME_DEFAULTS[k])) }
+  t.hero={...WEB_THEME_DEFAULTS.hero,...t.hero}; t.band={...WEB_THEME_DEFAULTS.band,...t.band};
+  WEB_THEME_DEFAULTS.sections.forEach(d=>{ if(!t.sections.some(s=>s.k===d.k)) t.sections.push({...d}) });
+  return t }
 
 /* ---- seed ---- */
 function seed(){
@@ -7194,16 +7171,118 @@ function webStock(pid){                    // what is really available to sell o
   return Math.max(0,p.stock-held);
 }
 /* ---------- the storefront, as the customer sees it ---------- */
+let siteTab='overview', siteQ='', siteCat='all', siteShow='all';
+const webListed=p=>S.web.settings.listMode==='selected'?p.web===true:p.web!==false;
 function site(){
-  return `<h1>The shop site <span class="muted" style="font-size:13px;font-weight:400">what a customer sees at ${S.web.settings.domain}</span></h1>
-   <div class="card note" style="margin-bottom:10px">
-    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
-     <div class="muted">The same products, prices and stock as the shop — nothing is kept twice. Orders placed here land in <b>Online orders</b>.
-      On the real thing this sits on its own domain; here it is shown in a browser frame.</div>
-     <div style="display:flex;gap:6px">
-      <button class="btn ghost" data-act="webSettings">Site settings</button>
-      <button class="btn ghost" data-view="weborders">Order desk</button></div></div></div>
-   <div class="sitewrap"><div class="siteurl"><span>${S.web.settings.domain}</span></div>${storefront()}</div>`;
+  const w=S.web.settings, T=webTheme();
+  const tabs=[['overview','Overview'],['products','Products online'],['look','Look & layout'],['text','Words & contact'],['pictures','Pictures'],['orders','Orders & delivery'],['preview','Preview']];
+  const fld=(k,label,hint='',type='text')=>`<div class="f"><label>${label}</label>${type==='check'?`<label class="chk"><input type="checkbox" data-set="web.${k}" ${w[k]?'checked':''}> ${hint}</label>`
+    :type==='area'?`<textarea data-set="web.${k}" rows="3" style="width:100%;border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;font:inherit">${String(w[k]??'').replace(/</g,'&lt;')}</textarea>${hint?`<div class="muted">${hint}</div>`:''}`
+    :`<input data-set="web.${k}" ${type==='number'?'type="number"':''} value="${String(w[k]??'').replace(/"/g,'&quot;')}">${hint?`<div class="muted">${hint}</div>`:''}`}</div>`;
+  const tf=(path,label,hint='',type='text')=>{ const v=path.split('.').reduce((o,k)=>o?o[k]:undefined,T);
+    return `<div class="f"><label>${label}</label>${type==='check'?`<label class="chk"><input type="checkbox" data-theme="${path}" ${v?'checked':''}> ${hint}</label>`
+     :type==='color'?`<div style="display:flex;gap:8px;align-items:center"><input type="color" data-theme="${path}" value="${v}" style="width:52px;padding:2px;height:38px"><input data-theme="${path}" value="${v}" style="flex:1"></div>${hint?`<div class="muted">${hint}</div>`:''}`
+     :`<input data-theme="${path}" ${type==='number'?'type="number"':''} value="${String(v??'').replace(/"/g,'&quot;')}">${hint?`<div class="muted">${hint}</div>`:''}`}</div>` };
+  const online=S.products.filter(webListed), feat=S.products.filter(p=>p.featured===true), pending=S.web.orders.filter(o=>o.status==='placed').length;
+  let body='';
+  if(siteTab==='overview'){
+    body=`<div class="grid3">
+      <div class="card"><div class="muted">The site is</div><div style="font-size:22px;font-weight:800">${w.open?'<span class="tag ok">taking orders</span>':'<span class="tag bad">closed</span>'}</div>${fld('open','','taking orders — untick to close the site','check')}</div>
+      <div class="card"><div class="muted">On the site</div><div style="font-size:22px;font-weight:800">${online.length} <span class="muted" style="font-size:13px;font-weight:400">of ${S.products.length} products</span></div><div class="muted">${feat.length} featured · ${w.listMode==='selected'?'only ticked items':'everything not switched off'}</div><button class="btn ghost sm" data-act="siteTab" data-t="products" style="margin-top:6px">Choose what is sold</button></div>
+      <div class="card"><div class="muted">Waiting for you</div><div style="font-size:22px;font-weight:800">${pending} <span class="muted" style="font-size:13px;font-weight:400">new online order${pending===1?'':'s'}</span></div><button class="btn ${pending?'tape':'ghost'} sm" data-view="weborders" style="margin-top:6px">Open the order desk</button></div>
+     </div>
+     <div class="grid3" style="margin-top:10px">
+      ${fld('name','What the site is called')}${fld('domain','Its address','Point the domain at the server; the shop signs in at '+w.domain+(w.staffPath||'/pos'))}
+      <div class="f"><label>Prices shown</label><select data-set="web.level">${[['retail','Counter prices'],['wholesale','Wholesale prices']].map(o=>`<option value="${o[0]}" ${w.level===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>
+     </div>
+     <div class="card note"><b>How it fits together.</b> The site reads the same products, prices and stock as the till and sends every order to <b>Online orders</b> — nothing is kept twice. Pictures and the look of the site are kept on the server, so a change here shows on ${w.domain} within a couple of minutes. Open it: <a href="/" target="_blank">${w.domain}</a> · this server: <a href="/" target="_blank">${location.origin}/</a></div>`;
+  }
+  if(siteTab==='products'){
+    const q=siteQ.toLowerCase().trim();
+    const cats=[...new Set(S.products.map(p=>p.cat))].sort();
+    const all=S.products.filter(p=>(siteCat==='all'||p.cat===siteCat)&&(!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||(p.short||'').toLowerCase().startsWith(q)||String(p.num).includes(q)));
+    const list=all.filter(p=>siteShow==='all'||(siteShow==='online'?webListed(p):siteShow==='offline'?!webListed(p):p.featured===true));
+    const shown=list.slice(0,300);
+    body=`<div class="card" style="margin-bottom:10px"><div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+      <label class="chk"><input type="radio" name="listMode" data-set="web.listMode" value="all" ${w.listMode!=='selected'?'checked':''}> <b>Sell everything the shop stocks</b> — untick the ones to keep off the site</label>
+      <label class="chk"><input type="radio" name="listMode" data-set="web.listMode" value="selected" ${w.listMode==='selected'?'checked':''}> <b>Only the items I tick</b> — the rest stay off the site</label>
+      <span class="muted" style="margin-left:auto">${online.length} of ${S.products.length} online</span></div></div>
+     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <input id="siteQ" placeholder="Search — name, code, short code…" value="${siteQ.replace(/"/g,'&quot;')}" style="max-width:300px">
+      <select id="siteCat" style="max-width:240px"><option value="all">Every category</option>${cats.map(c=>`<option ${siteCat===c?'selected':''}>${c}</option>`).join('')}</select>
+      <div class="chips" style="margin:0">${[['all','All'],['online','Online'],['offline','Off the site'],['featured','Featured']].map(x=>`<button class="${siteShow===x[0]?'on':''}" data-act="siteShow" data-v="${x[0]}">${x[1]}</button>`).join('')}</div>
+      <span class="muted" style="margin-left:auto">${list.length} item${list.length===1?'':'s'}${shown.length<list.length?` · showing the first ${shown.length}`:''}</span></div>
+     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="btn ghost sm" data-act="siteBulk" data-what="on">Put these ${list.length} online</button>
+      <button class="btn ghost sm" data-act="siteBulk" data-what="off">Take these ${list.length} off the site</button>
+      <button class="btn ghost sm" data-act="siteBulk" data-what="feat">Feature these</button>
+      <button class="btn ghost sm" data-act="siteBulk" data-what="unfeat">Un-feature these</button></div>
+     <table class="tbl"><tr><th>Online</th><th>Featured</th><th>Photo</th><th>Product</th><th>Category</th><th class="n">Price</th><th class="n">Stock</th><th></th></tr>
+      ${shown.map(p=>`<tr class="${webListed(p)?'':'dim'}">
+        <td><label class="chk" style="margin:0"><input type="checkbox" data-siteon="${p.id}" ${webListed(p)?'checked':''}></label></td>
+        <td><button class="btn ghost sm" data-act="siteFeat" data-id="${p.id}" title="Featured items come first on the home page" style="${p.featured?'color:#c98a00':''}">${p.featured?'★':'☆'}</button></td>
+        <td><div class="mediapic" style="width:44px;height:44px"><img src="/api/shop/media/p:${p.id}" loading="lazy" onerror="this.parentNode.classList.add('empty');this.remove()"></div></td>
+        <td><b>${p.name}</b><div class="muted">${p.code}${p.short?' · '+p.short:''}${p.desc?' · <span title="has a description">✎</span>':''}</div></td>
+        <td>${p.cat}</td><td class="n">${fmt(w.level==='wholesale'?p.wholesale:p.retail)}</td><td class="n">${CFG.stock&&CFG.stock.track===false?'—':fq(p.stock)}</td>
+        <td><button class="btn ghost sm" data-act="prodEditSite" data-id="${p.id}">Photo & text</button></td></tr>`).join('')||'<tr><td colspan="8" class="muted">Nothing matches.</td></tr>'}</table>`;
+  }
+  if(siteTab==='look'){
+    const secName={featured:'Featured products',categories:'Featured categories',banners:'Banner pictures',best:'Best selling',newest:'New products',band:'Delivery band',catwise:'A row per category'};
+    body=`<h2>Preset</h2><div class="chips" style="margin-bottom:12px">${Object.keys(WEB_PRESETS).map(k=>`<button class="${T.preset===k?'on':''}" data-act="sitePreset" data-p="${k}"><i style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${WEB_PRESETS[k].color};vertical-align:-1px;margin-right:6px"></i>${k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div>
+     <div class="grid3">${tf('color','Main colour','Buttons, prices, badges','color')}${tf('accent','Second colour','Highlights and the footer name','color')}
+      <div class="f"><label>Font</label><select data-theme="font">${['Public Sans','Inter','Roboto','Poppins','Nunito'].map(f=>`<option ${T.font===f?'selected':''}>${f}</option>`).join('')}</select></div></div>
+     <div class="grid3">${tf('headerDark','','dark menu bar and top bar (untick for a light header)','check')}${tf('topbar','','show the thin top bar with the tagline and helpline','check')}
+      <div class="f"><label>Product cards</label><select data-theme="cardStyle">${[['bordered','Bordered grid (classic)'],['shadow','Floating cards with shadow']].map(o=>`<option value="${o[0]}" ${T.cardStyle===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div></div>
+     <div class="grid3"><div class="f"><label>Products per row on wide screens</label><select data-theme="perRow">${[4,5,6].map(n=>`<option ${T.perRow==n?'selected':''}>${n}</option>`).join('')}</select></div>
+      ${tf('catwise','How many category rows on the home page','','number')}
+      <div class="f"><label>On product cards</label>${tf('showMrp','','show the crossed-out MRP','check')}${tf('showStock','','show what is in stock','check')}${tf('showSold','','show “sold recently”','check')}</div></div>
+     <h2 style="margin-top:14px">Home page sections <span class="muted" style="font-size:12px;font-weight:400">— tick what shows, rename it, move it up or down</span></h2>
+     <table class="tbl" style="max-width:760px">${T.sections.map((s,i)=>`<tr class="${s.on?'':'dim'}"><td style="width:30px"><label class="chk" style="margin:0"><input type="checkbox" data-secon="${i}" ${s.on?'checked':''}></label></td><td style="width:200px">${secName[s.k]||s.k}</td>
+        <td>${['banners','band','catwise'].includes(s.k)?'<span class="muted">—</span>':`<input data-sectitle="${i}" value="${(s.t||'').replace(/"/g,'&quot;')}" placeholder="${secName[s.k]}">`}</td>
+        <td class="n" style="white-space:nowrap"><button class="btn ghost sm" data-act="secMove" data-i="${i}" data-d="-1" ${i===0?'disabled':''}>↑</button> <button class="btn ghost sm" data-act="secMove" data-i="${i}" data-d="1" ${i===T.sections.length-1?'disabled':''}>↓</button></td></tr>`).join('')}</table>
+     <h2 style="margin-top:14px">Menu links</h2>
+     <table class="tbl" style="max-width:760px"><tr><th>Label</th><th>Goes to</th><th></th></tr>${T.menu.map((m,i)=>`<tr><td><input data-menu="${i}.label" value="${m.label.replace(/"/g,'&quot;')}"></td><td><input data-menu="${i}.href" value="${m.href.replace(/"/g,'&quot;')}" placeholder="#/search?cat=Cement or https://…"></td><td class="n"><button class="btn ghost sm" data-act="menuRm" data-i="${i}">✕</button></td></tr>`).join('')}</table>
+     <button class="btn ghost sm" data-act="menuAdd" style="margin-top:6px">Add a link</button>
+     <div class="muted" style="margin-top:6px">Links inside the site start with #/ — #/search?cat=Cement opens a category, #/product/123 a product, #/contact the contact page.</div>`;
+  }
+  if(siteTab==='text'){
+    body=`<h2>Words on the site</h2>
+     <div class="grid2">${fld('tagline','Line in the top bar','e.g. Everything for the build, delivered')}${fld('hours','When orders are picked','Shown on the delivery band and in the footer')}</div>
+     ${fld('about','About the shop, in the footer','','area')}
+     <div class="grid3">${tf('hero.title','Big line on the home slide','Empty: “<shop> — everything for the build”')}${tf('hero.text','Text under it','Empty: delivery and payment in a line')}${tf('hero.button','Button on the slide')}</div>
+     <div class="grid3">${tf('band.title','Delivery band, big line','Empty: the delivery charge and free-over amount')}${tf('band.text','Delivery band, small line','Empty: how to pay and the hours')}${tf('band.button','Delivery band button')}</div>
+     <h2 style="margin-top:14px">Contact</h2>
+     <div class="grid3">${fld('email','Email')}${fld('whatsapp','WhatsApp number','Shows a WhatsApp button on the contact page and in the footer')}${fld('facebook','Facebook page link')}</div>
+     <div class="grid2">${fld('instagram','Instagram link')}${fld('youtube','YouTube link')}</div>
+     <div class="muted">The address and phone numbers come from Settings → Shop details.</div>`;
+  }
+  if(siteTab==='pictures'){
+    const cats=[...new Set(S.products.filter(webListed).map(p=>p.cat))].sort();
+    body=`<div class="muted" style="margin-bottom:8px">Pictures go straight to the site when chosen — they are kept on the server, not in the books. Product photos are under <b>Products online → Photo &amp; text</b>.</div>
+     <div class="mediagrid">
+      ${mediaSlot('logo','Site logo','Shown in the header and footer; a wide PNG works best')}
+      ${[1,2,3,4,5].map(i=>mediaSlot('s:'+i,'Home slide '+i,'About 1200 × 460, one after another',true)).join('')}
+      ${[1,2,3].map(i=>mediaSlot('b:'+i,'Banner '+i,'Wide picture under the categories',true)).join('')}
+     </div>
+     <h2 style="margin-top:14px">Category pictures</h2>
+     <div class="muted" style="margin-bottom:6px">Shown beside each category on the home page and in the categories menu.</div>
+     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><select id="siteCatPic" style="max-width:280px">${cats.map(c=>`<option ${siteCat===c?'selected':''}>${c}</option>`).join('')}</select>
+      <div class="mediapic" id="siteCatPicView"></div><input type="file" accept="image/*" id="siteCatPicFile" style="padding:6px;max-width:260px"><button class="btn ghost sm" id="siteCatPicRm">Remove</button></div>`;
+  }
+  if(siteTab==='orders'){
+    body=`<div class="grid3">${fld('delivery','Delivery charge','','number')}${fld('freeOver','Free delivery over','','number')}${fld('minOrder','Smallest order taken','','number')}</div>
+     ${fld('payNote','What it says about paying')}
+     <div class="grid2" style="margin-top:8px">${fld('showOutOfStock','','show items that are out of stock, so people can ask','check')}</div>
+     <div class="card note" style="margin-top:10px"><b>Stock is held when you accept an order</b>, not when someone puts it in a basket — so the counter never loses a sale to an order nobody has confirmed. The site shows what is left after everything accepted. Orders are worked from the <a href="#" data-view="weborders">order desk</a>; the customer is texted at each step when messaging is on.</div>`;
+  }
+  if(siteTab==='preview'){
+    body=location.protocol==='file:'?'<div class="card muted">The preview needs the site to be served by the shop server — open the till through it and come back.</div>'
+     :`<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><span class="muted">Live — exactly what a customer sees. Changes made here show after the page refreshes itself (about two minutes) or when you press reload.</span><button class="btn ghost sm" id="sitePrevReload">Reload</button><a class="btn ghost sm" href="/" target="_blank">Open in a new tab</a></div>
+      <iframe id="sitePrev" src="/" style="width:100%;height:calc(100vh - 230px);border:1px solid var(--line);border-radius:var(--r);background:#fff"></iframe>`;
+  }
+  return `<h1>The shop site <span class="muted" style="font-size:13px;font-weight:400">${w.domain}</span></h1>
+   <div class="tabs">${tabs.map(t=>`<button class="${siteTab===t[0]?'on':''}" data-act="siteTab" data-t="${t[0]}">${t[1]}</button>`).join('')}</div>
+   <div class="card">${body}</div>`;
 }
 function storefront(){
   const w=S.web.settings, c=S.web.session?C(S.web.session):null;
@@ -8178,7 +8257,24 @@ function renderNow(){ if(S.view!=='board') document.body.classList.remove('board
       if(document.activeElement===document.body&&chqQ)cq.focus() }
     const cs=$('#chqStatus'); if(cs) cs.onchange=e=>{chqStatus=e.target.value;render()};
   }
-  if(S.view==='settings'){
+  if(S.view==='site'){
+    const T=webTheme(); const setPath=(o,path,v)=>{ const ks=path.split('.'); ks.slice(0,-1).forEach(k=>{o=o[k]}); o[ks.at(-1)]=v };
+    document.querySelectorAll('[data-theme]').forEach(el=>{ el.onchange=()=>{ const cur=el.dataset.theme.split('.').reduce((o,k)=>o?o[k]:undefined,T);
+      let v=el.type==='checkbox'?el.checked:(typeof cur==='number'||el.type==='number')?+el.value:el.value;
+      if(el.type==='color'||/^(color|accent)$/.test(el.dataset.theme)){ if(!/^#[0-9a-f]{6}$/i.test(v)) return toast('A colour looks like #d43533'); T.preset='custom' }
+      setPath(T,el.dataset.theme,v); render(); toast('Saved') } });
+    document.querySelectorAll('[data-secon]').forEach(el=>el.onchange=()=>{ T.sections[+el.dataset.secon].on=el.checked; render() });
+    document.querySelectorAll('[data-sectitle]').forEach(el=>el.onchange=()=>{ T.sections[+el.dataset.sectitle].t=el.value.trim(); toast('Saved') });
+    document.querySelectorAll('[data-menu]').forEach(el=>el.onchange=()=>{ const [i,k]=el.dataset.menu.split('.'); T.menu[+i][k]=el.value.trim(); toast('Saved') });
+    document.querySelectorAll('[data-siteon]').forEach(el=>el.onchange=()=>{ const p=P(+el.dataset.siteon); p.web=el.checked; el.closest('tr').classList.toggle('dim',!el.checked) });
+    const sq=$('#siteQ'); if(sq){ sq.oninput=()=>{ siteQ=sq.value; const pos=sq.selectionStart; render(); const q2=$('#siteQ'); q2.focus(); q2.setSelectionRange(pos,pos) } }
+    const sc=$('#siteCat'); if(sc) sc.onchange=()=>{ siteCat=sc.value; render() };
+    const cp=$('#siteCatPic'); if(cp){ const show=()=>{ const v=$('#siteCatPicView'); v.classList.remove('empty'); v.innerHTML=`<img src="/api/shop/media/${encodeURIComponent('c:'+cp.value)}?v=${Date.now()}" onerror="this.parentNode.classList.add('empty');this.remove()">` }; show(); cp.onchange=show;
+      $('#siteCatPicFile').onchange=()=>{ const f=$('#siteCatPicFile').files[0]; if(f) shopMediaUpload('c:'+cp.value,f,600).then(()=>{ toast('Picture is on the site'); show() }).catch(e=>toast('Not saved: '+e.message)) };
+      $('#siteCatPicRm').onclick=()=>shopMediaDelete('c:'+cp.value).then(()=>{ toast('Taken off the site'); show() }).catch(e=>toast(e.message)) }
+    const pr=$('#sitePrevReload'); if(pr) pr.onclick=()=>{ const f=$('#sitePrev'); f.src=f.src };
+  }
+  if(S.view==='settings'||S.view==='site'){
     document.querySelectorAll('[data-settab]').forEach(b=>b.onclick=()=>{setTab=b.dataset.settab;render()});
     document.querySelectorAll('[data-set]').forEach(el=>{
       const [g,k]=el.dataset.set.split('.');
@@ -13398,7 +13494,22 @@ document.addEventListener('click',e=>{
     webReject:()=>{const why=prompt('Why can it not be done?')||''; webSet(a.dataset.no,'rejected',why)},
     webBill:()=>webBill(a.dataset.no),
     webOpenSite:()=>go('site'),
-    webSettings:()=>{go('settings'); setTab='site'; render()},
+    webSettings:()=>{go('site'); siteTab='overview'; render()},
+    siteTab:()=>{siteTab=a.dataset.t;render()},
+    siteShow:()=>{siteShow=a.dataset.v;render()},
+    siteFeat:()=>{const p=P(+a.dataset.id); p.featured=!p.featured; render()},
+    prodEditSite:()=>productModal(+a.dataset.id),
+    siteBulk:()=>{ const q=siteQ.toLowerCase().trim(); const what=a.dataset.what;
+      const list=S.products.filter(p=>(siteCat==='all'||p.cat===siteCat)&&(!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||(p.short||'').toLowerCase().startsWith(q)||String(p.num).includes(q)))
+        .filter(p=>siteShow==='all'||(siteShow==='online'?webListed(p):siteShow==='offline'?!webListed(p):p.featured===true));
+      if(!list.length) return toast('Nothing to change');
+      if(!confirm(`${({on:'Put',off:'Take',feat:'Feature',unfeat:'Un-feature'})[what]} ${list.length} item${list.length===1?'':'s'}${what==='on'?' online':what==='off'?' off the site':''}?`)) return;
+      list.forEach(p=>{ if(what==='on') p.web=true; else if(what==='off') p.web=false; else p.featured=what==='feat' });
+      render(); toast(`${list.length} item${list.length===1?'':'s'} changed`) },
+    sitePreset:()=>{ const T=webTheme(); Object.assign(T,WEB_PRESETS[a.dataset.p]); T.preset=a.dataset.p; render(); toast('Preset applied — the site picks it up in a moment') },
+    secMove:()=>{ const T=webTheme(), i=+a.dataset.i, j=i+ +a.dataset.d; if(j<0||j>=T.sections.length) return; [T.sections[i],T.sections[j]]=[T.sections[j],T.sections[i]]; render() },
+    menuRm:()=>{ webTheme().menu.splice(+a.dataset.i,1); render() },
+    menuAdd:()=>{ webTheme().menu.push({label:'New link',href:'#/search'}); render() },
     bellOpen:()=>{S.notifOpen=!S.notifOpen; drawBell()},
     bellClear:()=>{S.notif.forEach(n=>n.read=true); drawBell()},
     bellGo:()=>{const n=S.notif.find(x=>x.id===a.dataset.id); if(!n)return;

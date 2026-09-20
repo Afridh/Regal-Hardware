@@ -80,12 +80,13 @@ function catalogOf(data, pending = [], media = {}) {
   const sold = {};
   for (const s of (S.sales || [])) if ((s.date || '') >= since) for (const l of (s.lines || [])) sold[l.pid] = (sold[l.pid] || 0) + (+l.qty || 0);
   const pic = key => media[key] ? `/api/shop/media/${encodeURIComponent(key)}?v=${media[key].v}` : '';
-  const featured = new Set(String(w.featured || '').split(/[,\s]+/).filter(Boolean).map(Number));
-  const products = (S.products || []).filter(p => p.active !== false && !p.hidden).map(p => ({
+  // which items go online: everything not switched off, or only the ones the shop ticked
+  const listed = p => w.listMode === 'selected' ? p.web === true : p.web !== false;
+  const products = (S.products || []).filter(p => p.active !== false && !p.hidden && listed(p)).map(p => ({
     id: p.id, code: p.code, num: p.num || '', short: p.short || '', name: p.name, cat: p.cat || 'Other', unit: p.unit || '',
     mrp: +p.mrp || 0, price: +(w.level === 'wholesale' ? p.wholesale : p.retail) || 0,
     stock: tracked ? Math.max(0, (+p.stock || 0) - (held[p.id] || 0)) : null,
-    img: pic('p:' + p.id), desc: p.desc || '', warranty: +p.warrantyMonths || 0, sold: sold[p.id] || 0, featured: featured.has(+p.id),
+    img: pic('p:' + p.id), desc: p.desc || '', warranty: +p.warrantyMonths || 0, sold: sold[p.id] || 0, featured: p.featured === true,
     tiers: Array.isArray(p.tiers) && p.tiers.length ? p.tiers.map(t => ({ min: +t.min, price: +t.price, label: t.label || '' })) : undefined,
   }));
   const counts = {};
@@ -95,7 +96,8 @@ function catalogOf(data, pending = [], media = {}) {
   return {
     shop: { name: CFG.shop?.name || 'Regal Hardware', addr: CFG.shop?.addr || '', phone: CFG.shop?.phone || '', land: CFG.shop?.land || '', tags: CFG.shop?.tags || '', hours: CFG.shop?.hours || '', logo: pic('logo') || CFG.shop?.logo || '' },
     settings: { open: !!w.open, name: w.name, domain: w.domain, staffPath: w.staffPath || '/pos', hours: w.hours, delivery: +w.delivery || 0, freeOver: +w.freeOver || 0, minOrder: +w.minOrder || 0, payNote: w.payNote, showOutOfStock: !!w.showOutOfStock || !tracked, tracked,
-      tagline: w.tagline, about: w.about, email: w.email, whatsapp: w.whatsapp, facebook: w.facebook, instagram: w.instagram, youtube: w.youtube, color: w.color },
+      tagline: w.tagline, about: w.about, email: w.email, whatsapp: w.whatsapp, facebook: w.facebook, instagram: w.instagram, youtube: w.youtube, color: w.color,
+      theme: (S.web?.theme && typeof S.web.theme === 'object') ? S.web.theme : {} },
     categories,
     slides: strip('s:'), banners: strip('b:'),
     products,

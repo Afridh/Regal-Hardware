@@ -82,7 +82,7 @@ if (process.argv[5] === 'pay') {                             // the customer pay
 }
 if ((process.argv[5] || '').startsWith('view:')) {           // any other page, e.g. view:customers
   const v = process.argv[5].slice(5);
-  await pg.evaluate(v => { S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill }; const [view, tab] = v.split('/'); if (tab && view === 'customers') custTab = tab; if (tab && view === 'suppliers') supTab = tab; if (tab && view === 'settings') setTab = tab; go(view); }, v);
+  await pg.evaluate(v => { S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill }; const [view, tab] = v.split('/'); if (tab && view === 'customers') custTab = tab; if (tab && view === 'suppliers') supTab = tab; if (tab && view === 'settings') setTab = tab; if (tab && view === 'site') siteTab = tab; go(view); }, v);
   await new Promise(r => setTimeout(r, 500));
   await pg.screenshot({ path: out, fullPage: process.argv[6] === 'full' }); await b.close(); console.log('wrote ' + out); process.exit(0);
 }
