@@ -388,6 +388,11 @@ footer.ft{background:var(--dark);color:#fff;margin-top:30px}
 @keyframes bounce{0%,80%,100%{transform:scale(.6);opacity:.5}40%{transform:scale(1);opacity:1}}
 .closed-note{background:var(--soft-warning);border:1px solid var(--warning);padding:14px 16px;margin:16px 0;font-size:14px}
 
+/* ---------- whatsapp ---------- */
+.wa-float{position:fixed;right:18px;bottom:18px;z-index:1000;display:flex;align-items:center;gap:8px;background:#25D366;color:#fff;border-radius:99px;padding:12px 18px 12px 14px;font-weight:700;font-size:14px;box-shadow:0 8px 24px rgba(37,211,102,.45);transition:.2s}
+.wa-float:hover{background:#1DB954;color:#fff;transform:translateY(-2px)}.wa-float svg{width:22px;height:22px}
+.wa-link{display:inline-flex;align-items:center;gap:6px;color:#128C7E;font-size:14px;font-weight:600}.wa-link:hover{color:#075E54}
+@media (max-width:991px){.wa-float{bottom:76px;right:12px;padding:12px}.wa-float span{display:none}}
 /* ---------- mobile ---------- */
 .menu-btn,.search-btn{display:none;background:none;border:0;cursor:pointer;color:var(--secondary);padding:4px}
 .side-drawer{position:fixed;inset:0;z-index:1060;display:none}
@@ -666,7 +671,8 @@ function productPage(){
      <div class="qtybox"><div class="r1"><div><div class="tot">${money(unit*qty)}</div><div class="avail ${out?'out':''}">${p.stock===null?'In stock':out?'Out of stock':`${fq(p.stock)} ${esc(p.unit)} available`}</div><div class="minq">Minimum order qty <b>1</b></div></div>
       <div style="display:flex;align-items:center;gap:16px"><span class="text-gray">QTY</span><div class="aiz-plus-minus"><button data-qty="-1">−</button><input type="number" id="pdQty" value="${qty}" min="1" step="any"><button data-qty="1">+</button></div></div></div>
       ${out?`<button class="btn btn-light btn-block btn-lg" disabled>Out of Stock</button>`:`<div class="buttons"><button class="btn btn-dark" data-buynow="${p.id}">Buy Now</button><button class="btn btn-soft-blue" data-add="${p.id}" data-qtyfrom="pdQty">Add to Cart <span id="addCnt">(${pad2(qty)})</span></button></div>`}
-      ${out?`<div style="margin-top:8px"><a href="#" data-askback="${p.id}">Ask when it is back</a></div>`:''}</div>
+      ${out?`<div style="margin-top:8px"><a href="#" data-askback="${p.id}">Ask when it is back</a></div>`:''}
+      ${w.whatsapp?`<div style="margin-top:10px;text-align:right"><a class="wa-link" href="https://wa.me/${esc(w.whatsapp.replace(/\D/g,'').replace(/^0/,'94'))}?text=${encodeURIComponent(`Hi, I want to order ${p.name} (${p.code}) × ${qty} ${p.unit}. ${location.origin}/#/product/${p.id}`)}" target="_blank" rel="noopener">${I.wa} Order via WhatsApp</a></div>`:''}</div>
      <div class="seller"><div><div class="lg">${s.logo?`<img src="${esc(s.logo)}" alt="">`:'<b>RH</b>'}</div><div><div class="fs-14"><b>Inhouse product</b> · ${esc(s.name)}</div>${s.phone?`<a href="tel:${esc(s.phone)}" class="fs-14">Call ${esc(s.phone)}</a>`:''}</div></div></div>
      <ul class="warranty"><li>${I.tick} Cash on Delivery available</li>${w.freeOver?`<li>${I.tick} Free delivery over ${money(w.freeOver)}</li>`:''}${p.warranty?`<li>${I.tick} ${p.warranty} month${p.warranty===1?'':'s'} warranty</li>`:''}<li>${I.tick} Collect at the counter</li></ul>
     </div></div>
@@ -769,7 +775,9 @@ function render(){
   if(!st.cat){ app.innerHTML='<div style="padding:60px;text-align:center;color:var(--secondary)">Loading the shop…</div>'; return }
   const v=st.route.parts[0]||'';
   const page=({'':home,search:listing,categories:categoriesPage,product:productPage,cart:cartPage,checkout:checkout,done:donePage,account:accountPage,track:trackPage,contact:contactPage})[v]||home;
-  app.innerHTML=header()+`<main>${page()}</main>`+footer()+drawer()+`<div class="mob-cart" id="mobCart">${mobCart()}</div>`;
+  const waNo=(st.cat.settings.whatsapp||'').replace(/\D/g,'').replace(/^0/,'94');
+  app.innerHTML=header()+`<main>${page()}</main>`+footer()+drawer()+`<div class="mob-cart" id="mobCart">${mobCart()}</div>`
+    +(waNo?`<a class="wa-float" href="https://wa.me/${waNo}?text=${encodeURIComponent('Hi '+(st.cat.shop.name||'')+', ')}" target="_blank" rel="noopener" title="Chat with us on WhatsApp">${I.wa}<span>Chat with us</span></a>`:'');
   bind();
 }
 function bind(){

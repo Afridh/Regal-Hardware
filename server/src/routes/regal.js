@@ -195,4 +195,35 @@ r.post('/sms/send', regalAuth, asyncHandler(async (req, res) => {
   }
 }));
 
+// ---------------------------------------------------------------- WhatsApp (Meta Business Cloud API)
+// The till's WhatsApp buttons open a chat on the PC unless Settings → Messaging chooses the Cloud API;
+// then the message comes here and goes out through Meta with the token kept on the server.
+export async function sendViaWhatsApp(cfg, to, message) {
+  if (!cfg?.waPhoneId || !cfg?.waToken) throw new HttpError(400, 'WhatsApp Cloud API is not set up (Settings → Messaging → WhatsApp)');
+  if (heldByTestMode(cfg, to)) throw new HttpError(400, `Held — test mode: messages only go to ${cfg.testOnly}`);
+  const contact = intlPhone(to);
+  if (!/^94\d{9}$/.test(contact)) throw new HttpError(400, `Not a Sri Lankan mobile: ${to}`);
+  const resp = await fetch(`https://graph.facebook.com/v20.0/${encodeURIComponent(cfg.waPhoneId)}/messages`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + cfg.waToken },
+    body: JSON.stringify({ messaging_product: 'whatsapp', to: contact, type: 'text', text: { preview_url: true, body: message } }),
+    signal: AbortSignal.timeout((+cfg.timeout || 30) * 1000) });
+  const j = await resp.json().catch(() => ({}));
+  if (!resp.ok || j.error) throw new HttpError(502, 'WhatsApp: ' + (j.error?.message || resp.status));
+  return j.messages?.[0]?.id || 'ok';
+}
+
+r.post('/wa/send', regalAuth, asyncHandler(async (req, res) => {
+  const { to, message } = req.body || {};
+  if (!to || !message) throw new HttpError(400, 'to and message required');
+  const row = await loadBooks();
+  const cfg = row?.data?.CFG?.msg;
+  if (heldByTestMode(cfg, to)) return res.json({ ok: false, held: true, status: `Held — test mode, only ${cfg.testOnly} gets messages` });
+  try {
+    const id = await sendViaWhatsApp(cfg, to, message);
+    res.json({ ok: true, status: 'Sent on WhatsApp', id });
+  } catch (e) {
+    res.json({ ok: false, status: 'Failed — ' + e.message, error: e.message });
+  }
+}));
+
 export default r;
