@@ -286,6 +286,39 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .chq .d{position:absolute}
 
 /* ---- tabs ---- */
+/* bills: find on the left, the bill on the right */
+.bl-wrap{display:grid;grid-template-columns:minmax(330px,.85fr) minmax(0,1.5fr);gap:14px;align-items:start}
+.bl-list{display:flex;flex-direction:column;position:sticky;top:0;max-height:calc(100vh - 100px)}
+.bl-dates{display:flex;align-items:center;gap:4px;margin-left:auto}.bl-dates input{padding:4px 6px;font-size:12px;width:128px}
+.bl-by{padding:4px 8px;font-size:12.5px;border-radius:99px;max-width:150px}
+.bl-count{display:flex;justify-content:space-between;font-size:12.5px;padding:2px 4px 6px;border-bottom:1px solid var(--line2)}
+.bl-rows{overflow:auto;flex:1;min-height:0}
+.bl-row{display:grid;grid-template-columns:88px 1fr auto;gap:10px;align-items:center;padding:9px 8px;border-bottom:1px solid var(--line2);cursor:pointer;border-radius:6px}
+.bl-row:hover{background:var(--panel)}
+.bl-row.sel{background:var(--tint-yellow);box-shadow:inset 3px 0 0 var(--chip-yellow)}
+.bl-when b{display:block;font-size:12.5px}.bl-when span{font-size:11.5px;color:var(--faint)}
+.bl-who{min-width:0}.bl-who b{display:block;font-family:Archivo,sans-serif;font-size:13.5px;letter-spacing:.01em}
+.bl-who span{display:block;font-size:12px;color:var(--steel);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bl-amt{text-align:right}.bl-amt b{display:block;font-family:Archivo,sans-serif;font-size:14px}
+.bl-amt i{font-style:normal;font-size:11px;display:block}.bl-amt i.owe{color:var(--chip-rust);font-weight:700}.bl-amt i.ok{color:var(--chip-green)}
+.bl-detail{min-width:0}
+.bl-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;padding-bottom:12px;border-bottom:1px solid var(--line2)}
+.bl-no{font-family:Archivo,sans-serif;font-weight:800;font-size:24px;letter-spacing:-.01em}
+.bl-cust{display:flex;align-items:center;gap:10px}.bl-cust b{display:block;font-size:14px}.bl-cust .muted{font-size:12px}
+.bl-btns{display:flex;gap:6px;flex-wrap:wrap;padding:12px 0}
+.bl-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.bl-strip>div{flex:1 1 92px;background:var(--panel);border:1px solid var(--line2);border-radius:8px;padding:8px 12px;min-width:0}
+.bl-strip span{display:block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--steel);font-weight:700}
+.bl-strip b{display:block;font-family:Archivo,sans-serif;font-size:16px;margin-top:2px;white-space:nowrap}.bl-strip small{font-family:'IBM Plex Sans',sans-serif;font-weight:400;color:var(--faint);font-size:11px}
+.bl-strip .net{background:var(--tint-yellow);border-color:var(--chip-yellow)}.bl-strip .net b{font-size:20px;color:var(--chip-rust)}
+.bl-strip .paid{background:var(--tint-green);border-color:#B7E0C9}.bl-strip .paid b{color:#12613D}
+.bl-strip .owe{background:var(--tint-rust);border-color:#F0B9AC}.bl-strip .owe b{color:var(--chip-rust)}
+.bl-lines{overflow:auto;border:1px solid var(--line);border-radius:var(--r)}
+.bl-lines td,.bl-lines th{white-space:nowrap}.bl-lines td.d{white-space:normal;min-width:200px;width:100%}
+.bl-foot{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}
+.bl-pays,.bl-hist{flex:1 1 240px;background:var(--panel);border-radius:8px;padding:8px 12px;font-size:12.5px}.bl-pays>b,.bl-hist>b{display:block;margin-bottom:4px}
+.bl-pays div{display:flex;justify-content:space-between;padding:2px 0}
+@media (max-width:1100px){.bl-wrap{grid-template-columns:1fr}.bl-list{position:static;max-height:none}.bl-rows{max-height:50vh}}
 /* pages with their own menu down the left (settings, the shop site) */
 .setwrap{display:grid;grid-template-columns:250px 1fr;gap:18px;align-items:start}
 .subnav{position:sticky;top:0;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px;box-shadow:var(--shadow);overflow:hidden}
@@ -8128,7 +8161,7 @@ function bindPhone(){
 /* ============================ UI ============================ */
 const $=(s)=>document.querySelector(s);
 const views=[
- ['grp','Counter'],['dashboard','Dashboard','F2'],['pos','POS billing','F3'],['bills','Find a bill','F9'],['recall','Bill recall'],['docs','Quotes & delivery notes'],
+ ['grp','Counter'],['dashboard','Dashboard','F2'],['pos','POS billing','F3'],['bills','Bills','F9'],['docs','Quotes & delivery notes'],
  ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['weborders','Online orders'],
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['purchases','Purchases'],
  ['grp','Stock'],['products','Products'],['inventory','Inventory & ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
@@ -8272,16 +8305,11 @@ function modal(html){ const m=document.createElement('div');m.className='modal';
 function closeModals(){document.querySelectorAll('.modal').forEach(m=>m.remove())}
 let _rendering=false;
 function render(){ if(_rendering) return; _rendering=true; try{ renderNow() } finally { _rendering=false } if(typeof persist==='function'&&S.user&&!S.signedOut) persist() }
-function renderNow(){ if(S.view!=='board') document.body.classList.remove('boardview'); renderNav(); const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,chequesIn,chequesOut,expenses,accounting,payroll,board,users,messages,reports,settings}[S.view]; $('#main').innerHTML=r(); document.body.classList.toggle('csfull',pref('till')==='classic'&&(S.view==='pos'||S.view==='recall')); if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() } if(S.view==='recall') recallAfter(); if(S.view==='stocktake') stockTakeAfter();
+function renderNow(){ if(S.view!=='board') document.body.classList.remove('boardview'); renderNav(); const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,chequesIn,chequesOut,expenses,accounting,payroll,board,users,messages,reports,settings}[S.view]; $('#main').innerHTML=r(); document.body.classList.toggle('csfull',pref('till')==='classic'&&S.view==='pos'); if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() } if(S.view==='recall') recallAfter(); if(S.view==='stocktake') stockTakeAfter();
   if(S.view==='serials'){ const sq=$('#srQ'); if(sq){ sq.oninput=e=>{srQ=e.target.value;render();const n=$('#srQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body) sq.focus() } } if(S.view==='labels') labelsAfter(); if(S.view==='receipts') receiptsAfter(); if(S.view==='dashboard') dashboardAfter();
 
-  if(S.view==='bills'){
-    const bq=$('#billQ'); if(bq){ bq.oninput=e=>{billQ=e.target.value;render();const n=$('#billQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
-      if(document.activeElement===document.body&&billQ)bq.focus() }
-    const bind=(id,set)=>{const el=$('#'+id); if(el)el.onchange=e=>{set(e.target.value);render()}};
-    bind('billFrom',v=>billFrom=v); bind('billTo',v=>billTo=v); bind('billType',v=>billType=v); bind('billBy',v=>billBy=v);
-  }
+  if(S.view==='bills'||S.view==='recall') billsAfter();
   document.querySelectorAll('[data-custfilter]').forEach(b=>b.onclick=()=>{custFilter=b.dataset.custfilter;render()});
   document.querySelectorAll('[data-custsort]').forEach(b=>b.onclick=()=>{custSort=b.dataset.custsort;render()});
   document.querySelectorAll('[data-custtab]').forEach(b=>b.onclick=()=>{custTab=b.dataset.custtab;render()});
@@ -10437,118 +10465,10 @@ function finishRemake(r,fresh){
   if(c.phone&&CFG.msg.autoBill) sms(c.phone,`${CFG.shop.name}: bill ${old.no} has been re-issued at ${fmt(fresh.total)}${fresh.balance?`, ${fmt(fresh.balance)} outstanding`:''}.`);
   return fresh;
 }
-/* ================== BILL RECALL ==================
-   The shape of the old screen: the bill itself at the top with its summary on
-   the right, and the invoice history underneath — search by number (F1), by
-   customer (F2), by date (F5), credit only or all. */
-let RC={sel:null,serial:'',cust:'',from:'',to:'',only:'all'};
-function recall(){
-  const t=D(today);
-  const from=RC.from, to=RC.to;                 // empty means every day
-  const list=S.sales.filter(s=>{
-    if(RC.serial&&!s.no.toLowerCase().includes(RC.serial.toLowerCase())) return false;
-    if(RC.cust){ const c=C(s.customerId);
-      const q=RC.cust.toLowerCase();
-      if(!(c.name.toLowerCase().includes(q)||(c.phone||'').includes(q)||(c.code||'').toLowerCase().includes(q))) return false }
-    if(from&&s.date<from) return false;
-    if(to&&s.date>to) return false;
-    if(RC.only==='credit'&&!(s.balance>0)) return false;
-    return true;
-  });
-  // newest first: by day, then by the order they were taken (two bills can share a minute)
-  const seq=new Map(S.sales.map((s2,i)=>[s2.no,i]));
-  list.sort((a,b)=> a.date===b.date ? seq.get(b.no)-seq.get(a.no) : b.date.localeCompare(a.date));
-  const inv=RC.sel?S.sales.find(s=>s.no===RC.sel):list[0];
-  const c=inv?C(inv.customerId):null;
-  const qty=inv?inv.lines.reduce((a,l)=>a+l.qty,0):0;
-  const gross=inv?inv.lines.reduce((a,l)=>a+l.qty*l.price,0):0;
-  const disc=inv?inv.lines.reduce((a,l)=>a+l.disc,0)+inv.billDisc:0;
-  const prev=inv&&c.id!==1?partyBal('C',c.id)-inv.balance:0;
-
-  return `<div class="rc">
-   <div class="rc-head">
-    <div><span>INVOICE BY</span><b>${inv?inv.by.toUpperCase():'—'}</b>
-     <span>CUSTOMER</span><b>${inv?C(inv.customerId).name.toUpperCase():'—'}</b></div>
-    <div class="rc-no">${inv?`<b>${inv.no}</b><span>${inv.date} ${inv.time||''}</span>
-      ${(inv.remade||[]).length?`<span class="tag warn">re-made ${inv.remade.length}×</span>`:''}
-      ${(inv.edits||[]).length?`<span class="tag warn">corrected</span>`:''}`:'<b>no bill picked</b>'}</div>
-    <div class="rc-btns">
-     <button class="rc-b dark" data-act="rcSms" ${inv&&C(inv.customerId).phone?'':'disabled'}>SEND E-BILL</button>
-     <button class="rc-b" data-act="rcPrint" ${inv?'':'disabled'}>PRINT</button>
-    </div>
-   </div>
-
-   <div class="rc-body">
-    <div class="rc-items">
-     <div class="rc-bar">INVOICE DETAILS${inv?` · ${inv.lines.length} line${inv.lines.length===1?'':'s'}`:''}</div>
-     <table class="till-tbl"><tr><th>CODE</th><th>ITEM NAME</th><th class="n">QTY</th><th class="n">MRP</th><th class="n">PRICE</th><th class="n">DISC</th><th class="n">TOTAL AMOUNT</th></tr>
-      ${inv?inv.lines.map(l=>{const p=P(l.pid);return `<tr>
-        <td class="c">${p.num||p.code}</td><td class="d">${p.name.toUpperCase()}</td>
-        <td class="n">${fq(l.qty)}</td><td class="n">${money2(l.mrp||p.mrp)}</td>
-        <td class="n">${money2(l.price)}</td><td class="n">${l.disc?money2(l.disc):'0.00'}</td>
-        <td class="n">${money2(l.qty*l.price-l.disc)}</td></tr>`}).join('')
-       :'<tr><td colspan="7" class="till-empty">Pick a bill from the history below.</td></tr>'}</table>
-    </div>
-    <div class="rc-sum">
-     <div class="rc-srow head"><span>INVOICE SUMMARY</span><b>${inv?fq(qty):'0.00'}</b></div>
-     <div class="rc-srow big"><span class="rust">SUB TOTAL</span><b class="rust">${money2(gross)}</b></div>
-     <div class="rc-srow"><span>TOTAL QTY</span><b>${fq(qty)}</b></div>
-     <div class="rc-srow"><span>TOTAL PCS ITEM</span><b>${inv?inv.lines.length:0}</b></div>
-     <div class="rc-srow"><span>DISCOUNT</span><b>${money2(disc)}</b></div>
-     <div class="rc-srow"><span class="rust">TOTAL DIS %</span><b>${gross?((disc/gross)*100).toFixed(2):'0.00'}</b></div>
-     <div class="rc-srow"><span>PREVIOUS CREDIT</span><b>${money2(prev)}</b></div>
-     <div class="rc-net"><span>NET TOTAL</span><b>${money2(inv?inv.total:0)}</b></div>
-     <div class="rc-paid"><span>PAID AMOUNT</span><b>${money2(inv?inv.paid:0)}</b></div>
-     <div class="rc-srow"><span class="rust">CREDIT / BALANCE</span><b class="rust">${money2(inv?inv.balance:0)}</b></div>
-     <div class="rc-acts">
-      <button class="rc-print" data-act="billEdit" data-no="${inv?inv.no:''}" ${inv?'':'disabled'}>EDIT IN THE TILL</button>
-      <button class="rc-side" data-act="billAmend" data-no="${inv?inv.no:''}" ${inv?'':'disabled'}>Correct a line</button>
-      <button class="rc-side" data-act="billCopy" data-no="${inv?inv.no:''}" ${inv?'':'disabled'}>Bill again</button>
-      <button class="rc-side" data-act="custPay" data-id="${inv?inv.customerId:''}" ${inv&&inv.balance>0?'':'disabled'}>Take payment</button>
-      <button class="rc-side" data-act="showInv" data-no="${inv?inv.no:''}" data-f="r80" ${inv?'':'disabled'}>80mm</button>
-     </div>
-    </div>
-   </div>
-
-   <div class="rc-hist">
-    <div class="rc-bar">INVOICE HISTORY</div>
-    <div class="rc-find">
-     <div class="f"><label>Search using serial no <em>F1</em></label><input id="rcSerial" value="${RC.serial}" placeholder="INVM-T1-AF-00031 or just 31"></div>
-     <div class="f"><label>Search using customer name / code <em>F2</em></label><input id="rcCust" value="${RC.cust}" placeholder="name, phone or code"></div>
-     <div class="f"><label>Between <em>F5</em></label>
-      <div class="rc-dates"><input id="rcFrom" type="date" value="${from||''}"><input id="rcTo" type="date" value="${to||''}">
-       ${from||to?`<button class="rc-x" data-act="rcAllDates" title="every day">✕</button>`:''}</div></div>
-     <div class="rc-chips">
-      <button class="${RC.only==='all'?'on':''}" data-act="rcOnly" data-v="all">All</button>
-      <button class="${RC.only==='credit'?'on':''}" data-act="rcOnly" data-v="credit">Credit only</button>
-      <button data-act="rcToday">Today</button>
-      ${RC.serial||RC.cust||RC.from||RC.to||RC.only!=='all'?`<button class="clear" data-act="rcAll">Clear</button>`:''}
-     </div>
-    </div>
-    <div class="rc-list">
-     <table class="till-tbl"><tr><th>DATE</th><th>TIME</th><th>SERIAL NO</th><th>CUSTOMER</th><th class="n">NET TOTAL</th><th class="n">CREDIT AMOUNT</th><th>INVOICE BY</th></tr>
-      ${list.slice(0,200).map(s=>`<tr class="${inv&&s.no===inv.no?'sel':''}" data-act="rcSel" data-no="${s.no}">
-        <td>${s.date}</td><td>${s.time||''}</td><td class="c">${s.no}</td>
-        <td class="d">${C(s.customerId).name.toUpperCase()}</td>
-        <td class="n">${money2(s.total)}</td>
-        <td class="n ${s.balance>0?'neg':''}">${money2(s.balance)}</td>
-        <td>${s.by.toUpperCase()}</td></tr>`).join('')
-       ||'<tr><td colspan="7" class="till-empty">No bill matches that. Widen the dates, or search by number.</td></tr>'}</table>
-    </div>
-    <div class="rc-foot">
-     <span>${list.length} bill${list.length===1?'':'s'}${!RC.serial&&!RC.cust&&!from&&!to?' — everything on the system':''}</span>
-     <span>Net ${fmt(list.reduce((a,s)=>a+s.total,0))}</span>
-     <span class="rust">Credit ${fmt(list.reduce((a,s)=>a+s.balance,0))}</span>
-    </div>
-   </div>
-  </div>`;
-}
-function recallAfter(){
-  const b=(id,key,ev='input')=>{ const el=$('#'+id); if(!el) return;
-    el.addEventListener(ev,e=>{ RC[key]=e.target.value; if(key==='serial'||key==='cust') RC.sel=null; render();
-      const n=$('#'+id); if(n&&ev==='input'){ n.focus(); n.setSelectionRange(n.value.length,n.value.length) } }) };
-  b('rcSerial','serial'); b('rcCust','cust'); b('rcFrom','from','change'); b('rcTo','to','change');
-}
+/* Bill recall is the same page as Bills now (the old full-screen recall was a second way to the same bills) */
+let RC={sel:null};
+function recall(){ return bills() }
+function recallAfter(){ billsAfter() }
 
 /* ================== THREE THINGS THE OLD TILL HAS ==================
    A purchase return (PRN) — goods sent back to the supplier.
@@ -10955,71 +10875,107 @@ function priceHistory(pid){
   };
   if(rows.length){ const sel2=m.querySelector('#phWho'); if(sel2) sel2.onchange=draw; draw() }
 }
-/* ---- finding an old bill ---- */
-let billQ='', billFrom='', billTo='', billType='all', billBy='all';
-function bills(){
+/* ================== BILLS ==================
+   One page for every bill on the system: find it on the left (number, customer, phone, item,
+   amount, dates, kind, cashier), see it on the right with everything you can do to it.
+   "Find a bill" and "Bill recall" used to be two screens doing the same job. */
+let billQ='', billFrom='', billTo='', billType='all', billBy='all', billSel=null, billLimit=150;
+const NOPROD={name:'(item no longer on file)',code:'',num:'',mrp:0};
+function billHit(s,q){
+  if(billFrom&&s.date<billFrom)return false;
+  if(billTo&&s.date>billTo)return false;
+  if(billType==='cash'&&s.type!=='CASH')return false;
+  if(billType==='credit'&&s.type!=='CREDIT')return false;
+  if(billType==='unpaid'&&!(s.balance>0))return false;
+  if(billBy!=='all'&&s.by!==billBy)return false;
+  if(!q)return true;
+  const c=C(s.customerId)||{name:'',phone:''}, digits=q.replace(/\D/g,'');
+  if(s.no.toLowerCase().includes(q)) return true;
+  if(digits.length>=3&&s.no.replace(/\D/g,'').endsWith(digits)) return true;           // "31" finds INVM-T1-AF-00031
+  return c.name.toLowerCase().includes(q)||(digits.length>=3&&(c.phone||'').replace(/\D/g,'').includes(digits))
+    ||s.total.toFixed(2).includes(q)||s.lines.some(l=>{const p=P(l.pid)||NOPROD; return p.name.toLowerCase().includes(q)||(p.code||'').toLowerCase().includes(q)});
+}
+function billList(){
   const q=billQ.trim().toLowerCase();
-  const hit=(s)=>{
-    if(billFrom&&s.date<billFrom)return false;
-    if(billTo&&s.date>billTo)return false;
-    if(billType==='cash'&&s.type!=='CASH')return false;
-    if(billType==='credit'&&s.type!=='CREDIT')return false;
-    if(billType==='unpaid'&&!(s.balance>0))return false;
-    if(billBy!=='all'&&s.by!==billBy)return false;
-    if(!q)return true;
-    const c=C(s.customerId);
-    return s.no.toLowerCase().includes(q)
-      || c.name.toLowerCase().includes(q)
-      || (c.phone||'').includes(q)
-      || s.total.toFixed(2).includes(q)
-      || s.lines.some(l=>P(l.pid).name.toLowerCase().includes(q)||P(l.pid).code.toLowerCase().includes(q));
-  };
-  const list=S.sales.filter(hit).sort((a,b)=>b.no.localeCompare(a.no));
+  const list=S.sales.filter(s=>billHit(s,q));
+  const seq=new Map(S.sales.map((s2,i)=>[s2.no,i]));         // newest first: by day, then the order they were taken
+  list.sort((a,b)=>a.date===b.date?seq.get(b.no)-seq.get(a.no):b.date.localeCompare(a.date));
+  return list;
+}
+function bills(){
+  const list=billList();
   const sum=list.reduce((a,s)=>{a.total+=s.total;a.paid+=s.paid;a.bal+=s.balance;return a},{total:0,paid:0,bal:0});
   const cashiers=[...new Set(S.sales.map(s=>s.by))];
-  return `<h1>Find a bill</h1>
-  <div class="card" style="margin-bottom:12px">
-   <div class="findbar">
-    <div class="f" style="flex:2;min-width:260px"><label>Invoice number, customer, phone, item or amount</label>
-     <input id="billQ" value="${billQ}" placeholder="e.g. 031975, Nimal, 0771234501, cement, 4890.00"></div>
-    <div class="f"><label>From</label><input id="billFrom" type="date" value="${billFrom}"></div>
-    <div class="f"><label>To</label><input id="billTo" type="date" value="${billTo}"></div>
-    <div class="f"><label>Kind</label><select id="billType">
-      ${[['all','All bills'],['cash','Cash only'],['credit','Credit only'],['unpaid','Still owing']].map(o=>`<option value="${o[0]}" ${billType===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>
-    <div class="f"><label>Cashier</label><select id="billBy">
-      <option value="all">Anyone</option>${cashiers.map(x=>`<option ${billBy===x?'selected':''}>${x}</option>`).join('')}</select></div>
-    <div class="f" style="flex:0"><label>&nbsp;</label><button class="btn ghost" data-act="billClear">Clear</button></div>
+  if(!list.some(s=>s.no===billSel)&&list.length) billSel=list[0].no;
+  const inv=list.find(s=>s.no===billSel)||null;
+  const filtered=billQ||billFrom||billTo||billType!=='all'||billBy!=='all';
+  const dayIs=(n)=>billFrom===(n===1?ago(1):ago(n))&&billTo===(n===1?ago(1):D(today));
+  return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><span>Bills <span class="muted" style="font-size:13px;font-weight:400;margin-left:6px">${S.sales.length} on the system</span></span>
+    <span style="display:flex;gap:6px"><button class="btn tape" data-view="pos">New bill <i class="kbd">F3</i></button></span></h1>
+  <div class="bl-wrap">
+   <div class="card bl-list">
+    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+     <input id="billQ" value="${billQ.replace(/"/g,'&quot;')}" placeholder="Bill number, customer, mobile, item or amount…" autocomplete="off"><span class="search-k"><i class="kbd">F1</i><i class="kbd">↑↓</i></span></div>
+    <div class="chips">${[[0,'Today'],[1,'Yesterday'],[7,'7 days'],[30,'30 days']].map(d=>`<button class="${dayIs(d[0])?'on':''}" data-act="billDay" data-d="${d[0]}">${d[1]}</button>`).join('')}<button class="${!billFrom&&!billTo?'on':''}" data-act="billAllDates">All time</button>
+     <span class="bl-dates"><input id="billFrom" type="date" value="${billFrom}" title="From"><span>–</span><input id="billTo" type="date" value="${billTo}" title="To"></span></div>
+    <div class="chips" style="margin-bottom:6px">${[['all','All'],['cash','Cash'],['credit','Credit'],['unpaid','Still owing']].map(o=>`<button class="${billType===o[0]?'on':''}" data-act="billKind" data-v="${o[0]}">${o[1]}</button>`).join('')}
+     <select id="billBy" class="bl-by"><option value="all">Any cashier</option>${cashiers.map(x=>`<option ${billBy===x?'selected':''}>${x}</option>`).join('')}</select>
+     ${filtered?`<button class="clear" data-act="billClear" style="color:var(--chip-rust)">Clear</button>`:''}</div>
+    <div class="bl-count"><span><b>${list.length}</b> bill${list.length===1?'':'s'} · ${fmt(sum.total)} billed</span><span>${sum.bal?`<b style="color:var(--chip-rust)">${fmt(sum.bal)}</b> owing`:'<span class="muted">nothing owing</span>'}</span></div>
+    <div class="bl-rows" id="billRows">
+     ${list.slice(0,billLimit).map(s=>{const c=C(s.customerId)||{name:'—'};return `<div class="bl-row ${inv&&s.no===inv.no?'sel':''}" data-act="billSel" data-no="${s.no}" tabindex="-1">
+       <div class="bl-when"><b>${s.date===D(today)?'Today':s.date===ago(1)?'Yesterday':s.date}</b><span>${s.time||''}</span></div>
+       <div class="bl-who"><b>${s.no}</b><span>${c.name}${c.id===1?'':' · '+(c.phone||'')}</span><span class="muted">${s.lines.length} line${s.lines.length===1?'':'s'} · ${s.by}${(s.remade||[]).length?' · re-made':''}${(s.edits||[]).length?' · corrected':''}</span></div>
+       <div class="bl-amt"><b>${fmt(s.total)}</b>${s.balance>0?`<i class="owe">${fmt(s.balance)} owing</i>`:s.type==='CREDIT'?'<i class="ok">credit · paid</i>':'<i class="ok">cash</i>'}</div></div>`}).join('')
+      ||`<div class="muted" style="padding:20px 8px">No bill matches that. Try the last few digits of the number, or their mobile.</div>`}
+     ${list.length>billLimit?`<div style="padding:8px"><button class="btn ghost sm" data-act="billMore">Show 150 more</button> <span class="muted">of ${list.length}</span></div>`:''}
+    </div>
    </div>
-   <div class="quickdays">
-    <button class="btn ghost sm" data-act="billDay" data-d="0">Today</button>
-    <button class="btn ghost sm" data-act="billDay" data-d="1">Yesterday</button>
-    <button class="btn ghost sm" data-act="billDay" data-d="7">Last 7 days</button>
-    <button class="btn ghost sm" data-act="billDay" data-d="30">Last 30 days</button>
-    <span class="muted" style="margin-left:auto">${list.length} bill${list.length===1?'':'s'} · ${fmt(sum.total)} billed · ${fmt(sum.paid)} taken${sum.bal?` · <b style="color:var(--chip-rust)">${fmt(sum.bal)} still owing</b>`:''}</span>
-   </div>
-  </div>
-  <div class="card">
-   <table><tr><th>Invoice</th><th>Date</th><th>Customer</th><th>Items</th><th>Cashier</th><th class="n">Total</th><th class="n">Paid</th><th class="n">Owing</th><th></th></tr>
-   ${list.slice(0,120).map(s=>{const c=C(s.customerId);return `<tr>
-     <td><a href="#" data-act="invoice" data-no="${s.no}">${s.no}</a>
-      <div class="muted">${s.type==='CREDIT'?'<span class="tag warn">credit</span>':'<span class="tag ok">cash</span>'}</div></td>
-     <td>${s.date}<div class="muted">${s.time||''}</div></td>
-     <td>${c.name}<div class="muted">${c.phone||''}</div></td>
-     <td class="muted">${s.lines.length} line${s.lines.length===1?'':'s'}<div>${P(s.lines[0].pid).name.slice(0,22)}${s.lines.length>1?' +'+(s.lines.length-1):''}</div></td>
-     <td>${s.by}</td>
-     <td class="n">${fmt(s.total)}</td><td class="n">${fmt(s.paid)}</td>
-     <td class="n">${s.balance?`<b>${fmt(s.balance)}</b>`:'—'}</td>
-     <td><div class="rowacts">
-      <button class="btn ghost sm" data-act="invoice" data-no="${s.no}">Reprint</button>
-      <button class="btn ghost sm" data-act="showInv" data-no="${s.no}" data-f="r80">80mm</button>
-      <button class="btn ghost sm" data-act="billSms" data-no="${s.no}">Text link</button>
-      ${s.balance?`<button class="btn tape sm" data-act="custPay" data-id="${s.customerId}">Take payment</button>`:''}
-      <button class="btn ghost sm" data-act="billCopy" data-no="${s.no}">Bill again</button>
-      ${can('cancelBill')||can('adjustInvoice')?`<button class="btn tape sm" data-act="billEdit" data-no="${s.no}">Edit in the till</button>
-      <button class="btn ghost sm" data-act="billAmend" data-no="${s.no}">Correct a line</button>`:''}
-     </div></td></tr>`}).join('')||'<tr><td colspan="9" class="muted" style="padding:26px;text-align:center">No bill matches that. Try just the last few digits of the invoice number, or their phone number.</td></tr>'}</table>
-   ${list.length>120?`<div class="muted" style="margin-top:8px">Showing the newest 120 of ${list.length}. Narrow it with a date range.</div>`:''}
+   <div class="card bl-detail">${inv?billDetail(inv):'<div class="muted">No bill picked.</div>'}</div>
   </div>`;
+}
+function billDetail(inv){
+  const c=C(inv.customerId)||{id:0,name:'—',phone:''};
+  const qty=inv.lines.reduce((a,l)=>a+l.qty,0), gross=inv.lines.reduce((a,l)=>a+l.qty*l.price,0), disc=inv.lines.reduce((a,l)=>a+(l.disc||0),0)+(inv.billDisc||0);
+  const prev=c.id&&c.id!==1?partyBal('C',c.id)-inv.balance:0;
+  const canEdit=can('cancelBill')||can('adjustInvoice');
+  return `<div class="bl-head">
+    <div><div class="bl-no">${inv.no}</div><div class="muted">${inv.date} ${inv.time||''} · by <b>${inv.by}</b> · ${inv.type==='CREDIT'?'<span class="tag warn">credit</span>':'<span class="tag ok">cash</span>'}${(inv.remade||[]).length?` <span class="tag warn">re-made ${inv.remade.length}×</span>`:''}${(inv.edits||[]).length?' <span class="tag warn">corrected</span>':''}</div></div>
+    <div class="bl-cust">${avatarOf(c)}<div><b>${c.name}</b><span class="muted">${c.phone||(c.id===1?'walk-in':'no mobile')}${c.id&&c.id!==1?` · <a href="#" data-act="cust" data-id="${c.id}">their account</a>`:''}</span></div></div>
+   </div>
+   <div class="bl-btns">
+    <button class="btn tape" data-act="invoice" data-no="${inv.no}">Print <i class="kbd">A5</i></button>
+    <button class="btn ghost" data-act="showInv" data-no="${inv.no}" data-f="r80">80mm receipt</button>
+    <button class="btn ghost" data-act="billSms" data-no="${inv.no}" ${c.phone?'':'disabled'}>Text e-bill</button>
+    ${inv.balance>0?`<button class="btn tape" data-act="custPay" data-id="${inv.customerId}">Take payment</button>`:''}
+    <button class="btn ghost" data-act="billCopy" data-no="${inv.no}">Bill again</button>
+    ${canEdit?`<button class="btn ghost" data-act="billEdit" data-no="${inv.no}">Edit in the till</button><button class="btn ghost" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}
+   </div>
+   <div class="bl-strip">
+    <div><span>Items · qty</span><b>${inv.lines.length} · ${fq(qty)}</b></div>
+    <div><span>Gross</span><b>${money2(gross)}</b></div>
+    <div><span>Discount</span><b>${money2(disc)}${gross&&disc?` <small>${(disc/gross*100).toFixed(1)}%</small>`:''}</b></div>
+    <div class="net"><span>Net total</span><b>${money2(inv.total)}</b></div>
+    <div class="paid"><span>Paid</span><b>${money2(inv.paid)}</b></div>
+    <div class="${inv.balance>0?'owe':''}"><span>Balance</span><b>${money2(inv.balance)}</b></div>
+    ${prev?`<div><span>Other bills owing</span><b>${money2(prev)}</b></div>`:''}
+   </div>
+   <div class="bl-lines"><table class="till-tbl"><tr><th>CODE</th><th>ITEM</th><th class="n">QTY</th><th class="n">MRP</th><th class="n">PRICE</th><th class="n">DISC</th><th class="n">AMOUNT</th></tr>
+    ${inv.lines.map(l=>{const p=P(l.pid)||NOPROD;return `<tr><td class="c">${p.num||p.code}</td><td class="d">${p.name}${l.serials&&l.serials.length?`<div class="muted">S/N ${l.serials.join(', ')}</div>`:''}</td>
+      <td class="n">${fq(l.qty)}</td><td class="n">${money2(l.mrp||p.mrp)}</td><td class="n">${money2(l.price)}</td><td class="n">${l.disc?money2(l.disc):'—'}</td><td class="n"><b>${money2(l.qty*l.price-(l.disc||0))}</b></td></tr>`}).join('')}</table></div>
+   <div class="bl-foot">
+    ${(inv.pays||[]).length?`<div class="bl-pays"><b>How it was paid</b>${inv.pays.map(p=>`<div><span>${p.method}${p.ref?' · '+p.ref:''}${p.bank?' · '+p.bank:''}</span><b>${money2(p.amount)}</b></div>`).join('')}</div>`:''}
+    ${(inv.edits||[]).length?`<div class="bl-hist"><b>Corrections</b>${inv.edits.map(e=>`<div class="muted">${e.at||''} ${e.by||''}: ${e.what||e.note||''}</div>`).join('')}</div>`:''}
+    ${(inv.remade||[]).length?`<div class="bl-hist"><b>Re-made</b>${inv.remade.map(e=>`<div class="muted">${e.at} by ${e.by} — was ${fmt(e.total)}, ${e.lines} lines</div>`).join('')}</div>`:''}
+   </div>`;
+}
+function billsAfter(){
+  const bq=$('#billQ'); if(bq){ bq.oninput=e=>{billQ=e.target.value;billLimit=150;render();const n=$('#billQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
+    bq.onkeydown=e=>{ if(e.key==='ArrowDown'||e.key==='ArrowUp'){ e.preventDefault(); const rows=[...document.querySelectorAll('.bl-row')]; const i=rows.findIndex(r=>r.classList.contains('sel')); const j=Math.max(0,Math.min(rows.length-1,i+(e.key==='ArrowDown'?1:-1))); if(rows[j]){ billSel=rows[j].dataset.no; render(); const r=document.querySelector('.bl-row.sel'); if(r) r.scrollIntoView({block:'nearest'}); $('#billQ').focus() } }
+      if(e.key==='Enter'){ const s=S.sales.find(x=>x.no===billSel); if(s) showInvoice(s) } };
+    if(document.activeElement===document.body) bq.focus() }
+  const bind=(id,set)=>{const el=$('#'+id); if(el)el.onchange=e=>{set(e.target.value);billLimit=150;render()}};
+  bind('billFrom',v=>billFrom=v); bind('billTo',v=>billTo=v); bind('billBy',v=>billBy=v);
 }
 function billCopy(no){
   const s=S.sales.find(x=>x.no===no);
@@ -13807,8 +13763,12 @@ document.addEventListener('click',e=>{
     billTill:()=>billToTill(a.dataset.no),
     billAmend:()=>{closeModals();editSaleModal(a.dataset.no)},
     purEdit:()=>editPurchaseModal(a.dataset.no),
-    billClear:()=>{billQ='';billFrom='';billTo='';billType='all';billBy='all';render()},
-    billDay:()=>{const n=+a.dataset.d; billFrom=n===1?ago(1):ago(n); billTo=n===1?ago(1):D(today); render()},
+    billClear:()=>{billQ='';billFrom='';billTo='';billType='all';billBy='all';billSel=null;billLimit=150;render()},
+    billDay:()=>{const n=+a.dataset.d; billFrom=n===1?ago(1):ago(n); billTo=n===1?ago(1):D(today); billLimit=150; render()},
+    billAllDates:()=>{billFrom='';billTo='';billLimit=150;render()},
+    billKind:()=>{billType=a.dataset.v;billLimit=150;render()},
+    billSel:()=>{billSel=a.dataset.no;render()},
+    billMore:()=>{billLimit+=150; const keep=$('#billRows').scrollTop; render(); const r=$('#billRows'); if(r) r.scrollTop=keep},
     billCopy:()=>billCopy(a.dataset.no),
     newProd:()=>productModal(), editProd:()=>{closeModals();productModal(+a.dataset.id)}, prodHist:()=>productHistory(+a.dataset.id),
     custQ:()=>{}, stmtPrint:()=>statement(+a.dataset.id,'print'), stmtSms:()=>statement(+a.dataset.id,'sms'),
@@ -13880,7 +13840,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){
     if(e.key==='Enter'&&onRow&&s){ e.preventDefault(); supPayModal(s.id); return }
     if((e.key==='ArrowDown'||e.key==='ArrowUp')&&onRow){ e.preventDefault(); const l=supList(), i=l.findIndex(x=>x.id===supSel); const n=l[Math.max(0,Math.min(l.length-1,i+(e.key==='ArrowDown'?1:-1)))]; if(n&&n.id!==supSel){ supSel=n.id; render(); const r=document.querySelector('.cu-row.sel'); if(r){ r.focus(); if(r.scrollIntoView) r.scrollIntoView({block:'nearest'}) } } return }
   }
-  if(e.key==='F2'){ if(S.view==='pos'&&pref('till')==='classic'&&typeof CS!=='undefined'&&CS.pid){e.preventDefault();priceHistory(CS.pid);return} e.preventDefault();go('dashboard')} if(e.key==='F3'){e.preventDefault();go('pos')} if(e.key==='F9'){e.preventDefault();go(pref('till')==='classic'?'recall':'bills')}
+  if(e.key==='F2'){ if(S.view==='pos'&&pref('till')==='classic'&&typeof CS!=='undefined'&&CS.pid){e.preventDefault();priceHistory(CS.pid);return} e.preventDefault();go('dashboard')} if(e.key==='F3'){e.preventDefault();go('pos')} if(e.key==='F9'){e.preventDefault();go('bills')}
   if((e.ctrlKey||e.metaKey)&&(e.key==='p'||e.key==='P')&&S.view==='pos'&&S.pos.lines.length&&!document.querySelector('.modal')){ e.preventDefault(); proofBill(); return }
     if(S.view==='pos'&&pref('till')==='classic'&&!document.querySelector('.modal')){
       const typing=/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName);
