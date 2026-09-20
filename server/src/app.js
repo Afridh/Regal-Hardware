@@ -24,6 +24,7 @@ import regalRoutes from './routes/regal.js';
 import shiftApi, { reportsDir } from './routes/shiftApi.js';
 import shopRoutes from './routes/shop.js';
 import supplierRoutes from './routes/supplier.js';
+import fileRoutes from './routes/files.js';
 
 if (!process.env.JWT_SECRET) console.error('JWT_SECRET is not set (copy .env.example to .env, or set it in the host\'s environment)');
 
@@ -31,7 +32,7 @@ const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', true);
 app.use(cors({ origin: (process.env.CORS_ORIGIN || '*').split(',').map(s => s.trim()), credentials: true }));
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '12mb' }));       // the books, and attachments of up to 8 MB as data URLs
 
 app.get('/api/health', async (_req, res) => {
   try { await pool.query('SELECT 1'); res.json({ ok: true, db: 'up', time: new Date().toISOString() }); }
@@ -55,6 +56,8 @@ app.use('/', shiftApi);
 app.use('/api/shop', shopRoutes);
 // the suppliers' page — reps sign in with the mobile on file, answer the shop's orders, upload the ones they took by hand
 app.use('/api/sup', supplierRoutes);
+// attachments (quotation requests, signed submissions) and outgoing email with them
+app.use('/api/files', fileRoutes);
 // day sheets the Shift Board publishes (on Vercel these live in /tmp, so only until the function is recycled)
 app.use('/reports', express.static(reportsDir));
 

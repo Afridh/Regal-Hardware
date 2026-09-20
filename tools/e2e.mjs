@@ -486,6 +486,31 @@ let webNo = null;
   ok('S: nothing left pending once the till has saved', !pending.sent.some(o => o.waiting) && !pending.pos.find(o => o.no === po.no).events.some(e => e.pending));
 }
 
+// ---------------------------------------------------------------- quotation requests & tenders, and the files behind them
+{
+  const j = async (path, opts = {}) => { const r = await fetch(BASE + path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined }); return { status: r.status, ...(await r.json().catch(() => ({}))) }; };
+  const H = { Authorization: 'Bearer ' + tok };
+  A.w.eval(`S.tenders=[]; S.tenders.unshift({id:'t1',no:tdNo('RFQ'),status:'received',org:'Divisional Secretariat',orgType:'gov',ref:'DS/1',subject:'Cement',contact:'',phone:'',email:'ds@example.lk',address:'',received:D(today),via:'post',closing:ago(-2),priceLevel:'wholesale',lines:[],files:[],terms:{validDays:30},events:[]}); tdSel='t1'; go('tenders')`);
+  ok('T: the request shows on the tenders page with its closing date', /Divisional Secretariat/.test(A.d.body.textContent) && /closes in 2 days/.test(A.d.body.textContent));
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const noAuth = await j('/api/files', { method: 'POST', body: { kind: 'tender', ref: 't1', name: 'letter.png', dataUrl: png } });
+  const up = await j('/api/files', { method: 'POST', headers: H, body: { kind: 'tender', ref: 't1', name: 'letter.png', dataUrl: png } });
+  ok('T: the letter is attached (staff only)', noAuth.status === 401 && up.status === 200 && /^\/api\/files\/\d+\?k=/.test(up.url), up.url);
+  const got = await fetch(BASE + up.url), bad = await fetch(BASE + up.url.split('?')[0]);
+  ok('T: attachment opens from its signed link only', got.status === 200 && got.headers.get('content-type') === 'image/png' && bad.status === 404);
+  const exe = await j('/api/files', { method: 'POST', headers: H, body: { kind: 'tender', ref: 't1', name: 'x.exe', dataUrl: 'data:application/x-msdownload;base64,AAAA' } });
+  ok('T: only documents and pictures are accepted', exe.status === 400);
+  A.w.eval(`const t=S.tenders[0]; const p=S.products[0]; t.lines.push({pid:p.id,desc:p.name,unit:p.unit,qty:10,price:p.wholesale,remark:''},{pid:null,desc:'River sand 3 cube',unit:'load',qty:1,price:30000,remark:'to site'}); tenderPrint(t); closeModals()`);
+  const t1 = A.w.S.tenders[0];
+  ok('T: quotation numbered and priced, with an item not on the system', /^QTN-\d{5}$/.test(t1.quoteNo) && t1.status === 'priced' && A.w.eval('tdTotal(S.tenders[0])') === 10 * A.w.S.products[0].wholesale + 30000, t1.quoteNo);
+  A.w.eval(`const t=S.tenders[0]; t.submitted={date:D(today),via:'email',ref:'',note:'',by:S.user.name,total:tdTotal(t)}; t.status='submitted'; tdEvent(t,'Submitted'); render()`);
+  A.w.eval(`const t=S.tenders[0]; t.result={date:D(today),amount:tdTotal(t)}; t.status='won'; tdEvent(t,'Won'); render()`);
+  ok('T: submission and result recorded, win rate shows', A.w.S.tenders[0].status === 'won' && /Win rate/.test(A.d.body.textContent) && /100%/.test(A.d.body.textContent));
+  const mail = await j('/api/files/mail/send', { method: 'POST', headers: H, body: { to: 'ds@example.lk', subject: 'x', text: 'y' } });
+  ok('T: emailing says what is missing until SMTP is set up', mail.status === 400 && /not set up/.test(mail.error || ''), mail.error);
+  A.w.eval(`S.tenders=[]; go('dashboard')`);
+}
+
 // ---------------------------------------------------------------- till B: another PC, same books
 const B = await openTill('B');
 const lockB = await until(() => B.d.getElementById('lockScreen'));
