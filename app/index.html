@@ -8166,6 +8166,7 @@ function renderNav(){
   const side=pref('nav')==='side';
   const items=views.filter(v=>v[0]==='grp'||allowed(v[0]));
   const initial=(S.user.name||'?').trim()[0].toUpperCase();
+  const oldList=$('#nav .navlist'), keepScroll=oldList?oldList.scrollTop:0;   // the menu is rebuilt on every render: keep where it was scrolled to
   $('#nav').innerHTML= side
     ? `<div class="navbrand">
         <span class="mark">${CFG.shop&&CFG.shop.logo?`<img src="${CFG.shop.logo}" alt="">`:'RH'}</span>
@@ -8188,6 +8189,10 @@ function renderNav(){
             ${icon(v[0])}<span>${v[1]}</span>${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}</button>`).join('');
   $('#hdr').innerHTML=`${S.user.name}, ${S.user.role.toLowerCase()} &nbsp;|&nbsp; till ${S.terminal}, drawer open since ${S.drawer.opened}<br>${today.toDateString()}`;
   if(side&&S.notif) drawBell();                       // the menu has its own bell now that the header is out of the way
+  const list=$('#nav .navlist');
+  if(list){ list.scrollTop=keepScroll;
+    const on=list.querySelector('button.on');           // only nudge if the current page's button is actually out of sight
+    if(on&&(on.offsetTop<list.scrollTop||on.offsetTop+on.offsetHeight>list.scrollTop+list.clientHeight)) on.scrollIntoView({block:'nearest'}) }
 }
 
 function go(v){ if(!allowed(v)){toast('That is not open to '+S.user.name);return} document.body.classList.remove('drawer');
