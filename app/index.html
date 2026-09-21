@@ -2006,6 +2006,10 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-no{flex:0 0 auto;background:#fff;border-radius:var(--r);padding:6px 14px;text-align:right}
 .till-no b{display:block;font-family:Archivo,sans-serif;font-weight:800;font-size:17px}
 .till-no span{font-size:10.5px;letter-spacing:.07em;color:var(--steel)}
+.till-level{background:none;border:0;display:inline-flex;gap:4px;cursor:pointer;padding:0;margin-top:2px}
+.till-level i{font-style:normal;font-size:9.5px;letter-spacing:.08em;padding:2px 8px;border-radius:99px;color:#8C9A95;border:1px solid var(--line);transition:all .15s}
+.till-level i.on{background:var(--chip-yellow);color:#2A2103;border-color:#D08F09;font-weight:700}
+.till-level:hover i:not(.on){border-color:var(--steel);color:var(--ink)}
 .till-no.editing{background:var(--tint-yellow);box-shadow:inset 0 0 0 2px var(--chip-yellow)}
 .till-no.editing span{color:#8A5D06;font-weight:700}
 
@@ -9268,7 +9272,16 @@ function drawSug(){
       </div></div>`}).join('')}</div>`;
   document.querySelectorAll('#sug [data-pid]').forEach(d=>d.addEventListener('mousedown',()=>startLine(+d.dataset.pid)));
 }
-const price=(p)=>{const c=C(S.pos.customer||1);return c.level==='wholesale'?p.wholesale:p.retail};
+/* which price list the bill is on: set by hand on the bill (the RETAIL / WHOLESALE switch, Ctrl+Shift+W,
+   or W / R in the price box), else whatever the customer is on */
+const posLevel=()=>S.pos.level||(C(S.pos.customer||1)||{}).level||'retail';
+const price=(p)=>posLevel()==='wholesale'?p.wholesale:p.retail;
+function posSetLevel(level,{quiet=false}={}){
+  const was=posLevel(); S.pos.level=level; if(was===level){ if(!quiet) render(); return }
+  let n=0; S.pos.lines.forEach(l=>{ const p=P(l.pid); if(!p) return; if(l.auto!==false&&!l.fromLast){ const np=priceFor(p,l.qty); if(Math.abs(np-l.price)>0.005){ l.price=np; l.disc=0; delete l.discPct; n++ } } });
+  if(CS.pid&&CS.auto!==false){ CS.price=priceFor(P(CS.pid),+CS.qty||1); const pf=$('#csPrice'); if(pf) pf.value=CS.price }
+  if(!quiet){ render(); toast(`${level==='wholesale'?'Wholesale':'Retail'} prices${n?` — ${n} line${n===1?'':'s'} repriced`:''}`) }
+}
 /* Some goods are dearer in small pieces — wire cut off the roll, cement by the
    bag against the pallet. A product can carry price breaks, and the till uses
    whichever one the quantity has reached. */
@@ -9815,7 +9828,7 @@ function posClassic(){
   const now=new Date(), sel=P(CS.pid);
   const owed=c.id===1?0:partyBal('C',c.id);
   const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['F1','Back to item'],['F4','Customer'],['F8','Bill disc.'],
-              ['F10','Pay'],['F6','On account'],['Ctrl+H','Hold'],['F9','Recall'],['F2','Last prices'],['Esc','Clear']];
+              ['F10','Pay'],['F6','On account'],['Ctrl+H','Hold'],['F9','Recall'],['S in price','Past prices'],['W / R','Wholesale · retail'],['Esc','Clear']];
 
   const sync=(document.getElementById('savedAt')||{}).textContent||'';
   return `<div class="till">
@@ -9832,7 +9845,7 @@ function posClassic(){
      <div class="till-clock">${now.toLocaleTimeString('en-GB',{hour12:true})}<em>${now.getDate()}</em></div></div>
     <div class="till-no ${S.pos.editing?'editing':''}">
      <b>${S.pos.editing||nextNo}</b>
-     <span>${S.pos.editing?'EDITING THIS BILL':c.level==='wholesale'?'WHOLESALE':'RETAIL'}</span></div>
+     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Switch between retail and wholesale prices for this bill — Ctrl+Shift+W, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button>`}</div>
     <button class="till-del" data-act="csDel" data-i="${S.pos.sel}" ${S.pos.sel>=0?'':'disabled'}>DELETE<i>Del</i></button>
    </div>
 
@@ -10248,6 +10261,12 @@ function bindClassic(){
       paint() };
     el.onkeydown=e=>{
       if(e.key==='Escape'){ e.preventDefault(); const q2=$('#csQ'); if(q2){q2.focus();q2.select()} return }
+      // in the price box, as on the old till: S shows every price this item went for, W / R switch the price list
+      if(id==='csPrice'&&!e.ctrlKey&&!e.altKey&&CS.pid){
+        const k=e.key.toLowerCase();
+        if(k==='s'){ e.preventDefault(); priceHistory(CS.pid); return }
+        if(k==='w'||k==='r'){ e.preventDefault(); CS.auto=true; posSetLevel(k==='w'?'wholesale':'retail'); const pf=$('#csPrice'); if(pf){ pf.focus(); pf.select() } return }
+      }
       if(e.key!=='Enter') return;
       e.preventDefault(); CS[key]=el.value; paint();
       if(id==='csDisc') csCommit(); else stepFrom(id,1);   // Enter moves along; from the discount box it puts the line on the bill
@@ -10344,10 +10363,12 @@ function pickCustomer(after){
   let touched=false;
   ph.oninput=()=>touched=true; nm.oninput=()=>touched=true;
 
-  const pick=(id)=>{ S.pos.customer=id===1?null:id;
+  const pick=(id)=>{ S.pos.customer=id===1?null:id; S.pos.level=null;      // the bill follows the customer's price list…
     S.pos.lines.forEach(l=>{ delete l.fromLast; l.price=priceFor(P(l.pid),l.qty); l.auto=true });
-    repriceToCustomer(S.pos.customer);
-    m.remove(); render(); if(after) after() };
+    const n=repriceToCustomer(S.pos.customer,{quiet:true});                 // …and each line goes to what they were charged last time
+    if(CS.pid){ const was=lastPriceFor(CS.pid,S.pos.customer); const p=P(CS.pid); if(was&&CFG.pos.repriceToLast&&was.price>=p.cost-0.005){ CS.price=was.price; CS.auto=false; CS.last=was } else if(CS.auto!==false){ CS.price=priceFor(p,+CS.qty||1); CS.last=was||null } }
+    m.remove(); render(); if(after) after();
+    if(id!==1){ const c=C(id); toast(`${c.name.split(' ')[0]} — ${c.level==='wholesale'?'wholesale':'retail'} prices${n?`, ${n} line${n===1?'':'s'} at what they paid last time`:''}`) } };
 
   let cur=0;                                   // which row the arrow keys are on
   const rows=()=>[...m.querySelectorAll('[data-cid]')];
@@ -11417,7 +11438,7 @@ function priceHistory(pid){
      </table>`;
     m.querySelectorAll('[data-phuse]').forEach(b=>b.onclick=()=>{
       CS.price=+b.dataset.phuse; CS.disc=0; CS.auto=false; m.remove(); render();
-      const f=$('#csQty'); if(f){f.focus();f.select()}
+      const f=$('#csPrice'); if(f){f.focus();f.select()}
       toast(`Price set to ${money2(+b.dataset.phuse)} — what it went for then`) });
   };
   if(rows.length){ const sel2=m.querySelector('#phWho'); if(sel2) sel2.onchange=draw; draw() }
@@ -14150,6 +14171,7 @@ document.addEventListener('click',e=>{
     webSettings:()=>{go('site'); siteTab='overview'; render()},
     navSignOut:()=>{ const b=document.getElementById('logoutBtn'); if(b) b.click() },
     privacyTry:()=>{ go('dashboard'); privacyToggle() },
+    csLevel:()=>{ posSetLevel(posLevel()==='wholesale'?'retail':'wholesale'); const q2=$('#csQ'); if(q2&&!CS.pid) q2.focus() },
     invMore:()=>{ invLimit+=200; const keep=$('#main').scrollTop; render(); $('#main').scrollTop=keep },
     tdNew:()=>tenderModal(null), tdEdit:()=>tenderModal(a.dataset.id), tdSel:()=>{ tdSel=a.dataset.id; tdLineQ=''; render() }, tdFilter:()=>{ tdFilter=a.dataset.v; render() },
     tdPrint:()=>tenderPrint(S.tenders.find(x=>x.id===a.dataset.id)), tdEmail:()=>tenderEmail(S.tenders.find(x=>x.id===a.dataset.id)),
@@ -14424,6 +14446,7 @@ document.addEventListener('click',e=>{
   })[act]?.() });
 document.addEventListener('keydown',e=>{
   if(CFG.privacy&&CFG.privacy.on&&S.user&&privacyKeyMatch(e)){ e.preventDefault(); e.stopPropagation(); privacyToggle(); return }   // the privacy screen, before anything else
+  if(S.view==='pos'&&e.ctrlKey&&e.shiftKey&&e.key.toLowerCase()==='w'&&!S.pos.editing){ e.preventDefault(); posSetLevel(posLevel()==='wholesale'?'retail':'wholesale'); return }   // retail ⇄ wholesale for the bill
   if(e.key==='Escape'){
     const hadModal=!!document.querySelector('.modal'); closeModals();
     // on the shop's own screen, Esc with nothing open clears the bill, as CLEAR does
