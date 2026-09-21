@@ -511,6 +511,22 @@ let webNo = null;
   A.w.eval(`S.tenders=[]; go('dashboard')`);
 }
 
+// ---------------------------------------------------------------- the privacy screen
+{
+  const real = A.w.S.sales, realN = real.length, realJ = A.w.S.journal.length, revBefore = (await (await fetch(BASE + '/api/books/regal/rev', { headers: { Authorization: 'Bearer ' + tok } })).json()).rev;
+  A.w.eval("CFG.privacy.on=true; CFG.privacy.pct=40; CFG.privacy.hideCredit=true; go('dashboard'); privacyToggle()");
+  ok('P: privacy screen shows fewer bills and no credit', A.w.privacyOn === true && A.w.S.sales.length < realN && A.w.S.sales.length > 0 && !A.w.S.sales.some(s => s.balance > 0) && A.w.S.journal.length < realJ, `${A.w.S.sales.length} of ${realN}`);
+  let refused = '';
+  try { A.w.completeSale({ lines: [{ pid: 23, qty: 1, price: 100, disc: 0 }], customerId: 1, pays: [{ method: 'CASH', amount: 100 }] }); } catch (e) { refused = e.message; }
+  ok('P: nothing can be billed while it is up', /busy/.test(refused), refused);
+  A.w.persist(true); await sleep(900);
+  const revAfter = (await (await fetch(BASE + '/api/books/regal/rev', { headers: { Authorization: 'Bearer ' + tok } })).json()).rev;
+  ok('P: nothing is saved while it is up', revAfter === revBefore, `rev ${revBefore} → ${revAfter}`);
+  A.w.eval("privacyToggle()");
+  ok('P: the key again brings the real books straight back', A.w.privacyOn === false && A.w.S.sales === real && A.w.S.sales.length === realN && A.w.S.journal.length === realJ);
+  A.w.eval("CFG.privacy.on=false");
+}
+
 // ---------------------------------------------------------------- till B: another PC, same books
 const B = await openTill('B');
 const lockB = await until(() => B.d.getElementById('lockScreen'));

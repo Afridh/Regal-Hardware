@@ -136,6 +136,7 @@
   /* ---------------- other tills ---------------- */
   async function poll() {
     if (!token || busy) return;
+    if (window.privacyOn) return;                          // the privacy screen is up: nothing moves until it is taken down
     if (Date.now() - lastPushAt < 3000) return;          // our own save is still settling
     var j = await call('GET', '/books/' + KEY + '/rev');
     if (j.__status !== 200) return;

@@ -339,6 +339,8 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .tq-words{font-style:italic;margin-bottom:10px}.tq-terms ul{margin:4px 0 0 18px;padding:0}.tq-terms li{margin:2px 0}
 .tq-sign{display:flex;justify-content:space-between;gap:30px;margin-top:40px;font-size:12px}.tq-sign>div{flex:1}.tq-sign .line{border-top:1px solid #111;margin-bottom:4px;width:80%}
 @media print{.print.tq{border:0;width:auto;min-height:0;padding:0}}
+body.privacy nav .navuser::after{content:'';position:absolute;left:6px;bottom:6px;width:5px;height:5px;border-radius:50%;background:#5E6E6A}
+body.privacy nav .navuser{position:relative}
 .btn.wa{color:#128C7E;border-color:#B7E0C9}.btn.wa:hover{background:#25D366;color:#fff;border-color:#25D366}.btn.wa:disabled{color:var(--faint);border-color:var(--line)}
 /* online products: a wall of cards */
 .wp-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
@@ -5917,6 +5919,7 @@ function recost(pid){
 }
 /* ---- business transactions ---- */
 function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.name,override=false,no=null}){
+  if(window.privacyOn) throw new Error('Till is busy — try again in a moment');
   if(!lines.length) throw new Error('A bill needs at least one line');
   lines.forEach(l=>{ if(!(l.qty>0)) throw new Error('Quantity must be above zero') });
   // the same item twice on a bill is checked as one quantity against the floor
@@ -6096,6 +6099,7 @@ const CFG={
   waMode:'chat',waPhoneId:'',waToken:'',waWabaId:'',waVerifyToken:'',waAuto:true,waTemplates:{},
    quietFrom:'21:00',quietTo:'07:00'},
  mail:{host:'',port:587,user:'',pass:'',from:'',cc:''},   // outgoing email — quotations to institutions go from here
+ privacy:{on:false,key:'ctrl+shift+x',pct:35,hideCredit:true,minutes:20,dot:true},   // the privacy screen (owner only)
  tpl:{
   cashSale:{label:'Cash bill',vars:'{shop} {invoice} {total} {link} {customer}',
     text:'{shop}: thank you for your purchase. Bill {invoice} for {total} — {link}'},
@@ -6247,7 +6251,7 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
 function settings(){
-  const tabs=[['screen','My screen'],['done','Finishing a bill'],['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['approvals','Approvals'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  const tabs=[['screen','My screen'],['done','Finishing a bill'],...(S.user&&S.user.role==='Owner'?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['approvals','Approvals'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
   const fld=(path,label,hint='',type='text')=>{
     const [g,k]=path.split('.'); const val=g==='web'?S.web.settings[k]:CFG[g][k];
     return `<div class="f"><label>${label}</label>
@@ -6465,6 +6469,17 @@ function settings(){
       <div style="display:flex;gap:6px;margin-top:6px">
        <button class="btn ghost sm" data-act="tplReset" data-k="${k}">Put the original back</button>
        <button class="btn ghost sm" data-act="tplTest" data-k="${k}">Send it to me as a test</button></div></div>`).join('')}`;
+  if(setTab==='privacy'&&S.user&&S.user.role==='Owner'){ const p=CFG.privacy||{};
+    body=`<div class="card note" style="margin-bottom:12px"><b>What it does</b><div class="muted">One key, and every screen shows a quieter shop — a share of the bills you choose, no credit customers, the day's takings and the reports following suit. The real books are not touched: they are held aside and come straight back when the key is pressed again, or after the time below. While the screen is up nothing can be billed or saved (staff see “till is busy”) and nothing comes in from the server, so the two can never mix. Only you see this page.</div></div>
+     ${fld('privacy.on','','Privacy screen switched on','check')}
+     <div class="grid3">
+      <div class="f"><label>Key</label><select data-set="privacy.key">${[['ctrl+shift+x','Ctrl + Shift + X'],['ctrl+shift+h','Ctrl + Shift + H'],['f12','F12'],['ctrl+`','Ctrl + ` (backtick)'],['scrolllock','Scroll Lock']].map(o=>`<option value="${o[0]}" ${(p.key||'ctrl+shift+x')===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select><div class="muted">Press it again to come back.</div></div>
+      ${fld('privacy.pct','Share of bills shown (%)','35 shows about a third of the bills, and so about a third of the takings','number')}
+      ${fld('privacy.minutes','Comes back by itself after (minutes)','0 = only when the key is pressed','number')}
+     </div>
+     <div class="grid2">${fld('privacy.hideCredit','','Hide credit — no bills on account, no outstanding balances, customers look clear','check')}${fld('privacy.dot','','A tiny grey dot bottom-left of the menu while it is up, so you know','check')}</div>
+     <div style="display:flex;gap:8px;align-items:center;margin-top:10px"><button class="btn tape" data-act="privacyTry" ${p.on?'':'disabled'}>Try it now</button><span class="muted">Same as pressing the key. Today's figures on the dashboard change at once; press the key to come back.</span></div>`;
+  }
   if(setTab==='approvals'){ const cfg=CFG.approvals||{};
     body=`<div class="card note" style="margin-bottom:10px"><b>Who decides</b><div class="muted">The owner, and anyone given the <i>Approve requests</i> right under Users, can make these changes straight away and decide other people's requests. Everyone else asks, and the change waits on the Approvals page until it is approved.</div></div>
      <div class="muted" style="margin-bottom:6px">These changes need the owner's approval:</div>
@@ -6474,7 +6489,7 @@ function settings(){
   const meta={screen:['Menu, landing page and shortcuts — yours alone','M3 5h18v11H3zM8 20h8M12 16v4'],done:['What happens after a bill is finished','M9 12l2 2 4-4M12 3a9 9 0 110 18 9 9 0 010-18z'],
     shop:['Name, address and phones as printed','M3 9l2-5h14l2 5M4 9h16v11H4zM9 20v-6h6v6'],bill:['Numbering, formats and the return window',ICONS.bills],layout:['Logo, lines and text size on the bill',ICONS.docs],
     cost:['The code that hides cost on labels',ICONS.labels],msg:['The SMS gateway and who gets texts',ICONS.messages],tpl:['Wording of every text that goes out','M4 6h16M4 12h10M4 18h7'],
-    approvals:['What needs the owner’s nod',ICONS.approvals]};
+    approvals:['What needs the owner’s nod',ICONS.approvals],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
   return subnavPage('Settings','How the till behaves for everyone',tabs.map(t=>[t[0],t[1],(meta[t[0]]||['',ICONS.settings])[0],(meta[t[0]]||['',ICONS.settings])[1]]),setTab,'data-settab',body);
 }
 /* Settings → Messaging → WhatsApp: the whole set-up on one screen, in the order Meta wants it done */
@@ -7278,8 +7293,36 @@ let saveTimer=null, lastSaved=null, lastSavedTxt='';
 function snapshot(){ const snap={}; Object.keys(S).forEach(k=>{ if(!TRANSIENT.includes(k)) snap[k]=S[k] }); return snap }
 function snapshotTxt(){ const local=(window.regalBridge&&regalBridge.localKeys)||[]; const snap=snapshot(); const cmp={}; Object.keys(snap).forEach(k=>{ if(!local.includes(k)) cmp[k]=snap[k] }); return JSON.stringify({S:cmp,CFG}) }
 /* every render saves — but only when something in the shared books actually changed */
+/* ================== PRIVACY SCREEN ==================
+   One key and the screen shows a quieter shop: a chosen share of the bills, no credit, the rest of
+   the figures following. Nothing in the books changes — the real records are held aside and put
+   back the moment the key is pressed again (or after the time set). While it is up nothing is
+   saved and nothing is pulled from the server, so the two can never mix. Owner-only, Settings →
+   Privacy screen. */
+let PRIV=null, privT=null;
+const privHash=s=>{ let h=7; for(const c of String(s||'')) h=(h*31+c.charCodeAt(0))>>>0; return h%100 };
+function privacyToggle(){
+  const cfg=CFG.privacy||{}; if(!cfg.on) return;
+  if(PRIV){ Object.assign(S,PRIV); PRIV=null; window.privacyOn=false; clearTimeout(privT); document.body.classList.remove('privacy'); render(); drawBell(); return }
+  clearTimeout(saveTimer); saveForce=false;
+  PRIV={sales:S.sales,payments:S.payments,journal:S.journal,notif:S.notif,tenders:S.tenders,web:S.web,messages:S.messages};
+  const pct=Math.max(1,Math.min(100,+cfg.pct||35)), keep=no=>privHash(no)<pct, dropped=new Set();
+  S.sales=PRIV.sales.filter(s=>{ if(cfg.hideCredit&&s.balance>0){ dropped.add(s.no); return false } const k=keep(s.no); if(!k) dropped.add(s.no); return k });
+  S.payments=PRIV.payments.filter(p=>{ const against=p.against||p.no||p.voucher||''; if(cfg.hideCredit&&p.dir==='IN'&&p.customerId&&p.customerId!==1){ dropped.add(p.no); dropped.add(p.voucher); return false } const k=keep(p.no||p.voucher||against); if(!k){ dropped.add(p.no); dropped.add(p.voucher) } return k });
+  const base=r=>String(r||'').replace(/-(R|U)$/,'');
+  S.journal=PRIV.journal.filter(j=>!dropped.has(j.ref)&&!dropped.has(base(j.ref)));
+  if(cfg.hideCredit){ const cust=new Set(); S.journal=S.journal.filter(j=>!j.lines.some(l=>l.party&&l.party.type==='C'&&l.ac==='1100')) }   // no customer ledger at all
+  S.notif=[]; S.messages=[]; S.tenders=[]; S.web={...PRIV.web,orders:[],cart:[]};
+  window.privacyOn=true; document.body.classList.toggle('privacy',cfg.dot!==false);
+  if(+cfg.minutes>0) privT=setTimeout(()=>{ if(PRIV) privacyToggle() },+cfg.minutes*60000);
+  if(S.view==='tenders'||S.view==='weborders'||S.view==='messages') S.view='dashboard';
+  render(); drawBell();
+}
+const privacyKeyMatch=(e)=>{ const k=(CFG.privacy&&CFG.privacy.key)||'ctrl+shift+x'; const key=e.key.toLowerCase();
+  return k==='ctrl+shift+x'?(e.ctrlKey&&e.shiftKey&&key==='x'):k==='f12'?(e.key==='F12'):k==='ctrl+`'?(e.ctrlKey&&(key==='`'||e.code==='Backquote')):k==='ctrl+shift+h'?(e.ctrlKey&&e.shiftKey&&key==='h'):k==='scrolllock'?(e.key==='ScrollLock'):false };
 let saveForce=false;
-function persist(force){ saveForce=saveForce||!!force; clearTimeout(saveTimer); saveTimer=setTimeout(async()=>{
+function persist(force){ if(window.privacyOn) return; saveForce=saveForce||!!force; clearTimeout(saveTimer); saveTimer=setTimeout(async()=>{
+  if(window.privacyOn){ saveForce=false; return }     // a save scheduled just before the privacy screen went up must not fire with its figures
   const f=saveForce; saveForce=false;                 // a forced save (orders just pulled in) survives an ordinary render's call landing on top of it
   const txt=snapshotTxt(); if(!f&&txt===lastSavedTxt) return;
   lastSavedTxt=txt;
@@ -14024,6 +14067,8 @@ document.addEventListener('click',e=>{
   const nb=e.target.closest('[data-view]'); if(nb){go(nb.dataset.view);return}
   const tb=e.target.closest('[data-tab]'); if(tb){invTab=tb.dataset.tab;invLimit=200;render();return} const ab=e.target.closest('[data-acc]'); if(ab){accTab=ab.dataset.acc;render();return}
   const a=e.target.closest('[data-act]'); if(!a)return; e.preventDefault(); const act=a.dataset.act;
+  // while the privacy screen is up only looking is allowed — nothing that writes, so the real books cannot be touched
+  if(window.privacyOn&&!/^(closeModal|invoice|showInv|doPrint|billSel|billKind|billDay|billAllDates|billMore|billClear|cust|siteTab|siteShow|wpView|ordTab|tdSel|tdFilter|bellOpen|bellClear|navMin|prefNav|prefMini|repRun|repPick|rep|acc|tab|zoom|prodHist|supShow|pickCust)$/.test(act)){ toast('Till is busy — try again in a moment'); return }
   ({ del:()=>{S.pos.lines.splice(+a.dataset.i,1);render()}, pay:openPay, pickCust:pickCustomer, clear:()=>{S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()}, hold:()=>{toast('Bill held — recall with Ctrl+R (demo keeps one)');S.held=S.pos;S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()},
     invoice:()=>showInvoice(S.sales.find(s=>s.no===a.dataset.no)), showInv:()=>{closeModals();showInvoice(S.sales.find(s=>s.no===a.dataset.no),a.dataset.f)}, closeModal:closeModals,
     doPrint:()=>{ try{ window.print() }catch(e){ toast("The preview is open — use the browser's own print, or pop the window out first") } },
@@ -14104,6 +14149,7 @@ document.addEventListener('click',e=>{
     webOpenSite:()=>go('site'),
     webSettings:()=>{go('site'); siteTab='overview'; render()},
     navSignOut:()=>{ const b=document.getElementById('logoutBtn'); if(b) b.click() },
+    privacyTry:()=>{ go('dashboard'); privacyToggle() },
     invMore:()=>{ invLimit+=200; const keep=$('#main').scrollTop; render(); $('#main').scrollTop=keep },
     tdNew:()=>tenderModal(null), tdEdit:()=>tenderModal(a.dataset.id), tdSel:()=>{ tdSel=a.dataset.id; tdLineQ=''; render() }, tdFilter:()=>{ tdFilter=a.dataset.v; render() },
     tdPrint:()=>tenderPrint(S.tenders.find(x=>x.id===a.dataset.id)), tdEmail:()=>tenderEmail(S.tenders.find(x=>x.id===a.dataset.id)),
@@ -14376,7 +14422,9 @@ document.addEventListener('click',e=>{
     payrollApprove:()=>{toast('Payroll approval is wired in the full build (posts Dr Salaries / Cr Salaries payable). Demo keeps the ledger as-is.')},
     sendSummary:()=>{sms('0777849964','Daily summary sent (see Reports for content)');toast('Daily summary queued to owner')}
   })[act]?.() });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'){
+document.addEventListener('keydown',e=>{
+  if(CFG.privacy&&CFG.privacy.on&&S.user&&privacyKeyMatch(e)){ e.preventDefault(); e.stopPropagation(); privacyToggle(); return }   // the privacy screen, before anything else
+  if(e.key==='Escape'){
     const hadModal=!!document.querySelector('.modal'); closeModals();
     // on the shop's own screen, Esc with nothing open clears the bill, as CLEAR does
     if(!hadModal&&S.view==='pos'&&pref('till')==='classic'&&!/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName)){
@@ -14461,7 +14509,8 @@ if(window.regalBridge){
 } else {
   boot().then(fresh=>{ if(fresh){ applyLayout(); render(); drawPhone(); toast('Books picked up from the shared store') } persist(); });
 }
-window.addEventListener('beforeunload',()=>{ clearTimeout(saveTimer); const snap={}; Object.keys(S).forEach(k=>{ if(!TRANSIENT.includes(k)) snap[k]=S[k] });
+window.addEventListener('beforeunload',()=>{ clearTimeout(saveTimer); if(PRIV){ Object.assign(S,PRIV); PRIV=null }   // never keep the privacy screen's figures
+  const snap={}; Object.keys(S).forEach(k=>{ if(!TRANSIENT.includes(k)) snap[k]=S[k] });
   try{ localStorage.setItem(STORE_KEY,JSON.stringify({v:1,at:new Date().toISOString(),S:snap,CFG})) }catch(e){} });
 </script>
 </body>
