@@ -10,6 +10,7 @@ import pg from 'pg';
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
 const to = opt('--to'), force = args.includes('--force'), check = args.includes('--check');
+const HISTORY = opt('--history') !== null ? +opt('--history') : 3;      // saved versions to carry up — each is the whole books, so keep it small on a slow line
 if (!to) { console.error('usage: node db/push-books.js --to "<hosted DATABASE_URL>" [--force] [--check]'); process.exit(1); }
 const hosted = u => /sslmode=require|\.neon\.tech|\.supabase\.co|\.vercel-storage\.com|\.render\.com/.test(u);
 const src = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: hosted(process.env.DATABASE_URL || '') ? { rejectUnauthorized: false } : undefined, max: 2 });
@@ -45,8 +46,9 @@ try {
     const { rows: [b] } = await src.query(`SELECT key, rev, data, updated_at, updated_by FROM books WHERE key = 'regal'`);
     await client.query(`INSERT INTO books (key, rev, data, updated_at, updated_by) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (key) DO UPDATE SET rev = EXCLUDED.rev, data = EXCLUDED.data, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by`, [b.key, b.rev, JSON.stringify(b.data), b.updated_at, b.updated_by]);
     await client.query(`DELETE FROM books_history WHERE key = 'regal'`);
-    const { rows: hist } = await src.query(`SELECT rev, data, saved_at, saved_by FROM books_history WHERE key = 'regal' ORDER BY id DESC LIMIT 20`);
-    for (const h of hist.reverse()) await client.query(`INSERT INTO books_history (key, rev, data, saved_at, saved_by) VALUES ('regal',$1,$2,$3,$4)`, [h.rev, JSON.stringify(h.data), h.saved_at, h.saved_by]);
+    console.log(`Books sent (${Math.round(JSON.stringify(b.data).length / 1024)} KB)…`);
+    const { rows: hist } = HISTORY > 0 ? await src.query(`SELECT rev, data, saved_at, saved_by FROM books_history WHERE key = 'regal' ORDER BY id DESC LIMIT $1`, [HISTORY]) : { rows: [] };
+    for (const h of hist.reverse()) { await client.query(`INSERT INTO books_history (key, rev, data, saved_at, saved_by) VALUES ('regal',$1,$2,$3,$4)`, [h.rev, JSON.stringify(h.data), h.saved_at, h.saved_by]); console.log(`  history rev ${h.rev} sent`); }
     let n = 0;
     if (await exists(src, 'shop_media')) { const { rows } = await src.query(`SELECT key, mime, data, link, updated_at FROM shop_media`); for (const m of rows) { await client.query(`INSERT INTO shop_media (key, mime, data, link, updated_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (key) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data, link = EXCLUDED.link, updated_at = EXCLUDED.updated_at`, [m.key, m.mime, m.data, m.link, m.updated_at]); n++; } }
     if (await exists(src, 'files')) { const { rows } = await src.query(`SELECT id, kind, ref, name, mime, data, bytes, uploaded_by, created_at FROM files`); for (const f of rows) { await client.query(`INSERT INTO files (id, kind, ref, name, mime, data, bytes, uploaded_by, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`, [f.id, f.kind, f.ref, f.name, f.mime, f.data, f.bytes, f.uploaded_by, f.created_at]); n++; } await client.query(`SELECT setval('files_id_seq', GREATEST((SELECT coalesce(max(id),0) FROM files), 1))`); }
