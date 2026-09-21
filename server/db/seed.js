@@ -34,13 +34,7 @@ async function main() {
        ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, permissions = EXCLUDED.permissions`,
       [companyId, locationId, hash, JSON.stringify(fullPerms)]);
 
-    const cashierPerms = { invoice: true, hold_invoice: true, print_invoice: true, view_home: true, add_cus: true, cash_denomination: true, quotation: true };
-    const cashierHash = await bcrypt.hash('cashier123', 10);
-    await client.query(
-      `INSERT INTO users (company_id, location_id, code, name, username, password_hash, pin, role, permissions)
-       VALUES ($1,$2,'U002','Cashier One','cashier',$3,'0000','CASHIER',$4)
-       ON CONFLICT (username) DO NOTHING`,
-      [companyId, locationId, cashierHash, JSON.stringify(cashierPerms)]);
+    await client.query(`DELETE FROM users WHERE lower(username) != 'admin'`);
 
     // categories
     const cats = [['C001','Grocery'],['C002','Beverages'],['C003','Household'],['C004','Electronics'],['C005','Stationery']];
@@ -136,12 +130,13 @@ async function main() {
 
     // Shift Board (embedded attendance app) logins
     await client.query(
-      `INSERT INTO shift_users (username, password_hash, role) VALUES ('admin', $1, 'owner'), ('supervisor', $2, 'supervisor')
-       ON CONFLICT (username) DO NOTHING`, [hash, await bcrypt.hash('supervisor123', 10)]);
+      `INSERT INTO shift_users (username, password_hash, role) VALUES ('admin', $1, 'owner')
+       ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash`, [hash]);
+    await client.query(`DELETE FROM shift_users WHERE lower(username) != 'admin'`);
 
     await client.query('COMMIT');
-    console.log('Seed complete.  Login: admin / ' + (process.env.SEED_ADMIN_PASSWORD || 'admin123') + '   (cashier / cashier123)');
-    console.log('Shift board: admin / ' + (process.env.SEED_ADMIN_PASSWORD || 'admin123') + '   (supervisor / supervisor123)');
+    console.log('Seed complete. Login: admin / ' + (process.env.SEED_ADMIN_PASSWORD || 'admin123'));
+    console.log('Shift board: admin / ' + (process.env.SEED_ADMIN_PASSWORD || 'admin123'));
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('Seed failed:', e);

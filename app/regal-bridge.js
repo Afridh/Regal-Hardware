@@ -22,11 +22,15 @@
     return h;
   }
   async function call(method, path, body) {
-    var r = await fetch(API + path, { method: method, headers: headers(!!body), body: body ? JSON.stringify(body) : undefined });
-    var j = null; try { j = await r.json(); } catch (e) { j = {}; }
-    j.__status = r.status;
-    if (r.status === 401 && token) { token = ''; localStorage.removeItem(TOKEN_KEY); onSignedOut(); }
-    return j;
+    try {
+      var r = await fetch(API + path, { method: method, headers: headers(!!body), body: body ? JSON.stringify(body) : undefined });
+      var j = null; try { j = await r.json(); } catch (e) { j = {}; }
+      j.__status = r.status;
+      if (r.status === 401 && token) { token = ''; localStorage.removeItem(TOKEN_KEY); onSignedOut(); }
+      return j;
+    } catch (e) {
+      return { __status: 0, error: e.message || 'Server unreachable' };
+    }
   }
   function strip(data) {
     // the document as saved: shared books only, no per-till state
@@ -115,7 +119,7 @@
   /* ---------------- sign in ---------------- */
   async function login(name, password) {
     var j = await call('POST', '/books/login', { user: name, password: password });
-    if (j.__status !== 200 || !j.ok) return { ok: false, error: j.error || 'Could not sign in' };
+    if (j.__status !== 200 || !j.ok) return { ok: false, status: j.__status, error: j.error || 'Could not sign in' };
     token = j.token; localStorage.setItem(TOKEN_KEY, token);
     await pull(true);
     startPolling();

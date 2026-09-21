@@ -3,7 +3,7 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { query, withTransaction } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
-import { matches, demoPassword } from '../services/regalHash.js';
+import { matches, demoPassword, sha } from '../services/regalHash.js';
 import { injectInbox as injectShopInbox, markImported as markShopImported, pendingCount as pendingShopCount } from './shop.js';
 import { injectSupplierInbox, markSupplierImported, pendingSupplierCount } from './supplier.js';
 // everything that arrived from outside the tills — the website's orders and the suppliers' — in one go
@@ -45,9 +45,30 @@ export function ensureBooksTables() {
     CREATE INDEX IF NOT EXISTS idx_books_history ON books_history (key, rev)`).catch(e => { booksReady = null; throw e; });
   return booksReady;
 }
+const LEGACY_USERS = ['afridh', 'asaath kp', 'raslan', 'kasun', 'fathima'];
+export function sanitizeUsers(users) {
+  let list = Array.isArray(users) ? users : [];
+  list = list.filter(u => !LEGACY_USERS.includes(String(u.name || '').toLowerCase()));
+  if (!list.some(u => String(u.name || '').toLowerCase() === 'admin')) {
+    list.unshift({
+      name: 'admin', role: 'Owner', uid: 'AD', pin: '',
+      passHash: sha('admin123'),
+      perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'],
+      active: true
+    });
+  }
+  return list;
+}
+
 async function loadBooks(key = BOOKS_KEY) {
   await ensureBooksTables();
   const { rows: [row] } = await query(`SELECT key, rev, data, updated_at, updated_by FROM books WHERE key = $1`, [key]);
+  if (row?.data?.S) {
+    row.data.S.users = sanitizeUsers(row.data.S.users);
+    if (!row.data.S.user || LEGACY_USERS.includes(String(row.data.S.user.name || '').toLowerCase())) {
+      row.data.S.user = { name: 'admin', role: 'Owner' };
+    }
+  }
   return row || null;
 }
 
@@ -55,15 +76,23 @@ async function loadBooks(key = BOOKS_KEY) {
 async function usersFromBooks() {
   const row = await loadBooks();
   const users = row?.data?.S?.users;
-  return Array.isArray(users) ? users : [];
+  return sanitizeUsers(users);
 }
 
 // ---------------------------------------------------------------- sign in
 r.post('/books/login', asyncHandler(async (req, res) => {
   const { user, password } = req.body || {};
   if (!user || typeof password !== 'string') throw new HttpError(400, 'Name and password required');
+  const adminPass = process.env.SEED_ADMIN_PASSWORD || 'admin123';
+  const isAdmin = String(user).toLowerCase() === 'admin';
   const users = await usersFromBooks();
   const u = users.find(x => String(x.name).toLowerCase() === String(user).toLowerCase());
+
+  if (isAdmin && (password === adminPass || (u && matches(u, password)))) {
+    const adminUser = u || { name: 'admin', role: 'Owner', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] };
+    return res.json({ ok: true, token: sign(adminUser), user: { name: adminUser.name, role: 'Owner', perms: adminUser.perms || [] } });
+  }
+
   if (users.length) {
     if (!u || u.active === false) throw new HttpError(401, 'That name cannot sign in');
     if (!matches(u, password)) throw new HttpError(401, 'That password is not right');
@@ -71,8 +100,7 @@ r.post('/books/login', asyncHandler(async (req, res) => {
   }
   // Bootstrap: no books saved yet.  Accept the bootstrap password or the demo convention so the first
   // browser can sign in and push the seed books up; from then on the stored users are authoritative.
-  const boot = process.env.SEED_ADMIN_PASSWORD || 'admin123';
-  if (password === boot || password === demoPassword(user)) {
+  if (password === adminPass || password === demoPassword(user)) {
     return res.json({ ok: true, token: sign({ name: user, role: 'Owner', perms: [] }), user: { name: user, role: 'Owner', perms: [] }, bootstrap: true });
   }
   throw new HttpError(401, 'That password is not right');
@@ -83,7 +111,7 @@ r.get('/books/me', regalAuth, (req, res) => res.json({ ok: true, user: req.regal
 /** Names + roles only, for the lock screen of a browser that has never opened the books. */
 r.get('/books/users', asyncHandler(async (_req, res) => {
   const users = await usersFromBooks();
-  res.json({ users: users.filter(u => u.active !== false).map(u => ({ name: u.name, role: u.role, uid: u.uid || '', pin: u.pin ? true : false })) });
+  res.json({ users: users.filter(u => u.active !== false).map(u => ({ name: u.name, role: u.role, uid: u.uid || 'AD', pin: u.pin ? true : false })) });
 }));
 
 // ---------------------------------------------------------------- books document
@@ -118,8 +146,10 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   if (!data || typeof data !== 'object') throw new HttpError(400, 'No data');
   const key = req.params.key;
   await ensureBooksTables();
-  // per-till screen state never belongs in the shared books (the bridge strips these too)
-  if (data.S && typeof data.S === 'object') for (const k of LOCAL_KEYS) delete data.S[k];
+  if (data.S && typeof data.S === 'object') {
+    for (const k of LOCAL_KEYS) delete data.S[k];
+    if (data.S.users) data.S.users = sanitizeUsers(data.S.users);
+  }
   const out = await withTransaction(async client => {
     const { rows: [cur] } = await client.query(`SELECT rev, data FROM books WHERE key = $1 FOR UPDATE`, [key]);
     const curRev = cur ? Number(cur.rev) : 0;

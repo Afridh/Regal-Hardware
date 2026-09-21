@@ -40,9 +40,9 @@ const { w, d } = A;
 ok('A: app booted', !!w.S && typeof w.completeSale === 'function', `${w.S.products.length} products seeded`);
 const lock = await until(() => d.getElementById('lockScreen'));
 ok('A: lock screen shown first (server build)', !!lock);
-lock.querySelector('[data-user="Afridh"]').click();
+lock.querySelector('[data-user="admin"]').click();
 await until(() => d.getElementById('lockPw'));
-d.getElementById('lockPw').value = 'afridh123';
+d.getElementById('lockPw').value = 'admin123';
 d.getElementById('lockGo').click();
 ok('A: signed in', !!(await until(() => !d.getElementById('lockScreen'))), `as ${w.S.user.name} (${w.S.user.role})`);
 ok('A: bridge holds a token', w.regalBridge.online());
@@ -597,11 +597,11 @@ B.w.persist(); await sleep(900);
 ok('B: sale saved', !!inv4 && !!inv4.no.match(/-KS-/), `${inv4.no} (cashier id in the number)`);
 const seenOnA = await until(() => A.w.S.sales.some(s => s.no === inv4.no), 20000, 500);
 ok('A: picked up B\'s bill by polling', !!seenOnA, seenOnA ? `${A.w.S.sales.length} bills on A now` : 'not within 20s');
-ok('A: still signed in as Afridh after the pull', A.w.S.user.name === 'Afridh' && !A.d.getElementById('lockScreen'));
+ok('A: still signed in as admin after the pull', A.w.S.user.name === 'admin' && !A.d.getElementById('lockScreen'));
 
 // ---------------------------------------------------------------- reload of till A with the token kept
 const A3 = await openTill('A3', tok);
-ok('A3: token remembered -> straight back at the till, no lock', !!(await until(() => A3.w.S.user && A3.w.S.user.name === 'Afridh' && !A3.d.getElementById('lockScreen') && A3.w.S.sales.some(s => s.no === inv4.no), 8000)), A3.w.S.user?.name);
+ok('A3: token remembered -> straight back at the till, no lock', !!(await until(() => A3.w.S.user && A3.w.S.user.name === 'admin' && !A3.d.getElementById('lockScreen') && A3.w.S.sales.some(s => s.no === inv4.no), 8000)), A3.w.S.user?.name);
 ok('A3: books loaded from server', A3.w.S.sales.some(s => s.no === inv4.no), `${A3.w.S.sales.length} bills`);
 
 ok('no script errors on any till', [A, B, A3].every(t => t.errors.length === 0), [A, B, A3].flatMap(t => t.errors).slice(0, 3).join(' | '));
