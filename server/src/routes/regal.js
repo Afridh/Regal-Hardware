@@ -36,7 +36,17 @@ export function regalAuth(req, _res, next) {
   }
 }
 
+// a fresh hosted database (Neon, Supabase…) has no tables yet: make the two the books need on first use
+let booksReady = null;
+export function ensureBooksTables() {
+  if (!booksReady) booksReady = query(`
+    CREATE TABLE IF NOT EXISTS books (key varchar(50) PRIMARY KEY, rev bigint NOT NULL DEFAULT 0, data jsonb, updated_at timestamptz DEFAULT now(), updated_by varchar(80));
+    CREATE TABLE IF NOT EXISTS books_history (id bigserial PRIMARY KEY, key varchar(50) NOT NULL, rev bigint NOT NULL, data jsonb, saved_at timestamptz DEFAULT now(), saved_by varchar(80));
+    CREATE INDEX IF NOT EXISTS idx_books_history ON books_history (key, rev)`).catch(e => { booksReady = null; throw e; });
+  return booksReady;
+}
 async function loadBooks(key = BOOKS_KEY) {
+  await ensureBooksTables();
   const { rows: [row] } = await query(`SELECT key, rev, data, updated_at, updated_by FROM books WHERE key = $1`, [key]);
   return row || null;
 }
@@ -107,6 +117,7 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   const { data, rev } = req.body || {};
   if (!data || typeof data !== 'object') throw new HttpError(400, 'No data');
   const key = req.params.key;
+  await ensureBooksTables();
   // per-till screen state never belongs in the shared books (the bridge strips these too)
   if (data.S && typeof data.S === 'object') for (const k of LOCAL_KEYS) delete data.S[k];
   const out = await withTransaction(async client => {
