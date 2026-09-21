@@ -5877,7 +5877,7 @@ const S = {
  web:{settings:{},orders:[],cart:[],session:null,delivery:true}, prns:[], stocktakes:[], counts:[], serials:[], notif:[], notifOpen:false, notices:[], payruns:[], advances:[], shift:{settings:{},days:{},imported:null},
  cportal:{session:null,pick:2,tab:'owed',stage:'phone',code:'',inbox:'',err:'',flash:''},
  portal:{session:null,pick:'1',tab:'new',filter:'all',stage:'phone',code:'',tries:0,left:0,timer:null,inbox:'',err:'',flash:'',rep:'Nimal',photos:[],replaces:null}, drawer:{opened:'08:02',float:5000},
- pos:{lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:'a5'}, heldBills:[]
+ pos:{lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:'r80'}, heldBills:[]
 };
 /* a bill number is prefix + till + the cashier's own id + a running number kept per
    cashier, so INVM-T1-AF-00031 and INVM-T2-RS-00031 can both exist and neither can
@@ -6177,7 +6177,7 @@ const CFG={
    line1:'Your trusted one-stop shop in Polonnaruwa for all Hardware, Paints, Electrical, PVC & Motor items.',
    line2:'We specialise in Dulux & Asian Paints colour mixing — offering the best prices.',
    hours:'8.00 am – 7.00 pm',owner:'0777849964'},
- bill:{prefix:'INVM-',warrantyNote:'Covers manufacturing faults only. Misuse, water damage and normal wear are not covered. Bring this card with the machine.',returnDays:7,quoteDays:14,showMrp:true,showSaving:true,defaultFormat:'a5',
+ bill:{prefix:'INVM-',warrantyNote:'Covers manufacturing faults only. Misuse, water damage and normal wear are not covered. Bring this card with the machine.',returnDays:7,quoteDays:14,showMrp:true,showSaving:true,defaultFormat:'r80',
    title:'INVOICE',creditTitle:'CREDIT INVOICE',showLogo:true,showSinhala:true,showStrap:true,
    showCode:true,showUom:true,showQr:true,showWords:true,showCashier:true,showOutstanding:true,
    showSign:true,signLeft:'Authorised By',signRight:'Received By',showItemCount:true,showBarcode:true,t80Sign:true,showWeb:true,a5Scale:118,r80Scale:100,
@@ -6185,7 +6185,7 @@ const CFG={
    footer:'Only returns will be accepted within {days} days with the original invoice. Goods once sold are checked and accepted by the customer.',
    blankLines:9,summaryTime:'19:30'},
  cost:{word:'BLACKNIGHT',repeat:'X',onLabel:true,atTill:true,inProducts:true},
- done:{askSize:true,cashDefault:'r80',creditDefault:'a5',rememberPick:true,notice:true,noticeMs:3200,
+ done:{askSize:true,cashDefault:'r80',creditDefault:'r80',rememberPick:true,notice:true,noticeMs:3200,
    printAnim:true,animMs:1000,creditStamp:true,creditWord:'CREDIT BILL',cashWord:'PAID',sound:false},
  stock:{allowNegative:false},
  print:{agent:'http://localhost:4100'},               // the print helper on the till PC (tools/print-agent); empty = browser print
@@ -6370,7 +6370,7 @@ function settings(){
       ${fld('pos.repriceToLast','','When a customer is picked, put the bill back to the prices they were charged last time','check')}${fld('bill.blankLines','Ruled blank lines on the A5 bill','Keeps short bills looking full','number')}</div>
     <div class="grid3">
      <div class="f"><label>Bill format offered first</label><select data-set="bill.defaultFormat">
-      ${[['a5','A5 printed bill'],['r80','80mm till receipt'],['sms','e-Bill by SMS']].map(o=>`<option value="${o[0]}" ${CFG.bill.defaultFormat===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>
+      ${[['r80','80mm till receipt'],['a5','A5 printed bill'],['sms','e-Bill by SMS']].map(o=>`<option value="${o[0]}" ${CFG.bill.defaultFormat===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>
      ${fld('bill.showMrp','Show the MRP column','Print the manufacturer price beside yours','check')}
      ${fld('bill.showSaving','Show what the customer saved','On the 80mm receipt','check')}</div>
     ${fld('bill.footer','Footer note on bills','Use {days} for the return window')}
@@ -6423,7 +6423,7 @@ function settings(){
   }
   if(setTab==='done'){
     const pick=(k,label)=>`<div class="f"><label>${label}</label><select data-set="${k}">
-      ${[['a5','Printed bill (A5)'],['r80','Till receipt (80mm)'],['sms','e-Bill by text']].map(o=>`<option value="${o[0]}" ${CFG.done[k.split('.')[1]]===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>`;
+      ${[['r80','Till receipt (80mm)'],['a5','Printed bill (A5)'],['sms','e-Bill by text']].map(o=>`<option value="${o[0]}" ${CFG.done[k.split('.')[1]]===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>`;
     body=`<div class="muted" style="margin-bottom:10px">What happens once the money is taken. Every step here can be turned on or off, and the words and timings are yours.</div>
      <h2>Which bill goes out</h2>
      <div class="grid3">${pick('done.cashDefault','Cash bill, usually')}${pick('done.creditDefault','Credit bill, usually')}
@@ -9826,30 +9826,97 @@ function openPay(resume){
 
 function askSize(inv){
   const kind=inv.balance>0?'CREDIT':'CASH';
-  const def=kind==='CREDIT'?CFG.done.creditDefault:CFG.done.cashDefault;
+  const def=(kind==='CREDIT'?CFG.done.creditDefault:CFG.done.cashDefault) || 'r80';
   const c=C(inv.customerId);
-  if(!CFG.done.askSize){ S.pos.lastBill=def; return printAnim(inv,def==='sms'&&!c.phone?'a5':def) }
-  const opts=[['a5','1','Printed bill','A5 landscape — the full bill with outstanding boxes'],
-              ['r80','2','Till receipt','80mm — quick, for the counter'],
+  if(!CFG.done.askSize){ S.pos.lastBill=def; return printAnim(inv,def==='sms'&&!c.phone?'r80':def) }
+  const opts=[['r80','1','80mm Till receipt','80mm thermal — quick for the counter'],
+              ['a5','2','Printed bill','A5 landscape — full bill with outstanding boxes'],
               ['sms','3','e-Bill by text',c.phone?`link to ${maskP(c.phone)}`:'no mobile on file']];
+  let cur=def;
+  if(cur==='sms'&&!c.phone) cur='r80';
+  const validKeys=opts.filter(o=>!(o[0]==='sms'&&!c.phone)).map(o=>o[0]);
+  if(!validKeys.includes(cur)) cur=validKeys[0]||'r80';
+
   const m=modal(`<div class="sizeq"><h2>${inv.no} — ${kind==='CREDIT'?'credit bill':'cash bill'} · ${fmt(inv.total)}</h2>
-   <div class="muted">Enter prints the one already chosen. 1 / 2 / 3 pick another.</div>
-   <div class="billpick">${opts.map(([k,n,l,sub])=>`<button class="pick ${k===def?'def':''}" data-bill="${k}" ${k==='sms'&&!c.phone?'disabled':''}>
-     <i>${n}</i><b>${l}</b><span>${sub}</span>${k===def?'<em>usual for a '+(kind==='CREDIT'?'credit':'cash')+' bill</em>':''}</button>`).join('')}</div>
+   <div class="muted">Enter prints chosen format. Use <b>◄ Left / Right ►</b> arrows to navigate printer (or 1 / 2 / 3).</div>
+   <div class="billpick">${opts.map(([k,n,l,sub])=>`<button class="pick ${k===cur?'def on':''}" data-bill="${k}" ${k==='sms'&&!c.phone?'disabled':''}>
+     <i>${n}</i><b>${l}</b><span>${sub}</span>${k===cur?'<em>selected</em>':''}</button>`).join('')}</div>
    <label class="chk" style="margin-top:10px"><input type="checkbox" id="szRemember" ${CFG.done.rememberPick?'checked':''}> remember my choice for ${kind==='CREDIT'?'credit':'cash'} bills</label>
    </div>`);
-  const go=(k)=>{ if(m.querySelector('#szRemember').checked) CFG.done[kind==='CREDIT'?'creditDefault':'cashDefault']=k;
-    S.pos.lastBill=k; stop(); m.remove(); printAnim(inv,k) };
+
+  const setCur=(k)=>{
+    if(!validKeys.includes(k)) return;
+    cur=k;
+    m.querySelectorAll('.billpick [data-bill]').forEach(b=>{
+      const isCur=b.dataset.bill===cur;
+      b.classList.toggle('def',isCur);
+      b.classList.toggle('on',isCur);
+      const em=b.querySelector('em');
+      if(isCur){
+        if(!em) b.insertAdjacentHTML('beforeend','<em>selected</em>');
+        b.focus();
+      } else if(em){
+        em.remove();
+      }
+    });
+  };
+
+  const go=(k)=>{
+    const chosen=validKeys.includes(k)?k:cur;
+    if(m.querySelector('#szRemember').checked) CFG.done[kind==='CREDIT'?'creditDefault':'cashDefault']=chosen;
+    S.pos.lastBill=chosen; stop(); m.remove(); printAnim(inv,chosen);
+  };
+
   const handler=(ev)=>{
     if(!document.body.contains(m)){ stop(); return }
     const k=ev.key;
-    if(k==='Enter'){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation&&ev.stopImmediatePropagation(); go(def); return }
-    if(k==='1'||k==='2'||k==='3'){ const o=opts[+k-1]; if(o[0]==='sms'&&!c.phone) return; ev.preventDefault(); ev.stopPropagation(); go(o[0]); return }
-    if(k==='Escape'){ ev.preventDefault(); stop(); m.remove(); showInvoice(inv,'a5') }
+    if(k==='ArrowLeft'||k==='ArrowUp'){
+      ev.preventDefault(); ev.stopPropagation();
+      let idx=validKeys.indexOf(cur);
+      if(idx<0) idx=0;
+      idx=(idx-1+validKeys.length)%validKeys.length;
+      setCur(validKeys[idx]);
+      return;
+    }
+    if(k==='ArrowRight'||k==='ArrowDown'){
+      ev.preventDefault(); ev.stopPropagation();
+      let idx=validKeys.indexOf(cur);
+      if(idx<0) idx=0;
+      idx=(idx+1)%validKeys.length;
+      setCur(validKeys[idx]);
+      return;
+    }
+    if(k==='Enter'){
+      ev.preventDefault(); ev.stopPropagation();
+      if(ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+      go(cur);
+      return;
+    }
+    if(k==='1'||k==='2'||k==='3'){
+      const o=opts[+k-1];
+      if(o&&validKeys.includes(o[0])){
+        ev.preventDefault(); ev.stopPropagation();
+        setCur(o[0]);
+        go(o[0]);
+      }
+      return;
+    }
+    if(k==='Escape'){
+      ev.preventDefault(); stop(); m.remove();
+      showInvoice(inv,cur||'r80');
+      return;
+    }
   };
+
   document.addEventListener('keydown',handler,true);
   const stop=()=>document.removeEventListener('keydown',handler,true);
-  m.querySelectorAll('[data-bill]').forEach(b=>b.onclick=()=>go(b.dataset.bill));
+  const origRemove=m.remove.bind(m);
+  m.remove=()=>{ stop(); origRemove(); };
+
+  m.querySelectorAll('[data-bill]').forEach(b=>b.onclick=()=>{
+    setCur(b.dataset.bill);
+    go(b.dataset.bill);
+  });
   (m.querySelector('.pick.def')||m).focus();
 }
 /* the paper comes out of the printer, then the bill is on the screen */
@@ -9863,7 +9930,7 @@ function printAnim(inv,k){
        <b>Printing ${k==='a5'?'the A5 bill':'the till receipt'}</b><span>${inv.no} · ${fmt(inv.total)}${inv.balance>0?' · '+fmt(inv.balance)+' on account':''}</span></div>`;
   document.body.appendChild(el);
   const done=()=>{ el.classList.add('out'); setTimeout(()=>el.remove(),260);
-    if(k==='sms'){ if(c.phone){ sms(c.phone,tpl('billLink',{no:inv.no,total:fmt(inv.total),link:inv.link})); toast(`e-bill texted to ${c.name}`) } else printBill(inv,'a5') }
+    if(k==='sms'){ if(c.phone){ sms(c.phone,tpl('billLink',{no:inv.no,total:fmt(inv.total),link:inv.link})); toast(`e-bill texted to ${c.name}`) } else printBill(inv,'r80') }
     else if(CFG.done.preview) showInvoice(inv,k); else printBill(inv,k) };   // straight to the printer unless a preview is asked for in Settings
   if(!CFG.done.printAnim){ el.remove(); return done() }
   setTimeout(done,(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)?50:(+CFG.done.animMs||1000)+50);
@@ -10783,15 +10850,27 @@ const PAY_KEYS=[
   {k:'a',code:'CARD',label:'Card / transfer',hint:'A'}];
 function askBill(m,pays,change,c,total,override){
   const canSms=!!c.phone;
-  m.querySelector('#payStage').innerHTML=`
-   <div class="paid">Payment taken${change>0?` · change ${fmt(change)}`:''}</div>
-   <div style="margin:12px 0 8px">How does the customer want the bill?</div>
-   <div class="billpick">
-    <button class="pick ${S.pos.lastBill==='a5'?'on':''}" data-bill="a5"><b>1</b><span>Printed bill</span><small>A5 landscape</small></button>
-    <button class="pick ${S.pos.lastBill==='r80'?'on':''}" data-bill="r80"><b>2</b><span>Till receipt</span><small>80mm thermal</small></button>
-    <button class="pick ${S.pos.lastBill==='sms'?'on':''}" data-bill="sms" ${canSms?'':'disabled'}><b>3</b><span>e-Bill</span><small>${canSms?'link by SMS to '+c.phone:'no mobile on file'}</small></button>
-   </div>
-   <div class="muted" style="margin-top:8px">Press 1, 2 or 3 — or Enter for ${S.pos.lastBill==='sms'?'e-Bill':S.pos.lastBill==='r80'?'the till receipt':'the printed bill'}.</div>`;
+  let cur=S.pos.lastBill||'r80';
+  if(cur==='sms'&&!canSms) cur='r80';
+  const opts=[['r80','1','Till receipt','80mm thermal'],
+              ['a5','2','Printed bill','A5 landscape'],
+              ['sms','3','e-Bill',canSms?'link by SMS to '+c.phone:'no mobile on file']];
+  const valid=opts.filter(o=>!(o[0]==='sms'&&!canSms)).map(o=>o[0]);
+  if(!valid.includes(cur)) cur=valid[0]||'r80';
+
+  const renderStage=()=>{
+    m.querySelector('#payStage').innerHTML=`
+     <div class="paid">Payment taken${change>0?` · change ${fmt(change)}`:''}</div>
+     <div style="margin:12px 0 8px">How does the customer want the bill?</div>
+     <div class="billpick">
+      ${opts.map(([k,n,l,sub])=>`<button class="pick ${k===cur?'on def':''}" data-bill="${k}" ${k==='sms'&&!canSms?'disabled':''}><b>${n}</b><span>${l}</span><small>${sub}</small></button>`).join('')}
+     </div>
+     <div class="muted" style="margin-top:8px">Use <b>◄ Left / Right ►</b> arrows to navigate · Enter for ${cur==='sms'?'e-Bill':cur==='a5'?'the printed bill':'the till receipt'}.</div>`;
+    m.querySelectorAll('[data-bill]').forEach(b=>b.onclick=()=>finish(b.dataset.bill));
+    const onBtn=m.querySelector('.billpick .pick.on')||m.querySelector('.billpick [data-bill]');
+    if(onBtn) onBtn.focus();
+  };
+
   const finish=(how)=>{
     try{
       const inv=completeSale({lines:S.pos.lines.map(l=>({...l})),customerId:c.id,billDisc:S.pos.billDisc,pays,override});
@@ -10807,13 +10886,26 @@ function askBill(m,pays,change,c,total,override){
       else { showInvoice(inv,how); render(); toast(`${inv.no} done · ${fmt(inv.total)}${change>0?' · change '+fmt(change):''}`) }
     }catch(err){toast(err.message)}
   };
-  m.querySelectorAll('[data-bill]').forEach(b=>b.onclick=()=>finish(b.dataset.bill));
+
   m.addEventListener('keydown',ev=>{
-    if(ev.key==='1')finish('a5'); if(ev.key==='2')finish('r80');
-    if(ev.key==='3'&&canSms)finish('sms');
-    if(ev.key==='Enter'){ev.preventDefault();finish(canSms||S.pos.lastBill!=='sms'?S.pos.lastBill:'a5')}
+    if(ev.key==='ArrowLeft'||ev.key==='ArrowUp'){
+      ev.preventDefault(); ev.stopPropagation();
+      let idx=valid.indexOf(cur); if(idx<0) idx=0;
+      idx=(idx-1+valid.length)%valid.length;
+      cur=valid[idx]; renderStage(); return;
+    }
+    if(ev.key==='ArrowRight'||ev.key==='ArrowDown'){
+      ev.preventDefault(); ev.stopPropagation();
+      let idx=valid.indexOf(cur); if(idx<0) idx=0;
+      idx=(idx+1)%valid.length;
+      cur=valid[idx]; renderStage(); return;
+    }
+    if(ev.key==='1') finish('r80');
+    if(ev.key==='2') finish('a5');
+    if(ev.key==='3'&&canSms) finish('sms');
+    if(ev.key==='Enter'){ev.preventDefault();finish(cur)}
   });
-  m.querySelector('[data-bill]').focus();
+  renderStage();
 }
 function smsSentModal(inv,c){
   modal(`<h2>e-Bill sent</h2><div class="muted">${c.name} · ${c.phone}</div>
@@ -11343,7 +11435,7 @@ function editSaleModal(no){
     inv.edits=(inv.edits||[]).concat([{at:D(today),by:S.user.name,why:why+(custChanged?' · moved to '+C(newCust).name:''),from:oldTotal,to:newTotal}]);
     notify('warn',`${S.user.name} changed bill ${inv.no} — ${fmt(oldTotal)} to ${fmt(newTotal)}`,'bills');
     if(c.phone&&CFG.msg.autoBill) sms(c.phone,`${CFG.shop.name}: bill ${inv.no} has been corrected to ${fmt(newTotal)}${inv.balance?`, ${fmt(inv.balance)} outstanding`:''}. ${why}`);
-    m.remove(); render(); showInvoice(inv,'a5');
+    m.remove(); render(); showInvoice(inv,'r80');
     toast(`${inv.no} changed · ${fmt(oldTotal)} to ${fmt(newTotal)}`);
   };
   draw();
@@ -13000,19 +13092,114 @@ function browserPrint(inv,f='a5'){
   window.addEventListener('afterprint',()=>setTimeout(arm,300),{once:true});
   setTimeout(()=>{ try{ window.print() }catch(e){ done(); showInvoice(inv,f) } },60);
 }
-function showInvoice(inv,f='a5'){
+function showInvoice(inv,f){
   window._shownBill=inv;
-  modal(`${inv.proof?'<div class="proofmark">PROOF ONLY — NOT A BILL · nothing has been posted and this number is not used</div>':''}
+  let curF = f || (CFG.bill && CFG.bill.defaultFormat) || 'r80';
+  if(curF !== 'a5' && curF !== 'r80') curF = 'r80';
+  S.pos.lastBill = curF;
+
+  const fmts = [
+    { id: 'r80', label: '80mm Receipt', keyHint: '◄ Left' },
+    { id: 'a5',  label: 'A5 Invoice',   keyHint: 'Right ►' }
+  ];
+
+  const renderButtons = () => {
+    return `<div class="pv-formats" style="display:inline-flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--bg)">
+      ${fmts.map(fmt => `<button type="button" class="btn sm ${fmt.id===curF?'tape':'ghost'}" data-pv-fmt="${fmt.id}" style="border:none;border-radius:0;padding:6px 12px;font-size:12px">
+        <b>${fmt.label}</b> <small style="opacity:0.85;font-size:10px;margin-left:4px">(${fmt.keyHint})</small>
+      </button>`).join('')}
+    </div>`;
+  };
+
+  const m = modal(`${inv.proof?'<div class="proofmark">PROOF ONLY — NOT A BILL · nothing has been posted and this number is not used</div>':''}
    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
-    <h2 style="margin:0">${inv.no} — ${f==='a5'?'A5 invoice':'80mm receipt'}</h2>
-    <div style="display:flex;gap:6px">
-     <button class="btn ghost sm" data-act="${inv.proof?(f==='a5'?'proof80':'proofA5'):'showInv'}" data-no="${inv.no}" data-f="${f==='a5'?'r80':'a5'}">Show the ${f==='a5'?'80mm':'A5'}</button>
+    <div>
+      <h2 id="pvTitle" style="margin:0">${inv.no} — ${curF==='a5'?'A5 invoice':'80mm receipt'}</h2>
+      <div class="muted" style="font-size:11px;margin-top:2px">Use <b>◄ Left / Right ►</b> arrows to switch printer · <b>Enter</b> to print</div>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+     <div id="pvFmtWrap">${renderButtons()}</div>
      ${(can('cancelBill')||can('adjustInvoice'))&&!inv.proof?`<button class="btn sm" data-act="billEdit" data-no="${inv.no}">Edit in the till</button>
      <button class="btn ghost sm" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}
-     <button class="btn sm" data-act="printNow" data-no="${inv.no}" data-f="${f}">Print</button>
-     <button class="btn ghost sm" data-act="closeModal">Close</button></div></div>
-   ${billHtml(inv,f)}
+     <button class="btn tape sm" id="pvPrintBtn" data-act="printNow" data-no="${inv.no}" data-f="${curF}">Print ↵</button>
+     <button class="btn ghost sm" data-act="closeModal">Close Esc</button></div></div>
+   <div id="pvBillBody" style="display:flex;justify-content:center;overflow-x:auto">${billHtml(inv,curF)}</div>
    ${inv.link?`<div class="muted" style="margin-top:8px">Customer copy: ${inv.link}</div>`:''}`);
+
+  const switchFmt = (nextF) => {
+    if(nextF !== 'r80' && nextF !== 'a5') return;
+    curF = nextF;
+    S.pos.lastBill = curF;
+    const t = m.querySelector('#pvTitle');
+    if(t) t.textContent = `${inv.no} — ${curF==='a5'?'A5 invoice':'80mm receipt'}`;
+    const fw = m.querySelector('#pvFmtWrap');
+    if(fw) fw.innerHTML = renderButtons();
+    bindPills();
+    const pb = m.querySelector('#pvPrintBtn');
+    if(pb) pb.dataset.f = curF;
+    const bb = m.querySelector('#pvBillBody');
+    if(bb) bb.innerHTML = billHtml(inv, curF);
+  };
+
+  const bindPills = () => {
+    m.querySelectorAll('[data-pv-fmt]').forEach(btn => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        switchFmt(btn.dataset.pvFmt);
+      };
+    });
+  };
+  bindPills();
+
+  const printCurrent = () => {
+    stop();
+    m.remove();
+    printBill({...inv, reprint: !inv.proof}, curF);
+  };
+
+  const keyHandler = (ev) => {
+    if(!document.body.contains(m)){ stop(); return }
+    const tg = ev.target;
+    if(tg && /^(INPUT|SELECT|TEXTAREA)$/.test(tg.tagName)) return;
+    const k = ev.key;
+    if(k === 'ArrowLeft'){
+      ev.preventDefault(); ev.stopPropagation();
+      switchFmt('r80');
+      return;
+    }
+    if(k === 'ArrowRight'){
+      ev.preventDefault(); ev.stopPropagation();
+      switchFmt('a5');
+      return;
+    }
+    if(k === '1'){
+      ev.preventDefault(); switchFmt('r80'); return;
+    }
+    if(k === '2'){
+      ev.preventDefault(); switchFmt('a5'); return;
+    }
+    if(k === 'Enter' || k === 'p' || k === 'P'){
+      ev.preventDefault(); ev.stopPropagation();
+      printCurrent();
+      return;
+    }
+    if(k === 'Escape'){
+      ev.preventDefault(); stop(); m.remove(); return;
+    }
+  };
+
+  document.addEventListener('keydown', keyHandler, true);
+  const stop = () => document.removeEventListener('keydown', keyHandler, true);
+  const origRemove = m.remove.bind(m);
+  m.remove = () => { stop(); origRemove(); };
+
+  const prBtn = m.querySelector('#pvPrintBtn');
+  if(prBtn){
+    prBtn.onclick = (e) => {
+      e.preventDefault();
+      printCurrent();
+    };
+  }
 }
 
 /* ---- products: add, edit, and what each one has sold ---- */
@@ -14765,7 +14952,7 @@ document.addEventListener('click',e=>{
     doPrint:()=>{ try{ window.print() }catch(e){ toast("The preview is open — use the browser's own print, or pop the window out first") } },
     logoClear:()=>{ CFG.shop.logo=''; render(); toast('Back to the default mark') },
     printTest:()=>{ const last=S.sales.slice().reverse().find(x=>x.lines.length)||S.sales.at(-1); if(!last) return toast('No bill to print yet'); toast('Sending a test bill…'); printBill({...last,proof:true},a.dataset.f) },
-    printNow:()=>{ const inv=window._shownBill&&window._shownBill.no===a.dataset.no?window._shownBill:S.sales.find(x=>x.no===a.dataset.no); if(!inv) return toast('No such bill'); closeModals(); printBill({...inv,reprint:!inv.proof},a.dataset.f||'a5') },
+    printNow:()=>{ const inv=window._shownBill&&window._shownBill.no===a.dataset.no?window._shownBill:S.sales.find(x=>x.no===a.dataset.no); if(!inv) return toast('No such bill'); closeModals(); printBill({...inv,reprint:!inv.proof},a.dataset.f||'r80') },
     proofA5:()=>proofBill('a5'), proof80:()=>proofBill('r80'),
     cust:()=>{ const id=+a.dataset.id; if(id===custSel&&S.view==='customers') return;
       // a beat of "opening" so the click is seen to land before the panel changes
@@ -14913,7 +15100,7 @@ document.addEventListener('click',e=>{
     rcToday:()=>{RC.from=D(today); RC.to=D(today); RC.serial=''; RC.cust=''; RC.sel=null; render()},
     rcAll:()=>{RC={sel:null,serial:'',cust:'',from:'',to:'',only:'all'}; render()},
     rcAllDates:()=>{RC.from=''; RC.to=''; RC.sel=null; render()},
-    rcPrint:()=>{const s2=S.sales.find(x=>x.no===(RC.sel||'')); if(s2) showInvoice(s2,'a5')},
+    rcPrint:()=>{const s2=S.sales.find(x=>x.no===(RC.sel||'')); if(s2) showInvoice(s2,'r80')},
     rcSms:()=>{const s2=S.sales.find(x=>x.no===(RC.sel||'')); if(!s2)return; const c2=C(s2.customerId);
       if(!c2.phone)return toast('No mobile on file for them');
       sms(c2.phone,tpl('billLink',{no:s2.no,total:fmt(s2.total),link:s2.link})); toast(`e-bill texted to ${c2.name}`)},
