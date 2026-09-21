@@ -9846,7 +9846,6 @@ function posClassic(){
     <div class="till-no ${S.pos.editing?'editing':''}">
      <b>${S.pos.editing||nextNo}</b>
      ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Switch between retail and wholesale prices for this bill — Ctrl+Shift+W, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button>`}</div>
-    <button class="till-del" data-act="csDel" data-i="${S.pos.sel}" ${S.pos.sel>=0?'':'disabled'}>DELETE<i>Del</i></button>
    </div>
 
    <div class="till-entry ${sel?'live':''}">
@@ -9908,7 +9907,6 @@ function posClassic(){
       <div class="sum-line edit"><span>Bill discount <i>F8</i></span>
        <input id="csBillDisc" type="number" step="any" value="${S.pos.billDisc||0}"></div>
       ${T.sub?`<div class="sum-line faint"><span>Total discount</span><b>${(((T.lineDisc+S.pos.billDisc)/T.sub)*100).toFixed(2)}%</b></div>`:''}
-      ${savedVsMrp(L)>0?`<div class="sum-line saved"><span>Customer saves against MRP</span><b>${money2(savedVsMrp(L))}</b></div>`:''}
      </div>
 
      <div class="sum-net">
@@ -10076,6 +10074,19 @@ function csStart(pid){
   render();
 
   const f=$('#csQty'); if(f){f.focus();f.select()}
+}
+/* CLEAR (F3 / Esc): a bill with anything on it is only thrown away after a yes */
+function csClearAsk(){
+  const doIt=()=>{ S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+    CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null}; closeModals(); render(); const q=$('#csQ'); if(q) q.focus() };
+  const n=S.pos.lines.length;
+  if(!n&&!CS.pid&&!S.pos.customer) return doIt();
+  const m=modal(`<h2>Clear this bill?</h2><div class="muted" style="margin-bottom:12px">${n?`${n} line${n===1?'':'s'} · ${fmt(billTotal())}`:'The item being keyed'}${S.pos.customer?` · ${C(S.pos.customer).name}`:''} — it will be thrown away.</div>
+   <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn ghost" id="clNo">Keep it <i class="kbd">Esc</i></button><button class="btn tape" id="clYes">Clear <i class="kbd">Enter</i></button></div>`);
+  m.querySelector('#clNo').onclick=()=>{ m.remove(); const q=$('#csQ'); if(q) q.focus() };
+  m.querySelector('#clYes').onclick=doIt;
+  const yes=m.querySelector('#clYes'); yes.focus();
+  m.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); doIt() } if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); m.remove(); const q=$('#csQ'); if(q) q.focus() } };
 }
 function csCommit(){
   const p=P(CS.pid); if(!p) return toast('Pick an item first');
@@ -14261,8 +14272,7 @@ document.addEventListener('click',e=>{
     csSignOut:()=>signOut(),
     csSel:()=>{ if(CS.editLine===+a.dataset.i) return;   // clicking into the boxes of the line being edited
       CS.editLine=null; S.pos.sel=+a.dataset.i; CS.focus='list'; render()},
-    csClear:()=>{S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
-      CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null}; render()},
+    csClear:()=>csClearAsk(),
     csLineDisc:()=>{const l=S.pos.lines[S.pos.sel]; if(!l)return;
       const v=prompt(`Discount on ${P(l.pid).name} — rupees, or 10% for a tenth`,''); if(v===null)return;
       const d=readDiscount(v,l.qty*l.price,lineMrp(l)); const net=(l.qty*l.price-d)/l.qty;
@@ -14450,9 +14460,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     const hadModal=!!document.querySelector('.modal'); closeModals();
     // on the shop's own screen, Esc with nothing open clears the bill, as CLEAR does
-    if(!hadModal&&S.view==='pos'&&pref('till')==='classic'&&!/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName)){
-      S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
-      CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null}; render() }
+    if(!hadModal&&S.view==='pos'&&pref('till')==='classic'&&!/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName)) csClearAsk();
     return}
   // the customers page: F7 takes a payment from the one on the screen, F6 starts a bill for them,
   // F8 prints their statement, Ctrl+N adds a customer, Ctrl+E edits; Enter on a list row takes a payment
