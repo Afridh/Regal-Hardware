@@ -14,7 +14,7 @@ const pendingCount = async () => (await pendingShopCount()) + (await pendingSupp
 const r = Router();
 const BOOKS_KEY = 'regal';
 const HISTORY_KEEP = 200;
-const LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'held', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId'];
+const LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'held', 'heldBills', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId'];
 
 function sign(user) {
   return jwt.sign({ kind: 'regal', name: user.name, role: user.role, perms: user.perms || [] }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES || '12h' });

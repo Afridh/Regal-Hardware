@@ -11,7 +11,7 @@
   var TERMINAL_KEY = 'regal_terminal';
   var POLL_MS = 12000;
   // per-device state that must never travel between tills
-  var LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'held', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId'];
+  var LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'held', 'heldBills', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId'];
 
   var rev = 0, token = localStorage.getItem(TOKEN_KEY) || '', busy = false, lastPushAt = 0, pollTimer = null, offlineSince = 0, build = '', toldBuild = false;
 
