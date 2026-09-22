@@ -2104,6 +2104,11 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-tbl td.x button{border:1px solid var(--line);background:#fff;border-radius:var(--r);width:28px;height:26px;
  cursor:pointer;margin-left:3px;font-size:12px;line-height:1}
 .till-tbl td.x button:hover{background:var(--panel);border-color:var(--steel)}
+.till-tbl td.x button.ln-ok{background:#1f8f4e;border-color:#1f8f4e;color:#fff;font-weight:800}
+.till-tbl td.x button.ln-ok:hover{background:#177a41}
+.till-tbl td.x button.ln-no{background:#fff;border-color:#c9433a;color:#c9433a;font-weight:800}
+.till-tbl td.x button.ln-no:hover{background:#fdecea}
+.till-tbl tr.editing td.x{white-space:nowrap}
 .till-empty{padding:40px;text-align:center;color:var(--steel)}
 .till-sum{flex:0 0 264px;background:var(--panel);border-left:1px solid var(--line);display:flex;
  flex-direction:column;min-width:0}
@@ -10484,10 +10489,14 @@ function posClassic(){
          <td class="n">${ed?`<input class="ln-in" id="lnPrice" type="number" step="any" value="${l.price}">`
            :`${money2(l.price)}${l.disc?`<em>net ${money2((l.qty*l.price-l.disc)/l.qty)}</em>`:''}`}</td>
          <td class="n">${l.disc?(l.discPct?`<b>${l.discPct}%</b><em>${money2(l.disc)}</em>`:money2(l.disc)):'—'}</td>
-         <td class="n"><b>${money2(l.qty*l.price-l.disc)}</b></td>
-         <td class="x"><button data-act="priceHist" data-id="${l.pid}" title="what it went out at before">₨</button>
-          <button data-act="csEdit" data-i="${i}" title="change this line">✎</button>
-          <button data-act="csDel" data-i="${i}" title="take it off">✕</button></td></tr>`}).join('')
+         <td class="n"><b id="${ed?'lnAmt':''}">${money2(l.qty*l.price-l.disc)}</b></td>
+         <td class="x">${ed
+           ? `<button class="ln-ok" data-act="csLineOk" title="keep the change (Enter)">✓</button>
+          <button class="ln-no" data-act="csLineNo" title="leave it as it was (Esc)">✕</button>
+          <button data-act="csEditMore" data-i="${i}" title="discount and warranty too">…</button>`
+           : `<button data-act="priceHist" data-id="${l.pid}" title="what it went out at before">₨</button>
+          <button data-act="csEdit" data-i="${i}" title="change the quantity or price here">✎</button>
+          <button data-act="csDel" data-i="${i}" title="take it off">✕</button>`}</td></tr>`}).join('')
        :`<tr><td colspan="9" class="till-empty">Scan or key an item code above. The newest line sits at the top.</td></tr>`}
       </tbody></table>
     </div>
@@ -10559,9 +10568,10 @@ function csFind(v){
   return [...exact,...rest];
 }
 /* ---- editing a line in place ----
-   Space on the highlighted line opens its quantity and price as boxes in the
-   row. Enter (or →) steps from quantity to price, ← goes back, Enter on the
-   price or Space saves and leaves, Esc leaves without saving. */
+   The ✎ button on a line (or Space on the highlighted one) opens its quantity
+   and price as boxes in the row; until then the list is read-only. Enter (or →)
+   steps from quantity to price, ← goes back, Enter on the price, Space or the
+   ✓ button saves and leaves, Esc or the ✕ button leaves without saving. */
 function csLineEdit(i){
   if(!S.pos.lines[i]) return;
   CS.editLine=i; CS.focus='list'; S.pos.sel=i; render();
@@ -11121,7 +11131,12 @@ function bindClassic(){
     const lq=$('#lnQty'), lp=$('#lnPrice'), lEd=S.pos.lines[CS.editLine], lP=lEd&&P(lEd.pid);
     if(lq&&lp&&lEd){
       const wasList=Math.abs(lEd.price-priceFor(lP,lEd.qty))<0.005;
-      lq.oninput=()=>{ if(wasList&&lEd.auto!==false) lp.value=priceFor(lP,+lq.value||1) };   // the price follows the breaks
+      // the amount at the end of the row follows the boxes as they are typed in
+      const amt=()=>{ const q=+lq.value||0, pr=+lp.value||0; let ds=lEd.disc||0;
+        if(lEd.discPct!==undefined) ds=Math.max(0,(pr-(lP.mrp||pr)*(1-lEd.discPct/100))*q);
+        const el=$('#lnAmt'); if(el) el.textContent=money2(Math.max(0,q*pr-ds)) };
+      lq.oninput=()=>{ if(wasList&&lEd.auto!==false) lp.value=priceFor(lP,+lq.value||1); amt() };   // the price follows the breaks
+      lp.oninput=amt;
       const keys=(el,other,isPrice)=>el.onkeydown=e=>{
         e.stopPropagation();
         if(e.key===' '){ e.preventDefault(); csLineDone(true); return }
@@ -15541,7 +15556,10 @@ document.addEventListener('click',e=>{
     rcSms:()=>{const s2=S.sales.find(x=>x.no===(RC.sel||'')); if(!s2)return; const c2=C(s2.customerId);
       if(!c2.phone)return toast('No mobile on file for them');
       sms(c2.phone,tpl('billLink',{no:s2.no,total:fmt(s2.total),link:s2.link})); toast(`e-bill texted to ${c2.name}`)},
-    csEdit:()=>csEditLine(+a.dataset.i),
+    csEdit:()=>csLineEdit(+a.dataset.i),        // the pencil opens the quantity and price as boxes in the row
+    csEditMore:()=>{ csLineDone(false); csEditLine(+a.dataset.i) },
+    csLineOk:()=>csLineDone(true),
+    csLineNo:()=>csLineDone(false),
     csDel:()=>csAskDel(+a.dataset.i),
     undoReprice:()=>{ const b=S.pos.undoReprice; if(!b) return;
       b.forEach(o=>{const l=S.pos.lines.find(x=>x.pid===o.pid); if(l){l.price=o.price;l.disc=o.disc;l.discPct=o.discPct;delete l.fromLast}});
