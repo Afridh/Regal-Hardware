@@ -40,7 +40,12 @@ const { w, d } = A;
 ok('A: app booted', !!w.S && typeof w.completeSale === 'function', `${w.S.products.length} products seeded`);
 const lock = await until(() => d.getElementById('lockScreen'));
 ok('A: lock screen shown first (server build)', !!lock);
-lock.querySelector('[data-user="Afridh"]').click();
+if (d.getElementById('lockUser')) {
+  d.getElementById('lockUser').value = 'Afridh';
+  d.getElementById('lockUser').dispatchEvent(new w.Event('input'));
+} else if (lock.querySelector('[data-user="Afridh"]')) {
+  lock.querySelector('[data-user="Afridh"]').click();
+}
 await until(() => d.getElementById('lockPw'));
 d.getElementById('lockPw').value = 'Afridh123';
 d.getElementById('lockGo').click();

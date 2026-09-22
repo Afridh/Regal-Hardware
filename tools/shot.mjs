@@ -37,7 +37,12 @@ if (shopMode) {
   await pg.screenshot({ path: out, fullPage: process.argv[6] === 'full' }); await b.close(); console.log('wrote ' + out + (pageErrs.length ? ' ERRORS ' + pageErrs.join(' | ') : '')); process.exit(0);
 }
 await pg.waitForSelector('#lockScreen', { timeout: 15000 });
-await pg.click('[data-user="Afridh"]'); await pg.waitForSelector('#lockPw');
+if (await pg.$('#lockUser')) {
+  await pg.type('#lockUser', 'Afridh');
+} else {
+  await pg.click('[data-user="Afridh"]');
+}
+await pg.waitForSelector('#lockPw');
 await pg.type('#lockPw', 'Afridh123'); await pg.click('#lockGo');
 await pg.waitForFunction(() => !document.getElementById('lockScreen'), { timeout: 15000 });
 await new Promise(r => setTimeout(r, 800));

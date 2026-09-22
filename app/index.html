@@ -1376,7 +1376,7 @@ tr.sum td{background:var(--panel);border-top:1px solid var(--line)}
 tr.rowlink{cursor:pointer}
 tr.rowlink td:first-child b{color:var(--ink)}
 tr.rowlink:hover td{background:var(--tint-yellow)}
-tr.rowlink.sel td{background:var(--tint-yellow);box-shadow:inset 3px 0 0 var(--chip-yellow)}
+tr.rowlink.sel td, tr.rowlink.on td{background:var(--tint-yellow);box-shadow:inset 3px 0 0 var(--chip-yellow)}
 tr.rowlink:focus-visible td{outline:2px solid var(--chip-yellow);outline-offset:-2px}
 tr.rowlink button{cursor:pointer}
 
@@ -6456,7 +6456,7 @@ function recost(pid){
   if(qty>0) p.cost=+cost.toFixed(4);
 }
 /* ---- business transactions ---- */
-function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.name,salesman=null,override=false,no=null}){
+function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.name,salesman=undefined,override=false,no=null}){
   if(window.privacyOn) throw new Error('Till is busy — try again in a moment');
   if(!lines.length) throw new Error('A bill needs at least one line');
   lines.forEach(l=>{ if(!(l.qty>0)) throw new Error('Quantity must be above zero') });
@@ -6498,8 +6498,12 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   if(credit>0.005&&cAdv&&cAdv.advance>0.005){ used=+Math.min(cAdv.advance,credit).toFixed(2); cAdv.advance=+(cAdv.advance-used).toFixed(2) }
   let usedCredit=0;
   if(credit>0.005&&customerId!==1){ const held=custCredit(customerId); usedCredit=+Math.min(held,credit).toFixed(2); if(usedCredit>0.005) credit=+(credit-usedCredit).toFixed(2) }
-  const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>({...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:salesman||(S.pos&&S.pos.salesman)||null,overLimit,terminal:S.terminal,time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true}).toUpperCase(),link:'regalhw.lk/b/'+Math.random().toString(36).slice(2,10)};
+  const assignedSalesman = salesman !== undefined ? salesman : ((S.pos && S.pos.salesman) || null);
+  const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>({...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true}).toUpperCase(),link:'regalhw.lk/b/'+Math.random().toString(36).slice(2,10)};
   S.sales.push(inv);
+  if(typeof BroadcastChannel !== 'undefined'){
+    try { new BroadcastChannel('regal_books_sync').postMessage('sale_completed'); }catch(_){}
+  }
   let cogs=0; for(const l of inv.lines){ move(l.pid,-l.qty,'SALE',inv.no,l.cost); cogs+=l.qty*l.cost }
   const jl=[{ac:'4100',cr:total}];
   for(const p of pays){ if(p.method==='CASH')jl.push({ac:'1010',dr:p.amount}); else if(p.method==='CARD'||p.method==='BANK')jl.push({ac:B(p.bank).ac,dr:p.amount}); else if(p.method==='CHEQUE'){jl.push({ac:'1030',dr:p.amount}); S.cheques.push({dir:'RECEIVED',no:p.ref,bank:p.bankName||'Customer bank',date:p.date||date,recvDate:date,payee:'Regal Hardware',amount:p.amount,status:'RECEIVED',party:C(customerId)?.name,customerId,ref:inv.no})}
@@ -8020,6 +8024,9 @@ function persist(force){ if(window.privacyOn) return; saveForce=saveForce||!!for
   const ok=await store.set({v:1,at:new Date().toISOString(),S:snapshot(),CFG});
   if(!ok) lastSavedTxt='';                       // so the next change tries again
   lastSaved=ok?new Date():null; ['savedAt','savedAtNav','csSync'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=ok?'saved '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'not saved' });
+  if(ok && typeof BroadcastChannel !== 'undefined'){
+    try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
+  }
 },400) }
 window.markSaved=()=>{ lastSavedTxt=snapshotTxt() };   // books just came from the server: nothing to push back
 const DEFAULT_ACCOUNTS = [
@@ -8056,11 +8063,13 @@ function applyKept(kept){
       if(acc.name==='KP') existing.role='KP';
       if(acc.name.startsWith('Sales')) existing.role='Salesman';
       if(!existing.passHash) existing.passHash=hashSync(acc.pass);
+      if(!Array.isArray(existing.perms) || !existing.perms.length) existing.perms=[...acc.perms];
     }
   }
   if(!S.user||!S.user.name||legacy.includes(String(S.user.name).toLowerCase())||String(S.user.name).toLowerCase()==='admin'){
     const af=S.users.find(u=>u.name==='Afridh')||S.users[0];
-    S.user={name:af.name,role:af.role,perms:[...af.perms],prefs:{...PREF_DEFAULTS,...(af.prefs||{})}};
+    const afPerms=Array.isArray(af.perms)&&af.perms.length?[...af.perms]:[...DEFAULT_ACCOUNTS[0].perms];
+    S.user={name:af.name,role:af.role,perms:afPerms,prefs:{...PREF_DEFAULTS,...(af.prefs||{})}};
   }
   if(!Array.isArray(S.heldBills)) S.heldBills = [];
   S._fromStore=true;
@@ -9746,6 +9755,7 @@ function salesmanDashboard(){
       <div class="muted">Regal Hardware till ${S.terminal} · ${today.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn ghost sm" data-act="dashSync" title="Check server for new sales immediately">↻ Refresh Live</button>
       <button class="btn ghost sm" data-act="myProfile">✎ My Account / Password</button>
       <button class="btn tape sm" data-view="products">Browse Stock</button>
       <button class="btn ghost sm" data-view="payroll">My Attendance</button>
@@ -10001,6 +10011,15 @@ function dashSettings(){
 }
 
 function dashboardAfter(){
+  if(!window._salesSyncTimer){
+    window._salesSyncTimer = setInterval(()=>{
+      if(S.view === 'dashboard' && !document.querySelector('.modal') && !document.querySelector('.lock')){
+        if(window.regalBridge && typeof regalBridge.pull === 'function'){
+          regalBridge.pull(true);
+        }
+      }
+    }, 4000);
+  }
   // numbers count up so the eye lands on what changed
   if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
   document.querySelectorAll('.count').forEach(el=>{
@@ -10052,12 +10071,17 @@ function pos(){
     <td class="n"><input type="number" step="any" value="${l.price}" data-edit="price" data-i="${i}"></td><td class="n"><input type="number" step="any" value="${l.discPct!==undefined?l.discPct:l.disc}" data-edit="disc" data-i="${i}" title="${CFG.pos.discFromMrp?'a plain number is a percentage off the MRP':'a plain number is rupees off'}"></td><td class="n">${fmt(l.qty*l.price-l.disc)}</td><td><button class="btn ghost sm" data-act="del" data-i="${i}">✕</button></td></tr>`}).reverse().join(''):'<tr><td colspan="9" class="muted" style="padding:34px;text-align:center">Scan an item or start typing its name. Then quantity, then price — Enter between each.</td></tr>'}
    </table></div>
    <div class="side">
-    <button class="custpick" data-act="pickCust">
-     <div class="cp-l">Customer <b>F7</b></div>
-     <div class="cp-n">${c.name}</div>
-     <div class="cp-s">${c.id===1?'Walk-in · retail prices · tap to choose'
-       :`${c.phone} · ${c.level} prices · owes ${fmt(partyBal('C',c.id))} of ${fmt(c.limit)}${(c.points||0)>0?` · ${fq(c.points)} pts`:''}`}</div>
-    </button>
+     <button class="custpick" data-act="pickCust">
+      <div class="cp-l">Customer <b>F7</b></div>
+      <div class="cp-n">${c.name}</div>
+      <div class="cp-s">${c.id===1?'Walk-in · retail prices · tap to choose'
+        :`${c.phone} · ${c.level} prices · owes ${fmt(partyBal('C',c.id))} of ${fmt(c.limit)}${(c.points||0)>0?` · ${fq(c.points)} pts`:''}`}</div>
+     </button>
+     <button class="custpick ${S.pos.salesman?'has-salesman':''}" data-act="pickSalesman" style="margin-top:6px">
+      <div class="cp-l">Salesperson <b>F3</b></div>
+      <div class="cp-n">${S.pos.salesman || 'None (No Salesperson)'}</div>
+      <div class="cp-s">${S.pos.salesman ? 'Attributed to ' + S.pos.salesman : 'Default: Null · tap or F3 to assign'}</div>
+     </button>
     <div class="card totals">
      <div class="tline"><span>Subtotal</span><b>${fmt(sub)}</b></div>
      <div class="tline"><span>Bill discount <i>F8</i></span><input id="bd" type="number" value="${S.pos.billDisc}"></div>
@@ -10331,6 +10355,9 @@ function posQuick(){
       <button class="${credit?'on':''}" data-act="qMode" data-v="credit">CREDIT BILL</button></div>
      <button class="qwho" data-act="pickCust">
       <b>${c.name}</b><span>${c.id===1?(credit?'tap to choose who — a credit bill needs a customer':'walk-in · tap to choose'):`${c.phone} · owes ${fmt(partyBal('C',c.id))} of ${fmt(c.limit)}`}</span></button>
+     <button class="qwho ${S.pos.salesman?'has-salesman':''}" data-act="pickSalesman" style="border-top:1px dashed var(--line);background:transparent;padding:6px 12px;font-size:12px;text-align:left">
+      <span class="muted">Salesperson:</span> <b style="color:var(--ink)">${S.pos.salesman || 'None (No Salesperson)'}</b> <span class="tag sm" style="margin-left:6px">${S.pos.salesman?'Change':'F3'}</span>
+     </button>
     </div>
     <div class="qlines">${L.length?L.map((l,i)=>{const p=P(l.pid);return `<div class="qline ${i===S.pos.sel?'sel':''}">
       <div class="ql-n"><b>${p.name}</b>${(()=>{const sp=lastSupplier(l.pid);return sp?`<span class="linesup">${sp.name.split(/[–(]/)[0].trim()}</span>`:''})()}<span>${money2(l.price)} × ${fq(l.qty)} ${p.unit}${l.disc?' · less '+money2(l.disc):''}${l.qty>p.stock?' · <em>only '+fq(p.stock)+' on the floor</em>':''}</span></div>
@@ -10412,15 +10439,15 @@ function qComplete(pays,override,change){
   try{
     const editing=S.pos.editing, retired=editing?retireBill(editing):null;
     let inv;
-    try{ inv=completeSale({lines:S.pos.lines.map(l=>({...l})),customerId:cust.id,billDisc:S.pos.billDisc,pays,override,no:editing||null}) }
+    try{ inv=completeSale({lines:S.pos.lines.map(l=>({...l})),customerId:cust.id,billDisc:S.pos.billDisc,pays,salesman:S.pos.salesman,override,no:editing||null}) }
     catch(e){ if(retired){ S.journal.filter(j=>j.ref===editing+'-R').slice().forEach(j=>post(D(today),'Undo '+j.desc,editing+'-U',j.lines.map(l=>({ac:l.ac,dr:l.cr,cr:l.dr,party:l.party}))));
         retired.old.lines.forEach(l=>move(l.pid,-l.qty,'SALE',editing+' kept',l.cost)); S.sales.splice(retired.idx,0,retired.old) } throw e }
     if(retired) inv=finishRemake(retired,inv);
     if(S.pos.fromDoc){ const dd=S.docs.find(x=>x.no===S.pos.fromDoc); if(dd){ dd.status='billed'; dd.invoice=inv.no } }
     if(S.pos.fromWeb){ const wo=S.web.orders.find(x=>x.no===S.pos.fromWeb); if(wo){ wo.invoice=inv.no; wo.status='invoiced' } }
-    S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+    S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
     QT.tender=''; QT.mode='cash';
-    render(); billSaved(inv); if(change>0.005) toast(`Change ${fmt(change)}`); askSize(inv);
+    render(); persist(true); billSaved(inv); if(change>0.005) toast(`Change ${fmt(change)}`); askSize(inv);
   }catch(e){ toast(e.message) }
 }
 function bindQuick(){
@@ -10655,7 +10682,7 @@ function openPay(resume){
       const editing=S.pos.editing;
       const retired=editing?retireBill(editing):null;
       let inv;
-      try{ inv=completeSale({lines:S.pos.lines.map(l=>({...l})),customerId:cust.id,billDisc:S.pos.billDisc,pays,override,no:editing||null}) }
+      try{ inv=completeSale({lines:S.pos.lines.map(l=>({...l})),customerId:cust.id,billDisc:S.pos.billDisc,pays,salesman:S.pos.salesman,override,no:editing||null}) }
       catch(e){ if(retired){ // put the old bill straight back if the new one is refused
           S.journal.filter(j=>j.ref===editing+'-R').slice().forEach(j=>post(D(today),'Undo '+j.desc,editing+'-U',j.lines.map(l=>({ac:l.ac,dr:l.cr,cr:l.dr,party:l.party}))));
           retired.old.lines.forEach(l=>move(l.pid,-l.qty,'SALE',editing+' kept',l.cost)); S.sales.splice(retired.idx,0,retired.old) }
@@ -10664,8 +10691,8 @@ function openPay(resume){
       if(note.trim()) inv.note=note.trim();
       if(S.pos.fromDoc){ const dd=S.docs.find(x=>x.no===S.pos.fromDoc); if(dd){ dd.status='billed'; dd.invoice=inv.no } }
       if(S.pos.fromWeb){ const wo=S.web.orders.find(x=>x.no===S.pos.fromWeb); if(wo){ wo.invoice=inv.no; wo.status='invoiced'; wo.events&&wo.events.push({at:Date.now(),who:S.user.name,what:'Billed as '+inv.no}) } }
-      S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
-      stop(); m.remove(); render();
+      S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+      stop(); m.remove(); render(); persist(true);
       billSaved(inv);
       if(change>0.005) toast(`Change ${fmt(change)}`);
       askSize(inv);
@@ -11158,10 +11185,10 @@ function csClearAsk(){
   const doIt=()=>{
     if(S.pos.lines.length) logTrail('billCleared',`${S.pos.lines.length} line${S.pos.lines.length===1?'':'s'} thrown away before billing`,
       {amount:billTotal(),who:C(S.pos.customer||1).name,bill:{ref:'cleared',lines:S.pos.lines.map(l=>({...l})),customer:S.pos.customer,billDisc:S.pos.billDisc||0,date:new Date().toISOString(),user:S.user.name}});
-    S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+    S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
     CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null,paper:null,chk:null}; closeModals(); render(); const q=$('#csQ'); if(q) q.focus() };
   const n=S.pos.lines.length;
-  if(!n&&!CS.pid&&!S.pos.customer) return doIt();
+  if(!n&&!CS.pid&&!S.pos.customer&&!S.pos.salesman) return doIt();
   const m=modal(`<h2>Clear this bill?</h2><div class="muted" style="margin-bottom:12px">${n?`${n} line${n===1?'':'s'} · ${fmt(billTotal())}`:'The item being keyed'}${S.pos.customer?` · ${C(S.pos.customer).name}`:''} — it will be thrown away.</div>
    <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn ghost" id="clNo">Keep it <i class="kbd">Esc</i></button><button class="btn tape" id="clYes">Clear <i class="kbd">Enter</i></button></div>`);
   m.querySelector('#clNo').onclick=()=>{ m.remove(); const q=$('#csQ'); if(q) q.focus() };
@@ -11914,15 +11941,16 @@ function askBill(m,pays,change,c,total,override){
 
   const finish=(how)=>{
     try{
-      const inv=completeSale({lines:S.pos.lines.map(l=>({...l})),customerId:c.id,billDisc:S.pos.billDisc,pays,override});
+      const inv=completeSale({lines:S.pos.lines.map(l=>({...l})),customerId:c.id,billDisc:S.pos.billDisc,pays,salesman:S.pos.salesman,override});
       if(S.pos.fromWeb){ const wo=S.web.orders.find(x=>x.no===S.pos.fromWeb);
         if(wo){ wo.invoice=inv.no; wo.status=wo.deliver?'despatched':'collected';
           webEvent(wo,'Billed as '+inv.no);
           if(C(wo.cid).phone) sms(C(wo.cid).phone,`${S.web.settings.name}: order ${wo.no} billed as ${inv.no} for ${fmt(inv.total)}. ${wo.deliver?'On the way to you.':'Ready at the counter.'}`) } }
       if(S.pos.fromDoc){ const dd=S.docs.find(x=>x.no===S.pos.fromDoc);
         if(dd){ dd.status='billed'; dd.invoice=inv.no } }
-      S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:how};
+      S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:how};
       m.remove();
+      persist(true);
       if(how==='sms'){ render(); toast(`${inv.no} done · e-Bill texted to ${c.phone}`); smsSentModal(inv,c) }
       else { showInvoice(inv,how); render(); toast(`${inv.no} done · ${fmt(inv.total)}${change>0?' · change '+fmt(change):''}`) }
     }catch(err){toast(err.message)}
@@ -12031,16 +12059,16 @@ function pickCustomer(after){
 }
 
 function pickSalesman(after){
-  const staff = S.users.filter(u => u.active);
+  const staff = S.users.filter(u => u.active !== false);
   const salesmen = staff.filter(u => String(u.role||'').toLowerCase() === 'salesman');
   const others = staff.filter(u => String(u.role||'').toLowerCase() !== 'salesman');
   const list = [...salesmen, ...others];
   
   const m = modal(`<h2>Select Salesperson</h2>
-    <input id="sq" placeholder="Search salesperson name or role…" autocomplete="off">
+    <input id="sq" placeholder="Type a name, role, or initials…" autocomplete="off">
     <div id="sl" style="margin-top:10px;max-height:360px;overflow-y:auto"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
-      <button class="btn ghost" id="sNone">Clear Salesperson (None)</button>
+      <button class="btn ghost" id="sNone">Clear (No Salesperson)</button>
       <button class="btn ghost" data-act="closeModal">Cancel Esc</button>
     </div>`);
   
@@ -12050,7 +12078,7 @@ function pickSalesman(after){
     m.remove();
     render();
     if(after) after();
-    toast(name ? `Salesperson: ${name}` : 'Salesperson removed');
+    toast(name ? `Salesperson: ${name}` : 'Salesperson removed (None)');
   };
   
   m.querySelector('#sNone').onclick = () => pick(null);
@@ -12065,14 +12093,19 @@ function pickSalesman(after){
   
   const draw = () => {
     const v = (q.value || '').trim().toLowerCase();
-    const hits = list.filter(u => u.name.toLowerCase().includes(v) || String(u.role||'').toLowerCase().includes(v));
+    const hits = list.filter(u => u.name.toLowerCase().includes(v) || String(u.role||'').toLowerCase().includes(v) || String(u.uid||'').toLowerCase().includes(v));
     m.querySelector('#sl').innerHTML = `<table>
-      <tr class="rowlink" data-sname=""><td><b>None (Cashier Only)</b><div class="muted">No commission / sales attribution</div></td><td class="n"></td></tr>
+      <tr class="rowlink ${!S.pos.salesman ? 'sel' : ''}" data-sname="">
+        <td><b>None (No Salesperson)</b><div class="muted">Default — cashier only, no commission attribution</div></td>
+        <td><span class="tag">Default (Null)</span></td>
+        <td class="n">${!S.pos.salesman ? '<b style="color:var(--chip-green)">Active ✓</b>' : ''}</td>
+      </tr>
       ${hits.map(u => `<tr class="rowlink ${S.pos.salesman === u.name ? 'sel' : ''}" data-sname="${u.name}">
-        <td><b>${u.name}</b> <span class="tag ${u.role==='Salesman'?'ok':''}">${u.role}</span>${u.uid?`<span class="muted" style="margin-left:6px">[${u.uid}]</span>`:''}</td>
-        <td class="n">${S.pos.salesman === u.name ? '<b>Selected ✓</b>' : ''}</td>
+        <td><b>${u.name}</b> <div class="muted">${u.role}${u.uid?` · [${u.uid}]`:''}</div></td>
+        <td><span class="tag ${u.role==='Salesman'?'ok':'blue'}">${u.role}</span></td>
+        <td class="n">${S.pos.salesman === u.name ? '<b style="color:var(--chip-green)">Selected ✓</b>' : ''}</td>
       </tr>`).join('')}
-      ${v && !hits.length ? `<tr><td colspan="2" class="muted">No matching staff members found.</td></tr>` : ''}
+      ${v && !hits.length ? `<tr><td colspan="3" class="muted" style="padding:12px;text-align:center">No staff matching "${q.value.trim()}". Press Enter to keep None.</td></tr>` : ''}
     </table>`;
     m.querySelectorAll('[data-sname]').forEach(r => r.onclick = () => pick(r.dataset.sname || null));
     cur = v && hits.length ? 1 : 0;
@@ -12091,7 +12124,7 @@ function pickSalesman(after){
   });
   
   draw();
-  setTimeout(() => q.focus(), 50);
+  setTimeout(() => { q.focus(); q.select(); }, 40);
 }
 
 /* ================== QUOTATION REQUESTS & TENDERS ==================
@@ -12338,9 +12371,10 @@ function saveDoc(kind){
   const doc={no:next(DOCK[kind].seq),kind,date:D(today),customerId:c.id,
     lines:L.map(l=>({...l,mrp:P(l.pid).mrp})),billDisc:S.pos.billDisc,total,
     valid:kind==='QUOTE'?CFG.bill.quoteDays:null,by:S.user.name,status:'open',
+    salesman:S.pos.salesman||null,
     vehicle:'',note:''};
   S.docs.push(doc);
-  S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+  S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
   render(); docPrint(doc.no);
   toast(`${DOCK[kind].label} ${doc.no} saved for ${c.name}`);
 }
@@ -16056,9 +16090,15 @@ function users(){
         const isTargetSuper=u.role==='Super Admin'||u.name==='Afridh';
         const canModify=isSuperAdmin||(!isTargetSuper&&isAdmin);
         const isSelf=S.user.name===u.name;
+        const isSalesStaff = u.role === 'Salesman' || S.sales.some(s => s.salesman === u.name || s.by === u.name);
+        const mySales = isSalesStaff ? S.sales.filter(s => s.salesman === u.name || s.by === u.name) : [];
+        const todaySales = mySales.filter(s => s.date === D(today));
+        const todayTot = todaySales.reduce((a, s) => a + s.total, 0);
+        const allTot = mySales.reduce((a, s) => a + s.total, 0);
         return `<tr class="${u.active?'':'off'}">
         <td><b>${u.name}</b>${isSelf?' <span class="tag ok">on now</span>':''}${isTargetSuper?' <span class="tag gold" style="margin-left:4px">Super Admin</span>':''}
-         <div class="muted">${u.active?'active':'switched off'} · bills ${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-…</div></td>
+         <div class="muted">${u.active?'active':'switched off'} · bills ${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-…</div>
+         ${isSalesStaff ? `<div style="margin-top:4px"><span class="tag sm ${todayTot>0?'ok':'blue'}" title="Today's sales">Today: ${fmt(todayTot)}</span> <span class="muted" style="font-size:11px;margin-left:4px">All-time: ${fmt(allTot)} (${mySales.length})</span></div>` : ''}</td>
         <td><b>${u.role}</b></td>
         <td><span class="tag ok">password</span>${u.pin?' <span class="tag blue">PIN</span>':''}
          <div class="muted">${(u.prefs&&u.prefs.nav)==='top'?'menu on top':'menu at the side'}</div></td>
@@ -16093,7 +16133,25 @@ function users(){
 
 function myProfileModal(){
   const u=S.users.find(x=>x.name===S.user.name)||S.user;
+  const isSalesStaff = String(u.role || '').toLowerCase() === 'salesman' || S.sales.some(s => s.salesman === u.name || s.by === u.name);
+  const mySales = isSalesStaff ? S.sales.filter(s => s.salesman === u.name || s.by === u.name) : [];
+  const todaySales = mySales.filter(s => s.date === D(today));
+  const todayTotal = todaySales.reduce((a, s) => a + s.total, 0);
+  const allTotal = mySales.reduce((a, s) => a + s.total, 0);
+
   const m=modal(`<h2>My Account · ${u.name}</h2>
+    ${isSalesStaff ? `
+      <div style="background:var(--tint-yellow);border:1px solid var(--chip-yellow);border-radius:6px;padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--ink);letter-spacing:0.5px;text-transform:uppercase">Sales Performance & Commission</div>
+          <div class="muted" style="font-size:12px">Attributed from POS Invoices & Counter Bills</div>
+        </div>
+        <div style="display:flex;gap:18px">
+          <div><span class="muted" style="font-size:11px">Today:</span> <b style="font-size:14px;color:var(--ink)">${fmt(todayTotal)}</b> <span class="muted" style="font-size:11px">(${todaySales.length} bills)</span></div>
+          <div><span class="muted" style="font-size:11px">All-Time:</span> <b style="font-size:14px;color:var(--ink)">${fmt(allTotal)}</b> <span class="muted" style="font-size:11px">(${mySales.length} bills)</span></div>
+        </div>
+      </div>
+    ` : ''}
     <div class="grid2">
       <div class="f"><label>Username</label><input id="mpName" value="${u.name}"></div>
       <div class="f"><label>Bill initials (two letters)</label><input id="mpUid" maxlength="2" value="${u.uid||''}" style="text-transform:uppercase"></div>
@@ -16303,10 +16361,22 @@ async function checkPass(u,given){
   if(window.regalBridge){
     try{
       const r=await regalBridge.login(u.name,given);
-      if(r.ok){ if(r.user&&r.user.perms&&r.user.perms.length){ u.role=r.user.role; u.perms=[...r.user.perms] } u.active=true;
-        const fresh=S.users.find(x=>x.name===u.name); if(fresh&&fresh!==u){ u.perms=[...fresh.perms]; u.role=fresh.role; u.prefs=fresh.prefs; u.pin=fresh.pin }
+      if(r.ok){
+        if(r.user){
+          u.role=r.user.role||u.role;
+          if(Array.isArray(r.user.perms)&&r.user.perms.length) u.perms=[...r.user.perms];
+        }
+        u.active=true;
+        const fresh=S.users.find(x=>x.name===u.name);
+        if(fresh&&fresh!==u){
+          if(Array.isArray(fresh.perms)) u.perms=[...fresh.perms];
+          u.role=fresh.role||u.role;
+          u.prefs={...(u.prefs||{}),...(fresh.prefs||{})};
+          u.pin=fresh.pin;
+        }
         if(r.bootstrap&&typeof persist==='function') setTimeout(()=>persist(true),50);   // first ever sign-in: push the books up so other tills can sign in
-        return true }
+        return true;
+      }
       if(r.status===401) return false;
     }catch(e){ /* server unreachable: fall through to the local check */ }
   }
@@ -16326,7 +16396,7 @@ S.user={name:'Afridh', role:'Super Admin', perms:[...DEFAULT_ACCOUNTS[0].perms],
 
 function signOut(){
   if(S.pos.lines.length&&!confirm('There is a bill on the screen that has not been paid. Sign out anyway and lose it?'))return;
-  S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:CFG.bill.defaultFormat};
+  S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:CFG.bill.defaultFormat};
   closeModals(); closePhone(); S.signedOut=true;
   if(window.regalBridge) regalBridge.logout();
   shopLock();
@@ -16350,6 +16420,7 @@ function proofBill(fmtWanted){
 }
 /* the shop's own lock screen — username + password with dynamic role badge */
 function shopLock(){
+  document.querySelectorAll('.lock, #lockScreen').forEach(x => x.remove());
   document.body.classList.add('locked');
   const el=document.createElement('div'); el.className='lock'; el.id='lockScreen';
   el.innerHTML=`<div class="lockbox" style="max-width:420px;padding:32px 28px">
@@ -16389,7 +16460,8 @@ function shopLock(){
       badge.innerHTML = '';
       return;
     }
-    const matched = S.users.find(u => u.active && u.name.toLowerCase() === val.toLowerCase());
+    const matched = S.users.find(u => u.active !== false && String(u.name || '').toLowerCase() === val.toLowerCase())
+      || DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === val.toLowerCase());
     if(matched){
       badge.style.display = 'inline-flex';
       const roleLower = String(matched.role || '').toLowerCase();
@@ -16428,45 +16500,73 @@ function shopLock(){
   uInp.addEventListener('input', updateRoleBadge);
 
   const doSignIn = async () => {
-    const uName = (uInp.value || '').trim();
-    if(!uName){
-      msg.textContent = 'Please enter your username';
-      msg.style.color = 'var(--chip-rust)';
-      uInp.focus();
-      return;
-    }
-    const u = S.users.find(x => x.active && x.name.toLowerCase() === uName.toLowerCase());
-    if(!u){
-      msg.textContent = 'Username not found';
-      msg.style.color = 'var(--chip-rust)';
-      uInp.focus();
-      return;
-    }
-    if(!(await checkPass(u, pInp.value))){
-      tries++;
-      msg.textContent = tries >= 5 ? 'Too many wrong passwords. Ask an administrator.' : 'That password is not right.';
-      msg.style.color = 'var(--chip-rust)';
-      if(tries >= 5) pInp.disabled = true;
-      pInp.focus();
-      return;
-    }
-    if(u.pin){
-      const got = prompt(`PIN for ${u.name}`);
-      if(got !== u.pin){
-        msg.textContent = 'That PIN is not right.';
+    const btn = el.querySelector('#lockGo');
+    if(btn){ btn.disabled = true; btn.textContent = 'Signing in…'; }
+    try {
+      const uName = (uInp.value || '').trim();
+      if(!uName){
+        msg.textContent = 'Please enter your username';
         msg.style.color = 'var(--chip-rust)';
+        if(btn){ btn.disabled = false; btn.textContent = 'Sign In'; }
+        uInp.focus();
         return;
       }
+      let u = S.users.find(x => x.active !== false && String(x.name || '').toLowerCase() === uName.toLowerCase());
+      if(!u){
+        const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === uName.toLowerCase());
+        if(def){
+          u = { name: def.name, role: def.role, uid: def.uid, pin: '', perms: [...def.perms], active: true, prefs: { ...PREF_DEFAULTS } };
+          S.users.push(u);
+        } else {
+          u = { name: uName, role: 'Cashier', perms: [], active: true, prefs: { ...PREF_DEFAULTS } };
+        }
+      }
+      const passOk = await checkPass(u, pInp.value);
+      if(!passOk){
+        tries++;
+        msg.textContent = tries >= 5 ? 'Too many wrong passwords. Ask an administrator.' : 'That password is not right.';
+        msg.style.color = 'var(--chip-rust)';
+        if(tries >= 5) pInp.disabled = true;
+        if(btn){ btn.disabled = false; btn.textContent = 'Sign In'; }
+        pInp.focus();
+        return;
+      }
+      const freshU = S.users.find(x => x.active !== false && String(x.name || '').toLowerCase() === uName.toLowerCase());
+      if(freshU) u = freshU;
+
+      if(u.pin && u.pin !== '?'){
+        const got = prompt(`PIN for ${u.name}`);
+        if(got !== u.pin){
+          msg.textContent = 'That PIN is not right.';
+          msg.style.color = 'var(--chip-rust)';
+          if(btn){ btn.disabled = false; btn.textContent = 'Sign In'; }
+          return;
+        }
+      }
+      u.lastSeen = D(today);
+      const accDef = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === u.name.toLowerCase());
+      const uPerms = Array.isArray(u.perms) && u.perms.length ? [...u.perms] : (accDef ? [...accDef.perms] : (Array.isArray(u.perms) ? [...u.perms] : []));
+      u.perms = uPerms;
+      S.user = { name: u.name, role: u.role, perms: [...uPerms], prefs: { ...PREF_DEFAULTS, ...(u.prefs || {}) } };
+      S.signedOut = false;
+
+      // Cleanly remove all lock overlays from document
+      document.querySelectorAll('.lock, #lockScreen').forEach(x => x.remove());
+      document.body.classList.remove('locked');
+      closeModals();
+
+      applyLayout();
+      const startV = pref('start');
+      const targetV = allowed(startV) ? startV : (allowed('dashboard') ? 'dashboard' : (allowed('pos') ? 'pos' : 'products'));
+      go(targetV);
+      toast(`Signed in as ${u.name} (${u.role})`);
+      try { clockInAsk(u.name); } catch(e) {}
+    } catch(err) {
+      console.error('Sign-in error:', err);
+      msg.textContent = 'Sign in error: ' + (err.message || err);
+      msg.style.color = 'var(--chip-rust)';
+      if(btn){ btn.disabled = false; btn.textContent = 'Sign In'; }
     }
-    u.lastSeen = D(today);
-    S.user = { name: u.name, role: u.role, perms: [...u.perms], prefs: { ...PREF_DEFAULTS, ...(u.prefs || {}) } };
-    S.signedOut = false;
-    el.remove();
-    document.body.classList.remove('locked');
-    applyLayout();
-    go(allowed(pref('start')) ? pref('start') : (allowed('dashboard') ? 'dashboard' : 'products'));
-    toast(`Signed in as ${u.name} (${u.role})`);
-    clockInAsk(u.name);
   };
 
   el.querySelector('#lockGo').onclick = doSignIn;
@@ -16496,7 +16596,7 @@ document.addEventListener('click',e=>{
   const tb=e.target.closest('[data-tab]'); if(tb){invTab=tb.dataset.tab;invLimit=200;render();return} const ab=e.target.closest('[data-acc]'); if(ab){accTab=ab.dataset.acc;render();return}
   const a=e.target.closest('[data-act]'); if(!a)return; e.preventDefault(); const act=a.dataset.act;
   // while the privacy screen is up only looking is allowed — nothing that writes, so the real books cannot be touched
-  if(window.privacyOn&&!/^(closeModal|invoice|showInv|doPrint|billSel|billKind|billDay|billAllDates|billMore|billClear|cust|siteTab|siteShow|wpView|ordTab|tdSel|tdFilter|bellOpen|bellClear|navMin|prefNav|prefMini|repRun|repPick|rep|acc|tab|zoom|prodHist|supShow|pickCust|pickSalesman|showHeld|csToggleSum)$/.test(act)){ toast('Till is busy — try again in a moment'); return }
+  if(window.privacyOn&&!/^(closeModal|invoice|showInv|doPrint|billSel|billKind|billDay|billAllDates|billMore|billClear|cust|siteTab|siteShow|wpView|ordTab|tdSel|tdFilter|bellOpen|bellClear|navMin|prefNav|prefMini|repRun|repPick|rep|acc|tab|zoom|prodHist|supShow|pickCust|pickSalesman|showHeld|csToggleSum|dashSync)$/.test(act)){ toast('Till is busy — try again in a moment'); return }
   ({ del:()=>{S.pos.lines.splice(+a.dataset.i,1);render()}, pay:openPay, pickCust:pickCustomer, pickSalesman:()=>pickSalesman(), clear:()=>{S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()}, hold:()=>holdCurrentBill(true), showHeld:()=>showHeldBillsModal(),
     csToggleSum:()=>{ const el=document.getElementById('csTillSum'); if(el) el.classList.toggle('expanded'); const b=document.querySelector('.cs-sum-btn'); if(b&&el) b.textContent=el.classList.contains('expanded')?'Details ▴':'Details ▾' },
     invoice:()=>showInvoice(S.sales.find(s=>s.no===a.dataset.no)), showInv:()=>{closeModals();showInvoice(S.sales.find(s=>s.no===a.dataset.no),a.dataset.f)}, closeModal:closeModals,
@@ -16536,6 +16636,17 @@ document.addEventListener('click',e=>{
         outstanding:fmt(partyBal('C',c.id)),link:'regalhw.lk/my/'+c.code.toLowerCase()}));
       render(); toast('Reminder texted to '+c.phone)},
     myProfile:()=>myProfileModal(),
+    dashSync:async()=>{
+      if(window.regalBridge&&typeof regalBridge.pull==='function'){
+        toast('Checking server for new sales…');
+        const updated=await regalBridge.pull(false);
+        if(!updated) toast('Already up to date');
+      } else if(typeof boot==='function'){
+        await boot();
+        toast('Data refreshed');
+      }
+      render();
+    },
     roleNew:()=>roleModal(),
     roleEdit:()=>roleModal(a.dataset.r),
     roleDel:()=>{
@@ -16686,7 +16797,7 @@ document.addEventListener('click',e=>{
       b.forEach(o=>{const l=S.pos.lines.find(x=>x.pid===o.pid); if(l){l.price=o.price;l.disc=o.disc;l.discPct=o.discPct;delete l.fromLast}});
       S.pos.undoReprice=null; render(); toast('Back to today\'s prices') },
     editDrop:()=>{ const no=S.pos.editing;
-      S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+      S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
       render(); toast(`${no} left as it was`) },
     drawer:()=>document.body.classList.toggle('drawer'),
     csExit:()=>{ if(window.matchMedia&&window.matchMedia('(max-width:900px)').matches) return document.body.classList.toggle('drawer');
@@ -16720,7 +16831,7 @@ document.addEventListener('click',e=>{
       S.web.orders=[]; S.web.cart=[]; S.shift.days={}; S.shift.imported=null;
       S.customers.push({id:1,code:'WALKIN',name:'Walk-in customer',phone:'',level:'retail',limit:0,address:'',portal:false});
       S.users=[me]; S.seq=Object.fromEntries(Object.keys(S.seq).map(k=>[k,1]));
-      S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:CFG.bill.defaultFormat};
+      S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:CFG.bill.defaultFormat};
       persist(); render(); toast('Empty shop. Add your products under Stock → Products and your opening stock will start the ledger.') },
     demoReset:()=>{ if(!confirm('Throw away everything in this browser and start the demo again?')) return;
       store.clear().then(()=>{ toast('Cleared — reloading'); setTimeout(()=>location.reload(),400) }) },
@@ -16981,6 +17092,23 @@ window.boot=boot; window.GL=GL;
 if(typeof extInstall==='function') extInstall();   // loyalty, vouchers, locations (regal-ext.js)
 bootSync(); if(typeof extEnsure==='function') extEnsure(); applyLayout(); render(); drawPhone();
 if(S._fromStore) toast('Books picked up where you left off');
+if(typeof BroadcastChannel !== 'undefined'){
+  try {
+    const syncBc = new BroadcastChannel('regal_books_sync');
+    syncBc.onmessage = async (msg) => {
+      if(msg.data === 'sale_completed' || msg.data === 'books_updated'){
+        if(window.regalBridge && typeof regalBridge.pull === 'function'){
+          await regalBridge.pull(true);
+        } else if(typeof boot === 'function'){
+          await boot();
+        }
+        if(S.view === 'dashboard' || S.view === 'bills' || S.view === 'receipts' || S.view === 'users'){
+          render();
+        }
+      }
+    };
+  } catch(_){}
+}
 if(window.regalBridge){
   /* server build: the books live in PostgreSQL and every till signs in against the server.
      Nobody is at the counter until they have signed in. */
@@ -16988,7 +17116,11 @@ if(window.regalBridge){
   const backAtTheTill=(name)=>{
     const u=S.users.find(x=>x.name===name&&x.active!==false);
     if(!u){ S.signedOut=true; shopLock(); return }
-    S.user={name:u.name,role:u.role,perms:[...(u.perms||[])],prefs:{...PREF_DEFAULTS,...(u.prefs||{})}};
+    const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === u.name.toLowerCase());
+    const uPerms = Array.isArray(u.perms) && u.perms.length ? [...u.perms] : (def ? [...def.perms] : []);
+    S.user={name:u.name,role:u.role,perms:uPerms,prefs:{...PREF_DEFAULTS,...(u.prefs||{})}};
+    document.querySelectorAll('.lock, #lockScreen').forEach(x => x.remove());
+    document.body.classList.remove('locked');
     applyLayout(); render(); drawPhone();
     try{ tenderReminders() }catch(e){}                 // quotations closing within 3 days ring the bell once a day
   };
@@ -16997,9 +17129,20 @@ if(window.regalBridge){
       backAtTheTill(name); persist(); });
   } else {
     regalBridge.serverUsers().then(list=>{
-      if(list.length) S.users=list.map(u=>({name:u.name,role:u.role,uid:u.uid,pin:u.pin?'?':'',perms:[],active:true,prefs:{...PREF_DEFAULTS}}));
-      S.signedOut=true; shopLock();
-    }).catch(()=>{ S.signedOut=true; shopLock() });
+      if(list.length) {
+        S.users=list.map(u=>{
+          const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === u.name.toLowerCase());
+          return {
+            name:u.name,role:u.role,uid:u.uid,pin:u.pin?'?':'',
+            perms:def?[...def.perms]:[],active:true,prefs:{...PREF_DEFAULTS}
+          };
+        });
+      }
+    }).catch(()=>{})
+    .finally(()=>{
+      S.signedOut=true;
+      shopLock();
+    });
   }
 } else {
   boot().then(fresh=>{ if(fresh){ applyLayout(); render(); drawPhone(); toast('Books picked up from the shared store') } persist(); });

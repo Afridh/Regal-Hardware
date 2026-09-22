@@ -9,7 +9,7 @@
   var KEY = 'regal';                       // books document key on the server
   var TOKEN_KEY = 'regal_token';
   var TERMINAL_KEY = 'regal_terminal';
-  var POLL_MS = 12000;
+  var POLL_MS = 3000;
   // per-device state that must never travel between tills
   var LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'held', 'heldBills', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId'];
 
