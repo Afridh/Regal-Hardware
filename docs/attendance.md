@@ -8,7 +8,7 @@ of three things reading and writing **the same records**:
 
 | What | Where it writes |
 |---|---|
-| The Shift Board the staff use | `?action=state` / `?action=day` |
+| The Shift Board on the staff phones | `?action=state` / `?action=day` |
 | The fingerprint machine at the door | `?action=punches` (device key) |
 | Attendance & pay inside the shop system | the same two, using the till's own sign-in |
 
@@ -25,23 +25,18 @@ a token for it on that PC.
 
 ## Signing in
 
-**The board inside the shop system has no sign-in of its own.** It is opened from behind the
-till's lock screen, which has already decided who this is, so a second login was only ever a
-door to get past. The board takes the till's token and sends it as `Authorization: Bearer …`
-on every call, alongside the `X-Shift-Token` header it has always used.
+**There is no second sign-in.** The shop system's own lock screen is the only one: *Attendance & pay* is part of the
+till now, not a separate board carried inside it, so whoever is signed in at the counter is who the attendance server
+is told about.
 
-* The **till's own sign-in** is what the server checks. An Owner (or anyone with *payroll* or
-  *settings*) counts as the board's owner; everyone else counts as a supervisor.
-* A supervisor is given the attendance **with the wages taken out on the server** — rates, pay
-  type, advances, the ledger and the money settings never leave it. Hiding them on the page
-  would not be the same thing. Removing the board's own login changed none of that: the
-  server still decides what it hands over.
-* A **Salesman** is not given the board at all. *Attendance & pay* shows them their own
-  punches and their own hours, with no rates and nobody else on the page.
-* If the server cannot be reached, the board carries on against the records kept on that
-  device rather than putting a sign-in up.
-* `?action=login` is still there on the server for a board hosted on its own, away from the
-  till.
+* Calls to the attendance server carry the till's own token as `Authorization: Bearer …`; the older
+  `X-Shift-Token` header still works for anything else that uses it.
+* An Owner (or anyone with *payroll* or *settings*) counts as the board's owner on the server; everyone else counts
+  as a supervisor, and a supervisor is given the attendance **with the wages taken out on the server** — rates, pay
+  type, advances, the ledger and the money settings never leave it.
+* Inside the shop system the same line is drawn again: Payroll, Payments and Trends need the *payroll* right, and a
+  **Salesman** only ever sees their own punches.
+* `?action=login` is still on the server for a board hosted on its own, away from the till.
 
 ## The fingerprint machine
 
@@ -67,7 +62,7 @@ Run it from Task Scheduler every evening, or whenever the machine is read.
 * The key can post punches and **nothing else** — it cannot read wages or settings, so the shop
   PC never holds anyone's password.
 * A reader is matched to a person by the **Fingerprint machine ID** on their card in
-  Attendance & pay → The roll. Readers nobody owns are listed back so they can be added.
+  Attendance & pay → Staff. Readers nobody owns are listed back so they can be added.
 * The day is built the way the board always built it: the first read is the arrival, the last
   the departure, pairs in between are breaks matched to the nearest scheduled break, and a
   second read within two minutes is the same punch.

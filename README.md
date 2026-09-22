@@ -3,7 +3,7 @@
 The **Regal Hardware** front-end (`app/index.html`) is the primary website: the till in three styles, bill recall,
 quotes and delivery notes, customers and receipts, suppliers and their orders, purchases and returns, stock, stock
 take, barcode labels, cheques in and out, expenses, drawer counts, accounting and reports, attendance & pay with the
-embedded Shift Board, the customer and supplier portals, the online shop, messaging — plus the features brought
+own attendance and payroll, the customer and supplier portals, the online shop, messaging — plus the features brought
 across from SePOS: **loyalty points, gift vouchers, locations & stock transfers**.
 
 Behind it is a **Node.js (Express) + PostgreSQL** server. The books are kept in PostgreSQL and shared by every till;
@@ -61,7 +61,7 @@ Open **http://localhost:4000/pos** (the shop site is at **http://localhost:4000*
 
 **Signing in** — the lock screen lists the staff. Demo passwords are the first name + `123`
 (`afridh123`, `asaathkp123`, `raslan123`, `kasun123`, `fathima123`). Change them under *Users and what they may do*.
-The **Shift Board** no longer asks for a login of its own — see *Attendance & pay* below.
+Attendance & pay is part of the till and has no sign-in of its own — see *Attendance & pay* below.
 
 ## What the server adds to the Regal app
 
@@ -144,33 +144,29 @@ The dashboard reads in sections, so one side of the shop is not mixed in with th
 its own section, and the sections keep their order. It is per person and follows your login. A section with everything
 switched off is not drawn at all.
 
-## Attendance & pay is the Shift Board
+## Attendance & pay
 
-*People → Attendance & pay* opens **the Shift Board itself** — the same board the staff punch on, with its Today,
-Sheet, Pay, Money, Trends, Staff and Setup tabs. There is no second set of attendance screens inside the shop system
-any more: one board, one set of figures. The shift rules and the holidays live on the board's *Setup* and come down
-with a sync, so there is one place to change them.
+*People → Attendance & pay* is the shop's own attendance and payroll system, built on the shop's own books. The
+Shift Board is no longer carried inside the page as a second app — everything it did is here, natively, on one
+sign-in and one set of figures:
 
-**No login.** The board is opened from behind the till's lock screen, which has already decided who is at the counter,
-so it takes the till's own sign-in and asks for nothing. The server still decides what it hands over: an Owner (or
-anyone with *payroll* or *settings*) gets the board as its owner, everyone else as a supervisor, and a supervisor's
-copy has the wages taken out **on the server**. If the server cannot be reached the board carries on against that
-device's records rather than putting a sign-in up.
-
-**A Salesman does not get the board** — it shows every rate and the money tabs. They keep the small page they had:
-their own punch status, their arrival time, their hours, and their own attendance sheet with no rates on it.
-
-**The bar above the board** carries the few things the board cannot do, because they go into the shop's books rather
-than into the punches:
-
-| Button | What it does |
+| Tab | What it is |
 |---|---|
-| **Sync** | pulls the punches from the attendance server |
-| **Pay \<month\>** | the pay sheet, and the run that posts the month's wages to the ledger |
-| **Advances** | money handed out before payday, and what is still to recover |
-| **Use these punches** | takes the figures off the open board for pay |
-| **Send the roll up** | pushes the staff list to the attendance server |
-| **Full width · Restart** | hides the menu · reloads the board |
+| **Today** | the day as it happens — scan a card or type a name to punch in, breaks, punch out, mark absent or on leave, fix the times |
+| **Attendance** | the month sheet: everyone down the side, every day across, hours in each cell. Tap a cell to fix that day. Click a name to open one person's month |
+| **Payroll** | the pay run — days, hours, overtime, late fines, advances, net — and the run that posts the month's wages to the ledger, with a salary voucher each |
+| **Payments** | advances handed out and still to recover, and every pay run posted |
+| **Trends** | six months of hours, overtime, late minutes, absence and wages; who works the hours and who comes in late |
+| **Staff** | the roll everything else reads |
+| **Rules** | opening and closing, grace, overtime multiplier, late fine, half-day, weekly off, the paid breaks and the holidays |
+
+**The phones still punch.** The attendance server the staff use from their own phones is unchanged: **Sync the
+punches** brings theirs down, **Send the roll up** pushes the staff list back, and a day punched at the counter goes
+up by itself. *Paste an export* is still there for a board that cannot be reached.
+
+**Who sees what.** Payroll, Payments and Trends need the *payroll* right; without it the page is Today, Attendance,
+Staff and Rules, and no rate is shown anywhere. A **Salesman** gets a page of their own — where they are, when they
+came in, hours on the floor, and their own month — with nobody else on it.
 
 ## Purchasing & the cash plan
 
