@@ -9152,7 +9152,7 @@ const $=(s)=>document.querySelector(s);
 const views=[
  ['grp','Counter'],['dashboard','Dashboard','F2'],['pos','POS billing','F3'],['bills','Bills','F9'],['docs','Quotes & delivery notes'],
  ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['tenders','Quotations & tenders'],
- ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['purchases','Purchases'],
+ ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],
  ['grp','Stock'],['products','Products'],['inventory','Inventory & ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
  ['grp','Online'],['weborders','Online orders'],['webproducts','Online products'],['site','The shop site'],
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],
@@ -9165,7 +9165,7 @@ const ownerOnly=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owne
 const SECTIONS = {
   Counter: ['dashboard', 'pos', 'bills', 'docs'],
   Customers: ['customers', 'receipts', 'tenders'],
-  Suppliers: ['suppliers', 'orders', 'purchases'],
+  Suppliers: ['suppliers', 'orders', 'purchases', 'purchasing'],
   Stock: ['products', 'inventory', 'stocktake', 'labels'],
   Online: ['weborders', 'webproducts', 'site'],
   Money: ['chequesIn', 'chequesOut', 'expenses', 'accounting'],
@@ -9293,6 +9293,7 @@ const ICONS={
 const icon=(k)=>`<svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.7"
   stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[k]||ICONS.dashboard}"/></svg>`;
 ICONS.tenders='M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h6M9 8h2';
+ICONS.purchasing='M3 17l5-5 4 3 5-6M3 21h18M5 3v14';
 ICONS.webproducts='M3 4h18v12H3zM3 8h18M8 20h8M12 16v4M9 12h2M13 12h4';
 ICONS.site='M3 12h18M12 3a15 15 0 010 18M12 3a15 15 0 000 18M12 3a9 9 0 110 18 9 9 0 010-18';
 ICONS.weborders='M8 4h9l3 4v12H8zM8 4H4v16h4M12 11h5M12 15h5';
@@ -9414,7 +9415,7 @@ function modal(html){ const m=document.createElement('div');m.className='modal';
 function closeModals(){document.querySelectorAll('.modal').forEach(m=>m.remove())}
 let _rendering=false;
 function render(){ if(_rendering) return; _rendering=true; try{ renderNow() } finally { _rendering=false } if(typeof persist==='function'&&S.user&&!S.signedOut) persist() }
-function renderNow(){ if(S.view!=='board') document.body.classList.remove('boardview'); renderNav(); const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,chequesIn,chequesOut,expenses,accounting,payroll,board,users,messages,reports,settings,trail}[S.view]; $('#main').innerHTML=r(); document.body.classList.toggle('csfull',pref('till')==='classic'&&S.view==='pos'); if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() } if(S.view==='recall') recallAfter(); if(S.view==='stocktake') stockTakeAfter();
+function renderNow(){ if(S.view!=='board') document.body.classList.remove('boardview'); renderNav(); const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,chequesIn,chequesOut,expenses,accounting,payroll,board,users,messages,reports,settings,trail}[S.view]; $('#main').innerHTML=r(); document.body.classList.toggle('csfull',pref('till')==='classic'&&S.view==='pos'); if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() } if(S.view==='recall') recallAfter(); if(S.view==='stocktake') stockTakeAfter(); if(S.view==='purchasing') purchasingAfter();
   if(S.view==='serials'){ const sq=$('#srQ'); if(sq){ sq.oninput=e=>{srQ=e.target.value;render();const n=$('#srQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body) sq.focus() } } if(S.view==='labels') labelsAfter(); if(S.view==='receipts') receiptsAfter(); if(S.view==='dashboard') dashboardAfter();
 
@@ -14931,6 +14932,402 @@ function words(n){ n=Math.floor(n); if(n===0)return 'zero'; const a=['','one','t
 
 /* ---- customers ---- */
 /* ---- suppliers ---- */
+
+/* ================== PURCHASING & THE CASH PLAN ==================
+   The shop buys on credit and sells for cash and cheques, so what can safely be
+   bought this week is not what is in the bank today — it is what will still be
+   there on the worst day between now and when the bills fall due.
+
+   Three things feed it:
+
+   * CREDIT PERIODS. A supplier has a standing number of days, and may give a
+     different number for different kinds of goods — cement at 30 days, paint at
+     45, on the same lorry. So a bill is not one debt with one date: it is tracked
+     as PARTS, one per category, each with its own due date. What has been paid is
+     spread across the parts earliest due first, which is the order money actually
+     settles a supplier account.
+
+   * WHAT COMES IN. Cheques already taken are known — each is counted on the day
+     it is banked. The rest (cash and card at the counter, and what customers pay
+     off their accounts) is estimated from the same weekday over the last few
+     weeks, multiplied by a season figure set per month, because the off season is
+     a fact about the calendar and not something to be discovered after it starts.
+
+   * WHAT GOES OUT. Our own cheques not yet cleared, the bill parts still owing on
+     their due dates, the running average of expenses, and the wages at month end.
+
+   Nothing here posts anything. It reads the books and says what the next weeks
+   look like, warns where they run short, and offers a set of cheques under the
+   ceiling that clears the pinch. The decision stays with the owner. */
+
+const PLAN_DEF={chequeMax:100000,weeks:8,lookback:6,float:100000,gap:7,
+  season:{1:1,2:1,3:1,4:1,5:1,6:1,7:1,8:1,9:1,10:1,11:1,12:1}};
+function planCfg(){
+  CFG.plan={...PLAN_DEF,...(CFG.plan||{})};
+  CFG.plan.season={...PLAN_DEF.season,...(CFG.plan.season||{})};
+  return CFG.plan;
+}
+const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const addDays=(d,n)=>{ const t=new Date(d+'T00:00:00'); t.setDate(t.getDate()+(+n||0)); return D(t) };
+const chqInDate=(c)=>c.chqDate||c.date;          // a receipt keeps the cheque's own date apart; a till cheque does not
+
+/* ---- credit periods ---- */
+function supTermList(s){ return Array.isArray(s&&s.terms)?s.terms:[] }
+function supDaysFor(s,cat){
+  const t=supTermList(s).find(x=>String(x.cat)===String(cat));
+  return (t&&+t.days>=0)?+t.days:Math.max(0,+((s&&s.days))||0);
+}
+function allCats(){ return [...new Set(S.products.map(p=>p&&p.cat).filter(Boolean))].sort() }
+
+/* ---- a bill, split into the parts its categories are owed on ---- */
+function purchaseParts(p){
+  const s=SU(p.supplierId);
+  const by={};
+  (p.lines||[]).forEach(l=>{ const pr=P(l.pid); const cat=(pr&&pr.cat)||'Other';
+    by[cat]=(by[cat]||0)+(l.qty*l.cost) });
+  const sub=Object.values(by).reduce((a,v)=>a+v,0);
+  // transport and the rest of the bill ride along with the goods, shared by value
+  let parts=Object.entries(by).map(([cat,v])=>{
+    const days=supDaysFor(s,cat);
+    return {cat,days,value:+(sub>0?p.total*v/sub:0).toFixed(2),due:addDays(p.date,days)};
+  });
+  if(!parts.length){ const days=supDaysFor(s,null); parts=[{cat:'Other',days,value:+(+p.total).toFixed(2),due:addDays(p.date,days)}] }
+  parts.sort((a,b)=>a.due.localeCompare(b.due)||a.cat.localeCompare(b.cat));
+  const drift=+(p.total-parts.reduce((a,x)=>a+x.value,0)).toFixed(2);   // the rounding goes on the first part
+  if(Math.abs(drift)>=0.01) parts[0].value=+(parts[0].value+drift).toFixed(2);
+  let paid=Math.max(0,+p.paid||0);
+  parts.forEach(x=>{ const a=Math.min(paid,x.value); x.paid=+a.toFixed(2); x.owing=+(x.value-a).toFixed(2); paid-=a });
+  return parts;
+}
+/* every part of every bill that is still owed, earliest due first */
+function duePartsAll(){
+  const out=[];
+  S.purchases.forEach(p=>{
+    if((+p.paid||0)>=p.total-0.005) return;
+    purchaseParts(p).forEach(x=>{ if(x.owing>0.005)
+      out.push({...x,pur:p.no,supInv:p.supInv,supplierId:p.supplierId,billed:p.date}) });
+  });
+  return out.sort((a,b)=>a.due.localeCompare(b.due));
+}
+
+/* ---- what an ordinary day brings in, cheques aside ---- */
+function takingsBaseline(){
+  const cfg=planCfg(), span=Math.max(7,(+cfg.lookback||6)*7), from=ago(span-1), to=D(today);
+  const perDay={};
+  for(let i=0;i<span;i++) perDay[ago(i)]=0;                 // a closed or a poor day counts as nothing, not as missing
+  S.sales.forEach(s=>{ if(s.date<from||s.date>to||perDay[s.date]===undefined) return;
+    (s.pays||[]).forEach(p=>{ if(p.method==='CASH'||p.method==='CARD'||p.method==='BANK') perDay[s.date]+=(+p.amount||0) }) });
+  S.payments.forEach(p=>{ if(p.dir!=='IN'||p.method==='CHEQUE') return;
+    if(perDay[p.date]===undefined) return; perDay[p.date]+=(+p.amount||0) });
+  const buck=[0,0,0,0,0,0,0].map(()=>({sum:0,n:0}));
+  Object.entries(perDay).forEach(([d,v])=>{ const w=new Date(d+'T00:00:00').getDay(); buck[w].sum+=v; buck[w].n++ });
+  return buck.map(b=>b.n?b.sum/b.n:0);
+}
+function seasonFactor(d){ const f=+((planCfg().season||{})[+d.slice(5,7)]); return f>0?f:1 }
+function expectedIn(d,base){ return (base[new Date(d+'T00:00:00').getDay()]||0)*seasonFactor(d) }
+function expenseBaseline(){
+  const cfg=planCfg(), span=Math.max(7,(+cfg.lookback||6)*7), from=ago(span-1);
+  return S.expenses.filter(e=>e.date>=from&&e.date<=D(today)).reduce((a,e)=>a+(+e.amount||0),0)/span;
+}
+
+/* ---- the ladder: every day from today, what lands on it and what is left ---- */
+function cashLadder(extra){
+  const cfg=planCfg(), base=takingsBaseline(), expDay=expenseBaseline();
+  const n=Math.max(1,Math.min(26,+cfg.weeks||8))*7;
+  const start=bal('1010')+S.banks.reduce((a,b)=>a+bal(b.ac),0);      // cheques in the drawer are counted on the day they bank
+  const chqIn=S.cheques.filter(c=>c.dir==='RECEIVED'&&c.status==='RECEIVED');
+  const chqOut=S.cheques.filter(c=>c.dir==='ISSUED'&&['ISSUED','PRINTED'].includes(c.status));
+  const parts=duePartsAll();
+  const mk=D(today).slice(0,7);
+  const wages=S.employees.filter(e=>e.active!==false).reduce((a,e)=>a+payFor(e,mk).net,0);
+  const planned=(extra||[]).map(x=>({date:x.date,amount:+x.amount||0,what:x.what||'Planned cheque'}));
+  const rows=[]; let run=start;
+  for(let i=0;i<n;i++){
+    const d=ago(-i), first=(i===0), items=[];
+    let In=0, out=0;
+    const t=expectedIn(d,base);
+    if(t>0.005) In+=t;
+    chqIn.forEach(c=>{ const cd=chqInDate(c); if(cd===d||(first&&cd<d)){ In+=+c.amount||0;
+      items.push({k:'in',t:`Cheque ${c.no} from ${c.party||'a customer'}${first&&cd<d?' — overdue, still not banked':''}`,v:+c.amount||0}) } });
+    chqOut.forEach(c=>{ if(c.date===d||(first&&c.date<d)){ out+=+c.amount||0;
+      items.push({k:'out',t:`Our cheque ${c.no} to ${c.payee}${first&&c.date<d?' — past its date':''}`,v:+c.amount||0}) } });
+    parts.forEach(x=>{ if(x.due===d||(first&&x.due<d)){ out+=x.owing;
+      const sp=SU(x.supplierId);
+      items.push({k:'out',t:`${sp?sp.name:'Supplier'} — ${x.cat} on ${x.supInv||x.pur}${first&&x.due<d?' — overdue':''}`,v:x.owing}) } });
+    planned.forEach(x=>{ if(x.date===d||(first&&x.date<d)){ out+=x.amount; items.push({k:'out',t:x.what,v:x.amount,planned:true}) } });
+    if(expDay>0.005) out+=expDay;
+    const lastOfMonth=new Date(+d.slice(0,4),+d.slice(5,7),0).getDate();
+    if(+d.slice(8,10)===lastOfMonth&&wages>0.005){ out+=wages; items.push({k:'out',t:'Wages for the month',v:wages}) }
+    run=+(run+In-out).toFixed(2);
+    rows.push({date:d,in:+In.toFixed(2),out:+out.toFixed(2),bal:run,items,takings:+t.toFixed(2),expenses:+expDay.toFixed(2)});
+  }
+  return {rows,start,base,expDay,wages,weekday:base};
+}
+function ladderLow(L){ return L.rows.reduce((m,r)=>Math.min(m,r.bal),L.start) }
+function ladderPinch(L){ const f=+planCfg().float||0; return L.rows.find(r=>r.bal<f)||null }
+function planHeadroom(L){ const f=+planCfg().float||0; return Math.max(0,+(ladderLow(L)-f).toFixed(2)) }
+function ladderWeeks(L){
+  const out=[];
+  for(let i=0;i<L.rows.length;i+=7){
+    const c=L.rows.slice(i,i+7); if(!c.length) break;
+    const low=c.reduce((m,r)=>r.bal<m.bal?r:m,c[0]);
+    out.push({from:c[0].date,to:c[c.length-1].date,
+      in:+c.reduce((a,r)=>a+r.in,0).toFixed(2), out:+c.reduce((a,r)=>a+r.out,0).toFixed(2),
+      end:c[c.length-1].bal, low:low.bal, lowDate:low.date});
+  }
+  return out;
+}
+
+/* ---- a big bill goes out as several cheques under the ceiling, a week apart ---- */
+function planCheques(amount,from,opts){
+  const cfg=planCfg(), o=opts||{};
+  const max=Math.max(1000,+((o.max!==undefined?o.max:cfg.chequeMax))||100000);
+  const gap=Math.max(1,+((o.gap!==undefined?o.gap:cfg.gap))||7);
+  const amt=+(+amount||0).toFixed(2);
+  if(amt<=0) return [];
+  const n=Math.max(1,Math.ceil(amt/max-1e-9));
+  const each=Math.min(max,Math.ceil(amt/n/100)*100);      // round up to the hundred so the last cheque is never the big one
+  const out=[]; let left=amt;
+  for(let i=0;i<n;i++){
+    const v=(i===n-1)?+left.toFixed(2):+Math.min(each,left).toFixed(2);
+    if(v<=0) break;
+    out.push({date:addDays(from,i*gap),amount:v});
+    left=+(left-v).toFixed(2);
+  }
+  return out;
+}
+
+/* ---- the page ---- */
+let purchTab='plan';
+function purchasing(){
+  const cfg=planCfg(), L=cashLadder(), weeks=ladderWeeks(L);
+  const low=ladderLow(L), pinch=ladderPinch(L), room=planHeadroom(L);
+  const parts=duePartsAll();
+  const chqOut=S.cheques.filter(c=>c.dir==='ISSUED'&&['ISSUED','PRINTED'].includes(c.status));
+  const soon=d=>parts.filter(x=>x.due<=ago(-d)).reduce((a,x)=>a+x.owing,0)
+              +chqOut.filter(c=>c.date<=ago(-d)).reduce((a,c)=>a+(+c.amount||0),0);
+  const tabs=[['plan','The plan'],['due','What falls due',parts.length+chqOut.length],
+              ['terms','Credit periods'],['season','Season & rules']];
+
+  const body=({plan:()=>planTab(L,weeks,cfg),due:()=>dueTab(parts,chqOut,L),
+               terms:()=>termsTab(),season:()=>seasonTab(cfg,L)})[purchTab]();
+
+  return `<h1>Purchasing &amp; cash plan</h1>
+   <div class="row" style="margin-bottom:12px">
+    ${stat('Safe to commit',fmt(room),room>0?`over and above the ${fmt(+cfg.float||0)} you keep back`:'nothing spare — buy only what sells this week',room>0?'g':'r')}
+    ${stat('Worst day in the next '+(+cfg.weeks||8)+' weeks',fmt(low),pinch?`${pinch.date} · below your float`:'never goes below the float','y')}
+    ${stat('Falling due in 7 days',fmt(soon(7)),'bills and our cheques together','b')}
+    ${stat('Falling due in 30 days',fmt(soon(30)),`${parts.length} bill part${parts.length===1?'':'s'} · ${chqOut.length} cheque${chqOut.length===1?'':'s'} out`,'r')}
+   </div>
+   ${pinch?`<div class="card note" style="margin-bottom:12px;border-left:3px solid var(--chip-rust)">
+     <b>${pinch.date} is the first day you run short</b> — it ends on ${fmt(pinch.bal)}, under the ${fmt(+cfg.float||0)} you keep back.
+     <div class="muted" style="margin-top:4px">What lands that day: ${pinch.items.length?pinch.items.map(x=>`${x.t} ${fmt(x.v)}`).join(' · '):'nothing but the everyday takings and expenses'}.</div>
+     <div class="muted" style="margin-top:4px">Either hold the purchasing back, or spread what is due — <b>What falls due</b> will cut any of it into cheques under ${fmt(+cfg.chequeMax||100000)}.</div></div>`:''}
+   <div class="cu-tabs">${tabs.map(t=>`<button class="${purchTab===t[0]?'on':''}" data-act="purchTab" data-t="${t[0]}">${t[1]}${t[2]!==undefined?`<i>${t[2]}</i>`:''}</button>`).join('')}</div>
+   <div class="cu-tab-body">${body}</div>`;
+}
+
+function planTab(L,weeks,cfg){
+  const f=+cfg.float||0;
+  const days=L.rows.slice(0,14);
+  return `<div class="card">
+    <h2>Week by week</h2>
+    <div class="muted">Starting from ${fmt(L.start)} in cash and the bank. Cheques you hold are counted on the day each one banks, not today.</div>
+    <table style="margin-top:8px"><tr><th>Week</th><th class="n">Coming in</th><th class="n">Going out</th><th class="n">Lowest it gets</th><th class="n">Left at the end</th></tr>
+    ${weeks.map(w=>`<tr class="${w.low<f?'noteopen':''}">
+      <td>${w.from} <span class="muted">to ${w.to}</span></td>
+      <td class="n">${fmt(w.in)}</td><td class="n">${fmt(w.out)}</td>
+      <td class="n"><b class="${w.low<0?'down':w.low<f?'':'up'}">${fmt(w.low)}</b>${w.low<f?`<div class="muted" style="font-size:12px">on ${w.lowDate}</div>`:''}</td>
+      <td class="n">${fmt(w.end)}</td></tr>`).join('')}</table>
+    <div class="ch-f"><span>Ordinary day brings in about ${fmt(L.base.reduce((a,v)=>a+v,0)/7)}</span>
+     <span>Expenses run about ${fmt(L.expDay)} a day</span>
+     <span>Wages ${fmt(L.wages)} at month end</span></div></div>
+
+   <div class="card" style="margin-top:12px"><h2>The next fortnight, day by day</h2>
+    <table><tr><th>Day</th><th class="n">Takings expected</th><th class="n">Other money in</th><th class="n">Going out</th><th class="n">Left</th><th>What lands</th></tr>
+    ${days.map(r=>`<tr class="${r.bal<f?'noteopen':''}">
+      <td>${r.date}<div class="muted" style="font-size:12px">${new Date(r.date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'short'})}${seasonFactor(r.date)!==1?` · season ×${seasonFactor(r.date)}`:''}</div></td>
+      <td class="n muted">${fmt(r.takings)}</td>
+      <td class="n">${fmt(+(r.in-r.takings).toFixed(2))}</td>
+      <td class="n">${fmt(r.out)}</td>
+      <td class="n"><b class="${r.bal<0?'down':r.bal<f?'':'up'}">${fmt(r.bal)}</b></td>
+      <td class="muted">${r.items.length?r.items.map(x=>x.t).join('<br>'):'<span class="muted">nothing but the everyday</span>'}</td></tr>`).join('')}</table></div>`;
+}
+
+function dueTab(parts,chqOut,L){
+  const cfg=planCfg();
+  const rows=[
+    ...parts.map(x=>({date:x.due,kind:'bill',v:x.owing,
+      who:(SU(x.supplierId)||{}).name||'Supplier',
+      what:`${x.cat} on ${x.supInv||x.pur} · ${x.days} day${x.days===1?'':'s'} from ${x.billed}`,
+      sid:x.supplierId,pur:x.pur})),
+    ...chqOut.map(c=>({date:c.date,kind:'chq',v:+c.amount||0,who:c.payee,what:`Our cheque ${c.no} on ${c.bank||'the bank'}`}))
+  ].sort((a,b)=>a.date.localeCompare(b.date));
+  const balOn=(d)=>{ const r=L.rows.find(x=>x.date===d); return r?r.bal:null };
+  const f=+cfg.float||0;
+  if(!rows.length) return '<div class="card note">Nothing is owed to a supplier and no cheque of ours is waiting to clear.</div>';
+  return `<div class="card">
+    <h2>Everything with a date on it</h2>
+    <div class="muted">A bill already covered by a cheque shows only as the cheque — writing one takes the bill off this list, so nothing is counted twice.</div>
+    <table style="margin-top:8px"><tr><th>Due</th><th>Who</th><th>What</th><th class="n">Amount</th><th class="n">Left that day</th><th></th></tr>
+    ${rows.map(r=>{ const b=balOn(r.date), late=r.date<D(today);
+      return `<tr class="${(b!==null&&b<f)||late?'noteopen':''}">
+       <td>${r.date}<div class="muted" style="font-size:12px">${late?'overdue':(Math.round((new Date(r.date)-today)/864e5)+' days')}</div></td>
+       <td>${r.who}</td><td class="muted">${r.what}</td>
+       <td class="n"><b>${fmt(r.v)}</b></td>
+       <td class="n">${b===null?'<span class="muted">beyond the plan</span>':`<span class="${b<0?'down':b<f?'':'up'}">${fmt(b)}</span>`}</td>
+       <td>${r.kind==='bill'?`<button class="btn ghost sm" data-act="planChq" data-sid="${r.sid}" data-amt="${r.v}" data-date="${r.date}" data-pur="${r.pur}">Cut into cheques</button>`:'<span class="muted">written</span>'}</td></tr>`}).join('')}
+    </table></div>`;
+}
+
+function termsTab(){
+  const cats=allCats();
+  const list=S.suppliers.filter(s=>s.active!==false);
+  return `<div class="card">
+    <h2>How long each supplier gives us</h2>
+    <div class="muted">The standing number of days, and any kind of goods they treat differently. This is what puts the due date on every bill part, so it is worth getting right.</div>
+    <table style="margin-top:8px"><tr><th>Supplier</th><th class="n">Usually</th><th>Different for</th><th class="n">Owed now</th><th></th></tr>
+    ${list.map(s=>{ const ov=supTermList(s).filter(t=>cats.includes(t.cat)||true);
+      return `<tr>
+       <td><b>${s.name}</b><div class="muted">${s.code||''}</div></td>
+       <td class="n">${Math.max(0,+s.days||0)} days</td>
+       <td>${ov.length?ov.map(t=>`<span class="tag blue">${t.cat} · ${t.days}d</span>`).join(' '):'<span class="muted">the same for everything</span>'}</td>
+       <td class="n">${partyBal('S',s.id)>0.005?fmt(partyBal('S',s.id)):'<span class="muted">clear</span>'}</td>
+       <td><button class="btn ghost sm" data-act="supTerms" data-id="${s.id}">Set the periods</button></td></tr>`}).join('')}
+    </table>
+    ${cats.length?'':'<div class="muted" style="margin-top:8px">No product categories yet — add products and their categories appear here to set periods against.</div>'}</div>`;
+}
+
+function seasonTab(cfg,L){
+  const now=+D(today).slice(5,7);
+  return `<div class="card">
+    <h2>The season</h2>
+    <div class="muted">What an ordinary day brings in is worked out from the last ${+cfg.lookback||6} weeks, the same weekday against the same weekday. These twelve figures then stretch or shrink it: 0.7 for a quiet month, 1.3 for a busy one, 1 to leave it alone.</div>
+    <div class="permgrid" style="margin-top:10px">
+     ${MONTHS.map((mn,i)=>`<div class="f"><label>${mn}${i+1===now?' <b>· now</b>':''}</label>
+       <input type="number" step="0.05" min="0" data-season="${i+1}" value="${(cfg.season||{})[i+1]}"></div>`).join('')}
+    </div>
+    <div class="ch-f"><span>An ordinary week, as it stands: <b>${fmt(L.base.reduce((a,v)=>a+v,0))}</b></span>
+     <span>This month's figure: <b>×${seasonFactor(D(today))}</b></span></div>
+   </div>
+   <div class="card" style="margin-top:12px"><h2>What an ordinary day looks like</h2>
+    <div class="muted">Straight out of the books — cash and card at the counter plus what customers pay off their accounts. Cheques are left out here because each one is counted on the day it banks.</div>
+    <table style="margin-top:8px"><tr><th>Day</th><th class="n">Usually takes</th><th class="n">With this month's season</th></tr>
+    ${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((dn,i)=>
+      `<tr><td>${dn}</td><td class="n">${fmt(L.base[i])}</td><td class="n">${fmt(L.base[i]*seasonFactor(D(today)))}</td></tr>`).join('')}
+    </table></div>
+   <div class="card" style="margin-top:12px"><h2>The rules</h2>
+    <div class="grid2">
+     <div class="f"><label>Most a single cheque should be</label><input type="number" step="1000" min="1000" data-plan="chequeMax" value="${+cfg.chequeMax||100000}">
+      <div class="muted">Anything bigger is cut into several. Yours is ${fmt(+cfg.chequeMax||100000)}. The lowest ceiling allowed is Rs 1,000.</div></div>
+     <div class="f"><label>Keep back at all times</label><input type="number" step="1000" data-plan="float" value="${+cfg.float||0}">
+      <div class="muted">The plan calls a day short when it would end below this.</div></div>
+     <div class="f"><label>How far ahead to look, in weeks</label><input type="number" step="1" min="1" max="26" data-plan="weeks" value="${+cfg.weeks||8}"></div>
+     <div class="f"><label>How far back to learn from, in weeks</label><input type="number" step="1" min="1" max="26" data-plan="lookback" value="${+cfg.lookback||6}"></div>
+     <div class="f"><label>Days between one cheque and the next</label><input type="number" step="1" min="1" max="60" data-plan="gap" value="${+cfg.gap||7}"></div>
+    </div></div>`;
+}
+
+// every rule has a floor, so what is stored is always a figure the plan can work with —
+// a ceiling of nothing would otherwise mean an endless list of cheques
+const PLAN_MIN={chequeMax:1000,weeks:1,lookback:1,gap:1,float:0};
+function purchasingAfter(){
+  document.querySelectorAll('[data-plan]').forEach(el=>el.onchange=()=>{
+    const cfg=planCfg(), k=el.dataset.plan;
+    cfg[k]=Math.max(PLAN_MIN[k]||0,+el.value||0); render(); toast('Saved') });
+  document.querySelectorAll('[data-season]').forEach(el=>el.onchange=()=>{
+    const cfg=planCfg(); cfg.season[el.dataset.season]=Math.max(0,+el.value||0); render(); toast('Saved') });
+}
+
+/* ---- setting a supplier's periods ---- */
+function supTermsModal(id){
+  const s=SU(id); if(!s) return toast('No such supplier');
+  const cats=allCats();
+  let rows=supTermList(s).map(t=>({cat:t.cat,days:+t.days||0}));
+  const m=modal(`<h2>How long ${s.name} gives us</h2>
+   <div class="muted">The standing period covers everything. Add a line for any kind of goods they treat differently — that line wins for those items, and a bill is then owed in parts, each on its own date.</div>
+   <div class="f" style="margin-top:10px;max-width:260px"><label>Usually, in days</label>
+    <input id="stDays" type="number" min="0" step="1" value="${Math.max(0,+s.days||0)}"></div>
+   <div id="stRows"></div>
+   <button class="btn ghost sm" id="stAdd" style="margin-top:6px">Add a different period</button>
+   <div class="muted" id="stMsg"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="stOk">Save the periods</button></div>`);
+  const draw=()=>{
+    m.querySelector('#stRows').innerHTML=rows.length?`<label style="margin-top:10px">Different for</label>
+      <table>${rows.map((r,i)=>`<tr>
+       <td><select data-stc="${i}">${cats.map(c=>`<option ${r.cat===c?'selected':''}>${c}</option>`).join('')}${cats.includes(r.cat)?'':`<option selected>${r.cat}</option>`}</select></td>
+       <td style="width:130px"><input type="number" min="0" step="1" data-std="${i}" value="${r.days}" style="text-align:right"></td>
+       <td class="muted">days</td>
+       <td><button class="btn ghost sm" data-strm="${i}">✕</button></td></tr>`).join('')}</table>`:'';
+    m.querySelectorAll('[data-stc]').forEach(el=>el.onchange=()=>{ rows[+el.dataset.stc].cat=el.value });
+    m.querySelectorAll('[data-std]').forEach(el=>el.onchange=()=>{ rows[+el.dataset.std].days=Math.max(0,+el.value||0) });
+    m.querySelectorAll('[data-strm]').forEach(b=>b.onclick=()=>{ rows.splice(+b.dataset.strm,1); draw() });
+  };
+  m.querySelector('#stAdd').onclick=()=>{
+    if(!cats.length) return toast('Give the products categories first — the periods hang off those');
+    const left=cats.find(c=>!rows.some(r=>r.cat===c))||cats[0];
+    rows.push({cat:left,days:Math.max(0,+s.days||0)}); draw();
+  };
+  m.querySelector('#stOk').onclick=()=>{
+    const seen=new Set();
+    for(const r of rows){ if(seen.has(r.cat)){ m.querySelector('#stMsg').textContent=`${r.cat} is in the list twice.`; return } seen.add(r.cat) }
+    s.days=Math.max(0,+m.querySelector('#stDays').value||0);
+    s.terms=rows.filter(r=>r.cat).map(r=>({cat:r.cat,days:Math.max(0,+r.days||0)}));
+    m.remove(); render(); toast(`${s.name} — ${s.days} days${s.terms.length?`, ${s.terms.length} exception${s.terms.length===1?'':'s'}`:''}`);
+  };
+  draw();
+}
+
+/* ---- cutting an amount into cheques under the ceiling ---- */
+function chequePlanModal(sid,amount,from,pur){
+  const s=SU(sid); if(!s) return toast('No such supplier');
+  const cfg=planCfg();
+  let max=+cfg.chequeMax||100000, gap=+cfg.gap||7, bank=(S.banks[0]||{}).id||1, start=from||D(today);
+  const m=modal(`<h2>Cheques for ${s.name}</h2>
+   <div class="muted">${fmt(amount)} due ${from}${pur?` on ${pur}`:''}. Cut into cheques under the ceiling and spread, so no one day has to carry the lot.</div>
+   <div class="grid3" style="margin-top:10px">
+    <div class="f"><label>Most per cheque</label><input id="cpMax" type="number" step="1000" value="${max}"></div>
+    <div class="f"><label>Days between them</label><input id="cpGap" type="number" step="1" min="1" value="${gap}"></div>
+    <div class="f"><label>First one dated</label><input id="cpFrom" type="date" value="${start}"></div></div>
+   <div class="f" style="max-width:320px"><label>Drawn on</label>
+    <select id="cpBank">${S.banks.map(b=>`<option value="${b.id}">${b.name} — ${b.no}</option>`).join('')}</select></div>
+   <div id="cpOut" style="margin-top:8px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="cpOk">Write these cheques</button></div>`);
+  let split=[];
+  const draw=()=>{
+    max=Math.max(1000,+m.querySelector('#cpMax').value||100000);
+    gap=Math.max(1,+m.querySelector('#cpGap').value||7);
+    start=m.querySelector('#cpFrom').value||D(today);
+    split=planCheques(amount,start,{max,gap});
+    const L=cashLadder(split.map(x=>({date:x.date,amount:x.amount,what:`Planned cheque to ${s.name}`})));
+    const f=+cfg.float||0, pinch=ladderPinch(L);
+    m.querySelector('#cpOut').innerHTML=`<table><tr><th>Dated</th><th class="n">Amount</th><th class="n">Left that day, with it</th></tr>
+      ${split.map(x=>{ const r=L.rows.find(y=>y.date===x.date); const b=r?r.bal:null;
+        return `<tr><td>${x.date}</td><td class="n"><b>${fmt(x.amount)}</b></td>
+        <td class="n">${b===null?'<span class="muted">beyond the plan</span>':`<span class="${b<0?'down':b<f?'':'up'}">${fmt(b)}</span>`}</td></tr>`}).join('')}
+      <tr class="tot"><td>${split.length} cheque${split.length===1?'':'s'}</td><td class="n"><b>${fmt(split.reduce((a,x)=>a+x.amount,0))}</b></td><td></td></tr></table>
+      <div class="card note" style="margin-top:8px;${pinch?'border-left:3px solid var(--chip-rust)':''}">
+       ${pinch?`Even so, <b>${pinch.date}</b> ends on ${fmt(pinch.bal)}, under the ${fmt(f)} you keep back. Push the first one later, or make the gap wider.`
+              :`No day in the next ${+cfg.weeks||8} weeks drops under the ${fmt(f)} you keep back.`}</div>`;
+  };
+  ['cpMax','cpGap','cpFrom'].forEach(i=>{ const el=m.querySelector('#'+i); el.oninput=draw; el.onchange=draw });
+  m.querySelector('#cpBank').onchange=()=>{ bank=+m.querySelector('#cpBank').value };
+  m.querySelector('#cpOk').onclick=()=>{
+    if(!split.length) return toast('Nothing to write');
+    try{
+      const pv=paySupplier({supplierId:sid,lines:split.map(x=>({method:'CHEQUE',bank:+bank,date:x.date,amount:x.amount})),
+        against:pur?[pur]:[]});
+      m.remove(); render(); supplierVoucher(pv);
+      toast(`${pv.no} saved · ${split.length} cheque${split.length===1?'':'s'} ready to print`);
+    }catch(e){ toast(e.message) }
+  };
+  draw();
+}
+
 let supSel=1, supQ='', supFilter='all', supSort='owed', supTab='overview', supBillsF='all', supStmtRange='3m';
 /* ====================== SUPPLIERS ======================
    The same shape as Customers: find them fast, see what we owe and how old it
@@ -15020,6 +15417,7 @@ function supplierPanel(s){
      <button class="btn ghost" data-act="supStmt" data-id="${s.id}">Statement <i class="kbd">F8</i></button>
      <button class="btn ghost" data-act="prn" data-id="${s.id}">Goods back</button>
      <button class="btn ghost" data-act="phoneToggle">${S.phoneOpen&&S.phoneMode==='supplier'?'Hide':'Show'} the rep's phone</button>
+     <button class="btn ghost" data-act="supTerms" data-id="${s.id}">Credit periods</button>
      <button class="btn ghost" data-act="noteAdd" data-ptype="S" data-id="${s.id}">Add a note</button>
      <button class="btn ghost" data-act="supEdit" data-id="${s.id}">Edit <i class="kbd">Ctrl+E</i></button>
     </div>
@@ -15062,15 +15460,27 @@ function supOverview(s,pur,open,pay,chq,orders,owed){
      :'<div class="muted">Nothing yet.</div>'}</div>
   </div>`;
 }
+/* each bill, and under it the parts it is owed in — one per credit period */
+function supBillParts(p){
+  const parts=purchaseParts(p);
+  if(parts.length<2&&!supTermList(SU(p.supplierId)).length) return '';
+  return `<div class="muted" style="font-size:12px;margin-top:3px">${parts.map(x=>
+    `${x.cat} ${fmt(x.value)} · ${x.days}d · due ${x.due}${x.owing>0.005?(x.due<D(today)?' <b style="color:var(--chip-rust)">overdue</b>':''):' <b>paid</b>'}`).join('<br>')}</div>`;
+}
 function supBills(s,pur){
   const list=pur.filter(p=>supBillsF==='all'||(supBillsF==='unpaid'?p.total-p.paid>0.005:p.total-p.paid<=0.005));
   return `<div class="chips" style="margin-bottom:8px">${[['all','All'],['unpaid','Unpaid'],['paid','Paid']].map(f=>`<button class="${supBillsF===f[0]?'on':''}" data-supbills="${f[0]}">${f[1]}</button>`).join('')}
     <span class="muted" style="align-self:center;margin-left:auto">${list.length} bill${list.length===1?'':'s'} · ${fmt(list.reduce((a,p)=>a+p.total,0))}</span></div>
    <table class="cu-tbl"><tr><th>Their invoice</th><th>GRN</th><th>Date</th><th>Items</th><th class="n">Total</th><th class="n">Paid</th><th class="n">Owing</th><th>Status</th><th></th></tr>
-   ${list.map(p=>{const d=daysAgo(p.date), ow=p.total-p.paid;return `<tr><td><b>${p.supInv}</b>${(p.adjustments||[]).length?`<div class="muted">${p.adjustments.map(a=>(ADJ_REASONS.find(r=>r[0]===a.why)?.[1]||a.why).toLowerCase()+' '+fmt(a.amount)).join(', ')}</div>`:''}${(p.edits||[]).length?'<div class="muted">changed</div>':''}</td>
-     <td>${p.no}</td><td>${p.date}<div class="muted">${agoTxt(p.date)}</div></td><td class="muted">${(p.lines||[]).length} line${(p.lines||[]).length===1?'':'s'}</td>
+   ${list.map(p=>{const d=daysAgo(p.date), ow=p.total-p.paid;
+     const owingParts=purchaseParts(p).filter(x=>x.owing>0.005);
+     const nextDue=owingParts.map(x=>x.due).sort()[0]||null;         // the soonest part still owed
+     const late=nextDue&&nextDue<D(today);
+     return `<tr><td><b>${p.supInv}</b>${(p.adjustments||[]).length?`<div class="muted">${p.adjustments.map(a=>(ADJ_REASONS.find(r=>r[0]===a.why)?.[1]||a.why).toLowerCase()+' '+fmt(a.amount)).join(', ')}</div>`:''}${(p.edits||[]).length?'<div class="muted">changed</div>':''}</td>
+     <td>${p.no}</td><td>${p.date}<div class="muted">${agoTxt(p.date)}</div></td>
+     <td class="muted">${(p.lines||[]).length} line${(p.lines||[]).length===1?'':'s'}${supBillParts(p)}</td>
      <td class="n">${fmt(p.total)}</td><td class="n">${fmt(p.paid)}</td><td class="n">${ow>0.005?`<b style="color:${d>60?'var(--chip-rust)':'inherit'}">${fmt(ow)}</b>`:'—'}</td>
-     <td>${ow>0.005?`<span class="tag ${d>60?'bad':d>(s.days||30)?'warn':'ok'}">${d>(s.days||30)?'past terms':'owing'} · ${d}d</span>`:'<span class="tag ok">paid</span>'}</td>
+     <td>${ow>0.005?`<span class="tag ${late&&d>60?'bad':late?'warn':'ok'}">${late?'past its date':'owing'}${nextDue?` · due ${nextDue}`:` · ${d}d`}</span>`:'<span class="tag ok">paid</span>'}</td>
      <td>${can('adjustInvoice')?`<button class="btn ghost sm" data-act="purEdit" data-no="${p.no}">Change</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="9" class="muted">No bills here.</td></tr>'}</table>`;
 }
 function supPayments(s,pay){
@@ -15163,11 +15573,14 @@ function supPayModal(id){
   const s=SU(id), owe=partyBal('S',id);
   const open=S.purchases.filter(p=>p.supplierId===id&&p.paid<p.total).sort((a,b)=>a.date.localeCompare(b.date));
   const m=modal(`<h2>Pay ${s.name}</h2>
-   <div class="muted">Outstanding ${fmt(owe)} across ${open.length} bill${open.length===1?'':'s'} · terms ${s.days} days</div>
+   <div class="muted">Outstanding ${fmt(owe)} across ${open.length} bill${open.length===1?'':'s'} · usually ${s.days} days${supTermList(s).length?', '+supTermList(s).map(t=>t.cat+' '+t.days+'d').join(', '):''}</div>
    <div id="supBills"></div>
    <label style="margin-top:10px">How are you paying?</label>
    <table id="pl"></table>
-   <button class="btn ghost sm" id="addl" style="margin-top:6px">Add another line</button>
+   <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+    <button class="btn ghost sm" id="addl">Add another line</button>
+    <button class="btn ghost sm" id="splitl">Cut it into cheques under ${fmt(+planCfg().chequeMax||100000)}</button></div>
+   <div id="plWarn"></div>
    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px;flex-wrap:wrap">
     <b id="ptot"></b>
     <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button>
@@ -15203,12 +15616,35 @@ function supPayModal(id){
        <td><button class="btn ghost sm" data-rm="${i}">✕</button></td></tr>`).join('');
     const tot=lines.reduce((a,l)=>a+l.amount,0);
     m.querySelector('#ptot').innerHTML=`Paying ${fmt(tot)}${tot>owe+0.005?' <span class="tag warn">more than is owed</span>':tot<owe?` · ${fmt(owe-tot)} left owing`:''}`;
+    drawWarn();
     m.querySelectorAll('[data-k]').forEach(el=>el.onchange=()=>{const l=lines[+el.dataset.i];
       l[el.dataset.k]=(el.dataset.k==='amount'||el.dataset.k==='bank')?+el.value:el.value; draw()});
     m.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.rm,1);draw()});
   };
+  // what these lines would do to the plan, and whether any cheque is over the ceiling
+  const drawWarn=()=>{
+    const box=m.querySelector('#plWarn'); if(!box) return;
+    const cfg=planCfg(), cap=+cfg.chequeMax||100000, f=+cfg.float||0;
+    const big=lines.filter(l=>l.method==='CHEQUE'&&l.amount>cap+0.005);
+    const L=cashLadder(lines.filter(l=>l.amount>0).map(l=>({date:(l.method==='CHEQUE'&&l.date)||D(today),amount:l.amount,what:'This payment'})));
+    const pinch=ladderPinch(L);
+    box.innerHTML=(big.length||pinch)?`<div class="card note" style="margin-top:10px;border-left:3px solid var(--chip-rust)">
+      ${big.length?`<div><b>${big.length} cheque${big.length===1?' is':'s are'} over your ${fmt(cap)} ceiling.</b></div>`:''}
+      ${pinch?`<div><b>${pinch.date}</b> would end on ${fmt(pinch.bal)}, under the ${fmt(f)} you keep back.</div>`:''}
+      <div class="muted" style="margin-top:4px">Cut it into cheques under the ceiling, or push the dates out.</div></div>`
+     :`<div class="muted" style="margin-top:10px">No day in the next ${+cfg.weeks||8} weeks drops under the ${fmt(f)} you keep back.</div>`;
+  };
   drawBills(); draw();
   m.querySelector('#addl').onclick=()=>{lines.push({method:'CHEQUE',bank:1,date:D(today),amount:0});draw()};
+  m.querySelector('#splitl').onclick=()=>{
+    const tot=lines.reduce((a,l)=>a+l.amount,0)||owe;
+    if(!(tot>0)) return toast('Nothing to cut up');
+    const bank=(lines.find(l=>l.method==='CHEQUE')||{}).bank||(S.banks[0]||{}).id||1;
+    const from=(lines.find(l=>l.method==='CHEQUE')||{}).date||D(today);
+    const split=planCheques(tot,from);
+    lines.length=0; split.forEach(x=>lines.push({method:'CHEQUE',bank,date:x.date,amount:x.amount}));
+    draw(); toast(`${split.length} cheque${split.length===1?'':'s'} under ${fmt(+planCfg().chequeMax||100000)}`);
+  };
   m.querySelector('#pok').onclick=()=>{
     const ls=lines.filter(l=>l.amount>0); if(!ls.length)return toast('Nothing to pay');
     const pv=paySupplier({supplierId:id,lines:ls,against:[...sel]});
@@ -16934,6 +17370,9 @@ document.addEventListener('click',e=>{
       if(panel&&S.view==='suppliers'){ document.querySelectorAll('.cu-row').forEach(r=>r.classList.toggle('sel',+r.dataset.id===id)); panel.innerHTML='<div class="cu-loading"><i></i>Opening…</div>'; setTimeout(()=>{ supSel=id; render() },160) }
       else { supSel=id; render() } },
     supNew:()=>supModal(null,a.dataset.q||supQ), supEdit:()=>supModal(+a.dataset.id),
+    supTerms:()=>supTermsModal(+a.dataset.id),
+    purchTab:()=>{ purchTab=a.dataset.t; render(); const mn=document.getElementById('main'); if(mn) mn.scrollTop=0 },
+    planChq:()=>chequePlanModal(+a.dataset.sid,+a.dataset.amt,a.dataset.date,a.dataset.pur||''),
     supRemove:()=>{ const s=SU(+a.dataset.id); if(partyBal('S',s.id)>0.005) return toast('Settle the account first');
       if(!confirm(`Remove ${s.name} from the supplier list? Their bills stay on the books.`)) return; s.active=false; supSel=0; render(); toast(`${s.name} removed`) },
     supPay:()=>supPayModal(+a.dataset.id), newPur:()=>newPurModal(+a.dataset.id),

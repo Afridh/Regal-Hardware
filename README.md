@@ -145,6 +145,41 @@ The dashboard reads in sections, so one side of the shop is not mixed in with th
 its own section, and the sections keep their order. It is per person and follows your login. A section with everything
 switched off is not drawn at all.
 
+## Purchasing & the cash plan
+
+*Suppliers → Purchasing & cash plan.* The shop buys on credit and sells for cash and cheques, so what can safely be
+bought this week is not what is in the bank today — it is what will still be there on the worst day between now and
+when the bills fall due. The page works that out and says so.
+
+**Credit periods.** A supplier has a standing number of days, and may give a different number for different kinds of
+goods — cement at 30 days, paint at 45, on the same lorry. Set both under *Credit periods*, or **Credit periods** on the
+supplier's own card. A bill is then not one debt with one date: it is tracked as **parts**, one per category, each with
+its own due date, shown under the bill on the supplier's *Their bills* tab. What has been paid is spread across the
+parts earliest due first, which is the order money actually settles a supplier account.
+
+**What comes in.** Cheques already taken are known — each is counted on the day it banks, not today. The rest (cash and
+card at the counter, and what customers pay off their accounts) is estimated from the same weekday over the last few
+weeks, then multiplied by a **season figure** set per month under *Season & rules*: 0.7 for a quiet month, 1.3 for a
+busy one, 1 to leave it alone. The off season is a fact about the calendar, not something to discover once takings have
+already fallen.
+
+**What goes out.** Our own cheques not yet cleared, the bill parts still owing on their due dates, the running average
+of expenses, and the wages at month end. A bill already covered by a cheque shows only as the cheque, so nothing is
+counted twice.
+
+**The plan** then runs day by day for eight weeks (yours to change), rolled up by week, with the worst day of each week
+called out. *Safe to commit* is that worst day less the float you keep back. When a day would end under the float the
+page says which day, what lands on it, and what to do about it.
+
+**Cheques.** The shop writes cheques under a ceiling — Rs 100,000 by default. *What falls due* → **Cut into cheques**
+takes anything owed and splits it into cheques under the ceiling, a week apart from the due date, showing what each one
+leaves in the bank that day and whether the pinch is cleared. **Write these cheques** does it for real. The same split
+is on the *Pay supplier* window, which also warns when a cheque is over the ceiling or when the payment would leave a
+day short.
+
+Nothing on this page posts anything by itself. It reads the books, says what the next weeks look like, and offers the
+cheques — the decision stays with the owner.
+
 ## Approvals
 
 Some changes need the owner's say-so before they happen: switching a customer's or supplier's portal on/off, changing a
