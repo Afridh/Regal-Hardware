@@ -2115,6 +2115,15 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-tbl td.x button.ln-no{background:#fff;border-color:#c9433a;color:#c9433a;font-weight:800}
 .till-tbl td.x button.ln-no:hover{background:#fdecea}
 .till-tbl tr.editing td.x{white-space:nowrap}
+/* dragging a line into place */
+.till-tbl th.g{width:22px;padding:6px 4px}
+.till-tbl td.g{width:22px;padding:7px 4px;text-align:center;vertical-align:middle}
+.ln-grip{display:inline-block;color:#B4BFBB;font-size:16px;line-height:1;cursor:grab;user-select:none;padding:2px 3px;border-radius:4px;touch-action:none}
+.ln-grip:hover{color:var(--ink);background:var(--panel)}
+.ln-grip:active{cursor:grabbing}
+.till-tbl tr.drag td{opacity:.35}
+.till-tbl tr.over-up td{box-shadow:inset 0 3px 0 var(--chip-rust)}
+.till-tbl tr.over-down td{box-shadow:inset 0 -3px 0 var(--chip-rust)}
 .till-empty{padding:40px;text-align:center;color:var(--steel)}
 .till-sum{flex:0 0 264px;background:var(--panel);border-left:1px solid var(--line);display:flex;
  flex-direction:column;min-width:0}
@@ -2382,28 +2391,29 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
     cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
   .till-tbl td.x button:active { background: #E2E8E7; }
-  .till-tbl td:nth-child(3) { display: none; } /* warranty */
-  .till-tbl td:nth-child(4) { /* qty */
+  .till-tbl td.g, .till-tbl th.g { display: none; } /* drag handle — no drag on touch */
+  .till-tbl td.w { display: none; } /* warranty */
+  .till-tbl td.q { /* qty */
     grid-area: qty; font-size: 13.5px; font-weight: 700; color: var(--ink);
   }
-  .till-tbl td:nth-child(4):not(:has(input))::before {
+  .till-tbl td.q:not(:has(input))::before {
     content: "Qty: "; font-weight: normal; color: var(--steel); font-size: 11px;
   }
-  .till-tbl td:nth-child(4) input {
+  .till-tbl td.q input {
     width: 70px; height: 36px; font-size: 15px; padding: 0 6px;
   }
-  .till-tbl td:nth-child(5) { display: none; } /* mrp */
-  .till-tbl td:nth-child(6) { /* price */
+  .till-tbl td.mrp { display: none; } /* mrp */
+  .till-tbl td.pr { /* price */
     grid-area: price; font-size: 13px; color: var(--steel);
   }
-  .till-tbl td:nth-child(6):not(:has(input))::before {
+  .till-tbl td.pr:not(:has(input))::before {
     content: "@ "; font-size: 11px;
   }
-  .till-tbl td:nth-child(6) input {
+  .till-tbl td.pr input {
     width: 90px; height: 36px; font-size: 15px; padding: 0 6px;
   }
-  .till-tbl td:nth-child(7) { display: none; } /* dis */
-  .till-tbl td:nth-child(8) { /* amount */
+  .till-tbl td.ds { display: none; } /* dis */
+  .till-tbl td.am { /* amount */
     grid-area: total; font-size: 16px; font-weight: 800;
     color: var(--chip-rust); text-align: right;
   }
@@ -6581,7 +6591,7 @@ const CFG={
    printAnim:true,animMs:1000,creditStamp:true,creditWord:'CREDIT BILL',cashWord:'PAID',sound:false},
  stock:{allowNegative:false},
  print:{agent:'http://localhost:4100'},               // the print helper on the till PC (tools/print-agent); empty = browser print
- pos:{discFromMrp:true,repriceToLast:true},          // a discount typed as a percentage comes off the maker's price
+ pos:{discFromMrp:true,repriceToLast:true,dragLines:true},          // a discount typed as a percentage comes off the maker's price; lines can be dragged into order
 
  msg:{provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',timeout:30,autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,
   waMode:'chat',waPhoneId:'',waToken:'',waWabaId:'',waVerifyToken:'',waAuto:true,waTemplates:{},
@@ -6759,7 +6769,8 @@ function settings(){
     ${fld('bill.returnDays','Return window in days','','number')}${fld('bill.quoteDays','How long a quotation holds good, in days','','number')}
       ${fld('stock.allowNegative','','Let a bill go out when the stock count is short (stock goes negative until the purchase is entered)','check')}
       ${fld('pos.discFromMrp','','A discount typed as a percentage comes off the MRP, not off the counter price','check')}
-      ${fld('pos.repriceToLast','','When a customer is picked, put the bill back to the prices they were charged last time','check')}${fld('bill.blankLines','Ruled blank lines on the A5 bill','Keeps short bills looking full','number')}</div>
+      ${fld('pos.repriceToLast','','When a customer is picked, put the bill back to the prices they were charged last time','check')}
+      ${fld('pos.dragLines','','Let the lines on a bill be dragged up and down by the ⠿ handle to change their order — the bill prints in that order','check')}${fld('bill.blankLines','Ruled blank lines on the A5 bill','Keeps short bills looking full','number')}</div>
     <div class="grid3">
      <div class="f"><label>Bill format offered first</label><select data-set="bill.defaultFormat">
       ${[['r80','80mm till receipt'],['a5','A5 printed bill'],['sms','e-Bill by SMS']].map(o=>`<option value="${o[0]}" ${CFG.bill.defaultFormat===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>
@@ -10441,10 +10452,10 @@ function posClassic(){
   const L=S.pos.lines, c=C(S.pos.customer||1), T=csTotals();
   const u=S.users.find(x=>x.name===S.user.name)||{};
   const nextNo=`${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-${String(((S.seqBy||{})[S.terminal+'-'+(u.uid||'??')]||0)+1).padStart(5,'0')}`;
-  const now=new Date(), sel=P(CS.pid);
+  const now=new Date(), sel=P(CS.pid), drag=CFG.pos.dragLines!==false;
   const owed=c.id===1?0:partyBal('C',c.id);
   const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['F1','Back to item'],['F4','Customer'],['F8','Bill disc.'],
-              ['F10','Pay'],['F6','On account'],['F5','Small · large bill'],['Ctrl+Q','Quotation'],['Ctrl+H','Hold'],['F3','Held bills'],['S in price','Past prices'],['W / R','Wholesale · retail'],['Esc','Clear']];
+              ['F10','Pay'],['F6','On account'],['F5','Small · large bill'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['Ctrl+H','Hold'],['F3','Held bills'],['S in price','Past prices'],['W / R','Wholesale · retail'],['Esc','Clear']];
 
   const sync=(document.getElementById('savedAt')||{}).textContent||'';
   return `<div class="till">
@@ -10488,25 +10499,26 @@ function posClassic(){
    <div class="till-main">
     <div class="till-lines">
      <table class="till-tbl">
-      <thead><tr><th class="c">CODE</th><th>ITEM</th><th>WARRANTY</th><th class="n">QTY</th><th class="n">MRP</th><th class="n">PRICE</th>
+      <thead><tr>${drag?'<th class="g"></th>':''}<th class="c">CODE</th><th>ITEM</th><th>WARRANTY</th><th class="n">QTY</th><th class="n">MRP</th><th class="n">PRICE</th>
        <th class="n">DIS</th><th class="n">AMOUNT</th><th class="x"></th></tr></thead>
       <tbody>
       ${L.length?[...L].map((l,i)=>{const p=P(l.pid), sp=lastSupplier(l.pid);
         const ed=CS.editLine===i;   // Space on a highlighted line: qty and price become boxes in the row itself
         return `<tr class="${i===S.pos.sel?'on':''} ${ed?'editing':''}" data-act="csSel" data-i="${i}">
+         ${drag?`<td class="g"><span class="ln-grip" title="drag to move this line · Ctrl+↑ / Ctrl+↓">⠿</span></td>`:''}
          <td class="c">${p.num||p.code}</td>
          <td class="d"><b>${p.name.toUpperCase()}</b>
           ${(l.serials&&l.serials.length)?`<em>serial ${l.serials.join(', ')}</em>`:''}
           ${l.fromLast?`<span class="tag blue">their last price · ${l.fromLast}</span>`:''}
           ${l.qty>p.stock+1e-9&&CFG.stock.track!==false?'<span class="tag bad">short on the floor</span>':''}
           ${l.belowCost?'<span class="tag bad">under cost</span>':''}</td>
-         <td>${l.warranty&&l.warranty!=='0'?l.warranty:'—'}</td>
-         <td class="n">${ed?`<input class="ln-in" id="lnQty" type="number" step="any" value="${l.qty}">`:fq(l.qty)}</td>
+         <td class="w">${l.warranty&&l.warranty!=='0'?l.warranty:'—'}</td>
+         <td class="n q">${ed?`<input class="ln-in" id="lnQty" type="number" step="any" value="${l.qty}">`:fq(l.qty)}</td>
          <td class="n mrp">${p.mrp?money2(p.mrp):'—'}</td>
-         <td class="n">${ed?`<input class="ln-in" id="lnPrice" type="number" step="any" value="${l.price}">`
+         <td class="n pr">${ed?`<input class="ln-in" id="lnPrice" type="number" step="any" value="${l.price}">`
            :`${money2(l.price)}${l.disc?`<em>net ${money2((l.qty*l.price-l.disc)/l.qty)}</em>`:''}`}</td>
-         <td class="n">${l.disc?(l.discPct?`<b>${l.discPct}%</b><em>${money2(l.disc)}</em>`:money2(l.disc)):'—'}</td>
-         <td class="n"><b id="${ed?'lnAmt':''}">${money2(l.qty*l.price-l.disc)}</b></td>
+         <td class="n ds">${l.disc?(l.discPct?`<b>${l.discPct}%</b><em>${money2(l.disc)}</em>`:money2(l.disc)):'—'}</td>
+         <td class="n am"><b id="${ed?'lnAmt':''}">${money2(l.qty*l.price-l.disc)}</b></td>
          <td class="x">${ed
            ? `<button class="ln-ok" data-act="csLineOk" title="keep the change (Enter)">✓</button>
           <button class="ln-no" data-act="csLineNo" title="leave it as it was (Esc)">✕</button>
@@ -10514,7 +10526,7 @@ function posClassic(){
            : `<button data-act="priceHist" data-id="${l.pid}" title="what it went out at before">₨</button>
           <button data-act="csEdit" data-i="${i}" title="change the quantity or price here">✎</button>
           <button data-act="csDel" data-i="${i}" title="take it off">✕</button>`}</td></tr>`}).join('')
-       :`<tr><td colspan="9" class="till-empty">Scan or key an item code above. The newest line sits at the top.</td></tr>`}
+       :`<tr><td colspan="${drag?10:9}" class="till-empty">Scan or key an item code above. The newest line sits at the top.</td></tr>`}
       </tbody></table>
     </div>
 
@@ -10583,6 +10595,14 @@ function csFind(v){
   // short codes that begin with what was typed sit above name matches
   rest.sort((a,b)=>((b.short||'').toLowerCase().startsWith(q)?1:0)-((a.short||'').toLowerCase().startsWith(q)?1:0));
   return [...exact,...rest];
+}
+/* a line moves to another place on the bill — by drag, or Ctrl+↑ / Ctrl+↓ on the highlighted one */
+function csMoveLine(from,to){
+  const L=S.pos.lines; if(!L[from]) return;
+  to=Math.max(0,Math.min(L.length-1,to)); if(to===from) return;
+  const [m]=L.splice(from,1); L.splice(to,0,m);
+  S.pos.sel=to; CS.editLine=null; CS.focus='list'; render();
+  const el=document.querySelector('.till-lines'); if(el){ el.focus(); const on=el.querySelector('tr.on'); if(on&&on.scrollIntoView) on.scrollIntoView({block:'nearest'}) }
 }
 /* ---- editing a line in place ----
    The ✎ button on a line (or Space on the highlighted one) opens its quantity
@@ -11115,6 +11135,9 @@ function bindClassic(){
     linesEl.tabIndex=0;
     linesEl.onkeydown=e=>{
       const n=S.pos.lines.length; if(!n) return;
+      // Ctrl+↑ / Ctrl+↓ move the highlighted line, the same as dragging it
+      if(e.ctrlKey&&(e.key==='ArrowUp'||e.key==='ArrowDown')&&CFG.pos.dragLines!==false&&S.pos.sel>=0){
+        e.preventDefault(); e.stopPropagation(); csMoveLine(S.pos.sel,S.pos.sel+(e.key==='ArrowDown'?1:-1)); return }
       if(e.key==='ArrowDown'){
         e.preventDefault(); e.stopPropagation();
         S.pos.sel=Math.min(n-1,(S.pos.sel<0?-1:S.pos.sel)+1);
@@ -11165,6 +11188,23 @@ function bindClassic(){
         if(e.key==='ArrowUp'||e.key==='ArrowDown'){ e.preventDefault(); e.stopPropagation(); return }   // finish the line first
       };
       keys(lq,lp,false); keys(lp,lq,true);
+    }
+    // a line can be dragged to another place on the bill by its ⠿ handle (Settings → Bills)
+    if(CFG.pos.dragLines!==false){
+      let from=null;
+      const rows=()=>[...linesEl.querySelectorAll('tr[data-act="csSel"]')];
+      const clear=()=>rows().forEach(r=>r.classList.remove('over-up','over-down'));
+      const half=(tr,e)=>{ const r=tr.getBoundingClientRect(); return e.clientY>r.top+r.height/2 };
+      rows().forEach(tr=>{
+        const g=tr.querySelector('.ln-grip'); if(!g) return;
+        // only a drag that starts on the handle picks the row up — clicks elsewhere still highlight it
+        g.onpointerdown=()=>{ tr.draggable=true };
+        g.onpointerup=()=>{ tr.draggable=false };
+        tr.ondragstart=e=>{ from=+tr.dataset.i; tr.classList.add('drag'); e.dataTransfer.effectAllowed='move'; try{ e.dataTransfer.setData('text/plain',String(from)) }catch(_){ } };
+        tr.ondragend=()=>{ tr.draggable=false; tr.classList.remove('drag'); clear(); from=null };
+        tr.ondragover=e=>{ if(from==null) return; e.preventDefault(); e.dataTransfer.dropEffect='move'; clear(); if(+tr.dataset.i!==from) tr.classList.add(half(tr,e)?'over-down':'over-up') };
+        tr.ondrop=e=>{ if(from==null) return; e.preventDefault(); let to=+tr.dataset.i+(half(tr,e)?1:0); if(to>from) to--; const f=from; from=null; csMoveLine(f,to) };
+      });
     }
   }
   if(q){
