@@ -2594,6 +2594,11 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .hb-c-custtag.walkin{background:var(--line2);color:var(--steel)}
 .hb-c-custtag.named{background:var(--tint-blue);color:var(--chip-blue)}
 .hb-c-name{font-weight:700;font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px}
+.hb-c-ref{font-size:11px;color:var(--steel);margin:-3px 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* the yes/no before a held bill comes back or a saved bill is opened for changing */
+.hb-ask{background:var(--tint-yellow);border-left:4px solid var(--chip-yellow);border-radius:var(--r);padding:8px 12px}
+.hb-ask b{display:block;font-family:Archivo,sans-serif;font-size:16px}
+.hb-ask span{display:block;font-size:12px;color:var(--steel);margin-top:2px}
 .hb-c-bottom{display:flex;align-items:center;justify-content:space-between;font-size:12px}
 .hb-c-meta{color:var(--steel)}
 .hb-c-amt{font-weight:800;font-family:Archivo,sans-serif;color:var(--chip-rust);font-size:13px}
@@ -10814,14 +10819,35 @@ function fastUpdatePosSel(idx){
 }
 
 /* ---- Multi-Bill Hold & Recall system ---- */
-function holdCurrentBill(notify = true){
+/* Hold asks what to call the bill first — the customer's name, a vehicle number, "waiting for cash" —
+   so the right one is easy to find among the held bills. A bill pushed aside by a recall is held
+   without asking and marked as such. */
+function holdAsk(){
+  if(!S.pos.lines.length) return toast('Nothing to hold — bill is empty');
+  const c=C(S.pos.customer||1), T=csTotals();
+  const m=modal(`<h2>Hold this bill</h2>
+   <div class="muted" style="margin-bottom:10px">${S.pos.lines.length} line${S.pos.lines.length===1?'':'s'} · ${fmt(T.net)}${c.id!==1?' · '+c.name:''}</div>
+   <div class="f"><label>Reference — who or what is it for?</label>
+    <input id="hbRef" placeholder="name, vehicle number, 'waiting for cash'…" maxlength="60" value="${c.id!==1?c.name.replace(/"/g,'&quot;'):''}"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" id="hbNo">Keep billing <i class="kbd">Esc</i></button>
+    <button class="btn tape" id="hbYes">Hold it <i class="kbd">Enter</i></button></div>`);
+  const inp=m.querySelector('#hbRef'); inp.focus(); inp.select();
+  const go=()=>{ const ref=inp.value.trim(); if(!ref){ inp.focus(); return toast('Put a reference in so the bill can be found again','warn') } m.remove(); holdCurrentBill(true,ref) };
+  m.querySelector('#hbYes').onclick=go;
+  m.querySelector('#hbNo').onclick=()=>{ m.remove(); const q=$('#csQ'); if(q) q.focus() };
+  inp.onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); go() } if(e.key==='Escape'){ e.preventDefault(); m.remove(); const q=$('#csQ'); if(q) q.focus() } };
+}
+function holdCurrentBill(notify = true, ref){
   if(!S.pos || !S.pos.lines || !S.pos.lines.length){
     if(notify) toast('Nothing to hold — bill is empty');
     return false;
   }
+  if(notify && ref === undefined){ holdAsk(); return false; }   // the reference is asked for first
   const bill = {
     id: 'hb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
     date: new Date().toISOString(),
+    ref: ref || (notify ? '' : 'Pushed aside by a recall'),
     customer: S.pos.customer,
     lines: JSON.parse(JSON.stringify(S.pos.lines)),
     billDisc: S.pos.billDisc || 0,
@@ -10836,8 +10862,31 @@ function holdCurrentBill(notify = true){
   S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill };
   if(typeof CS !== 'undefined') CS = { ...CS, pid: null, q: '', qty: 1, price: 0, disc: 0, focus: '', editLine: null };
   render();
-  if(notify) toast(`Bill held (${S.heldBills.length} on hold) — press F4 to get one back`);
+  if(notify) toast(`Held as "${bill.ref}" (${S.heldBills.length} on hold) — F4 brings it back`,'ok');
   return true;
+}
+
+/* bringing a held bill back is confirmed first — it replaces what is on the till (that gets held) */
+function recallAsk(idx){
+  S.heldBills = S.heldBills || [];
+  const b = S.heldBills[idx]; if(!b) return toast('No held bill selected');
+  closeModals();
+  const c = C(b.customer || 1), n = (b.lines || []).length;
+  const net = Math.max(0, (b.lines || []).reduce((a, l) => a + (l.qty * l.price - (l.disc || 0)), 0) - (b.billDisc || 0));
+  const onTill = S.pos.lines.length;
+  const m = modal(`<h2>Bring this bill back?</h2>
+   <div class="hb-ask"><b>${b.ref ? b.ref : (c.id === 1 ? 'Walk-in' : c.name)}</b><span>${n} line${n === 1 ? '' : 's'} · ${fmt(net)}${c.id !== 1 && b.ref !== c.name ? ' · ' + c.name : ''} · held ${b.date ? new Date(b.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''} by ${b.user || 'staff'}</span></div>
+   ${onTill ? `<div class="muted" style="margin-top:8px">The ${onTill} line${onTill === 1 ? '' : 's'} on the till now will be held first, so nothing is lost.</div>` : ''}
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" id="rcNo">No <i class="kbd">Esc</i></button>
+    <button class="btn tape" id="rcYes">Yes, bring it back <i class="kbd">Enter</i></button></div>`);
+  m.classList.add('hb-ask-wrap');
+  const yes = () => { m.remove(); recallHeldBill(idx) };
+  const no = () => { m.remove(); showHeldBillsModal(idx) };
+  m.querySelector('#rcYes').onclick = yes; m.querySelector('#rcNo').onclick = no;
+  const key = (e) => { if(!document.body.contains(m)){ window.removeEventListener('keydown', key, true); return } e.stopPropagation(); if(e.key === 'Enter'){ e.preventDefault(); yes() } if(e.key === 'Escape'){ e.preventDefault(); no() } };
+  window.addEventListener('keydown', key, true);
+  m.querySelector('#rcYes').focus();
 }
 
 function recallHeldBill(idx){
@@ -10864,7 +10913,7 @@ function recallHeldBill(idx){
   if(typeof CS !== 'undefined') CS = { ...CS, pid: null, q: '', qty: 1, price: 0, disc: 0, focus: '', editLine: null };
   closeModals();
   render();
-  toast('Bill recalled to till');
+  toast(`${bill.ref ? '"' + bill.ref + '"' : 'Bill'} is back on the till`);
   const qEl = document.getElementById('csQ') || document.getElementById('q') || document.getElementById('qq');
   if(qEl){ qEl.focus(); qEl.select && qEl.select(); }
   return true;
@@ -10943,7 +10992,8 @@ function showHeldBillsModal(initIdx = 0){
           <span class="hb-c-time">${formatHeldTime(b.date)}</span>
           <span class="hb-c-custtag ${isNamed ? 'named' : 'walkin'}">${isNamed ? 'Account' : 'Walk-in'}</span>
         </div>
-        <div class="hb-c-name">${(c.name || 'WALK-IN').toUpperCase()}</div>
+        <div class="hb-c-name">${(b.ref || c.name || 'WALK-IN').toUpperCase()}</div>
+        ${b.ref && isNamed && b.ref !== c.name ? `<div class="hb-c-ref">${c.name}</div>` : ''}
         <div class="hb-c-bottom">
           <span class="hb-c-meta">${(b.lines || []).length} item${(b.lines || []).length === 1 ? '' : 's'} · ${fq(qty)} qty</span>
           <span class="hb-c-amt">${fmt(net)}</span>
@@ -10967,6 +11017,7 @@ function showHeldBillsModal(initIdx = 0){
           <div class="hb-p-cmeta">${c.id === 1 ? 'Walk-in customer · Retail prices' : `${c.phone || 'No phone'} · Owes ${fmt(owed)} of ${fmt(c.limit)}`}</div>
         </div>
         <div class="hb-p-meta">
+          ${b.ref ? `<div><span>Reference:</span> <b>${b.ref}</b></div>` : ''}
           <div><span>Held at:</span> <b>${b.date ? new Date(b.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</b></div>
           <div><span>Cashier:</span> <b>${b.user || 'Staff'} · Till ${b.terminal || 'T1'}</b></div>
         </div>
@@ -11067,7 +11118,7 @@ function showHeldBillsModal(initIdx = 0){
 
   const bindPreviewActions = () => {
     const recallBtn = m.querySelector('#hbRecallBtn');
-    if(recallBtn) recallBtn.onclick = () => recallHeldBill(curIdx);
+    if(recallBtn) recallBtn.onclick = () => recallAsk(curIdx);
     const delBtn = m.querySelector('#hbDelBtn');
     if(delBtn) delBtn.onclick = () => discardHeldBill(curIdx);
   };
@@ -11078,14 +11129,14 @@ function showHeldBillsModal(initIdx = 0){
     const recallBtn = e.target.closest('[data-hb-recall]');
     if(recallBtn){
       const idx = +recallBtn.dataset.hbRecall;
-      recallHeldBill(idx);
+      recallAsk(idx);
       return;
     }
     const card = e.target.closest('.hb-card');
     if(!card) return;
     const idx = +card.dataset.hbIdx;
     if(idx === curIdx){
-      recallHeldBill(curIdx);
+      recallAsk(curIdx);
     } else {
       curIdx = idx;
       updateView();
@@ -11111,7 +11162,7 @@ function showHeldBillsModal(initIdx = 0){
       }
     } else if(e.key === 'Enter'){
       e.preventDefault(); e.stopPropagation();
-      recallHeldBill(curIdx);
+      recallAsk(curIdx);
     } else if(e.key === 'Delete'){
       e.preventDefault(); e.stopPropagation();
       discardHeldBill(curIdx);
@@ -12026,12 +12077,27 @@ function editPurchaseModal(no){
 function billToTill(no){
   if(!can('cancelBill')&&!can('adjustInvoice')) return toast('Changing a bill is not open to '+S.user.name);
   const inv=S.sales.find(x=>x.no===no); if(!inv) return;
-  if(S.pos.lines.length&&!confirm('There is a bill on the till already. Drop it and open '+no+' instead?')) return;
-  S.pos={lines:inv.lines.map(l=>({pid:l.pid,qty:l.qty,price:l.price,disc:l.disc||0,warranty:l.warranty,belowCost:l.belowCost})),
-    customer:inv.customerId===1?null:inv.customerId,billDisc:inv.billDisc||0,sel:-1,entry:null,lastBill:S.pos.lastBill,editing:inv.no};
-  if(typeof CS!=='undefined') CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0'};
-  closeModals(); go('pos');
-  toast(`${no} is on the till — ${inv.lines.length} line${inv.lines.length===1?'':'s'}, ${fmt(inv.total)}. Change it and take the payment again.`);
+  const c=C(inv.customerId), onTill=S.pos.lines.length;
+  // asked first, with a reason that goes on the bill's record
+  const m=modal(`<h2>Change bill ${no}?</h2>
+   <div class="hb-ask"><b>${c.name}</b><span>${inv.lines.length} line${inv.lines.length===1?'':'s'} · ${fmt(inv.total)} · ${inv.date} by ${inv.by}${(inv.remade||[]).length?` · already re-made ${inv.remade.length}×`:''}</span></div>
+   <div class="muted" style="margin:8px 0">The bill comes onto the till under the same number. When the payment is taken again the old one is reversed in full and the new one posted — stock, the ledger and what the customer owes all follow.${onTill?` The ${onTill} line${onTill===1?'':'s'} on the till now will be held first.`:''}</div>
+   <div class="f"><label>Why is it being changed?</label><input id="ebWhy" placeholder="wrong quantity, price agreed after, item swapped…" maxlength="80"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" id="ebNo">Leave it <i class="kbd">Esc</i></button>
+    <button class="btn tape" id="ebYes">Open it on the till <i class="kbd">Enter</i></button></div>`);
+  const inp=m.querySelector('#ebWhy'); inp.focus();
+  const go2=()=>{ const why=inp.value.trim(); if(!why){ inp.focus(); return toast('Put the reason in — it is kept with the bill','warn') }
+    m.remove();
+    if(S.pos.lines.length) holdCurrentBill(false);
+    S.pos={lines:inv.lines.map(l=>({pid:l.pid,qty:l.qty,price:l.price,disc:l.disc||0,warranty:l.warranty,belowCost:l.belowCost})),
+      customer:inv.customerId===1?null:inv.customerId,billDisc:inv.billDisc||0,sel:-1,entry:null,lastBill:S.pos.lastBill,editing:inv.no,editWhy:why};
+    if(typeof CS!=='undefined') CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0'};
+    closeModals(); go('pos');
+    toast(`${no} is on the till — ${inv.lines.length} line${inv.lines.length===1?'':'s'}, ${fmt(inv.total)}. Change it and take the payment again.`) };
+  m.querySelector('#ebYes').onclick=go2;
+  m.querySelector('#ebNo').onclick=()=>m.remove();
+  inp.onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); go2() } if(e.key==='Escape'){ e.preventDefault(); m.remove() } };
 }
 function retireBill(no){
   const old=S.sales.find(x=>x.no===no); if(!old) return null;
@@ -12043,13 +12109,13 @@ function retireBill(no){
   const tillMoney=old.pays.filter(p=>p.method!=='CREDIT').reduce((a,p)=>a+p.amount,0);
   const carry=+Math.max(0,old.paid-tillMoney-(old.usedCredit||0)).toFixed(2);
   const idx=S.sales.indexOf(old); S.sales.splice(idx,1);
-  return {old,carry,idx};
+  return {old,carry,idx,why:S.pos.editWhy||''};
 }
 function finishRemake(r,fresh){
   const {old,carry,idx}=r, c=C(fresh.customerId);
   const use=+Math.min(carry,fresh.balance).toFixed(2);
   if(use>0){ fresh.paid=+(fresh.paid+use).toFixed(2); fresh.balance=+(fresh.balance-use).toFixed(2); fresh.type=fresh.balance>0?'CREDIT':fresh.type }
-  fresh.remade=(old.remade||[]).concat([{at:D(today),by:S.user.name,total:old.total,lines:old.lines.length}]);
+  fresh.remade=(old.remade||[]).concat([{at:D(today),by:S.user.name,total:old.total,lines:old.lines.length,why:r.why||''}]);
   fresh.edits=old.edits; fresh.date=old.date; fresh.link=old.link;
   S.sales.pop(); S.sales.splice(idx,0,fresh);          // back where the old one sat
   notify('warn',`${S.user.name} re-made bill ${old.no} — ${fmt(old.total)} to ${fmt(fresh.total)}`,'bills');
@@ -12809,7 +12875,7 @@ function billDetail(inv){
    <div class="bl-foot">
     ${(inv.pays||[]).length?`<div class="bl-pays"><b>How it was paid</b>${inv.pays.map(p=>`<div><span>${p.method}${p.ref?' · '+p.ref:''}${p.bank?' · '+p.bank:''}</span><b>${money2(p.amount)}</b></div>`).join('')}</div>`:''}
     ${(inv.edits||[]).length?`<div class="bl-hist"><b>Corrections</b>${inv.edits.map(e=>`<div class="muted">${e.at||''} ${e.by||''}: ${e.what||e.note||''}</div>`).join('')}</div>`:''}
-    ${(inv.remade||[]).length?`<div class="bl-hist"><b>Re-made</b>${inv.remade.map(e=>`<div class="muted">${e.at} by ${e.by} — was ${fmt(e.total)}, ${e.lines} lines</div>`).join('')}</div>`:''}
+    ${(inv.remade||[]).length?`<div class="bl-hist"><b>Re-made</b>${inv.remade.map(e=>`<div class="muted">${e.at} by ${e.by} — was ${fmt(e.total)}, ${e.lines} lines${e.why?` · <i>${e.why}</i>`:''}</div>`).join('')}</div>`:''}
    </div>`;
 }
 function billsAfter(){
@@ -14961,7 +15027,7 @@ function reportData(){
     const rows=[];
     S.sales.forEach(x=>{
       (x.edits||[]).forEach(e=>rows.push([e.at,'Bill '+x.no,C(x.customerId).name,'corrected',e.why,money(e.from)+' → '+money(e.to),e.by]));
-      (x.remade||[]).forEach(e=>rows.push([e.at,'Bill '+x.no,C(x.customerId).name,'re-made in the till','',money(e.total)+' → '+money(x.total),e.by]));
+      (x.remade||[]).forEach(e=>rows.push([e.at,'Bill '+x.no,C(x.customerId).name,'re-made in the till'+(e.why?' — '+e.why:''),'',money(e.total)+' → '+money(x.total),e.by]));
       (x.adjustments||[]).forEach(a=>rows.push([a.date,'Bill '+x.no,C(x.customerId).name,'amount taken off',a.note||'',money(a.amount),a.by]));
       x.lines.filter(l=>l.belowCost).forEach(l=>rows.push([x.date,'Bill '+x.no,C(x.customerId).name,'sold under cost',P(l.pid).name,money(l.price),l.belowCost]));
       if(x.overLimit) rows.push([x.date,'Bill '+x.no,C(x.customerId).name,'past the credit limit','',money(x.balance),x.by]);
