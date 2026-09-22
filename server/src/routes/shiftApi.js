@@ -27,10 +27,82 @@ export const reportsDir = process.env.VERCEL ? '/tmp/regal-reports' : path.resol
 
 const fail = (res, status, error) => res.status(status).json({ ok: false, error });
 
+/** A shift token, or the till's own sign-in — so the ERP reads the board without a second login. */
 function whoami(req) {
   const t = req.headers['x-shift-token'];
-  if (!t) return null;
-  try { const p = jwt.verify(t, process.env.JWT_SECRET); return p.kind === 'shift' ? p : null; } catch { return null; }
+  if (t) {
+    try { const p = jwt.verify(t, process.env.JWT_SECRET); if (p.kind === 'shift') return p; } catch { /* fall through */ }
+  }
+  const h = req.headers.authorization || '';
+  if (h.startsWith('Bearer ')) {
+    try {
+      const p = jwt.verify(h.slice(7), process.env.JWT_SECRET);
+      if (p.kind === 'regal') {
+        const perms = p.perms || [];
+        const owner = p.role === 'Owner' || perms.includes('payroll') || perms.includes('settings');
+        return { kind: 'shift', user: p.name, role: owner ? 'owner' : 'supervisor', viaTill: true };
+      }
+    } catch { /* not signed in */ }
+  }
+  return null;
+}
+
+/* A supervisor is given the attendance without any money in it — the wages are taken out here,
+   on the server, rather than merely hidden on the page. Same list as shift-api.php. */
+function redactForSupervisor(state) {
+  if (!state || typeof state !== 'object') return state;
+  const s = { ...state };
+  delete s.advances; delete s.adjustments; delete s.ledger; delete s.messages; delete s.auth;
+  if (Array.isArray(s.employees)) s.employees = s.employees.map(e => {
+    const c = { ...e }; ['rate', 'payType', 'otMult', 'pin'].forEach(k => delete c[k]); return c;
+  });
+  if (s.settings) {
+    s.settings = { ...s.settings };
+    ['adminPin', 'smsSecret', 'smsRelayUrl', 'latePerMin', 'workDaysPerMonth', 'ownerPhone'].forEach(k => delete s.settings[k]);
+  }
+  return s;
+}
+
+let photosReady = null;
+function ensurePhotos() {
+  if (!photosReady) photosReady = query(
+    `CREATE TABLE IF NOT EXISTS shift_photos (
+       id varchar(40) PRIMARY KEY, day date NOT NULL, mime varchar(40) NOT NULL,
+       data bytea NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`).catch(e => { photosReady = null; throw e; });
+  return photosReady;
+}
+
+const toMin = (t) => { const [h, m] = String(t).split(':'); return (+h) * 60 + (+m) };
+
+/* The fingerprint terminal's raw punches, made into a day the same way the board's CSV import does:
+   the first read is the arrival, the last the departure, and pairs in between are breaks matched to
+   whichever scheduled break they are nearest. A day someone has edited by hand is left alone. */
+function dayFromPunches(times, state, existing) {
+  const sorted = [...times].sort();
+  const clean = [];
+  for (const t of sorted) {                                   // a second read within two minutes is the same punch
+    if (!clean.length || toMin(t) - toMin(clean[clean.length - 1]) >= 2) clean.push(t);
+  }
+  if (!clean.length) return null;
+  if (existing && existing.src !== 'device') return null;     // hand-written records are never overwritten
+  const rec = { status: 'work', in: clean[0], out: clean.length > 1 ? clean[clean.length - 1] : null,
+                breaks: [], src: 'device', note: 'From the fingerprint machine' };
+  if (clean.length > 3) {
+    const defs = ((state.settings || {}).breaks || []).filter(b => b.start).map(b => ({ id: String(b.id), at: toMin(b.start) }));
+    const mid = clean.slice(1, -1), used = [];
+    for (let i = 0; i + 1 < mid.length; i += 2) {
+      const at = toMin(mid[i]);
+      let id = 'other-' + at, best = 46;
+      for (const d of defs) {
+        if (used.includes(d.id)) continue;
+        const gap = Math.abs(at - d.at);
+        if (gap < best) { best = gap; id = d.id }
+      }
+      if (!id.startsWith('other-')) used.push(id);
+      rec.breaks.push({ id, start: mid[i], end: mid[i + 1] });
+    }
+  }
+  return rec;
 }
 
 async function current() {
@@ -72,6 +144,52 @@ r.all('/shift-api.php', asyncHandler(async (req, res) => {
     return res.json({ ok: true, token, user: u.username, role: u.role });
   }
 
+  /* The fingerprint machine on the shop PC: its own key, so that PC never holds a password.
+     It may post punches and nothing else — it cannot read wages or settings. */
+  if (action === 'punches') {
+    const key = process.env.SHIFT_DEVICE_KEY || '';
+    if (!key || String(body.key || '') !== key) return fail(res, 403, 'Wrong device key');
+    const date = String(body.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail(res, 400, 'Bad date');
+    const events = Array.isArray(body.events) ? body.events : [];
+    if (!events.length) return res.json({ ok: true, written: 0, skipped: 0, unmatched: [] });
+
+    const out = await withTransaction(async client => {
+      const { rows: [cur] } = await client.query(`SELECT rev, data FROM books WHERE key = $1 FOR UPDATE`, [KEY]);
+      const state = cur?.data;
+      if (!state || !Array.isArray(state.employees) || !state.employees.length)
+        return { error: 'Nobody is on the board yet — open Attendance once and add the staff' };
+      state.days = state.days || {};
+
+      const byDevice = {};
+      for (const e of state.employees) {
+        if (e.deviceId) byDevice[String(e.deviceId).trim().toUpperCase()] = e.id;
+        if (e.barcode) byDevice[String(e.barcode).trim().toUpperCase()] = e.id;
+      }
+      const grouped = {}, unmatched = new Set();
+      for (const ev of events) {
+        const id = String(ev.id || '').trim().toUpperCase();
+        let tm = String(ev.time || '').trim();
+        if (/^\d:\d\d$/.test(tm)) tm = '0' + tm;
+        if (!id || !/^([01]\d|2[0-3]):[0-5]\d$/.test(tm)) continue;
+        if (!byDevice[id]) { unmatched.add(id); continue }
+        (grouped[byDevice[id]] = grouped[byDevice[id]] || []).push(tm);
+      }
+      let written = 0, skipped = 0;
+      for (const [empId, times] of Object.entries(grouped)) {
+        const rec = dayFromPunches(times, state, (state.days[date] || {})[empId]);
+        if (!rec) { skipped++; continue }
+        state.days[date] = state.days[date] || {};
+        state.days[date][empId] = rec;
+        written++;
+      }
+      if (written) { state.updatedAt = new Date().toISOString(); await save(client, state, 'fingerprint'); }
+      return { written, skipped, unmatched: [...unmatched] };
+    });
+    if (out.error) return fail(res, 409, out.error);
+    return res.json({ ok: true, ...out });
+  }
+
   const me = whoami(req);
   if (!me) return fail(res, 401, 'Not signed in');
 
@@ -79,7 +197,33 @@ r.all('/shift-api.php', asyncHandler(async (req, res) => {
 
   if (action === 'state' && req.method === 'GET') {
     const { rev, state } = await current();
-    return res.json({ ok: true, rev, role: me.role, state });
+    return res.json({ ok: true, rev, role: me.role, user: me.user, state: me.role === 'owner' ? state : redactForSupervisor(state) });
+  }
+
+  /* A snapshot taken as someone clocked in or out. Kept out of the shared state so the records
+     stay small, and in the database so it works on a hosted server as well as the shop PC. */
+  if (action === 'photo' && req.method === 'POST') {
+    const date = String(body.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail(res, 400, 'Bad date');
+    const m = /^data:(image\/jpeg|image\/png);base64,/.exec(String(body.data || ''));
+    if (!m) return fail(res, 400, 'Expected a JPEG or PNG');
+    const raw = Buffer.from(String(body.data).slice(String(body.data).indexOf(',') + 1), 'base64');
+    if (raw.length < 200) return fail(res, 400, 'That image did not decode');
+    if (raw.length > 400000) return fail(res, 400, 'That image is too big');
+    await ensurePhotos();
+    const id = `${date.slice(0, 7)}-${randomBytes(8).toString('hex')}`;
+    await query(`INSERT INTO shift_photos (id, day, mime, data) VALUES ($1,$2,$3,$4)`, [id, date, m[1], raw]);
+    await query(`DELETE FROM shift_photos WHERE day < current_date - $1::int`, [Number(process.env.SHIFT_PHOTO_DAYS || 120)]);
+    return res.json({ ok: true, id });
+  }
+
+  if (action === 'photo' && req.method === 'GET') {
+    const id = String(req.query.id || '');
+    if (!/^\d{4}-\d{2}-[0-9a-f]{16}$/.test(id)) return fail(res, 400, 'Bad photo id');
+    await ensurePhotos();
+    const { rows: [p] } = await query(`SELECT mime, data FROM shift_photos WHERE id = $1`, [id]);
+    if (!p) return fail(res, 404, 'No such photo');
+    return res.json({ ok: true, data: `data:${p.mime};base64,${p.data.toString('base64')}` });
   }
 
   if (action === 'state' && req.method === 'POST') {

@@ -6612,6 +6612,7 @@ const CFG={
    quietFrom:'21:00',quietTo:'07:00'},
  mail:{host:'',port:587,user:'',pass:'',from:'',cc:''},   // outgoing email — quotations to institutions go from here
  privacy:{on:false,key:'ctrl+shift+x',pct:35,hideCredit:true,minutes:20,dot:true},   // the privacy screen (owner only)
+ shift:{url:'',user:'',autoPull:true},              // where the attendance records live — empty is this server
  tpl:{
   cashSale:{label:'Cash bill',vars:'{shop} {invoice} {total} {link} {customer}',
     text:'{shop}: thank you for your purchase. Bill {invoice} for {total} — {link}'},
@@ -6763,7 +6764,7 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
 function settings(){
-  const tabs=[['screen','My screen'],['done','Finishing a bill'],...(S.user&&(S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['approvals','Approvals'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  const tabs=[['screen','My screen'],['done','Finishing a bill'],...(S.user&&(S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
   const fld=(path,label,hint='',type='text')=>{
     const [g,k]=path.split('.'); const val=g==='web'?S.web.settings[k]:CFG[g][k];
     return `<div class="f"><label>${label}</label>
@@ -6998,10 +6999,26 @@ function settings(){
      <div class="muted" style="margin-bottom:6px">These changes need the owner's approval:</div>
      ${APPROVAL_KINDS.map(([k,l])=>`<label class="chk" style="display:flex;padding:7px 0;border-bottom:1px solid var(--line2)"><input type="checkbox" data-apk="${k}" ${cfg[k]!==false?'checked':''}> ${l}</label>`).join('')}
      <div class="muted" style="margin-top:8px">${apPending().length?`<b>${apPending().length}</b> request${apPending().length===1?'':'s'} waiting now.`:'Nothing waiting.'} <a href="#" data-view="approvals">Open Approvals</a></div>` }
+  if(setTab==='shift'){ const sc=shiftCfg(), sb=S.shift.imported;
+    body=`<div class="card note" style="margin-bottom:10px"><b>One set of punches</b>
+      <div class="muted">The Shift Board the staff use, the fingerprint machine and Attendance &amp; pay here all read and write the same records. Leave the address empty to use this shop's own server; fill it in if the board runs on your web hosting (the <i>shift-api.php</i> address).</div></div>
+     <div class="grid2">${fld('shift.url','Attendance server','Empty = this server (/shift-api.php). Otherwise e.g. https://regalhw.lk/shift/shift-api.php')}
+      ${fld('shift.user','Sign-in name there','Only needed for an outside server — this till signs itself in on its own server')}</div>
+     ${fld('shift.autoPull','','Take the punches down when Attendance is opened, and send punches made here straight up','check')}
+     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button class="btn tape" data-act="shiftSync">Sync now</button>
+      <button class="btn ghost" data-act="shiftStaffUp">Send the roll up</button>
+      <button class="btn ghost" data-act="shiftSignIn">Sign in to an outside server</button>
+      <button class="btn ghost" data-view="payroll">Open Attendance &amp; pay</button></div>
+     <div class="muted" style="margin-top:8px">${sb?`Last taken ${sb.at} by ${sb.by} — ${sb.people} people, ${sb.days} days${sb.from==='server'?', from the server':''}.`:'Nothing taken from the server yet.'}</div>
+     <h2 style="margin-top:16px">The fingerprint machine</h2>
+     <div class="muted">The sync script on the shop PC posts the day's reads to <span class="mono">${shiftUrl()}?action=punches</span> with the device key from the server's <span class="mono">SHIFT_DEVICE_KEY</span> setting — that PC never holds anyone's password, and the key can post punches and nothing else. A reader is matched to a person by the <i>device ID</i> on their card in The roll. A day already written by hand is never overwritten.</div>`;
+  }
   if(!body&&typeof extSettingsBody==='function') body=extSettingsBody(setTab);
   const meta={screen:['Menu, landing page and shortcuts — yours alone','M3 5h18v11H3zM8 20h8M12 16v4'],done:['What happens after a bill is finished','M9 12l2 2 4-4M12 3a9 9 0 110 18 9 9 0 010-18z'],
     shop:['Name, address and phones as printed','M3 9l2-5h14l2 5M4 9h16v11H4zM9 20v-6h6v6'],bill:['Numbering, formats and the return window',ICONS.bills],layout:['Logo, lines and text size on the bill',ICONS.docs],
     cost:['The code that hides cost on labels',ICONS.labels],msg:['The SMS gateway and who gets texts',ICONS.messages],tpl:['Wording of every text that goes out','M4 6h16M4 12h10M4 18h7'],
+    shift:['The Shift Board, the fingerprint machine and pay','M12 7v5l3 2M12 3a9 9 0 110 18 9 9 0 010-18z'],
     approvals:['What needs the owner’s nod',ICONS.approvals],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
   return subnavPage('Settings','How the till behaves for everyone',tabs.map(t=>[t[0],t[1],(meta[t[0]]||['',ICONS.settings])[0],(meta[t[0]]||['',ICONS.settings])[1]]),setTab,'data-settab',body);
 }
@@ -7228,10 +7245,12 @@ function applyShift(data){
     const id=byName[String(se.name||'').toLowerCase().trim()];
     if(id){ map[se.id]=id; matched.push(se.name);
       const e=S.employees.find(x=>x.id===id);
+      e.sbId=se.id;                                   // remembered so punches made here can go back up
       if(se.payType) e.basis=se.payType;
       if(se.rate) e.rate=+se.rate;
       if(se.otMult) e.otMult=+se.otMult;
       if(se.role&&!e.position) e.position=se.role;
+      if(se.deviceId&&!e.deviceId) e.deviceId=se.deviceId;
     } else missed.push(se.name||'(no name)');
   });
   if(!matched.length) return {matched,missed,days:0};
@@ -7243,8 +7262,108 @@ function applyShift(data){
     Object.entries(recs).forEach(([sid,r])=>{ if(map[sid]) S.shift.days[ds][map[sid]]=r });
   });
   const days=Object.keys(data.days||{}).length;
-  S.shift.imported={at:D(today),by:S.user.name,people:matched.length,days};
+  S.shift.imported={at:D(today),by:S.user.name,people:matched.length,days,from:data._from||'paste'};
   return {matched,missed,days};
+}
+/* ---- the attendance server: one set of punches for the board, the fingerprint machine and here ----
+   By default this is the shop's own server (/shift-api.php). A shop still running the board on its
+   web hosting can point at that instead under Settings → Attendance; the two speak the same language.
+   The till's own sign-in is accepted there, so nobody signs in twice. */
+const shiftCfg=()=>({url:'',user:'',autoPull:true,...(CFG.shift||{})});
+const shiftUrl=()=>{ const u=(shiftCfg().url||'').trim(); return u?u.replace(/\/$/,''):'/shift-api.php' };
+const shiftToken=()=>{ try{ return localStorage.getItem('regal_shift_token')||'' }catch(e){ return '' } };
+let shiftRev=0, shiftSyncing=false;
+async function shiftCall(action,body,method){
+  const url=shiftUrl()+'?action='+action;
+  const h={'Content-Type':'application/json'};
+  const t=shiftToken(); if(t) h['X-Shift-Token']=t;
+  if(window.regalBridge&&regalBridge.token()) h['Authorization']='Bearer '+regalBridge.token();
+  const r=await fetch(url,{method:method||(body?'POST':'GET'),headers:h,body:body?JSON.stringify(body):undefined});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||j.ok===false){ const e=new Error(j.error||('The attendance server said '+r.status)); e.status=r.status; e.conflict=j.conflict; throw e }
+  return j;
+}
+/* sign in to an attendance server that does not know this till (an outside one) */
+function shiftLogin(){
+  const c=shiftCfg();
+  const m=modal(`<h2>Sign in to the attendance server</h2>
+   <div class="muted">${shiftUrl()}</div>
+   <div class="grid2" style="margin-top:10px">
+    <div class="f"><label>User</label><input id="slU" value="${c.user||''}"></div>
+    <div class="f"><label>Password</label><input id="slP" type="password"></div></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="slOk">Sign in</button></div>`);
+  m.querySelector('#slOk').onclick=async()=>{
+    const user=m.querySelector('#slU').value.trim(), password=m.querySelector('#slP').value;
+    try{
+      const j=await shiftCall('login',{user,password});
+      try{ localStorage.setItem('regal_shift_token',j.token) }catch(e){}
+      CFG.shift={...shiftCfg(),user};
+      m.remove(); toast(`Signed in to the attendance server as ${j.user} (${j.role})`);
+      shiftPull();
+    }catch(e){ toast(e.message,'bad') }
+  };
+}
+/* bring the board's punches down and work pay out from them */
+async function shiftPull(quiet){
+  if(shiftSyncing) return;
+  shiftSyncing=true;
+  try{
+    const j=await shiftCall('state');
+    shiftRev=j.rev||0;
+    if(!j.state||!(j.state.employees||[]).length){ if(!quiet) toast('There is nobody on the attendance server yet — send your staff list up first','warn'); return }
+    const r=applyShift({...j.state,_from:'server'});
+    if(!r.matched.length){ if(!quiet) toast('None of the names on the attendance server match your staff','warn'); return }
+    render();
+    if(!quiet) toast(`${r.matched.length} people and ${r.days} days from the attendance server${r.missed.length?` · ${r.missed.length} name(s) did not match`:''}`);
+  }catch(e){
+    if(e.status===401){ if(!quiet) shiftLogin(); return }
+    if(!quiet) toast(e.message,'bad');
+  }finally{ shiftSyncing=false }
+}
+/* one day for one person goes back up, so the board and the fingerprint machine see it too */
+async function shiftPushDay(ds,empId){
+  const e=S.employees.find(x=>x.id===empId);
+  if(!e||!e.sbId) return;                      // not matched to anyone on the board yet
+  try{ await shiftCall('day',{date:ds,empId:e.sbId,rec:(S.shift.days[ds]||{})[empId]||null}) }
+  catch(err){ if(err.status!==401) toast('The punch is saved here but did not reach the attendance server: '+err.message,'warn') }
+}
+/* the staff on the roll here become the people on the board (owner only) */
+async function shiftPushStaff(){
+  try{
+    const j=await shiftCall('state');
+    const st=j.state||{v:1,settings:{},employees:[],days:{},holidays:[],sentDays:{}};
+    const have={}; (st.employees||[]).forEach(x=>have[String(x.name||'').toLowerCase().trim()]=x);
+    let added=0;
+    S.employees.forEach(e=>{
+      const k=e.name.toLowerCase().trim();
+      if(have[k]){ e.sbId=have[k].id; return }
+      const se={id:'e'+e.id,name:e.name,role:e.position||'',phone:e.phone||'',payType:e.basis||'monthly',
+                rate:e.rate||0,otMult:e.otMult||shiftSet().otMultiplier,active:e.active!==false,
+                deviceId:e.deviceId||'',barcode:e.card||''};
+      st.employees=st.employees||[]; st.employees.push(se); e.sbId=se.id; added++;
+    });
+    st.settings={...(st.settings||{}),...shiftSet()};
+    await shiftCall('state',{baseRev:j.rev||0,state:st});
+    render(); toast(added?`${added} added to the attendance server`:'The attendance server already has everyone');
+  }catch(e){ if(e.status===401) return shiftLogin(); toast(e.message,'bad') }
+}
+/* signing in at the till is the same person as the one on the roll: if they are linked and have not
+   clocked in today, they are asked once — no walking to the board for it */
+function clockInAsk(userName){
+  const e=S.employees.find(x=>x.active!==false&&x.userName===userName);
+  if(!e) return;
+  const ds=D(today);
+  if(isOff(ds)) return;
+  if(empState(ds,e.id)!=='out') return;         // already in, on a break, or the day is done
+  const m=modal(`<h2>Clock in, ${e.name.split(' ')[0]}?</h2>
+   <div class="muted" style="margin-bottom:10px">Nothing is on the board for you today. It is ${hhmm(nowMin())} — the shift starts at ${shiftSet().startTime}.</div>
+   <div style="display:flex;justify-content:flex-end;gap:8px">
+    <button class="btn ghost" id="ciNo">Not now</button>
+    <button class="btn tape" id="ciYes">Clock me in</button></div>`);
+  m.querySelector('#ciYes').onclick=()=>{ m.remove(); smartPunch(e.id); render() };
+  m.querySelector('#ciNo').onclick=()=>m.remove();
 }
 function importShift(){
   const m=modal(`<h2>Bring in the Shift Board</h2>
@@ -7272,7 +7391,8 @@ const isOff=(ds)=>{const d=new Date(ds);
   return (shiftSet().weeklyOff||[]).includes(d.getDay())||(S.shift.holidays||[]).some(h=>h.date===ds)};
 function recFor(ds,id){ S.shift.days[ds]=S.shift.days[ds]||{}; return S.shift.days[ds][id] }
 function setRec(ds,id,patch){ S.shift.days[ds]=S.shift.days[ds]||{};
-  S.shift.days[ds][id]={...(S.shift.days[ds][id]||{}),...patch,by:S.user.name}; }
+  S.shift.days[ds][id]={...(S.shift.days[ds][id]||{}),...patch,by:S.user.name};
+  if(shiftCfg().autoPull!==false) shiftPushDay(ds,id); }   // and straight on to the shared board
 function empState(ds,id){
   const r=recFor(ds,id);
   if(!r) return 'out';
@@ -7454,6 +7574,12 @@ function employeeModal(id){
     <div class="f"><label>Card or barcode</label><input id="emCard" value="${e?e.card||'':''}" placeholder="what the scanner reads"></div>
     <div class="f"><label>Joined</label><input id="emJoined" type="date" value="${e?e.joined||'':D(today)}"></div>
    </div>
+   <div class="grid2">
+    <div class="f"><label>Fingerprint machine ID</label><input id="emDev" value="${e?e.deviceId||'':''}" placeholder="the number the reader gives them"><div class="muted">How their reads are matched to this person.</div></div>
+    <div class="f"><label>Signs in at the till as</label>
+     <select id="emUser"><option value="">— not a till user —</option>${S.users.map(u=>`<option ${e&&e.userName===u.name?'selected':''}>${u.name}</option>`).join('')}</select>
+     <div class="muted">Links the roll to the sign-in, so their bills and their hours are the same person.</div></div>
+   </div>
    <label class="chk" style="flex:0 0 auto"><input type="checkbox" id="emActive" ${!e||e.active!==false?'checked':''}> still working here</label>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
     <button class="btn ghost" data-act="closeModal">Cancel</button>
@@ -7466,6 +7592,7 @@ function employeeModal(id){
     const data={code:(m.querySelector('#emCode').value||'').trim(),name,position:(m.querySelector('#emRole').value||'').trim(),
       basis:m.querySelector('#emBasis').value,rate,otMult:+m.querySelector('#emOt').value||1.5,
       phone:(m.querySelector('#emPhone').value||'').trim(),card:(m.querySelector('#emCard').value||'').trim(),
+      deviceId:(m.querySelector('#emDev').value||'').trim(),userName:m.querySelector('#emUser').value,
       joined:m.querySelector('#emJoined').value,active:m.querySelector('#emActive').checked};
     if(e) Object.assign(e,data);
     else S.employees.push({id:Math.max(0,...S.employees.map(x=>x.id))+1,advance:0,...data});
@@ -7650,15 +7777,17 @@ function payroll(){
   <div class="card note" style="margin-bottom:12px">
    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
     <div><b>Worked out from the Shift Board punches</b>
-     <div class="muted">${sb?`Brought in ${sb.at} by ${sb.by} — ${sb.people} people, ${sb.days} days.`
-       :'Using the punches recorded here. Paste an export from the Shift Board app to use the real ones.'}
+     <div class="muted">${sb?`${sb.from==='server'?'From the attendance server':'Brought in'} ${sb.at} by ${sb.by} — ${sb.people} people, ${sb.days} days.`
+       :'Using the punches recorded here. Sync to take the real ones from the attendance server.'}
       Standard day ${(stdMin()/60).toFixed(2)} hours, ${shiftSet().breaks.length} paid breaks, overtime past that at × ${shiftSet().otMultiplier}.</div></div>
     <div style="display:flex;gap:6px">
      <input id="payMonth" type="month" value="${mk}" style="max-width:160px">
      ${S.payruns.some(r=>r.mk===mk)?`<span class="tag ok" style="align-self:center">paid ${S.payruns.find(r=>r.mk===mk).date}</span>`
        :`<button class="btn tape" data-act="payRun">Pay ${monthName}</button>`}
-     <button class="btn tape" data-act="boardPull">Take the punches from the board</button>
+     <button class="btn tape" data-act="shiftSync">Sync with the attendance server</button>
      <button class="btn ghost" data-act="boardOpen">Open the Shift Board app</button>
+     <button class="btn ghost" data-act="shiftStaffUp">Send the roll up</button>
+     <button class="btn ghost" data-act="boardPull">Take them off the open board</button>
      <button class="btn ghost" data-act="shiftImport">Paste an export</button></div></div></div>
   <div class="card">
    <div class="tabs">${[['today','Today on the board'],['month','The month'],['day','A day at a time'],['sheet','One person'],['people','The roll'],['rules','Shift rules']]
@@ -9019,6 +9148,8 @@ function go(v){ if(!allowed(v)){toast('That is not open to '+S.user.name);return
   if(supplierTab) S.phoneMode='supplier';
   // there is no button for the phone anywhere else, so it does not follow you there
   if(S.phoneOpen && !(supplierTab||(customerTab&&S.phoneMode==='customer'))) closePhone();
+  // opening Attendance brings the latest punches down by itself — the board and the fingerprint machine feed the same server
+  if(v==='payroll'&&shiftCfg().autoPull!==false) setTimeout(()=>shiftPull(true),60);
   render(); drawPhone(); }
 /* a running note of anything that changed while you were looking elsewhere */
 function notify(kind,text,view,opts){
@@ -15512,6 +15643,7 @@ function shopLock(){
       S.signedOut=false; el.remove(); document.body.classList.remove('locked');
       applyLayout(); go(allowed(pref('start'))?pref('start'):'dashboard');
       toast(`Signed in as ${u.name}`);
+      clockInAsk(u.name);
     };
     el.querySelector('#lockGo').onclick=go2;
     pw.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();go2()} };
@@ -15764,6 +15896,9 @@ document.addEventListener('click',e=>{
       if(q==='all'){repFrom='';repTo=''}
       render()},
     shiftImport:()=>importShift(),
+    shiftSync:()=>shiftPull(),
+    shiftStaffUp:()=>shiftPushStaff(),
+    shiftSignIn:()=>shiftLogin(),
     boardPull:()=>pullBoard(),
     boardWide:()=>{document.body.classList.toggle('boardwide');
       toast(document.body.classList.contains('boardwide')?'Board opened out — press again to bring the menu back':'Menu back')},
