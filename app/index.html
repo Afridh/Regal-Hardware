@@ -1641,6 +1641,27 @@ tr.rowlink button{cursor:pointer}
 .kpi:nth-child(2){animation-delay:.05s}.kpi:nth-child(3){animation-delay:.1s}.kpi:nth-child(4){animation-delay:.15s}.kpi:nth-child(5){animation-delay:.2s}.kpi:nth-child(6){animation-delay:.25s}
 .kpi:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(16,30,34,.10)}
 .cu-head{background:linear-gradient(135deg,var(--tint-yellow) 0%,#fff 60%);margin:-14px -14px 0;padding:16px 14px 14px;border-radius:var(--r) var(--r) 0 0;border-bottom:1px solid var(--line)}
+/* ---- their own outstanding page: the bar at the top, and the violet mark that follows them ---- */
+.ownpage{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:-14px -14px 0;padding:9px 14px;
+ background:var(--panel);border-bottom:1px solid var(--line);border-radius:var(--r) var(--r) 0 0}
+.ownpage.on{background:linear-gradient(135deg,#EFE7FB 0%,#F8F5FE 70%);border-bottom-color:#C9B6EC;box-shadow:inset 4px 0 0 #7A4FC0}
+.ownpage .pb-i{width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+ font-size:13px;font-weight:800;background:#E4E9E8;color:var(--steel);flex:0 0 24px}
+.ownpage.on .pb-i{background:#7A4FC0;color:#fff}
+.ownpage .pb-t{flex:1;min-width:180px}
+.ownpage .pb-t b{display:block;font-family:Archivo,sans-serif;font-size:13.5px}
+.ownpage.on .pb-t b{color:#4B2E86}
+.ownpage .pb-t span{display:block;font-size:11.5px;color:var(--steel);white-space:normal;overflow:visible;text-overflow:clip}
+.ownpage .pb-a{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.ownpage .pb-a .chk{font-size:11.5px;background:none;border:0;padding:0}
+.cu-head.haspage{background:linear-gradient(135deg,#F1EAFC 0%,#fff 60%)}
+.cu-head.haspage .av.big{box-shadow:0 0 0 2px #fff,0 0 0 4px #7A4FC0,0 6px 16px rgba(16,30,34,.18)}
+.tag.page{background:#EFE7FB;color:#4B2E86;border-left-color:#7A4FC0}
+.cu-row.haspage{box-shadow:inset 3px 0 0 #7A4FC0}
+.cu-row.haspage .av{box-shadow:0 0 0 2px #fff,0 0 0 3px #B79BE4}
+.cu-row.haspage:hover{background:#F6F1FD}
+.cu-row.haspage.sel{background:#EFE7FB;border-color:#B79BE4}
+.cu-row.haspage .nm b{color:#4B2E86}
 .cu-head .av.big{box-shadow:0 6px 16px rgba(16,30,34,.18)}
 .cu-tabs button{transition:color .12s,background .12s}
 .cu-tabs button:hover{background:var(--panel)}
@@ -13622,10 +13643,10 @@ function customers(){
      ${[['owed','Balance'],['oldest','Oldest debt'],['recent','Recent'],['name','Name']].map(f=>`<button class="${custSort===f[0]?'on':''}" data-custsort="${f[0]}">${f[1]}</button>`).join('')}</div>
     <div class="muted" style="margin:0 0 4px 4px">${list.length} of ${all.length}</div>
     <div class="cu-rows" id="custRows">${list.map(x=>{const o=partyBal('C',x.id), over=o>x.limit, ag=custAge(x.id), seen=custLastSeen(x.id);
-      return `<div class="cu-row ${x.id===custSel?'sel':''}" data-act="cust" data-id="${x.id}" tabindex="-1">
+      return `<div class="cu-row ${x.id===custSel?'sel':''} ${x.portal?'haspage':''}" data-act="cust" data-id="${x.id}" tabindex="-1">
        ${avatarOf(x)}
        <div class="nm"><b>${x.name}</b><span>${x.phone||'no mobile'}${seen?' · '+agoTxt(seen):''}</span>
-        <div class="cu-tags">${x.level==='wholesale'?'<span class="tag blue">wholesale</span>':''}${over?'<span class="tag bad">over limit</span>':ag.old>0?'<span class="tag bad">60+ days</span>':ag.mid>0?'<span class="tag warn">31–60 days</span>':''}${x.portal?'<span class="tag ok">portal</span>':''}${x.online?'<span class="tag warn">website</span>':''}</div></div>
+        <div class="cu-tags">${x.level==='wholesale'?'<span class="tag blue">wholesale</span>':''}${over?'<span class="tag bad">over limit</span>':ag.old>0?'<span class="tag bad">60+ days</span>':ag.mid>0?'<span class="tag warn">31–60 days</span>':''}${x.portal?'<span class="tag page">own page</span>':''}${x.online?'<span class="tag warn">website</span>':''}</div></div>
        <div class="bal ${over?'over':o>0?'':'clear'}"><b>${o>0?fmt(o):'clear'}</b>${o>0?`<i>${ag.n} bill${ag.n===1?'':'s'} · ${ag.oldest}d</i>`:''}</div></div>`}).join('')
       ||`<div class="muted" style="padding:16px 8px">Nobody matches that.${custQ?` <a href="#" data-act="custNew" data-q="${custQ.replace(/"/g,'&quot;')}">Add “${custQ}”</a>`:''}</div>`}</div>
    </div>
@@ -13643,7 +13664,8 @@ function customerPanel(c){
   const webOrders=S.web.orders.filter(o=>o.cid===c.id);
   const notices=S.notices.filter(n=>n.kind==='customer'&&n.cid===c.id&&n.status==='open');
   const tabs=[['overview','Overview'],['bills','Bills',inv.length],['payments','Payments',rc.length],['statement','Statement'],['details','Details']];
-  return `<div class="cu-head">
+  return `${portalBar('C',c)}
+   <div class="cu-head ${c.portal?'haspage':''}">
     <div class="cu-acts">
      <button class="btn tape" data-act="custPay" data-id="${c.id}">Take a payment <i class="kbd">F7</i></button>
      <button class="btn ghost" data-act="custBill" data-id="${c.id}">New bill <i class="kbd">F6</i></button>
@@ -13655,7 +13677,7 @@ function customerPanel(c){
     <div class="cu-id">${avatarOf(c,true)}
     <div style="min-width:0"><h2>${c.name} <span class="muted" style="font-size:13px;font-weight:400">${c.code}</span></h2>
      <div class="muted" style="margin-top:2px">${c.phone?`<a href="tel:${c.phone}" style="border:0">📞 ${c.phone}</a>`:'<span class="tag warn">no mobile</span>'}${c.address?' · '+c.address:''}</div>
-     <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag ${c.level==='wholesale'?'blue':'ok'}">${c.level} prices</span>${overLimit?'<span class="tag bad">over the limit</span>':''}${ag.old>0?'<span class="tag bad">has 60+ day debt</span>':''}${c.portal?'<span class="tag ok">portal on</span>':''}${c.online?'<span class="tag warn">from the website</span>':''}${first?`<span class="muted" style="font-size:12px;align-self:center">customer since ${first}</span>`:''}</div></div></div></div>
+     <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag ${c.level==='wholesale'?'blue':'ok'}">${c.level} prices</span>${overLimit?'<span class="tag bad">over the limit</span>':''}${ag.old>0?'<span class="tag bad">has 60+ day debt</span>':''}${c.portal?'<span class="tag page">own page on</span>':''}${c.online?'<span class="tag warn">from the website</span>':''}${first?`<span class="muted" style="font-size:12px;align-self:center">customer since ${first}</span>`:''}</div></div></div></div>
 
    <div class="cu-kpis">
     <div class="kpi ${overLimit?'r':owed>0?'y':'g'}"><div class="l">Outstanding</div><div class="v ${fmt(owed).length>14?'small':''}">${fmt(owed)}</div><div class="s">${open.length?`${open.length} unpaid bill${open.length===1?'':'s'} · oldest ${ag.oldest} days`:'nothing owing'}</div>
@@ -13675,6 +13697,27 @@ function customerPanel(c){
    <div class="cu-tabs">${tabs.map(t=>`<button class="${custTab===t[0]?'on':''}" data-custtab="${t[0]}">${t[1]}${t[2]!==undefined?`<i>${t[2]}</i>`:''}</button>`).join('')}</div>
    <div class="cu-tab-body" key="${custTab}">${({overview:()=>custOverview(c,inv,open,rc,webOrders,ag,owed),bills:()=>custBills(c,inv),payments:()=>custPayments(c,rc),statement:()=>custStatement(c),details:()=>custDetails(c)})[custTab]()}</div>`;
 }
+/* ---- "their own outstanding page" — the bar at the top of a customer's or a supplier's card ----
+   It is the first thing on the page because it is the thing that stops the phone calls: on, and they
+   can see what they owe themselves. When it is on, the whole card and their row in the list are
+   marked in the portal colour so you can tell at a glance who is on it. */
+function portalBar(kind,p){
+  const on=kind==='C'?!!p.portal:!!p.enabled;
+  const who=kind==='C'?'They':'The rep';
+  return `<div class="ownpage ${on?'on':''}">
+   <span class="pb-i">${on?'✓':'○'}</span>
+   <div class="pb-t"><b>Their own outstanding page${on?'':' is off'}</b>
+    <span>${on
+      ? `${who} sign${kind==='C'?'':'s'} in with a code texted to ${p.phone||'their mobile'} and see${kind==='C'?'':'s'} every unpaid bill${kind==='S'?(p.showAccounts?', payments and cheques':' — payments and cheques are hidden'):''}. ${p.lastLogin?'Last opened '+p.lastLogin+'.':'Not opened yet.'}`
+      : `Switch it on and ${who.toLowerCase()} can check what ${kind==='C'?'they owe':'we owe them'} without phoning the shop.`}</span></div>
+   <div class="pb-a">
+    ${kind==='S'&&on?`<label class="chk"><input type="checkbox" ${p.showAccounts?'checked':''} data-act="supShow" data-id="${p.id}"> show bills and payments</label>`:''}
+    <button class="btn ${on?'ghost':'tape'} sm" data-act="${kind==='C'?'custPortal':'supEnable'}" data-id="${p.id}">${on?'Switch off':'Switch on'}</button>
+    ${on?(kind==='C'
+      ? `<button class="btn ghost sm" data-act="custLink" data-id="${p.id}">Text the link</button><button class="btn ghost sm" data-act="custOpen" data-id="${p.id}">Open their phone</button>`
+      : `<button class="btn ghost sm" data-act="openPortal" data-id="${p.id}">Open their phone</button>`):''}
+   </div></div>`;
+}
 function custOverview(c,inv,open,rc,webOrders,ag,owed){
   const ev=[
     ...inv.map(s=>({date:s.date,k:'bill',t:`Bill ${s.no}${s.type==='CREDIT'?' on account':''}${s.balance>0?` — ${fmt(s.balance)} still owing`:''}`,a:fmt(s.total),no:s.no,act:'invoice'})),
@@ -13689,13 +13732,6 @@ function custOverview(c,inv,open,rc,webOrders,ag,owed){
      ${open.sort((a,b)=>a.date.localeCompare(b.date)).map(s=>{const d=daysAgo(s.date);return `<tr><td><a href="#" data-act="invoice" data-no="${s.no}">${s.no}</a></td><td>${s.date}</td><td class="n"><b>${fmt(s.balance)}</b>${s.paid?`<div class="muted">of ${fmt(s.total)}</div>`:''}</td><td><span class="tag ${d>60?'bad':d>30?'warn':'ok'}">${d}d</span></td></tr>`}).join('')}
      <tr><td colspan="2"><b>Total</b></td><td class="n"><b>${fmt(owed)}</b></td><td></td></tr></table>`
      :'<div class="card note" style="background:var(--tint-green);border-color:var(--chip-green)"><b>Account clear.</b> <span class="muted">Nothing owing.</span></div>'}
-    <div class="card note" style="margin-top:12px">
-     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
-      <div><b>Their own outstanding page</b><div class="muted">${c.portal
-        ?`On — they sign in with a code texted to ${c.phone||'their mobile'} and see every unpaid bill.${c.lastLogin?' Last opened '+c.lastLogin+'.':' Not opened yet.'}`
-        :'Off — switch it on so they can check what they owe without phoning the shop.'}</div></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn ${c.portal?'ghost':'tape'} sm" data-act="custPortal" data-id="${c.id}">${c.portal?'Switch off':'Switch on'}</button>
-       ${c.portal?`<button class="btn ghost sm" data-act="custLink" data-id="${c.id}">Text the link</button><button class="btn ghost sm" data-act="custOpen" data-id="${c.id}">Open their phone</button>`:''}</div></div></div>
    </div>
    <div><h2 style="font-size:15px">What has been happening</h2>
     ${ev.length?`<div class="tl">${ev.map(e=>`<div class="ev ${e.k}"><span class="d">${e.date}</span><span class="t">${e.act?`<a href="#" data-act="${e.act}" data-no="${e.no}" style="border:0">${e.t}</a>`:e.t}</span><span class="a">${e.a}</span></div>`).join('')}</div>`
@@ -14534,10 +14570,10 @@ function suppliers(){
      ${[['owed','We owe'],['oldest','Oldest bill'],['recent','Recent'],['name','Name']].map(f=>`<button class="${supSort===f[0]?'on':''}" data-supsort="${f[0]}">${f[1]}</button>`).join('')}</div>
     <div class="muted" style="margin:0 0 4px 4px">${list.length} of ${all.length}</div>
     <div class="cu-rows">${list.map(x=>{const o=partyBal('S',x.id), ag=supAge(x.id), seen=supLastSeen(x.id), pc=supChequesOut(x).length, ord=S.orders.filter(od=>od.sid===x.id&&(od.status==='pending'||od.unreadShop)).length;
-      return `<div class="cu-row ${x.id===supSel?'sel':''}" data-act="sup" data-id="${x.id}" tabindex="-1">
+      return `<div class="cu-row ${x.id===supSel?'sel':''} ${x.enabled?'haspage':''}" data-act="sup" data-id="${x.id}" tabindex="-1">
        ${avatarOf(x)}
        <div class="nm"><b>${x.name}</b><span>${x.contact||''}${x.contact&&x.phone?' · ':''}${x.phone||''}${seen?' · '+agoTxt(seen):''}</span>
-        <div class="cu-tags">${ag.old>0?'<span class="tag bad">60+ days</span>':ag.mid>0?'<span class="tag warn">31–60 days</span>':''}${pc?`<span class="tag blue">${pc} cheque${pc===1?'':'s'} out</span>`:''}${ord?`<span class="tag warn">${ord} order${ord===1?'':'s'}</span>`:''}${x.enabled?'<span class="tag ok">portal</span>':''}</div></div>
+        <div class="cu-tags">${ag.old>0?'<span class="tag bad">60+ days</span>':ag.mid>0?'<span class="tag warn">31–60 days</span>':''}${pc?`<span class="tag blue">${pc} cheque${pc===1?'':'s'} out</span>`:''}${ord?`<span class="tag warn">${ord} order${ord===1?'':'s'}</span>`:''}${x.enabled?'<span class="tag page">own page</span>':''}</div></div>
        <div class="bal ${o>0?'over':'clear'}"><b>${o>0?fmt(o):'settled'}</b>${o>0?`<i>${ag.n} bill${ag.n===1?'':'s'} · ${ag.oldest}d</i>`:''}</div></div>`}).join('')
       ||`<div class="muted" style="padding:16px 8px">Nobody matches that.${supQ?` <a href="#" data-act="supNew" data-q="${supQ.replace(/"/g,'&quot;')}">Add “${supQ}”</a>`:''}</div>`}</div>
    </div>
@@ -14555,7 +14591,8 @@ function supplierPanel(s){
   const first=pur.length?pur[pur.length-1].date:null, lastPay=pay[0]||null;
   const orders=S.orders.filter(o=>o.sid===s.id), waiting=orders.filter(o=>o.status==='pending'||o.unreadShop).length;
   const tabs=[['overview','Overview'],['bills','Their bills',pur.length],['payments','Payments',pay.length],['cheques','Cheques',chq.length],['statement','Statement'],['details','Details']];
-  return `<div class="cu-head">
+  return `${portalBar('S',s)}
+   <div class="cu-head ${s.enabled?'haspage':''}">
     <div class="cu-acts">
      <button class="btn tape" data-act="supPay" data-id="${s.id}">Pay supplier <i class="kbd">F7</i></button>
      <button class="btn ghost" data-act="newPur" data-id="${s.id}">New purchase <i class="kbd">F6</i></button>
@@ -14567,7 +14604,7 @@ function supplierPanel(s){
     <div class="cu-id">${avatarOf(s,true)}
     <div style="min-width:0"><h2>${s.name} <span class="muted" style="font-size:13px;font-weight:400">${s.code}</span></h2>
      <div class="muted" style="margin-top:2px">${s.contact?s.contact+' · ':''}${s.phone?`<a href="tel:${s.phone}" style="border:0">📞 ${s.phone}</a>`:'<span class="tag warn">no phone</span>'}${s.address?' · '+s.address:''}</div>
-     <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag blue">terms ${s.days||0} days</span>${ag.old>0?'<span class="tag bad">bills over 60 days</span>':''}${pend.length?`<span class="tag warn">${pend.length} cheque${pend.length===1?'':'s'} out</span>`:''}${s.enabled?'<span class="tag ok">portal on</span>':''}${waiting?`<span class="tag warn">${waiting} order${waiting===1?'':'s'} waiting</span>`:''}${first?`<span class="muted" style="font-size:12px;align-self:center">supplier since ${first}</span>`:''}</div></div></div></div>
+     <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag blue">terms ${s.days||0} days</span>${ag.old>0?'<span class="tag bad">bills over 60 days</span>':''}${pend.length?`<span class="tag warn">${pend.length} cheque${pend.length===1?'':'s'} out</span>`:''}${s.enabled?'<span class="tag page">own page on</span>':''}${waiting?`<span class="tag warn">${waiting} order${waiting===1?'':'s'} waiting</span>`:''}${first?`<span class="muted" style="font-size:12px;align-self:center">supplier since ${first}</span>`:''}</div></div></div></div>
 
    <div class="cu-kpis">
     <div class="kpi ${ag.old>0?'r':owed>0?'y':'g'}"><div class="l">We owe</div><div class="v ${fmt(owed).length>14?'small':''}">${fmt(owed)}</div><div class="s">${open.length?`${open.length} unpaid bill${open.length===1?'':'s'} · oldest ${ag.oldest} days`:'nothing owing'}</div>
@@ -14595,12 +14632,6 @@ function supOverview(s,pur,open,pay,chq,orders,owed){
      ${open.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(p=>{const d=daysAgo(p.date), due=Math.max(0,(s.days||0)-d);return `<tr><td>${p.supInv}<div class="muted">${p.no}</div></td><td>${p.date}</td><td class="n"><b>${fmt(p.total-p.paid)}</b>${p.paid?`<div class="muted">of ${fmt(p.total)}</div>`:''}</td><td><span class="tag ${d>60?'bad':d>(s.days||30)?'warn':'ok'}">${d}d</span>${due?`<div class="muted">${due}d to terms</div>`:''}</td></tr>`}).join('')}
      <tr><td colspan="2"><b>Total</b></td><td class="n"><b>${fmt(owed)}</b></td><td></td></tr></table>`
      :'<div class="card note" style="background:var(--tint-green);border-color:var(--chip-green)"><b>Settled.</b> <span class="muted">Nothing owing to them.</span></div>'}
-    <div class="card note" style="margin-top:12px"><b>Supplier portal</b>
-     <div class="muted">The rep signs in with a code texted to <b>${s.phone||'— no number on file —'}</b>.${s.lastLogin?' Last signed in '+s.lastLogin+'.':' Never signed in.'}${s.pin?' Backup PIN set.':''}</div>
-     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;align-items:center">
-      <label class="chk" style="flex:1;min-width:220px"><input type="checkbox" ${s.showAccounts?'checked':''} data-act="supShow" data-id="${s.id}"> Let them see bills, payments and cheques</label>
-      <label class="chk" style="flex:1;min-width:160px"><input type="checkbox" ${s.enabled?'checked':''} data-act="supEnable" data-id="${s.id}"> Link is active</label>
-      <button class="btn ghost sm" data-act="openPortal" data-id="${s.id}">Open their phone</button></div></div>
    </div>
    <div><h2 style="font-size:15px">What has been happening</h2>
     ${ev.length?`<div class="tl">${ev.map(e=>`<div class="ev ${e.k}"><span class="d">${e.date}</span><span class="t">${e.act?`<a href="#" data-act="${e.act}" data-no="${e.no}" style="border:0">${e.t}</a>`:e.t}</span><span class="a">${e.a}</span></div>`).join('')}</div>`
