@@ -600,6 +600,11 @@ tr.off td{opacity:.55}
 .bc-a{display:flex;gap:5px;flex-wrap:wrap}
 
 /* the board sits over the working area; it is never moved, only shown or hidden */
+/* the price the site sells at, beside the counter price */
+.wp-pin{width:104px;text-align:right;padding:5px 7px}
+.wp-pin::placeholder{color:var(--steel);opacity:.55}
+.wp-own{font-size:11.5px;color:var(--chip-blue);font-weight:600;margin-top:2px}
+
 /* social: the preview beside the post, and the four weeks ahead */
 .socprev{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--panel)}
 .socprev .sp-h{display:flex;gap:9px;align-items:center;padding:10px}
@@ -9939,34 +9944,129 @@ function finishRemake(r,fresh){
    What the website sells, as a wall of cards: photo, price, an on/off switch and a star for
    featured. Photos are dropped straight onto the card; the text lives in a drawer. */
 let wpView='cards', wpLimit=96, wpOpen=null;
+/* ---- the price the site sells at ----
+   The counter and the site do not always want the same number: delivery costs money,
+   the site is shopped against other shops, and a promise made online is harder to take
+   back. So a product can carry a price of its own for the site — p.webPrice — and where
+   it is set, that is what the site shows, what goes in the basket, and what comes back
+   on the order and onto the bill when the order is billed at the counter.
+
+   Nothing is set to begin with: leave it empty and the item sells online at whatever the
+   site's own price list says (Site settings → Prices shown: counter or wholesale), which
+   is how it has always worked.
+
+   One thing worth knowing: an item with a price of its own online does not take the
+   quantity breaks the counter gives. The online price is the online price — otherwise a
+   break set for the counter could undercut a price put up for the site. */
+const webBasePrice=(p)=>+(S.web.settings.level==='wholesale'?p.wholesale:p.retail)||0;
+const webHasOwn=(p)=>+(p&&p.webPrice)>0;
+const webPriceOf=(p)=>webHasOwn(p)?+p.webPrice:webBasePrice(p);
+const webGapPct=(p)=>{ const b=webBasePrice(p); return b>0?((webPriceOf(p)-b)/b*100):0 };
+function webGapTag(p){
+  if(!webHasOwn(p)) return '';
+  const g=webGapPct(p);
+  if(Math.abs(g)<0.05) return '<span class="tag">same as the counter</span>';
+  return `<span class="tag ${g>0?'blue':'warn'}">${g>0?'+':''}${g.toFixed(0)}% ${g>0?'above':'below'} the counter</span>`;
+}
+function setWebPrice(p,v){
+  const n=+v||0;
+  if(n>0){ p.webPrice=+n.toFixed(2) } else { delete p.webPrice }
+}
+
+/* set, shift or clear the online price across everything the filters are showing */
+function webPriceBulk(){
+  if(needsApproval('prodPrice')) return toast('Prices need the owner — open a product and change it there to ask');
+  const list=wpList();
+  if(!list.length) return toast('Nothing on the screen to change');
+  const m=modal(`<h2>The online price for ${list.length} item${list.length===1?'':'s'}</h2>
+   <div class="muted">Everything the search and the filters are showing right now. The counter prices are not touched — only what the site sells at.</div>
+   <div class="f" style="margin-top:10px"><label>What to do</label>
+    <select id="wbHow">
+     <option value="pct">Take the counter price and add a percentage</option>
+     <option value="rs">Take the counter price and add so many rupees</option>
+     <option value="clear">Clear it — sell online at the counter price again</option>
+    </select></div>
+   <div class="grid3" id="wbArgs">
+    <div class="f"><label id="wbAmtL">Add, as a percentage</label><input id="wbAmt" type="number" step="any" value="10"></div>
+    <div class="f"><label>Round to the nearest</label><select id="wbRound">
+      <option value="1">1 rupee</option><option value="5" selected>5 rupees</option><option value="10">10 rupees</option><option value="0">do not round</option></select></div>
+    <div class="f"><label>Only where none is set</label>
+     <label class="chk" style="margin-top:6px"><input type="checkbox" id="wbOnlyEmpty"> leave the ones already priced</label></div></div>
+   <div id="wbPrev" style="margin-top:8px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="wbOk">Apply it</button></div>`);
+  const g=i=>m.querySelector('#'+i);
+  const work=(p)=>{
+    const how=g('wbHow').value, amt=+g('wbAmt').value||0, round=+g('wbRound').value||0, base=webBasePrice(p);
+    if(how==='clear') return 0;
+    let v=how==='pct'?base*(1+amt/100):base+amt;
+    if(round>0) v=Math.round(v/round)*round;
+    return Math.max(0,+v.toFixed(2));
+  };
+  const targets=()=>g('wbOnlyEmpty').checked?list.filter(p=>!webHasOwn(p)):list;
+  const draw=()=>{
+    const how=g('wbHow').value;
+    g('wbArgs').style.display=how==='clear'?'none':'';
+    g('wbAmtL').textContent=how==='pct'?'Add, as a percentage':'Add, in rupees';
+    const t=targets(), sample=t.slice(0,4);
+    m.querySelector('#wbPrev').innerHTML=`<table><tr><th>Product</th><th class="n">Counter</th><th class="n">Online now</th><th class="n">Online after</th></tr>
+      ${sample.map(p=>`<tr><td>${p.name}</td><td class="n">${fmt(webBasePrice(p))}</td>
+        <td class="n">${webHasOwn(p)?fmt(+p.webPrice):'<span class="muted">same</span>'}</td>
+        <td class="n"><b>${how==='clear'?'<span class="muted">same as the counter</span>':fmt(work(p))}</b></td></tr>`).join('')
+       ||'<tr><td colspan="4" class="muted">Nothing left after that tick.</td></tr>'}
+      ${t.length>sample.length?`<tr><td colspan="4" class="muted">…and ${t.length-sample.length} more</td></tr>`:''}</table>`;
+  };
+  ['wbHow','wbAmt','wbRound','wbOnlyEmpty'].forEach(i=>{ const el=g(i); el.oninput=draw; el.onchange=draw });
+  g('wbOk').onclick=()=>{
+    const t=targets(), how=g('wbHow').value;
+    if(!t.length) return toast('Nothing to change');
+    if(!confirm(how==='clear'
+      ? `Clear the online price on ${t.length} item${t.length===1?'':'s'}? They go back to selling online at the counter price.`
+      : `Set the online price on ${t.length} item${t.length===1?'':'s'}? The counter prices are not touched.`)) return;
+    t.forEach(p=>setWebPrice(p,how==='clear'?0:work(p)));
+    m.remove(); render();
+    toast(how==='clear'?`${t.length} back to the counter price online`:`${t.length} priced for the site`);
+  };
+  draw();
+}
+
 function wpList(){ const q=siteQ.toLowerCase().trim();
   const list=S.products.filter(p=>(siteCat==='all'||p.cat===siteCat)&&(!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||(p.short||'').toLowerCase().startsWith(q)||String(p.num).includes(q)))
-    .filter(p=>siteShow==='all'||(siteShow==='online'?webListed(p):siteShow==='offline'?!webListed(p):siteShow==='photo'?hasPic('p:'+p.id):siteShow==='nophoto'?!hasPic('p:'+p.id):p.featured===true));
+    .filter(p=>siteShow==='all'||(siteShow==='online'?webListed(p):siteShow==='offline'?!webListed(p):siteShow==='ownprice'?webHasOwn(p):siteShow==='photo'?hasPic('p:'+p.id):siteShow==='nophoto'?!hasPic('p:'+p.id):p.featured===true));
   if(q) list.sort((a,b)=>((a.short||'').toLowerCase()===q||a.name.toLowerCase().startsWith(q)?0:1)-((b.short||'').toLowerCase()===q||b.name.toLowerCase().startsWith(q)?0:1));
   return list }
 function webProducts(){
   loadShopMedia();
   const w=S.web.settings, online=S.products.filter(webListed), feat=S.products.filter(p=>p.featured===true), withPic=shopMedia?[...shopMedia].filter(k=>k.startsWith('p:')).length:0;
   const cats=[...new Set(S.products.map(p=>p.cat))].sort(); const catN={}; online.forEach(p=>catN[p.cat]=(catN[p.cat]||0)+1);
-  const list=wpList(), shown=list.slice(0,wpLimit), price=p=>w.level==='wholesale'?p.wholesale:p.retail;
+  const list=wpList(), shown=list.slice(0,wpLimit), price=webPriceOf;
+  const ownN=S.products.filter(p=>webListed(p)&&webHasOwn(p)).length;
   const card=p=>{ const on=webListed(p), pic=hasPic('p:'+p.id); return `<div class="wp-card ${on?'':'off'}" data-id="${p.id}">
     <div class="wp-pic ${pic?'':'empty'}" data-act="wpPhoto" data-id="${p.id}" title="Click to add or change the photo">${pic?`<img src="/api/shop/media/p:${p.id}?v=${shopMediaAt}" loading="lazy">`:`<span>${p.name.split(/\s+/).filter(x=>/^[A-Za-z]/.test(x)).slice(0,2).map(x=>x[0]).join('').toUpperCase()||'RH'}</span><small>add photo</small>`}
      ${p.mrp>price(p)?`<i class="wp-disc">-${Math.round((p.mrp-price(p))/p.mrp*100)}%</i>`:''}
      <button class="wp-star ${p.featured?'on':''}" data-act="siteFeat" data-id="${p.id}" title="Featured — shown first on the home page">★</button></div>
     <div class="wp-body"><b title="${p.name.replace(/"/g,'&quot;')}">${p.name}</b><span class="muted">${p.code}${p.short?' · '+p.short:''} · ${p.cat}</span>
      <div class="wp-price"><b>${fmt(price(p))}</b>${p.mrp>price(p)?`<s>${money2(p.mrp)}</s>`:''}${CFG.stock&&CFG.stock.track===false?'':`<em>${fq(p.stock)} ${p.unit}</em>`}</div>
+     ${webHasOwn(p)?`<div class="wp-own">its own price online · counter ${fmt(webBasePrice(p))}</div>`:''}
      <div class="wp-foot"><label class="switch" title="${on?'On the site':'Off the site'}"><input type="checkbox" data-siteon="${p.id}" ${on?'checked':''}><i></i><span>${on?'Online':'Off'}</span></label>
       <button class="btn ghost sm" data-act="wpEdit" data-id="${p.id}">${p.desc?'Text ✎':'Add text'}</button></div></div></div>` };
   const row=p=>{ const on=webListed(p), pic=hasPic('p:'+p.id); return `<tr class="${on?'':'dim'}"><td><label class="switch"><input type="checkbox" data-siteon="${p.id}" ${on?'checked':''}><i></i></label></td>
     <td><button class="wp-star sm ${p.featured?'on':''}" data-act="siteFeat" data-id="${p.id}">★</button></td>
     <td><div class="mediapic ${pic?'':'empty'}" style="width:40px;height:40px;cursor:pointer" data-act="wpPhoto" data-id="${p.id}">${pic?`<img src="/api/shop/media/p:${p.id}?v=${shopMediaAt}" loading="lazy">`:''}</div></td>
-    <td><b>${p.name}</b><div class="muted">${p.code}${p.short?' · '+p.short:''}${p.desc?' · ✎':''}</div></td><td>${p.cat}</td><td class="n">${fmt(price(p))}</td>
+    <td><b>${p.name}</b><div class="muted">${p.code}${p.short?' · '+p.short:''}${p.desc?' · ✎':''}</div></td><td>${p.cat}</td>
+    <td class="n muted">${fmt(webBasePrice(p))}</td>
+    <td class="n">${needsApproval('prodPrice')
+      ? `<span class="${webHasOwn(p)?'':'muted'}">${webHasOwn(p)?fmt(+p.webPrice):'same'}</span>`
+      : `<input class="wp-pin" type="number" step="any" data-webprice="${p.id}" value="${webHasOwn(p)?+p.webPrice:''}" placeholder="${money2(webBasePrice(p))}" title="Leave it empty to sell online at the counter price">`}</td>
+    <td>${webHasOwn(p)?webGapTag(p):'<span class="muted">same as the counter</span>'}</td>
     <td><button class="btn ghost sm" data-act="wpEdit" data-id="${p.id}">Text</button></td></tr>` };
   return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><span>Online products <span class="muted" style="font-size:13px;font-weight:400;margin-left:6px">what ${w.domain} sells</span></span>
     <span style="display:flex;gap:6px"><a class="btn ghost" href="/" target="_blank">See the site</a><button class="btn ghost" data-view="site">Site settings</button></span></h1>
    <div class="wp-stats">
     <div class="card"><span>Online</span><b>${online.length}</b><small>of ${S.products.length} products</small></div>
     <div class="card"><span>Featured</span><b>${feat.length}</b><small>shown first on the home page</small></div>
+    <div class="card"><span>Priced for the site</span><b>${ownN}</b><small>${ownN?'the rest sell at the counter price':'every online item sells at the counter price'}</small></div>
     <div class="card"><span>With a photo</span><b>${withPic}</b><small>${online.length-Math.min(withPic,online.length)>0?`${online.length-Math.min(withPic,online.length)} online without one`:'every online item has one'}</small></div>
     <div class="card wp-mode"><span>How items go online</span>
      <label class="chk"><input type="radio" name="listMode" data-set="web.listMode" value="all" ${w.listMode!=='selected'?'checked':''}> Everything, unless switched off</label>
@@ -9976,14 +10076,17 @@ function webProducts(){
     <div class="wp-bar">
      <div class="search" style="margin:0;flex:1;min-width:220px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="siteQ" placeholder="Search — name, code, short code…" value="${siteQ.replace(/"/g,'&quot;')}" autocomplete="off"></div>
      <select id="siteCat" style="max-width:240px"><option value="all">Every category</option>${cats.map(c=>`<option value="${c.replace(/"/g,'&quot;')}" ${siteCat===c?'selected':''}>${c}${catN[c]?' ('+catN[c]+' online)':''}</option>`).join('')}</select>
-     <div class="chips" style="margin:0">${[['all','All'],['online','Online'],['offline','Off'],['featured','Featured'],['photo','With photo'],['nophoto','No photo']].map(x=>`<button class="${siteShow===x[0]?'on':''}" data-act="siteShow" data-v="${x[0]}">${x[1]}</button>`).join('')}</div>
+     <div class="chips" style="margin:0">${[['all','All'],['online','Online'],['offline','Off'],['featured','Featured'],['ownprice','Own price'],['photo','With photo'],['nophoto','No photo']].map(x=>`<button class="${siteShow===x[0]?'on':''}" data-act="siteShow" data-v="${x[0]}">${x[1]}</button>`).join('')}</div>
      <div class="col-btns"><button class="${wpView==='cards'?'on':''}" data-act="wpView" data-v="cards" title="Cards">▦</button><button class="${wpView==='list'?'on':''}" data-act="wpView" data-v="list" title="List">☰</button></div>
     </div>
     <div class="wp-bulk"><span class="muted">${list.length} item${list.length===1?'':'s'}${shown.length<list.length?` · showing ${shown.length}`:''}</span>
      <button class="btn ghost sm" data-act="siteBulk" data-what="on">Put these online</button><button class="btn ghost sm" data-act="siteBulk" data-what="off">Take these off</button>
-     <button class="btn ghost sm" data-act="siteBulk" data-what="feat">Feature</button><button class="btn ghost sm" data-act="siteBulk" data-what="unfeat">Un-feature</button></div>
+     <button class="btn ghost sm" data-act="siteBulk" data-what="feat">Feature</button><button class="btn ghost sm" data-act="siteBulk" data-what="unfeat">Un-feature</button>
+     ${needsApproval('prodPrice')
+       ? '<span class="muted">Prices need the owner — open a product and change it there to ask.</span>'
+       : '<button class="btn tape sm" data-act="webPriceBulk">Set the online price</button>'}</div>
     ${wpView==='cards'?`<div class="wp-grid">${shown.map(card).join('')||'<div class="muted" style="padding:20px">Nothing matches.</div>'}</div>`
-     :`<table class="tbl"><tr><th>Online</th><th>★</th><th>Photo</th><th>Product</th><th>Category</th><th class="n">Price</th><th></th></tr>${shown.map(row).join('')||'<tr><td colspan="7" class="muted">Nothing matches.</td></tr>'}</table>`}
+     :`<table class="tbl"><tr><th>Online</th><th>★</th><th>Photo</th><th>Product</th><th>Category</th><th class="n">At the counter</th><th class="n">Online price</th><th></th><th></th></tr>${shown.map(row).join('')||'<tr><td colspan="9" class="muted">Nothing matches.</td></tr>'}</table>`}
     ${shown.length<list.length?`<div style="margin-top:10px"><button class="btn ghost sm" data-act="wpMore">Show ${Math.min(96,list.length-shown.length)} more</button></div>`:''}
    </div>
    <input type="file" id="wpFile" accept="image/*" style="display:none">
@@ -9995,12 +10098,24 @@ function wpDrawer(p){ if(!p) return ''; const pic=hasPic('p:'+p.id);
    <div style="display:flex;gap:6px;margin:8px 0"><button class="btn ghost sm" data-act="wpPhoto" data-id="${p.id}">${pic?'Change photo':'Add photo'}</button>${pic?`<button class="btn ghost sm" data-act="wpPhotoRm" data-id="${p.id}">Remove photo</button>`:''}</div>
    <div class="f"><label>Description for customers</label><textarea id="wpDesc" rows="7" style="width:100%;border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;font:inherit">${(p.desc||'').replace(/</g,'&lt;')}</textarea><div class="muted">Sizes, brand, what it is for. Shown under the product on the site.</div></div>
    <div class="grid2"><label class="chk"><input type="checkbox" data-siteon="${p.id}" ${webListed(p)?'checked':''}> On the site</label><label class="chk"><input type="checkbox" id="wpFeat" ${p.featured?'checked':''}> Featured</label></div>
-   <div class="muted" style="margin:6px 0 10px">${p.code} · ${p.cat} · ${fmt(S.web.settings.level==='wholesale'?p.wholesale:p.retail)} per ${p.unit}</div>
+   <div class="f" style="margin-top:8px"><label>Price on the site</label>
+    <input id="wpPrice" type="number" step="any" value="${webHasOwn(p)?+p.webPrice:''}" placeholder="${money2(webBasePrice(p))} — the counter price" ${needsApproval('prodPrice')?'disabled':''}>
+    <div class="muted">Leave it empty and the site sells it at the counter price. Put a number in and that is what the site charges, what the basket adds up, and what comes onto the bill when the order is billed here.${webHasOwn(p)?' '+webGapTag(p).replace(/<[^>]+>/g,''):''}</div></div>
+   <div class="muted" style="margin:6px 0 10px">${p.code} · ${p.cat} · ${fmt(webBasePrice(p))} per ${p.unit} on the site${webHasOwn(p)?` · ${fmt(p.retail)} at the counter`:''}</div>
    <div style="display:flex;gap:6px"><button class="btn tape" data-act="wpSave" data-id="${p.id}">Save</button><button class="btn ghost" data-act="editProd" data-id="${p.id}">Full product form</button></div></div>` }
 function webProductsAfter(){
   const sq=$('#siteQ'); if(sq){ sq.oninput=()=>{ siteQ=sq.value; wpLimit=96; const pos=sq.selectionStart; render(); const q2=$('#siteQ'); q2.focus(); q2.setSelectionRange(pos,pos) } }
   const sc=$('#siteCat'); if(sc) sc.onchange=()=>{ siteCat=sc.value; wpLimit=96; render() };
   document.querySelectorAll('[data-siteon]').forEach(el=>el.onchange=()=>{ const p=P(+el.dataset.siteon); p.web=el.checked; render() });
+  // the online price, keyed straight into the list
+  document.querySelectorAll('[data-webprice]').forEach(el=>el.onchange=()=>{
+    const p=P(+el.dataset.webprice); if(!p) return;
+    if(needsApproval('prodPrice')){ render(); return toast('Prices need the owner — open the product and change it there to ask') }
+    const was=webHasOwn(p);
+    setWebPrice(p,el.value);
+    render();
+    toast(webHasOwn(p)?`${p.name} — ${fmt(+p.webPrice)} on the site`:(was?`${p.name} back to the counter price online`:'Left at the counter price'));
+  });
   const f=$('#wpFile'); if(f) f.onchange=()=>{ const file=f.files[0], pid=+f.dataset.pid; if(!file||!pid) return;
     shopMediaUpload('p:'+pid,file,900).then(()=>{ shopMediaAt=Date.now(); toast('Photo is on the site'); render() }).catch(e=>toast('Photo not saved: '+e.message)); f.value='' };
 }
@@ -11854,6 +11969,7 @@ function productModal(pid){
     ${f('pcost','Cost',p?p.cost:'','number','What you pay for it')}
     ${f('pretail','Discounted price',p?p.retail:'','number','What you actually charge over the counter')}
     ${f('pwhole','Wholesale price',p?p.wholesale:'','number','For customers on wholesale terms')}
+    ${f('pweb','Price on the site',p&&+p.webPrice>0?p.webPrice:'','number','Leave it empty to sell online at the counter price')}
    </div>
    <div id="pmarg" class="muted"></div>
    <h2 style="margin-top:12px;font-size:14px">Price breaks</h2>
@@ -11905,18 +12021,25 @@ function productModal(pid){
     const data={code,name,cat:m.querySelector('#pcat').value,unit:m.querySelector('#punit').value,
       barcode:m.querySelector('#pbar').value.trim(),mrp:g('pmrp')||g('pretail'),cost:g('pcost'),
       retail:g('pretail'),wholesale:g('pwhole')||g('pretail'),min:g('pmin'),short,num:p?p.num:nextNum(),
+      webPrice:g('pweb')>0?+(+g('pweb')).toFixed(2):0,              // nought means: sell online at the counter price
       warrantyMonths:g('pwar'),serialised:m.querySelector('#pser').checked,desc:m.querySelector('#pdesc').value.trim(),
       tiers:tiers.filter(t=>+t.min>0&&+t.price>0).map(t=>({min:+t.min,price:+t.price,label:(t.label||'').trim()}))};
     const photo=m.querySelector('#pphotoFile').files[0];
     const sendPhoto=pid=>{ if(photo) shopMediaUpload('p:'+pid,photo,900).then(()=>toast('Photo is on the site')).catch(e=>toast('Photo not saved: '+e.message)) };
     if(p){
       sendPhoto(p.id);
-      const priceKeys=['mrp','cost','retail','wholesale','tiers'];
-      const priceChanged=priceKeys.some(k=>JSON.stringify(p[k]??null)!==JSON.stringify(data[k]??null));
+      const priceKeys=['mrp','cost','retail','wholesale','webPrice','tiers'];
+      // a product that has never had a price for the site holds no webPrice at all; without
+      // this it would read as a change the moment the form was opened
+      const same=(k,v)=>k==='tiers'?JSON.stringify(v??null):String(+(v||0));
+      const priceChanged=priceKeys.some(k=>same(k,p[k])!==same(k,data[k]));
       if(priceChanged&&needsApproval('prodPrice')){
         const rest={...data}; const prices={}; priceKeys.forEach(k=>{prices[k]=data[k]; delete rest[k]});
         Object.assign(p,rest);
-        return requestApproval('prodPrice',`Change prices of ${p.name}: MRP ${money2(p.mrp)} → ${money2(prices.mrp)}, cost ${money2(p.cost)} → ${money2(prices.cost)}, price ${money2(p.retail)} → ${money2(prices.retail)}, wholesale ${money2(p.wholesale)} → ${money2(prices.wholesale)}`,`${p.code} · ${fq(p.stock)} ${p.unit} in stock`,{pid:p.id,prices}) }
+        const webWas=+(p.webPrice||0), webNow=+(prices.webPrice||0);
+        const webPart=webWas===webNow?'' :
+          `, on the site ${webWas>0?money2(webWas):'counter price'} → ${webNow>0?money2(webNow):'counter price'}`;
+        return requestApproval('prodPrice',`Change prices of ${p.name}: MRP ${money2(p.mrp)} → ${money2(prices.mrp)}, cost ${money2(p.cost)} → ${money2(prices.cost)}, price ${money2(p.retail)} → ${money2(prices.retail)}, wholesale ${money2(p.wholesale)} → ${money2(prices.wholesale)}${webPart}`,`${p.code} · ${fq(p.stock)} ${p.unit} in stock`,{pid:p.id,prices}) }
       Object.assign(p,data); m.remove(); render(); toast(`${p.name} updated`) }
     else{ const np={id:Math.max(0,...S.products.map(x=>x.id))+1,stock:0,...data}; S.products.push(np); sendPhoto(np.id);
       const op=g('popen'); if(op>0){ move(np.id,op,'OPENING','New item',np.cost);
@@ -14575,6 +14698,7 @@ document.addEventListener('click',e=>{
     webSet:()=>webSet(a.dataset.no,a.dataset.s),
     webReject:()=>{const why=prompt('Why can it not be done?')||''; webSet(a.dataset.no,'rejected',why)},
     webBill:()=>webBill(a.dataset.no),
+    webPriceBulk:()=>webPriceBulk(),
     webOpenSite:()=>go('site'),
     webSettings:()=>{go('site'); siteTab='overview'; render()},
     navSignOut:()=>{ const b=document.getElementById('logoutBtn'); if(b) b.click() },
@@ -14604,7 +14728,11 @@ document.addEventListener('click',e=>{
     wpPhotoRm:()=>shopMediaDelete('p:'+a.dataset.id).then(()=>{ shopMediaAt=Date.now(); toast('Photo taken off the site'); render() }).catch(e=>toast(e.message)),
     wpEdit:()=>{ wpOpen=+a.dataset.id; render(); const t=$('#wpDesc'); if(t) t.focus() },
     wpClose:()=>{ wpOpen=null; render() },
-    wpSave:()=>{ const p=P(+a.dataset.id); if(!p) return; p.desc=($('#wpDesc')||{}).value.trim(); p.featured=!!($('#wpFeat')||{}).checked; wpOpen=null; render(); toast(`${p.name} saved`) },
+    wpSave:()=>{ const p=P(+a.dataset.id); if(!p) return;
+      p.desc=($('#wpDesc')||{}).value.trim(); p.featured=!!($('#wpFeat')||{}).checked;
+      const pf=$('#wpPrice'); if(pf&&!needsApproval('prodPrice')) setWebPrice(p,pf.value);
+      wpOpen=null; render();
+      toast(`${p.name} saved${webHasOwn(p)?` · ${fmt(+p.webPrice)} on the site`:''}`) },
     siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
     siteShow:()=>{siteShow=a.dataset.v;render()},
     siteFeat:()=>{const p=P(+a.dataset.id); p.featured=!p.featured; render()},

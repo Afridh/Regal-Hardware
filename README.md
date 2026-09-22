@@ -72,7 +72,7 @@ Attendance & pay is part of the till and has no sign-in of its own — see *Atte
 | Several tills | `regal-bridge.js` replaces `localStorage` with the API. Every change saves itself (400 ms after the last one, and only when the shared books actually changed), polls `/api/books/regal/rev` every 12 s and pulls newer books — never while a bill is being keyed or a dialog is open. A save against a stale revision gets **409** and the newer copy is loaded. Per-till state (signed-in user, the bill on the screen, the till's location, which page is open) never enters the shared books. |
 | Bill numbers | unchanged from Regal: `INVM-<till>-<cashier id>-<running number>`, so two tills never issue the same number. |
 | SMS | `POST /api/sms/send` — the server makes the smslenz.lk call with the settings from Settings → Messaging, so the browser never talks to the provider. |
-| Shift Board | `/shift-api.php?action=…` implemented in Node (`shift_users` table, state in `books` key `shiftboard`, day sheets published under `/reports/`). The board inside the frame points itself at the parent's server. |
+| Attendance | `/shift-api.php?action=…` implemented in Node (`shift_users` table, state in `books` key `shiftboard`, day sheets published under `/reports/`). *Attendance & pay* in the till reads and writes it with the till's own sign-in; the Shift Board on the staff phones writes the same records. |
 | Offline | The browser keeps a local copy; if the server is unreachable the till keeps working and the header says so. |
 
 ## Bringing the old SePOS data across
@@ -167,6 +167,31 @@ up by itself. *Paste an export* is still there for a board that cannot be reache
 **Who sees what.** Payroll, Payments and Trends need the *payroll* right; without it the page is Today, Attendance,
 Staff and Rules, and no rate is shown anywhere. A **Salesman** gets a page of their own — where they are, when they
 came in, hours on the floor, and their own month — with nobody else on it.
+
+## A different price online
+
+The counter and the site do not always want the same number: delivery costs money, the site is shopped against other
+shops, and a price put up online is harder to take back. So a product can carry **a price of its own for the site**.
+
+* **Online products → the list view** has an *Online price* column beside the counter price. Key a number in and that
+  is what the site charges; leave it empty and it sells online at whatever *Site settings → Prices shown* says
+  (counter or wholesale), exactly as before. A card shows *its own price online* under anything that has one.
+* **Set the online price** (the bulk button) works on everything the search and filters are showing: take the counter
+  price and add a percentage or so many rupees, round to the nearest 1, 5 or 10, and optionally leave alone the ones
+  already priced. It previews four of them before it does anything.
+* **Own price** is a filter, and a tile counts how many are priced for the site.
+* It is on the full product form too, beside MRP, cost, counter and wholesale.
+
+**It follows the sale the whole way.** The site shows it, the basket adds it up, the order carries it, and billing
+that order at the counter puts that price on the invoice — the till does not re-price an online order.
+
+**Two things it deliberately does:**
+
+* **An item priced for the site does not take the counter's quantity breaks.** A break set for the counter could
+  otherwise undercut the price put up for the site. Clear the online price and the breaks come back.
+* **It is a selling price, so it goes through the same approval as the others.** Changing it in the product form
+  raises the usual price-approval request (which now says what the site price becomes); without the right to approve,
+  the column on the Online products page is plain text and the bulk button is not offered.
 
 ## Social
 

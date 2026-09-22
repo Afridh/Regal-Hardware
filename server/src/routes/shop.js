@@ -84,10 +84,14 @@ function catalogOf(data, pending = [], media = {}) {
   const listed = p => w.listMode === 'selected' ? p.web === true : p.web !== false;
   const products = (S.products || []).filter(p => p.active !== false && !p.hidden && listed(p)).map(p => ({
     id: p.id, code: p.code, num: p.num || '', short: p.short || '', name: p.name, cat: p.cat || 'Other', unit: p.unit || '',
-    mrp: +p.mrp || 0, price: +(w.level === 'wholesale' ? p.wholesale : p.retail) || 0,
+    // a product may carry a price of its own for the site; where it does, that is the price
+    mrp: +p.mrp || 0, price: +(+p.webPrice > 0 ? p.webPrice : (w.level === 'wholesale' ? p.wholesale : p.retail)) || 0,
+    ownPrice: +p.webPrice > 0 || undefined,
     stock: tracked ? Math.max(0, (+p.stock || 0) - (held[p.id] || 0)) : null,
     img: pic('p:' + p.id), desc: p.desc || '', warranty: +p.warrantyMonths || 0, sold: sold[p.id] || 0, featured: p.featured === true,
-    tiers: Array.isArray(p.tiers) && p.tiers.length ? p.tiers.map(t => ({ min: +t.min, price: +t.price, label: t.label || '' })) : undefined,
+    // an item priced for the site does not take the counter's quantity breaks: a break set
+    // for the counter could otherwise undercut the price put up for the site
+    tiers: !(+p.webPrice > 0) && Array.isArray(p.tiers) && p.tiers.length ? p.tiers.map(t => ({ min: +t.min, price: +t.price, label: t.label || '' })) : undefined,
   }));
   const counts = {};
   for (const p of products) counts[p.cat] = (counts[p.cat] || 0) + 1;
