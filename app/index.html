@@ -6293,7 +6293,7 @@ const S = {
  web:{settings:{},orders:[],cart:[],session:null,delivery:true}, prns:[], stocktakes:[], counts:[], serials:[], notif:[], notifOpen:false, notices:[], payruns:[], advances:[], shift:{settings:{},days:{},imported:null},
  cportal:{session:null,pick:2,tab:'owed',stage:'phone',code:'',inbox:'',err:'',flash:''},
  portal:{session:null,pick:'1',tab:'new',filter:'all',stage:'phone',code:'',tries:0,left:0,timer:null,inbox:'',err:'',flash:'',rep:'Nimal',photos:[],replaces:null}, drawer:{opened:'08:02',float:5000},
- pos:{lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:'r80'}, heldBills:[]
+ pos:{lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:'r80'}, heldBills:[], trail:[]
 };
 /* a bill number is prefix + till + the cashier's own id + a running number kept per
    cashier, so INVM-T1-AF-00031 and INVM-T2-RS-00031 can both exist and neither can
@@ -9056,9 +9056,10 @@ const views=[
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['purchases','Purchases'],
  ['grp','Stock'],['products','Products'],['inventory','Inventory & ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
  ['grp','Online'],['weborders','Online orders'],['webproducts','Online products'],['site','The shop site'],
- ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],['grp','People'],['approvals','Approvals'],['payroll','Attendance & pay'],['users','Users & permissions'],['grp','Out'],['messages','Messages'],['reports','Reports'],['grp','System'],['settings','Settings']];
+ ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],['grp','People'],['approvals','Approvals'],['payroll','Attendance & pay'],['users','Users & permissions'],['grp','Out'],['trail','The trail'],['messages','Messages'],['reports','Reports'],['grp','System'],['settings','Settings']];
 const VIEW_PERM={users:'users',settings:'settings',payroll:'payroll',products:'products',webproducts:'products'};   // the board itself is open to everyone who signs in
-function allowed(v){ const p=VIEW_PERM[v]; return !p||can(p) }
+const ownerOnly=()=>!!(S.user&&(S.user.role==='Owner'||S.user.role==='Admin'));
+function allowed(v){ if(v==='trail') return ownerOnly(); const p=VIEW_PERM[v]; return !p||can(p) }
 /* ================== HOW THE SCREEN IS LAID OUT ==================
    Each person gets their own arrangement: menu down the side or across the
    top, wide or narrow, and the page they land on. It travels with the login,
@@ -9107,6 +9108,7 @@ ICONS.tenders='M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h6M9 8h2';
 ICONS.webproducts='M3 4h18v12H3zM3 8h18M8 20h8M12 16v4M9 12h2M13 12h4';
 ICONS.site='M3 12h18M12 3a15 15 0 010 18M12 3a15 15 0 000 18M12 3a9 9 0 110 18 9 9 0 010-18';
 ICONS.weborders='M8 4h9l3 4v12H8zM8 4H4v16h4M12 11h5M12 15h5';
+ICONS.trail='M4 19h4l3-7 3 12 3-9h3M2 5h20';
 const GROUP_ICON={Shop:'M3 9l2-5h14l2 5M4 9h16v11H4z',Stock:ICONS.inventory,Money:ICONS.expenses,People:ICONS.users,Out:ICONS.messages,System:ICONS.settings,Online:ICONS.site};
 
 function renderNav(){
@@ -9215,11 +9217,12 @@ function modal(html){ const m=document.createElement('div');m.className='modal';
 function closeModals(){document.querySelectorAll('.modal').forEach(m=>m.remove())}
 let _rendering=false;
 function render(){ if(_rendering) return; _rendering=true; try{ renderNow() } finally { _rendering=false } if(typeof persist==='function'&&S.user&&!S.signedOut) persist() }
-function renderNow(){ if(S.view!=='board') document.body.classList.remove('boardview'); renderNav(); const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,chequesIn,chequesOut,expenses,accounting,payroll,board,users,messages,reports,settings}[S.view]; $('#main').innerHTML=r(); document.body.classList.toggle('csfull',pref('till')==='classic'&&S.view==='pos'); if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() } if(S.view==='recall') recallAfter(); if(S.view==='stocktake') stockTakeAfter();
+function renderNow(){ if(S.view!=='board') document.body.classList.remove('boardview'); renderNav(); const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,chequesIn,chequesOut,expenses,accounting,payroll,board,users,messages,reports,settings,trail}[S.view]; $('#main').innerHTML=r(); document.body.classList.toggle('csfull',pref('till')==='classic'&&S.view==='pos'); if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() } if(S.view==='recall') recallAfter(); if(S.view==='stocktake') stockTakeAfter();
   if(S.view==='serials'){ const sq=$('#srQ'); if(sq){ sq.oninput=e=>{srQ=e.target.value;render();const n=$('#srQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body) sq.focus() } } if(S.view==='labels') labelsAfter(); if(S.view==='receipts') receiptsAfter(); if(S.view==='dashboard') dashboardAfter();
 
   if(S.view==='bills'||S.view==='recall') billsAfter();
+  if(S.view==='trail') trailAfter();
   document.querySelectorAll('[data-custfilter]').forEach(b=>b.onclick=()=>{custFilter=b.dataset.custfilter;render()});
   document.querySelectorAll('[data-custsort]').forEach(b=>b.onclick=()=>{custSort=b.dataset.custsort;render()});
   document.querySelectorAll('[data-custtab]').forEach(b=>b.onclick=()=>{custTab=b.dataset.custtab;render()});
@@ -10841,7 +10844,9 @@ function csAskDel(i){
    <div style="display:flex;justify-content:flex-end;gap:8px">
     <button class="btn ghost" id="cdNo">Keep it (Esc)</button>
     <button class="btn tape" id="cdYes">Take it off (Enter)</button></div>`);
-  const yes=()=>{ S.pos.lines.splice(i,1); if(S.pos.sel>=S.pos.lines.length) S.pos.sel=S.pos.lines.length-1;
+  const yes=()=>{
+    logTrail('lineOff',`${p.name} — ${fq(l.qty)} ${p.unit} at ${money2(l.price)}`,{amount:l.qty*l.price-l.disc,who:C(S.pos.customer||1).name,ref:S.pos.editing||''});
+    S.pos.lines.splice(i,1); if(S.pos.sel>=S.pos.lines.length) S.pos.sel=S.pos.lines.length-1;
     stop(); m.remove(); render(); toast(`${p.name} taken off`) };
   const stopKeys=(ev)=>{ if(!document.body.contains(m)){ stop(); return }
     if(ev.key==='Enter'){ ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation&&ev.stopImmediatePropagation(); yes() }
@@ -10865,7 +10870,10 @@ function csStart(pid){
 }
 /* CLEAR (F3 / Esc): a bill with anything on it is only thrown away after a yes */
 function csClearAsk(){
-  const doIt=()=>{ S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+  const doIt=()=>{
+    if(S.pos.lines.length) logTrail('billCleared',`${S.pos.lines.length} line${S.pos.lines.length===1?'':'s'} thrown away before billing`,
+      {amount:billTotal(),who:C(S.pos.customer||1).name,bill:{ref:'cleared',lines:S.pos.lines.map(l=>({...l})),customer:S.pos.customer,billDisc:S.pos.billDisc||0,date:new Date().toISOString(),user:S.user.name}});
+    S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
     CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null,paper:null,chk:null}; closeModals(); render(); const q=$('#csQ'); if(q) q.focus() };
   const n=S.pos.lines.length;
   if(!n&&!CS.pid&&!S.pos.customer) return doIt();
@@ -10949,6 +10957,31 @@ function fastUpdatePosSel(idx){
   }
 }
 
+/* ================== THE TRAIL — what was taken away, and by whom ==================
+   Anything thrown away or changed after it was entered leaves a line here: a held bill
+   discarded, a bill cleared off the till, a line taken off, a bill opened again and re-made.
+   It is the owner's page alone, nothing on it can be edited, and where it makes sense the
+   thing itself is kept with the line so it can be put back. */
+const TRAIL_KEEP=2000;
+function logTrail(kind,what,opts){
+  if(window.privacyOn) return;                       // the quiet screen writes nothing
+  S.trail=S.trail||[];
+  const d=new Date();
+  S.trail.unshift({id:'t'+d.getTime().toString(36)+Math.random().toString(36).slice(2,6),
+    at:d.toISOString(),date:D(today),time:d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),
+    by:(S.user&&S.user.name)||'?',till:S.terminal||'T1',kind,what,...(opts||{})});
+  if(S.trail.length>TRAIL_KEEP) S.trail.length=TRAIL_KEEP;
+}
+const TRAIL_KINDS={
+  holdDiscard:['Held bill thrown away','bad'],
+  billCleared:['Bill cleared off the till','warn'],
+  lineOff:['Line taken off a bill','warn'],
+  billEdit:['Saved bill opened to be changed','warn'],
+  billRemade:['Bill re-made','bad'],
+  priceDown:['Price dropped below the list','info'],
+  custDel:['Customer removed','bad'],
+  prodDel:['Item removed','bad'],
+  other:['Other','info']};
 /* ---- Multi-Bill Hold & Recall system ---- */
 /* Hold asks what to call the bill first — the customer's name, a vehicle number, "waiting for cash" —
    so the right one is easy to find among the held bills. A bill pushed aside by a recall is held
@@ -11051,18 +11084,40 @@ function recallHeldBill(idx){
   return true;
 }
 
+/* Throwing a held bill away is asked for first, one bill at a time, and the bill is kept on the
+   owner's Trail page so it can be put back — a wrong key never loses a customer's order. */
 function discardHeldBill(idx){
   S.heldBills = S.heldBills || [];
-  if(idx < 0 || idx >= S.heldBills.length) return;
-  S.heldBills.splice(idx, 1);
-  S.held = S.heldBills[0] || null;
-  toast('Held bill discarded');
-  if(!S.heldBills.length){
-    closeModals();
-    render();
-  } else {
-    showHeldBillsModal(Math.min(idx, S.heldBills.length - 1));
-  }
+  const b = S.heldBills[idx];
+  if(!b) return toast('No held bill selected');
+  closeModals();
+  const c = C(b.customer || 1), n = (b.lines || []).length;
+  const net = Math.max(0, (b.lines || []).reduce((a, l) => a + (l.qty * l.price - (l.disc || 0)), 0) - (b.billDisc || 0));
+  const rest = S.heldBills.length - 1;
+  const m = modal(`<h2>Throw this held bill away?</h2>
+   <div class="hb-ask"><b>${b.ref || (c.id === 1 ? 'Walk-in' : c.name)}</b><span>${n} line${n === 1 ? '' : 's'} · ${fmt(net)} · held ${b.date ? new Date(b.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''} by ${b.user || 'staff'}</span></div>
+   <div class="muted" style="margin-top:8px">Only this one. ${rest ? `The other ${rest} stay on hold.` : 'It is the only one on hold.'} It is kept on the owner's Trail page and can be put back from there.</div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" id="dhNo">Keep it <i class="kbd">Esc</i></button>
+    <button class="btn tape" id="dhYes">Throw it away <i class="kbd">Enter</i></button></div>`);
+  m.classList.add('hb-ask-wrap');
+  const no = () => { m.remove(); showHeldBillsModal(idx) };
+  const yes = () => {
+    m.remove();
+    const at = S.heldBills.indexOf(b);
+    if(at < 0) return;
+    S.heldBills.splice(at, 1);
+    S.held = S.heldBills[0] || null;
+    logTrail('holdDiscard', `${b.ref || c.name} — ${n} line${n === 1 ? '' : 's'}`, { amount: net, bill: b, who: c.name });
+    render(); persist();
+    toast(`Thrown away · ${S.heldBills.length} still on hold — it is on the Trail page if it was a mistake`, 'warn');
+    if(S.heldBills.length) showHeldBillsModal(Math.min(at, S.heldBills.length - 1));
+  };
+  m.querySelector('#dhYes').onclick = yes; m.querySelector('#dhNo').onclick = no;
+  const key = (e) => { if(!document.body.contains(m)){ window.removeEventListener('keydown', key, true); return } e.stopPropagation();
+    if(e.key === 'Enter'){ e.preventDefault(); yes() } if(e.key === 'Escape'){ e.preventDefault(); no() } };
+  window.addEventListener('keydown', key, true);
+  m.querySelector('#dhNo').focus();
 }
 
 function showHeldBillsModal(initIdx = 0){
@@ -12225,6 +12280,7 @@ function billToTill(no){
     S.pos={lines:inv.lines.map(l=>({pid:l.pid,qty:l.qty,price:l.price,disc:l.disc||0,warranty:l.warranty,belowCost:l.belowCost})),
       customer:inv.customerId===1?null:inv.customerId,billDisc:inv.billDisc||0,sel:-1,entry:null,lastBill:S.pos.lastBill,editing:inv.no,editWhy:why};
     if(typeof CS!=='undefined') CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0'};
+    logTrail('billEdit',`${no} opened to be changed`,{amount:inv.total,who:c.name,ref:no,why,bill:{ref:no,lines:inv.lines.map(l=>({...l})),customer:inv.customerId,billDisc:inv.billDisc||0,date:new Date().toISOString(),user:inv.by}});
     closeModals(); go('pos');
     toast(`${no} is on the till — ${inv.lines.length} line${inv.lines.length===1?'':'s'}, ${fmt(inv.total)}. Change it and take the payment again.`) };
   m.querySelector('#ebYes').onclick=go2;
@@ -12251,6 +12307,9 @@ function finishRemake(r,fresh){
   fresh.edits=old.edits; fresh.date=old.date; fresh.link=old.link;
   S.sales.pop(); S.sales.splice(idx,0,fresh);          // back where the old one sat
   notify('warn',`${S.user.name} re-made bill ${old.no} — ${fmt(old.total)} to ${fmt(fresh.total)}`,'bills');
+  logTrail('billRemade',`${old.no} — ${fmt(old.total)} became ${fmt(fresh.total)}`,
+    {amount:fresh.total-old.total,who:c.name,ref:old.no,why:r.why||'',
+     bill:{ref:old.no+' (as it was)',lines:old.lines.map(l=>({...l})),customer:old.customerId,billDisc:old.billDisc||0,date:old.date,user:old.by}});
   if(c.phone&&CFG.msg.autoBill) sms(c.phone,`${CFG.shop.name}: bill ${old.no} has been re-issued at ${fmt(fresh.total)}${fresh.balance?`, ${fmt(fresh.balance)} outstanding`:''}.`);
   return fresh;
 }
@@ -13078,6 +13137,95 @@ function decideApproval(id,ok,note){
   render(); toast(a.status==='approved'?'Approved and applied':a.status==='failed'?'Approved but could not be applied — '+a.note:'Turned down');
 }
 let apTab='pending';
+/* ================== THE TRAIL — the owner's page ==================
+   Everything thrown away or changed after it was entered, in one list: held bills discarded,
+   bills cleared off the till, lines taken off, bills opened again and re-made, along with the
+   corrections and adjustments already kept on the bills themselves. Owner and Admin only.
+   Nothing here can be edited; a held bill or a cleared bill can be put back on the till. */
+let trailTab='all', trailQ='', trailDays=30;
+function trailRows(){
+  const rows=[];
+  (S.trail||[]).forEach(t=>rows.push({...t,src:'trail'}));
+  // what the bills themselves already remember, so one page shows the lot
+  S.sales.forEach(x=>{
+    (x.edits||[]).forEach(e=>rows.push({at:e.at,date:e.at,time:'',by:e.by,kind:'billRemade',
+      what:`${x.no} corrected — ${fmt(e.from)} became ${fmt(e.to)}`,why:e.why||'',who:C(x.customerId).name,ref:x.no,amount:e.to-e.from,src:'bill'}));
+    (x.adjustments||[]).forEach(a=>rows.push({at:a.date,date:a.date,time:'',by:a.by,kind:'other',
+      what:`${fmt(a.amount)} taken off ${x.no}`,why:a.note||'',who:C(x.customerId).name,ref:x.no,amount:-a.amount,src:'bill'}));
+  });
+  const q=trailQ.toLowerCase().trim();
+  const from=trailDays?D(new Date(Date.now()-trailDays*864e5)):'';
+  return rows
+    .filter(r=>trailTab==='all'||r.kind===trailTab)
+    .filter(r=>!from||String(r.date||r.at).slice(0,10)>=from)
+    .filter(r=>!q||[r.what,r.why,r.by,r.who,r.ref].some(v=>String(v||'').toLowerCase().includes(q)))
+    .sort((a,b)=>String(b.at).localeCompare(String(a.at)));
+}
+function trail(){
+  if(!ownerOnly()) return `<h1>The trail</h1><div class="card muted">This page is the owner's.</div>`;
+  const all=trailRows();
+  const count=(k)=>(S.trail||[]).filter(t=>t.kind===k).length;
+  const money0=(v)=>v?fmt(Math.abs(v)):'—';
+  const tabs=[['all','Everything'],['holdDiscard','Held bills thrown away'],['billCleared','Bills cleared'],
+              ['lineOff','Lines taken off'],['billEdit','Bills opened again'],['billRemade','Bills re-made']];
+  return `<h1>The trail <span class="muted" style="font-size:13px;font-weight:400">what was taken away or changed, and who did it</span></h1>
+   <div class="row" style="margin-bottom:12px">
+    ${stat('Held bills thrown away',count('holdDiscard'),'can be put back','r')}
+    ${stat('Bills cleared off the till',count('billCleared'),'before any bill was made','y')}
+    ${stat('Lines taken off',count('lineOff'),'while billing','y')}
+    ${stat('Bills re-made or corrected',all.filter(r=>r.kind==='billRemade').length,'after they were saved','b')}
+   </div>
+   <div class="card">
+    <div class="tabs">${tabs.map(t=>`<button class="${trailTab===t[0]?'on':''}" data-act="trTab" data-t="${t[0]}">${t[1]}</button>`).join('')}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
+     <input id="trQ" value="${trailQ.replace(/"/g,'&quot;')}" placeholder="item, customer, who did it, bill number…" style="flex:1;min-width:200px">
+     <select data-act="trDays" id="trDays">${[[7,'Last 7 days'],[30,'Last 30 days'],[90,'Last 3 months'],[0,'Everything kept']].map(o=>`<option value="${o[0]}" ${trailDays===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>
+     <button class="btn ghost" data-act="trCsv">Save as CSV</button>
+    </div>
+    ${all.length?`<table class="tbl tr-tbl">
+      <tr><th>When</th><th>What happened</th><th>Who it was for</th><th class="n">Amount</th><th>By</th><th></th></tr>
+      ${all.slice(0,400).map(r=>{const k=TRAIL_KINDS[r.kind]||TRAIL_KINDS.other;
+        return `<tr>
+         <td class="muted" style="white-space:nowrap">${String(r.date||r.at).slice(0,10)}${r.time?`<em style="display:block;font-style:normal">${r.time}</em>`:''}</td>
+         <td><span class="tag ${k[1]}">${k[0]}</span> <b>${r.what||''}</b>${r.why?`<div class="muted">“${r.why}”</div>`:''}${r.ref?`<div class="muted">${r.ref}</div>`:''}</td>
+         <td>${r.who||'—'}</td>
+         <td class="n">${money0(r.amount)}</td>
+         <td>${r.by}${r.till?`<em style="display:block;font-style:normal;font-size:10.5px;color:var(--steel)">till ${r.till}</em>`:''}</td>
+         <td class="n" style="white-space:nowrap">${r.bill?`<button class="btn ghost sm" data-act="trShow" data-id="${r.id}">Look at it</button>${(r.kind==='holdDiscard'||r.kind==='billCleared')?`<button class="btn ghost sm" data-act="trBack" data-id="${r.id}">Put it back</button>`:''}`:''}</td></tr>`}).join('')}
+     </table>${all.length>400?`<div class="muted" style="margin-top:8px">Showing the newest 400 of ${all.length}.</div>`:''}`
+    :'<div class="muted" style="padding:20px">Nothing here yet — nothing has been thrown away or changed.</div>'}
+   </div>
+   <div class="card note" style="margin-top:12px">Only the owner and an admin can open this page. Lines cannot be edited or deleted from here, and the till writes nothing to it while the privacy screen is up. The last ${TRAIL_KEEP} are kept.</div>`;
+}
+function trailAfter(){
+  const q=$('#trQ'); if(q){ q.oninput=()=>{ trailQ=q.value; const keep=$('#main').scrollTop; renderNow(); $('#main').scrollTop=keep; const f=$('#trQ'); if(f){ f.focus(); f.setSelectionRange(f.value.length,f.value.length) } } }
+  const d=$('#trDays'); if(d) d.onchange=()=>{ trailDays=+d.value; render() };
+}
+function trailShow(id){
+  const r=(S.trail||[]).find(t=>t.id===id); if(!r||!r.bill) return toast('Nothing kept for that line');
+  const b=r.bill, c=C(b.customer||1);
+  const net=(b.lines||[]).reduce((a,l)=>a+(l.qty*l.price-(l.disc||0)),0)-(b.billDisc||0);
+  modal(`<h2>${(TRAIL_KINDS[r.kind]||TRAIL_KINDS.other)[0]}</h2>
+   <div class="hb-ask"><b>${b.ref||c.name}</b><span>${r.by} · ${String(r.date||'').slice(0,10)} ${r.time||''} · till ${r.till||'?'}${r.why?` · “${r.why}”`:''}</span></div>
+   <table class="tbl" style="margin-top:10px"><tr><th>Item</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th></tr>
+    ${(b.lines||[]).map(l=>{const p=P(l.pid);return `<tr><td>${p?p.name:'(item removed)'}</td><td class="n">${fq(l.qty)}</td><td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}
+    <tr><td colspan="3" class="n"><b>Total</b></td><td class="n"><b>${money2(Math.max(0,net))}</b></td></tr></table>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Close</button>
+    ${(r.kind==='holdDiscard'||r.kind==='billCleared')?`<button class="btn tape" data-act="trBack" data-id="${r.id}">Put it back on hold</button>`:''}</div>`);
+}
+function trailBack(id){
+  const r=(S.trail||[]).find(t=>t.id===id); if(!r||!r.bill) return toast('Nothing kept for that line');
+  const b=r.bill;
+  S.heldBills=S.heldBills||[];
+  S.heldBills.unshift({id:'hb_'+Date.now(),date:new Date().toISOString(),ref:(b.ref||'Put back')+' (put back)',
+    customer:b.customer||null,lines:JSON.parse(JSON.stringify(b.lines||[])),billDisc:b.billDisc||0,
+    user:S.user.name,terminal:S.terminal||'T1'});
+  S.held=S.heldBills[0];
+  r.restored={at:D(today),by:S.user.name};
+  closeModals(); render(); persist();
+  toast(`Back on hold as "${S.heldBills[0].ref}" — F4 at the till brings it up`,'ok');
+}
 function approvals(){
   const list=S.approvals||[], mine=!canApprove();
   const vis=list.filter(a=>!mine||a.by===S.user.name);
@@ -15895,6 +16043,14 @@ document.addEventListener('click',e=>{
       if(q==='year'){repFrom=D(new Date(y,0,1));repTo=D(today)}
       if(q==='all'){repFrom='';repTo=''}
       render()},
+    trTab:()=>{ trailTab=a.dataset.t; render() },
+    trShow:()=>trailShow(a.dataset.id),
+    trBack:()=>trailBack(a.dataset.id),
+    trCsv:()=>{ const rows=trailRows().map(r=>[String(r.date||r.at).slice(0,10),r.time||'',(TRAIL_KINDS[r.kind]||TRAIL_KINDS.other)[0],r.what||'',r.why||'',r.who||'',r.amount==null?'':(+r.amount).toFixed(2),r.by||'',r.till||'']);
+      const csv=[['Date','Time','What happened','Detail','Why','Who it was for','Amount','By','Till'],...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+      const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+      const a3=document.createElement('a'); a3.href=URL.createObjectURL(blob); a3.download='trail-'+D(today)+'.csv'; a3.click();
+      toast(`${rows.length} line${rows.length===1?'':'s'} saved`) },
     shiftImport:()=>importShift(),
     shiftSync:()=>shiftPull(),
     shiftStaffUp:()=>shiftPushStaff(),
