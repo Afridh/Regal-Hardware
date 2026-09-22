@@ -8029,18 +8029,26 @@ function privacyToggle(){
 const privacyKeyMatch=(e)=>{ const k=(CFG.privacy&&CFG.privacy.key)||'ctrl+shift+x'; const key=e.key.toLowerCase();
   return k==='ctrl+shift+x'?(e.ctrlKey&&e.shiftKey&&key==='x'):k==='f12'?(e.key==='F12'):k==='ctrl+`'?(e.ctrlKey&&(key==='`'||e.code==='Backquote')):k==='ctrl+shift+h'?(e.ctrlKey&&e.shiftKey&&key==='h'):k==='scrolllock'?(e.key==='ScrollLock'):false };
 let saveForce=false;
-function persist(force){ if(window.privacyOn) return; saveForce=saveForce||!!force; clearTimeout(saveTimer); saveTimer=setTimeout(async()=>{
-  if(window.privacyOn){ saveForce=false; return }     // a save scheduled just before the privacy screen went up must not fire with its figures
-  const f=saveForce; saveForce=false;                 // a forced save (orders just pulled in) survives an ordinary render's call landing on top of it
-  const txt=snapshotTxt(); if(!f&&txt===lastSavedTxt) return;
-  lastSavedTxt=txt;
-  const ok=await store.set({v:1,at:new Date().toISOString(),S:snapshot(),CFG});
-  if(!ok) lastSavedTxt='';                       // so the next change tries again
-  lastSaved=ok?new Date():null; ['savedAt','savedAtNav','csSync'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=ok?'saved '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'not saved' });
-  if(ok && typeof BroadcastChannel !== 'undefined'){
-    try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
-  }
-},400) }
+function persist(force){
+  if(window.privacyOn) return;
+  saveForce=saveForce||!!force;
+  clearTimeout(saveTimer);
+  const doSave=async()=>{
+    if(window.privacyOn){ saveForce=false; return; }
+    const f=saveForce; saveForce=false;
+    const txt=snapshotTxt();
+    if(!f&&txt===lastSavedTxt) return;
+    lastSavedTxt=txt;
+    const ok=await store.set({v:1,at:new Date().toISOString(),S:snapshot(),CFG});
+    if(!ok) lastSavedTxt='';
+    lastSaved=ok?new Date():null;
+    ['savedAt','savedAtNav','csSync'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=ok?'saved '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'not saved'; });
+    if(ok && typeof BroadcastChannel !== 'undefined'){
+      try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
+    }
+  };
+  if(force){ doSave(); } else { saveTimer=setTimeout(doSave, 400); }
+}
 window.markSaved=()=>{ lastSavedTxt=snapshotTxt() };   // books just came from the server: nothing to push back
 const DEFAULT_ACCOUNTS = [
   { name: 'Afridh', role: 'Super Admin', uid: 'AF', pass: 'Afridh123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
@@ -9757,12 +9765,38 @@ function donut(parts,{size=118,thick=16,center=''}={}){
 
 function salesmanDashboard(){
   const t=D(today);
-  const mySales=S.sales.filter(s=>String(s.by||'').toLowerCase()===String(S.user.name||'').toLowerCase() || String(s.salesman||'').toLowerCase()===String(S.user.name||'').toLowerCase());
-  const todaySales=mySales.filter(s=>s.date===t);
-  const todayTotal=todaySales.reduce((a,s)=>a+s.total,0);
-  const todayCash=todaySales.filter(s=>s.type==='CASH').reduce((a,s)=>a+s.total,0);
-  const todayCredit=todaySales.filter(s=>s.type==='CREDIT').reduce((a,s)=>a+s.total,0);
-  const allSalesTotal=mySales.reduce((a,s)=>a+s.total,0);
+  const u = (S.users && S.users.find(x => String(x.name || '').toLowerCase() === String(S.user && S.user.name || '').toLowerCase())) || S.user || {};
+  const myEmp = (S.employees || []).find(e => String(e.name || '').toLowerCase() === String(S.user && S.user.name || '').toLowerCase() || (e.code && e.code.toLowerCase() === String(u.uid || '').toLowerCase()));
+  const myAliases = new Set();
+  const addAlias = (val) => {
+    if(!val) return;
+    const s = String(val).trim().toLowerCase();
+    if(s) {
+      myAliases.add(s);
+      myAliases.add(s.replace(/[\s\-_]+/g, ''));
+    }
+  };
+  addAlias(S.user && S.user.name);
+  addAlias(u.name);
+  addAlias(u.uid);
+  if(myEmp){
+    addAlias(myEmp.name);
+    addAlias(myEmp.code);
+  }
+
+  const isMyInvoice = (s) => {
+    if(!s) return false;
+    const sm = String(s.salesman || '').trim().toLowerCase();
+    const by = String(s.by || '').trim().toLowerCase();
+    return (sm && (myAliases.has(sm) || myAliases.has(sm.replace(/[\s\-_]+/g, '')))) ||
+           (by && (myAliases.has(by) || myAliases.has(by.replace(/[\s\-_]+/g, ''))));
+  };
+  const mySales = (S.sales || []).filter(isMyInvoice);
+  const todaySales = mySales.filter(s => String(s.date || '').slice(0, 10) === t);
+  const todayTotal = todaySales.reduce((a, s) => a + Number(s.total || 0), 0);
+  const todayCash = todaySales.filter(s => s.type === 'CASH').reduce((a, s) => a + Number(s.total || 0), 0);
+  const todayCredit = todaySales.filter(s => s.type === 'CREDIT').reduce((a, s) => a + Number(s.total || 0), 0);
+  const allSalesTotal = mySales.reduce((a, s) => a + Number(s.total || 0), 0);
 
   const emp=S.employees.find(e=>String(e.name||'').toLowerCase()===String(S.user.name||'').toLowerCase()) ||
             S.employees.find(e=>/sales/i.test(e.position)) || S.employees[0];
@@ -9853,11 +9887,11 @@ function salesmanDashboard(){
     </div>
     <table>
       <tr><th>Invoice #</th><th>Date</th><th>Customer</th><th>Items</th><th class="n">Total</th><th>Type</th></tr>
-      ${mySales.slice(-8).reverse().map(s=>`<tr>
+      ${mySales.slice(-20).reverse().map(s=>`<tr>
         <td><b>${s.no}</b></td>
-        <td class="muted">${s.date}</td>
+        <td class="muted">${s.date}${s.time ? ` · ${s.time}` : ''}</td>
         <td>${(C(s.customerId)||{}).name||'Cash Customer'}</td>
-        <td>${s.lines.length} item${s.lines.length===1?'':'s'}</td>
+        <td>${(s.lines||[]).length} item${(s.lines||[]).length===1?'':'s'}</td>
         <td class="n"><b>${fmt(s.total)}</b></td>
         <td><span class="tag ${s.type==='CASH'?'ok':'warn'}">${s.type}</span></td>
       </tr>`).join('')||'<tr><td colspan="6" class="muted">No bills recorded under your name yet.</td></tr>'}
@@ -9867,7 +9901,7 @@ function salesmanDashboard(){
 
 function dashboard(){
   try{ tenderReminders() }catch(e){}
-  if(S.user && S.user.role === 'Salesman') return salesmanDashboard();
+  if(S.user && /sales/i.test(String(S.user.role || ''))) return salesmanDashboard();
   const t=D(today), sum=(a,k)=>a.reduce((x,y)=>x+y[k],0);
   const ts=S.sales.filter(s=>s.date===t);
   const cashS=ts.filter(s=>s.type==='CASH'), credS=ts.filter(s=>s.type==='CREDIT');
@@ -10057,13 +10091,20 @@ function dashSettings(){
 
 function dashboardAfter(){
   if(!window._salesSyncTimer){
-    window._salesSyncTimer = setInterval(()=>{
+    window._salesSyncTimer = setInterval(async ()=>{
       if(S.view === 'dashboard' && !document.querySelector('.modal') && !document.querySelector('.lock')){
-        if(window.regalBridge && typeof regalBridge.pull === 'function'){
-          regalBridge.pull(true);
+        let pulled = false;
+        if(window.regalBridge && typeof regalBridge.pull === 'function' && regalBridge.online()){
+          pulled = await regalBridge.pull(true);
         }
+        if(!pulled && typeof bootSync === 'function'){
+          bootSync();
+        } else if(!pulled && typeof boot === 'function'){
+          await boot();
+        }
+        render();
       }
-    }, 4000);
+    }, 2500);
   }
   // numbers count up so the eye lands on what changed
   if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
@@ -16887,11 +16928,34 @@ function users(){
 
 function myProfileModal(){
   const u=S.users.find(x=>x.name===S.user.name)||S.user;
-  const isSalesStaff = String(u.role || '').toLowerCase() === 'salesman' || S.sales.some(s => s.salesman === u.name || s.by === u.name);
-  const mySales = isSalesStaff ? S.sales.filter(s => s.salesman === u.name || s.by === u.name) : [];
-  const todaySales = mySales.filter(s => s.date === D(today));
-  const todayTotal = todaySales.reduce((a, s) => a + s.total, 0);
-  const allTotal = mySales.reduce((a, s) => a + s.total, 0);
+  const myEmp = (S.employees || []).find(e => String(e.name || '').toLowerCase() === String(u.name || '').toLowerCase() || (e.code && e.code.toLowerCase() === String(u.uid || '').toLowerCase()));
+  const myAliases = new Set();
+  const addAlias = (val) => {
+    if(!val) return;
+    const s = String(val).trim().toLowerCase();
+    if(s) {
+      myAliases.add(s);
+      myAliases.add(s.replace(/[\s\-_]+/g, ''));
+    }
+  };
+  addAlias(u.name);
+  addAlias(u.uid);
+  if(myEmp){
+    addAlias(myEmp.name);
+    addAlias(myEmp.code);
+  }
+  const isMyInvoice = (s) => {
+    if(!s) return false;
+    const sm = String(s.salesman || '').trim().toLowerCase();
+    const by = String(s.by || '').trim().toLowerCase();
+    return (sm && (myAliases.has(sm) || myAliases.has(sm.replace(/[\s\-_]+/g, '')))) ||
+           (by && (myAliases.has(by) || myAliases.has(by.replace(/[\s\-_]+/g, ''))));
+  };
+  const isSalesStaff = String(u.role || '').toLowerCase() === 'salesman' || S.sales.some(isMyInvoice);
+  const mySales = isSalesStaff ? S.sales.filter(isMyInvoice) : [];
+  const todaySales = mySales.filter(s => String(s.date || '').slice(0, 10) === D(today));
+  const todayTotal = todaySales.reduce((a, s) => a + Number(s.total || 0), 0);
+  const allTotal = mySales.reduce((a, s) => a + Number(s.total || 0), 0);
 
   const m=modal(`<h2>My Account · ${u.name}</h2>
     ${isSalesStaff ? `
@@ -16960,6 +17024,7 @@ function myProfileModal(){
     }
     S.user.name=nm;
     S.user.prefs={...u.prefs};
+    try { localStorage.setItem('regal_user', nm); } catch(e){}
     applyLayout();
     persist(true);
     m.remove();
@@ -17152,6 +17217,10 @@ function signOut(){
   if(S.pos.lines.length&&!confirm('There is a bill on the screen that has not been paid. Sign out anyway and lose it?'))return;
   S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:CFG.bill.defaultFormat};
   closeModals(); closePhone(); S.signedOut=true;
+  try {
+    localStorage.removeItem('regal_user');
+    localStorage.setItem('regal_signed_out', '1');
+  } catch(e){}
   if(window.regalBridge) regalBridge.logout();
   shopLock();
 }
@@ -17303,6 +17372,10 @@ function shopLock(){
       u.perms = uPerms;
       S.user = { name: u.name, role: u.role, perms: [...uPerms], prefs: { ...PREF_DEFAULTS, ...(u.prefs || {}) } };
       S.signedOut = false;
+      try {
+        localStorage.setItem('regal_user', u.name);
+        localStorage.removeItem('regal_signed_out');
+      } catch(e){}
 
       // Cleanly remove all lock overlays from document
       document.querySelectorAll('.lock, #lockScreen').forEach(x => x.remove());
@@ -17394,14 +17467,18 @@ document.addEventListener('click',e=>{
       render(); toast('Reminder texted to '+c.phone)},
     myProfile:()=>myProfileModal(),
     dashSync:async()=>{
-      if(window.regalBridge&&typeof regalBridge.pull==='function'){
+      let updated=false;
+      if(window.regalBridge&&typeof regalBridge.pull==='function'&&regalBridge.online()){
         toast('Checking server for new sales…');
-        const updated=await regalBridge.pull(false);
-        if(!updated) toast('Already up to date');
-      } else if(typeof boot==='function'){
-        await boot();
-        toast('Data refreshed');
+        updated=await regalBridge.pull(false);
       }
+      if(!updated && typeof bootSync === 'function'){
+        bootSync();
+      } else if(!updated && typeof boot==='function'){
+        await boot();
+      }
+      if(updated) toast('Books updated from server');
+      else toast('Sales and records refreshed');
       render();
     },
     roleNew:()=>roleModal(),
@@ -17850,16 +17927,83 @@ $('#logoutBtn').onclick=signOut;
   bg.onclick=()=>document.body.classList.remove('drawer'); document.body.appendChild(bg); })();
 window.boot=boot; window.GL=GL;
 if(typeof extInstall==='function') extInstall();   // loyalty, vouchers, locations (regal-ext.js)
-bootSync(); if(typeof extEnsure==='function') extEnsure(); applyLayout(); render(); drawPhone();
+
+const explicitlySignedOut = (() => {
+  try { return localStorage.getItem('regal_signed_out') === '1'; } catch(e){ return false; }
+})();
+const rememberedUser = (() => {
+  try {
+    if(explicitlySignedOut) return '';
+    const u = localStorage.getItem('regal_user');
+    if(u) return u;
+    if(window.regalBridge && regalBridge.online()){
+      const t = regalBridge.token();
+      if(t && t.split('.').length > 1){
+        return JSON.parse(atob(t.split('.')[1])).name || '';
+      }
+    }
+    return '';
+  } catch(e){ return ''; }
+})();
+
+const backAtTheTill=(name)=>{
+  if(!name){ S.signedOut=true; shopLock(); return; }
+  let u=S.users.find(x=>String(x.name||'').toLowerCase()===String(name).toLowerCase()&&x.active!==false);
+  if(!u){
+    const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === String(name).toLowerCase());
+    if(def){
+      u = { name: def.name, role: def.role, uid: def.uid, pin: '', perms: [...def.perms], active: true, prefs: { ...PREF_DEFAULTS } };
+      S.users.push(u);
+    }
+  }
+  if(!u){ S.signedOut=true; shopLock(); return; }
+  const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === u.name.toLowerCase());
+  const uPerms = Array.isArray(u.perms) && u.perms.length ? [...u.perms] : (def ? [...def.perms] : (Array.isArray(u.perms) ? [...u.perms] : []));
+  u.perms = uPerms;
+  S.user={name:u.name,role:u.role,perms:uPerms,prefs:{...PREF_DEFAULTS,...(u.prefs||{})}};
+  S.signedOut=false;
+  try {
+    localStorage.setItem('regal_user', u.name);
+    localStorage.removeItem('regal_signed_out');
+  } catch(e){}
+  document.querySelectorAll('.lock, #lockScreen').forEach(x => x.remove());
+  document.body.classList.remove('locked');
+  applyLayout();
+  if(!allowed(S.view)){
+    const startV = pref('start');
+    const targetV = allowed(startV) ? startV : (allowed('dashboard') ? 'dashboard' : (allowed('pos') ? 'pos' : 'products'));
+    S.view = targetV;
+  }
+  render();
+  drawPhone();
+  try{ tenderReminders() }catch(e){}
+};
+
+bootSync();
+if(explicitlySignedOut){
+  S.signedOut = true;
+  shopLock();
+} else if(rememberedUser){
+  backAtTheTill(rememberedUser);
+}
+if(typeof extEnsure==='function') extEnsure();
+applyLayout();
+render();
+drawPhone();
 if(S._fromStore) toast('Books picked up where you left off');
+
 if(typeof BroadcastChannel !== 'undefined'){
   try {
     const syncBc = new BroadcastChannel('regal_books_sync');
     syncBc.onmessage = async (msg) => {
       if(msg.data === 'sale_completed' || msg.data === 'books_updated'){
-        if(window.regalBridge && typeof regalBridge.pull === 'function'){
-          await regalBridge.pull(true);
-        } else if(typeof boot === 'function'){
+        let pulled = false;
+        if(window.regalBridge && typeof regalBridge.pull === 'function' && regalBridge.online()){
+          pulled = await regalBridge.pull(true);
+        }
+        if(!pulled && typeof bootSync === 'function'){
+          bootSync();
+        } else if(!pulled && typeof boot === 'function'){
           await boot();
         }
         if(S.view === 'dashboard' || S.view === 'bills' || S.view === 'receipts' || S.view === 'users'){
@@ -17869,24 +18013,40 @@ if(typeof BroadcastChannel !== 'undefined'){
     };
   } catch(_){}
 }
+
+window.addEventListener('storage', async (e) => {
+  if(e.key === STORE_KEY || e.key === 'regal_books_sync'){
+    let pulled = false;
+    if(window.regalBridge && typeof regalBridge.pull === 'function' && regalBridge.online()){
+      pulled = await regalBridge.pull(true);
+    }
+    if(!pulled && typeof bootSync === 'function'){
+      bootSync();
+    } else if(!pulled && typeof boot === 'function'){
+      await boot();
+    }
+    if(S.view === 'dashboard' || S.view === 'bills' || S.view === 'receipts' || S.view === 'users'){
+      render();
+    }
+  }
+});
+
 if(window.regalBridge){
-  /* server build: the books live in PostgreSQL and every till signs in against the server.
-     Nobody is at the counter until they have signed in. */
   if(regalBridge.terminal()) S.terminal=regalBridge.terminal();
-  const backAtTheTill=(name)=>{
-    const u=S.users.find(x=>x.name===name&&x.active!==false);
-    if(!u){ S.signedOut=true; shopLock(); return }
-    const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === u.name.toLowerCase());
-    const uPerms = Array.isArray(u.perms) && u.perms.length ? [...u.perms] : (def ? [...def.perms] : []);
-    S.user={name:u.name,role:u.role,perms:uPerms,prefs:{...PREF_DEFAULTS,...(u.prefs||{})}};
-    document.querySelectorAll('.lock, #lockScreen').forEach(x => x.remove());
-    document.body.classList.remove('locked');
-    applyLayout(); render(); drawPhone();
-    try{ tenderReminders() }catch(e){}                 // quotations closing within 3 days ring the bell once a day
-  };
   if(regalBridge.online()){
-    boot().then(()=>{ let name=''; try{ name=JSON.parse(atob(regalBridge.token().split('.')[1])).name }catch(e){}
-      backAtTheTill(name); persist(); });
+    boot().then(()=>{
+      let name = rememberedUser;
+      if(!name){
+        try{ name=JSON.parse(atob(regalBridge.token().split('.')[1])).name }catch(e){}
+      }
+      if(!explicitlySignedOut && name){
+        backAtTheTill(name);
+      } else {
+        S.signedOut=true;
+        shopLock();
+      }
+      persist();
+    });
   } else {
     regalBridge.serverUsers().then(list=>{
       if(list.length) {
@@ -17900,12 +18060,34 @@ if(window.regalBridge){
       }
     }).catch(()=>{})
     .finally(()=>{
-      S.signedOut=true;
-      shopLock();
+      if(!explicitlySignedOut && rememberedUser){
+        backAtTheTill(rememberedUser);
+      } else {
+        S.signedOut=true;
+        shopLock();
+      }
     });
   }
 } else {
-  boot().then(fresh=>{ if(fresh){ applyLayout(); render(); drawPhone(); toast('Books picked up from the shared store') } persist(); });
+  if(explicitlySignedOut){
+    S.signedOut = true;
+    shopLock();
+  } else if(rememberedUser){
+    backAtTheTill(rememberedUser);
+  }
+  boot().then(fresh=>{
+    if(fresh){
+      applyLayout();
+      if(!allowed(S.view)){
+        const startV = pref('start');
+        S.view = allowed(startV) ? startV : (allowed('dashboard') ? 'dashboard' : 'products');
+      }
+      render();
+      drawPhone();
+      toast('Books picked up from the shared store');
+    }
+    persist();
+  });
 }
 window.addEventListener('beforeunload',()=>{ clearTimeout(saveTimer); if(PRIV){ Object.assign(S,PRIV); PRIV=null }   // never keep the privacy screen's figures
   const snap={}; Object.keys(S).forEach(k=>{ if(!TRANSIENT.includes(k)) snap[k]=S[k] });
