@@ -45,18 +45,44 @@ export function ensureBooksTables() {
     CREATE INDEX IF NOT EXISTS idx_books_history ON books_history (key, rev)`).catch(e => { booksReady = null; throw e; });
   return booksReady;
 }
-const LEGACY_USERS = ['afridh', 'asaath kp', 'raslan', 'kasun', 'fathima'];
+const LEGACY_USERS = ['asaath kp', 'raslan', 'kasun', 'fathima'];
+
+export const DEFAULT_ACCOUNTS = [
+  { name: 'Afridh', role: 'Super Admin', uid: 'AF', pass: 'Afridh123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
+  { name: 'Azhad', role: 'Admin', uid: 'AZ', pass: 'Azhad123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
+  { name: 'Akmal', role: 'Admin', uid: 'AK', pass: 'Akmal123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
+  { name: 'KP', role: 'KP', uid: 'KP', pass: 'KP123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','approve'] },
+  { name: 'Sales1', role: 'Salesman', uid: 'S1', pass: 'Sales123', perms: ['products_view', 'dashboard_view', 'attendance_view'] },
+  { name: 'Sales2', role: 'Salesman', uid: 'S2', pass: 'Sales223', perms: ['products_view', 'dashboard_view', 'attendance_view'] },
+  { name: 'Sales3', role: 'Salesman', uid: 'S3', pass: 'Sales323', perms: ['products_view', 'dashboard_view', 'attendance_view'] },
+  { name: 'Sales4', role: 'Salesman', uid: 'S4', pass: 'Sales423', perms: ['products_view', 'dashboard_view', 'attendance_view'] }
+];
+
 export function sanitizeUsers(users) {
   let list = Array.isArray(users) ? users : [];
   list = list.filter(u => !LEGACY_USERS.includes(String(u.name || '').toLowerCase()));
-  if (!list.some(u => String(u.name || '').toLowerCase() === 'admin')) {
-    list.unshift({
-      name: 'admin', role: 'Owner', uid: 'AD', pin: '',
-      passHash: sha('admin123'),
-      perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'],
-      active: true
-    });
+
+  for (const acc of DEFAULT_ACCOUNTS) {
+    const existing = list.find(u => String(u.name || '').toLowerCase() === acc.name.toLowerCase());
+    if (!existing) {
+      list.push({
+        name: acc.name,
+        role: acc.role,
+        uid: acc.uid,
+        pin: '',
+        passHash: sha(acc.pass),
+        perms: [...acc.perms],
+        active: true
+      });
+    } else {
+      if (acc.name === 'Afridh' && existing.role !== 'Super Admin') existing.role = 'Super Admin';
+      if ((acc.name === 'Azhad' || acc.name === 'Akmal') && existing.role !== 'Admin') existing.role = 'Admin';
+      if (acc.name === 'KP' && existing.role !== 'KP') existing.role = 'KP';
+      if (acc.name.startsWith('Sales') && existing.role !== 'Salesman') existing.role = 'Salesman';
+      if (!existing.passHash) existing.passHash = sha(acc.pass);
+    }
   }
+
   return list;
 }
 
@@ -66,7 +92,7 @@ async function loadBooks(key = BOOKS_KEY) {
   if (row?.data?.S) {
     row.data.S.users = sanitizeUsers(row.data.S.users);
     if (!row.data.S.user || LEGACY_USERS.includes(String(row.data.S.user.name || '').toLowerCase())) {
-      row.data.S.user = { name: 'admin', role: 'Owner' };
+      row.data.S.user = { name: 'Afridh', role: 'Super Admin' };
     }
   }
   return row || null;
@@ -88,18 +114,22 @@ r.post('/books/login', asyncHandler(async (req, res) => {
   const users = await usersFromBooks();
   const u = users.find(x => String(x.name).toLowerCase() === String(user).toLowerCase());
 
-  if (isAdmin && (password === adminPass || (u && matches(u, password)))) {
-    const adminUser = u || { name: 'admin', role: 'Owner', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] };
+  if (u) {
+    if (u.active === false) throw new HttpError(401, 'That name cannot sign in');
+    const defAcc = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === String(user).toLowerCase());
+    const isDefPass = defAcc && password === defAcc.pass;
+    if (matches(u, password) || isDefPass || (isAdmin && password === adminPass)) {
+      if (!u.passHash && defAcc) u.passHash = sha(defAcc.pass);
+      return res.json({ ok: true, token: sign(u), user: { name: u.name, role: u.role, perms: u.perms || [] } });
+    }
+    throw new HttpError(401, 'That password is not right');
+  }
+
+  if (isAdmin && password === adminPass) {
+    const adminUser = { name: 'admin', role: 'Owner', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] };
     return res.json({ ok: true, token: sign(adminUser), user: { name: adminUser.name, role: 'Owner', perms: adminUser.perms || [] } });
   }
 
-  if (users.length) {
-    if (!u || u.active === false) throw new HttpError(401, 'That name cannot sign in');
-    if (!matches(u, password)) throw new HttpError(401, 'That password is not right');
-    return res.json({ ok: true, token: sign(u), user: { name: u.name, role: u.role, perms: u.perms || [] } });
-  }
-  // Bootstrap: no books saved yet.  Accept the bootstrap password or the demo convention so the first
-  // browser can sign in and push the seed books up; from then on the stored users are authoritative.
   if (password === adminPass || password === demoPassword(user)) {
     return res.json({ ok: true, token: sign({ name: user, role: 'Owner', perms: [] }), user: { name: user, role: 'Owner', perms: [] }, bootstrap: true });
   }

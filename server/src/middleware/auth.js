@@ -33,7 +33,8 @@ export async function authenticate(req, _res, next) {
 
 export function hasPermission(user, perm) {
   if (!user) return false;
-  if (user.role === 'ADMIN') return true;
+  const r = String(user.role || '').toUpperCase();
+  if (r === 'ADMIN' || r === 'SUPER ADMIN' || r === 'SUPERADMIN' || r === 'OWNER') return true;
   return !!(user.permissions && user.permissions[perm]);
 }
 

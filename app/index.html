@@ -2867,6 +2867,7 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 
 @media (max-width:480px){
  .ptiles{grid-template-columns:1fr}
+ 
  .rc-find .f{flex-basis:100%}
 }
 
@@ -6285,7 +6286,7 @@ const fmt = (n)=> (n<0?'-':'')+'Rs '+Math.abs(n).toLocaleString('en-LK',{minimum
 const fq = (n)=> Number(n).toLocaleString('en-LK',{maximumFractionDigits:3});
 
 const S = {
- user:{name:'admin',role:'Owner'}, terminal:'T1', view:'dashboard',
+ user:{name:'Afridh',role:'Super Admin'}, terminal:'T1', view:'dashboard',
  seq:{PRN:1,STK:1,WEB:1,PO:1,QTN:1,DN:1,INV:31975,PUR:212,PAY:88,RCT:145,VCH:301,EXP:77,DMG:12,JE:1500},
  products:[], customers:[], suppliers:[], banks:[], cheques:[], employees:[],
  docs:[], sales:[], purchases:[], payments:[], expenses:[], damages:[], movements:[], journal:[], messages:[], orders:[],
@@ -6293,7 +6294,7 @@ const S = {
  web:{settings:{},orders:[],cart:[],session:null,delivery:true}, prns:[], stocktakes:[], counts:[], serials:[], notif:[], notifOpen:false, notices:[], payruns:[], advances:[], shift:{settings:{},days:{},imported:null},
  cportal:{session:null,pick:2,tab:'owed',stage:'phone',code:'',inbox:'',err:'',flash:''},
  portal:{session:null,pick:'1',tab:'new',filter:'all',stage:'phone',code:'',tries:0,left:0,timer:null,inbox:'',err:'',flash:'',rep:'Nimal',photos:[],replaces:null}, drawer:{opened:'08:02',float:5000},
- pos:{lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:'r80'}, heldBills:[], trail:[]
+ pos:{lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:'r80'}, heldBills:[], trail:[], roles:[]
 };
 /* a bill number is prefix + till + the cashier's own id + a running number kept per
    cashier, so INVM-T1-AF-00031 and INVM-T2-RS-00031 can both exist and neither can
@@ -6764,7 +6765,7 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
 function settings(){
-  const tabs=[['screen','My screen'],['done','Finishing a bill'],...(S.user&&(S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  const tabs=[['screen','My screen'],['done','Finishing a bill'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
   const fld=(path,label,hint='',type='text')=>{
     const [g,k]=path.split('.'); const val=g==='web'?S.web.settings[k]:CFG[g][k];
     return `<div class="f"><label>${label}</label>
@@ -6983,7 +6984,7 @@ function settings(){
       <div style="display:flex;gap:6px;margin-top:6px">
        <button class="btn ghost sm" data-act="tplReset" data-k="${k}">Put the original back</button>
        <button class="btn ghost sm" data-act="tplTest" data-k="${k}">Send it to me as a test</button></div></div>`).join('')}`;
-  if(setTab==='privacy'&&S.user&&(S.user.role==='Owner'||S.user.role==='Admin')){ const p=CFG.privacy||{};
+  if(setTab==='privacy'&&S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')){ const p=CFG.privacy||{};
     body=`<div class="card note" style="margin-bottom:12px"><b>What it does</b><div class="muted">One key, and every screen shows a quieter shop — a share of the bills you choose, no credit customers, the day's takings and the reports following suit. The real books are not touched: they are held aside and come straight back when the key is pressed again, or after the time below. While the screen is up nothing can be billed or saved (staff see “till is busy”) and nothing comes in from the server, so the two can never mix. Only you see this page.</div></div>
      ${fld('privacy.on','','Privacy screen switched on','check')}
      <div class="grid3">
@@ -7430,6 +7431,7 @@ function smartPunch(id){
 }
 function boardToday(){
   const ds=D(today);
+  const isSalesman=S.user&&S.user.role==='Salesman';
   const rows=S.employees.filter(e=>e.active!==false).map(e=>({e,st:empState(ds,e.id),f:dayFigures(ds,e.id)}));
   const inNow=rows.filter(r=>r.st==='working'||r.st==='break');
   const late=rows.filter(r=>r.f.late>0);
@@ -7447,9 +7449,9 @@ function boardToday(){
      <div class="bc-a">
       <button class="btn tape sm" data-act="punch" data-id="${e.id}">${
         st==='out'?'Punch in':st==='break'?'Back from break':st==='working'?(breakWindow()&&!(recFor(ds,e.id).breaks||[]).some(b=>b.id===breakWindow().id)?'Start break':'Punch out'):'Punch in again'}</button>
-      <button class="btn ghost sm" data-act="dayEdit" data-id="${e.id}" data-d="${ds}">Fix the times</button>
+      ${!isSalesman?`<button class="btn ghost sm" data-act="dayEdit" data-id="${e.id}" data-d="${ds}">Fix the times</button>
       ${st==='out'?`<button class="btn ghost sm" data-act="mark" data-id="${e.id}" data-s="absent">Absent</button>
-        <button class="btn ghost sm" data-act="mark" data-id="${e.id}" data-s="leave">Leave</button>`:''}
+        <button class="btn ghost sm" data-act="mark" data-id="${e.id}" data-s="leave">Leave</button>`:''}`:''}
      </div></div>`};
   return `${off?`<div class="card note" style="margin-bottom:10px"><b>Today is a day off</b>
     <div class="muted">${(S.shift.holidays||[]).find(h=>h.date===ds)?.name||'Weekly off'} — punches still work if someone comes in.</div></div>`:''}
@@ -7642,6 +7644,12 @@ function payRun(mk){
 
 let payMonth=null, paySel=null, payTab='today';
 function payroll(){
+  const isSalesman=S.user&&S.user.role==='Salesman';
+  const myEmp=isSalesman?(S.employees.find(e=>String(e.name||'').toLowerCase()===String(S.user.name||'').toLowerCase())||S.employees.find(e=>/sales/i.test(e.position))||S.employees[0]):null;
+  if(isSalesman){
+    if(payTab!=='today'&&payTab!=='sheet') payTab='today';
+    if(myEmp) paySel=myEmp.id;
+  }
   const mk=payMonth||D(today).slice(0,7);
   const list=S.employees;
   const rows=list.map(e=>({e,p:payFor(e,mk)}));
@@ -7765,6 +7773,22 @@ function payroll(){
         <td>${f.in||'—'}</td><td>${f.out||'—'}</td><td class="n">${f.worked?hrs(f.worked).toFixed(2):'—'}</td>
         <td class="n">${f.ot?hrs(f.ot).toFixed(2):'—'}</td><td class="n">${f.late||'—'}</td>
         <td>${f.status==='work'?'<span class="tag ok">worked</span>':f.status==='absent'?'<span class="tag bad">absent</span>':'<span class="tag blue">leave</span>'}</td></tr>`}).join('')}</table>`;
+  }
+
+  if(isSalesman){
+    const stCard=myEmp?empState(D(today),myEmp.id):'out';
+    const f=myEmp?dayFigures(D(today),myEmp.id):{};
+    return `<h1>Attendance · ${S.user.name}</h1>
+    <div class="row" style="margin-bottom:12px">
+      ${stat('Punch Status',stCard.toUpperCase(),'shift today','g')}
+      ${stat('Arrival Time',f.in||'—','punch in','b')}
+      ${stat('Hours on Shift',f.worked?hrs(f.worked).toFixed(2)+' hrs':'0.0 hrs','floor time','y')}
+    </div>
+    <div class="card">
+     <div class="tabs">${[['today','Today on the board'],['sheet','My Attendance Sheet']]
+       .map(t=>`<button class="${payTab===t[0]?'on':''}" data-act="payTab" data-t="${t[0]}">${t[1]}</button>`).join('')}</div>
+     ${body||'<div class="muted">Loading attendance...</div>'}
+    </div>`;
   }
 
   return `<h1>Attendance and pay</h1>
@@ -7973,19 +7997,46 @@ function persist(force){ if(window.privacyOn) return; saveForce=saveForce||!!for
   lastSaved=ok?new Date():null; ['savedAt','savedAtNav','csSync'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=ok?'saved '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'not saved' });
 },400) }
 window.markSaved=()=>{ lastSavedTxt=snapshotTxt() };   // books just came from the server: nothing to push back
+const DEFAULT_ACCOUNTS = [
+  { name: 'Afridh', role: 'Super Admin', uid: 'AF', pass: 'Afridh123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
+  { name: 'Azhad', role: 'Admin', uid: 'AZ', pass: 'Azhad123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
+  { name: 'Akmal', role: 'Admin', uid: 'AK', pass: 'Akmal123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
+  { name: 'KP', role: 'KP', uid: 'KP', pass: 'KP123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','approve'] },
+  { name: 'Sales1', role: 'Salesman', uid: 'S1', pass: 'Sales123', perms: ['products_view', 'dashboard_view', 'attendance_view'] },
+  { name: 'Sales2', role: 'Salesman', uid: 'S2', pass: 'Sales223', perms: ['products_view', 'dashboard_view', 'attendance_view'] },
+  { name: 'Sales3', role: 'Salesman', uid: 'S3', pass: 'Sales323', perms: ['products_view', 'dashboard_view', 'attendance_view'] },
+  { name: 'Sales4', role: 'Salesman', uid: 'S4', pass: 'Sales423', perms: ['products_view', 'dashboard_view', 'attendance_view'] }
+];
 function applyKept(kept){
   Object.assign(S,kept.S); Object.keys(kept.CFG||{}).forEach(k=>{ CFG[k]={...(CFG[k]||{}),...(kept.CFG[k]||{})} });
   S.phoneOpen=false; S.notifOpen=false;
-  const legacy=['afridh','asaath kp','raslan','kasun','fathima'];
+  const legacy=['asaath kp','raslan','kasun','fathima'];
   if(Array.isArray(S.users)){
-    if(S.users.some(u=>legacy.includes(String(u.name).toLowerCase()))||!S.users.some(u=>String(u.name).toLowerCase()==='admin')){
-      S.users=S.users.filter(u=>!legacy.includes(String(u.name).toLowerCase()));
-      if(!S.users.some(u=>String(u.name).toLowerCase()==='admin')){
-        S.users.unshift({name:'admin',role:'Owner',pin:'',uid:'AD',passHash:hashSync('admin123'),perms:[...ROLE_DEFAULTS.Owner],active:true,lastSeen:D(today),prefs:{...PREF_DEFAULTS}});
-      }
+    S.users=S.users.filter(u=>!legacy.includes(String(u.name).toLowerCase()));
+  } else {
+    S.users=[];
+  }
+  if(!Array.isArray(S.roles)) S.roles=[];
+  for(const acc of DEFAULT_ACCOUNTS){
+    const existing=S.users.find(u=>String(u.name||'').toLowerCase()===acc.name.toLowerCase());
+    if(!existing){
+      S.users.push({
+        name:acc.name, role:acc.role, uid:acc.uid, pin:'',
+        passHash:hashSync(acc.pass), perms:[...acc.perms], active:true,
+        lastSeen:null, prefs:{...PREF_DEFAULTS}
+      });
+    } else {
+      if(acc.name==='Afridh') existing.role='Super Admin';
+      if(acc.name==='Azhad'||acc.name==='Akmal') existing.role='Admin';
+      if(acc.name==='KP') existing.role='KP';
+      if(acc.name.startsWith('Sales')) existing.role='Salesman';
+      if(!existing.passHash) existing.passHash=hashSync(acc.pass);
     }
   }
-  if(!S.user||!S.user.name||legacy.includes(String(S.user.name).toLowerCase())) S.user={name:'admin',role:'Owner',perms:[...ROLE_DEFAULTS.Owner],prefs:{...PREF_DEFAULTS}};
+  if(!S.user||!S.user.name||legacy.includes(String(S.user.name).toLowerCase())||String(S.user.name).toLowerCase()==='admin'){
+    const af=S.users.find(u=>u.name==='Afridh')||S.users[0];
+    S.user={name:af.name,role:af.role,perms:[...af.perms],prefs:{...PREF_DEFAULTS,...(af.prefs||{})}};
+  }
   if(!Array.isArray(S.heldBills)) S.heldBills = [];
   S._fromStore=true;
 }
@@ -9056,10 +9107,99 @@ const views=[
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['purchases','Purchases'],
  ['grp','Stock'],['products','Products'],['inventory','Inventory & ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
  ['grp','Online'],['weborders','Online orders'],['webproducts','Online products'],['site','The shop site'],
- ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],['grp','People'],['approvals','Approvals'],['payroll','Attendance & pay'],['users','Users & permissions'],['grp','Out'],['trail','The trail'],['messages','Messages'],['reports','Reports'],['grp','System'],['settings','Settings']];
-const VIEW_PERM={users:'users',settings:'settings',payroll:'payroll',products:'products',webproducts:'products'};   // the board itself is open to everyone who signs in
-const ownerOnly=()=>!!(S.user&&(S.user.role==='Owner'||S.user.role==='Admin'));
-function allowed(v){ if(v==='trail') return ownerOnly(); const p=VIEW_PERM[v]; return !p||can(p) }
+ ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],
+ ['grp','People'],['approvals','Approvals'],['payroll','Attendance & pay'],['users','Users & permissions'],
+ ['grp','Out'],['trail','The trail'],['messages','Messages'],['reports','Reports'],
+ ['grp','System'],['settings','Settings']];
+
+const ownerOnly=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'));
+
+const SECTIONS = {
+  Counter: ['dashboard', 'pos', 'bills', 'docs'],
+  Customers: ['customers', 'receipts', 'tenders'],
+  Suppliers: ['suppliers', 'orders', 'purchases'],
+  Stock: ['products', 'inventory', 'stocktake', 'labels'],
+  Online: ['weborders', 'webproducts', 'site'],
+  Money: ['chequesIn', 'chequesOut', 'expenses', 'accounting'],
+  People: ['approvals', 'payroll', 'users'],
+  Out: ['trail', 'messages', 'reports'],
+  System: ['settings']
+};
+
+const DEFAULT_ROLES = [
+  {
+    name: 'Super Admin',
+    desc: 'Complete control of all sections and exclusive ability to create and configure roles',
+    sections: ['Counter', 'Customers', 'Suppliers', 'Stock', 'Online', 'Money', 'People', 'Out', 'System'],
+    isSystem: true
+  },
+  {
+    name: 'Admin',
+    desc: 'Full access to all 9 system sections, manage own profile and regular store operations',
+    sections: ['Counter', 'Customers', 'Suppliers', 'Stock', 'Online', 'Money', 'People', 'Out', 'System'],
+    isSystem: true
+  },
+  {
+    name: 'KP',
+    desc: 'Counter, Suppliers, Stock, Online, Money, and People operations',
+    sections: ['Counter', 'Suppliers', 'Stock', 'Online', 'Money', 'People'],
+    isSystem: true
+  },
+  {
+    name: 'Salesman',
+    desc: 'Dashboard sales metrics, view stock/products (read-only), view own attendance',
+    sections: [],
+    allowedViews: ['dashboard', 'products', 'payroll'],
+    isSystem: true
+  }
+];
+
+function roleDefFor(roleName){
+  if(Array.isArray(S.roles)){
+    const custom = S.roles.find(r => String(r.name||'').toLowerCase() === String(roleName||'').toLowerCase());
+    if(custom) return custom;
+  }
+  return DEFAULT_ROLES.find(r => String(r.name||'').toLowerCase() === String(roleName||'').toLowerCase()) || null;
+}
+
+const VIEW_PERM={users:'users',settings:'settings',payroll:'payroll',products:'products',webproducts:'products'};
+function allowed(v){
+  if(!S.user || !S.user.name) return false;
+  if(v === 'trail') return ownerOnly();
+  const roleName = String(S.user.role || '');
+  const rLower = roleName.toLowerCase();
+  
+  if(rLower === 'super admin' || rLower === 'superadmin' || rLower === 'owner') return true;
+  if(rLower === 'admin') return true;
+  
+  if(rLower === 'salesman'){
+    return ['dashboard', 'products', 'payroll'].includes(v);
+  }
+  
+  if(rLower === 'kp'){
+    if(v === 'users') return false;
+    const kpSections = ['Counter', 'Suppliers', 'Stock', 'Online', 'Money', 'People'];
+    for(const sec of kpSections){
+      if(SECTIONS[sec] && SECTIONS[sec].includes(v)) return true;
+    }
+    return false;
+  }
+  
+  const rDef = roleDefFor(roleName);
+  if(rDef){
+    if(rDef.allowedViews && rDef.allowedViews.includes(v)) return true;
+    if(v === 'users' && !['super admin', 'superadmin', 'admin'].includes(rLower)) return false;
+    if(Array.isArray(rDef.sections)){
+      for(const sec of rDef.sections){
+        if(SECTIONS[sec] && SECTIONS[sec].includes(v)) return true;
+      }
+    }
+    return false;
+  }
+  
+  const p = VIEW_PERM[v];
+  return !p || can(p);
+}
 /* ================== HOW THE SCREEN IS LAID OUT ==================
    Each person gets their own arrangement: menu down the side or across the
    top, wide or narrow, and the page they land on. It travels with the login,
@@ -9113,7 +9253,16 @@ const GROUP_ICON={Shop:'M3 9l2-5h14l2 5M4 9h16v11H4z',Stock:ICONS.inventory,Mone
 
 function renderNav(){
   const side=pref('nav')==='side';
-  const items=views.filter(v=>v[0]==='grp'||allowed(v[0]));
+  const items=[];
+  let curGrp=null;
+  for(const v of views){
+    if(v[0]==='grp'){
+      curGrp=v;
+    } else if(allowed(v[0])){
+      if(curGrp){ items.push(curGrp); curGrp=null; }
+      items.push(v);
+    }
+  }
   const initial=(S.user.name||'?').trim()[0].toUpperCase();
   const oldList=$('#nav .navlist'), keepScroll=oldList?oldList.scrollTop:0;   // the menu is rebuilt on every render: keep where it was scrolled to
   $('#nav').innerHTML= side
@@ -9551,8 +9700,117 @@ function donut(parts,{size=118,thick=16,center=''}={}){
    <div class="legend">${parts.map((p,i)=>`<div><i style="background:${p.color||CHART_COLORS[i]}"></i><span>${p.label}</span><b>${fmt(p.v)}</b><em>${(p.v/tot*100).toFixed(0)}%</em></div>`).join('')}</div></div>`;
 }
 
+function salesmanDashboard(){
+  const t=D(today);
+  const mySales=S.sales.filter(s=>String(s.by||'').toLowerCase()===String(S.user.name||'').toLowerCase());
+  const todaySales=mySales.filter(s=>s.date===t);
+  const todayTotal=todaySales.reduce((a,s)=>a+s.total,0);
+  const todayCash=todaySales.filter(s=>s.type==='CASH').reduce((a,s)=>a+s.total,0);
+  const todayCredit=todaySales.filter(s=>s.type==='CREDIT').reduce((a,s)=>a+s.total,0);
+  const allSalesTotal=mySales.reduce((a,s)=>a+s.total,0);
+
+  const emp=S.employees.find(e=>String(e.name||'').toLowerCase()===String(S.user.name||'').toLowerCase()) ||
+            S.employees.find(e=>/sales/i.test(e.position)) || S.employees[0];
+  const st=emp?empState(t,emp.id):'out';
+  const f=emp?dayFigures(t,emp.id):{};
+  const punchLabel={out:'Not in yet',working:'On duty',break:'On break',done:'Gone home',absent:'Absent',leave:'Leave'}[st]||st;
+
+  return `<div class="dash-h" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div>
+      <h1 style="margin:0">Salesman Portal · ${S.user.name}</h1>
+      <div class="muted">Regal Hardware till ${S.terminal} · ${today.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn tape sm" data-view="products">Browse Stock</button>
+      <button class="btn ghost sm" data-view="payroll">My Attendance</button>
+    </div>
+  </div>
+
+  <div class="row dashrow" style="margin-bottom:16px">
+    <div class="flex1">
+      <div class="board" style="height:100%">
+        <div class="lead">
+          <div class="l"><span class="live"></span>My Sales Today</div>
+          <div class="v"><span class="count" data-to="${todayTotal.toFixed(2)}">${fmt(todayTotal)}</span></div>
+          <div class="s">${todaySales.length} invoice${todaySales.length===1?'':'s'} billed under your name today</div>
+        </div>
+        <div class="split" style="margin-top:12px">
+          <div><div class="l">Cash</div><div class="v">${fmt(todayCash)}</div></div>
+          <div><div class="l">Credit</div><div class="v">${fmt(todayCredit)}</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="flex1">
+      <div class="card" style="height:100%;display:flex;flex-direction:column;justify-content:center">
+        <div class="muted" style="text-transform:uppercase;font-size:11px;letter-spacing:1px;font-weight:600;margin-bottom:4px">All-Time Sales Amount</div>
+        <div style="font-size:28px;font-weight:700;color:var(--ink);margin-bottom:4px"><span class="count" data-to="${allSalesTotal.toFixed(2)}">${fmt(allSalesTotal)}</span></div>
+        <div class="muted">${mySales.length} total invoice${mySales.length===1?'':'s'} billed across your shifts</div>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:flex;gap:16px;flex-wrap:wrap">
+          <div><span class="muted">Today Average:</span> <b>${todaySales.length?fmt(todayTotal/todaySales.length):'—'}</b></div>
+          <div><span class="muted">Overall Average:</span> <b>${mySales.length?fmt(allSalesTotal/mySales.length):'—'}</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row dashrow" style="margin-bottom:16px">
+    <div class="flex1">
+      <div class="card" style="height:100%">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h2 style="margin:0">My Shift & Attendance</h2>
+          <span class="tag ${st==='working'?'ok':st==='break'?'warn':st==='absent'?'bad':'blue'}">${punchLabel}</span>
+        </div>
+        <div class="row" style="margin-bottom:12px">
+          ${stat('In Time',f.in||'—','shift arrival','g')}
+          ${stat('Out Time',f.out||'—','shift departure','b')}
+          ${stat('Hours Today',f.worked?hrs(f.worked).toFixed(2)+'h':'—','floor time','y')}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${emp?`<button class="btn tape sm" data-act="punch" data-id="${emp.id}">${
+            st==='out'?'Punch in':st==='break'?'Back from break':st==='working'?'Punch out':'Punch in again'
+          }</button>`:''}
+          <button class="btn ghost sm" data-view="payroll">View Attendance Record</button>
+        </div>
+      </div>
+    </div>
+    <div class="flex1">
+      <div class="card" style="height:100%">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h2 style="margin:0">Quick Stock Check</h2>
+          <button class="btn ghost sm" data-view="products">Full Catalog</button>
+        </div>
+        <p class="muted" style="margin-top:0">Instant price and stock availability lookup on the showroom floor.</p>
+        <div style="display:flex;gap:8px">
+          <input id="quickStockQ" placeholder="Type item name, code or barcode…" style="flex:1" onkeydown="if(event.key==='Enter'){prodQ=this.value;go('products')}">
+          <button class="btn tape sm" onclick="const q=(document.getElementById('quickStockQ').value||'').trim();if(q){prodQ=q;go('products')}">Check</button>
+        </div>
+        <div class="muted" style="margin-top:10px">${S.products.length} products on catalog · ${S.products.filter(p=>p.stock<=p.min).length} low in stock</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0">My Recent Invoices</h2>
+      <span class="muted">${mySales.length} total bills</span>
+    </div>
+    <table>
+      <tr><th>Invoice #</th><th>Date</th><th>Customer</th><th>Items</th><th class="n">Total</th><th>Type</th></tr>
+      ${mySales.slice(-8).reverse().map(s=>`<tr>
+        <td><b>${s.no}</b></td>
+        <td class="muted">${s.date}</td>
+        <td>${(C(s.customerId)||{}).name||'Cash Customer'}</td>
+        <td>${s.lines.length} item${s.lines.length===1?'':'s'}</td>
+        <td class="n"><b>${fmt(s.total)}</b></td>
+        <td><span class="tag ${s.type==='CASH'?'ok':'warn'}">${s.type}</span></td>
+      </tr>`).join('')||'<tr><td colspan="6" class="muted">No bills recorded under your name yet.</td></tr>'}
+    </table>
+  </div>`;
+}
+
 function dashboard(){
   try{ tenderReminders() }catch(e){}
+  if(S.user && S.user.role === 'Salesman') return salesmanDashboard();
   const t=D(today), sum=(a,k)=>a.reduce((x,y)=>x+y[k],0);
   const ts=S.sales.filter(s=>s.date===t);
   const cashS=ts.filter(s=>s.type==='CASH'), credS=ts.filter(s=>s.type==='CREDIT');
@@ -13101,7 +13359,7 @@ const APPROVAL_KINDS=[
   ['purAdjust','Amount taken off a supplier bill'],
   ['prodPrice','Product prices or cost changed']];
 const APKIND=Object.fromEntries(APPROVAL_KINDS);
-const canApprove=()=>!!(S.user&&(S.user.role==='Owner'||S.user.role==='Admin'||can('approve')));
+const canApprove=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||can('approve')));
 const needsApproval=(kind)=>{ const cfg=CFG.approvals||{}; return cfg[kind]!==false&&!canApprove() };
 const apPending=()=>(S.approvals||[]).filter(a=>a.status==='pending');
 const apMine=()=>apPending().filter(a=>canApprove()||a.by===(S.user||{}).name);   // what the badge counts: to decide, or waiting on my behalf
@@ -13497,7 +13755,7 @@ function custDetails(c){
      ${webOrders.length?`<tr><th>Website</th><td>${webOrders.length} order${webOrders.length===1?'':'s'} placed online</td></tr>`:''}
     </table>
     <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap"><button class="btn tape" data-act="custEdit" data-id="${c.id}">Edit details</button>
-     ${can('users')||S.user.role==='Owner'||S.user.role==='Admin'?`<button class="btn ghost" data-act="custRemove" data-id="${c.id}" ${partyBal('C',c.id)>0.005?'disabled title="Settle the account first"':''}>Remove customer</button>`:''}</div></div>
+     ${can('users')||S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'?`<button class="btn ghost" data-act="custRemove" data-id="${c.id}" ${partyBal('C',c.id)>0.005?'disabled title="Settle the account first"':''}>Remove customer</button>`:''}</div></div>
    <div><h2 style="font-size:15px">Messages sent</h2>
     ${(S.messages||[]).filter(m=>m.to===c.phone).slice(0,8).map(m=>`<div class="ev" style="padding:6px 0;border-bottom:1px solid var(--line2)"><div class="muted" style="font-size:12px">${m.date||m.at||''} · ${m.status||''}</div><div style="font-size:13px">${m.text||m.message||''}</div></div>`).join('')||'<div class="muted">No texts to this customer yet.</div>'}</div>
   </div>`;
@@ -14067,6 +14325,7 @@ function showInvoice(inv,f){
 /* ---- products: add, edit, and what each one has sold ---- */
 function nextNum(){ const used=new Set(S.products.map(p=>+p.num||0)); let n=1000; while(used.has(n)) n++; return String(n) }
 function productModal(pid){
+  if(S.user && S.user.role === 'Salesman') return toast('Adding or editing products is not open to Salesman');
   const p=pid?P(pid):null;
   const f=(id,label,val,type='text',hint='')=>`<div class="f"><label>${label}</label><input id="${id}" ${type==='number'?'type="number" step="any"':''} value="${val??''}">${hint?`<div class="muted">${hint}</div>`:''}</div>`;
   const m=modal(`<h2>${p?'Edit '+p.name:'New product'}</h2>
@@ -14404,7 +14663,7 @@ function supDetails(s,orders){
      ${orders.length?`<tr><th>Orders</th><td>${orders.length} sent to them</td></tr>`:''}
     </table>
     <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap"><button class="btn tape" data-act="supEdit" data-id="${s.id}">Edit details</button>
-     ${S.user.role==='Owner'||S.user.role==='Admin'?`<button class="btn ghost" data-act="supRemove" data-id="${s.id}" ${partyBal('S',s.id)>0.005?'disabled title="Settle the account first"':''}>Remove supplier</button>`:''}</div></div>
+     ${S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'?`<button class="btn ghost" data-act="supRemove" data-id="${s.id}" ${partyBal('S',s.id)>0.005?'disabled title="Settle the account first"':''}>Remove supplier</button>`:''}</div></div>
    <div><h2 style="font-size:15px">Messages sent</h2>
     ${(S.messages||[]).filter(m=>s.phone&&m.to===s.phone).slice(0,8).map(m=>`<div style="padding:6px 0;border-bottom:1px solid var(--line2)"><div class="muted" style="font-size:12px">${m.at||''} · ${m.status||''}</div><div style="font-size:13px">${m.body||''}</div></div>`).join('')||'<div class="muted">No texts to this supplier yet.</div>'}</div>
   </div>`;
@@ -14529,27 +14788,31 @@ function newPurModal(sid,ord){
 let invTab='products', prodQ='', invLimit=200;
 /* long lists are drawn a page at a time — thousands of rows in one go is what makes a screen feel stuck */
 const moreRows=(shown,total,act)=>shown<total?`<div style="display:flex;gap:10px;align-items:center;margin-top:8px"><span class="muted">Showing ${shown} of ${total}.</span><button class="btn ghost sm" data-act="${act}">Show 200 more</button><span class="muted">or search to narrow it down</span></div>`:'';
-function inventory(){ const tabs=[['products','Products'],['stock','Stock'],['ledger','Stock ledger'],['damage','Damaged goods']];
+function inventory(){
+  const isSalesman=S.user&&S.user.role==='Salesman';
+  const tabs=isSalesman?[['products','Products'],['stock','Stock']]:[['products','Products'],['stock','Stock'],['ledger','Stock ledger'],['damage','Damaged goods']];
+  if(isSalesman&&invTab!=='products'&&invTab!=='stock') invTab='products';
   let body='';
   if(invTab==='products'){ const q=prodQ.toLowerCase().trim(); const list=S.products.filter(p=>!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||(p.short||'').toLowerCase()===q||String(p.num||'')===q||p.barcode===q||(p.cat||'').toLowerCase().includes(q));
     if(q) list.sort((a,b)=>((a.short||'').toLowerCase()===q||a.name.toLowerCase().startsWith(q)?0:1)-((b.short||'').toLowerCase()===q||b.name.toLowerCase().startsWith(q)?0:1));
     const shown=list.slice(0,invLimit);
     body=`<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
       <input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search item name, code, short code, barcode or category…" style="max-width:380px">
-      <button class="btn tape" data-act="newProd">Add a product</button><span class="muted" style="margin-left:auto">${list.length} of ${S.products.length} products</span></div>
-     <table><tr><th>No.</th><th>Code</th><th>Short</th><th>Item</th><th>Unit</th><th class="n">MRP</th><th class="n">Cost${CFG.cost.inProducts&&can('cost')?' code':''}</th><th class="n">Discounted</th><th class="n">Wholesale</th><th class="n">Margin</th><th class="n">In stock</th><th></th></tr>
-     ${shown.map(p=>`<tr class="rowlink" data-act="prodHist" data-id="${p.id}"><td><span class="pnum">${p.num||''}</span></td><td>${p.code}<div class="muted">${p.barcode}</div></td>
+      ${!isSalesman?`<button class="btn tape" data-act="newProd">Add a product</button>`:''}
+      <span class="muted" style="margin-left:auto">${list.length} of ${S.products.length} products</span></div>
+     <table><tr><th>No.</th><th>Code</th><th>Short</th><th>Item</th><th>Unit</th><th class="n">MRP</th>${!isSalesman?`<th class="n">Cost${CFG.cost.inProducts&&can('cost')?' code':''}</th>`:''}<th class="n">Discounted</th><th class="n">Wholesale</th>${!isSalesman?'<th class="n">Margin</th>':''}<th class="n">In stock</th>${!isSalesman?'<th></th>':''}</tr>
+     ${shown.map(p=>`<tr class="rowlink" ${!isSalesman?`data-act="prodHist" data-id="${p.id}"`:''}><td><span class="pnum">${p.num||''}</span></td><td>${p.code}<div class="muted">${p.barcode}</div></td>
       <td>${p.short?`<span class="shortcode">${p.short}</span>`:'<span class="muted">—</span>'}</td>
       <td><b>${p.name}</b><div class="muted">${p.cat}</div></td><td>${p.unit}</td>
-      <td class="n">${money2(p.mrp)}</td><td class="n">${CFG.cost.inProducts&&can('cost')?`<span class="cc">${costCode(p.cost)}</span>`:money2(p.cost)}</td><td class="n"><b>${money2(p.retail)}</b></td><td class="n">${money2(p.wholesale)}</td>
-      <td class="n">${((p.retail-p.cost)/p.retail*100).toFixed(1)}%</td>
+      <td class="n">${money2(p.mrp)}</td>${!isSalesman?`<td class="n">${CFG.cost.inProducts&&can('cost')?`<span class="cc">${costCode(p.cost)}</span>`:money2(p.cost)}</td>`:''}<td class="n"><b>${money2(p.retail)}</b></td><td class="n">${money2(p.wholesale)}</td>
+      ${!isSalesman?`<td class="n">${((p.retail-p.cost)/p.retail*100).toFixed(1)}%</td>`:''}
       <td class="n">${p.stock<=p.min?`<span class="tag bad">${fq(p.stock)}</span>`:fq(p.stock)}</td>
-      <td><button class="btn ghost sm" data-act="editProd" data-id="${p.id}">Edit</button></td></tr>`).join('')||'<tr><td colspan="12" class="muted">Nothing matches that.</td></tr>'}</table>
+      ${!isSalesman?`<td><button class="btn ghost sm" data-act="editProd" data-id="${p.id}">Edit</button></td>`:''}</tr>`).join('')||'<tr><td colspan="12" class="muted">Nothing matches that.</td></tr>'}</table>
      ${moreRows(shown.length,list.length,'invMore')}
-     <div class="muted" style="margin-top:8px">Click an item to see every bill it has been sold on.</div>`}
+     ${!isSalesman?'<div class="muted" style="margin-top:8px">Click an item to see every bill it has been sold on.</div>':''} `}
   if(invTab==='stock'){ const q=prodQ.toLowerCase().trim(); const list=S.products.filter(p=>!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||(p.cat||'').toLowerCase().includes(q)); const shown=list.slice(0,invLimit);
-   body=`<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search name, code or category…" style="max-width:380px"><span class="muted" style="margin-left:auto">${list.length} products</span></div>
-   <table><tr><th>Code</th><th>Product</th><th>Category</th><th class="n">In stock</th><th class="n">Min</th><th class="n">Cost (avg)</th><th class="n">Retail</th><th class="n">Wholesale</th><th class="n">Value</th></tr>${shown.map(p=>`<tr><td>${p.code}<div class="muted">${p.barcode}</div></td><td>${p.name}</td><td>${p.cat}</td><td class="n">${p.stock<=p.min?'<span class="tag bad">':''}${fq(p.stock)} ${p.unit}${p.stock<=p.min?'</span>':''}</td><td class="n">${p.min}</td><td class="n">${p.cost.toFixed(2)}</td><td class="n">${p.retail.toFixed(2)}</td><td class="n">${p.wholesale.toFixed(2)}</td><td class="n">${fmt(p.stock*p.cost)}</td></tr>`).join('')}<tr><td colspan=8><b>Total stock value${q?' of these':''}</b></td><td class="n"><b>${fmt(list.reduce((a,p)=>a+p.stock*p.cost,0))}</b></td></tr></table>${moreRows(shown.length,list.length,'invMore')}` }
+    body=`<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search name, code or category…" style="max-width:380px"><span class="muted" style="margin-left:auto">${list.length} products</span></div>
+    <table><tr><th>Code</th><th>Product</th><th>Category</th><th class="n">In stock</th><th class="n">Min</th>${!isSalesman?'<th class="n">Cost (avg)</th>':''}<th class="n">Retail</th><th class="n">Wholesale</th>${!isSalesman?'<th class="n">Value</th>':''}</tr>${shown.map(p=>`<tr><td>${p.code}<div class="muted">${p.barcode}</div></td><td>${p.name}</td><td>${p.cat}</td><td class="n">${p.stock<=p.min?'<span class="tag bad">':''}${fq(p.stock)} ${p.unit}${p.stock<=p.min?'</span>':''}</td><td class="n">${p.min}</td>${!isSalesman?`<td class="n">${p.cost.toFixed(2)}</td>`:''}<td class="n">${p.retail.toFixed(2)}</td><td class="n">${p.wholesale.toFixed(2)}</td>${!isSalesman?`<td class="n">${fmt(p.stock*p.cost)}</td>`:''}</tr>`).join('')}${!isSalesman?`<tr><td colspan=8><b>Total stock value${q?' of these':''}</b></td><td class="n"><b>${fmt(list.reduce((a,p)=>a+p.stock*p.cost,0))}</b></td></tr>`:''}</table>${moreRows(shown.length,list.length,'invMore')}` }
   if(invTab==='ledger') body=`<div class="muted" style="margin-bottom:6px">Every movement has a source document. Nothing changes stock silently.</div><table><tr><th>Date</th><th>Product</th><th>Type</th><th class="n">Qty</th><th class="n">After</th><th class="n">Unit cost</th><th>Reference</th></tr>${S.movements.slice().reverse().slice(0,invLimit).map(m=>`<tr><td>${m.date}</td><td>${P(m.pid).name}</td><td><span class="tag ${m.type==='PURCHASE_VOID'?'warn':m.qty>0?'ok':'bad'}">${m.type==='PURCHASE_VOID'?'ENTRY VOIDED':m.type}</span></td><td class="n">${m.qty>0?'+':''}${fq(m.qty)}</td><td class="n">${fq(m.after)}</td><td class="n">${m.cost.toFixed(2)}</td><td>${m.ref}</td></tr>`).join('')}</table>${moreRows(Math.min(invLimit,S.movements.length),S.movements.length,'invMore')}`;
   if(invTab==='damage') body=`<button class="btn tape" data-act="newDmg" style="margin-bottom:10px">Record damaged goods</button><table><tr><th>No</th><th>Date</th><th>Product</th><th class="n">Qty</th><th class="n">Value</th><th>Reason</th><th>User</th></tr>${S.damages.map(d=>`<tr><td>${d.no}</td><td>${d.date}</td><td>${P(d.pid).name}</td><td class="n">${d.qty}</td><td class="n">${fmt(d.value)}</td><td>${d.reason}</td><td>${d.by}</td></tr>`).join('')}</table>`;
   return `<h1>Inventory</h1><div class="tabs">${tabs.map(t=>`<button class="${invTab===t[0]?'on':''}" data-tab="${t[0]}">${t[1]}</button>`).join('')}</div><div class="card">${body}</div>` }
@@ -15610,60 +15873,275 @@ const PERMS=[
   ['users','Manage users'],
   ['approve','Approve requests: portals, credit limits, write-offs, price changes']];
 const ROLE_DEFAULTS={
+  'Super Admin':PERMS.map(p=>p[0]),
   Owner:PERMS.map(p=>p[0]),
   Admin:PERMS.map(p=>p[0]),
+  KP:['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','approve'],
+  Salesman:['products_view','dashboard_view','attendance_view'],
   Manager:['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products'],
   Cashier:['sell','receive'],
   Store:['products'],
   Accounts:['receive','paySupplier','adjustInvoice','overLimit','cost','profit','payroll']};
-const can=(k)=>!!(S.user&&S.user.perms&&S.user.perms.includes(k));
 
-let userSel=null;
+const can=(k)=>{
+  if(!S.user) return false;
+  const r=String(S.user.role||'').toLowerCase();
+  if(r==='super admin'||r==='superadmin'||r==='owner') return true;
+  if(r==='admin') return true;
+  if(r==='salesman'){
+    return ['products_view','dashboard_view','attendance_view'].includes(k);
+  }
+  return !!(S.user.perms&&S.user.perms.includes(k));
+};
+
+let userTab='users';
 function users(){
+  const isSuperAdmin=S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner');
+  const isAdmin=isSuperAdmin||(S.user&&S.user.role==='Admin');
   const list=S.users;
-  return `<h1>Users and what they may do</h1>
-  <div class="row" style="margin-bottom:12px">
-   ${stat('People with a login',list.filter(u=>u.active).length,`${list.filter(u=>!u.active).length} switched off`,'b')}
-   ${stat('Can take bills',list.filter(u=>u.active&&u.perms.includes('sell')).length,'','y')}
-   ${stat('Can see cost prices',list.filter(u=>u.active&&u.perms.includes('cost')).length,'keep this short','r')}
-   ${stat('Can change settings',list.filter(u=>u.active&&u.perms.includes('settings')).length,'','g')}
-  </div>
-  <div class="card" style="margin-bottom:12px">
-   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-    <div class="muted">Whoever signs in at the lock screen is the name printed on the bills they take. Switch someone off and they disappear from that screen straight away.</div>
-    <button class="btn tape" data-act="userNew">Add someone</button></div></div>
-  <div class="card">
-   <table><tr><th>Name</th><th>Role</th><th>Signs in with</th><th>Last signed in</th><th>What they may do</th><th></th></tr>
-   ${list.map(u=>`<tr class="${u.active?'':'off'}">
-     <td><b>${u.name}</b>${S.user.name===u.name?' <span class="tag ok">on now</span>':''}<div class="muted">${u.active?'active':'switched off'} · bills ${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-…</div></td>
-     <td>${u.role}</td>
-     <td><span class="tag ok">password</span>${u.pin?' <span class="tag blue">PIN</span>':''}
-      <div class="muted">${(u.prefs&&u.prefs.nav)==='top'?'menu on top':'menu at the side'}</div></td>
-     <td class="muted">${u.lastSeen||'never'}</td>
-     <td><div class="permlist">${u.perms.length===PERMS.length?'<span class="tag ok">everything</span>'
-        :u.perms.length?u.perms.map(p=>`<span class="permchip">${PERMS.find(x=>x[0]===p)[1]}</span>`).join(''):'<span class="muted">nothing yet</span>'}</div></td>
-     <td><div class="rowacts">
-      <button class="btn ghost sm" data-act="userEdit" data-n="${u.name}">Edit</button>
-      <button class="btn ghost sm" data-act="userToggle" data-n="${u.name}">${u.active?'Switch off':'Switch on'}</button>
-     </div></td></tr>`).join('')}</table>
-  </div>`;
+  const allRoles=[...DEFAULT_ROLES,...(S.roles||[]).filter(r=>!DEFAULT_ROLES.some(d=>d.name.toLowerCase()===r.name.toLowerCase()))];
+  
+  let tabBody='';
+  if(userTab==='roles'&&isSuperAdmin){
+    tabBody=`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+        <div>
+          <b>Store Roles & Section Access</b>
+          <div class="muted">As Super Admin, configure access to the 9 system sections or create custom staff roles.</div>
+        </div>
+        <button class="btn tape" data-act="roleNew">Create New Role</button>
+      </div>
+      <table>
+        <tr><th>Role</th><th>Description</th><th>Type</th><th>Permitted Sections</th><th></th></tr>
+        ${allRoles.map(r=>{
+          const isCustom=!r.isSystem;
+          const secs=r.sections||(r.allowedViews?r.allowedViews.map(v=>'View: '+v):[]);
+          return `<tr>
+            <td><b>${r.name}</b></td>
+            <td class="muted">${r.desc||'—'}</td>
+            <td><span class="tag ${isCustom?'warn':'blue'}">${isCustom?'Custom':'System'}</span></td>
+            <td><div class="permlist">${secs.length?secs.map(s=>`<span class="permchip">${s}</span>`).join(''):'<span class="muted">None</span>'}</div></td>
+            <td><div class="rowacts">
+              ${isCustom?`
+                <button class="btn ghost sm" data-act="roleEdit" data-r="${r.name}">Edit</button>
+                <button class="btn ghost sm" data-act="roleDel" data-r="${r.name}">Delete</button>
+              `:r.name==='KP'?`<button class="btn ghost sm" data-act="roleEdit" data-r="${r.name}">Customize</button>`:`<span class="muted">Built-in</span>`}
+            </div></td>
+          </tr>`;
+        }).join('')}
+      </table>
+    `;
+  } else {
+    tabBody=`
+      <div class="row" style="margin-bottom:12px">
+       ${stat('People with a login',list.filter(u=>u.active).length,`${list.filter(u=>!u.active).length} switched off`,'b')}
+       ${stat('Super Admins & Admins',list.filter(u=>u.active&&['Super Admin','Admin','Owner'].includes(u.role)).length,'full access','g')}
+       ${stat('KP Staff',list.filter(u=>u.active&&u.role==='KP').length,'operational','y')}
+       ${stat('Salesmen',list.filter(u=>u.active&&u.role==='Salesman').length,'read-only catalog','r')}
+      </div>
+      <div class="card" style="margin-bottom:12px">
+       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div class="muted">Whoever signs in at the lock screen is the name printed on the bills they take. Switch someone off and they disappear from that screen straight away.</div>
+        <div style="display:flex;gap:8px">
+          ${!isSuperAdmin&&isAdmin?`<button class="btn ghost" data-act="myProfile">My Profile</button>`:''}
+          <button class="btn tape" data-act="userNew">Add someone</button>
+        </div>
+       </div>
+      </div>
+      <table><tr><th>Name</th><th>Role</th><th>Signs in with</th><th>Last signed in</th><th>What they may do</th><th></th></tr>
+      ${list.map(u=>{
+        const isTargetSuper=u.role==='Super Admin'||u.name==='Afridh';
+        const canModify=isSuperAdmin||(!isTargetSuper&&isAdmin);
+        const isSelf=S.user.name===u.name;
+        return `<tr class="${u.active?'':'off'}">
+        <td><b>${u.name}</b>${isSelf?' <span class="tag ok">on now</span>':''}${isTargetSuper?' <span class="tag gold" style="margin-left:4px">Super Admin</span>':''}
+         <div class="muted">${u.active?'active':'switched off'} · bills ${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-…</div></td>
+        <td><b>${u.role}</b></td>
+        <td><span class="tag ok">password</span>${u.pin?' <span class="tag blue">PIN</span>':''}
+         <div class="muted">${(u.prefs&&u.prefs.nav)==='top'?'menu on top':'menu at the side'}</div></td>
+        <td class="muted">${u.lastSeen||'never'}</td>
+        <td><div class="permlist">${u.role==='Super Admin'||u.role==='Admin'||u.role==='Owner'?'<span class="tag ok">Full System Access</span>'
+           :u.role==='KP'?'<span class="tag blue">Counter · Suppliers · Stock · Online · Money · People</span>'
+           :u.role==='Salesman'?'<span class="tag warn">Dashboard · Read-Only Stock · Attendance</span>'
+           :u.perms.length?u.perms.map(p=>`<span class="permchip">${(PERMS.find(x=>x[0]===p)||[])[1]||p}</span>`).join(''):'<span class="muted">nothing yet</span>'}</div></td>
+        <td><div class="rowacts">
+         ${isSelf?`<button class="btn ghost sm" data-act="myProfile">My Profile</button>`:''}
+         ${canModify&&!isSelf?`
+           <button class="btn ghost sm" data-act="userEdit" data-n="${u.name}">Edit</button>
+           ${!isTargetSuper?`<button class="btn ghost sm" data-act="userToggle" data-n="${u.name}">${u.active?'Switch off':'Switch on'}</button>`:''}
+         `:(!isSelf?`<span class="muted">Protected</span>`:'')}
+        </div></td></tr>`}).join('')}</table>
+    `;
+  }
+
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+      <h1>Users, Roles and Permissions</h1>
+      ${isSuperAdmin?`
+        <div class="tabs" style="margin:0">
+          <button class="${userTab==='users'?'on':''}" onclick="userTab='users';render()">Users</button>
+          <button class="${userTab==='roles'?'on':''}" onclick="userTab='roles';render()">Roles & Section Access</button>
+        </div>
+      `:''}
+    </div>
+    <div class="card">${tabBody}</div>
+  `;
 }
+
+function myProfileModal(){
+  const u=S.users.find(x=>x.name===S.user.name)||S.user;
+  const m=modal(`<h2>My Profile · ${u.name}</h2>
+    <div class="grid2">
+      <div class="f"><label>Name as it appears on bills & audits</label><input id="mpName" value="${u.name}"></div>
+      <div class="f"><label>Bill initials (two letters)</label><input id="mpUid" maxlength="2" value="${u.uid||''}" style="text-transform:uppercase"></div>
+    </div>
+    <div class="grid2" style="margin-top:10px">
+      <div class="f"><label>Change Password (leave blank to keep current)</label><input id="mpPass" type="password" autocomplete="new-password" placeholder="at least 6 characters"></div>
+      <div class="f"><label>PIN code (optional, 4-6 digits)</label><input id="mpPin" inputmode="numeric" maxlength="6" value="${u.pin||''}" placeholder="e.g. 1234"></div>
+    </div>
+    <div class="grid2" style="margin-top:10px">
+      <div class="f"><label>Menu Placement</label><select id="mpNav">
+        <option value="side" ${pref('nav')==='side'?'selected':''}>Menu down the side</option>
+        <option value="top" ${pref('nav')==='top'?'selected':''}>Menu across the top</option>
+      </select></div>
+      <div class="f"><label>Default Start View</label><select id="mpStart">
+        ${views.filter(v=>v[0]!=='grp'&&allowed(v[0])).map(v=>`<option value="${v[0]}" ${pref('start')===v[0]?'selected':''}>${v[1]}</option>`).join('')}
+      </select></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+      <button class="btn ghost" data-act="closeModal">Cancel</button>
+      <button class="btn tape" id="mpSave">Save My Profile</button>
+    </div>
+  `);
+  m.querySelector('#mpSave').onclick=()=>{
+    const nm=(m.querySelector('#mpName').value||'').trim();
+    if(!nm) return toast('Name is required');
+    const uid=(m.querySelector('#mpUid').value||'').replace(/[^A-Za-z]/g,'').toUpperCase().slice(0,2)||nm.slice(0,2).toUpperCase();
+    const pass=(m.querySelector('#mpPass').value||'').trim();
+    if(pass&&pass.length<6) return toast('Password needs at least six characters');
+    const pin=(m.querySelector('#mpPin').value||'').replace(/\D/g,'');
+    if(pin&&pin.length<4) return toast('PIN needs at least 4 digits');
+    const navChoice=m.querySelector('#mpNav').value;
+    const startChoice=m.querySelector('#mpStart').value;
+    
+    u.name=nm;
+    u.uid=uid;
+    u.pin=pin;
+    if(!u.prefs) u.prefs={...PREF_DEFAULTS};
+    u.prefs.nav=navChoice;
+    u.prefs.start=startChoice;
+    setPref('nav',navChoice);
+    setPref('start',startChoice);
+    if(pass){
+      u.passHash=hashSync(pass);
+      delete u.pass;
+      hashPass(pass).then(h=>{ u.passHash=h; });
+    }
+    S.user.name=nm;
+    S.user.prefs={...u.prefs};
+    applyLayout();
+    persist(true);
+    m.remove();
+    render();
+    toast('Profile updated successfully');
+  };
+}
+
+function roleModal(roleName){
+  if(S.user.role!=='Super Admin'&&S.user.role!=='Owner'){
+    return toast('Only Super Admin can configure roles and section permissions');
+  }
+  const isEdit=!!roleName;
+  const existing=isEdit?roleDefFor(roleName):null;
+  const curSections=new Set(existing?(existing.sections||[]):['Counter','Stock']);
+  
+  const sectionList=[
+    ['Counter','Dashboard, POS Billing, Bills history, Quotes & Delivery notes'],
+    ['Customers','Customers registry, Receipts & payments, Quotations & Tenders'],
+    ['Suppliers','Suppliers registry, Supplier orders, Purchases & Goods received'],
+    ['Stock','Products list, Inventory & ledger, Stock take, Barcode labels'],
+    ['Online','Online customer orders, Online store catalog, Website settings'],
+    ['Money','Cheques in, Cheques out, Store expenses, Chart of accounts & ledger'],
+    ['People','Management approvals, Attendance board & wages'],
+    ['Out','Customer & supplier SMS messages, Business reports & analytics'],
+    ['System','Shop settings & system configuration']
+  ];
+  
+  const m=modal(`<h2>${isEdit?'Edit Role · '+roleName:'Create New Role'}</h2>
+    <p class="muted">Select which of the 9 shop sections staff in this role can access.</p>
+    <div class="grid2">
+      <div class="f"><label>Role Name</label><input id="rlName" value="${existing?existing.name:''}" ${isEdit&&existing.isSystem?'readonly':''} placeholder="e.g. Supervisor, Cashier"></div>
+      <div class="f"><label>Description</label><input id="rlDesc" value="${existing?(existing.desc||''):''}" placeholder="e.g. Counter operations and stock check"></div>
+    </div>
+    <h3 style="margin-top:14px;margin-bottom:8px">Section Access Checkboxes</h3>
+    <div class="grid2" id="rlSections">
+      ${sectionList.map(([sec,desc])=>`
+        <label class="chk" style="padding:8px;border:1px solid var(--line);border-radius:6px;margin:0">
+          <input type="checkbox" data-sec="${sec}" ${curSections.has(sec)?'checked':''}>
+          <div>
+            <b>${sec} Section</b>
+            <div class="muted" style="font-size:11px">${desc}</div>
+          </div>
+        </label>
+      `).join('')}
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+      <button class="btn ghost" data-act="closeModal">Cancel</button>
+      <button class="btn tape" id="rlSave">${isEdit?'Save Changes':'Create Role'}</button>
+    </div>
+  `);
+  
+  m.querySelector('#rlSave').onclick=()=>{
+    const nm=(m.querySelector('#rlName').value||'').trim();
+    if(!nm) return toast('Role name is required');
+    const desc=(m.querySelector('#rlDesc').value||'').trim();
+    const pickedSecs=[...m.querySelectorAll('[data-sec]:checked')].map(cb=>cb.dataset.sec);
+    if(!pickedSecs.length) return toast('Select at least one section for this role');
+    
+    if(!Array.isArray(S.roles)) S.roles=[];
+    
+    if(existing&&existing.isSystem){
+      existing.sections=pickedSecs;
+      existing.desc=desc;
+    } else {
+      const idx=S.roles.findIndex(r=>r.name.toLowerCase()===nm.toLowerCase());
+      const roleObj={name:nm,desc,sections:pickedSecs,isSystem:false};
+      if(idx>=0) S.roles[idx]=roleObj;
+      else S.roles.push(roleObj);
+    }
+    
+    persist(true);
+    m.remove();
+    render();
+    toast(`Role ${nm} saved with ${pickedSecs.length} section(s) permitted`);
+  };
+}
+
 function userModal(name){
+  const isSuperAdmin=S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner');
+  if(name==='Afridh'&&!isSuperAdmin){
+    return toast('Only Super Admin Afridh can modify Super Admin profile');
+  }
   const u=name?S.users.find(x=>x.name===name):null;
-  const perms=new Set(u?u.perms:ROLE_DEFAULTS.Cashier);
+  const allRoles=[...DEFAULT_ROLES,...(S.roles||[]).filter(r=>!DEFAULT_ROLES.some(d=>d.name.toLowerCase()===r.name.toLowerCase()))];
+  const availableRoles=isSuperAdmin
+    ? allRoles.map(r=>r.name)
+    : allRoles.filter(r=>r.name!=='Super Admin'&&r.name!=='Owner').map(r=>r.name);
+
+  const perms=new Set(u?u.perms:(ROLE_DEFAULTS.Cashier||[]));
   const m=modal(`<h2>${u?'Edit '+u.name:'Add someone'}</h2>
    <div class="grid3">
-    <div class="f"><label>Name as it prints on bills</label><input id="uName" value="${u?u.name:''}"></div>
+    <div class="f"><label>Name as it prints on bills</label><input id="uName" value="${u?u.name:''}" ${u&&u.name==='Afridh'&&!isSuperAdmin?'readonly':''}></div>
     <div class="f"><label>Bill id (two letters, goes in every bill number)</label><input id="uUid" maxlength="2" value="${u?(u.uid||''):''}" placeholder="e.g. RS" style="text-transform:uppercase"></div>
-    <div class="f"><label>Role</label><select id="uRole">${Object.keys(ROLE_DEFAULTS).map(r=>`<option ${u&&u.role===r?'selected':''}>${r}</option>`).join('')}</select>
+    <div class="f"><label>Role</label><select id="uRole">${availableRoles.map(r=>`<option ${(u&&u.role===r)||(!u&&r==='Salesman')?'selected':''}>${r}</option>`).join('')}</select>
      <div class="muted">Changing the role ticks that role's usual boxes</div></div>
     <div class="f"><label>${u?'New password (blank keeps the old one)':'Password'}</label><input id="uPass" type="password" autocomplete="new-password" placeholder="at least 6 characters"></div>
     <div class="f"><label>PIN as well (optional)</label><input id="uPin" inputmode="numeric" maxlength="6" value="${u&&u.pin?u.pin:''}" placeholder="4 to 6 digits"></div>
    </div>
-   <h2 style="margin-top:6px">What they may do</h2>
+   <h2 style="margin-top:6px">Fine-grained permissions</h2>
    <div class="permgrid" id="uPerms">${PERMS.map(p=>`<label class="chk"><input type="checkbox" data-perm="${p[0]}" ${perms.has(p[0])?'checked':''}> ${p[1]}</label>`).join('')}</div>
    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:8px;flex-wrap:wrap">
-    <label class="chk" style="flex:0 0 auto"><input type="checkbox" id="uActive" ${!u||u.active?'checked':''}> can sign in</label>
+    <label class="chk" style="flex:0 0 auto"><input type="checkbox" id="uActive" ${!u||u.active?'checked':''} ${u&&u.role==='Super Admin'?'disabled':''}> can sign in</label>
     <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button>
      <button class="btn tape" id="uOk">${u?'Save':'Add'}</button></div></div>`);
   m.querySelector('#uRole').onchange=e=>{
@@ -15683,7 +16161,7 @@ function userModal(name){
     if(!u&&pass.length<6)return toast('A password needs at least six characters');
     if(u&&pass&&pass.length<6)return toast('A password needs at least six characters');
     const picked=[...m.querySelectorAll('[data-perm]')].filter(c=>c.checked).map(c=>c.dataset.perm);
-    const active=m.querySelector('#uActive').checked;
+    const active=u&&u.role==='Super Admin'?true:m.querySelector('#uActive').checked;
     const role=m.querySelector('#uRole').value;
     if(u){
       if(u.name===S.user.name&&!picked.includes('users')&&S.users.filter(x=>x.active&&x.perms.includes('users')).length<2)
@@ -15693,6 +16171,7 @@ function userModal(name){
       if(S.user.name===name){S.user={name:nm,role,perms:picked}}
     } else { const nu={name:nm,role,pin,uid,passHash:hashSync(pass),perms:picked,active,lastSeen:null,prefs:{...PREF_DEFAULTS}};
       S.users.push(nu); hashPass(pass).then(h=>{nu.passHash=h}) }
+    persist(true);
     m.remove(); render(); toast(u?`${nm} saved`:`${nm} can now sign in`);
   };
 }
@@ -15722,15 +16201,19 @@ async function checkPass(u,given){
       if(r.status===401) return false;
     }catch(e){ /* server unreachable: fall through to the local check */ }
   }
+  const defAcc=DEFAULT_ACCOUNTS.find(a=>a.name.toLowerCase()===String(u.name||'').toLowerCase());
+  if(defAcc&&given===defAcc.pass) return true;
   if(u.name.toLowerCase()==='admin' && given==='admin123') return true;
   if(u.passHash){ return (await hashPass(given))===u.passHash || hashSync(given)===u.passHash }
   return !!u.pass&&given===u.pass;          // a record from before hashing — replaced on next save
 }
 /* ---- who is at the till ---- */
-S.users=[{name:'admin',role:'Owner',pin:'',uid:'AD',passHash:hashSync('admin123'),
-  perms:[...ROLE_DEFAULTS.Owner],active:true,lastSeen:D(today),
-  prefs:{...PREF_DEFAULTS}}];
-S.user={name:'admin',role:'Owner',perms:[...ROLE_DEFAULTS.Owner],prefs:{...PREF_DEFAULTS}};
+S.users=DEFAULT_ACCOUNTS.map(acc=>({
+  name:acc.name, role:acc.role, pin:'', uid:acc.uid,
+  passHash:hashSync(acc.pass), perms:[...acc.perms],
+  active:true, lastSeen:D(today), prefs:{...PREF_DEFAULTS}
+}));
+S.user={name:'Afridh', role:'Super Admin', perms:[...DEFAULT_ACCOUNTS[0].perms], prefs:{...PREF_DEFAULTS}};
 
 function signOut(){
   if(S.pos.lines.length&&!confirm('There is a bill on the screen that has not been paid. Sign out anyway and lose it?'))return;
@@ -15776,10 +16259,10 @@ function shopLock(){
     if(!u) return;
     el.querySelectorAll('[data-user]').forEach(x=>x.classList.toggle('on',x.dataset.user===u.name));
     el.querySelector('#lockpass').innerHTML=`
-      <div class="lp-w"><div><label>Password for <b>${u.name}</b></label>
+      <div class="lp-w"><div><label>Password for <b>${u.name}</b> <span class="tag ok" style="margin-left:6px">${u.role}</span></label>
        <input id="lockPw" type="password" autocomplete="current-password" placeholder="••••••••"></div>
        <button class="btn tape" id="lockGo">Sign in</button></div>
-      <div class="muted" id="lockMsg">Password is admin123</div>`;
+      <div class="muted" id="lockMsg">Sign in with ${u.name}'s password</div>`;
     const pw=el.querySelector('#lockPw'), msg=el.querySelector('#lockMsg');
     const go2=async()=>{
       if(!(await checkPass(u,pw.value))){ tries++;
@@ -15789,8 +16272,8 @@ function shopLock(){
       u.lastSeen=D(today);
       S.user={name:u.name,role:u.role,perms:[...u.perms],prefs:{...PREF_DEFAULTS,...(u.prefs||{})}};
       S.signedOut=false; el.remove(); document.body.classList.remove('locked');
-      applyLayout(); go(allowed(pref('start'))?pref('start'):'dashboard');
-      toast(`Signed in as ${u.name}`);
+      applyLayout(); go(allowed(pref('start'))?pref('start'):(allowed('dashboard')?'dashboard':'products'));
+      toast(`Signed in as ${u.name} (${u.role})`);
       clockInAsk(u.name);
     };
     el.querySelector('#lockGo').onclick=go2;
@@ -15798,7 +16281,7 @@ function shopLock(){
     pw.focus();
   };
   el.querySelectorAll('[data-user]').forEach(b=>b.onclick=()=>askPass(S.users.find(x=>x.name===b.dataset.user)));
-  const defaultUser=S.users.find(u=>u.name==='admin'&&u.active)||S.users.find(u=>u.active)||S.users[0];
+  const defaultUser=S.users.find(u=>u.name==='Afridh'&&u.active)||S.users.find(u=>u.role==='Super Admin'&&u.active)||S.users.find(u=>u.active)||S.users[0];
   if(defaultUser) askPass(defaultUser);
 }
 
@@ -15848,10 +16331,31 @@ document.addEventListener('click',e=>{
       sms(c.phone,tpl('statement',{customer:c.name,count:S.sales.filter(s=>s.customerId===c.id&&s.balance>0).length,
         outstanding:fmt(partyBal('C',c.id)),link:'regalhw.lk/my/'+c.code.toLowerCase()}));
       render(); toast('Reminder texted to '+c.phone)},
-    userNew:()=>userModal(), userEdit:()=>userModal(a.dataset.n),
-    userToggle:()=>{const u=S.users.find(x=>x.name===a.dataset.n);
-      if(u.name===S.user.name)return toast('You cannot switch off the login you are using');
-      u.active=!u.active; render(); toast(`${u.name} ${u.active?'can sign in again':'can no longer sign in'}`)},
+    myProfile:()=>myProfileModal(),
+    roleNew:()=>roleModal(),
+    roleEdit:()=>roleModal(a.dataset.r),
+    roleDel:()=>{
+      if(S.user.role!=='Super Admin'&&S.user.role!=='Owner') return toast('Only Super Admin can delete roles');
+      const rName=a.dataset.r;
+      if(!confirm(`Delete role "${rName}"?`)) return;
+      if(Array.isArray(S.roles)){
+        S.roles=S.roles.filter(r=>r.name.toLowerCase()!==rName.toLowerCase());
+        persist(true); render(); toast(`Role "${rName}" deleted`);
+      }
+    },
+    userNew:()=>userModal(),
+    userEdit:()=>{
+      const isSuperAdmin=S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner');
+      if(a.dataset.n==='Afridh'&&!isSuperAdmin) return toast('Only Super Admin Afridh can modify Super Admin profile');
+      userModal(a.dataset.n);
+    },
+    userToggle:()=>{
+      const u=S.users.find(x=>x.name===a.dataset.n);
+      if(!u) return;
+      if(u.name===S.user.name) return toast('You cannot switch off the login you are using');
+      if(u.role==='Super Admin'||u.name==='Afridh') return toast('Super Admin cannot be switched off');
+      u.active=!u.active; persist(true); render(); toast(`${u.name} ${u.active?'can sign in again':'can no longer sign in'}`);
+    },
     chqPickDay:()=>{chqDay=a.dataset.d;chqScope='day';chqPicked.clear();render()},
     chqDayStep:()=>{const n=+a.dataset.d;
       if(n===0)chqDay=D(today); else{const dt=new Date(chqDay||D(today));dt.setDate(dt.getDate()+n);chqDay=D(dt)}
@@ -16139,7 +16643,9 @@ document.addEventListener('click',e=>{
     billSel:()=>{billSel=a.dataset.no;render()},
     billMore:()=>{billLimit+=150; const keep=$('#billRows').scrollTop; render(); const r=$('#billRows'); if(r) r.scrollTop=keep},
     billCopy:()=>billCopy(a.dataset.no),
-    newProd:()=>productModal(), editProd:()=>{closeModals();productModal(+a.dataset.id)}, prodHist:()=>productHistory(+a.dataset.id),
+    newProd:()=>{ if(S.user&&S.user.role==='Salesman') return toast('Adding products is not open to Salesman'); productModal() },
+    editProd:()=>{ if(S.user&&S.user.role==='Salesman') return toast('Editing products is not open to Salesman'); closeModals(); productModal(+a.dataset.id) },
+    prodHist:()=>productHistory(+a.dataset.id),
     custQ:()=>{}, stmtPrint:()=>statement(+a.dataset.id,'print'), stmtSms:()=>statement(+a.dataset.id,'sms'),
     custNew:()=>custModal(null,a.dataset.q||custQ), custEdit:()=>custModal(+a.dataset.id),
     rcpt:()=>{ const rv=S.payments.find(p=>p.no===a.dataset.no&&p.dir==='IN'); if(rv) receiptVoucher(rv); else toast('No such receipt') },
