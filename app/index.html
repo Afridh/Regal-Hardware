@@ -600,6 +600,26 @@ tr.off td{opacity:.55}
 .bc-a{display:flex;gap:5px;flex-wrap:wrap}
 
 /* the board sits over the working area; it is never moved, only shown or hidden */
+/* social: the preview beside the post, and the four weeks ahead */
+.socprev{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--panel)}
+.socprev .sp-h{display:flex;gap:9px;align-items:center;padding:10px}
+.socprev .sp-av{width:34px;height:34px;border-radius:50%;background:var(--ink2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800}
+.socprev .sp-pic{aspect-ratio:1;background:var(--line2);display:flex;align-items:center;justify-content:center;color:var(--steel);font-size:12px}
+.socprev .sp-pic img{width:100%;height:100%;object-fit:cover;display:block}
+.socprev .sp-t{padding:10px;font-size:13.5px;line-height:1.45;white-space:pre-wrap}
+.socprev .sp-f{padding:0 10px 10px;display:flex;gap:4px;flex-wrap:wrap}
+.socal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.socal-d{border:1px solid var(--line);border-radius:var(--r);padding:6px;min-height:76px;background:var(--panel)}
+.socal-d.has{background:var(--tint-yellow)}
+.socal-d.now{outline:2px solid var(--chip-yellow);outline-offset:-2px}
+.socal-d .sd-h{display:flex;gap:5px;align-items:baseline;margin-bottom:4px}
+.socal-d .sd-h b{font-size:15px}
+.socal-d .sd-h span{font-size:10.5px;color:var(--steel)}
+.socal-d .sd-p{display:block;width:100%;text-align:left;border:0;border-radius:6px;background:var(--ink2);color:#fff;font:inherit;font-size:11px;padding:4px 5px;margin-top:3px;cursor:pointer;overflow:hidden}
+.socal-d .sd-p span{display:block;opacity:.75;font-size:10px}
+@media (max-width:900px){.socal{grid-template-columns:repeat(4,1fr)}}
+@media (max-width:560px){.socal{grid-template-columns:repeat(2,1fr)}}
+
 /* the month sheet: everyone down the side, every day of the month across */
 .sheetwrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r)}
 .attsheet{border-collapse:separate;border-spacing:0;min-width:100%;font-size:12.5px}
@@ -2966,7 +2986,8 @@ const S = {
  cportal:{session:null,pick:2,tab:'owed',stage:'phone',code:'',inbox:'',err:'',flash:''},
  portal:{session:null,pick:'1',tab:'new',filter:'all',stage:'phone',code:'',tries:0,left:0,timer:null,inbox:'',err:'',flash:'',rep:'Nimal',photos:[],replaces:null}, drawer:{opened:'08:02',float:5000},
  pos:{lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:'r80'}, heldBills:[], trail:[], roles:[],
- partyNotes:[]                                     // notes against a customer or a supplier, and the money still to sort out
+ partyNotes:[],                                    // notes against a customer or a supplier, and the money still to sort out
+ social:{posts:[]}                                 // what goes out on the Page, on Instagram and on WhatsApp
 };
 /* a bill number is prefix + till + the cashier's own id + a running number kept per
    cashier, so INVM-T1-AF-00031 and INVM-T2-RS-00031 can both exist and neither can
@@ -4283,6 +4304,273 @@ function payRun(mk){
 }
 
 let payMonth=null, paySel=null, payTab='today';
+
+/* ================== SOCIAL ==================
+   One place to write a post and put it on the shop's Facebook Page, its Instagram and
+   out on WhatsApp — now, or on a day and a time you choose.
+
+   Facebook and Instagram go through the Meta Graph API on the shop's own server, with a
+   Page token set under Connect; WhatsApp goes out through the Cloud API that Messaging
+   already uses. Instagram will not take a post without a picture and will not take an
+   upload either — it fetches the picture from an address — so a post's picture is put in
+   the shop's own media store, which is served without a sign-in, and Instagram is handed
+   that address. That address has to be one Meta can reach, so Instagram will not work
+   from a till running on localhost.
+
+   A scheduled post goes out from whichever till is open when it falls due. The till that
+   takes it writes its own name against it first and saves, so two tills do not both post
+   the same thing; nothing already posted is ever posted again. With every till shut, a
+   post waits and is listed as due until someone opens one. */
+
+const SOCIAL_CH=[['fb','Facebook','the shop Page'],
+                 ['ig','Instagram','needs a picture'],
+                 ['wa','WhatsApp','to customers you pick']];
+const WA_AUDIENCE=[['all','Everyone with a mobile'],['wholesale','Wholesale customers'],
+                   ['recent','Bought in the last 90 days'],['owing','Customers who owe us']];
+const SOCIAL_MAX_WA=200;
+let socTab='new';
+let SOC={text:'',img:'',channels:['fb'],when:'',audience:'all',editing:null};
+
+const socialPosts=()=>((S.social&&S.social.posts)||[]);
+function socialCfg(){ CFG.social={fbPageId:'',fbToken:'',igUserId:'',auto:true,...(CFG.social||{})}; return CFG.social }
+const socImgUrl=(key)=>key?location.origin+'/api/shop/media/'+encodeURIComponent(key):'';
+const socChName=(k)=>((SOCIAL_CH.find(c=>c[0]===k)||[])[1]||k);
+const socWhere=(p)=>(p.channels||[]).map(socChName).join(', ')||'nowhere';
+const socWhenTxt=(w)=>{ if(!w) return 'no date'; const d=new Date(w);
+  return d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})+' '+
+         d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) };
+
+function socialAudience(kind){
+  const list=S.customers.filter(c=>c.id!==1&&c.active!==false&&c.phone);
+  if(kind==='wholesale') return list.filter(c=>c.level==='wholesale');
+  if(kind==='owing') return list.filter(c=>partyBal('C',c.id)>0.005);
+  if(kind==='recent'){ const from=ago(90); return list.filter(c=>S.sales.some(s=>s.customerId===c.id&&s.date>=from)) }
+  return list;
+}
+
+/* ---- putting one out ---- */
+async function socialSend(p,quiet){
+  const results={};
+  const meta=p.channels.filter(c=>c==='fb'||c==='ig');
+  if(meta.length){
+    try{
+      const r=await fetch('/api/social/post',{method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:'Bearer '+(window.regalBridge?regalBridge.token():'')},
+        body:JSON.stringify({text:p.text,imageUrl:socImgUrl(p.img),channels:meta})});
+      const j=await r.json();
+      if(j.results) Object.assign(results,j.results);
+      else meta.forEach(c=>results[c]={ok:false,status:'Failed — '+(j.error||('HTTP '+r.status))});
+    }catch(e){ meta.forEach(c=>results[c]={ok:false,status:'Failed — '+e.message}) }
+  }
+  if(p.channels.includes('wa')){
+    const who=socialAudience(p.audience).slice(0,SOCIAL_MAX_WA);
+    let sent=0, failed=0;
+    for(const c of who){
+      try{
+        const r=await fetch('/api/wa/send',{method:'POST',
+          headers:{'Content-Type':'application/json',Authorization:'Bearer '+(window.regalBridge?regalBridge.token():'')},
+          body:JSON.stringify({to:c.phone,message:p.text})});
+        const j=await r.json(); j.ok?sent++:failed++;
+      }catch(e){ failed++ }
+    }
+    results.wa={ok:sent>0,status:`${sent} sent${failed?`, ${failed} would not go`:''}${who.length>=SOCIAL_MAX_WA?` · only the first ${SOCIAL_MAX_WA}`:''}`,sent,failed};
+  }
+  p.results=results;
+  const vals=Object.values(results);
+  p.status=vals.length&&vals.every(x=>x.ok)?'posted':vals.some(x=>x.ok)?'part':'failed';
+  p.postedAt=new Date().toISOString();
+  render();
+  if(!quiet) toast(p.status==='posted'?'Posted':p.status==='part'?'Some of it went out — see the post':'It would not go out');
+  return p.status;
+}
+
+/* a scheduled post, taken by whichever till is open when it falls due */
+async function socialRunDue(){
+  if(!S.user||S.signedOut||!socialCfg().auto) return;
+  const now=new Date().toISOString();
+  const due=socialPosts().filter(p=>p.status==='scheduled'&&p.when&&p.when<=now);
+  for(const p of due){
+    p.status='sending'; p.takenBy=S.terminal; p.takenAt=Date.now();
+    if(typeof persist==='function') persist();                 // put our name on it before anything goes out
+    await new Promise(r=>setTimeout(r,4000));                  // let the other tills see it
+    const still=socialPosts().find(x=>x.id===p.id);
+    if(!still||still.status!=='sending'||still.takenBy!==S.terminal) continue;   // somebody else took it
+    await socialSend(still,true);
+    notify('info',`${still.text.slice(0,40)}${still.text.length>40?'…':''} — ${still.status==='posted'?'posted':'did not go out'}`,'social');
+  }
+}
+setInterval(()=>{ try{ socialRunDue() }catch(e){} },60000);
+
+/* ---- the page ---- */
+function social(){
+  const cfg=socialCfg();
+  const posts=socialPosts().slice().sort((a,b)=>String(b.when||b.at||'').localeCompare(String(a.when||a.at||'')));
+  const due=posts.filter(p=>p.status==='scheduled'&&p.when&&p.when<=new Date().toISOString());
+  const queued=posts.filter(p=>p.status==='scheduled');
+  const gone=posts.filter(p=>['posted','part'].includes(p.status));
+  const tabs=[['new',SOC.editing?'Edit the post':'New post'],['posts','Posts',posts.length],
+              ['plan','Calendar',queued.length],['connect','Connect']];
+  const body=({new:()=>socCompose(cfg),posts:()=>socPostList(posts),plan:()=>socPlan(queued),connect:()=>socConnect(cfg)}[socTab]||(()=>socCompose(cfg)))();
+  return `<h1>Social</h1>
+   <div class="row" style="margin-bottom:12px">
+    ${stat('Waiting to go out',queued.length,queued.length?`next ${socWhenTxt(queued[queued.length-1].when)}`:'nothing scheduled',queued.length?'y':'b')}
+    ${stat('Due now',due.length,due.length?'a till must stay open':'nothing overdue',due.length?'r':'g')}
+    ${stat('Posted',gone.length,gone.length?`last ${socWhenTxt(gone[0].postedAt||gone[0].when)}`:'none yet','g')}
+    ${stat('Where it goes',[cfg.fbPageId?'Facebook':'',cfg.igUserId?'Instagram':'',CFG.msg.waMode==='cloud'?'WhatsApp':''].filter(Boolean).join(' · ')||'nothing connected',
+      'set up under Connect',cfg.fbPageId?'b':'r')}
+   </div>
+   ${due.length?`<div class="card note" style="margin-bottom:12px;border-left:3px solid var(--chip-rust)">
+     <b>${due.length} post${due.length===1?' is':'s are'} past the time you set.</b>
+     <div class="muted">A scheduled post goes out from whichever till is open when it falls due${cfg.auto?'':' — and posting by itself is switched off under Connect'}. Open <b>Posts</b> and press <b>Post it now</b>, or leave a till open.</div></div>`:''}
+   <div class="cu-tabs">${tabs.map(t=>`<button class="${socTab===t[0]?'on':''}" data-act="socTab" data-t="${t[0]}">${t[1]}${t[2]!==undefined?`<i>${t[2]}</i>`:''}</button>`).join('')}</div>
+   <div class="cu-tab-body">${body}</div>`;
+}
+
+function socCompose(cfg){
+  const chosen=new Set(SOC.channels);
+  const igNoPic=chosen.has('ig')&&!SOC.img;
+  const waN=chosen.has('wa')?socialAudience(SOC.audience).length:0;
+  return `<div class="row" style="align-items:flex-start;gap:16px">
+   <div class="flex1" style="min-width:320px">
+    <div class="f"><label>What the post says</label>
+     <textarea id="socText" rows="5" placeholder="e.g. Dulux Weathershield 4L now Rs 8,450 — this week only. 077 222 22 59">${(SOC.text||'').replace(/</g,'&lt;')}</textarea></div>
+    <div class="f"><label>Picture</label>
+     <div style="display:flex;gap:10px;align-items:flex-start">
+      <div class="mediapic ${SOC.img?'':'empty'}" style="width:96px;height:96px">${SOC.img?`<img src="${socImgUrl(SOC.img)}?v=${Date.now()}">`:''}</div>
+      <div style="flex:1;min-width:0">
+       <input type="file" id="socPic" accept="image/*" style="padding:6px;width:100%">
+       <div class="muted">A square picture about 1080 across looks right on both. Instagram will not take a post without one.</div>
+       <div class="findbar" style="margin-top:6px">
+        <div class="f"><label>Or take one from the products</label>
+         <select id="socProd"><option value="">—</option>
+          ${S.products.slice(0,400).map(p=>`<option value="${p.id}">${p.name} — ${fmt(price(p))}</option>`).join('')}</select></div>
+        ${SOC.img?`<div class="f" style="flex:0"><label>&nbsp;</label><button class="btn ghost" data-act="socPicClear">Take the picture off</button></div>`:''}</div>
+      </div></div></div>
+    <div class="f"><label>Where it goes</label>
+     <div class="permgrid">
+      ${SOCIAL_CH.map(([k,l,h])=>`<label class="chk"><input type="checkbox" data-socch="${k}" ${chosen.has(k)?'checked':''}>
+        <span><b>${l}</b> <span class="muted">— ${h}</span></span></label>`).join('')}</div></div>
+    ${chosen.has('wa')?`<div class="f" style="max-width:340px"><label>Who on WhatsApp</label>
+      <select id="socAud">${WA_AUDIENCE.map(a=>`<option value="${a[0]}" ${SOC.audience===a[0]?'selected':''}>${a[1]}</option>`).join('')}</select>
+      <div class="muted">${waN} customer${waN===1?'':'s'} match${waN===1?'es':''}${waN>SOCIAL_MAX_WA?` — only the first ${SOCIAL_MAX_WA} are sent`:''}. Free text only reaches someone who has written to the shop in the last 24 hours; the rest need an approved template (Settings → Messaging).</div></div>`:''}
+    <div class="findbar">
+     <div class="f"><label>When</label><input id="socWhen" type="datetime-local" value="${SOC.when||''}"></div>
+     <div class="f" style="flex:0;align-self:flex-end;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn ghost" data-act="socSave">${SOC.when?'Schedule it':'Keep as a draft'}</button>
+      <button class="btn tape" data-act="socPostNow">Post it now</button>
+      ${SOC.editing?'<button class="btn ghost" data-act="socCancel">Cancel</button>':''}</div></div>
+    ${igNoPic?'<div class="card note" style="border-left:3px solid var(--chip-rust)">Instagram is ticked but there is no picture. Add one, or untick Instagram.</div>':''}
+   </div>
+   <div class="card flex1" style="min-width:280px;max-width:420px">
+    <h2>How it will look</h2>
+    <div class="socprev">
+     <div class="sp-h"><div class="sp-av">${(CFG.shop.name||'R')[0]}</div><div><b>${CFG.shop.name}</b><div class="muted">${SOC.when?socWhenTxt(SOC.when):'just now'}</div></div></div>
+     ${SOC.img?`<div class="sp-pic"><img src="${socImgUrl(SOC.img)}?v=${Date.now()}"></div>`:'<div class="sp-pic empty">no picture</div>'}
+     <div class="sp-t">${(SOC.text||'Nothing written yet.').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+     <div class="sp-f">${[...chosen].map(k=>`<span class="tag blue">${(SOCIAL_CH.find(c=>c[0]===k)||[])[1]||k}</span>`).join(' ')||'<span class="muted">nowhere yet</span>'}</div>
+    </div>
+    <div class="muted" style="margin-top:8px">${(SOC.text||'').length} characters. Instagram allows 2,200; Facebook far more.</div>
+   </div></div>`;
+}
+
+function socPostList(posts){
+  if(!posts.length) return '<div class="card note">Nothing written yet. <b>New post</b> starts one — write it once and it goes to the Page, to Instagram and out on WhatsApp together.</div>';
+  const tagFor=(p)=>({draft:'',scheduled:'warn',sending:'warn',posted:'ok',part:'warn',failed:'bad'})[p.status]||'';
+  return `<table><tr><th>When</th><th>Post</th><th>Where</th><th>How it went</th><th></th></tr>
+   ${posts.map(p=>`<tr>
+    <td>${socWhenTxt(p.when||p.at)}<div class="muted" style="font-size:12px">${p.by||''}</div></td>
+    <td style="max-width:360px">
+     <div style="display:flex;gap:8px">
+      ${p.img?`<div class="mediapic" style="width:44px;height:44px;flex:0 0 44px"><img src="${socImgUrl(p.img)}" loading="lazy"></div>`:''}
+      <div style="min-width:0">${(p.text||'').slice(0,160).replace(/</g,'&lt;')}${(p.text||'').length>160?'…':''}</div></div></td>
+    <td>${(p.channels||[]).map(k=>`<span class="tag blue">${(SOCIAL_CH.find(c=>c[0]===k)||[])[1]||k}</span>`).join(' ')}</td>
+    <td><span class="tag ${tagFor(p)}">${p.status}</span>
+     ${p.results?`<div class="muted" style="font-size:12px">${Object.entries(p.results).map(([k,v])=>`${(SOCIAL_CH.find(c=>c[0]===k)||[])[1]||k}: ${v.status}`).join('<br>')}</div>`:''}</td>
+    <td style="white-space:nowrap">
+     ${['posted'].includes(p.status)?'':`<button class="btn tape sm" data-act="socPostOne" data-id="${p.id}">Post it now</button>`}
+     <button class="btn ghost sm" data-act="socEdit" data-id="${p.id}">Edit</button>
+     <button class="btn ghost sm" data-act="socDel" data-id="${p.id}">✕</button></td></tr>`).join('')}</table>`;
+}
+
+function socPlan(queued){
+  const days=[...Array(28)].map((_,i)=>ago(-i));
+  const byDay={}; queued.forEach(p=>{ const d=(p.when||'').slice(0,10); (byDay[d]=byDay[d]||[]).push(p) });
+  return `<div class="muted" style="margin-bottom:8px">The next four weeks. A post goes out from whichever till is open when it falls due.</div>
+   <div class="socal">${days.map(d=>{
+     const list=byDay[d]||[], dt=new Date(d+'T00:00:00');
+     return `<div class="socal-d ${list.length?'has':''} ${d===D(today)?'now':''}">
+      <div class="sd-h"><b>${dt.getDate()}</b><span>${dt.toLocaleDateString('en-GB',{month:'short'})} · ${dt.toLocaleDateString('en-GB',{weekday:'short'})}</span></div>
+      ${list.map(p=>`<button class="sd-p" data-act="socEdit" data-id="${p.id}" title="${(p.text||'').replace(/"/g,'&quot;')}">
+        <b>${(p.when||'').slice(11,16)}</b> ${(p.text||'').slice(0,42).replace(/</g,'&lt;')}
+        <span>${(p.channels||[]).map(k=>k.toUpperCase()).join(' ')}</span></button>`).join('')}
+     </div>`}).join('')}</div>`;
+}
+
+function socConnect(cfg){
+  return `<div class="card">
+   <h2>Facebook and Instagram</h2>
+   <div class="muted">They go through the same Meta Graph API the WhatsApp Cloud API already uses, with a Page token of its own. The Instagram account has to be a business or creator account joined to the Page — then one token reaches both.</div>
+   <div class="wa-step"><b>1</b><div><b>Business portfolio and app</b><div class="muted">Business portfolio at <a href="https://business.facebook.com" target="_blank">business.facebook.com</a>, then an app at <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com</a> (type <i>Business</i>).</div></div></div>
+   <div class="wa-step"><b>2</b><div><b>Join the Instagram account to the Page</b><div class="muted">On the Page: Settings → Linked accounts → Instagram. It must be a business or creator account, not a personal one.</div></div></div>
+   <div class="wa-step"><b>3</b><div><b>A token that can post</b><div class="muted">Business Settings → System users → add one (Admin) → Generate token for the app with <code>pages_manage_posts</code>, <code>pages_read_engagement</code>, <code>instagram_basic</code> and <code>instagram_content_publish</code>. Take a long-lived one.</div></div></div>
+   <div class="wa-step"><b>4</b><div><b>The Page ID</b><div class="muted">On the Page: About → Page transparency, or in Business Settings → Accounts → Pages.</div></div></div>
+   <div class="grid2" style="margin-top:10px">
+    <div class="f"><label>Page ID</label><input data-soc="fbPageId" value="${String(cfg.fbPageId||'').replace(/"/g,'&quot;')}" placeholder="e.g. 102938475610293"></div>
+    <div class="f"><label>Instagram account ID</label><input data-soc="igUserId" value="${String(cfg.igUserId||'').replace(/"/g,'&quot;')}" placeholder="filled in by Check"></div></div>
+   <div class="f"><label>Page access token</label><input data-soc="fbToken" type="password" value="${String(cfg.fbToken||'').replace(/"/g,'&quot;')}" placeholder="EAAG…"></div>
+   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <button class="btn tape" data-act="socCheck">Check the connection</button>
+    <span class="muted" id="socCheckOut"></span></div>
+   <label class="chk" style="margin-top:12px"><input type="checkbox" data-soc="auto" ${cfg.auto?'checked':''}>
+    <span>Let a scheduled post go out by itself when a till is open. Untick and a post waits under <b>Posts</b> until someone presses <b>Post it now</b>.</span></label>
+   <div class="card note" style="margin-top:12px"><b>Instagram fetches the picture from an address.</b>
+    <div class="muted">It is given <code>${location.origin}/api/shop/media/…</code>, which is served without a sign-in. Meta has to be able to reach it, so Instagram will not work from a till running on localhost — put the shop's own address in front of it first.</div></div>
+  </div>
+  <div class="card" style="margin-top:12px"><h2>WhatsApp</h2>
+   <div class="muted">WhatsApp posting uses the Cloud API that Messaging is already set up with — ${CFG.msg.waMode==='cloud'?'<b>it is on</b>.':'<b>it is not on yet</b>: Settings → Messaging → WhatsApp.'} Free text only reaches someone who has written to the shop in the last 24 hours; anything else needs a template Meta has approved.</div>
+   <div style="margin-top:8px"><button class="btn ghost" data-view="settings">Open Settings → Messaging</button></div></div>`;
+}
+
+function socialAfter(){
+  const t=$('#socText'); if(t) t.oninput=()=>{ SOC.text=t.value };
+  const w=$('#socWhen'); if(w) w.onchange=()=>{ SOC.when=w.value };
+  const au=$('#socAud'); if(au) au.onchange=()=>{ SOC.audience=au.value; render() };
+  document.querySelectorAll('[data-socch]').forEach(cb=>cb.onchange=()=>{
+    const k=cb.dataset.socch;
+    SOC.channels=cb.checked?[...new Set([...SOC.channels,k])]:SOC.channels.filter(x=>x!==k);
+    const keep=$('#socText'); if(keep) SOC.text=keep.value;
+    render();
+  });
+  const pic=$('#socPic');
+  if(pic) pic.onchange=()=>{ const f=pic.files[0]; if(!f) return;
+    const key='social:'+(SOC.editing||('d'+Date.now().toString(36)));
+    const keep=$('#socText'); if(keep) SOC.text=keep.value;
+    shopMediaUpload(key,f,1080).then(()=>{ SOC.img=key; render(); toast('Picture ready') })
+      .catch(e=>toast('Not saved: '+e.message)) };
+  const pr=$('#socProd');
+  if(pr) pr.onchange=()=>{ const p=P(+pr.value); if(!p) return;
+    SOC.text=`${p.name} — ${fmt(price(p))}${p.mrp>price(p)?` (was ${fmt(p.mrp)})`:''}\n${CFG.shop.name} · ${CFG.shop.phone}`;
+    SOC.img='p:'+p.id; render(); toast('Filled in from '+p.name) };
+  document.querySelectorAll('[data-soc]').forEach(el=>el.onchange=()=>{
+    const cfg=socialCfg(); cfg[el.dataset.soc]=el.type==='checkbox'?el.checked:el.value.trim();
+    render(); toast('Saved') });
+}
+
+function socGrab(){ const t=$('#socText'); if(t) SOC.text=t.value; const w=$('#socWhen'); if(w) SOC.when=w.value }
+function socReset(){ SOC={text:'',img:'',channels:['fb'],when:'',audience:'all',editing:null} }
+function socStore(status){
+  socGrab();
+  if(!String(SOC.text||'').trim()&&!SOC.img) return toast('Write something, or add a picture');
+  if(!SOC.channels.length) return toast('Pick where it goes');
+  if(SOC.channels.includes('ig')&&!SOC.img) return toast('Instagram will not take a post without a picture');
+  S.social=S.social||{posts:[]};
+  let p=SOC.editing?socialPosts().find(x=>x.id===SOC.editing):null;
+  if(!p){ p={id:'sp'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),by:S.user.name,at:new Date().toISOString()};
+    S.social.posts.push(p) }
+  Object.assign(p,{text:SOC.text,img:SOC.img,channels:[...SOC.channels],when:SOC.when||'',audience:SOC.audience,status});
+  return p;
+}
+
 /* ================== ATTENDANCE & PAY ==================
    The whole of the Shift Board, built into the shop system rather than hung beside it:
    the day as it happens, the month sheet, the pay run, what has been handed over, how
@@ -4793,6 +5081,7 @@ function applyKept(kept){
   }
   if(!Array.isArray(S.roles)) S.roles=[];
   if(!Array.isArray(S.partyNotes)) S.partyNotes=[];        // books saved before notes existed
+  if(!S.social||!Array.isArray(S.social.posts)) S.social={posts:[]};
   for(const acc of DEFAULT_ACCOUNTS){
     const existing=S.users.find(u=>String(u.name||'').toLowerCase()===acc.name.toLowerCase());
     if(!existing){
@@ -5884,7 +6173,7 @@ const views=[
  ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['tenders','Quotations & tenders'],
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],
  ['grp','Stock'],['products','Products'],['inventory','Inventory & ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
- ['grp','Online'],['weborders','Online orders'],['webproducts','Online products'],['site','The shop site'],
+ ['grp','Online'],['weborders','Online orders'],['webproducts','Online products'],['site','The shop site'],['social','Social'],
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],
  ['grp','People'],['approvals','Approvals'],['payroll','Attendance & pay'],['users','Users & permissions'],
  ['grp','Out'],['trail','The trail'],['messages','Messages'],['reports','Reports'],
@@ -5897,7 +6186,7 @@ const SECTIONS = {
   Customers: ['customers', 'receipts', 'tenders'],
   Suppliers: ['suppliers', 'orders', 'purchases', 'purchasing'],
   Stock: ['products', 'inventory', 'stocktake', 'labels'],
-  Online: ['weborders', 'webproducts', 'site'],
+  Online: ['weborders', 'webproducts', 'site', 'social'],
   Money: ['chequesIn', 'chequesOut', 'expenses', 'accounting'],
   People: ['approvals', 'payroll', 'users'],
   Out: ['trail', 'messages', 'reports'],
@@ -6024,6 +6313,7 @@ const icon=(k)=>`<svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="curren
   stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[k]||ICONS.dashboard}"/></svg>`;
 ICONS.tenders='M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h6M9 8h2';
 ICONS.purchasing='M3 17l5-5 4 3 5-6M3 21h18M5 3v14';
+ICONS.social='M18 8a3 3 0 100-6 3 3 0 000 6zM6 15a3 3 0 100-6 3 3 0 000 6zM18 22a3 3 0 100-6 3 3 0 000 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4';
 ICONS.webproducts='M3 4h18v12H3zM3 8h18M8 20h8M12 16v4M9 12h2M13 12h4';
 ICONS.site='M3 12h18M12 3a15 15 0 010 18M12 3a15 15 0 000 18M12 3a9 9 0 110 18 9 9 0 010-18';
 ICONS.weborders='M8 4h9l3 4v12H8zM8 4H4v16h4M12 11h5M12 15h5';
@@ -6145,7 +6435,7 @@ function modal(html){ const m=document.createElement('div');m.className='modal';
 function closeModals(){document.querySelectorAll('.modal').forEach(m=>m.remove())}
 let _rendering=false;
 function render(){ if(_rendering) return; _rendering=true; try{ renderNow() } finally { _rendering=false } if(typeof persist==='function'&&S.user&&!S.signedOut) persist() }
-function renderNow(){ renderNav(); const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,reports,settings,trail}[S.view]; $('#main').innerHTML=r(); document.body.classList.toggle('csfull',pref('till')==='classic'&&S.view==='pos'); if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() } if(S.view==='recall') recallAfter(); if(S.view==='stocktake') stockTakeAfter(); if(S.view==='purchasing') purchasingAfter();
+function renderNow(){ renderNav(); const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view]; $('#main').innerHTML=r(); document.body.classList.toggle('csfull',pref('till')==='classic'&&S.view==='pos'); if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() } if(S.view==='recall') recallAfter(); if(S.view==='stocktake') stockTakeAfter(); if(S.view==='purchasing') purchasingAfter(); if(S.view==='social') socialAfter();
   if(S.view==='serials'){ const sq=$('#srQ'); if(sq){ sq.oninput=e=>{srQ=e.target.value;render();const n=$('#srQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body) sq.focus() } } if(S.view==='labels') labelsAfter(); if(S.view==='receipts') receiptsAfter(); if(S.view==='dashboard') dashboardAfter();
 
@@ -14166,6 +14456,35 @@ document.addEventListener('click',e=>{
       else { supSel=id; render() } },
     supNew:()=>supModal(null,a.dataset.q||supQ), supEdit:()=>supModal(+a.dataset.id),
     supTerms:()=>supTermsModal(+a.dataset.id),
+    socTab:()=>{ socTab=a.dataset.t; render(); const mn=document.getElementById('main'); if(mn) mn.scrollTop=0 },
+    socPicClear:()=>{ socGrab(); SOC.img=''; render() },
+    socCancel:()=>{ socReset(); render(); toast('Left as it was') },
+    socSave:()=>{ const p=socStore(SOC.when?'scheduled':'draft'); if(!p) return;
+      socReset(); socTab='posts'; render(); toast(p.when?'Scheduled for '+socWhenTxt(p.when):'Kept as a draft') },
+    socPostNow:()=>{ const p=socStore('sending'); if(!p) return;
+      if(!confirm(`Put this out now on ${socWhere(p)}?`)){ p.status=p.when?'scheduled':'draft'; return render() }
+      socReset(); socTab='posts'; render(); socialSend(p) },
+    socPostOne:()=>{ const p=socialPosts().find(x=>x.id===a.dataset.id); if(!p) return;
+      if(!confirm(`Put this out now on ${socWhere(p)}?`)) return;
+      p.status='sending'; render(); socialSend(p) },
+    socEdit:()=>{ const p=socialPosts().find(x=>x.id===a.dataset.id); if(!p) return;
+      SOC={text:p.text||'',img:p.img||'',channels:[...(p.channels||['fb'])],when:p.when||'',audience:p.audience||'all',editing:p.id};
+      socTab='new'; render() },
+    socDel:()=>{ const p=socialPosts().find(x=>x.id===a.dataset.id); if(!p) return;
+      if(!confirm(`Throw this post away?\n\n"${(p.text||'').slice(0,120)}"${p.status==='posted'?'\n\nIt has already gone out — this only removes the record of it.':''}`)) return;
+      S.social.posts=socialPosts().filter(x=>x.id!==p.id); if(SOC.editing===p.id) socReset(); render(); toast('Thrown away') },
+    socCheck:async()=>{ const out=$('#socCheckOut'); if(out) out.textContent='Checking…';
+      try{ const r=await fetch('/api/social/status',{headers:{Authorization:'Bearer '+(window.regalBridge?regalBridge.token():'')}});
+        const j=await r.json();
+        if(!j.ok) throw new Error(j.error||('HTTP '+r.status));
+        const cfg=socialCfg();
+        if(j.instagram&&j.instagram.id) cfg.igUserId=j.instagram.id;
+        render();
+        const o2=$('#socCheckOut');
+        if(o2) o2.innerHTML=`<span class="tag ok">${j.page.name}</span> ${j.page.likes||0} likes`+
+          (j.instagram?` · <span class="tag ok">@${j.instagram.username}</span> ${j.instagram.followers||0} followers`
+                      :' · <span class="tag warn">no Instagram account joined to the Page</span>');
+      }catch(e){ const o2=$('#socCheckOut'); if(o2) o2.innerHTML='<span class="tag bad">'+e.message+'</span>' } },
     purchTab:()=>{ purchTab=a.dataset.t; render(); const mn=document.getElementById('main'); if(mn) mn.scrollTop=0 },
     planChq:()=>chequePlanModal(+a.dataset.sid,+a.dataset.amt,a.dataset.date,a.dataset.pur||''),
     supRemove:()=>{ const s=SU(+a.dataset.id); if(partyBal('S',s.id)>0.005) return toast('Settle the account first');

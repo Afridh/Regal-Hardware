@@ -408,4 +408,86 @@ r.post('/wa/inbox/read', regalAuth, asyncHandler(async (_req, res) => {
   res.json({ ok: true });
 }));
 
+/* ================== FACEBOOK AND INSTAGRAM ==================
+   The same Meta Graph API the WhatsApp Cloud API already goes through, with a token of
+   its own: a Page access token that also reaches the Instagram business account linked
+   to that Page. Nothing is kept here — the token lives in the books under CFG.social,
+   the way the WhatsApp one lives under CFG.msg.
+
+   Instagram will not take a picture as an upload. It fetches one from a public address,
+   so a post's picture is put in shop_media first (which is served without a sign-in) and
+   Instagram is handed that address. Publishing there is two steps: make the container,
+   then publish it. Facebook takes the picture by address in one step, and takes a post
+   with no picture at all — Instagram never will. */
+const socialCfg = (books) => (books?.data?.CFG?.social) || {};
+
+async function fbGraph(cfg, path, opts = {}) {
+  if (!cfg?.fbToken) throw new HttpError(400, 'No Facebook Page token yet (Social → Connect)');
+  const resp = await fetch(GRAPH + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + cfg.fbToken, ...(opts.headers || {}) },
+    signal: AbortSignal.timeout((+cfg.timeout || 30) * 1000),
+  });
+  const j = await resp.json().catch(() => ({}));
+  if (!resp.ok || j.error) {
+    throw new HttpError(502, 'Meta: ' + (j.error?.message || ('HTTP ' + resp.status)) +
+      (j.error?.error_user_msg ? ' — ' + j.error.error_user_msg : ''));
+  }
+  return j;
+}
+
+/** What the token can actually reach: the Page, and the Instagram account joined to it. */
+r.get('/social/status', regalAuth, asyncHandler(async (_req, res) => {
+  const cfg = socialCfg(await loadBooks());
+  if (!cfg.fbToken) return res.json({ ok: false, error: 'No Page token set yet' });
+  const out = { ok: true };
+  const pageId = String(cfg.fbPageId || '').trim();
+  if (!pageId) return res.json({ ok: false, error: 'No Page ID set yet' });
+  const page = await fbGraph(cfg, `/${encodeURIComponent(pageId)}?fields=name,username,fan_count,link,instagram_business_account{id,username,followers_count,profile_picture_url}`);
+  out.page = { id: pageId, name: page.name, username: page.username, likes: page.fan_count, link: page.link };
+  const ig = page.instagram_business_account;
+  out.instagram = ig ? { id: ig.id, username: ig.username, followers: ig.followers_count } : null;
+  res.json(out);
+}));
+
+/** Put a post out. { text, imageUrl?, channels: ['fb','ig'] } — one result per channel. */
+r.post('/social/post', regalAuth, asyncHandler(async (req, res) => {
+  const { text, imageUrl, channels } = req.body || {};
+  const want = Array.isArray(channels) ? channels : [];
+  if (!want.length) throw new HttpError(400, 'Pick at least one place to post');
+  if (!String(text || '').trim() && !imageUrl) throw new HttpError(400, 'A post needs words or a picture');
+  const cfg = socialCfg(await loadBooks());
+  const results = {};
+
+  if (want.includes('fb')) {
+    const pageId = String(cfg.fbPageId || '').trim();
+    try {
+      if (!pageId) throw new HttpError(400, 'No Page ID set (Social → Connect)');
+      const j = imageUrl
+        ? await fbGraph(cfg, `/${encodeURIComponent(pageId)}/photos`, { method: 'POST', body: JSON.stringify({ url: imageUrl, caption: text || '' }) })
+        : await fbGraph(cfg, `/${encodeURIComponent(pageId)}/feed`, { method: 'POST', body: JSON.stringify({ message: text || '' }) });
+      results.fb = { ok: true, id: j.post_id || j.id, status: 'Posted to the Page' };
+    } catch (e) { results.fb = { ok: false, status: 'Failed — ' + e.message }; }
+  }
+
+  if (want.includes('ig')) {
+    const igId = String(cfg.igUserId || '').trim();
+    try {
+      if (!igId) throw new HttpError(400, 'No Instagram account linked (Social → Connect)');
+      if (!imageUrl) throw new HttpError(400, 'Instagram will not take a post without a picture');
+      // step one: the container
+      const made = await fbGraph(cfg, `/${encodeURIComponent(igId)}/media`, {
+        method: 'POST', body: JSON.stringify({ image_url: imageUrl, caption: text || '' }),
+      });
+      // step two: publish it
+      const out = await fbGraph(cfg, `/${encodeURIComponent(igId)}/media_publish`, {
+        method: 'POST', body: JSON.stringify({ creation_id: made.id }),
+      });
+      results.ig = { ok: true, id: out.id, status: 'Posted to Instagram' };
+    } catch (e) { results.ig = { ok: false, status: 'Failed — ' + e.message }; }
+  }
+
+  res.json({ ok: Object.values(results).some(x => x.ok), results });
+}));
+
 export default r;

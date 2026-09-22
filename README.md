@@ -2,9 +2,9 @@
 
 The **Regal Hardware** front-end (`app/index.html`) is the primary website: the till in three styles, bill recall,
 quotes and delivery notes, customers and receipts, suppliers and their orders, purchases and returns, stock, stock
-take, barcode labels, cheques in and out, expenses, drawer counts, accounting and reports, attendance & pay with the
-own attendance and payroll, the customer and supplier portals, the online shop, messaging — plus the features brought
-across from SePOS: **loyalty points, gift vouchers, locations & stock transfers**.
+take, barcode labels, cheques in and out, expenses, drawer counts, accounting and reports, attendance & pay, purchasing
+and the cash plan, the customer and supplier portals, the online shop, messaging and social posting — plus the features
+brought across from SePOS: **loyalty points, gift vouchers, locations & stock transfers**.
 
 Behind it is a **Node.js (Express) + PostgreSQL** server. The books are kept in PostgreSQL and shared by every till;
 sign-in is checked by the server; each save is versioned so two tills cannot overwrite each other, and the owner
@@ -167,6 +167,37 @@ up by itself. *Paste an export* is still there for a board that cannot be reache
 **Who sees what.** Payroll, Payments and Trends need the *payroll* right; without it the page is Today, Attendance,
 Staff and Rules, and no rate is shown anywhere. A **Salesman** gets a page of their own — where they are, when they
 came in, hours on the floor, and their own month — with nobody else on it.
+
+## Social
+
+*Online → Social.* Write a post once and put it on the shop's **Facebook Page**, its **Instagram** and out on
+**WhatsApp** — now, or on a day and a time you pick.
+
+* **New post** — the words, a picture (from a file, or taken straight off a product with its price), which of the
+  three it goes to, and when. A preview beside it shows how it will read.
+* **Posts** — everything written: drafts, what is waiting, what went out and what each place said back.
+* **Calendar** — the next four weeks, a box a day, what is due on each.
+* **Connect** — the Meta setup, step by step, and a **Check** button that names the Page and the Instagram account
+  the token can actually reach.
+
+**How each one goes out.** Facebook and Instagram go through the Meta Graph API on the shop's own server, with a Page
+access token set under Connect — one token reaches both, as long as the Instagram account is a business or creator
+account joined to the Page. WhatsApp goes through the Cloud API that *Settings → Messaging* is already set up with,
+to customers you choose: everyone with a mobile, wholesale only, those who bought in the last 90 days, or those who
+owe money.
+
+**Three things worth knowing before you rely on it:**
+
+* **Instagram will not take a post without a picture**, and it will not take an upload either — it fetches the
+  picture from an address. A post's picture is put in the shop's own media store, which is served without a sign-in,
+  and Instagram is handed that address. Meta has to be able to reach it, so Instagram will not work from a till
+  running on `localhost` — the shop's own address has to be in front of it.
+* **A scheduled post goes out from whichever till is open when it falls due.** The till that takes it writes its own
+  name against it and saves before anything is sent, so two tills never post the same thing twice, and nothing
+  already posted is posted again. With every till shut, a post waits and is listed as *due now* until someone opens
+  one. Posting by itself can be switched off under Connect.
+* **On WhatsApp, free text only reaches someone who has written to the shop in the last 24 hours.** Everyone else
+  needs a template Meta has approved (*Settings → Messaging → WhatsApp → Templates*). A run is capped at 200.
 
 ## Purchasing & the cash plan
 
