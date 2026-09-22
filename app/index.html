@@ -2002,10 +2002,16 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-clear{background:var(--chip-blue)} .till-del{background:var(--chip-rust)}
 .till-clear i,.till-del i{display:block;font-style:normal;font-weight:400;font-size:10.5px;opacity:.9}
 .till-del:disabled{opacity:.5;box-shadow:none}
-.till-who{flex:1 1 220px;background:#fff;border-radius:var(--r);padding:6px 12px;overflow:hidden}
-.till-who b{display:block;font-family:Archivo,sans-serif;font-size:16px;line-height:1.2}
-.till-who span{display:block;font-size:12.5px}
-.till-who em{font-style:normal;font-size:11px;color:var(--steel)}
+.till-who{flex:1 1 220px;background:#fff;border-radius:var(--r);padding:6px 12px;overflow:hidden;cursor:pointer}
+.till-who>b{display:block;font-family:Archivo,sans-serif;font-size:19px;line-height:1.15;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.till-who.named>b{color:#8a4b06}
+.till-who span{display:block;font-size:11px;color:var(--steel);margin-top:2px}
+.till-who span b{font-family:inherit;font-size:11px;color:var(--ink);font-weight:700}
+.till-who em{display:block;font-style:normal;font-size:11.5px;color:var(--steel)}
+.till-paper{background:none;border:0;display:inline-flex;gap:4px;cursor:pointer;padding:0;margin:2px 0 0 8px}
+.till-paper i{font-style:normal;font-size:9.5px;letter-spacing:.08em;padding:2px 8px;border-radius:99px;color:#8C9A95;border:1px solid var(--line);transition:all .15s}
+.till-paper i.on{background:#1f3b5a;color:#fff;border-color:#1f3b5a;font-weight:700}
+.till-paper:hover i:not(.on){border-color:var(--steel);color:var(--ink)}
 .till-date{flex:0 0 auto;background:#fff;border-radius:var(--r);padding:6px 14px;text-align:center}
 .till-date b{font-family:Archivo,sans-serif;font-size:14px}
 .till-date span{font-size:12px;margin-left:6px}
@@ -2206,9 +2212,10 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
     user-select: none; -webkit-user-select: none;
   }
   .till-who:active { background: #EEF3F2; }
-  .till-who b { font-size: 14px; }
-  .till-who span { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+  .till-who > b { font-size: 16px; }
+  .till-who span { font-size: 11px; color: var(--steel); }
   .till-who em { font-size: 11px; color: var(--steel); }
+  .till-level, .till-paper { min-height: 32px; font-size: 11px; }
 
   .till-clear, .till-held {
     order: 2; flex: 1 1 44%; min-height: 44px; padding: 0 12px;
@@ -9789,6 +9796,15 @@ function posSetLevel(level,{quiet=false}={}){
   if(CS.pid&&CS.auto!==false){ CS.price=priceFor(P(CS.pid),+CS.qty||1); const pf=$('#csPrice'); if(pf) pf.value=CS.price }
   if(!quiet){ render(); toast(`${level==='wholesale'?'Wholesale':'Retail'} prices${n?` — ${n} line${n===1?'':'s'} repriced`:''}`) }
 }
+/* which bill prints once the money is taken: the SMALL / LARGE switch on the bill (F5) picks the 80mm
+   receipt or the A5 bill for this bill only and skips the question after payment; with nothing picked
+   the till follows Settings → After the sale as before */
+const csPaper=()=>CS.paper||((CFG.done||{}).cashDefault==='a5'?'a5':'r80');
+function csSetPaper(k){
+  CS.paper=k; render();
+  toast(k==='a5'?'Large bill — A5 printed bill after payment':'Small bill — 80mm receipt after payment','info');
+  const q=$('#csQ'); if(q&&!CS.pid) q.focus();
+}
 /* Some goods are dearer in small pieces — wire cut off the roll, cement by the
    bag against the pallet. A product can carry price breaks, and the till uses
    whichever one the quantity has reached. */
@@ -10249,6 +10265,7 @@ function askSize(inv){
   const kind=inv.balance>0?'CREDIT':'CASH';
   const def=(kind==='CREDIT'?CFG.done.creditDefault:CFG.done.cashDefault) || 'r80';
   const c=C(inv.customerId);
+  if(typeof CS!=='undefined'&&CS.paper){ const k=CS.paper; CS.paper=null; S.pos.lastBill=k; return printAnim(inv,k) }   // picked on the bill itself — no question
   if(!CFG.done.askSize){ S.pos.lastBill=def; return printAnim(inv,def==='sms'&&!c.phone?'r80':def) }
   const opts=[['r80','1','80mm Till receipt','80mm thermal — quick for the counter'],
               ['a5','2','Printed bill','A5 landscape — full bill with outstanding boxes'],
@@ -10392,7 +10409,7 @@ function belowCostAsk(p,net,then){
    the date and the invoice number, one entry row across the top, the list of
    lines below it, and the invoice summary down the right. The buttons that ran
    along the bottom of the old screen are grouped into tabs instead. */
-let CS={tab:'bill',q:'',step:'code',qty:1,price:0,disc:0,pid:null,warranty:'0',note:''};
+let CS={tab:'bill',q:'',step:'code',qty:1,price:0,disc:0,pid:null,warranty:'0',note:'',paper:null};
 let csArmed=0;
 window.CS=()=>CS;   // exposed for tests
 
@@ -10427,7 +10444,7 @@ function posClassic(){
   const now=new Date(), sel=P(CS.pid);
   const owed=c.id===1?0:partyBal('C',c.id);
   const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['F1','Back to item'],['F4','Customer'],['F8','Bill disc.'],
-              ['F10','Pay'],['F6','On account'],['Ctrl+Q','Quotation'],['Ctrl+H','Hold'],['F3','Held bills'],['S in price','Past prices'],['W / R','Wholesale · retail'],['Esc','Clear']];
+              ['F10','Pay'],['F6','On account'],['F5','Small · large bill'],['Ctrl+Q','Quotation'],['Ctrl+H','Hold'],['F3','Held bills'],['S in price','Past prices'],['W / R','Wholesale · retail'],['Esc','Clear']];
 
   const sync=(document.getElementById('savedAt')||{}).textContent||'';
   return `<div class="till">
@@ -10436,17 +10453,17 @@ function posClassic(){
     <button class="burger cs-burger" data-act="drawer" title="Menu">☰</button>
     <button class="till-clear" data-act="csClear">CLEAR<i>Esc</i></button>
     <button class="till-held ${S.heldBills&&S.heldBills.length?'has-held':''}" data-act="showHeld" title="Preview held bills (F3)">HELD<i>F3</i>${(S.heldBills&&S.heldBills.length)?`<b>${S.heldBills.length}</b>`:''}</button>
-    <div class="till-who" data-act="pickCust" role="button" title="Change customer (F4)">
-     <b>${S.user.name.toUpperCase()}</b>
-     <span>${c.id===1?'Walk-in customer':c.name}</span>
-     <em>${c.id===1?'no account · tap to choose':`${c.phone||''} · owes ${fmt(owed)} of ${fmt(c.limit)}${owed>c.limit?' · over limit':''}`}</em>
+    <div class="till-who ${c.id===1?'':'named'}" data-act="pickCust" role="button" title="Change customer (F4)">
+     <b>${c.id===1?'WALK-IN CUSTOMER':c.name.toUpperCase()}</b>
+     <em>${c.id===1?'no account · tap or F4 to choose':`${c.phone||''} · owes ${fmt(owed)} of ${fmt(c.limit)}${owed>c.limit?' · over limit':''}`}</em>
+     <span>cashier <b>${S.user.name}</b></span>
     </div>
     <div class="till-date"><b>${now.toLocaleDateString('en-GB',{weekday:'long'})}</b>
      <span>${now.toLocaleDateString('en-GB',{month:'long'})} ${now.getFullYear()}</span>
      <div class="till-clock">${now.toLocaleTimeString('en-GB',{hour12:true})}<em>${now.getDate()}</em></div></div>
     <div class="till-no ${S.pos.editing?'editing':''}">
      <b>${S.pos.editing||nextNo}</b>
-     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Switch between retail and wholesale prices for this bill — Ctrl+Shift+W, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button>`}</div>
+     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Switch between retail and wholesale prices for this bill — Ctrl+Shift+W, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><button class="till-paper" data-act="csPaper" title="Which bill prints after payment — small 80mm receipt or the large A5 bill (F5)"><i class="${csPaper()==='r80'?'on':''}">SMALL BILL</i><i class="${csPaper()==='a5'?'on':''}">LARGE BILL</i></button>`}</div>
    </div>
 
    <div class="till-entry ${sel?'live':''}">
@@ -10687,7 +10704,7 @@ function csStart(pid){
 /* CLEAR (F3 / Esc): a bill with anything on it is only thrown away after a yes */
 function csClearAsk(){
   const doIt=()=>{ S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
-    CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null}; closeModals(); render(); const q=$('#csQ'); if(q) q.focus() };
+    CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null,paper:null}; closeModals(); render(); const q=$('#csQ'); if(q) q.focus() };
   const n=S.pos.lines.length;
   if(!n&&!CS.pid&&!S.pos.customer) return doIt();
   const m=modal(`<h2>Clear this bill?</h2><div class="muted" style="margin-bottom:12px">${n?`${n} line${n===1?'':'s'} · ${fmt(billTotal())}`:'The item being keyed'}${S.pos.customer?` · ${C(S.pos.customer).name}`:''} — it will be thrown away.</div>
@@ -15481,6 +15498,7 @@ document.addEventListener('click',e=>{
     navSignOut:()=>{ const b=document.getElementById('logoutBtn'); if(b) b.click() },
     privacyTry:()=>{ go('dashboard'); privacyToggle() },
     csLevel:()=>{ posSetLevel(posLevel()==='wholesale'?'retail':'wholesale'); const q2=$('#csQ'); if(q2&&!CS.pid) q2.focus() },
+    csPaper:()=>csSetPaper(csPaper()==='a5'?'r80':'a5'),
     invMore:()=>{ invLimit+=200; const keep=$('#main').scrollTop; render(); $('#main').scrollTop=keep },
     tdNew:()=>tenderModal(null), tdEdit:()=>tenderModal(a.dataset.id), tdSel:()=>{ tdSel=a.dataset.id; tdLineQ=''; render() }, tdFilter:()=>{ tdFilter=a.dataset.v; render() },
     tdPrint:()=>tenderPrint(S.tenders.find(x=>x.id===a.dataset.id)), tdEmail:()=>tenderEmail(S.tenders.find(x=>x.id===a.dataset.id)),
@@ -15791,6 +15809,7 @@ document.addEventListener('keydown',e=>{
     if(S.view==='pos'&&pref('till')==='classic'&&!document.querySelector('.modal')){
       const typing=/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName);
       if(e.key==='F8'){ e.preventDefault(); const f=$('#csBillDisc'); if(f){f.focus();f.select()} return }
+      if(e.key==='F5'&&!S.pos.editing){ e.preventDefault(); csSetPaper(csPaper()==='a5'?'r80':'a5'); return }   // small ⇄ large bill for this sale
       if(e.key==='F1'){ e.preventDefault();
         CS={...CS,pid:null,q:'',qty:1,price:0,disc:0,focus:'',editLine:null}; render();   // F1 from the bill brings you back to the item row
         const f=$('#csQ'); if(f){f.focus();f.select()} return }
