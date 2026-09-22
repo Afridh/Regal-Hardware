@@ -2256,8 +2256,8 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
   .till-who em { font-size: 11px; color: var(--steel); }
   .till-level, .till-paper { min-height: 32px; font-size: 11px; }
 
-  .till-clear, .till-held {
-    order: 2; flex: 1 1 44%; min-height: 44px; padding: 0 12px;
+  .till-clear, .till-held, .till-salesman {
+    order: 2; flex: 1 1 30%; min-height: 44px; padding: 0 8px;
     font-size: 13px; display: flex; flex-direction: column;
     align-items: center; justify-content: center;
   }
@@ -2589,6 +2589,10 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-held i{display:block;font-style:normal;font-weight:400;font-size:10.5px;opacity:.9}
 .till-held.has-held{background:var(--chip-yellow);color:#101E22}
 .till-held b{position:absolute;top:-4px;right:-4px;background:var(--chip-rust);color:#fff;border-radius:10px;font-size:11px;padding:1px 5px;font-weight:700}
+.till-salesman{border:0;border-radius:var(--r);color:#fff;font-family:Archivo,sans-serif;font-weight:800;background:var(--ink2);padding:4px 12px;cursor:pointer;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;position:relative}
+.till-salesman i{display:block;font-style:normal;font-weight:400;font-size:10.5px;opacity:.9}
+.till-salesman.has-salesman{background:var(--tape);color:#fff}
+.till-salesman b{position:absolute;top:-4px;right:-4px;background:var(--chip-green);color:#fff;border-radius:10px;font-size:10px;padding:1px 5px;font-weight:700;max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* ---- Held Bills Modal ---- */
 .hb-modal-wrap .box{padding:0;max-width:960px;width:95vw;height:600px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;border-top:4px solid var(--chip-yellow)}
@@ -6315,7 +6319,7 @@ const S = {
  web:{settings:{},orders:[],cart:[],session:null,delivery:true}, prns:[], stocktakes:[], counts:[], serials:[], notif:[], notifOpen:false, notices:[], payruns:[], advances:[], shift:{settings:{},days:{},imported:null},
  cportal:{session:null,pick:2,tab:'owed',stage:'phone',code:'',inbox:'',err:'',flash:''},
  portal:{session:null,pick:'1',tab:'new',filter:'all',stage:'phone',code:'',tries:0,left:0,timer:null,inbox:'',err:'',flash:'',rep:'Nimal',photos:[],replaces:null}, drawer:{opened:'08:02',float:5000},
- pos:{lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:'r80'}, heldBills:[], trail:[], roles:[]
+ pos:{lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:'r80'}, heldBills:[], trail:[], roles:[]
 };
 /* a bill number is prefix + till + the cashier's own id + a running number kept per
    cashier, so INVM-T1-AF-00031 and INVM-T2-RS-00031 can both exist and neither can
@@ -6452,7 +6456,7 @@ function recost(pid){
   if(qty>0) p.cost=+cost.toFixed(4);
 }
 /* ---- business transactions ---- */
-function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.name,override=false,no=null}){
+function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.name,salesman=null,override=false,no=null}){
   if(window.privacyOn) throw new Error('Till is busy — try again in a moment');
   if(!lines.length) throw new Error('A bill needs at least one line');
   lines.forEach(l=>{ if(!(l.qty>0)) throw new Error('Quantity must be above zero') });
@@ -6494,7 +6498,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   if(credit>0.005&&cAdv&&cAdv.advance>0.005){ used=+Math.min(cAdv.advance,credit).toFixed(2); cAdv.advance=+(cAdv.advance-used).toFixed(2) }
   let usedCredit=0;
   if(credit>0.005&&customerId!==1){ const held=custCredit(customerId); usedCredit=+Math.min(held,credit).toFixed(2); if(usedCredit>0.005) credit=+(credit-usedCredit).toFixed(2) }
-  const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>({...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,overLimit,terminal:S.terminal,time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true}).toUpperCase(),link:'regalhw.lk/b/'+Math.random().toString(36).slice(2,10)};
+  const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>({...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:salesman||(S.pos&&S.pos.salesman)||null,overLimit,terminal:S.terminal,time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true}).toUpperCase(),link:'regalhw.lk/b/'+Math.random().toString(36).slice(2,10)};
   S.sales.push(inv);
   let cogs=0; for(const l of inv.lines){ move(l.pid,-l.qty,'SALE',inv.no,l.cost); cogs+=l.qty*l.cost }
   const jl=[{ac:'4100',cr:total}];
@@ -9301,7 +9305,7 @@ function renderNav(){
         : `<button class="${S.view===v[0]?'on':''}" data-view="${v[0]}" title="${v[1]}">
             <i class="ic">${icon(v[0])}</i><span>${v[1]}</span>${v[2]?`<em class="k">${v[2]}</em>`:''}${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}<i class="tip">${v[1]}${v[2]?' · '+v[2]:''}</i></button>`).join('')
       +`</div>
-       <div class="navuser"><span class="avatar">${initial}</span><span class="who"><b>${S.user.name}</b><small>${S.user.role} · ${S.drawer&&S.drawer.opened?'drawer since '+S.drawer.opened:'signed in'} · ${today.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</small></span></div>`
+       <div class="navuser" data-act="myProfile" style="cursor:pointer" title="Edit your account or password"><span class="avatar">${initial}</span><span class="who"><b>${S.user.name}</b><small>${S.user.role} · ${S.drawer&&S.drawer.opened?'drawer since '+S.drawer.opened:'signed in'} · ${today.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</small></span></div>`
     : items.map(v=>v[0]==='grp'
         ? `<div class="grp"><span>${v[1]}</span></div>`
         : `<button class="${S.view===v[0]?'on':''}" data-view="${v[0]}" title="${v[1]}${v[2]?' · '+v[2]:''}">
@@ -9723,7 +9727,7 @@ function donut(parts,{size=118,thick=16,center=''}={}){
 
 function salesmanDashboard(){
   const t=D(today);
-  const mySales=S.sales.filter(s=>String(s.by||'').toLowerCase()===String(S.user.name||'').toLowerCase());
+  const mySales=S.sales.filter(s=>String(s.by||'').toLowerCase()===String(S.user.name||'').toLowerCase() || String(s.salesman||'').toLowerCase()===String(S.user.name||'').toLowerCase());
   const todaySales=mySales.filter(s=>s.date===t);
   const todayTotal=todaySales.reduce((a,s)=>a+s.total,0);
   const todayCash=todaySales.filter(s=>s.type==='CASH').reduce((a,s)=>a+s.total,0);
@@ -9741,7 +9745,8 @@ function salesmanDashboard(){
       <h1 style="margin:0">Salesman Portal · ${S.user.name}</h1>
       <div class="muted">Regal Hardware till ${S.terminal} · ${today.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
     </div>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn ghost sm" data-act="myProfile">✎ My Account / Password</button>
       <button class="btn tape sm" data-view="products">Browse Stock</button>
       <button class="btn ghost sm" data-view="payroll">My Attendance</button>
     </div>
@@ -10881,27 +10886,27 @@ function posClassic(){
   const nextNo=`${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-${String(((S.seqBy||{})[S.terminal+'-'+(u.uid||'??')]||0)+1).padStart(5,'0')}`;
   const now=new Date(), sel=P(CS.pid), drag=CFG.pos.dragLines!==false;
   const owed=c.id===1?0:partyBal('C',c.id);
-  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['F1','Back to item'],['F7','Customer'],['F8','Bill disc.'],
-              ['F10','Pay'],['F6','On account'],['F5','Small · large bill'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['Ctrl+H','Hold'],['F4','Held bills'],['S in price','Past prices'],['W / R','Wholesale · retail'],['F3 / Esc','Clear']];
+  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['F1','Back to item'],['F3','Salesperson'],['F4','Customer'],
+              ['F5 / Ctrl+R','Held bills'],['F7 / Ctrl+H','Hold bill'],['F8','Bill disc.'],['F10','Pay'],['F6','On account'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['S in price','Past prices'],['W / R','Wholesale · retail'],['Clear','Reset bill']];
 
   const sync=(document.getElementById('savedAt')||{}).textContent||'';
   return `<div class="till">
 
    <div class="till-head">
     <button class="burger cs-burger" data-act="drawer" title="Menu">☰</button>
-    <button class="till-clear" data-act="csClear" title="Clear the bill (F3 or Esc)">CLEAR<i>F3</i></button>
-    <button class="till-held ${S.heldBills&&S.heldBills.length?'has-held':''}" data-act="showHeld" title="Get a held bill back (F4)">HELD<i>F4</i>${(S.heldBills&&S.heldBills.length)?`<b>${S.heldBills.length}</b>`:''}</button>
-    <div class="till-who ${c.id===1?'':'named'}" data-act="pickCust" role="button" title="Change customer (F7)">
+    <button class="till-salesman ${S.pos.salesman?'has-salesman':''}" data-act="pickSalesman" title="Assign salesperson (F3)">SALES<i>F3</i>${S.pos.salesman?`<b>${S.pos.salesman}</b>`:''}</button>
+    <button class="till-held ${S.heldBills&&S.heldBills.length?'has-held':''}" data-act="showHeld" title="Preview held bills (F5, Ctrl+R)">HELD<i>F5</i>${(S.heldBills&&S.heldBills.length)?`<b>${S.heldBills.length}</b>`:''}</button>
+    <div class="till-who ${c.id===1?'':'named'}" data-act="pickCust" role="button" title="Change customer (F4)">
      <b>${c.id===1?'WALK-IN CUSTOMER':c.name.toUpperCase()}</b>
-     <em>${c.id===1?'no account · tap or F7 to choose':`${c.phone||''} · owes ${fmt(owed)} of ${fmt(c.limit)}${owed>c.limit?' · over limit':''}`}</em>
-     <span>cashier <b>${S.user.name}</b></span>
+     <em>${c.id===1?'no account · tap or F4 to choose':`${c.phone||''} · owes ${fmt(owed)} of ${fmt(c.limit)}${owed>c.limit?' · over limit':''}`}</em>
+     <span>cashier <b>${S.user.name}</b>${S.pos.salesman?` · sales: <b>${S.pos.salesman}</b>`:''}</span>
     </div>
     <div class="till-date"><b>${now.toLocaleDateString('en-GB',{weekday:'long'})}</b>
      <span>${now.toLocaleDateString('en-GB',{month:'long'})} ${now.getFullYear()}</span>
      <div class="till-clock">${now.toLocaleTimeString('en-GB',{hour12:true})}<em>${now.getDate()}</em></div></div>
     <div class="till-no ${S.pos.editing?'editing':''}">
      <b>${S.pos.editing||nextNo}</b>
-     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Switch between retail and wholesale prices for this bill — Ctrl+Shift+W, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><button class="till-paper" data-act="csPaper" title="Which bill prints after payment — small 80mm receipt or the large A5 bill (F5)"><i class="${csPaper()==='r80'?'on':''}">SMALL BILL</i><i class="${csPaper()==='a5'?'on':''}">LARGE BILL</i></button>`}</div>
+     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Switch between retail and wholesale prices for this bill — Ctrl+Shift+W, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><button class="till-paper" data-act="csPaper" title="Which bill prints after payment — small 80mm receipt or the large A5 bill"><i class="${csPaper()==='r80'?'on':''}">SMALL BILL</i><i class="${csPaper()==='a5'?'on':''}">LARGE BILL</i></button>`}</div>
    </div>
 
    <div class="till-entry ${sel?'live':''}">
@@ -10991,13 +10996,14 @@ function posClassic(){
       <button class="sum-credit" data-act="credit" ${L.length?'':'disabled'}>
        <b>ON ACCOUNT</b><span>${c.id===1?'choose a customer first':c.name.split(' ')[0]} · F6</span></button>
       <div class="sum-more">
-       <button data-act="pickCust">Customer <i>F7</i></button>
+       <button data-act="pickSalesman">Salesperson <i>F3</i>${S.pos.salesman?` (${S.pos.salesman})`:''}</button>
+       <button data-act="pickCust">Customer <i>F4</i></button>
        <button data-act="proofA5" ${L.length?'':'disabled'}>Check bill</button>
        <button data-act="doc" data-k="QUOTE" ${L.length?'':'disabled'}>Quotation <i>Ctrl+Q</i></button>
        <button data-act="doc" data-k="DN" ${L.length?'':'disabled'}>Delivery note</button>
-       <button data-act="hold" ${L.length?'':'disabled'}>Hold <i>Ctrl+H</i></button>
-       <button data-act="showHeld">Held bills <i>F4</i>${(S.heldBills&&S.heldBills.length)?` (${S.heldBills.length})`:''}</button>
-       <button data-act="csClear" ${L.length?'':'disabled'}>Clear <i>F3</i></button>
+       <button data-act="hold" ${L.length?'':'disabled'}>Hold <i>F7 / Ctrl+H</i></button>
+       <button data-act="showHeld">Held bills <i>F5 / Ctrl+R</i>${(S.heldBills&&S.heldBills.length)?` (${S.heldBills.length})`:''}</button>
+       <button data-act="csClear" ${L.length?'':'disabled'}>Clear <i>Esc</i></button>
       </div>
      </div>
     </div>
@@ -11293,6 +11299,7 @@ function holdCurrentBill(notify = true, ref){
     date: new Date().toISOString(),
     ref: ref || (notify ? '' : 'Pushed aside by a recall'),
     customer: S.pos.customer,
+    salesman: S.pos.salesman || null,
     lines: JSON.parse(JSON.stringify(S.pos.lines)),
     billDisc: S.pos.billDisc || 0,
     editing: S.pos.editing || null,
@@ -11303,10 +11310,10 @@ function holdCurrentBill(notify = true, ref){
   S.heldBills = S.heldBills || [];
   S.heldBills.unshift(bill);
   S.held = bill;
-  S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill };
+  S.pos = { lines: [], customer: null, salesman: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill };
   if(typeof CS !== 'undefined') CS = { ...CS, pid: null, q: '', qty: 1, price: 0, disc: 0, focus: '', editLine: null };
   render();
-  if(notify) toast(`Held as "${bill.ref}" (${S.heldBills.length} on hold) — F4 brings it back`,'ok');
+  if(notify) toast(`Held as "${bill.ref}" (${S.heldBills.length} on hold) — F5 / Ctrl+R brings it back`,'ok');
   return true;
 }
 
@@ -11346,6 +11353,7 @@ function recallHeldBill(idx){
   S.pos = {
     lines: bill.lines || [],
     customer: bill.customer || null,
+    salesman: bill.salesman || null,
     billDisc: bill.billDisc || 0,
     sel: bill.lines && bill.lines.length ? 0 : -1,
     entry: null,
@@ -11419,7 +11427,7 @@ function showHeldBillsModal(initIdx = 0){
       <div class="hb-empty">
         <div class="hb-empty-icon">📋</div>
         <h3>No Bills On Hold</h3>
-        <p>Press <b>Ctrl+H</b> anytime items are on the till to hold the bill.<br>Press <b>F4</b> here to view and switch between held bills.</p>
+        <p>Press <b>F7</b> or <b>Ctrl+H</b> anytime items are on the till to hold the bill.<br>Press <b>F5</b> or <b>Ctrl+R</b> to view and switch between held bills.</p>
         <button class="btn tape" data-act="closeModal" style="margin-top:16px;padding:8px 20px">Back to Till (Esc)</button>
       </div>`);
     m.classList.add('hb-modal-wrap');
@@ -12020,6 +12028,70 @@ function pickCustomer(after){
   ph.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();nm.focus()} };
   nm.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();add()} };
   draw(); q.focus();
+}
+
+function pickSalesman(after){
+  const staff = S.users.filter(u => u.active);
+  const salesmen = staff.filter(u => String(u.role||'').toLowerCase() === 'salesman');
+  const others = staff.filter(u => String(u.role||'').toLowerCase() !== 'salesman');
+  const list = [...salesmen, ...others];
+  
+  const m = modal(`<h2>Select Salesperson</h2>
+    <input id="sq" placeholder="Search salesperson name or role…" autocomplete="off">
+    <div id="sl" style="margin-top:10px;max-height:360px;overflow-y:auto"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
+      <button class="btn ghost" id="sNone">Clear Salesperson (None)</button>
+      <button class="btn ghost" data-act="closeModal">Cancel Esc</button>
+    </div>`);
+  
+  const q = m.querySelector('#sq');
+  const pick = (name) => {
+    S.pos.salesman = name || null;
+    m.remove();
+    render();
+    if(after) after();
+    toast(name ? `Salesperson: ${name}` : 'Salesperson removed');
+  };
+  
+  m.querySelector('#sNone').onclick = () => pick(null);
+  
+  let cur = 0;
+  const rows = () => [...m.querySelectorAll('[data-sname]')];
+  const mark = () => {
+    rows().forEach((r, i) => r.classList.toggle('on', i === cur));
+    const r = rows()[cur];
+    if(r && r.scrollIntoView) r.scrollIntoView({ block: 'nearest' });
+  };
+  
+  const draw = () => {
+    const v = (q.value || '').trim().toLowerCase();
+    const hits = list.filter(u => u.name.toLowerCase().includes(v) || String(u.role||'').toLowerCase().includes(v));
+    m.querySelector('#sl').innerHTML = `<table>
+      <tr class="rowlink" data-sname=""><td><b>None (Cashier Only)</b><div class="muted">No commission / sales attribution</div></td><td class="n"></td></tr>
+      ${hits.map(u => `<tr class="rowlink ${S.pos.salesman === u.name ? 'sel' : ''}" data-sname="${u.name}">
+        <td><b>${u.name}</b> <span class="tag ${u.role==='Salesman'?'ok':''}">${u.role}</span>${u.uid?`<span class="muted" style="margin-left:6px">[${u.uid}]</span>`:''}</td>
+        <td class="n">${S.pos.salesman === u.name ? '<b>Selected ✓</b>' : ''}</td>
+      </tr>`).join('')}
+      ${v && !hits.length ? `<tr><td colspan="2" class="muted">No matching staff members found.</td></tr>` : ''}
+    </table>`;
+    m.querySelectorAll('[data-sname]').forEach(r => r.onclick = () => pick(r.dataset.sname || null));
+    cur = v && hits.length ? 1 : 0;
+    mark();
+  };
+  
+  q.addEventListener('input', draw);
+  q.addEventListener('keydown', e => {
+    if(e.key === 'ArrowDown'){ e.preventDefault(); cur = Math.min(rows().length - 1, cur + 1); mark(); return; }
+    if(e.key === 'ArrowUp'){ e.preventDefault(); cur = Math.max(0, cur - 1); mark(); return; }
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      const r = rows()[cur];
+      if(r) pick(r.dataset.sname || null);
+    }
+  });
+  
+  draw();
+  setTimeout(() => q.focus(), 50);
 }
 
 /* ================== QUOTATION REQUESTS & TENDERS ==================
@@ -16021,13 +16093,13 @@ function users(){
 
 function myProfileModal(){
   const u=S.users.find(x=>x.name===S.user.name)||S.user;
-  const m=modal(`<h2>My Profile · ${u.name}</h2>
+  const m=modal(`<h2>My Account · ${u.name}</h2>
     <div class="grid2">
-      <div class="f"><label>Name as it appears on bills & audits</label><input id="mpName" value="${u.name}"></div>
+      <div class="f"><label>Username</label><input id="mpName" value="${u.name}"></div>
       <div class="f"><label>Bill initials (two letters)</label><input id="mpUid" maxlength="2" value="${u.uid||''}" style="text-transform:uppercase"></div>
     </div>
     <div class="grid2" style="margin-top:10px">
-      <div class="f"><label>Change Password (leave blank to keep current)</label><input id="mpPass" type="password" autocomplete="new-password" placeholder="at least 6 characters"></div>
+      <div class="f"><label>New Password (leave blank to keep current)</label><input id="mpPass" type="password" autocomplete="new-password" placeholder="at least 6 characters"></div>
       <div class="f"><label>PIN code (optional, 4-6 digits)</label><input id="mpPin" inputmode="numeric" maxlength="6" value="${u.pin||''}" placeholder="e.g. 1234"></div>
     </div>
     <div class="grid2" style="margin-top:10px">
@@ -16041,12 +16113,18 @@ function myProfileModal(){
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
       <button class="btn ghost" data-act="closeModal">Cancel</button>
-      <button class="btn tape" id="mpSave">Save My Profile</button>
+      <button class="btn tape" id="mpSave">Save Account</button>
     </div>
   `);
   m.querySelector('#mpSave').onclick=()=>{
+    const oldNm=u.name;
     const nm=(m.querySelector('#mpName').value||'').trim();
-    if(!nm) return toast('Name is required');
+    if(!nm) return toast('Username is required');
+    if(nm.toLowerCase()!==oldNm.toLowerCase()){
+      if(S.users.some(x=>x.name.toLowerCase()===nm.toLowerCase())){
+        return toast('That username is already taken');
+      }
+    }
     const uid=(m.querySelector('#mpUid').value||'').replace(/[^A-Za-z]/g,'').toUpperCase().slice(0,2)||nm.slice(0,2).toUpperCase();
     const pass=(m.querySelector('#mpPass').value||'').trim();
     if(pass&&pass.length<6) return toast('Password needs at least six characters');
@@ -16074,7 +16152,7 @@ function myProfileModal(){
     persist(true);
     m.remove();
     render();
-    toast('Profile updated successfully');
+    toast('Account updated successfully');
   };
 }
 
@@ -16270,50 +16348,145 @@ function proofBill(fmtWanted){
     link:'regalhw.lk/b/proof',proof:true};
   showInvoice(proof,fmtWanted||S.pos.lastBill||CFG.bill.defaultFormat);
 }
-/* the shop's own lock screen — a name, then a password, and their own screen
-   comes with them */
+/* the shop's own lock screen — username + password with dynamic role badge */
 function shopLock(){
   document.body.classList.add('locked');
   const el=document.createElement('div'); el.className='lock'; el.id='lockScreen';
-  el.innerHTML=`<div class="lockbox">
+  el.innerHTML=`<div class="lockbox" style="max-width:420px;padding:32px 28px">
     <div class="lockmark">${mark(52)}</div>
     <div class="lockname">REGAL<span>HW</span></div>
-    <div class="muted" style="margin-bottom:16px">${CFG.shop.addr} · till ${S.terminal} · ${S.web.settings.domain}${S.web.settings.staffPath||'/pos'}</div>
-    <div class="muted" style="margin-bottom:8px">Who is taking over the counter?</div>
-    <div class="lockstaff">${S.users.filter(u=>u.active).map(u=>`<button data-user="${u.name}"><b>${u.name}</b><span>${u.role}</span></button>`).join('')}</div>
-    <div id="lockpass" class="lockpass"></div>
-    <div class="muted" style="margin-top:14px">The drawer stays as it is. Whoever signs in is the name printed on the bills they take.</div>
+    <div class="muted" style="margin-bottom:20px;font-size:12px">${CFG.shop.addr} · till ${S.terminal} · ${S.web.settings.domain}${S.web.settings.staffPath||'/pos'}</div>
+    
+    <div style="text-align:left;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+        <label for="lockUser" style="margin:0;font-size:12.5px;font-weight:700;color:var(--steel);text-transform:uppercase;letter-spacing:0.04em">Username</label>
+        <span id="lockRoleBadge" style="display:none;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:12px"></span>
+      </div>
+      <input id="lockUser" type="text" autocomplete="username" placeholder="Enter username…" style="width:100%;font-size:15px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r);box-sizing:border-box">
+    </div>
+
+    <div style="text-align:left;margin-bottom:18px">
+      <label for="lockPw" style="display:block;margin:0 0 5px;font-size:12.5px;font-weight:700;color:var(--steel);text-transform:uppercase;letter-spacing:0.04em">Password</label>
+      <input id="lockPw" type="password" autocomplete="current-password" placeholder="••••••••" style="width:100%;font-size:15px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r);box-sizing:border-box">
+    </div>
+
+    <button class="btn tape" id="lockGo" style="width:100%;padding:11px 0;font-size:14px;font-weight:700">Sign In</button>
+    <div class="muted" id="lockMsg" style="margin-top:12px;min-height:18px;font-size:12px;text-align:center"></div>
+    <div class="muted" style="margin-top:14px;font-size:11px;border-top:1px solid var(--line);padding-top:10px;text-align:center">The drawer stays as it is. Whoever signs in is the name printed on the bills they take.</div>
    </div>`;
   document.body.appendChild(el);
-  let tries=0;
-  const askPass=(u)=>{
-    if(!u) return;
-    el.querySelectorAll('[data-user]').forEach(x=>x.classList.toggle('on',x.dataset.user===u.name));
-    el.querySelector('#lockpass').innerHTML=`
-      <div class="lp-w"><div><label>Password for <b>${u.name}</b> <span class="tag ok" style="margin-left:6px">${u.role}</span></label>
-       <input id="lockPw" type="password" autocomplete="current-password" placeholder="••••••••"></div>
-       <button class="btn tape" id="lockGo">Sign in</button></div>
-      <div class="muted" id="lockMsg">Sign in with ${u.name}'s password</div>`;
-    const pw=el.querySelector('#lockPw'), msg=el.querySelector('#lockMsg');
-    const go2=async()=>{
-      if(!(await checkPass(u,pw.value))){ tries++;
-        msg.textContent=tries>=5?'Too many wrong passwords. Ask the administrator to reset it.':'That password is not right.';
-        msg.style.color='var(--chip-rust)'; if(tries>=5) pw.disabled=true; return }
-      if(u.pin){ const got=prompt(`PIN for ${u.name}`); if(got!==u.pin){ msg.textContent='That PIN is not right.'; return } }
-      u.lastSeen=D(today);
-      S.user={name:u.name,role:u.role,perms:[...u.perms],prefs:{...PREF_DEFAULTS,...(u.prefs||{})}};
-      S.signedOut=false; el.remove(); document.body.classList.remove('locked');
-      applyLayout(); go(allowed(pref('start'))?pref('start'):(allowed('dashboard')?'dashboard':'products'));
-      toast(`Signed in as ${u.name} (${u.role})`);
-      clockInAsk(u.name);
-    };
-    el.querySelector('#lockGo').onclick=go2;
-    pw.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();go2()} };
-    pw.focus();
+
+  const uInp = el.querySelector('#lockUser');
+  const pInp = el.querySelector('#lockPw');
+  const badge = el.querySelector('#lockRoleBadge');
+  const msg = el.querySelector('#lockMsg');
+  let tries = 0;
+
+  const updateRoleBadge = () => {
+    const val = (uInp.value || '').trim();
+    if(!val){
+      badge.style.display = 'none';
+      badge.innerHTML = '';
+      return;
+    }
+    const matched = S.users.find(u => u.active && u.name.toLowerCase() === val.toLowerCase());
+    if(matched){
+      badge.style.display = 'inline-flex';
+      const roleLower = String(matched.role || '').toLowerCase();
+      if(roleLower === 'super admin' || roleLower === 'superadmin'){
+        badge.style.background = '#FEF3C7';
+        badge.style.color = '#92400E';
+        badge.style.border = '1px solid #F59E0B';
+        badge.innerHTML = `<span style="font-size:13px;line-height:1">👑</span> <b>Super Admin</b>`;
+      } else if(roleLower === 'admin'){
+        badge.style.background = '#E0E7FF';
+        badge.style.color = '#3730A3';
+        badge.style.border = '1px solid #6366F1';
+        badge.innerHTML = `<span style="font-size:12px;line-height:1">🛡️</span> <b>Admin</b>`;
+      } else if(roleLower === 'kp'){
+        badge.style.background = '#ECFDF5';
+        badge.style.color = '#065F46';
+        badge.style.border = '1px solid #10B981';
+        badge.innerHTML = `<b>KP</b>`;
+      } else if(roleLower === 'salesman'){
+        badge.style.background = '#F0FDF4';
+        badge.style.color = '#166534';
+        badge.style.border = '1px solid #22C55E';
+        badge.innerHTML = `<b>Salesman</b>`;
+      } else {
+        badge.style.background = 'var(--panel)';
+        badge.style.color = 'var(--ink)';
+        badge.style.border = '1px solid var(--line)';
+        badge.innerHTML = `<b>${matched.role}</b>`;
+      }
+    } else {
+      badge.style.display = 'none';
+      badge.innerHTML = '';
+    }
   };
-  el.querySelectorAll('[data-user]').forEach(b=>b.onclick=()=>askPass(S.users.find(x=>x.name===b.dataset.user)));
-  const defaultUser=S.users.find(u=>u.name==='Afridh'&&u.active)||S.users.find(u=>u.role==='Super Admin'&&u.active)||S.users.find(u=>u.active)||S.users[0];
-  if(defaultUser) askPass(defaultUser);
+
+  uInp.addEventListener('input', updateRoleBadge);
+
+  const doSignIn = async () => {
+    const uName = (uInp.value || '').trim();
+    if(!uName){
+      msg.textContent = 'Please enter your username';
+      msg.style.color = 'var(--chip-rust)';
+      uInp.focus();
+      return;
+    }
+    const u = S.users.find(x => x.active && x.name.toLowerCase() === uName.toLowerCase());
+    if(!u){
+      msg.textContent = 'Username not found';
+      msg.style.color = 'var(--chip-rust)';
+      uInp.focus();
+      return;
+    }
+    if(!(await checkPass(u, pInp.value))){
+      tries++;
+      msg.textContent = tries >= 5 ? 'Too many wrong passwords. Ask an administrator.' : 'That password is not right.';
+      msg.style.color = 'var(--chip-rust)';
+      if(tries >= 5) pInp.disabled = true;
+      pInp.focus();
+      return;
+    }
+    if(u.pin){
+      const got = prompt(`PIN for ${u.name}`);
+      if(got !== u.pin){
+        msg.textContent = 'That PIN is not right.';
+        msg.style.color = 'var(--chip-rust)';
+        return;
+      }
+    }
+    u.lastSeen = D(today);
+    S.user = { name: u.name, role: u.role, perms: [...u.perms], prefs: { ...PREF_DEFAULTS, ...(u.prefs || {}) } };
+    S.signedOut = false;
+    el.remove();
+    document.body.classList.remove('locked');
+    applyLayout();
+    go(allowed(pref('start')) ? pref('start') : (allowed('dashboard') ? 'dashboard' : 'products'));
+    toast(`Signed in as ${u.name} (${u.role})`);
+    clockInAsk(u.name);
+  };
+
+  el.querySelector('#lockGo').onclick = doSignIn;
+  uInp.onkeydown = e => {
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      if(uInp.value.trim()){
+        if(pInp.value) doSignIn();
+        else pInp.focus();
+      }
+    }
+  };
+  pInp.onkeydown = e => {
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      doSignIn();
+    }
+  };
+
+  uInp.focus();
 }
 
 /* ---- events ---- */
@@ -16323,8 +16496,8 @@ document.addEventListener('click',e=>{
   const tb=e.target.closest('[data-tab]'); if(tb){invTab=tb.dataset.tab;invLimit=200;render();return} const ab=e.target.closest('[data-acc]'); if(ab){accTab=ab.dataset.acc;render();return}
   const a=e.target.closest('[data-act]'); if(!a)return; e.preventDefault(); const act=a.dataset.act;
   // while the privacy screen is up only looking is allowed — nothing that writes, so the real books cannot be touched
-  if(window.privacyOn&&!/^(closeModal|invoice|showInv|doPrint|billSel|billKind|billDay|billAllDates|billMore|billClear|cust|siteTab|siteShow|wpView|ordTab|tdSel|tdFilter|bellOpen|bellClear|navMin|prefNav|prefMini|repRun|repPick|rep|acc|tab|zoom|prodHist|supShow|pickCust|showHeld|csToggleSum)$/.test(act)){ toast('Till is busy — try again in a moment'); return }
-  ({ del:()=>{S.pos.lines.splice(+a.dataset.i,1);render()}, pay:openPay, pickCust:pickCustomer, clear:()=>{S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()}, hold:()=>holdCurrentBill(true), showHeld:()=>showHeldBillsModal(),
+  if(window.privacyOn&&!/^(closeModal|invoice|showInv|doPrint|billSel|billKind|billDay|billAllDates|billMore|billClear|cust|siteTab|siteShow|wpView|ordTab|tdSel|tdFilter|bellOpen|bellClear|navMin|prefNav|prefMini|repRun|repPick|rep|acc|tab|zoom|prodHist|supShow|pickCust|pickSalesman|showHeld|csToggleSum)$/.test(act)){ toast('Till is busy — try again in a moment'); return }
+  ({ del:()=>{S.pos.lines.splice(+a.dataset.i,1);render()}, pay:openPay, pickCust:pickCustomer, pickSalesman:()=>pickSalesman(), clear:()=>{S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()}, hold:()=>holdCurrentBill(true), showHeld:()=>showHeldBillsModal(),
     csToggleSum:()=>{ const el=document.getElementById('csTillSum'); if(el) el.classList.toggle('expanded'); const b=document.querySelector('.cs-sum-btn'); if(b&&el) b.textContent=el.classList.contains('expanded')?'Details ▴':'Details ▾' },
     invoice:()=>showInvoice(S.sales.find(s=>s.no===a.dataset.no)), showInv:()=>{closeModals();showInvoice(S.sales.find(s=>s.no===a.dataset.no),a.dataset.f)}, closeModal:closeModals,
     doPrint:()=>{ try{ window.print() }catch(e){ toast("The preview is open — use the browser's own print, or pop the window out first") } },
@@ -16747,18 +16920,21 @@ document.addEventListener('keydown',e=>{
     if(e.key==='Enter'&&onRow&&s){ e.preventDefault(); supPayModal(s.id); return }
     if((e.key==='ArrowDown'||e.key==='ArrowUp')&&onRow){ e.preventDefault(); const l=supList(), i=l.findIndex(x=>x.id===supSel); const n=l[Math.max(0,Math.min(l.length-1,i+(e.key==='ArrowDown'?1:-1)))]; if(n&&n.id!==supSel){ supSel=n.id; render(); const r=document.querySelector('.cu-row.sel'); if(r){ r.focus(); if(r.scrollIntoView) r.scrollIntoView({block:'nearest'}) } } return }
   }
-  if(e.key==='F2'){ if(S.view==='pos'&&pref('till')==='classic'&&typeof CS!=='undefined'&&CS.pid){e.preventDefault();priceHistory(CS.pid);return} e.preventDefault();go('dashboard')} if(e.key==='F3'){e.preventDefault();   // on the till F3 clears the bill (asks first); anywhere else it opens the till
-    if(S.view!=='pos') go('pos'); else if(!document.querySelector('.modal')){ if(pref('till')==='classic') csClearAsk(); else { S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill}; render() } } return}
+  if(e.key==='F2'){ if(S.view==='pos'&&pref('till')==='classic'&&typeof CS!=='undefined'&&CS.pid){e.preventDefault();priceHistory(CS.pid);return} e.preventDefault();go('dashboard')}
+  if(e.key==='F3'){e.preventDefault();   // F3 on POS: select the salesperson; anywhere else opens POS
+    if(S.view==='pos'){ if(!document.querySelector('.modal')) pickSalesman(); }
+    else go('pos');
+    return;
+  }
   if(e.key==='F9'){e.preventDefault();go('bills')}
   if((e.ctrlKey||e.metaKey)&&(e.key==='p'||e.key==='P')&&S.view==='pos'&&S.pos.lines.length&&!document.querySelector('.modal')){ e.preventDefault(); proofBill(); return }
-    if(S.view==='pos'&&pref('till')==='classic'&&!document.querySelector('.modal')){
-      const typing=/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName);
-      if(e.key==='F8'){ e.preventDefault(); const f=$('#csBillDisc'); if(f){f.focus();f.select()} else toast('Bill discounts need a user who may give discounts','warn'); return }
-      if(e.key==='F5'&&!S.pos.editing){ e.preventDefault(); csSetPaper(csPaper()==='a5'?'r80':'a5'); return }   // small ⇄ large bill for this sale
-      if(e.key==='F1'){ e.preventDefault();
-        CS={...CS,pid:null,q:'',qty:1,price:0,disc:0,focus:'',editLine:null}; render();   // F1 from the bill brings you back to the item row
-        const f=$('#csQ'); if(f){f.focus();f.select()} return }
-    } if(e.key==='F7'&&S.view!=='pos'){e.preventDefault();go('receipts')}
+  if(S.view==='pos'&&pref('till')==='classic'&&!document.querySelector('.modal')){
+    const typing=/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName);
+    if(e.key==='F8'){ e.preventDefault(); const f=$('#csBillDisc'); if(f){f.focus();f.select()} else toast('Bill discounts need a user who may give discounts','warn'); return }
+    if(e.key==='F1'){ e.preventDefault();
+      CS={...CS,pid:null,q:'',qty:1,price:0,disc:0,focus:'',editLine:null}; render();   // F1 from the bill brings you back to the item row
+      const f=$('#csQ'); if(f){f.focus();f.select()} return }
+  } if(e.key==='F7'&&S.view!=='pos'){e.preventDefault();go('receipts')}
   if(S.view==='labels'&&!document.querySelector('.modal')){
     if(e.key==='F1'){e.preventDefault();$('#labQ')&&$('#labQ').focus()}
     if(e.key==='F4'){e.preventDefault();LAB.type='s1';render()}
@@ -16767,8 +16943,14 @@ document.addEventListener('keydown',e=>{
     if(e.key==='F12'||e.key==='F10'){e.preventDefault();labelSheet()}
   }
   if(S.view!=='pos'||document.querySelector('.modal'))return;
-  if(e.key==='F1'){e.preventDefault();$('#q').focus()} if(e.key==='F4'){e.preventDefault();showHeldBillsModal();return} if(e.key==='F7'){e.preventDefault();pickCustomer();return} if(e.key==='F8'){e.preventDefault();$('#bd').focus();$('#bd').select()} if(e.key==='F10'){e.preventDefault();if(S.pos.lines.length)openPay()}
- if(e.key==='F6'){e.preventDefault();if(S.pos.lines.length){ if(pref('till')==='quick'){ QT.mode='credit'; render(); qDone() } else creditSale() }} if(e.key==='F12'){e.preventDefault();const s=S.sales.at(-1);s&&showInvoice(s)}
+  if(e.key==='F1'){e.preventDefault();$('#q').focus()}
+  if(e.key==='F4'){e.preventDefault();pickCustomer();return}
+  if(e.key==='F5'){e.preventDefault();showHeldBillsModal();return}
+  if(e.key==='F7'){e.preventDefault();holdCurrentBill(true);return}
+  if(e.key==='F8'){e.preventDefault();$('#bd').focus();$('#bd').select()}
+  if(e.key==='F10'){e.preventDefault();if(S.pos.lines.length)openPay()}
+  if(e.key==='F6'){e.preventDefault();if(S.pos.lines.length){ if(pref('till')==='quick'){ QT.mode='credit'; render(); qDone() } else creditSale() }}
+  if(e.key==='F12'){e.preventDefault();const s=S.sales.at(-1);s&&showInvoice(s)}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='q'){e.preventDefault(); if(S.pos.lines.length) saveDoc('QUOTE'); else toast('Nothing on the bill to quote — add items first'); return}
   if(e.ctrlKey&&e.key.toLowerCase()==='h'){e.preventDefault(); holdCurrentBill(true); return}
   if(e.ctrlKey&&e.key.toLowerCase()==='r'){e.preventDefault(); showHeldBillsModal(); return}
