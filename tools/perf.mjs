@@ -7,7 +7,7 @@ const exe = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Progra
 const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['--no-sandbox'] });
 const pg = await b.newPage(); await pg.setViewport({ width: 1366, height: 800 });
 await pg.goto(BASE + '/pos', { waitUntil: 'networkidle2' });
-await pg.waitForSelector('#lockScreen'); await pg.click('[data-user="admin"]'); await pg.waitForSelector('#lockPw'); await pg.type('#lockPw', 'admin123'); await pg.click('#lockGo');
+await pg.waitForSelector('#lockScreen'); await pg.click('[data-user="Afridh"]'); await pg.waitForSelector('#lockPw'); await pg.type('#lockPw', 'Afridh123'); await pg.click('#lockGo');
 await pg.waitForFunction(() => !document.getElementById('lockScreen')); await new Promise(r => setTimeout(r, 1000));
 const views = process.argv.slice(2).length ? process.argv.slice(2) : ['dashboard', 'pos', 'customers', 'products', 'inventory', 'suppliers', 'purchases', 'accounting', 'reports', 'settings', 'site', 'site/products', 'weborders'];
 for (const v of views) {

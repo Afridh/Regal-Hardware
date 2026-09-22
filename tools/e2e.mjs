@@ -40,9 +40,9 @@ const { w, d } = A;
 ok('A: app booted', !!w.S && typeof w.completeSale === 'function', `${w.S.products.length} products seeded`);
 const lock = await until(() => d.getElementById('lockScreen'));
 ok('A: lock screen shown first (server build)', !!lock);
-lock.querySelector('[data-user="admin"]').click();
+lock.querySelector('[data-user="Afridh"]').click();
 await until(() => d.getElementById('lockPw'));
-d.getElementById('lockPw').value = 'admin123';
+d.getElementById('lockPw').value = 'Afridh123';
 d.getElementById('lockGo').click();
 ok('A: signed in', !!(await until(() => !d.getElementById('lockScreen'))), `as ${w.S.user.name} (${w.S.user.role})`);
 ok('A: bridge holds a token', w.regalBridge.online());
@@ -528,18 +528,23 @@ let webNo = null;
 }
 
 // ---------------------------------------------------------------- till B: another PC, same books
+// the owner puts a plain cashier on the roll for the other till to use
+A.w.eval(`(function(){ if(!S.users.some(u=>u.name==='Ravi')) S.users.push({name:'Ravi',role:'Cashier',uid:'KS',pin:'',passHash:hashSync('ravi123'),perms:[...ROLE_DEFAULTS.Cashier],active:true,lastSeen:null,prefs:{...PREF_DEFAULTS}}); })()`);
+A.w.persist(true); await sleep(1200);
+
 const B = await openTill('B');
 const lockB = await until(() => B.d.getElementById('lockScreen'));
-ok('B: fresh browser gets the lock screen with the real staff list', !!lockB && lockB.querySelectorAll('[data-user]').length === 5);
-lockB.querySelector('[data-user="Kasun"]').click(); await until(() => B.d.getElementById('lockPw'));
+const staffB = () => [...lockB.querySelectorAll('[data-user]')].map(b => b.dataset.user);
+ok('B: fresh browser gets the lock screen with the real staff list', !!lockB && staffB().includes('Afridh') && staffB().includes('Ravi'), staffB().join(', '));
+lockB.querySelector('[data-user="Ravi"]').click(); await until(() => B.d.getElementById('lockPw'));
 B.d.getElementById('lockPw').value = 'wrong'; B.d.getElementById('lockGo').click(); await sleep(400);
 ok('B: wrong password refused', !!B.d.getElementById('lockScreen') && /not right/.test(B.d.getElementById('lockMsg').textContent));
-B.d.getElementById('lockPw').value = 'kasun123'; B.d.getElementById('lockGo').click();
+B.d.getElementById('lockPw').value = 'ravi123'; B.d.getElementById('lockGo').click();
 ok('B: cashier signed in', !!(await until(() => !B.d.getElementById('lockScreen'))), `${B.w.S.user.name} Â· ${B.w.S.user.role} Â· ${B.w.S.user.perms.length} perms`);
 await sleep(300);
 ok('B: sees till A\'s voucher, transfer and bills', B.w.S.vouchers.length === 1 && B.w.S.transfers.length === 1 && B.w.S.sales.some(s => s.no === inv1.no), `${B.w.S.sales.length} bills`);
 ok('B: sees the website order once, not twice', B.w.S.web.orders.filter(o => o.no === webNo).length === 1);
-ok('B: keeps its own signed-in user (not A\'s)', B.w.S.user.name === 'Kasun');
+ok('B: keeps its own signed-in user (not A\'s)', B.w.S.user.name === 'Ravi');
 ok('B: cashier cannot open Users', !B.w.allowed('users') && B.w.allowed('pos'));
 
 // ---------------------------------------------------------------- approvals: the cashier asks, the owner decides
@@ -548,27 +553,27 @@ ok('B: cashier cannot open Users', !B.w.allowed('users') && B.w.allowed('pos'));
   const wasPortal = !!CB(2).portal;
   B.w.eval('custSel=2; custTab="overview"'); B.w.go('customers'); await sleep(30);
   B.d.querySelector('[data-act="custPortal"][data-id="2"]').click(); await sleep(30);
-  const req0 = (B.w.S.approvals || []).find(a => a.status === 'pending' && a.by === 'Kasun' && a.kind === 'custPortal');
+  const req0 = (B.w.S.approvals || []).find(a => a.status === 'pending' && a.by === 'Ravi' && a.kind === 'custPortal');
   ok('B: cashier cannot switch a portal — a request is made instead', !!CB(2).portal === wasPortal && !!req0 && (B.w.S.approvals || []).filter(a => a.status === 'pending').length === 1, JSON.stringify((B.w.S.approvals||[]).map(a=>[a.kind,a.status,a.by])));
   ok('B: menu shows the waiting badge', /nbadge/.test(B.d.querySelector('[data-view="approvals"]').innerHTML));
   B.w.go('approvals'); await sleep(30);
   ok('B: cashier sees their request waiting, with no approve button', /Waiting for the owner/.test(B.d.getElementById('main').innerHTML) && !B.d.querySelector('[data-act="apOk"]'));
   B.w.go('dashboard'); A.w.go('dashboard'); await sleep(30);
   // nobody calls persist(): every change now saves itself, and the other till picks it up by polling
-  const seenA = await until(() => A.w.S.approvals && A.w.S.approvals.some(a => a.by === 'Kasun' && a.status === 'pending'), 25000, 500);
+  const seenA = await until(() => A.w.S.approvals && A.w.S.approvals.some(a => a.by === 'Ravi' && a.status === 'pending'), 25000, 500);
   ok('A: request reached the owner by itself (auto-save + poll)', !!seenA);
-  ok('A: owner is told in the bell', A.w.S.notif.some(n => n.kind === 'approval' && /Kasun asks/.test(n.text)) && !!A.d.querySelector('#bell .bdot'));
+  ok('A: owner is told in the bell', A.w.S.notif.some(n => n.kind === 'approval' && /Ravi asks/.test(n.text)) && !!A.d.querySelector('#bell .bdot'));
   ok('A: bell entry is not shown to the cashier', !B.w.eval('notifMine')(A.w.S.notif.find(n => n.kind === 'approval')));
   A.w.go('approvals'); await sleep(30);
   ok('A: owner sees Approve / Turn down', !!A.d.querySelector('[data-act="apOk"]') && !!A.d.querySelector('[data-act="apNo"]'));
-  const reqId = A.w.S.approvals.find(a => a.status === 'pending' && a.by === 'Kasun').id, reqA = () => A.w.S.approvals.find(a => a.id === reqId);
+  const reqId = A.w.S.approvals.find(a => a.status === 'pending' && a.by === 'Ravi').id, reqA = () => A.w.S.approvals.find(a => a.id === reqId);
   A.d.getElementById('apn-' + reqId).value = 'fine, but watch the balance';
   A.d.querySelector('[data-act="apOk"][data-id="' + reqId + '"]').click(); await sleep(50);
   ok('A: approved — the change is applied', !!CA(2).portal === !wasPortal && reqA().status === 'approved' && reqA().decidedBy === 'Afridh' && reqA().note === 'fine, but watch the balance');
   A.w.go('dashboard');
   const backB = await until(() => B.w.S.approvals.some(a => a.id === reqId && a.status === 'approved'), 25000, 500);
   ok('B: cashier sees the decision and the change', !!backB && !!CB(2).portal === !wasPortal);
-  ok('B: cashier is told in their bell, with the note', B.w.S.notif.some(n => n.kind === 'approval' && /Approved/.test(n.text) && /watch the balance/.test(n.text) && n.forUser === 'Kasun'));
+  ok('B: cashier is told in their bell, with the note', B.w.S.notif.some(n => n.kind === 'approval' && /Approved/.test(n.text) && /watch the balance/.test(n.text) && n.forUser === 'Ravi'));
   // the owner does the same thing without asking anyone
   A.w.eval('custSel=2; custTab="overview"'); A.w.go('customers'); await sleep(30);
   A.d.querySelector('[data-act="custPortal"][data-id="2"]').click(); await sleep(30);
@@ -597,11 +602,11 @@ B.w.persist(); await sleep(900);
 ok('B: sale saved', !!inv4 && !!inv4.no.match(/-KS-/), `${inv4.no} (cashier id in the number)`);
 const seenOnA = await until(() => A.w.S.sales.some(s => s.no === inv4.no), 20000, 500);
 ok('A: picked up B\'s bill by polling', !!seenOnA, seenOnA ? `${A.w.S.sales.length} bills on A now` : 'not within 20s');
-ok('A: still signed in as admin after the pull', A.w.S.user.name === 'admin' && !A.d.getElementById('lockScreen'));
+ok('A: still signed in as Afridh after the pull', A.w.S.user.name === 'Afridh' && !A.d.getElementById('lockScreen'));
 
 // ---------------------------------------------------------------- reload of till A with the token kept
 const A3 = await openTill('A3', tok);
-ok('A3: token remembered -> straight back at the till, no lock', !!(await until(() => A3.w.S.user && A3.w.S.user.name === 'admin' && !A3.d.getElementById('lockScreen') && A3.w.S.sales.some(s => s.no === inv4.no), 8000)), A3.w.S.user?.name);
+ok('A3: token remembered -> straight back at the till, no lock', !!(await until(() => A3.w.S.user && A3.w.S.user.name === 'Afridh' && !A3.d.getElementById('lockScreen') && A3.w.S.sales.some(s => s.no === inv4.no), 8000)), A3.w.S.user?.name);
 ok('A3: books loaded from server', A3.w.S.sales.some(s => s.no === inv4.no), `${A3.w.S.sales.length} bills`);
 
 ok('no script errors on any till', [A, B, A3].every(t => t.errors.length === 0), [A, B, A3].flatMap(t => t.errors).slice(0, 3).join(' | '));

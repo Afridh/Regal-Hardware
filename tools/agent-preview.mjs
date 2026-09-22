@@ -6,7 +6,7 @@ const [format = 'r80', out = 'agent-preview.png'] = process.argv.slice(2);
 const exe = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
 const b = await puppeteer.launch({ executablePath: exe, headless: true });
 const pg = await b.newPage(); await pg.goto('http://localhost:4000/pos', { waitUntil: 'networkidle2' });
-await pg.waitForSelector('#lockScreen'); await pg.click('[data-user="admin"]'); await pg.waitForSelector('#lockPw'); await pg.type('#lockPw', 'admin123'); await pg.click('#lockGo');
+await pg.waitForSelector('#lockScreen'); await pg.click('[data-user="Afridh"]'); await pg.waitForSelector('#lockPw'); await pg.type('#lockPw', 'Afridh123'); await pg.click('#lockGo');
 await pg.waitForFunction(() => !document.getElementById('lockScreen')); await new Promise(r => setTimeout(r, 800));
 const html = await pg.evaluate(f => { const inv = S.sales.slice().reverse().find(s => s.lines.length >= 3) || S.sales.at(-1); return billDocument({ ...inv, proof: true }, f); }, format);
 await b.close();

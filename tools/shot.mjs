@@ -9,7 +9,7 @@ const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['
 const pg = await b.newPage(); await pg.setViewport({ width: W, height: H });
 const pageErrs = []; pg.on('pageerror', e => pageErrs.push(e.message));
 if (/^supplier(:\w+)?$/.test(process.argv[5] || '')) {                 // the suppliers' page, signed in as the first supplier with a mobile; supplier:send / supplier:sent for the other tabs
-  const tok = (await (await fetch(BASE + '/api/books/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: 'admin', password: 'admin123' }) })).json()).token;
+  const tok = (await (await fetch(BASE + '/api/books/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: 'Afridh', password: 'Afridh123' }) })).json()).token;
   const books = await (await fetch(BASE + '/api/books/regal', { headers: { Authorization: 'Bearer ' + tok } })).json();
   const sup = books.data.S.suppliers.find(s => /^0\d{9}$/.test((s.phone || '').replace(/\D/g, '')));
   const phone = sup.phone.replace(/\D/g, '');
@@ -37,8 +37,8 @@ if (shopMode) {
   await pg.screenshot({ path: out, fullPage: process.argv[6] === 'full' }); await b.close(); console.log('wrote ' + out + (pageErrs.length ? ' ERRORS ' + pageErrs.join(' | ') : '')); process.exit(0);
 }
 await pg.waitForSelector('#lockScreen', { timeout: 15000 });
-await pg.click('[data-user="admin"]'); await pg.waitForSelector('#lockPw');
-await pg.type('#lockPw', 'admin123'); await pg.click('#lockGo');
+await pg.click('[data-user="Afridh"]'); await pg.waitForSelector('#lockPw');
+await pg.type('#lockPw', 'Afridh123'); await pg.click('#lockGo');
 await pg.waitForFunction(() => !document.getElementById('lockScreen'), { timeout: 15000 });
 await new Promise(r => setTimeout(r, 800));
 await pg.evaluate(() => { go('pos'); csStart(1); csCommit(); csStart(2); csCommit(); csStart(3); csCommit(); });

@@ -91,9 +91,9 @@ async function loadBooks(key = BOOKS_KEY) {
   const { rows: [row] } = await query(`SELECT key, rev, data, updated_at, updated_by FROM books WHERE key = $1`, [key]);
   if (row?.data?.S) {
     row.data.S.users = sanitizeUsers(row.data.S.users);
-    if (!row.data.S.user || LEGACY_USERS.includes(String(row.data.S.user.name || '').toLowerCase())) {
-      row.data.S.user = { name: 'Afridh', role: 'Super Admin' };
-    }
+    // who is signed in belongs to the till, not to the shared books: a till that has nobody
+    // signed in picks its own (see applyKept in the app), so nothing is put here.
+    delete row.data.S.user;
   }
   return row || null;
 }
