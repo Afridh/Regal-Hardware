@@ -2104,8 +2104,17 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
  border:1px solid var(--chip-yellow);border-radius:var(--r);padding:0 7px;background:#fff;box-sizing:border-box;-moz-appearance:textfield}
 .till-tbl input.ln-in::-webkit-inner-spin-button,.till-tbl input.ln-in::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .till-tbl input.ln-in:focus{outline:none;box-shadow:0 0 0 3px rgba(240,168,30,.25);border-color:var(--chip-rust)}
-.till-tbl tr.on td{background:var(--tint-yellow)}
-.till-tbl tr:hover td{background:#FAFCFB}
+/* walking the bill with the arrows: the line under the cursor stands out plainly, and every line
+   walked onto keeps a green tick so you can see which ones have been checked */
+.till-tbl tr.on td{background:#FFE9A6;box-shadow:inset 0 -1px 0 #E5B93A}
+.till-tbl tr.on td:first-child{box-shadow:inset 5px 0 0 var(--chip-rust),inset 0 -1px 0 #E5B93A}
+.till-tbl tr.on td.d b{color:#7A3A0E}
+.till-tbl tr.on td.n.am b{color:var(--chip-rust)}
+.ln-chk{display:none;font-style:normal;color:#1f8f4e;font-weight:800;font-size:12px;margin-right:4px}
+.till-tbl tr.ln-checked .ln-chk{display:inline}
+.till-tbl tr.ln-checked:not(.on) td{background:#F2FAF5}
+.till-tbl tr.ln-checked:not(.on) td.d b{color:#245C3D}
+.till-tbl tr:hover:not(.on) td{background:#FAFCFB}
 .till-tbl td.x{white-space:nowrap}
 .till-tbl td.x button{border:1px solid var(--line);background:#fff;border-radius:var(--r);width:28px;height:26px;
  cursor:pointer;margin-left:3px;font-size:12px;line-height:1}
@@ -9621,7 +9630,7 @@ function pos(){
    </table></div>
    <div class="side">
     <button class="custpick" data-act="pickCust">
-     <div class="cp-l">Customer <b>F4</b></div>
+     <div class="cp-l">Customer <b>F7</b></div>
      <div class="cp-n">${c.name}</div>
      <div class="cp-s">${c.id===1?'Walk-in · retail prices · tap to choose'
        :`${c.phone} · ${c.level} prices · owes ${fmt(partyBal('C',c.id))} of ${fmt(c.limit)}${(c.points||0)>0?` · ${fq(c.points)} pts`:''}`}</div>
@@ -9639,14 +9648,14 @@ function pos(){
        <button class="btn ghost sm" data-act="doc" data-k="QUOTE" ${L.length?'':'disabled'}>Quotation <i>Ctrl+Q</i></button>
        <button class="btn ghost sm" data-act="doc" data-k="DN" ${L.length?'':'disabled'}>Delivery note</button>
        <button class="btn ghost sm" data-act="hold">Hold <i>Ctrl+H</i></button>
-       <button class="btn ghost sm" data-act="showHeld">Held <i>F3</i>${(S.heldBills&&S.heldBills.length)?` (${S.heldBills.length})`:''}</button>
+       <button class="btn ghost sm" data-act="showHeld">Held <i>F4</i>${(S.heldBills&&S.heldBills.length)?` (${S.heldBills.length})`:''}</button>
        <button class="btn ghost sm" data-act="clear">Cancel</button></div>
       ${S.pos.fromDoc?`<div class="muted" style="text-align:center">From ${S.pos.fromDoc} — completing closes it</div>`:''}
       ${S.pos.editing?`<div class="tag warn" style="display:block;padding:8px 10px;text-align:center"><b>Editing ${S.pos.editing}</b><br>the old bill is replaced when this one completes
         <button class="btn ghost sm" data-act="editDrop" style="margin-top:6px">Leave it as it was</button></div>`:''}
       <div class="muted" style="text-align:center;font-size:11.5px">Last bill ${S.sales.at(-1)?.no||'—'} · till ${S.terminal}</div>
      </div>
-     <div class="keys"><span><b>F1</b>item</span><span><b>Enter</b>next step</span><span><b>/</b>discount</span><span><b>↑↓</b>pick line</span><span><b>+ −</b>qty</span><span><b>F4</b>customer</span><span><b>F8</b>bill discount</span><span><b>F10</b>payment</span><span><b>F6</b>on account</span><span><b>Del</b>remove line</span><span><b>Ctrl+Q</b>quote</span><span><b>Ctrl+H</b>hold</span><span><b>F3</b>held</span><span><b>F12</b>reprint</span><span><b>Esc</b>back</span></div>
+     <div class="keys"><span><b>F1</b>item</span><span><b>Enter</b>next step</span><span><b>/</b>discount</span><span><b>↑↓</b>pick line</span><span><b>+ −</b>qty</span><span><b>F7</b>customer</span><span><b>F8</b>bill discount</span><span><b>F10</b>payment</span><span><b>F6</b>on account</span><span><b>Del</b>remove line</span><span><b>Ctrl+Q</b>quote</span><span><b>Ctrl+H</b>hold</span><span><b>F4</b>held</span><span><b>F3</b>clear</span><span><b>F12</b>reprint</span><span><b>Esc</b>back</span></div>
     </div>`;
 }
 let sugIdx=0, sugList=[], armed=0;
@@ -9924,7 +9933,7 @@ function posQuick(){
       <button class="btn ghost" data-act="pay" ${L.length?'':'disabled'}>Cheque / card / split</button>
       <button class="btn ghost" data-act="qDisc" ${L.length?'':'disabled'}>Bill discount</button>
       <button class="btn ghost" data-act="hold">Hold <i>Ctrl+H</i></button>
-      <button class="btn ghost" data-act="showHeld">Held (F3)${(S.heldBills&&S.heldBills.length)?` [${S.heldBills.length}]`:''}</button>
+      <button class="btn ghost" data-act="showHeld">Held (F4)${(S.heldBills&&S.heldBills.length)?` [${S.heldBills.length}]`:''}</button>
       <button class="btn ghost" data-act="clear">Clear</button></div>
     </div>
     ${S.pos.editing?`<div class="tag warn" style="display:block;padding:8px 10px;text-align:center"><b>Re-making ${S.pos.editing}</b></div>`:''}
@@ -10122,7 +10131,7 @@ function openPay(resume){
     if(kind==='CARD') return cardForm(amt,'Card at the machine');
     if(kind==='BANK') return cardForm(amt,'Bank transfer');
     if(kind==='POINTS'){
-      const cc=c(); if(cc.id===1) return toast('Points need a named customer — press F4 first');
+      const cc=c(); if(cc.id===1) return toast('Points need a named customer — press F7 first');
       const worth=typeof extPointsValue==='function'?extPointsValue(cc):0;
       const already=taken.filter(p=>p.method==='POINTS').reduce((a,p)=>a+p.amount,0);
       if(worth-already<=0.005) return toast(`${cc.name.split(' ')[0]} has no points to spend`);
@@ -10454,19 +10463,19 @@ function posClassic(){
   const nextNo=`${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-${String(((S.seqBy||{})[S.terminal+'-'+(u.uid||'??')]||0)+1).padStart(5,'0')}`;
   const now=new Date(), sel=P(CS.pid), drag=CFG.pos.dragLines!==false;
   const owed=c.id===1?0:partyBal('C',c.id);
-  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['F1','Back to item'],['F4','Customer'],['F8','Bill disc.'],
-              ['F10','Pay'],['F6','On account'],['F5','Small · large bill'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['Ctrl+H','Hold'],['F3','Held bills'],['S in price','Past prices'],['W / R','Wholesale · retail'],['Esc','Clear']];
+  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['F1','Back to item'],['F7','Customer'],['F8','Bill disc.'],
+              ['F10','Pay'],['F6','On account'],['F5','Small · large bill'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['Ctrl+H','Hold'],['F4','Held bills'],['S in price','Past prices'],['W / R','Wholesale · retail'],['F3 / Esc','Clear']];
 
   const sync=(document.getElementById('savedAt')||{}).textContent||'';
   return `<div class="till">
 
    <div class="till-head">
     <button class="burger cs-burger" data-act="drawer" title="Menu">☰</button>
-    <button class="till-clear" data-act="csClear">CLEAR<i>Esc</i></button>
-    <button class="till-held ${S.heldBills&&S.heldBills.length?'has-held':''}" data-act="showHeld" title="Preview held bills (F3)">HELD<i>F3</i>${(S.heldBills&&S.heldBills.length)?`<b>${S.heldBills.length}</b>`:''}</button>
-    <div class="till-who ${c.id===1?'':'named'}" data-act="pickCust" role="button" title="Change customer (F4)">
+    <button class="till-clear" data-act="csClear" title="Clear the bill (F3 or Esc)">CLEAR<i>F3</i></button>
+    <button class="till-held ${S.heldBills&&S.heldBills.length?'has-held':''}" data-act="showHeld" title="Get a held bill back (F4)">HELD<i>F4</i>${(S.heldBills&&S.heldBills.length)?`<b>${S.heldBills.length}</b>`:''}</button>
+    <div class="till-who ${c.id===1?'':'named'}" data-act="pickCust" role="button" title="Change customer (F7)">
      <b>${c.id===1?'WALK-IN CUSTOMER':c.name.toUpperCase()}</b>
-     <em>${c.id===1?'no account · tap or F4 to choose':`${c.phone||''} · owes ${fmt(owed)} of ${fmt(c.limit)}${owed>c.limit?' · over limit':''}`}</em>
+     <em>${c.id===1?'no account · tap or F7 to choose':`${c.phone||''} · owes ${fmt(owed)} of ${fmt(c.limit)}${owed>c.limit?' · over limit':''}`}</em>
      <span>cashier <b>${S.user.name}</b></span>
     </div>
     <div class="till-date"><b>${now.toLocaleDateString('en-GB',{weekday:'long'})}</b>
@@ -10504,9 +10513,10 @@ function posClassic(){
       <tbody>
       ${L.length?[...L].map((l,i)=>{const p=P(l.pid), sp=lastSupplier(l.pid);
         const ed=CS.editLine===i;   // Space on a highlighted line: qty and price become boxes in the row itself
-        return `<tr class="${i===S.pos.sel?'on':''} ${ed?'editing':''}" data-act="csSel" data-i="${i}">
+        const chk=CS.chk&&CS.chk.has(l);   // walked onto with the arrows: checked against the goods
+        return `<tr class="${i===S.pos.sel?'on':''} ${ed?'editing':''} ${chk?'ln-checked':''}" data-act="csSel" data-i="${i}">
          ${drag?`<td class="g"><span class="ln-grip" title="drag to move this line · Ctrl+↑ / Ctrl+↓">⠿</span></td>`:''}
-         <td class="c">${p.num||p.code}</td>
+         <td class="c"><i class="ln-chk" title="checked">✓</i>${p.num||p.code}</td>
          <td class="d"><b>${p.name.toUpperCase()}</b>
           ${(l.serials&&l.serials.length)?`<em>serial ${l.serials.join(', ')}</em>`:''}
           ${l.fromLast?`<span class="tag blue">their last price · ${l.fromLast}</span>`:''}
@@ -10563,13 +10573,13 @@ function posClassic(){
       <button class="sum-credit" data-act="credit" ${L.length?'':'disabled'}>
        <b>ON ACCOUNT</b><span>${c.id===1?'choose a customer first':c.name.split(' ')[0]} · F6</span></button>
       <div class="sum-more">
-       <button data-act="pickCust">Customer <i>F4</i></button>
+       <button data-act="pickCust">Customer <i>F7</i></button>
        <button data-act="proofA5" ${L.length?'':'disabled'}>Check bill</button>
        <button data-act="doc" data-k="QUOTE" ${L.length?'':'disabled'}>Quotation <i>Ctrl+Q</i></button>
        <button data-act="doc" data-k="DN" ${L.length?'':'disabled'}>Delivery note</button>
        <button data-act="hold" ${L.length?'':'disabled'}>Hold <i>Ctrl+H</i></button>
-       <button data-act="showHeld">Held bills <i>F3</i>${(S.heldBills&&S.heldBills.length)?` (${S.heldBills.length})`:''}</button>
-       <button data-act="csClear" ${L.length?'':'disabled'}>Clear <i>Esc</i></button>
+       <button data-act="showHeld">Held bills <i>F4</i>${(S.heldBills&&S.heldBills.length)?` (${S.heldBills.length})`:''}</button>
+       <button data-act="csClear" ${L.length?'':'disabled'}>Clear <i>F3</i></button>
       </div>
      </div>
     </div>
@@ -10720,7 +10730,7 @@ function csStart(pid){
 /* CLEAR (F3 / Esc): a bill with anything on it is only thrown away after a yes */
 function csClearAsk(){
   const doIt=()=>{ S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
-    CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null,paper:null}; closeModals(); render(); const q=$('#csQ'); if(q) q.focus() };
+    CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null,paper:null,chk:null}; closeModals(); render(); const q=$('#csQ'); if(q) q.focus() };
   const n=S.pos.lines.length;
   if(!n&&!CS.pid&&!S.pos.customer) return doIt();
   const m=modal(`<h2>Clear this bill?</h2><div class="muted" style="margin-bottom:12px">${n?`${n} line${n===1?'':'s'} · ${fmt(billTotal())}`:'The item being keyed'}${S.pos.customer?` · ${C(S.pos.customer).name}`:''} — it will be thrown away.</div>
@@ -10774,11 +10784,13 @@ function csCommit(){
 /* ---- POS fast selection update (zero lag on keyboard navigation) ---- */
 function fastUpdatePosSel(idx){
   S.pos.sel = idx;
+  // a line the cashier has walked onto counts as checked against the goods — it keeps a tick until the bill changes
+  if(idx>=0&&S.pos.lines[idx]){ if(!CS.chk) CS.chk=new WeakSet(); CS.chk.add(S.pos.lines[idx]) }
   const linesEl = document.querySelector('.till-lines');
   if(linesEl){
     const rows = linesEl.querySelectorAll('.till-tbl tbody tr[data-act="csSel"]');
     rows.forEach((r, i)=>{
-      if(i === idx){ r.classList.add('on'); r.scrollIntoView({ block: 'nearest' }); }
+      if(i === idx){ r.classList.add('on','ln-checked'); r.scrollIntoView({ block: 'nearest' }); }
       else { r.classList.remove('on'); }
     });
   }
@@ -10824,7 +10836,7 @@ function holdCurrentBill(notify = true){
   S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill };
   if(typeof CS !== 'undefined') CS = { ...CS, pid: null, q: '', qty: 1, price: 0, disc: 0, focus: '', editLine: null };
   render();
-  if(notify) toast(`Bill held (${S.heldBills.length} on hold) — press F3 to view`);
+  if(notify) toast(`Bill held (${S.heldBills.length} on hold) — press F4 to get one back`);
   return true;
 }
 
@@ -10892,7 +10904,7 @@ function showHeldBillsModal(initIdx = 0){
       <div class="hb-empty">
         <div class="hb-empty-icon">📋</div>
         <h3>No Bills On Hold</h3>
-        <p>Press <b>Ctrl+H</b> anytime items are on the till to hold the bill.<br>Press <b>F3</b> here to view and switch between held bills.</p>
+        <p>Press <b>Ctrl+H</b> anytime items are on the till to hold the bill.<br>Press <b>F4</b> here to view and switch between held bills.</p>
         <button class="btn tape" data-act="closeModal" style="margin-top:16px;padding:8px 20px">Back to Till (Esc)</button>
       </div>`);
     m.classList.add('hb-modal-wrap');
@@ -11732,7 +11744,7 @@ function saveDoc(kind){
   const L=S.pos.lines;
   if(!L.length) return toast('Nothing on the screen to save');
   const c=C(S.pos.customer||1);
-  if(kind==='DN'&&c.id===1) return toast('A delivery note needs a customer — press F4');
+  if(kind==='DN'&&c.id===1) return toast('A delivery note needs a customer — press F7');
   const sub=L.reduce((a,l)=>a+l.qty*l.price-l.disc,0), total=+(sub-S.pos.billDisc).toFixed(2);
   const doc={no:next(DOCK[kind].seq),kind,date:D(today),customerId:c.id,
     lines:L.map(l=>({...l,mrp:P(l.pid).mrp})),billDisc:S.pos.billDisc,total,
@@ -15840,7 +15852,9 @@ document.addEventListener('keydown',e=>{
     if(e.key==='Enter'&&onRow&&s){ e.preventDefault(); supPayModal(s.id); return }
     if((e.key==='ArrowDown'||e.key==='ArrowUp')&&onRow){ e.preventDefault(); const l=supList(), i=l.findIndex(x=>x.id===supSel); const n=l[Math.max(0,Math.min(l.length-1,i+(e.key==='ArrowDown'?1:-1)))]; if(n&&n.id!==supSel){ supSel=n.id; render(); const r=document.querySelector('.cu-row.sel'); if(r){ r.focus(); if(r.scrollIntoView) r.scrollIntoView({block:'nearest'}) } } return }
   }
-  if(e.key==='F2'){ if(S.view==='pos'&&pref('till')==='classic'&&typeof CS!=='undefined'&&CS.pid){e.preventDefault();priceHistory(CS.pid);return} e.preventDefault();go('dashboard')} if(e.key==='F3'){e.preventDefault(); if(S.view==='pos') showHeldBillsModal(); else go('pos'); return} if(e.key==='F9'){e.preventDefault();go('bills')}
+  if(e.key==='F2'){ if(S.view==='pos'&&pref('till')==='classic'&&typeof CS!=='undefined'&&CS.pid){e.preventDefault();priceHistory(CS.pid);return} e.preventDefault();go('dashboard')} if(e.key==='F3'){e.preventDefault();   // on the till F3 clears the bill (asks first); anywhere else it opens the till
+    if(S.view!=='pos') go('pos'); else if(!document.querySelector('.modal')){ if(pref('till')==='classic') csClearAsk(); else { S.pos={lines:[],customer:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill}; render() } } return}
+  if(e.key==='F9'){e.preventDefault();go('bills')}
   if((e.ctrlKey||e.metaKey)&&(e.key==='p'||e.key==='P')&&S.view==='pos'&&S.pos.lines.length&&!document.querySelector('.modal')){ e.preventDefault(); proofBill(); return }
     if(S.view==='pos'&&pref('till')==='classic'&&!document.querySelector('.modal')){
       const typing=/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName);
@@ -15849,7 +15863,7 @@ document.addEventListener('keydown',e=>{
       if(e.key==='F1'){ e.preventDefault();
         CS={...CS,pid:null,q:'',qty:1,price:0,disc:0,focus:'',editLine:null}; render();   // F1 from the bill brings you back to the item row
         const f=$('#csQ'); if(f){f.focus();f.select()} return }
-    } if(e.key==='F7'){e.preventDefault();go('receipts')}
+    } if(e.key==='F7'&&S.view!=='pos'){e.preventDefault();go('receipts')}
   if(S.view==='labels'&&!document.querySelector('.modal')){
     if(e.key==='F1'){e.preventDefault();$('#labQ')&&$('#labQ').focus()}
     if(e.key==='F4'){e.preventDefault();LAB.type='s1';render()}
@@ -15858,7 +15872,7 @@ document.addEventListener('keydown',e=>{
     if(e.key==='F12'||e.key==='F10'){e.preventDefault();labelSheet()}
   }
   if(S.view!=='pos'||document.querySelector('.modal'))return;
-  if(e.key==='F1'){e.preventDefault();$('#q').focus()} if(e.key==='F4'){e.preventDefault();pickCustomer()} if(e.key==='F8'){e.preventDefault();$('#bd').focus();$('#bd').select()} if(e.key==='F10'){e.preventDefault();if(S.pos.lines.length)openPay()}
+  if(e.key==='F1'){e.preventDefault();$('#q').focus()} if(e.key==='F4'){e.preventDefault();showHeldBillsModal();return} if(e.key==='F7'){e.preventDefault();pickCustomer();return} if(e.key==='F8'){e.preventDefault();$('#bd').focus();$('#bd').select()} if(e.key==='F10'){e.preventDefault();if(S.pos.lines.length)openPay()}
  if(e.key==='F6'){e.preventDefault();if(S.pos.lines.length){ if(pref('till')==='quick'){ QT.mode='credit'; render(); qDone() } else creditSale() }} if(e.key==='F12'){e.preventDefault();const s=S.sales.at(-1);s&&showInvoice(s)}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='q'){e.preventDefault(); if(S.pos.lines.length) saveDoc('QUOTE'); else toast('Nothing on the bill to quote — add items first'); return}
   if(e.ctrlKey&&e.key.toLowerCase()==='h'){e.preventDefault(); holdCurrentBill(true); return}
