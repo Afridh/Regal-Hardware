@@ -5009,12 +5009,14 @@ const store={
     try{ localStorage.setItem(STORE_KEY,txt); return true }catch(e){ return false } },
   async clear(){ try{ if(window.storage) await window.storage.delete(STORE_KEY) }catch(e){} try{ localStorage.removeItem(STORE_KEY) }catch(e){} }
 };
-const TRANSIENT=['phoneOpen','notifOpen','signedOut'];
+const LOCAL_KEYS=['user','pos','view','terminal','held','heldBills','portal','cportal','phoneOpen','phoneMode','notifOpen','signedOut','drawer','_fromStore','locId'];
+const TRANSIENT=[...LOCAL_KEYS];
 let saveTimer=null, lastSaved=null, lastSavedTxt='';
+try { window._lastLocalStoreTxt = localStorage.getItem(STORE_KEY) || ''; } catch(_){}
 /* the books as they would be saved; the text leaves out this till's own screen
    state so keying a bill does not count as a change to the shared books */
 function snapshot(){ const snap={}; Object.keys(S).forEach(k=>{ if(!TRANSIENT.includes(k)) snap[k]=S[k] }); return snap }
-function snapshotTxt(){ const local=(window.regalBridge&&regalBridge.localKeys)||[]; const snap=snapshot(); const cmp={}; Object.keys(snap).forEach(k=>{ if(!local.includes(k)) cmp[k]=snap[k] }); return JSON.stringify({S:cmp,CFG}) }
+function snapshotTxt(){ const snap=snapshot(); return JSON.stringify({S:snap,CFG}) }
 /* every render saves — but only when something in the shared books actually changed */
 /* ================== PRIVACY SCREEN ==================
    One key and the screen shows a quieter shop: a chosen share of the bills, no credit, the rest of
@@ -5056,6 +5058,9 @@ function persist(force){
     lastSavedTxt=txt;
     const ok=await store.set({v:1,at:new Date().toISOString(),S:snapshot(),CFG});
     if(!ok) lastSavedTxt='';
+    else {
+      try { window._lastLocalStoreTxt = localStorage.getItem(STORE_KEY) || ''; }catch(_){}
+    }
     lastSaved=ok?new Date():null;
     ['savedAt','savedAtNav','csSync'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=ok?'saved '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'not saved'; });
     if(ok && typeof BroadcastChannel !== 'undefined'){
@@ -5076,7 +5081,19 @@ const DEFAULT_ACCOUNTS = [
   { name: 'Sales4', role: 'Salesman', uid: 'S4', pass: 'Sales423', perms: ['products_view', 'dashboard_view', 'attendance_view'] }
 ];
 function applyKept(kept){
-  Object.assign(S,kept.S); Object.keys(kept.CFG||{}).forEach(k=>{ CFG[k]={...(CFG[k]||{}),...(kept.CFG[k]||{})} });
+  if(!kept || !kept.S) return;
+  const local = {};
+  LOCAL_KEYS.forEach(k => {
+    if(S[k] !== undefined) local[k] = S[k];
+  });
+  const incoming = { ...kept.S };
+  LOCAL_KEYS.forEach(k => { delete incoming[k]; });
+
+  Object.assign(S, incoming);
+  Object.keys(kept.CFG||{}).forEach(k=>{ CFG[k]={...(CFG[k]||{}),...(kept.CFG[k]||{})} });
+
+  // Always keep current till / device state
+  Object.assign(S, local);
   S.phoneOpen=false; S.notifOpen=false;
   const legacy=['asaath kp','raslan','kasun','fathima'];
   if(Array.isArray(S.users)){
@@ -5118,7 +5135,12 @@ const keptOk=(k)=>k&&k.S&&Array.isArray(k.S.products)&&Array.isArray(k.S.users)&
    has a newer copy it is applied a moment later. Demo data is only ever seeded
    when neither has anything. */
 function bootSync(){
-  let kept=null; try{ const r=localStorage.getItem(STORE_KEY); kept=r?JSON.parse(r):null }catch(e){}
+  let kept=null;
+  try{
+    const r=localStorage.getItem(STORE_KEY);
+    window._lastLocalStoreTxt = r || '';
+    kept=r?JSON.parse(r):null;
+  }catch(e){}
   if(keptOk(kept)) applyKept(kept); else { seed(); S._fromStore=false; }
 }
 async function boot(){
@@ -6375,6 +6397,7 @@ function go(v){ if(!allowed(v)){toast('That is not open to '+S.user.name);return
   if(S.phoneOpen && !(supplierTab||(customerTab&&S.phoneMode==='customer'))) closePhone();
   // opening Attendance brings the latest punches down by itself — the board and the fingerprint machine feed the same server
   if(v==='payroll'&&shiftCfg().autoPull!==false) setTimeout(()=>shiftPull(true),60);
+  const mn=document.getElementById('main'); if(mn) mn.scrollTop=0;
   render(); drawPhone(); }
 /* a running note of anything that changed while you were looking elsewhere */
 function notify(kind,text,view,opts){
@@ -6438,9 +6461,25 @@ function billSaved(inv){
 }
 function modal(html){ const m=document.createElement('div');m.className='modal';m.innerHTML=`<div class="box">${html}</div>`;m.addEventListener('click',e=>{if(e.target===m)m.remove()});document.body.appendChild(m);const f=m.querySelector('input,select,button');f&&f.focus();return m }
 function closeModals(){document.querySelectorAll('.modal').forEach(m=>m.remove())}
-let _rendering=false;
+let _rendering=false, _lastRenderView=null;
 function render(){ if(_rendering) return; _rendering=true; try{ renderNow() } finally { _rendering=false } if(typeof persist==='function'&&S.user&&!S.signedOut) persist() }
-function renderNow(){ renderNav(); const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view]; $('#main').innerHTML=r(); document.body.classList.toggle('csfull',pref('till')==='classic'&&S.view==='pos'); if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() } if(S.view==='recall') recallAfter(); if(S.view==='stocktake') stockTakeAfter(); if(S.view==='purchasing') purchasingAfter(); if(S.view==='social') socialAfter();
+function renderNow(){
+  if(S.view!=='board') document.body.classList.remove('boardview');
+  renderNav();
+  const mn = document.getElementById('main');
+  const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
+  _lastRenderView = S.view;
+  const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  if(mn && typeof r === 'function'){
+    mn.innerHTML = r();
+    if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
+  }
+  document.body.classList.toggle('csfull',pref('till')==='classic'&&S.view==='pos');
+  if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() }
+  if(S.view==='recall') recallAfter();
+  if(S.view==='stocktake') stockTakeAfter();
+  if(S.view==='purchasing') purchasingAfter();
+  if(S.view==='social') socialAfter();
   if(S.view==='serials'){ const sq=$('#srQ'); if(sq){ sq.oninput=e=>{srQ=e.target.value;render();const n=$('#srQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body) sq.focus() } } if(S.view==='labels') labelsAfter(); if(S.view==='receipts') receiptsAfter(); if(S.view==='dashboard') dashboardAfter();
 
@@ -7115,7 +7154,6 @@ function dashboardAfter(){
      the whole books down twenty-four times a minute, and on a till that had lost its
      connection fell through to re-running the boot — which restores the books from
      this PC's copy, or seeds the demo shop when there is no copy to restore. */
-
   // numbers count up so the eye lands on what changed
   if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
   document.querySelectorAll('.count').forEach(el=>{
