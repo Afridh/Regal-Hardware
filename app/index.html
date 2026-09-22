@@ -1631,6 +1631,13 @@ tr.rowlink button{cursor:pointer}
 @keyframes cuGlow{0%{box-shadow:0 0 0 0 rgba(240,168,30,.45)}100%{box-shadow:0 0 0 10px rgba(240,168,30,0)}}
 .cu-panel{animation:cuFadeUp .24s ease-out}
 .cu-tab-body{animation:cuFadeUp .2s ease-out}
+.notetbl td{vertical-align:top}
+.notetbl tr.noteopen{background:var(--tint-yellow)}
+.dashgrp{display:flex;align-items:center;gap:12px;margin:22px 0 10px}
+.dashgrp span{font-family:Archivo,sans-serif;font-weight:800;font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--steel);white-space:nowrap}
+.dashgrp:after{content:"";flex:1;height:2px;background:var(--line);border-radius:2px}
+.dsgrp{font-family:Archivo,sans-serif;font-weight:800;font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--steel);margin:12px 0 4px}
+.dsgrp:first-child{margin-top:0}
 .cu-row{animation:cuSlideIn .22s ease-out both}
 .cu-row:nth-child(2){animation-delay:.03s}.cu-row:nth-child(3){animation-delay:.06s}.cu-row:nth-child(4){animation-delay:.09s}.cu-row:nth-child(5){animation-delay:.12s}
 .cu-row:nth-child(6){animation-delay:.15s}.cu-row:nth-child(7){animation-delay:.18s}.cu-row:nth-child(8){animation-delay:.21s}.cu-row:nth-child(n+9){animation-delay:.24s}
@@ -6319,7 +6326,8 @@ const S = {
  web:{settings:{},orders:[],cart:[],session:null,delivery:true}, prns:[], stocktakes:[], counts:[], serials:[], notif:[], notifOpen:false, notices:[], payruns:[], advances:[], shift:{settings:{},days:{},imported:null},
  cportal:{session:null,pick:2,tab:'owed',stage:'phone',code:'',inbox:'',err:'',flash:''},
  portal:{session:null,pick:'1',tab:'new',filter:'all',stage:'phone',code:'',tries:0,left:0,timer:null,inbox:'',err:'',flash:'',rep:'Nimal',photos:[],replaces:null}, drawer:{opened:'08:02',float:5000},
- pos:{lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:'r80'}, heldBills:[], trail:[], roles:[]
+ pos:{lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:'r80'}, heldBills:[], trail:[], roles:[],
+ partyNotes:[]                                     // notes against a customer or a supplier, and the money still to sort out
 };
 /* a bill number is prefix + till + the cashier's own id + a running number kept per
    cashier, so INVM-T1-AF-00031 and INVM-T2-RS-00031 can both exist and neither can
@@ -8054,6 +8062,7 @@ function applyKept(kept){
     S.users=[];
   }
   if(!Array.isArray(S.roles)) S.roles=[];
+  if(!Array.isArray(S.partyNotes)) S.partyNotes=[];        // books saved before notes existed
   for(const acc of DEFAULT_ACCOUNTS){
     const existing=S.users.find(u=>String(u.name||'').toLowerCase()===acc.name.toLowerCase());
     if(!existing){
@@ -9690,20 +9699,26 @@ function sparkline(vals,w=260,h=54){
    Built from panels. Each person keeps their own choice of which to show and
    in what order — it travels with their login. Every chart is drawn from the
    same ledgers as the reports. */
+/* The dashboard reads in sections, so the supplier side of the shop is in one place
+   and the customer side in another. Each panel says which section it belongs to;
+   the sections run in this order and a section with nothing in it is not drawn. */
+const DASH_GROUPS=[['top',''],['sell','Sales & profit'],['cust','Customers'],['sup','Suppliers'],['cash','Money & costs']];
 const DASH_PANELS=[
-  ['day','Today at the counter','the day board with the big number'],
-  ['alerts','Things that need you','orders, notices, cheques, low stock'],
-  ['position','Where the shop stands','receivable, payable, expenses, wages'],
-  ['sales','Sales, last 14 days','bars, cash against credit'],
-  ['flow','Money in against money out','this month, as a diagram'],
-  ['owed','Money owed, both ways','customer ageing and supplier balances'],
-  ['expenses','Where the expenses go','this month, by category'],
-  ['money','Where the money is','cash, banks, cheques in the drawer'],
-  ['week','This week','profit, margin, best sellers'],
-  ['cashier','Takings by cashier','today'],
-  ['bills','Latest bills','the last six'],
-  ['low','Running low','below reorder level']];
+  ['day','Today at the counter','the day board with the big number','top'],
+  ['alerts','Things that need you','orders, notices, cheques, low stock, notes to settle','top'],
+  ['sales','Sales, last 14 days','bars, cash against credit','sell'],
+  ['week','This week','gross profit, margin, best sellers','sell'],
+  ['cashier','Takings by cashier','today','sell'],
+  ['custOwed','What customers owe us','by age — up to 30, 31 to 60, over 60 days','cust'],
+  ['bills','Latest bills','the last six','cust'],
+  ['supOwed','What we owe suppliers','by supplier, with our cheques still to clear','sup'],
+  ['low','Running low','below reorder level — what to order next','sup'],
+  ['position','Where the shop stands','receivable, payable, expenses, wages','cash'],
+  ['money','Where the money is','cash, banks, cheques in the drawer','cash'],
+  ['flow','Money in against money out','this month, as a diagram','cash'],
+  ['expenses','Where the expenses go','this month, by category','cash']];
 const DASH_DEFAULT=DASH_PANELS.map(p=>p[0]);
+const DASH_GROUP_OF=Object.fromEntries(DASH_PANELS.map(p=>[p[0],p[3]]));
 function dashPrefs(){
   const p=prefs();
   if(!p.dash||!Array.isArray(p.dash.order)) p.dash={order:[...DASH_DEFAULT],hidden:[]};
@@ -9862,6 +9877,7 @@ function dashboard(){
   const inHand=S.cheques.filter(c=>c.dir==='RECEIVED'&&c.status==='RECEIVED');
   const waiting=S.orders.filter(o=>o.status==='pending'||o.unreadShop);
   const claims=S.notices.filter(n=>n.status==='open');
+  const noteC=allNotesOpen('C'), noteS=allNotesOpen('S');
   const dates=[...Array(14)].map((_,i)=>ago(13-i));
   const daily=dates.map(d=>S.sales.filter(s=>s.date===d).reduce((a,s)=>a+s.total,0));
   const dailyCash=dates.map(d=>S.sales.filter(s=>s.date===d&&s.type==='CASH').reduce((a,s)=>a+s.total,0));
@@ -9916,6 +9932,8 @@ function dashboard(){
    alerts:()=>{ const items=[
      waiting.length?`<button class="alert" data-view="orders"><b>${waiting.length}</b><span>supplier order${waiting.length===1?'':'s'} waiting on you</span></button>`:'',
      claims.length?`<button class="alert" data-view="customers"><b>${claims.length}</b><span>payment notice${claims.length===1?'':'s'} to check</span></button>`:'',
+     noteS.length?`<button class="alert" data-view="suppliers"><b>${noteS.length}</b><span>supplier note${noteS.length===1?'':'s'} still to settle${noteS.reduce((a,n)=>a+(n.amount||0),0)>0.005?' · '+fmt(noteS.reduce((a,n)=>a+(n.amount||0),0)):''}</span></button>`:'',
+     noteC.length?`<button class="alert" data-view="customers"><b>${noteC.length}</b><span>customer note${noteC.length===1?'':'s'} still to settle${noteC.reduce((a,n)=>a+(n.amount||0),0)>0.005?' · '+fmt(noteC.reduce((a,n)=>a+(n.amount||0),0)):''}</span></button>`:'',
      inHand.length?`<button class="alert" data-view="chequesIn"><b>${inHand.length}</b><span>cheque${inHand.length===1?'':'s'} in the drawer to bank</span></button>`:'',
      pend.filter(c=>CHQ_DAYS(c.date)<=2).length?`<button class="alert warn" data-view="chequesOut"><b>${pend.filter(c=>CHQ_DAYS(c.date)<=2).length}</b><span>of our cheques due within two days</span></button>`:'',
      low.length?`<button class="alert" data-view="inventory"><b>${low.length}</b><span>item${low.length===1?'':'s'} below reorder level</span></button>`:'',
@@ -9945,13 +9963,14 @@ function dashboard(){
       ${[['Purchases',mPurch],['Paid to suppliers',mPaidSup],['Expenses',expMonth],['Wages',wages]].map(([l,v])=>`<div class="fc-bar"><span>${l}</span><i style="--w:${Math.max(2,v/Math.max(mSales,mPurch,1)*100)}%;background:var(--chip-rust)"></i><b>${fmt(v)}</b></div>`).join('')}</div>
     </div>
     <div class="ch-f"><span>Billed less bought, expenses and wages: <b class="${mSales-mPurch-expMonth-wages>=0?'up':'down'}">${fmt(mSales-mPurch-expMonth-wages)}</b></span></div></div>`,
-   owed:()=>`<div class="card chartcard"><h2>Money owed, both ways</h2>
-    <div class="twoup">
-     <div>${donut([{label:'Up to 30 days',v:age.now,color:CHART_COLORS[2]},{label:'31 to 60',v:age.mid,color:CHART_COLORS[0]},{label:'Over 60',v:age.old,color:CHART_COLORS[3]}],{center:'owed to us'})}
-      <div class="muted" style="margin-top:4px">${fmt(ar)} across ${owingCust} customer${owingCust===1?'':'s'}</div></div>
-     <div>${donut(S.suppliers.map((sp,i)=>({label:sp.name.split(/[–(]/)[0].trim(),v:Math.max(0,partyBal('S',sp.id))})).filter(x=>x.v>0),{center:'we owe'})}
-      <div class="muted" style="margin-top:4px">${fmt(ap)} across ${owedSup} supplier${owedSup===1?'':'s'}</div></div>
-    </div></div>`,
+   custOwed:()=>`<div class="card chartcard"><h2>What customers owe us</h2>
+    ${ar>0.005?donut([{label:'Up to 30 days',v:age.now,color:CHART_COLORS[2]},{label:'31 to 60',v:age.mid,color:CHART_COLORS[0]},{label:'Over 60',v:age.old,color:CHART_COLORS[3]}],{center:'owed to us'})
+      :'<div class="muted">Nobody owes us anything — every bill is settled.</div>'}
+    <div class="muted" style="margin-top:4px">${fmt(ar)} across ${owingCust} customer${owingCust===1?'':'s'}${age.old>0?` · ${fmt(age.old)} of it older than 60 days`:''}${noteC.length?` · ${noteC.length} note${noteC.length===1?'':'s'} to settle`:''}</div></div>`,
+   supOwed:()=>`<div class="card chartcard"><h2>What we owe suppliers</h2>
+    ${ap>0.005?donut(S.suppliers.map(sp=>({label:sp.name.split(/[–(]/)[0].trim(),v:Math.max(0,partyBal('S',sp.id))})).filter(x=>x.v>0),{center:'we owe'})
+      :'<div class="muted">Every supplier bill is paid.</div>'}
+    <div class="muted" style="margin-top:4px">${fmt(ap)} across ${owedSup} supplier${owedSup===1?'':'s'}${chqOut>0.005?` · ${fmt(chqOut)} in our cheques not yet cleared`:''}${noteS.length?` · ${noteS.length} note${noteS.length===1?'':'s'} to settle`:''}</div></div>`,
    expenses:()=>`<div class="card chartcard"><h2>Where the expenses go, ${new Date(mk+'-01').toLocaleDateString('en-GB',{month:'long'})}</h2>
     ${Object.keys(expCat).length?donut(Object.entries(expCat).sort((a,b)=>b[1]-a[1]).map(([ac,v])=>({label:GL[ac],v})),{center:fmt(expMonth).replace('Rs ','')})
       :'<div class="muted">Nothing spent yet this month.</div>'}</div>`,
@@ -9980,36 +9999,56 @@ function dashboard(){
   };
   const dp=dashPrefs();
   const wide=new Set(['day','alerts','position']);
-  const order=dp.order.filter(k=>!dp.hidden.includes(k)&&panels[k]);
+  const live=dp.order.filter(k=>!dp.hidden.includes(k)&&panels[k]);
   let html=`<div class="dash-h"><h1>Dashboard</h1><button class="btn ghost sm" data-act="dashSet">Arrange</button></div>`;
-  let i=0, pair=[];
-  const flush=()=>{ if(pair.length){ html+=`<div class="row dashrow">${pair.join('')}</div>`; pair=[] } };
-  order.forEach(k=>{
-    const body=panels[k](); if(!body) return;
-    if(wide.has(k)){ flush(); html+=`<div class="fade dashwide" style="--i:${i++}">${body}</div>` }
-    else { pair.push(`<div class="flex1 fade" style="--i:${i++}">${body}</div>`); if(pair.length===2) flush() }
+  let i=0;
+  DASH_GROUPS.forEach(([gk,gLabel])=>{
+    const keys=live.filter(k=>DASH_GROUP_OF[k]===gk);
+    if(!keys.length) return;
+    let body='', pair=[];
+    const flush=()=>{ if(pair.length){ body+=`<div class="row dashrow">${pair.join('')}</div>`; pair=[] } };
+    keys.forEach(k=>{
+      const out=panels[k](); if(!out) return;                 // a panel with nothing to say draws nothing
+      if(wide.has(k)){ flush(); body+=`<div class="fade dashwide" style="--i:${i++}">${out}</div>` }
+      else { pair.push(`<div class="flex1 fade" style="--i:${i++}">${out}</div>`); if(pair.length===2) flush() }
+    });
+    flush();
+    if(!body) return;                                         // and an empty section gets no heading
+    html+=(gLabel?`<div class="dashgrp"><span>${gLabel}</span></div>`:'')+body;
   });
-  flush();
   return html;
 }
 function dashSettings(){
   const dp=dashPrefs();
   const m=modal(`<h2>Arrange the dashboard</h2>
-   <div class="muted">Tick what you want to see and put it in the order you read it. This is yours, ${S.user.name} — it follows your login.</div>
+   <div class="muted">Tick what you want to see and put it in the order you read it, section by section. This is yours, ${S.user.name} — it follows your login.</div>
    <div id="dsList" style="margin-top:10px"></div>
    <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-wrap:wrap">
     <button class="btn ghost" id="dsReset">Back to the usual order</button>
     <button class="btn tape" data-act="closeModal">Done</button></div>`);
+  // ▲ ▼ move a panel within its own section; the sections themselves keep their order
+  const move=(k,dir)=>{
+    const at=dp.order.map((x,i)=>[x,i]).filter(([x])=>DASH_GROUP_OF[x]===DASH_GROUP_OF[k]).map(([,i])=>i);
+    const from=at.indexOf(dp.order.indexOf(k)), to=from+dir;
+    if(from<0||to<0||to>=at.length) return;
+    const i=at[from], j=at[to];
+    [dp.order[i],dp.order[j]]=[dp.order[j],dp.order[i]];
+    setDash(dp);
+  };
   const draw=()=>{
-    m.querySelector('#dsList').innerHTML=dp.order.map((k,i)=>{const p=DASH_PANELS.find(x=>x[0]===k); if(!p)return '';
-      return `<div class="dsrow ${dp.hidden.includes(k)?'off':''}">
-       <label class="chk" style="flex:1;margin:0"><input type="checkbox" data-dsk="${k}" ${dp.hidden.includes(k)?'':'checked'}> <b>${p[1]}</b> <span class="muted">${p[2]}</span></label>
-       <button class="btn ghost sm" data-dsup="${i}" ${i===0?'disabled':''}>▲</button>
-       <button class="btn ghost sm" data-dsdn="${i}" ${i===dp.order.length-1?'disabled':''}>▼</button></div>`}).join('');
+    m.querySelector('#dsList').innerHTML=DASH_GROUPS.map(([gk,gLabel])=>{
+      const keys=dp.order.filter(k=>DASH_GROUP_OF[k]===gk);
+      if(!keys.length) return '';
+      return `<div class="dsgrp">${gLabel||'Straight at the top'}</div>`+keys.map((k,j)=>{
+        const p=DASH_PANELS.find(x=>x[0]===k);
+        return `<div class="dsrow ${dp.hidden.includes(k)?'off':''}">
+         <label class="chk" style="flex:1;margin:0"><input type="checkbox" data-dsk="${k}" ${dp.hidden.includes(k)?'':'checked'}> <b>${p[1]}</b> <span class="muted">${p[2]}</span></label>
+         <button class="btn ghost sm" data-dsmv="${k}" data-d="-1" ${j===0?'disabled':''}>▲</button>
+         <button class="btn ghost sm" data-dsmv="${k}" data-d="1" ${j===keys.length-1?'disabled':''}>▼</button></div>`}).join('');
+    }).join('');
     m.querySelectorAll('[data-dsk]').forEach(cb=>cb.onchange=()=>{ const k=cb.dataset.dsk;
       dp.hidden=cb.checked?dp.hidden.filter(x=>x!==k):[...dp.hidden,k]; setDash(dp); draw(); if(S.view==='dashboard') render() });
-    m.querySelectorAll('[data-dsup]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.dsup; [dp.order[i-1],dp.order[i]]=[dp.order[i],dp.order[i-1]]; setDash(dp); draw(); if(S.view==='dashboard') render() });
-    m.querySelectorAll('[data-dsdn]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.dsdn; [dp.order[i+1],dp.order[i]]=[dp.order[i],dp.order[i+1]]; setDash(dp); draw(); if(S.view==='dashboard') render() });
+    m.querySelectorAll('[data-dsmv]').forEach(b=>b.onclick=()=>{ move(b.dataset.dsmv,+b.dataset.d); draw(); if(S.view==='dashboard') render() });
   };
   m.querySelector('#dsReset').onclick=()=>{ dp.order=[...DASH_DEFAULT]; dp.hidden=[]; setDash(dp); draw(); if(S.view==='dashboard') render() };
   draw();
@@ -13814,6 +13853,128 @@ function applyPurAdjust(no,v,why,note,by){
   post(D(today),`${ADJ_REASONS.find(r=>r[0]===why)[1]} on ${pur.supInv}${note?' — '+note:''}`,pur.no,
     [{ac:'2100',dr:v,party:{type:'S',id:sp.id}},{ac:'1200',cr:v}]);
 }
+
+/* ================== NOTES ON A CUSTOMER OR A SUPPLIER ==================
+   A running log against a party, kept beside their bills: what was said, what was
+   promised, and above all money that is out of step — a supplier paid twice, a
+   customer who handed over too much, a short delivery still to be credited.
+
+   A note can carry an amount, and one that does is flagged on their card and stays
+   flagged until somebody marks it settled. Nothing here is ever posted to the
+   ledger: what is owed is what the bills and the payments say, so a note can never
+   make the books wrong. It is a reminder with a number on it, which is what the
+   counter actually needs — the correction itself is made where it belongs, by
+   taking it off the next bill or with an adjustment. */
+const NOTE_KINDS=[['overpaid','Overpaid'],['credit','Credit owed back'],['short','Short or missing'],['price','Price difference'],['other','Something else']];
+const noteEsc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const noteKind=k=>(NOTE_KINDS.find(x=>x[0]===k)||['other','Something else'])[1];
+function partyNoteList(type,pid){ return (S.partyNotes||[]).filter(n=>n.type===type&&n.pid===pid) }
+function partyNotesOpen(type,pid){ return partyNoteList(type,pid).filter(n=>n.todo&&!n.done) }
+function allNotesOpen(type){ return (S.partyNotes||[]).filter(n=>n.type===type&&n.todo&&!n.done) }
+
+/* the strip above the tabs: what is still open, on whichever tab you are reading */
+function partyNoteFlags(type,pid){
+  const open=partyNotesOpen(type,pid);
+  if(!open.length) return '';
+  return open.map(n=>`<div class="card note" style="margin-bottom:10px;border-left:3px solid var(--${n.amount>0.005?'chip-rust':'chip-yellow'})">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+     <div style="min-width:0">
+      <b>${n.amount>0.005?`${noteKind(n.kind)} — ${fmt(n.amount)}`:'Note to deal with'}</b>
+      <div class="muted">${noteEsc(n.text)}</div>
+      <div class="muted" style="font-size:12px;margin-top:2px">${n.date} · ${noteEsc(n.by||'staff')}</div></div>
+     <div style="display:flex;gap:6px;flex-shrink:0">
+      <button class="btn tape" data-act="noteDone" data-nid="${n.id}">Mark settled</button>
+      <button class="btn ghost" data-act="noteEdit" data-nid="${n.id}">Edit</button></div></div></div>`).join('');
+}
+
+/* the Notes tab itself — everything ever written down, open ones at the top */
+function partyNotesPanel(type,pid){
+  const list=partyNoteList(type,pid).slice().sort((a,b)=>
+    ((b.todo&&!b.done)?1:0)-((a.todo&&!a.done)?1:0)
+    || String(b.date||'').localeCompare(String(a.date||''))
+    || (b.at||0)-(a.at||0));
+  const owed=list.filter(n=>n.todo&&!n.done&&n.amount>0.005).reduce((a,n)=>a+n.amount,0);
+  return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+    <div class="muted">Anything worth remembering about ${type==='C'?'this customer':'this supplier'} — what was said, what was promised, money that is out of step.
+     ${owed>0.005?`<b style="color:var(--chip-rust)">${fmt(owed)} still to sort out.</b>`:''}</div>
+    <button class="btn tape" data-act="noteAdd" data-ptype="${type}" data-id="${pid}">Add a note</button></div>
+   ${list.length?`<table class="notetbl">
+    <tr><th style="width:96px">When</th><th>What</th><th class="n" style="width:120px">Amount</th><th style="width:210px"></th></tr>
+    ${list.map(n=>{ const open=n.todo&&!n.done;
+      return `<tr class="${open?'noteopen':''}">
+       <td>${n.date}<div class="muted" style="font-size:12px">${noteEsc(n.by||'staff')}</div></td>
+       <td><div>${noteEsc(n.text)}</div>
+        <div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap">
+         ${n.amount>0.005?`<span class="tag ${open?'bad':''}">${noteKind(n.kind)}</span>`:''}
+         ${open?'<span class="tag warn">still open</span>':''}
+         ${n.done?`<span class="tag ok">settled ${n.doneDate||''}${n.doneBy?' by '+noteEsc(n.doneBy):''}</span>`:''}</div></td>
+       <td class="n">${n.amount>0.005?fmt(n.amount):'<span class="muted">—</span>'}</td>
+       <td style="text-align:right;white-space:nowrap">
+        ${open?`<button class="btn tape sm" data-act="noteDone" data-nid="${n.id}">Settled</button>`:''}
+        ${n.done?`<button class="btn ghost sm" data-act="noteReopen" data-nid="${n.id}">Reopen</button>`:''}
+        <button class="btn ghost sm" data-act="noteEdit" data-nid="${n.id}">Edit</button>
+        <button class="btn ghost sm" data-act="noteDel" data-nid="${n.id}">✕</button></td></tr>`}).join('')}
+    </table>`
+   :'<div class="card note">Nothing written down yet. <b>Add a note</b> for anything the next person at the counter would want to know — an overpayment to give back, a price agreed on the phone, when the lorry comes.</div>'}`;
+}
+
+function noteModal(type,pid,nid){
+  const n=nid?(S.partyNotes||[]).find(x=>x.id===nid):null;
+  if(n){ type=n.type; pid=n.pid }                       // editing: the note itself says whose it is
+  const who=type==='C'?C(pid):SU(pid);
+  if(!who) return toast('That card is gone');
+  const m=modal(`<h2>${n?'Edit the note':'Note about '+noteEsc(who.name)}</h2>
+   <div class="muted">It goes on ${n?'their':noteEsc(who.name.split(' ')[0])+'’s'} card with the date and your name. Nothing here changes what is owed — the books stay as the bills and the payments left them.</div>
+   <div class="f" style="margin-top:10px"><label>What happened</label>
+    <textarea id="ntText" rows="3" placeholder="e.g. paid twice on their bill 4471 — take it off the next lorry">${n?noteEsc(n.text):''}</textarea></div>
+   <div class="grid3">
+    <div class="f"><label>Amount, if money is out of step</label>
+     <input id="ntAmt" type="number" step="any" placeholder="leave empty for a plain note" value="${n&&n.amount>0.005?n.amount:''}"></div>
+    <div class="f"><label>What the money is</label><select id="ntKind">
+     ${NOTE_KINDS.map(k=>`<option value="${k[0]}" ${n&&n.kind===k[0]?'selected':''}>${k[1]}</option>`).join('')}</select></div>
+    <div class="f"><label>Date</label><input id="ntDate" type="date" value="${n?n.date:D(today)}"></div></div>
+   <label class="chk"><input type="checkbox" id="ntTodo" ${!n||n.todo?'checked':''}> keep it flagged on their card until someone marks it settled</label>
+   <div class="muted" id="ntMsg"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="ntOk">${n?'Save the note':'Add the note'}</button></div>`);
+  const g=i=>m.querySelector('#'+i);
+  // typing an amount is what makes it something to chase, so tick the flag for them
+  let flagTouched=false;
+  g('ntTodo').onchange=()=>flagTouched=true;
+  g('ntAmt').oninput=()=>{ if(!flagTouched&&(+g('ntAmt').value||0)>0) g('ntTodo').checked=true };
+  const save=()=>{
+    const text=g('ntText').value.trim(), amt=+g('ntAmt').value||0, kind=g('ntKind').value,
+          date=g('ntDate').value||D(today), todo=g('ntTodo').checked;
+    if(!text){ g('ntMsg').textContent='Write down what happened.'; g('ntText').focus(); return }
+    if(amt<0){ g('ntMsg').textContent='An amount cannot be negative — say what it is in the words instead.'; g('ntAmt').focus(); return }
+    if(n){ Object.assign(n,{text,amount:amt,kind,date,todo}); if(!todo){ n.done=false; delete n.doneBy; delete n.doneDate } }
+    else{ S.partyNotes=S.partyNotes||[];
+      S.partyNotes.push({id:'N'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+        type,pid,date,text,amount:amt,kind,todo,done:false,by:S.user.name,at:Date.now()}) }
+    m.remove(); render(); toast(n?'Note saved':(amt>0.005?`Note added · ${fmt(amt)} flagged until it is settled`:'Note added'));
+  };
+  g('ntOk').onclick=save;
+  g('ntText').onkeydown=e=>{ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); save() } };
+  ['ntAmt','ntKind','ntDate'].forEach(i=>g(i).onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); save() } });
+  g('ntText').focus();
+}
+
+function noteById(nid){ return (S.partyNotes||[]).find(x=>x.id===nid) }
+function noteSettle(nid,on){
+  const n=noteById(nid); if(!n) return toast('That note is gone');
+  if(on){ n.done=true; n.doneBy=S.user.name; n.doneDate=D(today); n.doneAt=Date.now() }
+  else { n.done=false; delete n.doneBy; delete n.doneDate; delete n.doneAt }
+  render(); toast(on?'Marked settled':'Open again');
+}
+function noteRemove(nid){
+  const n=noteById(nid); if(!n) return;
+  const who=n.type==='C'?C(n.pid):SU(n.pid);
+  if(!confirm(`Remove this note from ${who?who.name:'their'} card?\n\n"${n.text}"${n.amount>0.005?`\n\n${noteKind(n.kind)} ${fmt(n.amount)} — removing it forgets the reminder.`:''}`)) return;
+  S.partyNotes=(S.partyNotes||[]).filter(x=>x.id!==nid);
+  render(); toast('Note removed');
+}
+
 let custSel=2, custQ='', custFilter='all', custSort='owed', custTab='overview', custBillsF='all', custStmtRange='3m';
 /* ====================== CUSTOMERS ======================
    Find them fast (name, mobile, code, address, first letters — arrows and Enter
@@ -13920,7 +14081,7 @@ function customerPanel(c){
   const used=c.limit>0?Math.min(100,Math.round(owed/c.limit*100)):0;
   const webOrders=S.web.orders.filter(o=>o.cid===c.id);
   const notices=S.notices.filter(n=>n.kind==='customer'&&n.cid===c.id&&n.status==='open');
-  const tabs=[['overview','Overview'],['bills','Bills',inv.length],['payments','Payments',rc.length],['statement','Statement'],['details','Details']];
+  const tabs=[['overview','Overview'],['bills','Bills',inv.length],['payments','Payments',rc.length],['notes','Notes',partyNoteList('C',c.id).length],['statement','Statement'],['details','Details']];
   return `${portalBar('C',c)}
    <div class="cu-head ${c.portal?'haspage':''}">
     <div class="cu-acts">
@@ -13929,6 +14090,7 @@ function customerPanel(c){
      <button class="btn ghost" data-act="stmtPrint" data-id="${c.id}">Statement <i class="kbd">F8</i></button>
      <button class="btn ghost" data-act="stmtSms" data-id="${c.id}" ${c.phone?'':'disabled'}>Text it</button>
      <button class="btn ghost wa" data-act="custWa" data-id="${c.id}" ${c.phone?'':'disabled'} title="Open WhatsApp with them — the statement typed in if they owe">${WA_ICON} WhatsApp</button>
+     <button class="btn ghost" data-act="noteAdd" data-ptype="C" data-id="${c.id}">Add a note</button>
      <button class="btn ghost" data-act="custEdit" data-id="${c.id}">Edit <i class="kbd">Ctrl+E</i></button>
     </div>
     <div class="cu-id">${avatarOf(c,true)}
@@ -13951,8 +14113,10 @@ function customerPanel(c){
        <div><b>${c.name} says they paid ${fmt(n.amount)}</b><div class="muted">${n.method}${n.ref?' · '+n.ref:''} · told us ${n.date}. Nothing has been posted yet.</div></div>
        <div style="display:flex;gap:6px"><button class="btn tape" data-act="noticeTake" data-id="${n.id}">Record it</button><button class="btn ghost" data-act="noticeDrop" data-id="${n.id}">Dismiss</button></div></div></div>`).join('')}
 
+   ${partyNoteFlags('C',c.id)}
+
    <div class="cu-tabs">${tabs.map(t=>`<button class="${custTab===t[0]?'on':''}" data-custtab="${t[0]}">${t[1]}${t[2]!==undefined?`<i>${t[2]}</i>`:''}</button>`).join('')}</div>
-   <div class="cu-tab-body" key="${custTab}">${({overview:()=>custOverview(c,inv,open,rc,webOrders,ag,owed),bills:()=>custBills(c,inv),payments:()=>custPayments(c,rc),statement:()=>custStatement(c),details:()=>custDetails(c)})[custTab]()}</div>`;
+   <div class="cu-tab-body" key="${custTab}">${({overview:()=>custOverview(c,inv,open,rc,webOrders,ag,owed),bills:()=>custBills(c,inv),payments:()=>custPayments(c,rc),notes:()=>partyNotesPanel('C',c.id),statement:()=>custStatement(c),details:()=>custDetails(c)})[custTab]()}</div>`;
 }
 /* ---- "their own outstanding page" — the bar at the top of a customer's or a supplier's card ----
    It is the first thing on the page because it is the thing that stops the phone calls: on, and they
@@ -14847,7 +15011,7 @@ function supplierPanel(s){
   const bought=pur.reduce((a,p)=>a+p.total,0), paidTot=pay.reduce((a,p)=>a+p.total,0);
   const first=pur.length?pur[pur.length-1].date:null, lastPay=pay[0]||null;
   const orders=S.orders.filter(o=>o.sid===s.id), waiting=orders.filter(o=>o.status==='pending'||o.unreadShop).length;
-  const tabs=[['overview','Overview'],['bills','Their bills',pur.length],['payments','Payments',pay.length],['cheques','Cheques',chq.length],['statement','Statement'],['details','Details']];
+  const tabs=[['overview','Overview'],['bills','Their bills',pur.length],['payments','Payments',pay.length],['cheques','Cheques',chq.length],['notes','Notes',partyNoteList('S',s.id).length],['statement','Statement'],['details','Details']];
   return `${portalBar('S',s)}
    <div class="cu-head ${s.enabled?'haspage':''}">
     <div class="cu-acts">
@@ -14856,6 +15020,7 @@ function supplierPanel(s){
      <button class="btn ghost" data-act="supStmt" data-id="${s.id}">Statement <i class="kbd">F8</i></button>
      <button class="btn ghost" data-act="prn" data-id="${s.id}">Goods back</button>
      <button class="btn ghost" data-act="phoneToggle">${S.phoneOpen&&S.phoneMode==='supplier'?'Hide':'Show'} the rep's phone</button>
+     <button class="btn ghost" data-act="noteAdd" data-ptype="S" data-id="${s.id}">Add a note</button>
      <button class="btn ghost" data-act="supEdit" data-id="${s.id}">Edit <i class="kbd">Ctrl+E</i></button>
     </div>
     <div class="cu-id">${avatarOf(s,true)}
@@ -14871,8 +15036,10 @@ function supplierPanel(s){
     <div class="kpi b"><div class="l">Bought in all</div><div class="v ${fmt(bought).length>14?'small':''}">${fmt(bought)}</div><div class="s">${pur.length} GRN${pur.length===1?'':'s'} · paid ${fmt(paidTot)}</div></div>
    </div>
 
+   ${partyNoteFlags('S',s.id)}
+
    <div class="cu-tabs">${tabs.map(t=>`<button class="${supTab===t[0]?'on':''}" data-suptab="${t[0]}">${t[1]}${t[2]!==undefined?`<i>${t[2]}</i>`:''}</button>`).join('')}</div>
-   <div class="cu-tab-body">${({overview:()=>supOverview(s,pur,open,pay,chq,orders,owed),bills:()=>supBills(s,pur),payments:()=>supPayments(s,pay),cheques:()=>supCheques(s,chq),statement:()=>supStatement(s),details:()=>supDetails(s,orders)})[supTab]()}</div>`;
+   <div class="cu-tab-body">${({overview:()=>supOverview(s,pur,open,pay,chq,orders,owed),bills:()=>supBills(s,pur),payments:()=>supPayments(s,pay),cheques:()=>supCheques(s,chq),notes:()=>partyNotesPanel('S',s.id),statement:()=>supStatement(s),details:()=>supDetails(s,orders)})[supTab]()}</div>`;
 }
 function supOverview(s,pur,open,pay,chq,orders,owed){
   const ev=[
@@ -17114,6 +17281,9 @@ document.addEventListener('click',e=>{
     prodHist:()=>productHistory(+a.dataset.id),
     custQ:()=>{}, stmtPrint:()=>statement(+a.dataset.id,'print'), stmtSms:()=>statement(+a.dataset.id,'sms'),
     custNew:()=>custModal(null,a.dataset.q||custQ), custEdit:()=>custModal(+a.dataset.id),
+    noteAdd:()=>noteModal(a.dataset.ptype,+a.dataset.id), noteEdit:()=>noteModal(null,null,a.dataset.nid),
+    noteDone:()=>noteSettle(a.dataset.nid,true), noteReopen:()=>noteSettle(a.dataset.nid,false),
+    noteDel:()=>noteRemove(a.dataset.nid),
     rcpt:()=>{ const rv=S.payments.find(p=>p.no===a.dataset.no&&p.dir==='IN'); if(rv) receiptVoucher(rv); else toast('No such receipt') },
     custBill:()=>{ const c=C(+a.dataset.id); S.pos.customer=c.id; if(typeof repriceToCustomer==='function') repriceToCustomer(c.id); go('pos'); toast(`New bill for ${c.name}`) },
     custRemove:()=>{ const c=C(+a.dataset.id); if(partyBal('C',c.id)>0.005) return toast('Settle the account first');

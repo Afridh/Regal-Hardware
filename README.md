@@ -114,6 +114,37 @@ Neither question moves a price. By the time they come up the bill is agreed and 
 adds the name — no line is repriced and the total does not change. A bill that already has its customer (anything on
 account, which asks earlier) or a salesperson picked with F3 is not asked again.
 
+## Notes on a customer or a supplier
+
+Every customer and every supplier card has a **Notes** tab, and an **Add a note** button in the row of actions at the
+top. A note is a running log beside their bills: what was said, what was promised, and above all money that is out of
+step — a supplier paid twice, a customer who handed over too much, a short delivery still to be credited.
+
+A note can carry an **amount** and a reason (overpaid · credit owed back · short or missing · price difference ·
+something else). One that does is flagged on their card, above the tabs, on whichever tab you are reading, and it stays
+flagged until somebody presses **Mark settled** — who settled it and when is kept. Open notes are also counted in
+*Things that need you* on the dashboard, customers and suppliers separately, with the money involved.
+
+**A note never posts to the ledger.** What is owed is what the bills and the payments say, so a mistyped note can never
+make the books wrong — it is a reminder with a number on it. The correction itself is made where it belongs: taken off
+the next bill, or with an adjustment on the bill it came from.
+
+## How the dashboard is laid out
+
+The dashboard reads in sections, so one side of the shop is not mixed in with the other:
+
+| Section | What is in it |
+|---|---|
+| *(top, no heading)* | Today at the counter · Things that need you |
+| **Sales & profit** | Sales last 14 days · This week (gross profit, margin, best sellers) · Takings by cashier |
+| **Customers** | What customers owe us, by age · Latest bills |
+| **Suppliers** | What we owe suppliers, with our cheques still to clear · Running low (what to order next) |
+| **Money & costs** | Where the shop stands · Where the money is · Money in against money out · Where the expenses go |
+
+*Arrange* (top right) still chooses what you see and in what order, now section by section — ▲ ▼ move a panel within
+its own section, and the sections keep their order. It is per person and follows your login. A section with everything
+switched off is not drawn at all.
+
 ## Approvals
 
 Some changes need the owner's say-so before they happen: switching a customer's or supplier's portal on/off, changing a
