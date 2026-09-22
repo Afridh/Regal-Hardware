@@ -7102,22 +7102,15 @@ function dashSettings(){
 }
 
 function dashboardAfter(){
-  if(!window._salesSyncTimer){
-    window._salesSyncTimer = setInterval(async ()=>{
-      if(S.view === 'dashboard' && !document.querySelector('.modal') && !document.querySelector('.lock')){
-        let pulled = false;
-        if(window.regalBridge && typeof regalBridge.pull === 'function' && regalBridge.online()){
-          pulled = await regalBridge.pull(true);
-        }
-        if(!pulled && typeof bootSync === 'function'){
-          bootSync();
-        } else if(!pulled && typeof boot === 'function'){
-          await boot();
-        }
-        render();
-      }
-    }, 2500);
-  }
+  /* The dashboard does not poll for itself. regal-bridge.js already asks the server
+     every two seconds for the revision alone — a few bytes — and only pulls the books
+     down and redraws when that number has actually moved, holding off while somebody
+     is keying a bill. A timer here that redrew every couple of seconds whether or not
+     anything had changed only made the page flicker and the figures re-count, pulled
+     the whole books down twenty-four times a minute, and on a till that had lost its
+     connection fell through to re-running the boot — which restores the books from
+     this PC's copy, or seeds the demo shop when there is no copy to restore. */
+
   // numbers count up so the eye lands on what changed
   if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
   document.querySelectorAll('.count').forEach(el=>{
