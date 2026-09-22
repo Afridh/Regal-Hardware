@@ -98,6 +98,22 @@ bill with the Chrome on the PC and handing the image to Windows, so no print box
 running the browser's print box opens instead, page already sized. *Settings → Finishing a bill → Printing* shows
 whether the helper is up and has test buttons for both sizes.
 
+## The two questions at the end of a bill
+
+Once the money is settled and before the bill is written, the till can ask two things — both switched on or off under
+*Settings → Finishing a bill → What is asked once the money is taken*, and both skipped with **Esc** so the bill still
+goes straight out.
+
+* **Customer's number** (on by default) — key a mobile and the bill goes in that customer's name; a number nobody is on
+  offers to add them there and then. Left empty, it stays a walk-in sale, which is the point: the cashier never has to
+  answer. Putting a name on the bill is what earns the loyalty points and lets the e-Bill be texted.
+* **Who sold it** (off by default) — the salesperson the bill counts towards, the same attribution F3 sets before the
+  bill. Salespeople are listed first; Enter on its own leaves the bill with the cashier alone.
+
+Neither question moves a price. By the time they come up the bill is agreed and paid, so a customer picked here only
+adds the name — no line is repriced and the total does not change. A bill that already has its customer (anything on
+account, which asks earlier) or a salesperson picked with F3 is not asked again.
+
 ## Approvals
 
 Some changes need the owner's say-so before they happen: switching a customer's or supplier's portal on/off, changing a

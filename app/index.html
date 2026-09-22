@@ -6632,6 +6632,7 @@ const CFG={
    blankLines:9,summaryTime:'19:30'},
  cost:{word:'BLACKNIGHT',repeat:'X',onLabel:true,atTill:true,inProducts:true},
  done:{askSize:true,cashDefault:'r80',creditDefault:'r80',rememberPick:true,notice:true,noticeMs:3200,
+   askCustomer:true,askSalesman:false,                 // the two questions once the money is taken
    printAnim:true,animMs:1000,creditStamp:true,creditWord:'CREDIT BILL',cashWord:'PAID',sound:false},
  stock:{allowNegative:false},
  print:{agent:'http://localhost:4100'},               // the print helper on the till PC (tools/print-agent); empty = browser print
@@ -6877,6 +6878,10 @@ function settings(){
      <div class="grid3">${pick('done.cashDefault','Cash bill, usually')}${pick('done.creditDefault','Credit bill, usually')}
       <div class="f"><label>&nbsp;</label>${fld('done.askSize','','Ask which bill each time (Enter takes the usual one)','check')}</div></div>
      ${fld('done.rememberPick','','Tick "remember my choice" by default on that question','check')}
+     <h2 style="margin-top:14px">What is asked once the money is taken</h2>
+     <div class="grid2">${fld('done.askCustomer','','Ask for the customer&rsquo;s mobile number. Found, the bill goes in their name; left empty, it stays a walk-in sale','check')}
+      ${fld('done.askSalesman','','Ask who sold it, so the bill counts towards that salesperson&rsquo;s figures','check')}</div>
+     <div class="muted">Neither question moves a price &mdash; by then the bill is agreed and paid, so only the name is added. A bill that already has its customer (anything on account) or a salesperson picked with F3 is not asked again, and Esc on either question lets the bill straight out.</div>
      <h2 style="margin-top:14px">The notice when a bill goes in</h2>
      <div class="grid3">${fld('done.notice','','Show the notice','check')}${fld('done.noticeMs','How long it stays, in milliseconds','3200 is about three seconds','number')}</div>
      <div class="grid2">${fld('done.cashWord','What a cash bill says')}${fld('done.creditWord','What a credit bill says')}</div>
@@ -10429,10 +10434,10 @@ function qDone(){
       if(!confirm(`${c.name} owes ${fmt(partyBal('C',c.id))} against a limit of ${fmt(c.limit)}.\nThis bill takes them to ${fmt(partyBal('C',c.id)+total)}. Allow it?`)) return;
       override=true;
     }
-    return qComplete([{method:'CREDIT',amount:0}],override,0);
+    return endBillAsk(()=>qComplete([{method:'CREDIT',amount:0}],override,0));
   }
   const tender=+QT.tender||0, change=tender>total?+(tender-total).toFixed(2):0;
-  qComplete([{method:'CASH',amount:total}],false,change);
+  endBillAsk(()=>qComplete([{method:'CASH',amount:total}],false,change));
 }
 function qComplete(pays,override,change){
   const cust=C(S.pos.customer||1);
@@ -10660,6 +10665,8 @@ function openPay(resume){
     finish();
   };
   const finish=()=>{
+    if(!m._asked){ m._asked=true; m._busy=true;            // the end-of-bill questions, when they are switched on
+      return endBillAsk(()=>{ m._busy=false; finish() }) }
     const cust=c(); const cr=credit();
     let override=false;
     if(cr>0.005&&partyBal('C',cust.id)+cr>cust.limit){
@@ -12125,6 +12132,150 @@ function pickSalesman(after){
   
   draw();
   setTimeout(() => { q.focus(); q.select(); }, 40);
+}
+
+/* ================== THE QUESTIONS AT THE END OF A BILL ==================
+   Two of them, each switched on or off in Settings → Finishing a bill. They come up
+   once the money is settled and before the bill is written, so all they do is put a
+   name against it: no line is repriced and the total does not move. Esc, or the skip
+   button, leaves the bill as it stands and it still goes out — which is what a walk-in
+   sale wants. A bill that already has its customer (anything on account) or a
+   salesperson picked with F3 is not asked again. */
+function endBillAsk(done){
+  const wantCust=CFG.done.askCustomer&&!S.pos.customer;
+  const wantSales=CFG.done.askSalesman&&!S.pos.salesman;
+  if(!wantCust&&!wantSales) return done();
+  const second=()=>wantSales?askBillSalesman(done):done();
+  if(wantCust) askBillCustomer(second); else second();
+}
+
+/* the number first: it is what the counter has to hand, and it finds them in one go */
+function askBillCustomer(done){
+  const m=modal(`<h2>Customer's number</h2>
+   <div class="muted">Key the mobile and press Enter — the bill goes in their name. Leave it empty and it goes out as a walk-in sale.</div>
+   <input id="bqQ" placeholder="07… or a name" autocomplete="off" style="margin-top:8px">
+   <div id="bqL" style="margin-top:10px;max-height:280px;overflow:auto"></div>
+   <div class="card note" id="bqNew" style="margin-top:10px;display:none">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
+     <b>Nobody on that number</b><span class="muted">A mobile and a name is enough — the rest can wait.</span></div>
+    <div class="grid2" style="margin-top:8px">
+     <div class="f"><label>Mobile</label><input id="bqPh" placeholder="07…" autocomplete="off"></div>
+     <div class="f"><label>Name</label><input id="bqNm" placeholder="Name or shop" autocomplete="off"></div></div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+     <button class="btn tape" id="bqAdd">Add them and put the bill in their name</button>
+     <span class="muted" id="bqMsg"></span></div>
+   </div>
+   <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:12px">
+    <button class="btn ghost" id="bqSkip">Walk-in — no name <i class="kbd">Esc</i></button>
+    <span class="muted">The prices and the total stay as they were agreed.</span></div>`);
+
+  const q=m.querySelector('#bqQ'), ph=m.querySelector('#bqPh'), nm=m.querySelector('#bqNm'), box=m.querySelector('#bqNew');
+  const isPhone=v=>/^0\d{6,9}$/.test(v);
+  let touched=false; ph.oninput=()=>touched=true; nm.oninput=()=>touched=true;
+
+  let cur=0;
+  const rows=()=>[...m.querySelectorAll('[data-bqid]')];
+  const mark=()=>{ rows().forEach((r,i)=>r.classList.toggle('on',i===cur)); const r=rows()[cur]; if(r&&r.scrollIntoView) r.scrollIntoView({block:'nearest'}) };
+
+  const close=()=>{ window.removeEventListener('keydown',key,true); m.remove() };
+  const skip=()=>{ close(); done() };
+  // the bill takes their name — nothing is repriced, the money is already agreed
+  const take=(id)=>{ const c=C(id); S.pos.customer=id; close(); render();
+    toast(`${c.name} — bill in their name${c.level==='wholesale'?', at the counter prices already keyed':''}`); done() };
+
+  const draw=()=>{
+    const v=q.value.trim();
+    const hits=v?S.customers.filter(c=>c.id!==1&&c.active!==false&&custMatch(c,v)).slice(0,8):[];
+    m.querySelector('#bqL').innerHTML=v?`<table>
+      ${hits.map(c=>`<tr class="rowlink" data-bqid="${c.id}"><td><b>${c.name}</b><div class="muted">${c.phone||'no mobile'} · ${c.code||''}</div></td>
+        <td>${c.level}</td><td class="n">${partyBal('C',c.id)>0?'owes '+fmt(partyBal('C',c.id)):'<span class="muted">clear</span>'}</td></tr>`).join('')}
+      ${hits.length?'':'<tr><td colspan="3" class="muted">Nobody matches that yet.</td></tr>'}</table>`:'';
+    m.querySelectorAll('[data-bqid]').forEach(r=>r.onclick=()=>take(+r.dataset.bqid));
+    box.style.display=(v&&!hits.length)?'':'none';
+    if(!touched){ if(isPhone(v)){ ph.value=v; nm.value='' } else { nm.value=v; ph.value='' } }
+    cur=0; mark();
+  };
+
+  const add=()=>{
+    const msg=m.querySelector('#bqMsg'), p2=ph.value.trim(), n2=nm.value.trim();
+    if(!isPhone(p2)){ msg.textContent='Enter a mobile like 0771234567.'; ph.focus(); return }
+    if(!n2){ msg.textContent='A name is needed.'; nm.focus(); return }
+    const dup=S.customers.find(c=>c.phone===p2); if(dup) return take(dup.id);
+    const c={id:Math.max(...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),
+      name:n2,phone:p2,level:'retail',limit:25000,address:'',portal:false,lastLogin:null};
+    S.customers.push(c); take(c.id);
+    toast(`${n2} added · retail prices, ${fmt(c.limit)} limit — change it in Customers`);
+  };
+
+  const key=(e)=>{
+    if(!document.body.contains(m)){ window.removeEventListener('keydown',key,true); return }
+    e.stopPropagation();                                  // the payment window behind must not see any of this
+    if(e.key==='Escape'){ e.preventDefault(); skip(); return }
+    const inNew=e.target&&e.target.closest&&e.target.closest('#bqNew');
+    if(!inNew&&e.key==='ArrowDown'){ e.preventDefault(); cur=Math.min(rows().length-1,cur+1); mark(); return }
+    if(!inNew&&e.key==='ArrowUp'){ e.preventDefault(); cur=Math.max(0,cur-1); mark(); return }
+    if(e.key!=='Enter') return;
+    e.preventDefault();
+    if(inNew){ if(e.target===ph) nm.focus(); else add(); return }
+    const v=q.value.trim();
+    if(!v) return skip();                                 // nothing keyed: walk-in, straight on
+    const r=rows()[cur];
+    if(r) return take(+r.dataset.bqid);
+    (isPhone(v)?nm:ph).focus();                           // no match: finish adding them
+  };
+  window.addEventListener('keydown',key,true);
+  m.addEventListener('click',e=>{ if(e.target===m) skip() });   // clicking away is a skip, never a dead end
+  m.querySelector('#bqSkip').onclick=skip;
+  m.querySelector('#bqAdd').onclick=add;
+  q.addEventListener('input',draw);
+  draw(); q.focus();
+}
+
+/* then who sold it — salespeople first, because that is who is nearly always picked */
+function askBillSalesman(done){
+  const staff=S.users.filter(u=>u.active);
+  const list=[...staff.filter(u=>String(u.role||'').toLowerCase()==='salesman'),
+              ...staff.filter(u=>String(u.role||'').toLowerCase()!=='salesman')];
+  const m=modal(`<h2>Who sold it?</h2>
+   <div class="muted">The bill counts towards them. Enter on its own leaves it with ${S.user.name} alone.</div>
+   <input id="bsQ" placeholder="Search a name or a role…" autocomplete="off" style="margin-top:8px">
+   <div id="bsL" style="margin-top:10px;max-height:300px;overflow:auto"></div>
+   <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:12px">
+    <button class="btn ghost" id="bsSkip">Nobody — cashier only <i class="kbd">Esc</i></button>
+    <span class="muted">↑ ↓ to walk the list, Enter to take it.</span></div>`);
+
+  const q=m.querySelector('#bsQ');
+  let cur=0;
+  const rows=()=>[...m.querySelectorAll('[data-bsn]')];
+  const mark=()=>{ rows().forEach((r,i)=>r.classList.toggle('on',i===cur)); const r=rows()[cur]; if(r&&r.scrollIntoView) r.scrollIntoView({block:'nearest'}) };
+  const close=()=>{ window.removeEventListener('keydown',key,true); m.remove() };
+  const pick=(name)=>{ S.pos.salesman=name||null; close(); render(); if(name) toast(`Sold by ${name}`); done() };
+
+  const draw=()=>{
+    const v=(q.value||'').trim().toLowerCase();
+    const hits=list.filter(u=>u.name.toLowerCase().includes(v)||String(u.role||'').toLowerCase().includes(v));
+    m.querySelector('#bsL').innerHTML=`<table>
+      <tr class="rowlink" data-bsn=""><td><b>Nobody — cashier only</b><div class="muted">the bill stays with ${S.user.name}</div></td><td class="n"></td></tr>
+      ${hits.map(u=>`<tr class="rowlink" data-bsn="${u.name}"><td><b>${u.name}</b> <span class="tag ${u.role==='Salesman'?'ok':''}">${u.role}</span></td>
+        <td class="n">${u.uid?'['+u.uid+']':''}</td></tr>`).join('')}
+      ${v&&!hits.length?'<tr><td colspan="2" class="muted">No staff match that.</td></tr>':''}</table>`;
+    m.querySelectorAll('[data-bsn]').forEach(r=>r.onclick=()=>pick(r.dataset.bsn||null));
+    cur=v&&hits.length?1:0; mark();
+  };
+
+  const key=(e)=>{
+    if(!document.body.contains(m)){ window.removeEventListener('keydown',key,true); return }
+    e.stopPropagation();
+    if(e.key==='Escape'){ e.preventDefault(); pick(null); return }
+    if(e.key==='ArrowDown'){ e.preventDefault(); cur=Math.min(rows().length-1,cur+1); mark(); return }
+    if(e.key==='ArrowUp'){ e.preventDefault(); cur=Math.max(0,cur-1); mark(); return }
+    if(e.key==='Enter'){ e.preventDefault(); const r=rows()[cur]; pick(r?(r.dataset.bsn||null):null) }
+  };
+  window.addEventListener('keydown',key,true);
+  m.addEventListener('click',e=>{ if(e.target===m) pick(null) });
+  m.querySelector('#bsSkip').onclick=()=>pick(null);
+  q.addEventListener('input',draw);
+  draw(); q.focus();
 }
 
 /* ================== QUOTATION REQUESTS & TENDERS ==================
