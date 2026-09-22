@@ -10828,12 +10828,13 @@ function holdAsk(){
   const m=modal(`<h2>Hold this bill</h2>
    <div class="muted" style="margin-bottom:10px">${S.pos.lines.length} line${S.pos.lines.length===1?'':'s'} · ${fmt(T.net)}${c.id!==1?' · '+c.name:''}</div>
    <div class="f"><label>Reference — who or what is it for?</label>
-    <input id="hbRef" placeholder="name, vehicle number, 'waiting for cash'…" maxlength="60" value="${c.id!==1?c.name.replace(/"/g,'&quot;'):''}"></div>
+    <input id="hbRef" placeholder="name, vehicle number, 'waiting for cash'… or just Enter" maxlength="60" value="${c.id!==1?c.name.replace(/"/g,'&quot;'):''}"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
     <button class="btn ghost" id="hbNo">Keep billing <i class="kbd">Esc</i></button>
     <button class="btn tape" id="hbYes">Hold it <i class="kbd">Enter</i></button></div>`);
   const inp=m.querySelector('#hbRef'); inp.focus(); inp.select();
-  const go=()=>{ const ref=inp.value.trim(); if(!ref){ inp.focus(); return toast('Put a reference in so the bill can be found again','warn') } m.remove(); holdCurrentBill(true,ref) };
+  // no reference typed is fine — the bill is held under the time instead
+  const go=()=>{ const ref=inp.value.trim()||('Held '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})); m.remove(); holdCurrentBill(true,ref) };
   m.querySelector('#hbYes').onclick=go;
   m.querySelector('#hbNo').onclick=()=>{ m.remove(); const q=$('#csQ'); if(q) q.focus() };
   inp.onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); go() } if(e.key==='Escape'){ e.preventDefault(); m.remove(); const q=$('#csQ'); if(q) q.focus() } };
@@ -12082,12 +12083,12 @@ function billToTill(no){
   const m=modal(`<h2>Change bill ${no}?</h2>
    <div class="hb-ask"><b>${c.name}</b><span>${inv.lines.length} line${inv.lines.length===1?'':'s'} · ${fmt(inv.total)} · ${inv.date} by ${inv.by}${(inv.remade||[]).length?` · already re-made ${inv.remade.length}×`:''}</span></div>
    <div class="muted" style="margin:8px 0">The bill comes onto the till under the same number. When the payment is taken again the old one is reversed in full and the new one posted — stock, the ledger and what the customer owes all follow.${onTill?` The ${onTill} line${onTill===1?'':'s'} on the till now will be held first.`:''}</div>
-   <div class="f"><label>Why is it being changed?</label><input id="ebWhy" placeholder="wrong quantity, price agreed after, item swapped…" maxlength="80"></div>
+   <div class="f"><label>Why is it being changed? <span class="muted">(optional)</span></label><input id="ebWhy" placeholder="wrong quantity, price agreed after, item swapped… or just Enter" maxlength="80"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
     <button class="btn ghost" id="ebNo">Leave it <i class="kbd">Esc</i></button>
     <button class="btn tape" id="ebYes">Open it on the till <i class="kbd">Enter</i></button></div>`);
   const inp=m.querySelector('#ebWhy'); inp.focus();
-  const go2=()=>{ const why=inp.value.trim(); if(!why){ inp.focus(); return toast('Put the reason in — it is kept with the bill','warn') }
+  const go2=()=>{ const why=inp.value.trim();   // a reason is kept with the bill when given; none is fine too
     m.remove();
     if(S.pos.lines.length) holdCurrentBill(false);
     S.pos={lines:inv.lines.map(l=>({pid:l.pid,qty:l.qty,price:l.price,disc:l.disc||0,warranty:l.warranty,belowCost:l.belowCost})),
