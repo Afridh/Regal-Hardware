@@ -25,12 +25,23 @@ a token for it on that PC.
 
 ## Signing in
 
-* The **till's own sign-in** is accepted. An Owner (or anyone with *payroll* or *settings*)
-  counts as the board's owner; everyone else counts as a supervisor.
+**The board inside the shop system has no sign-in of its own.** It is opened from behind the
+till's lock screen, which has already decided who this is, so a second login was only ever a
+door to get past. The board takes the till's token and sends it as `Authorization: Bearer …`
+on every call, alongside the `X-Shift-Token` header it has always used.
+
+* The **till's own sign-in** is what the server checks. An Owner (or anyone with *payroll* or
+  *settings*) counts as the board's owner; everyone else counts as a supervisor.
 * A supervisor is given the attendance **with the wages taken out on the server** — rates, pay
   type, advances, the ledger and the money settings never leave it. Hiding them on the page
-  would not be the same thing.
-* The board's own logins (`?action=login`) still work for the standalone board.
+  would not be the same thing. Removing the board's own login changed none of that: the
+  server still decides what it hands over.
+* A **Salesman** is not given the board at all. *Attendance & pay* shows them their own
+  punches and their own hours, with no rates and nobody else on the page.
+* If the server cannot be reached, the board carries on against the records kept on that
+  device rather than putting a sign-in up.
+* `?action=login` is still there on the server for a board hosted on its own, away from the
+  till.
 
 ## The fingerprint machine
 

@@ -3407,7 +3407,7 @@ tr.voided td:nth-child(5){text-decoration:none}
       <span class="d" id="liveDate"></span>
     </div>
     <span class="sync" id="syncBadge" data-s="idle">Ready</span>
-    <span class="whoami" id="whoami" hidden><span id="whoName"></span><button class="btn sm ghost" data-act="signout">Sign out</button></span>
+    <span class="whoami" id="whoami" hidden><span id="whoName"></span></span>
   </div>
   <nav class="tabs" id="tabs" role="tablist">
     <button role="tab" data-tab="today" aria-selected="true">Today</button>
@@ -3436,17 +3436,7 @@ tr.voided td:nth-child(5){text-decoration:none}
 <div class="toast" id="toast"></div>
 <div class="scanflash" id="scanflash"></div>
 
-<div class="gate" id="gate" hidden>
-  <form class="gatebox" id="gateForm">
-    <h2>Regal Shift Board</h2>
-    <p class="gsub" id="gateMsg">Sign in to open the board</p>
-    <label class="f"><span>Username</span><input type="text" id="gu" autocomplete="username" autocapitalize="none" required></label>
-    <label class="f"><span>Password</span><input type="password" id="gp" autocomplete="current-password" required></label>
-    <label class="chk" style="font-weight:500"><input type="checkbox" id="gkeep"> Stay signed in on this device</label>
-    <button class="btn primary big" type="submit" id="gbtn">Sign in</button>
-    <p class="gerr" id="gerr"></p>
-  </form>
-</div>
+<!-- the board's sign-in used to sit here; it is opened from inside the till now -->
 
 <script>
 (function(){
@@ -3498,6 +3488,7 @@ var ROLE = "local", CFG = {apiUrl:"", token:"", user:"", role:""}, SREV = 0, POL
 
 function loadCfg(){
   try{ var c=JSON.parse(localStorage.getItem(CFG_KEY)||"null"); if(c) CFG=c; }catch(e){}
+  if(!CFG.apiUrl && tillToken()) CFG.apiUrl=tillShiftUrl();          // opened inside the till: use its address
   /* inside the shop system the board runs in a frame: the punches go to the same
      Node server the shop uses, at /shift-api.php */
   try{
@@ -3509,7 +3500,22 @@ function loadCfg(){
   }
 }
 function saveCfg(){ try{ localStorage.setItem(CFG_KEY, JSON.stringify(CFG)); }catch(e){} }
-function online(){ return !!(CFG.apiUrl && CFG.token); }
+
+/* The board has no sign-in of its own any more. It is opened from inside the till,
+   which has already checked who this is and whether they may see pay at all, and the
+   attendance server takes the till's own token — an Owner (or anyone with payroll or
+   settings) counts as the board's owner, everyone else as a supervisor, and a
+   supervisor's wages are taken out on the server rather than merely hidden here. */
+function tillToken(){ try{ return localStorage.getItem("regal_token")||""; }catch(e){ return ""; } }
+function tillUser(){
+  try{ var p=window.parent; if(p&&p!==window&&p.S&&p.S.user) return p.S.user.name||""; }catch(e){}
+  return "";
+}
+function tillShiftUrl(){
+  try{ var p=window.parent; if(p&&p!==window&&typeof p.shiftUrl==="function") return p.shiftUrl(); }catch(e){}
+  return "/shift-api.php";
+}
+function online(){ return !!(CFG.apiUrl && (CFG.token || tillToken())); }
 function isOwner(){ return ROLE==="owner" || (ROLE==="local" && ADMIN); }
 function canEditDays(){ return ROLE==="owner" || ROLE==="supervisor" || ROLE==="local"; }
 
@@ -3553,6 +3559,7 @@ function clearSession(){ try{ localStorage.removeItem(SESS_KEY); }catch(e){} }
 function api(action, body, method){
   var opt={ method: method || (body?"POST":"GET"),
             headers:{ "Content-Type":"application/json", "X-Shift-Token": CFG.token||"" } };
+  var tt=tillToken(); if(tt) opt.headers["Authorization"]="Bearer "+tt;   // the till's own sign-in
   if(body) opt.body=JSON.stringify(body);
   return fetch(CFG.apiUrl+"?action="+encodeURIComponent(action), opt).then(function(r){
     return r.json().catch(function(){ return {ok:false,error:"The server sent something unreadable"}; })
@@ -5241,19 +5248,14 @@ function renderSetup(){
     '<div class="row" style="margin-top:14px">'+
     '<button class="btn" data-act="backup">Download backup</button>'+
     '<button class="btn" data-act="restore">Restore from backup</button>'+
-    (online()?'<button class="btn" data-act="change-pass">Change password</button>':'')+
-    (!online()?'<button class="btn" data-act="setup-login">'+
-      (localAuthOn()?"Change the logins":"Set up a login")+'</button>':'')+
     '<button class="btn ghost" data-act="lock">Lock owner access</button>'+
     '<button class="btn danger" data-act="clear-all">Erase everything</button></div>'+
     '<p class="hint" style="margin-top:10px">'+
+    'The board takes its sign-in from the till it is opened in, so there is no second login to get past. '+
     (online()
-      ? 'Records live on your server, so every device sees the same thing. A backup file is still worth keeping monthly.'
-      : (localAuthOn()
-          ? 'A login is on for this link. Anyone opening it must sign in \u2014 but the data still travels inside the page, '+
-            'so it is a lock on the door rather than a safe.'
-          : 'No login on this link \u2014 anyone with it opens the board straight away. The owner PIN only guards payroll and settings.')
-    )+'</p></div>';
+      ? 'Records live on your server, so every device sees the same thing \u2014 a backup file is still worth keeping monthly.'
+      : 'The server cannot be reached just now, so this is kept on the device until it can be.')+
+    ' The owner PIN still guards pay and settings on this screen.</p></div>';
   p.innerHTML=h;
 }
 function fld(label,type,id,val){
@@ -6086,9 +6088,10 @@ function applyBrand(){
   $("shopName").textContent = S().shopName || "Regal Shift Board";
   $("shopSub").textContent = "Attendance & Pay";
   var w=$("whoami");
-  if((online() || localAuthOn()) && CFG.user){
+  var who = CFG.user || tillUser();                       // whoever the till says is at the counter
+  if(who){
     w.hidden=false;
-    $("whoName").textContent = CFG.user + (ROLE==="supervisor" ? " \u00b7 supervisor" : "");
+    $("whoName").textContent = who + (ROLE==="supervisor" ? " \u00b7 supervisor" : "");
   } else w.hidden=true;
 }
 function renderAll(){
@@ -6152,13 +6155,16 @@ document.addEventListener("keydown",function(ev){
   if(ev.key.length===1) scanBuf+=ev.key;
 });
 
+/* Nothing gates the board now. Where it used to put a sign-in up — no token, an
+   expired one, a server that will not answer — it simply carries on against this
+   device's own records, and the till stays the thing that decides who gets in. */
 function showLogin(msg){
-  $("gate").hidden=false;
-  $("gateMsg").textContent = msg || "Sign in to open the board";
-  $("gerr").textContent="";
-  setTimeout(function(){ var f=$("gu"); if(f) f.focus(); },40);
+  var g=$("gate"); if(g) g.hidden=true;
+  if(ROLE!=="owner"&&ROLE!=="supervisor"){ ROLE="local"; ADMIN=true; }
+  if(msg) try{ toast(msg); }catch(e){}
+  renderAll();
 }
-function hideLogin(){ $("gate").hidden=true; }
+function hideLogin(){ var g=$("gate"); if(g) g.hidden=true; }
 function startPolling(){
   if(POLL) clearInterval(POLL);
   POLL=setInterval(function(){ pullState(true); }, 20000);
@@ -6171,69 +6177,7 @@ function afterSignIn(){
   switchTab("today");
   setSync("saved","Saved \u00b7 everyone sees it");
 }
-function localSignIn(u,p,keep){
-  var A=STATE.auth;
-  var acc=A.users.filter(function(x){ return x.user.toLowerCase()===String(u).toLowerCase(); })[0];
-
-  /* try the real account first \u2014 a long password must never be mistaken for a
-     recovery code */
-  var first = acc ? hashPw(p,A.salt).then(function(h){
-    if(h!==acc.hash) return false;
-    ROLE = acc.role==="owner" ? "local" : "supervisor";
-    ADMIN = acc.role==="owner";
-    CFG.user=acc.user; CFG.role=acc.role;
-    writeSession(acc.user,acc.role,keep);
-    hideLogin(); renderAll(); switchTab("today");
-    return true;
-  }) : Promise.resolve(false);
-
-  return first.then(function(ok){
-    if(ok || !A.recovery) return ok;
-    var rec=String(p||"").trim().toUpperCase();
-    if(!/^[A-Z2-9]{10}$/.test(rec)) return false;
-    return hashPw(rec,A.salt).then(function(h){
-      if(h!==A.recovery) return false;
-      A.on=false; save(); ROLE="local"; ADMIN=true; clearSession();
-      hideLogin(); renderAll(); switchTab("setup");
-      toast("Recovery code accepted \u2014 the login is off, set it up again");
-      return true;
-    });
-  });
-}
-
-$("gateForm").addEventListener("submit",function(ev){
-  ev.preventDefault();
-  var u=$("gu").value.trim(), p=$("gp").value;
-  var keep=$("gkeep") ? $("gkeep").checked : false;
-  $("gbtn").disabled=true; $("gerr").textContent="";
-
-  if(!online() && localAuthOn()){
-    localSignIn(u,p,keep).then(function(ok){
-      $("gbtn").disabled=false;
-      if(!ok) $("gerr").textContent="Wrong username or password";
-      else $("gp").value="";
-    });
-    return;
-  }
-
-  api("login",{user:u,password:p}).then(function(j){
-    $("gbtn").disabled=false;
-    if(!j.ok){ $("gerr").textContent=j.error||"Could not sign in"; return; }
-    CFG.token=j.token; CFG.user=j.user; CFG.role=j.role; saveCfg();
-    ROLE=j.role; $("gp").value="";
-    api("state").then(function(s){
-      if(s.ok){
-        SREV=s.rev;
-        if(s.state){ STATE=normalize(s.state); clearFirstDay(); mirror(); }
-        else if(ROLE==="owner"){ SREV=s.rev; pushState(); }
-      }
-      afterSignIn();
-    });
-  }).catch(function(){
-    $("gbtn").disabled=false;
-    $("gerr").textContent="Cannot reach the server at "+CFG.apiUrl;
-  });
-});
+/* the sign-in form and its local-password helper used to sit here */
 
 function boot(){
   PRISTINE = document.documentElement.outerHTML;
@@ -6259,7 +6203,7 @@ function boot(){
   }
 
   if(CFG.apiUrl){
-    if(CFG.token){
+    if(CFG.token || tillToken()){
       api("state").then(function(j){
         if(j.__status===401 || !j.ok){ showLogin(); return; }
         ROLE=j.role||"supervisor"; SREV=j.rev;
@@ -7143,29 +7087,94 @@ function shiftFrame(){ return document.getElementById('shiftFrame') }
 function buildBoardHost(){
   if(document.getElementById('boardHost')) return;
   const host=document.createElement('div'); host.id='boardHost';
-  host.innerHTML=`<div class="boardbar">
-     <div class="muted">This is the same board the staff use. Punches made here feed straight into Attendance &amp; pay — nothing to export or paste.</div>
-     <button class="btn tape" data-act="boardPull">Use these punches for pay</button>
-     <button class="btn ghost" data-act="boardWide">Full width</button>
-     <button class="btn ghost" data-act="boardReload">Restart it</button></div>
-    <iframe id="shiftFrame" title="Shift board"></iframe>`;
+  host.innerHTML=`<div class="boardbar" id="boardBar"></div><iframe id="shiftFrame" title="Shift board"></iframe>`;
   document.body.appendChild(host);
+  drawBoardBar();
   writeBoard();
+}
+/* The board is the attendance page. What it cannot do — put the month's wages into
+   the ledger, print a salary voucher, hand out an advance — sits in the bar above it,
+   because those touch the shop's books rather than the punches. */
+function drawBoardBar(){
+  const bar=document.getElementById('boardBar'); if(!bar) return;
+  const mk=payMonth||D(today).slice(0,7);
+  const monthName=new Date(mk+'-01').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+  const net=S.employees.filter(e=>e.active!==false).reduce((a,e)=>a+payFor(e,mk).net,0);
+  const run=S.payruns.find(r=>r.mk===mk), sb=S.shift.imported;
+  bar.innerHTML=`<div class="muted"><b style="color:var(--ink)">The Shift Board</b> — the same one the staff use; punches here are what pay is worked out from.
+    <br>${S.employees.length} on the roll · wages for ${monthName} <b>${fmt(net)}</b>${run?` · <span class="tag ok">paid ${run.date}</span>`:''}${sb?` · punches ${sb.from==='server'?'from the server':'brought in'} ${sb.at}`:''}</div>
+   <button class="btn tape" data-act="shiftSync">Sync</button>
+   <button class="btn ${run?'ghost':'tape'}" data-act="payRunOpen">${run?'Pay sheet &amp; vouchers':'Pay '+monthName}</button>
+   <button class="btn ghost" data-act="payAdvances">Advances</button>
+   <button class="btn ghost" data-act="boardPull">Use these punches</button>
+   <button class="btn ghost" data-act="shiftStaffUp">Send the roll up</button>
+   <button class="btn ghost" data-act="boardWide">Full width</button>
+   <button class="btn ghost" data-act="boardReload">Restart</button>`;
 }
 function writeBoard(){
   const f=shiftFrame(); if(!f) return;
   try{ const doc=f.contentWindow.document; doc.open(); doc.write(shiftSrc()); doc.close(); }
   catch(e){ f.srcdoc=shiftSrc(); }   // if writing is blocked, fall back to the attribute
 }
-function board(){ buildBoardHost(); document.body.classList.add('boardview');
-  // the board fills the screen, so it carries its own way back to attendance
-  setTimeout(()=>{ if(document.getElementById('boardBack')) return;
-    const b=document.createElement('button'); b.id='boardBack'; b.className='boardback';
-    b.textContent='← Attendance & pay';
-    b.onclick=()=>{ document.body.classList.remove('boardview'); go('payroll') };
-    document.body.appendChild(b) },50);
-  return '' }
+function board(){ buildBoardHost(); document.body.classList.add('boardview'); drawBoardBar(); return '' }
+const salesmanUser=()=>!!(S.user&&S.user.role==='Salesman');
+const boardIsThePage=()=>S.view==='board'||(S.view==='payroll'&&!salesmanUser());
 /* reading the board's own state, so pay is worked out from live punches */
+/* the pay run, the vouchers and the advances — what the board cannot do, because these
+   go into the shop's books rather than into the punches */
+function payRunModal(){
+  const mk=payMonth||D(today).slice(0,7);
+  const monthName=new Date(mk+'-01').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+  const rows=S.employees.filter(e=>e.active!==false).map(e=>({e,p:payFor(e,mk)}));
+  const tot=rows.reduce((a,r)=>{a.basic+=r.p.basic;a.ot+=r.p.otPay;a.adv+=r.p.advance;a.net+=r.p.net;return a},{basic:0,ot:0,adv:0,net:0});
+  const run=S.payruns.find(r=>r.mk===mk);
+  const m=modal(`<h2>Pay sheet — ${monthName}</h2>
+   <div class="muted">Worked out from the punches on the board, using the board's own rules. Change the hours or the rules there and sync; this only puts the figures into the books.</div>
+   <div class="findbar" style="margin-top:10px">
+    <div class="f"><label>Month</label><input id="prMonth" type="month" value="${mk}"></div>
+    <div class="f" style="flex:0;align-self:flex-end">${run?`<span class="tag ok">paid ${run.date}</span>`
+      :`<button class="btn tape" id="prRun">Pay ${monthName} — ${fmt(tot.net)}</button>`}</div></div>
+   <div style="max-height:50vh;overflow:auto;margin-top:8px">
+    <table><tr><th>Employee</th><th class="n">Days</th><th class="n">Hours</th><th class="n">OT hrs</th>
+     <th class="n">Basic</th><th class="n">OT pay</th><th class="n">Advance</th><th class="n">Net</th><th></th></tr>
+    ${rows.map(({e,p})=>`<tr><td><b>${e.name}</b><div class="muted">${e.position} · ${e.code}</div></td>
+      <td class="n">${p.t.days}${p.t.absent?`<div class="muted">${p.t.absent} absent</div>`:''}</td>
+      <td class="n">${hrs(p.t.worked).toFixed(1)}</td><td class="n">${hrs(p.t.ot).toFixed(1)}</td>
+      <td class="n">${fmt(p.basic)}</td><td class="n">${fmt(p.otPay)}</td>
+      <td class="n">${p.advance?'('+fmt(p.advance)+')':'—'}</td>
+      <td class="n"><b>${fmt(p.net)}</b></td>
+      <td><button class="btn ghost sm" data-act="payslip" data-id="${e.id}">Voucher</button></td></tr>`).join('')
+     ||'<tr><td colspan="9" class="muted">Nobody on the roll — add the staff on the board, under Staff.</td></tr>'}
+    ${rows.length?`<tr class="tot"><td><b>Everyone</b></td><td colspan="3"></td>
+      <td class="n"><b>${fmt(tot.basic)}</b></td><td class="n"><b>${fmt(tot.ot)}</b></td>
+      <td class="n"><b>${tot.adv?'('+fmt(tot.adv)+')':'—'}</b></td><td class="n"><b>${fmt(tot.net)}</b></td><td></td></tr>`:''}
+    </table></div>
+   <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn ghost" data-act="closeModal">Done</button></div>`);
+  m.querySelector('#prMonth').onchange=e=>{ payMonth=e.target.value; m.remove(); payRunModal(); drawBoardBar() };
+  const rb=m.querySelector('#prRun');
+  if(rb) rb.onclick=()=>{ m.remove(); payRun(mk); drawBoardBar() };
+}
+function advancesModal(){
+  const out=(id)=>(S.advances||[]).filter(a=>a.empId===id&&!a.recovered).reduce((x,a)=>x+a.amount,0);
+  const m=modal(`<h2>Advances</h2>
+   <div class="muted">Money handed over before payday. It comes off the pay run for the month it is recovered in — the board knows nothing about it.</div>
+   <div style="max-height:34vh;overflow:auto;margin-top:10px">
+    <table><tr><th>Employee</th><th>What they do</th><th class="n">Still to recover</th><th></th></tr>
+    ${S.employees.filter(e=>e.active!==false).map(e=>`<tr><td><b>${e.name}</b><div class="muted">${e.code}</div></td>
+      <td>${e.position}</td><td class="n">${out(e.id)?fmt(out(e.id)):'<span class="muted">none</span>'}</td>
+      <td><button class="btn ghost sm" data-act="advance" data-id="${e.id}">Hand one out</button></td></tr>`).join('')
+     ||'<tr><td colspan="4" class="muted">Nobody on the roll yet.</td></tr>'}</table></div>
+   ${(S.advances||[]).length?`<h2 style="margin-top:14px;font-size:16px">Paid out so far</h2>
+    <div style="max-height:26vh;overflow:auto">
+    <table><tr><th>Date</th><th>Who</th><th>Why</th><th>Paid by</th><th class="n">Amount</th><th>State</th></tr>
+    ${S.advances.slice().reverse().map(a=>`<tr><td>${a.date}</td>
+      <td>${(S.employees.find(x=>x.id===a.empId)||{}).name||''}</td><td>${a.note||'—'}</td><td>${a.by}</td>
+      <td class="n">${fmt(a.amount)}</td>
+      <td>${a.recovered?'<span class="tag ok">recovered</span>':'<span class="tag warn">to recover</span>'}</td></tr>`).join('')}
+    </table></div>`:''}
+   <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn ghost" data-act="closeModal">Done</button></div>`);
+  return m;
+}
 function boardState(){
   const f=shiftFrame(); if(!f) return null;
   try{ const w=f.contentWindow; return (w&&w.STATE)?JSON.parse(JSON.stringify(w.STATE)):null }
@@ -7299,6 +7308,8 @@ function applyShift(data){
   if(!matched.length) return {matched,missed,days:0};
   S.shift.settings={...SHIFT_DEFAULTS,...(data.settings||{})};
   if(!S.shift.settings.breaks||!S.shift.settings.breaks.length) S.shift.settings.breaks=SHIFT_DEFAULTS.breaks;
+  // the shift rules and the holidays are the board's to keep now, so they come down with the punches
+  if(Array.isArray(data.holidays)) S.shift.holidays=data.holidays.map(h=>({date:h.date,name:h.name||'Holiday'}));
   S.shift.days={};
   Object.entries(data.days||{}).forEach(([ds,recs])=>{
     S.shift.days[ds]={};
@@ -7692,6 +7703,15 @@ function payroll(){
     if(payTab!=='today'&&payTab!=='sheet') payTab='today';
     if(myEmp) paySel=myEmp.id;
   }
+
+  /* The Shift Board is the attendance page. It is the same board the staff punch on,
+     so there is one set of figures rather than two, and the bar above it carries the
+     few things the board cannot do — putting the month's wages into the ledger,
+     printing a salary voucher, handing out an advance.
+     A Salesman is not given the board: it shows everyone's rate and the money tabs.
+     They keep the small page below, which is their own punches and nothing else. */
+  if(!isSalesman){ buildBoardHost(); document.body.classList.add('boardview'); drawBoardBar(); return '' }
+
   const mk=payMonth||D(today).slice(0,7);
   const list=S.employees;
   const rows=list.map(e=>({e,p:payFor(e,mk)}));
@@ -7702,101 +7722,6 @@ function payroll(){
 
   let body='';
   if(payTab==='today') body=boardToday();
-  if(payTab==='people'){
-    body=`<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-      <div class="muted">Everyone on the roll. The board, the pay run and the vouchers all read this one list.</div>
-      <button class="btn tape" data-act="empNew">Add someone</button></div>
-     <table><tr><th>Code</th><th>Name</th><th>What they do</th><th>Paid</th><th class="n">Rate</th><th class="n">OT ×</th>
-      <th>Mobile</th><th>Card</th><th class="n">Advance out</th><th></th></tr>
-     ${S.employees.map(e=>{const out=(S.advances||[]).filter(a=>a.empId===e.id&&!a.recovered).reduce((x,a)=>x+a.amount,0);
-       return `<tr class="${e.active===false?'off':''}"><td>${e.code}</td><td><b>${e.name}</b></td><td>${e.position}</td>
-       <td>${e.basis}</td><td class="n">${can('payroll')?fmt(e.rate):'—'}</td><td class="n">${e.otMult||shiftSet().otMultiplier}</td>
-       <td>${e.phone||'—'}</td><td class="muted">${e.card||'—'}</td>
-       <td class="n">${out?fmt(out):'—'}</td>
-       <td><div class="rowacts"><button class="btn ghost sm" data-act="empEdit" data-id="${e.id}">Edit</button>
-        <button class="btn ghost sm" data-act="advance" data-id="${e.id}">Advance</button>
-        <button class="btn ghost sm" data-act="paySel" data-id="${e.id}">Sheet</button></div></td></tr>`}).join('')}</table>
-     ${(S.advances||[]).length?`<h2 style="margin-top:14px">Advances paid out</h2>
-      <table><tr><th>Date</th><th>Who</th><th>Why</th><th>Paid by</th><th class="n">Amount</th><th>State</th></tr>
-      ${S.advances.slice().reverse().map(a=>`<tr><td>${a.date}</td><td>${S.employees.find(x=>x.id===a.empId)?.name||''}</td>
-       <td>${a.note||'—'}</td><td>${a.by}</td><td class="n">${fmt(a.amount)}</td>
-       <td>${a.recovered?'<span class="tag ok">recovered</span>':'<span class="tag warn">to recover</span>'}</td></tr>`).join('')}</table>`:''}`;
-  }
-  if(payTab==='rules'){
-    const st=shiftSet();
-    body=`<div class="muted" style="margin-bottom:10px">These are the rules every day and every pay run is worked out from — the same ones the Shift Board uses.</div>
-     <div class="grid3">
-      <div class="f"><label>Shop opens</label><input data-sh="startTime" type="time" value="${st.startTime}"></div>
-      <div class="f"><label>Shop closes</label><input data-sh="closeTime" type="time" value="${st.closeTime}"></div>
-      <div class="f"><label>Grace, in minutes</label><input data-sh="graceMin" type="number" value="${st.graceMin}"></div></div>
-     <div class="grid3">
-      <div class="f"><label>Overtime multiplier</label><input data-sh="otMultiplier" type="number" step="0.1" value="${st.otMultiplier}"></div>
-      <div class="f"><label>Working days a month</label><input data-sh="workDaysPerMonth" type="number" value="${st.workDaysPerMonth}"></div>
-      <div class="f"><label>Fine per late minute</label><input data-sh="latePerMin" type="number" value="${st.latePerMin}"></div></div>
-     <div class="grid3">
-      <div class="f"><label>Half day under, in minutes</label><input data-sh="halfDayAfterMin" type="number" value="${st.halfDayAfterMin}"></div>
-      <div class="f"><label>Weekly off</label><select data-sh="weeklyOff">
-        ${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d2,i)=>`<option value="${i}" ${(st.weeklyOff||[]).includes(i)?'selected':''}>${d2}</option>`).join('')}</select></div>
-      <div class="f" style="padding-top:20px"><div class="muted">Standard day works out at <b>${(stdMin()/60).toFixed(2)} hours</b></div></div></div>
-     <h2 style="margin-top:12px">Breaks</h2>
-     <table><tr><th>Name</th><th>From</th><th>To</th><th class="n">Allowed</th><th class="n">Extra</th><th>Paid</th><th></th></tr>
-      ${st.breaks.map((b,i)=>`<tr><td><input data-br="${i}" data-k="name" value="${b.name}"></td>
-       <td><input data-br="${i}" data-k="start" type="time" value="${b.start}"></td>
-       <td><input data-br="${i}" data-k="end" type="time" value="${b.end}"></td>
-       <td class="n"><input data-br="${i}" data-k="mins" type="number" value="${b.mins}" style="width:70px;text-align:right"></td>
-       <td class="n"><input data-br="${i}" data-k="extra" type="number" value="${b.extra}" style="width:70px;text-align:right"></td>
-       <td><input type="checkbox" data-br="${i}" data-k="paid" ${b.paid?'checked':''} style="width:auto"></td>
-       <td><button class="btn ghost sm" data-act="brDel" data-i="${i}">✕</button></td></tr>`).join('')}</table>
-     <button class="btn ghost sm" data-act="brAdd" style="margin-top:6px">Add a break</button>
-     <h2 style="margin-top:14px">Holidays</h2>
-     ${(S.shift.holidays||[]).length?`<table><tr><th>Date</th><th>What for</th><th></th></tr>
-      ${S.shift.holidays.map((h,i)=>`<tr><td>${h.date}</td><td>${h.name}</td>
-       <td><button class="btn ghost sm" data-act="holDel" data-i="${i}">✕</button></td></tr>`).join('')}</table>`
-      :'<div class="muted">None set. Poya days and the like go here so nobody shows as absent.</div>'}
-     <div class="findbar" style="margin-top:8px">
-      <div class="f"><label>Date</label><input id="holDate" type="date" value="${D(today)}"></div>
-      <div class="f"><label>What for</label><input id="holName" placeholder="e.g. Poya"></div>
-      <div class="f" style="flex:0"><label>&nbsp;</label><button class="btn ghost" data-act="holAdd">Add the holiday</button></div></div>`;
-  }
-  if(payTab==='month'){
-    body=`<table><tr><th>Code</th><th>Employee</th><th>Paid</th><th class="n">Days</th><th class="n">Absent</th>
-      <th class="n">Hours</th><th class="n">OT hrs</th><th class="n">Late</th><th class="n">Basic</th><th class="n">OT pay</th>
-      <th class="n">Advance</th><th class="n">Net</th><th></th></tr>
-     ${rows.map(({e,p})=>`<tr class="rowlink" data-act="paySel" data-id="${e.id}">
-       <td>${e.code}</td><td><b>${e.name}</b><div class="muted">${e.position}</div></td>
-       <td>${e.basis}<div class="muted">${can('payroll')?fmt(e.rate):'—'}</div></td>
-       <td class="n">${p.t.days}${p.t.half?`<div class="muted">${p.t.half} half</div>`:''}</td>
-       <td class="n">${p.t.absent?`<span class="tag bad">${p.t.absent}</span>`:'—'}${p.t.leave?`<div class="muted">${p.t.leave} leave</div>`:''}</td>
-       <td class="n">${hrs(p.t.worked).toFixed(1)}</td>
-       <td class="n">${hrs(p.t.ot).toFixed(1)}</td>
-       <td class="n">${p.t.late?`<span class="tag warn">${p.t.late}m</span>`:'—'}</td>
-       <td class="n">${fmt(p.basic)}</td><td class="n">${fmt(p.otPay)}</td>
-       <td class="n">${p.advance?'('+fmt(p.advance)+')':'—'}</td>
-       <td class="n"><b>${fmt(p.net)}</b></td>
-       <td><button class="btn ghost sm" data-act="payslip" data-id="${e.id}">Voucher</button></td></tr>`).join('')}
-     <tr><td colspan="8"><b>Everyone</b></td><td class="n"><b>${fmt(tot.basic)}</b></td><td class="n"><b>${fmt(tot.ot)}</b></td>
-      <td class="n"><b>${tot.adv?'('+fmt(tot.adv)+')':'—'}</b></td><td class="n"><b>${fmt(tot.net)}</b></td><td></td></tr></table>`;
-  }
-  if(payTab==='day'){
-    const ds=paySel||D(today);
-    const recs=S.shift.days[ds]||{};
-    body=`<div class="dayhead" style="margin-bottom:10px">
-      <button class="btn ghost sm" data-act="payDay" data-d="-1">◀ day before</button>
-      <input id="payDay" type="date" value="${ds}" style="max-width:170px">
-      <button class="btn ghost sm" data-act="payDay" data-d="1">day after ▶</button>
-      <button class="btn ghost sm" data-act="payDay" data-d="0">today</button>
-      <div class="muted" style="margin-left:auto">Standard day ${(stdMin()/60).toFixed(2)} hours · start ${shiftSet().startTime} with ${shiftSet().graceMin} minutes grace · overtime × ${shiftSet().otMultiplier}</div></div>
-     <table><tr><th>Employee</th><th>In</th><th>Out</th><th class="n">Break over</th><th class="n">Worked</th><th class="n">OT</th><th class="n">Late</th><th>State</th></tr>
-      ${S.employees.map(e=>{const f=dayFigures(ds,e.id);return `<tr>
-        <td><b>${e.name}</b><div class="muted">${e.position}</div></td>
-        <td>${f.in||'—'}</td><td>${f.out||'—'}</td>
-        <td class="n">${f.over?`<span class="tag warn">${f.over}m</span>`:'—'}</td>
-        <td class="n">${f.worked?hrs(f.worked).toFixed(2)+' h':'—'}</td>
-        <td class="n">${f.ot?hrs(f.ot).toFixed(2)+' h':'—'}</td>
-        <td class="n">${f.late?`<span class="tag warn">${f.late}m</span>`:'—'}</td>
-        <td>${f.status==='work'?'<span class="tag ok">worked</span>':f.status==='absent'?'<span class="tag bad">absent</span>'
-          :f.status==='leave'?'<span class="tag blue">leave</span>':'<span class="muted">—</span>'}</td></tr>`}).join('')}</table>`;
-  }
   if(payTab==='sheet'&&paySel){
     const e=S.employees.find(x=>x.id===paySel)||S.employees[0];
     const p=payFor(e,mk);
@@ -7833,33 +7758,7 @@ function payroll(){
     </div>`;
   }
 
-  return `<h1>Attendance and pay</h1>
-  <div class="row" style="margin-bottom:12px">
-   ${stat('On the roll',S.employees.length,`${Object.keys(S.shift.days[D(today)]||{}).length} punched in today`,'b')}
-   ${stat('Wages for '+monthName,fmt(tot.net),`basic ${fmt(tot.basic)} + OT ${fmt(tot.ot)}`,'g')}
-   ${stat('Overtime',tot.otH.toFixed(1)+' hrs',`at × ${shiftSet().otMultiplier}`,'y')}
-   ${stat('Advances to recover',fmt(tot.adv),'taken off this run','r')}
-  </div>
-  <div class="card note" style="margin-bottom:12px">
-   <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
-    <div><b>Worked out from the Shift Board punches</b>
-     <div class="muted">${sb?`${sb.from==='server'?'From the attendance server':'Brought in'} ${sb.at} by ${sb.by} — ${sb.people} people, ${sb.days} days.`
-       :'Using the punches recorded here. Sync to take the real ones from the attendance server.'}
-      Standard day ${(stdMin()/60).toFixed(2)} hours, ${shiftSet().breaks.length} paid breaks, overtime past that at × ${shiftSet().otMultiplier}.</div></div>
-    <div style="display:flex;gap:6px">
-     <input id="payMonth" type="month" value="${mk}" style="max-width:160px">
-     ${S.payruns.some(r=>r.mk===mk)?`<span class="tag ok" style="align-self:center">paid ${S.payruns.find(r=>r.mk===mk).date}</span>`
-       :`<button class="btn tape" data-act="payRun">Pay ${monthName}</button>`}
-     <button class="btn tape" data-act="shiftSync">Sync with the attendance server</button>
-     <button class="btn ghost" data-act="boardOpen">Open the Shift Board app</button>
-     <button class="btn ghost" data-act="shiftStaffUp">Send the roll up</button>
-     <button class="btn ghost" data-act="boardPull">Take them off the open board</button>
-     <button class="btn ghost" data-act="shiftImport">Paste an export</button></div></div></div>
-  <div class="card">
-   <div class="tabs">${[['today','Today on the board'],['month','The month'],['day','A day at a time'],['sheet','One person'],['people','The roll'],['rules','Shift rules']]
-     .map(t=>`<button class="${payTab===t[0]?'on':''}" data-act="payTab" data-t="${t[0]}">${t[1]}</button>`).join('')}</div>
-   ${body||'<div class="muted">Pick someone on the month view to see their sheet.</div>'}
-  </div>`;
+  return '';    // not reached: everyone but a Salesman was sent to the board above
 }
 
 
@@ -9423,7 +9322,7 @@ function modal(html){ const m=document.createElement('div');m.className='modal';
 function closeModals(){document.querySelectorAll('.modal').forEach(m=>m.remove())}
 let _rendering=false;
 function render(){ if(_rendering) return; _rendering=true; try{ renderNow() } finally { _rendering=false } if(typeof persist==='function'&&S.user&&!S.signedOut) persist() }
-function renderNow(){ if(S.view!=='board') document.body.classList.remove('boardview'); renderNav(); const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,chequesIn,chequesOut,expenses,accounting,payroll,board,users,messages,reports,settings,trail}[S.view]; $('#main').innerHTML=r(); document.body.classList.toggle('csfull',pref('till')==='classic'&&S.view==='pos'); if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() } if(S.view==='recall') recallAfter(); if(S.view==='stocktake') stockTakeAfter(); if(S.view==='purchasing') purchasingAfter();
+function renderNow(){ if(!boardIsThePage()) document.body.classList.remove('boardview'); renderNav(); const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,chequesIn,chequesOut,expenses,accounting,payroll,board,users,messages,reports,settings,trail}[S.view]; $('#main').innerHTML=r(); document.body.classList.toggle('csfull',pref('till')==='classic'&&S.view==='pos'); if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() } if(S.view==='recall') recallAfter(); if(S.view==='stocktake') stockTakeAfter(); if(S.view==='purchasing') purchasingAfter(); if(boardIsThePage()) drawBoardBar();
   if(S.view==='serials'){ const sq=$('#srQ'); if(sq){ sq.oninput=e=>{srQ=e.target.value;render();const n=$('#srQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body) sq.focus() } } if(S.view==='labels') labelsAfter(); if(S.view==='receipts') receiptsAfter(); if(S.view==='dashboard') dashboardAfter();
 
@@ -17711,7 +17610,8 @@ document.addEventListener('click',e=>{
     boardPull:()=>pullBoard(),
     boardWide:()=>{document.body.classList.toggle('boardwide');
       toast(document.body.classList.contains('boardwide')?'Board opened out — press again to bring the menu back':'Menu back')},
-    boardOpen:()=>go('board'),
+    boardOpen:()=>go('payroll'),
+    payRunOpen:()=>payRunModal(), payAdvances:()=>advancesModal(),
     boardReload:()=>{ if(confirm('Restart the board? Anything it has not saved is lost.')){ writeBoard(); toast('Board restarted') } },
     punch:()=>smartPunch(+a.dataset.id),
     dayEdit:()=>dayEditModal(+a.dataset.id,a.dataset.d),
@@ -17721,12 +17621,6 @@ document.addEventListener('click',e=>{
     advance:()=>advanceModal(+a.dataset.id),
     empNew:()=>employeeModal(), empEdit:()=>employeeModal(+a.dataset.id),
     payRun:()=>payRun(payMonth||D(today).slice(0,7)),
-    brAdd:()=>{shiftSet().breaks.push({id:'b'+(shiftSet().breaks.length+1),name:'New break',start:'10:00',end:'10:15',mins:15,extra:5,paid:true});render()},
-    brDel:()=>{shiftSet().breaks.splice(+a.dataset.i,1);render()},
-    holAdd:()=>{const d2=$('#holDate').value, n=($('#holName').value||'').trim();
-      if(!d2||!n)return toast('A date and a reason, please');
-      S.shift.holidays=(S.shift.holidays||[]).concat([{date:d2,name:n}]); render(); toast(n+' added')},
-    holDel:()=>{S.shift.holidays.splice(+a.dataset.i,1);render()},
     payTab:()=>{payTab=a.dataset.t; if(payTab==='day'&&!/^\d{4}-\d{2}-\d{2}$/.test(paySel||''))paySel=D(today); render()},
     paySel:()=>{paySel=+a.dataset.id; payTab='sheet'; render()},
     payDay:()=>{const n=+a.dataset.d;
