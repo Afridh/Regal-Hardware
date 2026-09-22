@@ -1817,9 +1817,9 @@ tr.rowlink button{cursor:pointer}
 
 /* ==================== THE BILLS AS THE OLD TILL PRINTED THEM ==================== */
 /* 80mm receipt */
-.print.sb80{width:302px;padding:8px 10px;font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff;font-size:12px;font-weight:600;line-height:1.25;text-align:center;border:1px solid #000}
 .sb80 .sb-top{display:flex;justify-content:space-between;font-size:9px;font-style:italic;border-bottom:1px solid #000;padding-bottom:2px;margin-bottom:4px}
 .sb80 .sb-logo{display:flex;justify-content:center;margin:2px 0 3px}
+.sb80 .sb-logo img,.sba5 .sb-mark img,.bill-logo,.bmark img{filter:grayscale(1) brightness(0);-webkit-filter:grayscale(1) brightness(0);image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges}
 .sba5 .sb-words{font-size:10px;margin-top:4px}.sba5 .sb-words span{color:#444}
 .logo-row{display:flex;gap:12px;align-items:center;margin-bottom:10px}
 .logo-box{width:130px;height:74px;border:1px dashed var(--line);border-radius:var(--r);display:flex;align-items:center;justify-content:center;background:#fff;flex:0 0 130px}
@@ -5133,7 +5133,9 @@ function applyKept(kept){
   if(!Array.isArray(S.roles)) S.roles=[];
   if(!Array.isArray(S.partyNotes)) S.partyNotes=[];        // books saved before notes existed
   if(!S.social||!Array.isArray(S.social.posts)) S.social={posts:[]};
+  if(!Array.isArray(S.deletedUsers)) S.deletedUsers=[];
   for(const acc of DEFAULT_ACCOUNTS){
+    if(S.deletedUsers.includes(acc.name.toLowerCase())) continue;
     const existing=S.users.find(u=>String(u.name||'').toLowerCase()===acc.name.toLowerCase());
     if(!existing){
       S.users.push({
@@ -8083,6 +8085,18 @@ function csTotals(){
    use the till- prefix and nothing else in the system touches them.
    Top to bottom: the shortcut line, the header band, the entry row, the match
    list, then the bill with its summary beside it. */
+function tickPosClock(){
+  const elT=document.getElementById('posClockTime');
+  if(!elT) return;
+  const now=new Date();
+  const timeStr=now.toLocaleTimeString('en-GB',{hour12:true});
+  if(elT.textContent!==timeStr) elT.textContent=timeStr;
+  const elD=document.getElementById('posClockDay');
+  if(elD && elD.textContent!==String(now.getDate())) elD.textContent=now.getDate();
+}
+if(!window._posClockTimer){
+  window._posClockTimer=setInterval(tickPosClock, 1000);
+}
 function posClassic(){
   const L=S.pos.lines, c=C(S.pos.customer||1), T=csTotals();
   const u=S.users.find(x=>x.name===S.user.name)||{};
@@ -8106,7 +8120,7 @@ function posClassic(){
     </div>
     <div class="till-date"><b>${now.toLocaleDateString('en-GB',{weekday:'long'})}</b>
      <span>${now.toLocaleDateString('en-GB',{month:'long'})} ${now.getFullYear()}</span>
-     <div class="till-clock">${now.toLocaleTimeString('en-GB',{hour12:true})}<em>${now.getDate()}</em></div></div>
+     <div class="till-clock"><span id="posClockTime">${now.toLocaleTimeString('en-GB',{hour12:true})}</span><em id="posClockDay">${now.getDate()}</em></div></div>
     <div class="till-no ${S.pos.editing?'editing':''}">
      <b>${S.pos.editing||nextNo}</b>
      ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Switch between retail and wholesale prices for this bill — Ctrl+Shift+W, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><button class="till-paper" data-act="csPaper" title="Which bill prints after payment — small 80mm receipt or the large A5 bill"><i class="${csPaper()==='r80'?'on':''}">SMALL BILL</i><i class="${csPaper()==='a5'?'on':''}">LARGE BILL</i></button>`}</div>
@@ -11751,7 +11765,7 @@ const SHOP={name:'REGAL HARDWARE',sinhala:'රීගල් හාඩ්වෙය
   addr:'748, Main Street, Kaduruwela',near:'(Near Hatton National Bank)',
   phones:'077 222 22 59 · 027 222 22 59',
   tags:'Hardware · Paints · Electrical · PVC · Motor Items'};
-const mark=(h)=>`<svg viewBox="0 0 100 84" width="${h*1.19}" height="${h}"><path d="M50 4 96 80H72L50 40 28 80H4z" fill="#000"/><path d="M50 34 68 66H58L50 52 42 66H32z" fill="#fff"/><path d="M62 52l10 18h-8z" fill="#000"/></svg>`;
+const mark=(h)=>`<img src="regal-logo-bw.png" alt="Regal Hardware" class="bill-logo" style="height:${h}px;width:auto;object-fit:contain;display:inline-block;vertical-align:middle;filter:grayscale(1) brightness(0)">`;
 const money2=n=>Number(n||0).toLocaleString('en-LK',{minimumFractionDigits:2,maximumFractionDigits:2});
 const timeOf=(inv)=>inv.time||'11:34 AM';
 
@@ -11783,7 +11797,7 @@ function billHtml(inv,f='a5'){
   const B=CFG.bill, SH=CFG.shop;
   const heading=credit?(B.creditTitle||'Credit Invoice'):(B.title||'Invoice');
   const copy=inv.proof?'PROOF — NOT A BILL':(inv.reprint?heading+'-Copy':heading);
-  const logo=(h)=>SH.logo?`<img src="${SH.logo}" alt="" style="height:${h}px;max-width:${Math.round(h*2.4)}px;object-fit:contain;display:block">`:mark(h);
+  const logo=(h)=>SH.logo?`<img src="${SH.logo}" alt="" class="bill-logo" style="height:${h}px;max-width:${Math.round(h*2.4)}px;object-fit:contain;display:block;margin:0 auto;filter:grayscale(1) brightness(0)">`:mark(h);
   const phones=SH.phone||SHOP.phones;
   // text size from Settings: the bill is drawn bigger, its width shrunk to match, so the paper stays the same
   const sc80=Math.max(0.6,Math.min(2,(+B.r80Scale||100)/100)), scA5=Math.max(0.6,Math.min(2,(+B.a5Scale||100)/100));
@@ -11874,7 +11888,8 @@ function billHtml(inv,f='a5'){
    Without it, the browser's own print is used, page size set to suit. */
 function billDocument(inv,f){
   const css=[...document.querySelectorAll('style')].map(s=>s.textContent).join('\n');
-  return `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body class="direct-print"><div id="printArea" class="printArea ${f}">${billHtml(inv,f)}</div></body></html>`;
+  const base=(typeof location!=='undefined'&&location.href)?location.href:'';
+  return `<!doctype html><html><head><meta charset="utf-8">${base?`<base href="${base}">`:''}<style>${css}</style></head><body class="direct-print"><div id="printArea" class="printArea ${f}">${billHtml(inv,f)}</div></body></html>`;
 }
 const printAgentUrl=()=>(CFG.print&&CFG.print.agent!==undefined)?String(CFG.print.agent||'').replace(/\/$/,''):'http://localhost:4100';
 async function agentPrint(inv,f){
@@ -14034,8 +14049,8 @@ const can=(k)=>{
 
 let userTab='users';
 function users(){
-  const isSuperAdmin=S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner');
-  const isAdmin=isSuperAdmin||(S.user&&S.user.role==='Admin');
+  const isSuperAdmin=S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||['super admin','superadmin','owner'].includes(String(S.user.role||'').toLowerCase()));
+  const isAdmin=isSuperAdmin||(S.user&&String(S.user.role||'').toLowerCase()==='admin');
   const list=S.users;
   const allRoles=[...DEFAULT_ROLES,...(S.roles||[]).filter(r=>!DEFAULT_ROLES.some(d=>d.name.toLowerCase()===r.name.toLowerCase()))];
   
@@ -14088,7 +14103,7 @@ function users(){
       </div>
       <table><tr><th>Name</th><th>Role</th><th>Signs in with</th><th>Last signed in</th><th>What they may do</th><th></th></tr>
       ${list.map(u=>{
-        const isTargetSuper=u.role==='Super Admin'||u.name==='Afridh';
+        const isTargetSuper=u.role==='Super Admin'||u.role==='Owner'||u.name==='Afridh'||['super admin','superadmin','owner'].includes(String(u.role||'').toLowerCase());
         const canModify=isSuperAdmin||(!isTargetSuper&&isAdmin);
         const isSelf=S.user.name===u.name;
         const isSalesStaff = u.role === 'Salesman' || S.sales.some(s => s.salesman === u.name || s.by === u.name);
@@ -14113,6 +14128,7 @@ function users(){
          ${canModify&&!isSelf?`
            <button class="btn ghost sm" data-act="userEdit" data-n="${u.name}">Edit</button>
            ${!isTargetSuper?`<button class="btn ghost sm" data-act="userToggle" data-n="${u.name}">${u.active?'Switch off':'Switch on'}</button>`:''}
+           ${isSuperAdmin?`<button class="btn ghost sm bad" data-act="userDel" data-n="${u.name}" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)">Remove</button>`:''}
          `:(!isSelf?`<span class="muted">Protected</span>`:'')}
         </div></td></tr>`}).join('')}</table>
     `;
@@ -14310,7 +14326,7 @@ function roleModal(roleName){
 }
 
 function userModal(name){
-  const isSuperAdmin=S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner');
+  const isSuperAdmin=S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||['super admin','superadmin','owner'].includes(String(S.user.role||'').toLowerCase()));
   if(name==='Afridh'&&!isSuperAdmin){
     return toast('Only Super Admin Afridh can modify Super Admin profile');
   }
@@ -14334,8 +14350,27 @@ function userModal(name){
    <div class="permgrid" id="uPerms">${PERMS.map(p=>`<label class="chk"><input type="checkbox" data-perm="${p[0]}" ${perms.has(p[0])?'checked':''}> ${p[1]}</label>`).join('')}</div>
    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:8px;flex-wrap:wrap">
     <label class="chk" style="flex:0 0 auto"><input type="checkbox" id="uActive" ${!u||u.active?'checked':''} ${u&&u.role==='Super Admin'?'disabled':''}> can sign in</label>
-    <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button>
-     <button class="btn tape" id="uOk">${u?'Save':'Add'}</button></div></div>`);
+    <div style="display:flex;gap:8px;align-items:center">
+     ${u&&isSuperAdmin&&u.name!==S.user.name?`<button class="btn ghost bad" id="uDelBtn" type="button" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)">Remove User</button>`:''}
+     <button class="btn ghost" data-act="closeModal">Cancel</button>
+     <button class="btn tape" id="uOk">${u?'Save':'Add'}</button>
+    </div>
+   </div>`);
+  const delBtn=m.querySelector('#uDelBtn');
+  if(delBtn){
+    delBtn.onclick=()=>{
+      if(u.name==='Afridh'&&S.user.name!=='Afridh') return toast('The primary Super Admin Afridh cannot be removed');
+      if(!confirm(`Are you sure you want to permanently remove user "${u.name}" (${u.role})?`)) return;
+      S.deletedUsers=S.deletedUsers||[];
+      if(!S.deletedUsers.includes(u.name.toLowerCase())) S.deletedUsers.push(u.name.toLowerCase());
+      const idx=S.users.findIndex(x=>x.name===u.name);
+      if(idx!==-1) S.users.splice(idx,1);
+      persist(true);
+      m.remove();
+      render();
+      toast(`User ${u.name} has been removed`);
+    };
+  }
   m.querySelector('#uRole').onchange=e=>{
     const def=ROLE_DEFAULTS[e.target.value]||[];
     m.querySelectorAll('[data-perm]').forEach(cb=>cb.checked=def.includes(cb.dataset.perm));
@@ -14361,7 +14396,9 @@ function userModal(name){
       Object.assign(u,{name:nm,role,pin,uid,perms:picked,active});
       if(pass){ u.passHash=hashSync(pass); delete u.pass; hashPass(pass).then(h=>{u.passHash=h}) }
       if(S.user.name===name){S.user={name:nm,role,perms:picked}}
-    } else { const nu={name:nm,role,pin,uid,passHash:hashSync(pass),perms:picked,active,lastSeen:null,prefs:{...PREF_DEFAULTS}};
+    } else {
+      S.deletedUsers=(S.deletedUsers||[]).filter(x=>x!==nm.toLowerCase());
+      const nu={name:nm,role,pin,uid,passHash:hashSync(pass),perms:picked,active,lastSeen:null,prefs:{...PREF_DEFAULTS}};
       S.users.push(nu); hashPass(pass).then(h=>{nu.passHash=h}) }
     persist(true);
     m.remove(); render(); toast(u?`${nm} saved`:`${nm} can now sign in`);
@@ -14749,6 +14786,24 @@ document.addEventListener('click',e=>{
       if(u.name===S.user.name) return toast('You cannot switch off the login you are using');
       if(u.role==='Super Admin'||u.name==='Afridh') return toast('Super Admin cannot be switched off');
       u.active=!u.active; persist(true); render(); toast(`${u.name} ${u.active?'can sign in again':'can no longer sign in'}`);
+    },
+    userDel:()=>{
+      const isSuperAdmin=S.user&&['super admin','superadmin','owner'].includes(String(S.user.role||'').toLowerCase());
+      if(!isSuperAdmin) return toast('Only Super Admin can remove users');
+      const u=S.users.find(x=>x.name===a.dataset.n);
+      if(!u) return;
+      if(u.name===S.user.name) return toast('You cannot remove the account you are currently logged in as');
+      if(u.name==='Afridh'&&S.user.name!=='Afridh') return toast('The primary Super Admin Afridh cannot be removed');
+      if(!confirm(`Are you sure you want to permanently remove user "${u.name}" (${u.role})?`)) return;
+      S.deletedUsers=S.deletedUsers||[];
+      if(!S.deletedUsers.includes(u.name.toLowerCase())) S.deletedUsers.push(u.name.toLowerCase());
+      const idx=S.users.findIndex(x=>x.name===u.name);
+      if(idx!==-1){
+        S.users.splice(idx,1);
+        persist(true);
+        render();
+        toast(`User ${u.name} has been removed`);
+      }
     },
     chqPickDay:()=>{chqDay=a.dataset.d;chqScope='day';chqPicked.clear();render()},
     chqDayStep:()=>{const n=+a.dataset.d;
