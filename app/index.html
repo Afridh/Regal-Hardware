@@ -8094,6 +8094,10 @@ function savedVsMrp(L){
    What the bill makes over what the goods cost. Shown as "GP" and nothing else, and only to an
    owner or an admin — it is never printed, never texted and never on a screen a customer sees. */
 const gpSeen=()=>ownerOnly();
+/* What a line is called on this bill. Paint goes out as a base with a colour code mixed into it, so the
+   name on the line can be changed for that bill — N on the line, or the Name box when the line is opened.
+   The product itself is never renamed; the wording is kept with the bill and prints on it. */
+const lineName=(l)=>String(l && l.name ? l.name : ((P(l.pid)||{name:'(item removed)'}).name));
 /* A line whose written-down cost is far above what it sold for is nearly always a bad cost carried in
    from the old system — a roll price against a metre sold — not a real loss. They are counted apart so
    one of them cannot quietly swallow the month's GP. */
@@ -8135,7 +8139,7 @@ function posClassic(){
   const nextNo=`${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-${String(((S.seqBy||{})[S.terminal+'-'+(u.uid||'??')]||0)+1).padStart(5,'0')}`;
   const now=new Date(), sel=P(CS.pid), drag=CFG.pos.dragLines!==false;
   const owed=c.id===1?0:partyBal('C',c.id);
-  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['F1','Back to item'],['F3','Salesperson'],['F4','Customer'],
+  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['P on the bill','Price'],['N on the bill','Rename'],['F1','Back to item'],['F3','Salesperson'],['F4','Customer'],
               ['F5 / Ctrl+R','Held bills'],['F7 / Ctrl+H','Hold bill'],['F8','Bill disc.'],['F10','Pay'],['F6','On account'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['S in price','Past prices'],['W / R','Wholesale · retail'],['Clear','Reset bill']];
 
   const sync=(document.getElementById('savedAt')||{}).textContent||'';
@@ -8190,7 +8194,7 @@ function posClassic(){
         return `<tr class="${i===S.pos.sel?'on':''} ${ed?'editing':''} ${chk?'ln-checked':''}" data-act="csSel" data-i="${i}">
          ${drag?`<td class="g"><span class="ln-grip" title="drag to move this line · Ctrl+↑ / Ctrl+↓">⠿</span></td>`:''}
          <td class="c"><i class="ln-chk" title="checked">✓</i>${p.num||p.code}</td>
-         <td class="d"><b>${p.name.toUpperCase()}</b>
+         <td class="d"><b>${lineName(l).toUpperCase()}</b>
           ${(l.serials&&l.serials.length)?`<em>serial ${l.serials.join(', ')}</em>`:''}
           ${l.fromLast?`<span class="tag blue">their last price · ${l.fromLast}</span>`:''}
           ${l.qty>p.stock+1e-9&&CFG.stock.track!==false?'<span class="tag bad">short on the floor</span>':''}
@@ -8206,8 +8210,8 @@ function posClassic(){
            ? `<button class="ln-ok" data-act="csLineOk" title="keep the change (Enter)">✓</button>
           <button class="ln-no" data-act="csLineNo" title="leave it as it was (Esc)">✕</button>
           <button data-act="csEditMore" data-i="${i}" title="discount and warranty too">…</button>`
-           : `<button data-act="priceHist" data-id="${l.pid}" title="what it went out at before">₨</button>
-          <button data-act="csEdit" data-i="${i}" title="change the quantity or price here">✎</button>
+           : `<button data-act="csRename" data-i="${i}" title="what this line is called on the bill — N">Aa</button>
+          <button data-act="csEdit" data-i="${i}" title="change the quantity or price here — Space, or P for the price">✎</button>
           <button data-act="csDel" data-i="${i}" title="take it off">✕</button>`}</td></tr>`}).join('')
        :`<tr><td colspan="${drag?10:9}" class="till-empty">Scan or key an item code above. The newest line sits at the top.</td></tr>`}
       </tbody></table>
@@ -8291,13 +8295,36 @@ function csMoveLine(from,to){
    and price as boxes in the row; until then the list is read-only. Enter (or →)
    steps from quantity to price, ← goes back, Enter on the price, Space or the
    ✓ button saves and leaves, Esc or the ✕ button leaves without saving. */
-function csLineEdit(i){
+function csLineEdit(i,box){
   if(!S.pos.lines[i]) return;
-  CS.editLine=i; CS.focus='list'; S.pos.sel=i; render();
+  CS.editLine=i; CS.editBox=box==='price'?'price':'qty'; CS.focus='list'; S.pos.sel=i; render();
+}
+/* What the line is called on this bill — the colour code mixed into a paint base, a size, a note the
+   customer asked for. The product keeps its own name; only this bill carries the wording. */
+function csLineRename(i){
+  const l=S.pos.lines[i]; if(!l) return;
+  const p=P(l.pid)||{name:''};
+  const m=modal(`<h2>What this line is called</h2>
+   <div class="muted" style="margin-bottom:10px">On the product it stays <b>${p.name}</b>. This wording is for this bill only and is what prints.</div>
+   <div class="f"><label>Name on the bill</label><input id="lnName" maxlength="90" value="${lineName(l).replace(/"/g,'&quot;')}"></div>
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px">
+    <button class="btn ghost" id="lnReset" ${l.name?'':'disabled'}>Back to the product name</button>
+    <div style="display:flex;gap:8px"><button class="btn ghost" id="lnNo">Cancel <i class="kbd">Esc</i></button>
+     <button class="btn tape" id="lnOk">Save <i class="kbd">Enter</i></button></div></div>`);
+  const inp=m.querySelector('#lnName'); inp.focus(); inp.select();
+  const back=()=>{ CS.editLine=null; CS.focus='list'; render();
+    const el=document.querySelector('.till-lines'); if(el) el.focus() };
+  const save=()=>{ const v=inp.value.trim();
+    if(!v||v===p.name) delete l.name; else l.name=v;
+    m.remove(); back(); toast(l.name?`Line reads “${l.name}”`:'Back to the product name') };
+  m.querySelector('#lnOk').onclick=save;
+  m.querySelector('#lnNo').onclick=()=>{ m.remove(); back() };
+  m.querySelector('#lnReset').onclick=()=>{ delete l.name; m.remove(); back(); toast('Back to the product name') };
+  inp.onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); save() } if(e.key==='Escape'){ e.preventDefault(); m.remove(); back() } };
 }
 function csLineDone(save){
   const i=CS.editLine, l=S.pos.lines[i];
-  const leave=()=>{ CS.editLine=null; CS.focus='list'; render() };
+  const leave=()=>{ CS.editLine=null; CS.editBox=null; CS.focus='list'; render() };
   if(i==null||!l||!save) return leave();
   const p=P(l.pid);
   const qEl=$('#lnQty'), prEl=$('#lnPrice');
@@ -8321,6 +8348,8 @@ function csEditLine(i){
   const p=P(l.pid);
   const m=modal(`<h2>${p.name}</h2>
    <div class="muted">${p.num||p.code} · ${fq(p.stock)} ${p.unit} on the floor · MRP ${money2(p.mrp)}${CFG.cost.atTill&&can('cost')?' · cost code '+costCode(p.cost):''}</div>
+   <div class="f" style="margin-top:10px"><label>Name on this bill <span class="muted">— a colour code, a size, anything the customer should read</span></label>
+    <input id="elName" maxlength="90" value="${lineName(l).replace(/"/g,'&quot;')}"></div>
    <div class="grid3" style="margin-top:10px">
     <div class="f"><label>Quantity</label><input id="elQty" type="number" step="any" value="${l.qty}"></div>
     <div class="f"><label>Price each</label><input id="elPrice" type="number" step="any" value="${l.price}"></div>
@@ -8346,6 +8375,7 @@ function csEditLine(i){
     if(p.mrp>net) bits.push(`${money2(p.mrp-net)} under MRP`);
     m.querySelector('#elNote').innerHTML=bits.join(' · ');
   };
+  m.querySelector('#elName').onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); save() } };
   m.querySelectorAll('#elQty,#elPrice,#elDisc').forEach(el=>{
     // the price follows the breaks only if this line was on the list price to begin with
     const wasList=Math.abs(l.price-priceFor(p,l.qty))<0.005;
@@ -8360,10 +8390,12 @@ function csEditLine(i){
     if(pctTyped!==null){ const want=(p.mrp||pr)*(1-pctTyped/100); ds=Math.max(0,+((pr-want)*q).toFixed(2)) }
     if(ds>q*pr) return toast('The discount is more than the line');
     const net=(q*pr-ds)/q;
+    const nm=(m.querySelector('#elName').value||'').trim();
     const put=(by)=>{ l.qty=q; l.price=pr; l.disc=ds; l.warranty=m.querySelector('#elWarr').value;
+      if(!nm||nm===p.name) delete l.name; else l.name=nm;
       if(pctTyped!==null) l.discPct=pctTyped; else delete l.discPct;
       if(by) l.belowCost=by; if(pr!==priceFor(p,q)) l.auto=false;
-      m.remove(); render(); toast(`${p.name} — ${fq(q)} at ${money2(pr)}`) };
+      m.remove(); render(); toast(`${lineName(l)} — ${fq(q)} at ${money2(pr)}`) };
     if(net<p.cost-0.005&&!l.belowCost){ m.remove(); return belowCostAsk(p,net,put) }
     put(l.belowCost);
   };
@@ -8943,6 +8975,9 @@ function bindClassic(){
         return;
       }
       if(e.key===' '){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csLineEdit(S.pos.sel); return }
+      // P goes straight to the price of the line under the cursor, N to what it is called on this bill
+      if(!e.ctrlKey&&!e.altKey&&e.key.toLowerCase()==='p'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csLineEdit(S.pos.sel,'price'); return }
+      if(!e.ctrlKey&&!e.altKey&&e.key.toLowerCase()==='n'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csLineRename(S.pos.sel); return }
       if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csEditLine(S.pos.sel); return }
       if(e.key==='Delete'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csAskDel(S.pos.sel); return }
     };
@@ -9047,7 +9082,7 @@ function bindClassic(){
       setTimeout(()=>{ if(csArmed&&Date.now()-csArmed>=2400){ csArmed=0; draw() } },2500);
     };
     draw();
-    if(CS.editLine!=null&&$('#lnQty')){ const f=$('#lnQty'); f.focus(); f.select(); }
+    if(CS.editLine!=null&&$('#lnQty')){ const f=(CS.editBox==='price'&&$('#lnPrice'))||$('#lnQty'); f.focus(); f.select(); }
     else if(CS.focus==='list'&&linesEl&&S.pos.lines.length){
       linesEl.focus();
       const on=linesEl.querySelector('tr.on'); if(on&&on.scrollIntoView) on.scrollIntoView({block:'nearest'});
@@ -10931,7 +10966,7 @@ function billDetail(inv){
       return `<div class="gp ${odd?'odd':g.gp<0?'neg':''}" title="${odd?'A line carries a cost far above what it sold for — the cost, not the sale, is what to look at':'What this bill made over what the goods cost'}"><span>GP</span><b>${money2(g.gp)} <small>${odd?'cost looks wrong':g.pct+'%'}</small></b></div>`})():''}
    </div>
    <div class="bl-lines"><table class="till-tbl"><tr><th>CODE</th><th>ITEM</th><th class="n">QTY</th><th class="n">MRP</th><th class="n">PRICE</th><th class="n">DISC</th><th class="n">AMOUNT</th></tr>
-    ${inv.lines.map(l=>{const p=P(l.pid)||NOPROD;return `<tr><td class="c">${p.num||p.code}</td><td class="d">${p.name}${l.serials&&l.serials.length?`<div class="muted">S/N ${l.serials.join(', ')}</div>`:''}</td>
+    ${inv.lines.map(l=>{const p=P(l.pid)||NOPROD;return `<tr><td class="c">${p.num||p.code}</td><td class="d">${lineName(l)}${l.serials&&l.serials.length?`<div class="muted">S/N ${l.serials.join(', ')}</div>`:''}</td>
       <td class="n">${fq(l.qty)}</td><td class="n">${money2(l.mrp||p.mrp)}</td><td class="n">${money2(l.price)}</td><td class="n">${l.disc?money2(l.disc):'—'}</td><td class="n"><b>${money2(l.qty*l.price-(l.disc||0))}</b></td></tr>`}).join('')}</table></div>
    <div class="bl-foot">
     ${(inv.pays||[]).length?`<div class="bl-pays"><b>How it was paid</b>${inv.pays.map(p=>`<div><span>${p.method}${p.ref?' · '+p.ref:''}${p.bank?' · '+p.bank:''}</span><b>${money2(p.amount)}</b></div>`).join('')}</div>`:''}
@@ -11856,11 +11891,11 @@ function billHtml(inv,f='a5'){
    ${walk?'':`<div class="sb-kv"><span>Customer :</span><b>${c.name.toUpperCase()}</b><span>${c.phone||''}</span></div>`}
    <div class="sb-rule"></div>
    ${B.showSaving!==false?`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>MRP</th><th>D.Price</th><th>Amount</th></tr>
-   ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${p.name.toUpperCase()}</td></tr>
+   ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}</td></tr>
      <tr class="qt"><td class="l">${l.qty.toFixed(3)}</td><td>${money2(p.mrp)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}
    </table>`
    :`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>Qty</th><th>Price</th><th>Amount</th></tr>
-   ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${p.name.toUpperCase()}</td></tr>
+   ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}</td></tr>
      <tr class="qt"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}
    </table>`}
    <div class="sb-rule"></div>
@@ -11881,7 +11916,7 @@ function billHtml(inv,f='a5'){
   </div>`;
   // ---------- A5 landscape ----------
   const showCode=B.showCode!==false, showUom=B.showUom!==false, showMrp=B.showMrp!==false;
-  const rows=inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr><td>${i+1})</td>${showCode?`<td>${p.num||p.code}</td>`:''}<td class="d">${p.name.toUpperCase()}</td>
+  const rows=inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr><td>${i+1})</td>${showCode?`<td>${p.num||p.code}</td>`:''}<td class="d">${lineName(l).toUpperCase()}</td>
     <td class="n">${l.qty.toFixed(2)}</td>${showUom?`<td class="u">${(p.unit||'').toUpperCase()}</td>`:''}${showMrp?`<td class="n">${money2(p.mrp)}</td>`:''}<td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('');
   const nm=(SH.name||'REGAL HARDWARE');
   return `<div class="print a5 sba5" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5})">
@@ -14971,6 +15006,7 @@ document.addEventListener('click',e=>{
       if(!c2.phone)return toast('No mobile on file for them');
       sms(c2.phone,tpl('billLink',{no:s2.no,total:fmt(s2.total),link:s2.link})); toast(`e-bill texted to ${c2.name}`)},
     csEdit:()=>csLineEdit(+a.dataset.i),        // the pencil opens the quantity and price as boxes in the row
+    csRename:()=>csLineRename(+a.dataset.i),
     csEditMore:()=>{ csLineDone(false); csEditLine(+a.dataset.i) },
     csLineOk:()=>csLineDone(true),
     csLineNo:()=>csLineDone(false),
