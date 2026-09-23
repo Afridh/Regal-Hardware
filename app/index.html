@@ -2158,6 +2158,14 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .till-item em{font-style:normal;font-size:10px;color:var(--steel);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .till-item i{font-style:normal;color:var(--faint);font-size:13px}
+/* the name can be typed over for this line: a colour code mixed into a paint base, a size */
+.till-item input{width:100%;border:0;padding:0;background:none;outline:none;
+ font-family:Archivo,sans-serif;font-weight:800;font-size:15.5px;line-height:1.15;letter-spacing:-.01em;color:var(--ink);
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.till-item input:focus{color:#7A3A0E}
+.till-item.renamed{border-color:var(--chip-blue);box-shadow:inset 0 0 0 1px var(--chip-blue)}
+.till-item.renamed input{color:#0E5B76}
+.f-item .hint-n{font-style:normal;color:var(--faint);letter-spacing:0;font-size:9px;margin-left:4px;text-transform:none}
 .till-ro{height:40px;min-height:40px;flex:0 0 40px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel);padding:0 10px;
  display:flex;align-items:center;justify-content:flex-end;font-family:Archivo,sans-serif;color:var(--steel);font-size:13.5px}
 .till-amt{height:40px;min-height:40px;flex:0 0 40px;border:1px solid var(--ink);border-radius:var(--r);background:#fff;padding:0 10px;
@@ -8139,7 +8147,7 @@ function posClassic(){
   const nextNo=`${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-${String(((S.seqBy||{})[S.terminal+'-'+(u.uid||'??')]||0)+1).padStart(5,'0')}`;
   const now=new Date(), sel=P(CS.pid), drag=CFG.pos.dragLines!==false;
   const owed=c.id===1?0:partyBal('C',c.id);
-  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['P on the bill','Price'],['N on the bill','Rename'],['F1','Back to item'],['F3','Salesperson'],['F4','Customer'],
+  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['P on the bill','Price'],['Ctrl+N','Change the name'],['N on the bill','Rename'],['F1','Back to item'],['F3','Salesperson'],['F4','Customer'],
               ['F5 / Ctrl+R','Held bills'],['F7 / Ctrl+H','Hold bill'],['F8','Bill disc.'],['F10','Pay'],['F6','On account'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['S in price','Past prices'],['W / R','Wholesale · retail'],['Clear','Reset bill']];
 
   const sync=(document.getElementById('savedAt')||{}).textContent||'';
@@ -8165,10 +8173,11 @@ function posClassic(){
    <div class="till-entry ${sel?'live':''}">
     <label class="f-code"><span>SCAN / INPUT CODE</span>
      <input id="csQ" value="${CS.q}" placeholder="code, short code or barcode" autocomplete="off"></label>
-    <div class="f-item"><span>ITEM</span>
-     <div class="till-item ${sel?'has':''}">${sel
-       // the name alone — the stock, the short code and the cost code are on the match list above
-       ? `<b>${sel.name.toUpperCase()}</b>${(CS.last||sel.serialised)?`<em>${[CS.last?`<b class="lastp">last time ${money2(CS.last.price)} on ${CS.last.no}</b>`:'',sel.serialised?'serial asked on Enter':''].filter(Boolean).join(' · ')}</em>`:''}`
+    <div class="f-item"><span>ITEM${sel?' <i class="hint-n">Ctrl+N to change it</i>':''}</span>
+     <div class="till-item ${sel?'has':''} ${CS.name?'renamed':''}">${sel
+       // the name is typed over when the goods need saying differently on the bill — a colour code
+       // mixed into a paint base, a size. The stock and the codes are on the match list above.
+       ? `<input id="csName" value="${String(CS.name||sel.name).toUpperCase().replace(/"/g,'&quot;')}" maxlength="90" spellcheck="false" autocomplete="off">${(CS.last||sel.serialised)?`<em>${[CS.last?`<b class="lastp">last time ${money2(CS.last.price)} on ${CS.last.no}</b>`:'',sel.serialised?'serial asked on Enter':''].filter(Boolean).join(' · ')}</em>`:''}`
        : '<i>scan or key a code — F1</i>'}</div></div>
     <label class="f-warr"><span>WARRANTY</span>
      <select id="csWarr">${['0','3 MONTHS','6 MONTHS','1 YEAR','2 YEARS','3 YEARS'].map(x=>`<option ${CS.warranty===x?'selected':''}>${x}</option>`).join('')}</select></label>
@@ -8428,7 +8437,7 @@ function csAskDel(i){
 }
 function csStart(pid){
   const p=P(pid); if(!p) return;
-  CS.pid=pid; CS.q=p.num||p.code; CS.qty=1; CS.disc=0; CS.serials=[]; CS.focus=''; CS.editLine=null;
+  CS.pid=pid; CS.q=p.num||p.code; CS.qty=1; CS.disc=0; CS.serials=[]; CS.focus=''; CS.editLine=null; CS.name=null;
   const was=lastPriceFor(pid,S.pos.customer);
   if(was&&CFG.pos.repriceToLast&&was.price>=p.cost-0.005){ CS.price=was.price; CS.auto=false; CS.last=was }
   else { CS.price=priceFor(p,1); CS.auto=true; CS.last=was||null }
@@ -8468,19 +8477,22 @@ function csCommit(){
   const pctGiven=(d>0&&CFG.pos.discFromMrp)?d:null;
   const net=(qty*price-disc)/qty;
   const put=(by,serials)=>{
-    // the same item keyed again joins its line on the bill (same price, same warranty, no serial numbers)
-    const same=(!serials||!serials.length)?S.pos.lines.findIndex(l=>l.pid===p.id&&Math.abs(l.price-price)<0.005&&(l.warranty||'0')===(CS.warranty||'0')&&!(l.serials&&l.serials.length)&&(l.discPct||0)===(pctGiven||0)):-1;
+    // the same item keyed again joins its line on the bill (same price, same warranty, same wording, no serial numbers)
+    const asked=((CS.name||'').trim()&&(CS.name||'').trim().toUpperCase()!==p.name.toUpperCase())?(CS.name||'').trim():null;
+    const same=(!serials||!serials.length)?S.pos.lines.findIndex(l=>l.pid===p.id&&Math.abs(l.price-price)<0.005&&(l.warranty||'0')===(CS.warranty||'0')&&!(l.serials&&l.serials.length)&&(l.discPct||0)===(pctGiven||0)&&(l.name||null)===asked):-1;
     if(same>=0){
       const l=S.pos.lines[same]; l.qty=+(l.qty+qty).toFixed(3);
       l.disc=+((l.disc||0)+disc).toFixed(2);          // same price and same % means the same discount per piece, so the rupees simply add up
       if(by) l.belowCost=by; l.auto=Math.abs(price-priceFor(p,l.qty))<0.005;
       S.pos.sel=same; toast(`${p.name} — now ${fq(l.qty)} ${p.unit} on the bill`);
     } else {
+      const typed=(CS.name||'').trim();
       S.pos.lines.push({pid:p.id,qty,price,disc,discPct:pctGiven||undefined,warranty:CS.warranty,serials:serials||undefined,
+        ...(typed&&typed.toUpperCase()!==p.name.toUpperCase()?{name:typed}:{}),
         auto:Math.abs(price-priceFor(p,qty))<0.005,...(by?{belowCost:by}:{})});
       S.pos.sel=S.pos.lines.length-1;
     }
-    CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null};
+    CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null,name:null};
     if(!CFG.stock.allowNegative&&CFG.stock.track!==false){ const on=S.pos.lines.filter(l=>l.pid===p.id).reduce((a,l)=>a+l.qty,0);
       if(on>p.stock+1e-9) toast(`Only ${fq(p.stock)} ${p.unit} of ${p.name} on the floor`) }
     render(); const f=$('#csQ'); if(f) f.focus();
@@ -9153,6 +9165,25 @@ function bindClassic(){
   };
   bind('csQty','qty'); bind('csPrice','price'); bind('csDisc','disc');
   paint();
+
+  /* the ITEM box: the name can be typed over before the line goes on the bill — Ctrl+N from any box
+     gets to it, Enter carries on to the quantity, Esc puts the product's own name back */
+  const nm=$('#csName');
+  if(nm){
+    const pSel=P(CS.pid);
+    nm.oninput=()=>{ CS.name=nm.value; const box=nm.closest('.till-item');
+      if(box) box.classList.toggle('renamed',!!nm.value.trim()&&nm.value.trim().toUpperCase()!==(pSel?pSel.name.toUpperCase():'')) };
+    nm.onkeydown=e=>{
+      e.stopPropagation();
+      if(e.key==='Enter'){ e.preventDefault(); CS.name=nm.value; focusField(FIELDS.findIndex(f=>f[0]==='csQty')); return }
+      if(e.key==='Escape'){ e.preventDefault(); CS.name=null; nm.value=pSel?pSel.name.toUpperCase():''; const box=nm.closest('.till-item'); if(box) box.classList.remove('renamed'); const f=$('#csQty'); if(f){f.focus();f.select()} return }
+      if(e.key==='ArrowDown'){ e.preventDefault(); goList(); return }
+    };
+  }
+  // Ctrl+N while keying an item goes to the name box
+  [q,$('#csQty'),$('#csPrice'),$('#csDisc'),$('#csWarr')].forEach(el=>{ if(!el) return;
+    el.addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'&&CS.pid){
+      e.preventDefault(); e.stopPropagation(); const f=$('#csName'); if(f){ f.focus(); f.select() } } },true) });
 
   const wr=$('#csWarr');
   if(wr){ wr.onchange=e=>{CS.warranty=e.target.value};
