@@ -405,7 +405,8 @@ body.privacy nav .navuser{position:relative}
 .bl-list{display:flex;flex-direction:column;position:sticky;top:0;max-height:calc(100vh - 100px)}
 .bl-dates{display:flex;align-items:center;gap:4px;margin-left:auto}.bl-dates input{padding:4px 6px;font-size:12px;width:128px}
 .bl-by{padding:4px 8px;font-size:12.5px;border-radius:99px;max-width:150px}
-.bl-count{display:flex;justify-content:space-between;font-size:12.5px;padding:2px 4px 6px;border-bottom:1px solid var(--line2)}
+.bl-count{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;padding:2px 4px 6px;border-bottom:1px solid var(--line2)}
+.bl-count>span{white-space:nowrap}
 .bl-rows{overflow:auto;flex:1;min-height:0}
 .bl-row{display:grid;grid-template-columns:88px 1fr auto;gap:10px;align-items:center;padding:9px 8px;border-bottom:1px solid var(--line2);cursor:pointer;border-radius:6px}
 .bl-row:hover{background:var(--panel)}
@@ -427,6 +428,15 @@ body.privacy nav .navuser{position:relative}
 .bl-strip .net{background:var(--tint-yellow);border-color:var(--chip-yellow)}.bl-strip .net b{font-size:20px;color:var(--chip-rust)}
 .bl-strip .paid{background:var(--tint-green);border-color:#B7E0C9}.bl-strip .paid b{color:#12613D}
 .bl-strip .owe{background:var(--tint-rust);border-color:#F0B9AC}.bl-strip .owe b{color:var(--chip-rust)}
+/* GP — owner and admin only */
+.bl-strip .gp{background:#12302A;border-color:#12302A}.bl-strip .gp span{color:#8FBFAC}.bl-strip .gp b{color:#9FE7C6}.bl-strip .gp small{color:#7FB8A2}
+.bl-strip .gp.neg{background:#3A1A16;border-color:#3A1A16}.bl-strip .gp.neg b{color:#FFB4A6}
+.bl-amt i.gp{color:#1F7A5A;font-weight:700;font-size:10.5px;letter-spacing:.01em}
+.bl-amt i.gp.neg{color:var(--chip-rust)}
+.bl-amt i.gp.odd{color:#8A5D06}
+.bl-strip .gp.odd{background:var(--tint-yellow);border-color:var(--chip-yellow)}.bl-strip .gp.odd span,.bl-strip .gp.odd small{color:#8A5D06}.bl-strip .gp.odd b{color:#7A5A05}
+.bl-gp{color:#1F7A5A;font-weight:600}.bl-gp b{font-family:Archivo,sans-serif}.bl-gp.neg{color:var(--chip-rust)}
+.bl-odd{color:#8A5D06;font-weight:600;border-bottom:1px dotted #C9A227;margin-left:4px}
 .bl-lines{overflow:auto;border:1px solid var(--line);border-radius:var(--r)}
 .bl-lines td,.bl-lines th{white-space:nowrap}.bl-lines td.d{white-space:normal;min-width:200px;width:100%}
 .bl-foot{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px}
@@ -2248,6 +2258,12 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .sum-line.edit input:focus{outline:none;border-color:var(--chip-yellow);box-shadow:0 0 0 3px rgba(240,168,30,.2)}
 .sum-net{background:var(--ink);color:#fff;padding:6px 10px}
 .sum-net span{display:block;font-size:10px;letter-spacing:.1em;color:#9BB0AE}
+/* GP — owner and admin only, never printed */
+.sum-gp{display:flex;align-items:baseline;gap:6px;padding:4px 10px;background:#12302A;color:#9FE7C6;border-bottom:1px solid var(--line)}
+.sum-gp span{font-size:9.5px;letter-spacing:.12em;font-weight:700;opacity:.8}
+.sum-gp b{font-family:Archivo,sans-serif;font-size:14px;margin-left:auto}
+.sum-gp i{font-style:normal;font-size:10px;opacity:.75}
+.sum-gp.neg{background:#3A1A16;color:#FFB4A6}
 .sum-net b{display:block;font-family:Archivo,sans-serif;font-weight:800;font-size:25px;line-height:1.05;
  text-align:right;color:var(--chip-yellow);letter-spacing:-.015em}
 .till-sum input{user-select:text}
@@ -8073,6 +8089,20 @@ function savedVsMrp(L){
   return +L.reduce((a,l)=>{const p=P(l.pid); const mrp=p.mrp||l.price;
     return a+Math.max(0,(mrp*l.qty)-(l.qty*l.price-l.disc))},0).toFixed(2);
 }
+/* ---- GP ----
+   What the bill makes over what the goods cost. Shown as "GP" and nothing else, and only to an
+   owner or an admin — it is never printed, never texted and never on a screen a customer sees. */
+const gpSeen=()=>ownerOnly();
+/* A line whose written-down cost is far above what it sold for is nearly always a bad cost carried in
+   from the old system — a roll price against a metre sold — not a real loss. They are counted apart so
+   one of them cannot quietly swallow the month's GP. */
+const gpOdd=(s)=>(s.lines||[]).some(l=>l.cost>0&&l.price>0&&l.cost>l.price*3);
+function gpOf(lines,billDisc=0){
+  const take=lines.reduce((a,l)=>a+(l.qty*l.price-(l.disc||0)),0)-(+billDisc||0);
+  const cost=lines.reduce((a,l)=>{ const c=(l.cost!==undefined&&l.cost!==null)?l.cost:((P(l.pid)||{}).cost||0); return a+l.qty*c },0);
+  const gp=+(take-cost).toFixed(2);
+  return {gp,take,cost,pct:take>0?+(gp/take*100).toFixed(1):0};
+}
 function csTotals(){
   const L=S.pos.lines;
   const sub=L.reduce((a,l)=>a+l.qty*l.price,0);
@@ -8201,6 +8231,8 @@ function posClassic(){
       <span>NET TOTAL</span>
       <b>${money2(T.net)}</b>
      </div>
+     ${gpSeen()&&L.length?(()=>{const g=gpOf(L,S.pos.billDisc);
+       return `<div class="sum-gp ${g.gp<0?'neg':''}" title="on this bill"><span>GP</span><b>${money2(g.gp)}</b><i>${g.pct}%</i></div>`})():''}
      ${c.id!==1&&owed+T.net>c.limit?`<div class="sum-over">Over their limit — owed ${money2(owed)} of ${money2(c.limit)}</div>`:''}
 
      ${S.pos.undoReprice?`<div class="sum-editing">Prices set to what they paid last time
@@ -10816,6 +10848,7 @@ function billHit(s,q){
   if(billType==='cash'&&s.type!=='CASH')return false;
   if(billType==='credit'&&s.type!=='CREDIT')return false;
   if(billType==='unpaid'&&!(s.balance>0))return false;
+  if(billType==='oddcost'&&!gpOdd(s))return false;              // the cost written on the line is above what it sold for
   if(billBy!=='all'&&s.by!==billBy)return false;
   if(!q)return true;
   const c=C(s.customerId)||{name:'',phone:''}, digits=q.replace(/\D/g,'');
@@ -10847,15 +10880,18 @@ function bills(){
      <input id="billQ" value="${billQ.replace(/"/g,'&quot;')}" placeholder="Bill number, customer, mobile, item or amount…" autocomplete="off"><span class="search-k"><i class="kbd">F1</i><i class="kbd">↑↓</i></span></div>
     <div class="chips">${[[0,'Today'],[1,'Yesterday'],[7,'7 days'],[30,'30 days']].map(d=>`<button class="${dayIs(d[0])?'on':''}" data-act="billDay" data-d="${d[0]}">${d[1]}</button>`).join('')}<button class="${!billFrom&&!billTo?'on':''}" data-act="billAllDates">All time</button>
      <span class="bl-dates"><input id="billFrom" type="date" value="${billFrom}" title="From"><span>–</span><input id="billTo" type="date" value="${billTo}" title="To"></span></div>
-    <div class="chips" style="margin-bottom:6px">${[['all','All'],['cash','Cash'],['credit','Credit'],['unpaid','Still owing']].map(o=>`<button class="${billType===o[0]?'on':''}" data-act="billKind" data-v="${o[0]}">${o[1]}</button>`).join('')}
+    <div class="chips" style="margin-bottom:6px">${[['all','All'],['cash','Cash'],['credit','Credit'],['unpaid','Still owing'],...(gpSeen()?[['oddcost','Cost looks wrong']]:[])].map(o=>`<button class="${billType===o[0]?'on':''}" data-act="billKind" data-v="${o[0]}">${o[1]}</button>`).join('')}
      <select id="billBy" class="bl-by"><option value="all">Any cashier</option>${cashiers.map(x=>`<option ${billBy===x?'selected':''}>${x}</option>`).join('')}</select>
      ${filtered?`<button class="clear" data-act="billClear" style="color:var(--chip-rust)">Clear</button>`:''}</div>
-    <div class="bl-count"><span><b>${list.length}</b> bill${list.length===1?'':'s'} · ${fmt(sum.total)} billed</span><span>${sum.bal?`<b style="color:var(--chip-rust)">${fmt(sum.bal)}</b> owing`:'<span class="muted">nothing owing</span>'}</span></div>
+    <div class="bl-count"><span><b>${list.length}</b> bill${list.length===1?'':'s'} · ${fmt(sum.total)} billed</span>
+     ${gpSeen()?(()=>{const t=list.reduce((a,s)=>{ if(gpOdd(s)){ a.odd++; return a } const g=gpOf(s.lines,s.billDisc); a.gp+=g.gp; a.take+=g.take; return a },{gp:0,take:0,odd:0});
+       return `<span class="bl-gp ${t.gp<0?'neg':''}">GP <b>${fmt(t.gp)}</b>${t.take>0?` · ${(t.gp/t.take*100).toFixed(1)}%`:''}${t.odd?` <a href="#" data-act="billKind" data-v="oddcost" class="bl-odd" title="Their written-down cost is more than three times what the goods sold for — almost always a cost brought in wrong from the old system. They are left out of this figure.">${t.odd} left out</a>`:''}</span>`})():''}
+     <span>${sum.bal?`<b style="color:var(--chip-rust)">${fmt(sum.bal)}</b> owing`:'<span class="muted">nothing owing</span>'}</span></div>
     <div class="bl-rows" id="billRows">
      ${list.slice(0,billLimit).map(s=>{const c=C(s.customerId)||{name:'—'};return `<div class="bl-row ${inv&&s.no===inv.no?'sel':''}" data-act="billSel" data-no="${s.no}" tabindex="-1">
        <div class="bl-when"><b>${s.date===D(today)?'Today':s.date===ago(1)?'Yesterday':s.date}</b><span>${s.time||''}</span></div>
        <div class="bl-who"><b>${s.no}</b><span>${c.name}${c.id===1?'':' · '+(c.phone||'')}</span><span class="muted">${s.lines.length} line${s.lines.length===1?'':'s'} · ${s.by}${(s.remade||[]).length?' · re-made':''}${(s.edits||[]).length?' · corrected':''}</span></div>
-       <div class="bl-amt"><b>${fmt(s.total)}</b>${s.balance>0?`<i class="owe">${fmt(s.balance)} owing</i>`:s.type==='CREDIT'?'<i class="ok">credit · paid</i>':'<i class="ok">cash</i>'}</div></div>`}).join('')
+       <div class="bl-amt"><b>${fmt(s.total)}</b>${s.balance>0?`<i class="owe">${fmt(s.balance)} owing</i>`:s.type==='CREDIT'?'<i class="ok">credit · paid</i>':'<i class="ok">cash</i>'}${gpSeen()?(gpOdd(s)?'<i class="gp odd" title="The cost written on a line is far above what it sold for — check it">GP · cost looks wrong</i>':(()=>{const g=gpOf(s.lines,s.billDisc);return `<i class="gp ${g.gp<0?'neg':''}">GP ${fmt(g.gp)} · ${g.pct}%</i>`})()):''}</div></div>`}).join('')
       ||`<div class="muted" style="padding:20px 8px">No bill matches that. Try the last few digits of the number, or their mobile.</div>`}
      ${list.length>billLimit?`<div style="padding:8px"><button class="btn ghost sm" data-act="billMore">Show 150 more</button> <span class="muted">of ${list.length}</span></div>`:''}
     </div>
@@ -10889,6 +10925,8 @@ function billDetail(inv){
     <div class="paid"><span>Paid</span><b>${money2(inv.paid)}</b></div>
     <div class="${inv.balance>0?'owe':''}"><span>Balance</span><b>${money2(inv.balance)}</b></div>
     ${prev?`<div><span>Other bills owing</span><b>${money2(prev)}</b></div>`:''}
+    ${gpSeen()?(()=>{const g=gpOf(inv.lines,inv.billDisc), odd=gpOdd(inv);
+      return `<div class="gp ${odd?'odd':g.gp<0?'neg':''}" title="${odd?'A line carries a cost far above what it sold for — the cost, not the sale, is what to look at':'What this bill made over what the goods cost'}"><span>GP</span><b>${money2(g.gp)} <small>${odd?'cost looks wrong':g.pct+'%'}</small></b></div>`})():''}
    </div>
    <div class="bl-lines"><table class="till-tbl"><tr><th>CODE</th><th>ITEM</th><th class="n">QTY</th><th class="n">MRP</th><th class="n">PRICE</th><th class="n">DISC</th><th class="n">AMOUNT</th></tr>
     ${inv.lines.map(l=>{const p=P(l.pid)||NOPROD;return `<tr><td class="c">${p.num||p.code}</td><td class="d">${p.name}${l.serials&&l.serials.length?`<div class="muted">S/N ${l.serials.join(', ')}</div>`:''}</td>
