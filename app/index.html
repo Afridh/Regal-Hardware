@@ -641,6 +641,26 @@ tr.off td{opacity:.55}
 .bc-a{display:flex;gap:5px;flex-wrap:wrap}
 
 /* the board sits over the working area; it is never moved, only shown or hidden */
+/* the limit, as a line under what is owed rather than a headline of its own */
+.kpi-lim{display:flex;align-items:center;gap:8px;margin-top:7px}
+.kpi-lim .bar{flex:1;margin:0}
+.kpi-lim span{font-size:11px;color:var(--steel);white-space:nowrap}
+
+/* searching every setting */
+.setsearch{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r);
+  padding:8px 11px;margin-bottom:14px;background:var(--panel)}
+.setsearch svg{width:17px;height:17px;color:var(--steel);flex:0 0 auto}
+.setsearch input{flex:1;border:0;background:none;font:inherit;font-size:14px;padding:2px 0;outline:none}
+.setfound{display:flex;flex-direction:column;gap:6px}
+.sethitrow{display:block;width:100%;text-align:left;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--panel);font:inherit;padding:9px 11px;cursor:pointer}
+.sethitrow:hover{border-color:var(--chip-yellow);background:var(--tint-yellow)}
+.sethitrow b{display:block;font-size:13.5px}
+.sethitrow span{display:block;font-size:12px;color:var(--steel);margin-top:2px}
+.sethitrow em{display:block;font-style:normal;font-size:11px;color:var(--steel);margin-top:3px;
+  font-family:Archivo,sans-serif;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.f.sethit{outline:2px solid var(--chip-yellow);outline-offset:5px;border-radius:var(--r)}
+
 /* the price the site sells at, beside the counter price */
 .wp-pin{width:104px;text-align:right;padding:5px 7px}
 .wp-pin::placeholder{color:var(--steel);opacity:.55}
@@ -3519,12 +3539,96 @@ function salaryVoucher(e,p,mk){
 
 /* ---- settings ---- */
 let setTab='shop';
+/* ---- finding a setting ----
+   There are a hundred-odd settings across eleven pages, and nobody remembers which page
+   the one they want is on. The box at the top searches all of them.
+
+   The list is not written out by hand — it would go stale the first time a setting moved.
+   Each page is drawn once into a detached element and every field read off it, so whatever
+   is on the page is what can be found. Drawing a page while indexing would draw the search
+   box again and start over, so the flag below leaves it out while that is going on. */
+let setSearch='', setJump=null, _setIndexing=false, _setIndex=null;
+
+function settingsIndex(){
+  if(_setIndex) return _setIndex;
+  const keep=setTab, out=[];
+  _setIndexing=true;
+  try{
+    for(const [tab,tabLabel] of settingsTabs()){
+      setTab=tab;
+      let html=''; try{ html=settings() }catch(e){ continue }
+      const box=document.createElement('div');
+      box.innerHTML=html;
+      const card=box.querySelector('.setbody .card')||box;
+      let section='';
+      const squash=s=>String(s||'').replace(/\s+/g,' ').trim();
+      card.querySelectorAll('h2, .f, label.chk, [data-tpl]').forEach(el=>{
+        if(el.tagName==='H2'){ section=squash(el.textContent); return }
+        // a message template is a card of its own, named by the bold line above the box
+        if(el.hasAttribute&&el.hasAttribute('data-tpl')){
+          const own=el.closest('.card'), nm=squash(((own&&own.querySelector('b'))||{}).textContent);
+          if(nm) out.push({tab,tabLabel,section,name:nm,hint:'the wording of this message',path:'tpl.'+el.getAttribute('data-tpl')});
+          return;
+        }
+        if(el.classList.contains('chk')&&el.closest('.f')) return;      // counted with its own field
+        const lab=[...el.children].find(c=>c.tagName==='LABEL'&&!c.classList.contains('chk'));
+        const chk=el.classList.contains('chk')?el:el.querySelector('label.chk');
+        const hintEl=el.querySelector(':scope > .muted');
+        const chkTxt=chk?squash(chk.textContent):'';
+        const chkB=chk?squash(((chk.querySelector('b'))||{}).textContent):'';
+        let name=squash((lab&&lab.textContent)||''), hint='';
+        if(!name){ name=chkB||chkTxt; hint=chkB?squash(chkTxt.slice(chkB.length)):'' }
+        else { hint=chkTxt||squash((hintEl&&hintEl.textContent)||'') }
+        if(!name||name===' ') return;
+        if(name.length>90){ const sp=name.slice(0,90).lastIndexOf(' '), at=sp>40?sp:90;
+          hint=squash(name.slice(at))+(hint?' · '+hint:''); name=squash(name.slice(0,at)) }
+        const path=(el.querySelector('[data-set]')||{}).dataset?.set||'';
+        out.push({tab,tabLabel,section,name,hint,path});
+      });
+    }
+  } finally { _setIndexing=false; setTab=keep }
+  _setIndex=out;
+  return out;
+}
+
+function settingsHits(q){
+  const v=String(q||'').toLowerCase().trim();
+  if(v.length<2) return [];
+  const words=v.split(/\s+/).filter(Boolean);
+  const score=(s)=>{
+    const hay=`${s.name} ${s.hint} ${s.section} ${s.tabLabel} ${s.path}`.toLowerCase();
+    if(!words.every(w=>hay.includes(w))) return 0;
+    const n=s.name.toLowerCase();
+    return n.startsWith(v)?4:n.includes(v)?3:s.section.toLowerCase().includes(v)?2:1;
+  };
+  return settingsIndex().map(s=>({s,n:score(s)})).filter(x=>x.n>0)
+    .sort((a,b)=>b.n-a.n||a.s.name.localeCompare(b.s.name)).slice(0,40).map(x=>x.s);
+}
+
+function settingsSearchBox(){
+  const hits=settingsHits(setSearch);
+  const v=setSearch.replace(/"/g,'&quot;');
+  return `<div class="setsearch">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="setQ" placeholder="Search every setting — cheque, logo, overtime, WhatsApp…" value="${v}" autocomplete="off">
+    ${setSearch?`<button class="btn ghost sm" data-act="setClearQ">Clear</button>`:''}</div>
+   ${setSearch.trim().length>=2?`<div class="setfound">
+     <div class="muted">${hits.length?`${hits.length} setting${hits.length===1?'':'s'} match “${setSearch.trim()}”`:`Nothing matches “${setSearch.trim()}”`}</div>
+     ${hits.map(s=>`<button class="sethitrow" data-act="setGo" data-t="${s.tab}" data-n="${String(s.name).replace(/"/g,'&quot;')}">
+       <b>${s.name}</b>${s.hint?`<span>${s.hint}</span>`:''}
+       <em>${s.tabLabel}${s.section?' · '+s.section:''}</em></button>`).join('')}
+    </div>`:''}`;
+}
+
 const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediakey="${key}"><label>${label}</label>
   <div style="display:flex;gap:10px;align-items:flex-start"><div class="mediapic"><img src="/api/shop/media/${encodeURIComponent(key)}?v=${Date.now()}" onerror="this.parentNode.classList.add('empty');this.remove()"></div>
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
+function settingsTabs(){
+  return [['screen','My screen'],['done','Finishing a bill'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+}
 function settings(){
-  const tabs=[['screen','My screen'],['done','Finishing a bill'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  const tabs=settingsTabs();
   const fld=(path,label,hint='',type='text')=>{
     const [g,k]=path.split('.'); const val=g==='web'?S.web.settings[k]:CFG[g][k];
     return `<div class="f"><label>${label}</label>
@@ -3784,6 +3888,10 @@ function settings(){
     cost:['The code that hides cost on labels',ICONS.labels],msg:['The SMS gateway and who gets texts',ICONS.messages],tpl:['Wording of every text that goes out','M4 6h16M4 12h10M4 18h7'],
     shift:['The Shift Board, the fingerprint machine and pay','M12 7v5l3 2M12 3a9 9 0 110 18 9 9 0 010-18z'],
     approvals:['What needs the owner’s nod',ICONS.approvals],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
+  if(!_setIndexing){
+    const searching=setSearch.trim().length>=2;
+    body=settingsSearchBox()+(searching?'':body);
+  }
   return subnavPage('Settings','How the till behaves for everyone',tabs.map(t=>[t[0],t[1],(meta[t[0]]||['',ICONS.settings])[0],(meta[t[0]]||['',ICONS.settings])[1]]),setTab,'data-settab',body);
 }
 /* Settings → Messaging → WhatsApp: the whole set-up on one screen, in the order Meta wants it done */
@@ -6534,7 +6642,6 @@ function closeModals(){document.querySelectorAll('.modal').forEach(m=>m.remove()
 let _rendering=false, _lastRenderView=null;
 function render(){ if(_rendering) return; _rendering=true; try{ renderNow() } finally { _rendering=false } if(typeof persist==='function'&&S.user&&!S.signedOut) persist() }
 function renderNow(){
-  if(S.view!=='board') document.body.classList.remove('boardview');
   applyLayout();
   renderNav();
   const mn = document.getElementById('main');
@@ -6672,7 +6779,27 @@ function renderNow(){
   if(S.view==='webproducts') webProductsAfter();
   if(S.view==='tenders') tendersAfter();
   if(S.view==='settings'||S.view==='site'||S.view==='webproducts'){
-    document.querySelectorAll('[data-settab]').forEach(b=>b.onclick=()=>{setTab=b.dataset.settab;render();$('#main').scrollTop=0});
+    document.querySelectorAll('[data-settab]').forEach(b=>b.onclick=()=>{setTab=b.dataset.settab;setSearch='';render();$('#main').scrollTop=0});
+    const sq=$('#setQ');
+    if(sq){
+      sq.oninput=()=>{ const pos=sq.selectionStart; setSearch=sq.value; render();
+        const n=$('#setQ'); if(n){ n.focus(); n.setSelectionRange(pos,pos) } };
+      sq.onkeydown=e=>{ if(e.key==='Escape'){ e.preventDefault(); setSearch=''; render(); const n=$('#setQ'); if(n) n.focus() } };
+      if(setSearch&&document.activeElement===document.body){ sq.focus(); sq.setSelectionRange(sq.value.length,sq.value.length) }
+    }
+    // arriving from a search result: show which field was meant
+    if(setJump){
+      const want=String(setJump).toLowerCase(); setJump=null;
+      const box=[...document.querySelectorAll('.setbody .card .f')].find(f=>{
+        const lab=[...f.children].find(c=>c.tagName==='LABEL'&&!c.classList.contains('chk'));
+        const chk=f.querySelector('label.chk');
+        const nm=((lab&&lab.textContent)||'').trim()||((chk&&chk.textContent)||'').trim();
+        return nm.toLowerCase()===want;
+      });
+      if(box){ box.classList.add('sethit'); box.scrollIntoView({block:'center',behavior:'smooth'});
+        const f=box.querySelector('input,select,textarea'); if(f&&f.type!=='file') setTimeout(()=>f.focus(),260);
+        setTimeout(()=>box.classList.remove('sethit'),2200); }
+    }
     document.querySelectorAll('[data-set]').forEach(el=>{
       const [g,k]=el.dataset.set.split('.');
       if(g==='web'){ el.onchange=()=>{ const cur=S.web.settings[k];
@@ -11489,8 +11616,9 @@ function customerPanel(c){
 
    <div class="cu-kpis">
     <div class="kpi ${overLimit?'r':owed>0?'y':'g'}"><div class="l">Outstanding</div><div class="v ${fmt(owed).length>14?'small':''}">${fmt(owed)}</div><div class="s">${open.length?`${open.length} unpaid bill${open.length===1?'':'s'} · oldest ${ag.oldest} days`:'nothing owing'}</div>
-     ${owed>0?`<div class="agebars" title="up to 30 · 31–60 · over 60 days"><i style="width:${ag.now/owed*100}%;background:var(--chip-green)"></i><i style="width:${ag.mid/owed*100}%;background:var(--chip-yellow)"></i><i style="width:${ag.old/owed*100}%;background:var(--chip-rust)"></i></div>`:''}</div>
-    <div class="kpi ${overLimit?'r':used>80?'y':'b'}"><div class="l">Credit limit</div><div class="v ${fmt(c.limit).length>14?'small':''}">${fmt(c.limit)}</div><div class="s">${overLimit?`${fmt(owed-c.limit)} over`:`${used}% used · ${fmt(c.limit-owed)} left`}</div><div class="bar"><i class="${overLimit?'bad':used>80?'warn':''}" style="width:${used}%"></i></div></div>
+     ${owed>0?`<div class="agebars" title="up to 30 · 31–60 · over 60 days"><i style="width:${ag.now/owed*100}%;background:var(--chip-green)"></i><i style="width:${ag.mid/owed*100}%;background:var(--chip-yellow)"></i><i style="width:${ag.old/owed*100}%;background:var(--chip-rust)"></i></div>`:''}
+     ${c.limit>0?`<div class="kpi-lim"><div class="bar"><i class="${overLimit?'bad':used>80?'warn':''}" style="width:${used}%"></i></div>
+       <span>${overLimit?`${fmt(owed-c.limit)} over the ${fmt(c.limit)} limit`:`${fmt(c.limit-owed)} of the ${fmt(c.limit)} limit left`}</span></div>`:''}</div>
     <div class="kpi g"><div class="l">Last payment</div><div class="v ${lastPay&&fmt(lastPay.amount).length>14?'small':''}">${lastPay?fmt(lastPay.amount):'—'}</div><div class="s">${lastPay?`${lastPay.date} · ${lastPay.method.toLowerCase()} · ${agoTxt(lastPay.date)}`:'nothing received yet'}</div></div>
     <div class="kpi b"><div class="l">Bought in all</div><div class="v ${fmt(lifetime).length>14?'small':''}">${fmt(lifetime)}</div><div class="s">${inv.length} bill${inv.length===1?'':'s'} · paid ${fmt(paidTot)}</div></div>
     ${credit>0?`<div class="kpi g"><div class="l">Credit held</div><div class="v">${fmt(credit)}</div><div class="s">paid ahead — comes off the next bill</div></div>`:''}
@@ -15014,6 +15142,8 @@ document.addEventListener('click',e=>{
       wpOpen=null; render();
       toast(`${p.name} saved${webHasOwn(p)?` · ${fmt(+p.webPrice)} on the site`:''}`) },
     siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
+    setGo:()=>{ setTab=a.dataset.t; setJump=a.dataset.n; setSearch=''; render(); },
+    setClearQ:()=>{ setSearch=''; render(); const n=$('#setQ'); if(n) n.focus() },
     siteShow:()=>{siteShow=a.dataset.v;render()},
     siteFeat:()=>{const p=P(+a.dataset.id); p.featured=!p.featured; render()},
     prodEditSite:()=>productModal(+a.dataset.id),
