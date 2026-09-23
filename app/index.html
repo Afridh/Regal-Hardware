@@ -8147,7 +8147,7 @@ function posClassic(){
   const nextNo=`${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-${String(((S.seqBy||{})[S.terminal+'-'+(u.uid||'??')]||0)+1).padStart(5,'0')}`;
   const now=new Date(), sel=P(CS.pid), drag=CFG.pos.dragLines!==false;
   const owed=c.id===1?0:partyBal('C',c.id);
-  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['P on the bill','Price'],['Ctrl+N','Change the name'],['N on the bill','Rename'],['F1','Back to item'],['F3','Salesperson'],['F4','Customer'],
+  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['P on the bill','Price'],['N on the bill','Rename'],['F1','Back to item'],['F3','Salesperson'],['F4','Customer'],
               ['F5 / Ctrl+R','Held bills'],['F7 / Ctrl+H','Hold bill'],['F8','Bill disc.'],['F10','Pay'],['F6','On account'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['S in price','Past prices'],['W / R','Wholesale · retail'],['Clear','Reset bill']];
 
   const sync=(document.getElementById('savedAt')||{}).textContent||'';
@@ -8173,7 +8173,7 @@ function posClassic(){
    <div class="till-entry ${sel?'live':''}">
     <label class="f-code"><span>SCAN / INPUT CODE</span>
      <input id="csQ" value="${CS.q}" placeholder="code, short code or barcode" autocomplete="off"></label>
-    <div class="f-item"><span>ITEM${sel?' <i class="hint-n">Ctrl+N to change it</i>':''}</span>
+    <div class="f-item"><span>ITEM</span>
      <div class="till-item ${sel?'has':''} ${CS.name?'renamed':''}">${sel
        // the name is typed over when the goods need saying differently on the bill — a colour code
        // mixed into a paint base, a size. The stock and the codes are on the match list above.
@@ -8443,8 +8443,9 @@ function csStart(pid){
   else { CS.price=priceFor(p,1); CS.auto=true; CS.last=was||null }
   CS.warranty=p.warrantyMonths?(p.warrantyMonths>=36?'3 YEARS':p.warrantyMonths>=24?'2 YEARS':p.warrantyMonths>=12?'1 YEAR':p.warrantyMonths>=6?'6 MONTHS':'3 MONTHS'):'0';
   render();
-
-  const f=$('#csQty'); if(f){f.focus();f.select()}
+  // the name is the next box: Enter leaves it as it is, or type onto the end first (a colour code on a paint base)
+  const f=$('#csName')||$('#csQty');
+  if(f){ f.focus(); if(f.id==='csName'){ const n=f.value.length; try{ f.setSelectionRange(n,n) }catch(e){} } else if(f.select) f.select() }
 }
 /* CLEAR (F3 / Esc): a bill with anything on it is only thrown away after a yes */
 function csClearAsk(){
@@ -9113,7 +9114,8 @@ function bindClassic(){
      The order is the order you read it in. Left and right step between the
      boxes, Enter moves to the next box and only puts the line on the bill from
      the discount box, down drops onto the bill, Esc goes back to the code box. */
-  const FIELDS=[['csQ','q'],['csWarr','warranty'],['csQty','qty'],['csPrice','price'],['csDisc','disc']];
+  // the boxes in the order they are worked through: code, then the name as it will read, then the rest
+  const FIELDS=[['csQ','q'],['csName','name'],['csWarr','warranty'],['csQty','qty'],['csPrice','price'],['csDisc','disc']];
   const focusField=(i)=>{
     const wrap=Math.max(0,Math.min(FIELDS.length-1,i));
     const el=$('#'+FIELDS[wrap][0]); if(!el) return;
@@ -9166,8 +9168,8 @@ function bindClassic(){
   bind('csQty','qty'); bind('csPrice','price'); bind('csDisc','disc');
   paint();
 
-  /* the ITEM box: the name can be typed over before the line goes on the bill — Ctrl+N from any box
-     gets to it, Enter carries on to the quantity, Esc puts the product's own name back */
+  /* the ITEM box is a step of its own: Enter leaves the name as it is and carries on to the quantity,
+     or type onto it first — a colour code mixed into a paint base. Esc puts the product's name back. */
   const nm=$('#csName');
   if(nm){
     const pSel=P(CS.pid);
@@ -9180,10 +9182,6 @@ function bindClassic(){
       if(e.key==='ArrowDown'){ e.preventDefault(); goList(); return }
     };
   }
-  // Ctrl+N while keying an item goes to the name box
-  [q,$('#csQty'),$('#csPrice'),$('#csDisc'),$('#csWarr')].forEach(el=>{ if(!el) return;
-    el.addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'&&CS.pid){
-      e.preventDefault(); e.stopPropagation(); const f=$('#csName'); if(f){ f.focus(); f.select() } } },true) });
 
   const wr=$('#csWarr');
   if(wr){ wr.onchange=e=>{CS.warranty=e.target.value};

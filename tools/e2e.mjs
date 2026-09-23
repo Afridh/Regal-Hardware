@@ -206,7 +206,9 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   w.S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: w.S.pos.lastBill };
   w.go('pos'); await sleep(30);
   w.csStart(1); await sleep(20);
-  ok('K: picking an item lands on Qty', active() === 'csQty');
+  // the name is a step of its own now: code → name → qty → price → discount
+  ok('K: picking an item lands on the name', active() === 'csName');
+  key(d.getElementById('csName'), 'Enter'); ok('K: Enter on the name goes to Qty', active() === 'csQty');
   key(d.getElementById('csQty'), 'ArrowRight'); ok('K: → from Qty goes to Price', active() === 'csPrice');
   key(d.getElementById('csPrice'), 'ArrowRight'); ok('K: → from Price goes to Discount', active() === 'csDisc');
   key(d.getElementById('csDisc'), 'ArrowLeft'); ok('K: ← from Discount goes back to Price', active() === 'csPrice');
@@ -240,8 +242,9 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   const qb = d.getElementById('csQ'); qb.value = 'cement'; qb.dispatchEvent(new w.Event('input')); await sleep(20);
   ok('K: typing shows matches', d.querySelectorAll('#csHits [data-act="csPick"]').length > 0);
   w.csStart(1); await sleep(20);
-  ok('K: match list gone once an item is picked', d.querySelectorAll('#csHits [data-act="csPick"]').length === 0 && active() === 'csQty');
+  ok('K: match list gone once an item is picked', d.querySelectorAll('#csHits [data-act="csPick"]').length === 0 && active() === 'csName');
   // Space on a bill line: qty and price become boxes in the row
+  key(d.getElementById('csName'), 'Enter');
   key(d.getElementById('csQty'), 'ArrowDown'); await sleep(20);
   w.S.pos.sel = 1; key(d.activeElement, ' '); await sleep(20);
   ok('K: Space opens the line in place', active() === 'lnQty' && w.eval('CS').editLine === 1 && !d.querySelector('.modal'));
