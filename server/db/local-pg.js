@@ -1,13 +1,18 @@
 // Development only: runs a self-contained PostgreSQL (embedded-postgres) on port 5433
 // with its data directory in server/.pgdata.  Use a real PostgreSQL server in production.
 //   npm run db:local
+//
+// LOCAL_PG_DIR puts the data directory somewhere else, for a machine that will not have it
+// where the checkout is:  LOCAL_PG_DIR=C:/regal-pgdata npm run db:local
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import EmbeddedPostgres from 'embedded-postgres';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.resolve(here, '../.pgdata');
+const dataDir = process.env.LOCAL_PG_DIR
+  ? path.resolve(process.env.LOCAL_PG_DIR)
+  : path.resolve(here, '../.pgdata');
 const port = Number(process.env.LOCAL_PG_PORT) || 5433;
 const user = 'sepos', password = 'sepos', dbName = 'sepos';
 
