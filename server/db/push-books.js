@@ -12,7 +12,7 @@ const opt = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : nu
 const to = opt('--to'), force = args.includes('--force'), check = args.includes('--check');
 const HISTORY = opt('--history') !== null ? +opt('--history') : 3;      // saved versions to carry up — each is the whole books, so keep it small on a slow line
 if (!to) { console.error('usage: node db/push-books.js --to "<hosted DATABASE_URL>" [--force] [--check]'); process.exit(1); }
-const hosted = u => /sslmode=require|\.neon\.tech|\.supabase\.co|\.vercel-storage\.com|\.render\.com/.test(u);
+const hosted = u => /sslmode=require|\.neon\.tech|\.supabase\.(co|com)|pooler\.supabase\.com|\.vercel-storage\.com|\.render\.com/.test(u);
 const src = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: hosted(process.env.DATABASE_URL || '') ? { rejectUnauthorized: false } : undefined, max: 2 });
 const dst = new pg.Pool({ connectionString: to, ssl: hosted(to) ? { rejectUnauthorized: false } : undefined, max: 2 });
 
