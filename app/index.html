@@ -268,22 +268,8 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .pos .items{grid-column:1/2;grid-row:3;overflow:auto;padding:0}
 .pos .items table{border-collapse:separate;border-spacing:0}
 .pos .side{grid-column:2/3;grid-row:2/4;display:flex;flex-direction:column;gap:10px}
-/* the bills waiting to come back, along the top rather than behind a button */
-.heldstrip{flex:1;min-width:220px;display:flex;align-items:center;gap:8px;overflow-x:auto;
-  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px}
-.heldstrip .hs-l{font-family:Archivo,sans-serif;font-weight:800;font-size:10.5px;letter-spacing:.09em;
-  text-transform:uppercase;color:var(--steel);display:flex;align-items:center;gap:6px;white-space:nowrap}
-.heldstrip .hs-l b{background:var(--chip-yellow);color:#101E22;border-radius:99px;padding:1px 7px;font-size:11px}
-.heldstrip .hs-b{border:1px solid var(--line);border-left:3px solid var(--chip-yellow);border-radius:var(--r);
-  background:#fff;font:inherit;text-align:left;padding:5px 9px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
-.heldstrip .hs-b:hover{background:var(--tint-yellow);border-color:var(--chip-yellow)}
-.heldstrip .hs-b b{display:block;font-size:12.5px}
-.heldstrip .hs-b span{display:block;font-size:11px;color:var(--steel)}
-.heldstrip .hs-more{border:1px dashed var(--line);border-radius:var(--r);background:none;font:inherit;
-  font-size:12px;color:var(--steel);padding:6px 10px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
-.heldstrip .hs-more:hover{border-color:var(--chip-yellow);color:var(--ink)}
-.heldstrip .hs-more i{font-style:normal;opacity:.7}
-.till-heldstrip{margin:0 0 10px}
+/* the keyboard till's top strip carries the same three buttons as the other one */
+.pos .postop .till-held,.pos .postop .till-hold,.pos .postop .till-clear{flex:0 0 auto;min-height:52px}
 .pos .minirow.four{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .pos .minirow.four .btn{width:100%;justify-content:center}
 .pos .keys{grid-column:1/-1;background:var(--ink);color:#C9D2CF;padding:9px 13px;border-radius:var(--r);
@@ -7407,8 +7393,7 @@ function pos(){
   const L=S.pos.lines, c=S.pos.customer?C(S.pos.customer):C(1);
   const sub=L.reduce((a,l)=>a+l.qty*l.price-l.disc,0), total=sub-S.pos.billDisc;
   const e=S.pos.entry;
-  const heldAll=S.heldBills||[], heldShow=heldAll.slice(-5).reverse();
-  const heldNet=(b)=>Math.max(0,(b.lines||[]).reduce((a,l)=>a+(l.qty*l.price-(l.disc||0)),0)-(b.billDisc||0));
+  const heldAll=S.heldBills||[];
   return `<div class="pos">
    <div class="postop">
     <button class="custpick" data-act="pickCust">
@@ -7417,13 +7402,9 @@ function pos(){
      <div class="cp-s">${c.id===1?'Walk-in · retail prices · tap to choose'
        :`${c.phone} · ${c.level} prices · owes ${fmt(partyBal('C',c.id))} of ${fmt(c.limit)}${(c.points||0)>0?` · ${fq(c.points)} pts`:''}`}</div>
     </button>
-    ${heldAll.length?`<div class="heldstrip">
-      <div class="hs-l">On hold<b>${heldAll.length}</b></div>
-      ${heldShow.map(b=>`<button class="hs-b" data-act="heldOne" data-i="${heldAll.indexOf(b)}" title="Bring this bill back">
-        <b>${(b.ref||'no name').slice(0,22)}</b>
-        <span>${(b.lines||[]).length} line${(b.lines||[]).length===1?'':'s'} · ${fmt(heldNet(b))}</span></button>`).join('')}
-      ${heldAll.length>heldShow.length?`<button class="hs-more" data-act="showHeld">+${heldAll.length-heldShow.length} more</button>`:'<button class="hs-more" data-act="showHeld">All <i>F4</i></button>'}
-     </div>`:''}
+    <button class="till-held ${heldAll.length?'has-held':''}" data-act="showHeld" title="The bills on hold — see what is on each and bring one back (F4)">HELD<i>F4</i>${heldAll.length?`<b>${heldAll.length}</b>`:''}</button>
+    <button class="till-hold" data-act="hold" ${L.length?'':'disabled'} title="Put this bill aside, or make it a quotation (Ctrl+H)">HOLD<i>Ctrl+H</i></button>
+    <button class="till-clear" data-act="csClear" ${L.length||S.pos.customer?'':'disabled'} title="Throw this bill away (Esc)">CLEAR<i>Esc</i></button>
    </div>
    <div class="card search">${e
      ? `<div class="entry">
@@ -8326,6 +8307,7 @@ function posClassic(){
     <button class="burger cs-burger" data-act="drawer" title="Menu">☰</button>
     <button class="till-hold" data-act="hold" ${L.length?'':'disabled'} title="Put this bill aside, or make it a quotation (F7, Ctrl+H)">HOLD<i>F7</i></button>
     <button class="till-clear" data-act="csClear" ${L.length||CS.pid||S.pos.customer?'':'disabled'} title="Throw this bill away (Esc)">CLEAR<i>Esc</i></button>
+    <button class="till-held ${S.heldBills&&S.heldBills.length?'has-held':''}" data-act="showHeld" title="The bills on hold — see what is on each and bring one back (F5, Ctrl+R)">HELD<i>F5</i>${(S.heldBills&&S.heldBills.length)?`<b>${S.heldBills.length}</b>`:''}</button>
     <div class="till-who ${c.id===1?'':'named'}" data-act="pickCust" role="button" title="Change customer (F4)">
      <b>${c.id===1?'WALK-IN CUSTOMER':c.name.toUpperCase()}</b>
      <em>${c.id===1?'no account · tap or F4 to choose':`${c.phone||''} · owes ${fmt(owed)} of ${fmt(c.limit)}${owed>c.limit?' · over limit':''}`}</em>
@@ -8340,17 +8322,6 @@ function posClassic(){
      ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Switch between retail and wholesale prices for this bill — Ctrl+Shift+W, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><button class="till-paper" data-act="csPaper" title="Which bill prints after payment — small 80mm receipt or the large A5 bill"><i class="${csPaper()==='r80'?'on':''}">SMALL BILL</i><i class="${csPaper()==='a5'?'on':''}">LARGE BILL</i></button>`}</div>
    </div>
 
-   ${(()=>{ const h=S.heldBills||[]; if(!h.length) return '';
-     const shown=h.slice(-6).reverse();
-     const net=b=>Math.max(0,(b.lines||[]).reduce((a,l)=>a+(l.qty*l.price-(l.disc||0)),0)-(b.billDisc||0));
-     return `<div class="heldstrip till-heldstrip">
-      <div class="hs-l">On hold<b>${h.length}</b></div>
-      ${shown.map(b=>`<button class="hs-b" data-act="heldOne" data-i="${h.indexOf(b)}" title="Bring this bill back">
-        <b>${(b.ref||'no name').slice(0,22)}</b>
-        <span>${(b.lines||[]).length} line${(b.lines||[]).length===1?'':'s'} · ${fmt(net(b))}</span></button>`).join('')}
-      ${h.length>shown.length?`<button class="hs-more" data-act="showHeld">+${h.length-shown.length} more</button>`
-        :'<button class="hs-more" data-act="showHeld">All <i>F5</i></button>'}
-     </div>`})()}
 
    <div class="till-entry ${sel?'live':''}">
     <label class="f-code"><span>SCAN / INPUT CODE</span>
@@ -15147,7 +15118,6 @@ document.addEventListener('click',e=>{
       depositSlip(picked,S.banks[0].id,D(today))},
     credit:()=>creditSale(),
     doc:()=>{ if(a.dataset.k==='QUOTE'){ if(!S.pos.lines.length) return toast('Nothing on the screen to quote for'); return holdAsk('quote') } saveDoc(a.dataset.k) },
-    heldOne:()=>recallHeldBill(+a.dataset.i),
     docPrint:()=>docPrint(a.dataset.no), docBill:()=>docToBill(a.dataset.no),
     docKind:()=>{docKind=a.dataset.k;render()},
     docDrop:()=>{const dd=S.docs.find(x=>x.no===a.dataset.no); dd.status='closed'; render(); toast(`${dd.no} closed`)},
