@@ -283,6 +283,7 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
   font-size:12px;color:var(--steel);padding:6px 10px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
 .heldstrip .hs-more:hover{border-color:var(--chip-yellow);color:var(--ink)}
 .heldstrip .hs-more i{font-style:normal;opacity:.7}
+.till-heldstrip{margin:0 0 10px}
 .pos .minirow.four{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .pos .minirow.four .btn{width:100%;justify-content:center}
 .pos .keys{grid-column:1/-1;background:var(--ink);color:#C9D2CF;padding:9px 13px;border-radius:var(--r);
@@ -8303,7 +8304,7 @@ function posClassic(){
   const nextNo=`${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-${String(((S.seqBy||{})[S.terminal+'-'+(u.uid||'??')]||0)+1).padStart(5,'0')}`;
   const now=new Date(), sel=P(CS.pid), drag=CFG.pos.dragLines!==false;
   const owed=c.id===1?0:partyBal('C',c.id);
-  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['P on the bill','Price'],['N on the bill','Rename'],['F1','Back to item'],['F3','Salesperson'],['F4','Customer'],
+  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['P on the bill','Price'],['N on the bill','Rename'],['F1','Back to item'],['F4','Customer'],
               ['F5 / Ctrl+R','Held bills'],['F7 / Ctrl+H','Hold bill'],['F8','Bill disc.'],['F10','Pay'],['F6','On account'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['S in price','Past prices'],['W / R','Wholesale · retail'],['Clear','Reset bill']];
 
   const sync=(document.getElementById('savedAt')||{}).textContent||'';
@@ -8311,7 +8312,6 @@ function posClassic(){
 
    <div class="till-head">
     <button class="burger cs-burger" data-act="drawer" title="Menu">☰</button>
-    <button class="till-held ${S.heldBills&&S.heldBills.length?'has-held':''}" data-act="showHeld" title="Preview held bills (F5, Ctrl+R)">HELD<i>F5</i>${(S.heldBills&&S.heldBills.length)?`<b>${S.heldBills.length}</b>`:''}</button>
     <div class="till-who ${c.id===1?'':'named'}" data-act="pickCust" role="button" title="Change customer (F4)">
      <b>${c.id===1?'WALK-IN CUSTOMER':c.name.toUpperCase()}</b>
      <em>${c.id===1?'no account · tap or F4 to choose':`${c.phone||''} · owes ${fmt(owed)} of ${fmt(c.limit)}${owed>c.limit?' · over limit':''}`}</em>
@@ -8324,6 +8324,18 @@ function posClassic(){
      <b>${S.pos.editing||nextNo}</b>
      ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Switch between retail and wholesale prices for this bill — Ctrl+Shift+W, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><button class="till-paper" data-act="csPaper" title="Which bill prints after payment — small 80mm receipt or the large A5 bill"><i class="${csPaper()==='r80'?'on':''}">SMALL BILL</i><i class="${csPaper()==='a5'?'on':''}">LARGE BILL</i></button>`}</div>
    </div>
+
+   ${(()=>{ const h=S.heldBills||[]; if(!h.length) return '';
+     const shown=h.slice(-6).reverse();
+     const net=b=>Math.max(0,(b.lines||[]).reduce((a,l)=>a+(l.qty*l.price-(l.disc||0)),0)-(b.billDisc||0));
+     return `<div class="heldstrip till-heldstrip">
+      <div class="hs-l">On hold<b>${h.length}</b></div>
+      ${shown.map(b=>`<button class="hs-b" data-act="heldOne" data-i="${h.indexOf(b)}" title="Bring this bill back">
+        <b>${(b.ref||'no name').slice(0,22)}</b>
+        <span>${(b.lines||[]).length} line${(b.lines||[]).length===1?'':'s'} · ${fmt(net(b))}</span></button>`).join('')}
+      ${h.length>shown.length?`<button class="hs-more" data-act="showHeld">+${h.length-shown.length} more</button>`
+        :'<button class="hs-more" data-act="showHeld">All <i>F5</i></button>'}
+     </div>`})()}
 
    <div class="till-entry ${sel?'live':''}">
     <label class="f-code"><span>SCAN / INPUT CODE</span>
@@ -8416,14 +8428,10 @@ function posClassic(){
       <button class="sum-credit" data-act="credit" ${L.length?'':'disabled'}>
        <b>ON ACCOUNT</b><span>${c.id===1?'choose a customer first':c.name.split(' ')[0]} · F6</span></button>
       <div class="sum-more">
-       <button data-act="pickSalesman">Salesperson <i>F3</i>${S.pos.salesman?` (${S.pos.salesman})`:''}</button>
-       <button data-act="pickCust">Customer <i>F4</i></button>
-       <button data-act="proofA5" ${L.length?'':'disabled'}>Check bill</button>
+       <button data-act="hold" ${L.length?'':'disabled'}>Put aside <i>F7 / Ctrl+H</i></button>
        <button data-act="doc" data-k="QUOTE" ${L.length?'':'disabled'}>Quotation <i>Ctrl+Q</i></button>
        <button data-act="doc" data-k="DN" ${L.length?'':'disabled'}>Delivery note</button>
-       <button data-act="hold" ${L.length?'':'disabled'}>Hold <i>F7 / Ctrl+H</i></button>
-       <button data-act="showHeld">Held bills <i>F5 / Ctrl+R</i>${(S.heldBills&&S.heldBills.length)?` (${S.heldBills.length})`:''}</button>
-       <button data-act="csClear" ${L.length?'':'disabled'}>Clear <i>Esc</i></button>
+       <button data-act="proofA5" ${L.length?'':'disabled'}>Check bill</button>
       </div>
      </div>
     </div>
