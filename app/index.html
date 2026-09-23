@@ -2143,9 +2143,19 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
  font-size:15px;padding:0 20px;cursor:pointer;letter-spacing:.03em;flex:0 0 auto;
  box-shadow:inset 0 -4px 0 rgba(0,0,0,.2)}
 .till-clear{background:var(--chip-blue)} .till-del{background:var(--chip-rust)}
+.till-hold{border:0;border-radius:var(--r);color:#101E22;font-family:Archivo,sans-serif;font-weight:800;
+  background:var(--chip-yellow);padding:4px 12px;cursor:pointer;display:inline-flex;flex-direction:column;
+  align-items:center;justify-content:center}
+.till-hold i{display:block;font-style:normal;font-weight:400;font-size:10.5px;opacity:.75}
+.till-hold:disabled,.till-clear:disabled{opacity:.45;cursor:default}
 .till-clear i,.till-del i{display:block;font-style:normal;font-weight:400;font-size:10.5px;opacity:.9}
 .till-del:disabled{opacity:.5;box-shadow:none}
-.till-who{flex:1 1 220px;background:#fff;border-radius:var(--r);padding:6px 12px;overflow:hidden;cursor:pointer}
+.till-who{position:relative;flex:1 1 220px;background:#fff;border-radius:var(--r);padding:6px 150px 6px 12px;overflow:hidden;cursor:pointer}
+.till-whobtn{position:absolute;right:10px;top:50%;transform:translateY(-50%);border:1px solid var(--line);
+  border-radius:var(--r);background:var(--panel);font:inherit;font-size:12px;font-weight:600;
+  padding:7px 11px;cursor:pointer;white-space:nowrap;line-height:1.1}
+.till-whobtn:hover{background:var(--tint-yellow);border-color:var(--chip-yellow)}
+.till-whobtn i{font-style:normal;opacity:.6;margin-left:4px}
 .till-who>b{display:block;font-family:Archivo,sans-serif;font-size:19px;line-height:1.15;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .till-who.named>b{color:#8a4b06}
 .till-who span{display:block;font-size:11px;color:var(--steel);margin-top:2px}
@@ -2392,7 +2402,9 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
   .till-who em { font-size: 11px; color: var(--steel); }
   .till-level, .till-paper { min-height: 32px; font-size: 11px; }
 
-  .till-clear, .till-held, .till-salesman {
+  .till-whobtn{position:static;transform:none;display:block;margin-top:6px}
+  .till-who{padding:6px 12px}
+  .till-clear, .till-hold, .till-held, .till-salesman {
     order: 2; flex: 1 1 30%; min-height: 44px; padding: 0 8px;
     font-size: 13px; display: flex; flex-direction: column;
     align-items: center; justify-content: center;
@@ -8312,10 +8324,13 @@ function posClassic(){
 
    <div class="till-head">
     <button class="burger cs-burger" data-act="drawer" title="Menu">☰</button>
+    <button class="till-hold" data-act="hold" ${L.length?'':'disabled'} title="Put this bill aside, or make it a quotation (F7, Ctrl+H)">HOLD<i>F7</i></button>
+    <button class="till-clear" data-act="csClear" ${L.length||CS.pid||S.pos.customer?'':'disabled'} title="Throw this bill away (Esc)">CLEAR<i>Esc</i></button>
     <div class="till-who ${c.id===1?'':'named'}" data-act="pickCust" role="button" title="Change customer (F4)">
      <b>${c.id===1?'WALK-IN CUSTOMER':c.name.toUpperCase()}</b>
      <em>${c.id===1?'no account · tap or F4 to choose':`${c.phone||''} · owes ${fmt(owed)} of ${fmt(c.limit)}${owed>c.limit?' · over limit':''}`}</em>
      <span>cashier <b>${S.user.name}</b>${S.pos.salesman?` · sales: <b>${S.pos.salesman}</b>`:''}</span>
+     <button class="till-whobtn" data-act="pickCust" title="Choose the customer (F4)">${c.id===1?'Choose customer':'Change customer'} <i>F4</i></button>
     </div>
     <div class="till-date"><b>${now.toLocaleDateString('en-GB',{weekday:'long'})}</b>
      <span>${now.toLocaleDateString('en-GB',{month:'long'})} ${now.getFullYear()}</span>
