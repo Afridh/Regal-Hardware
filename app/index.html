@@ -1295,6 +1295,7 @@ tr.rowlink{transition:background .1s ease}
 @media (max-width:900px){.sg-cells{flex-wrap:wrap;gap:4px}.sg-c{min-width:70px;padding:3px 6px}.sg-c b{font-size:13px}}
 
 .pnum{font-family:Archivo,sans-serif;font-weight:700;font-size:12px;color:var(--chip-blue);letter-spacing:.04em}
+.psup{font-size:12px;color:var(--steel);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sg-n .pnum{font-size:13px;margin-right:2px}
 
 /* the quick till */
@@ -8162,7 +8163,8 @@ function posClassic(){
      <input id="csQ" value="${CS.q}" placeholder="code, short code or barcode" autocomplete="off"></label>
     <div class="f-item"><span>ITEM</span>
      <div class="till-item ${sel?'has':''}">${sel
-       ? `<b>${sel.name.toUpperCase()}</b><em>${[sel.short?sel.short.toUpperCase():'',CFG.stock.track===false?'':fq(sel.stock)+' '+sel.unit+' on the floor'].filter(Boolean).join(' · ')}${CFG.cost.atTill&&can('cost')?' · '+costCode(sel.cost):''}${sel.serialised?' · serial asked on Enter':''}${CS.last?` · <b class="lastp">last time ${money2(CS.last.price)} on ${CS.last.no}</b>`:''}</em>`
+       // the name alone — the stock, the short code and the cost code are on the match list above
+       ? `<b>${sel.name.toUpperCase()}</b>${(CS.last||sel.serialised)?`<em>${[CS.last?`<b class="lastp">last time ${money2(CS.last.price)} on ${CS.last.no}</b>`:'',sel.serialised?'serial asked on Enter':''].filter(Boolean).join(' · ')}</em>`:''}`
        : '<i>scan or key a code — F1</i>'}</div></div>
     <label class="f-warr"><span>WARRANTY</span>
      <select id="csWarr">${['0','3 MONTHS','6 MONTHS','1 YEAR','2 YEARS','3 YEARS'].map(x=>`<option ${CS.warranty===x?'selected':''}>${x}</option>`).join('')}</select></label>
@@ -9004,7 +9006,7 @@ function bindClassic(){
       const who=S.pos.customer;
       box.innerHTML=hits.length?`<table><thead><tr><th>CODE</th><th>DESCRIPTION</th>${showCost?'<th>COST</th>':''}
          ${CFG.stock.track===false?'':'<th class="n">STOCK</th>'}<th class="n">MRP</th><th class="n">PRICE</th>${who?`<th class="n">${C(who).name.split(' ')[0].toUpperCase()} PAID</th>`:''}<th>SUPPLIER</th></tr></thead><tbody>
-        ${hits.slice(0,12).map(p=>{const sp=lastSupplier(p.id);
+        ${hits.slice(0,12).map(p=>{const sp=SU(p.supplierId)||lastSupplier(p.id);   // who it is bought from, else who last delivered it
           return `<tr data-act="csPick" data-id="${p.id}">
           <td class="c">${p.short?`<b style="color:var(--chip-blue)">${p.short.toUpperCase()}</b> · `:''}${p.num||p.code}</td>
           <td class="d">${p.name.toUpperCase()}</td>
@@ -9014,7 +9016,7 @@ function bindClassic(){
           <td class="p">${money2(priceFor(p,1))}</td>
           ${who?(()=>{const was=lastPriceFor(p.id,who);
             return `<td class="n last">${was?`${money2(was.price)}<em>${was.date}</em>`:'—'}</td>`})():''}
-          <td class="s">${sp?sp.name.split(/[–(]/)[0].trim().toUpperCase().slice(0,14):'—'}</td></tr>`}).join('')}
+          <td class="s">${sp?sp.name.split(/[–(]/)[0].trim().toUpperCase().slice(0,16):'—'}</td></tr>`}).join('')}
         </tbody></table>`:'';
       box.querySelectorAll('[data-act="csPick"]').forEach(b2=>{
         const pick=(ev)=>{ ev.preventDefault(); csStart(+b2.dataset.id); };
@@ -12993,14 +12995,15 @@ function inventory(){
       <input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search item name, code, short code, barcode or category…" style="max-width:380px">
       ${!isSalesman?`<button class="btn tape" data-act="newProd">Add a product</button>`:''}
       <span class="muted" style="margin-left:auto">${list.length} of ${S.products.length} products</span></div>
-     <table><tr><th>No.</th><th>Code</th><th>Short</th><th>Item</th><th>Unit</th><th class="n">MRP</th>${!isSalesman?`<th class="n">Cost${CFG.cost.inProducts&&can('cost')?' code':''}</th>`:''}<th class="n">Discounted</th><th class="n">Wholesale</th>${!isSalesman?'<th class="n">Margin</th>':''}<th class="n">In stock</th>${!isSalesman?'<th></th>':''}</tr>
+     <table><tr><th>No.</th><th>Code</th><th>Short</th><th>Item</th><th>Supplier</th><th>Unit</th><th class="n">MRP</th>${!isSalesman?`<th class="n">Cost${CFG.cost.inProducts&&can('cost')?' code':''}</th>`:''}<th class="n">Discounted</th><th class="n">Wholesale</th>${!isSalesman?'<th class="n">Margin</th>':''}<th class="n">In stock</th>${!isSalesman?'<th></th>':''}</tr>
      ${shown.map(p=>`<tr class="rowlink" ${!isSalesman?`data-act="prodHist" data-id="${p.id}"`:''}><td><span class="pnum">${p.num||''}</span></td><td>${p.code}<div class="muted">${p.barcode}</div></td>
       <td>${p.short?`<span class="shortcode">${p.short}</span>`:'<span class="muted">—</span>'}</td>
-      <td><b>${p.name}</b><div class="muted">${p.cat}</div></td><td>${p.unit}</td>
+      <td><b>${p.name}</b><div class="muted">${p.cat}</div></td>
+      <td class="psup">${(()=>{const sp=SU(p.supplierId);return sp?sp.name.split(/[–(]/)[0].trim():'<span class="muted">—</span>'})()}</td><td>${p.unit}</td>
       <td class="n">${money2(p.mrp)}</td>${!isSalesman?`<td class="n">${CFG.cost.inProducts&&can('cost')?`<span class="cc">${costCode(p.cost)}</span>`:money2(p.cost)}</td>`:''}<td class="n"><b>${money2(p.retail)}</b></td><td class="n">${money2(p.wholesale)}</td>
       ${!isSalesman?`<td class="n">${((p.retail-p.cost)/p.retail*100).toFixed(1)}%</td>`:''}
       <td class="n">${p.stock<=p.min?`<span class="tag bad">${fq(p.stock)}</span>`:fq(p.stock)}</td>
-      ${!isSalesman?`<td><button class="btn ghost sm" data-act="editProd" data-id="${p.id}">Edit</button></td>`:''}</tr>`).join('')||'<tr><td colspan="12" class="muted">Nothing matches that.</td></tr>'}</table>
+      ${!isSalesman?`<td><button class="btn ghost sm" data-act="editProd" data-id="${p.id}">Edit</button></td>`:''}</tr>`).join('')||'<tr><td colspan="13" class="muted">Nothing matches that.</td></tr>'}</table>
      ${moreRows(shown.length,list.length,'invMore')}
      ${!isSalesman?'<div class="muted" style="margin-top:8px">Click an item to see every bill it has been sold on.</div>':''} `}
   if(invTab==='stock'){ const q=prodQ.toLowerCase().trim(); const list=S.products.filter(p=>!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||(p.cat||'').toLowerCase().includes(q)); const shown=list.slice(0,invLimit);
