@@ -18,9 +18,17 @@ const url = process.env.DATABASE_URL
   || '';
 // Hosted PostgreSQL (Neon, Supabase, Vercel Postgres…) needs TLS; the local one does not.
 const hosted = /sslmode=require|\.neon\.tech|\.supabase\.(co|com)|pooler\.supabase\.com|\.vercel-storage\.com|\.render\.com/.test(url) || process.env.PGSSL === '1';
+// `sslmode=require` in the address now means "verify the chain as well", and a pooler in front of a
+// hosted database answers with its own certificate — so the mode is taken out of the address and the
+// connection is encrypted from the setting below instead. The traffic is still TLS either way.
+const conn = (() => {
+  if (!hosted || !url) return url;
+  try { const u = new URL(url); u.searchParams.delete('sslmode'); u.searchParams.delete('uselibpqcompat'); return u.toString(); }
+  catch { return url.replace(/([?&])sslmode=[^&]*&?/g, '$1').replace(/[?&]$/, ''); }
+})();
 
 export const pool = new Pool({
-  connectionString: url,
+  connectionString: conn,
   max: process.env.VERCEL ? 3 : 10,      // a serverless instance should hold few connections
   ssl: hosted ? { rejectUnauthorized: false } : undefined,
 });
