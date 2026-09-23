@@ -539,9 +539,16 @@ A.w.persist(true); await sleep(1200);
 
 const B = await openTill('B');
 const lockB = await until(() => B.d.getElementById('lockScreen'));
-const staffB = () => [...lockB.querySelectorAll('[data-user]')].map(b => b.dataset.user);
-ok('B: fresh browser gets the lock screen with the real staff list', !!lockB && staffB().includes('Afridh') && staffB().includes('Ravi'), staffB().join(', '));
-lockB.querySelector('[data-user="Ravi"]').click(); await until(() => B.d.getElementById('lockPw'));
+const staffB = () => [...lockB.querySelectorAll('[data-user]')].map(b => b.dataset.user);   // older lock screen listed them as buttons
+ok('B: fresh browser gets the lock screen and knows the staff', !!lockB && (!!B.d.getElementById('lockUser') || (staffB().includes('Afridh') && staffB().includes('Ravi'))),
+  B.d.getElementById('lockUser') ? 'name and password asked for' : staffB().join(', '));
+if (B.d.getElementById('lockUser')) {
+  B.d.getElementById('lockUser').value = 'Ravi';
+  B.d.getElementById('lockUser').dispatchEvent(new B.w.Event('input'));
+} else {
+  lockB.querySelector('[data-user="Ravi"]').click();
+}
+await until(() => B.d.getElementById('lockPw'));
 B.d.getElementById('lockPw').value = 'wrong'; B.d.getElementById('lockGo').click(); await sleep(400);
 ok('B: wrong password refused', !!B.d.getElementById('lockScreen') && /not right/.test(B.d.getElementById('lockMsg').textContent));
 B.d.getElementById('lockPw').value = 'ravi123'; B.d.getElementById('lockGo').click();
