@@ -6777,7 +6777,11 @@ function renderNow(){
   if(S.view==='trail') trailAfter();
   // who signs in for the customer on the screen, read once and kept until another is opened
   if(S.view==='customers'&&custSel&&document.getElementById('cuLogins')&&custLogins.cid!==custSel&&!custLogins.busy){
-    custLogins.busy=true; loadCustLogins(custSel,true).then(()=>{ custLogins.busy=false; if(S.view==='customers') renderNow() }); }
+    const asked=custSel; custLogins.busy=true;
+    loadCustLogins(asked,true).then(got=>{ custLogins.busy=false;
+      // only draw again when something came back, and only if that customer is still the one on the screen
+      if(got&&S.view==='customers'&&custSel===asked) renderNow(); });
+  }
   document.querySelectorAll('[data-custfilter]').forEach(b=>b.onclick=()=>{custFilter=b.dataset.custfilter;render()});
   document.querySelectorAll('[data-custsort]').forEach(b=>b.onclick=()=>{custSort=b.dataset.custsort;render()});
   document.querySelectorAll('[data-custtab]').forEach(b=>b.onclick=()=>{custTab=b.dataset.custtab;render()});
@@ -11843,16 +11847,19 @@ function portalBar(kind,p){
    with on their page. The shop sets a password; the person may set their own later, and the shop's
    one goes on working, so the counter can always get them in. The names and passwords are kept on
    the shop's server, never in the books. */
-let custLogins={cid:0,list:null,busy:false};
+/* Read once for the customer on the screen. Whether it works or not, the attempt is remembered —
+   a reader that forgets it has tried would be asked again by the next redraw, and again, for ever. */
+let custLogins={cid:0,list:null,busy:false,failed:''};
 async function loadCustLogins(cid,force){
-  if(!window.regalBridge||!regalBridge.token()) return null;
-  if(!force&&custLogins.cid===cid&&custLogins.list) return custLogins.list;
+  if(!force&&custLogins.cid===cid) return custLogins.list;
+  if(!window.regalBridge||!regalBridge.token()){ custLogins={cid,list:[],busy:false,failed:'not signed in to the shop server'}; return null }
   try{
     const r=await fetch('/api/my/admin/logins/'+cid,{headers:{'Authorization':'Bearer '+regalBridge.token()}});
     const j=await r.json().catch(()=>({}));
-    custLogins={cid,list:(j.logins||[]),busy:false};
+    if(!r.ok||j.ok===false){ custLogins={cid,list:[],busy:false,failed:j.error||('the server said '+r.status)}; return null }
+    custLogins={cid,list:(j.logins||[]),busy:false,failed:''};
     return custLogins.list;
-  }catch(e){ return null }
+  }catch(e){ custLogins={cid,list:[],busy:false,failed:e.message}; return null }
 }
 function custLoginsPanel(c){
   const mine=(custLogins.cid===c.id&&custLogins.list)?custLogins.list:null;
@@ -11861,7 +11868,8 @@ function custLoginsPanel(c){
      <div><b>Who signs in for ${c.name}</b>
       <div class="muted">A firm can have as many as it needs — the manager, the accountant, the storekeeper. Each gets a name and a password for ${('regalhw.lk/my/'+(c.code||'')).toLowerCase()}.</div></div>
      <button class="btn tape sm" data-act="cuLoginNew" data-id="${c.id}">Add someone</button></div>
-    ${mine===null?'<div class="muted">Reading…</div>'
+    ${custLogins.cid===c.id&&custLogins.failed?`<div class="muted">Could not read them — ${custLogins.failed}. <a href="#" data-act="cuLoginsAgain" data-id="${c.id}">Try again</a></div>`
+     :mine===null?'<div class="muted">Reading…</div>'
      :!mine.length?'<div class="muted">Nobody yet. Anyone with the mobile on this account can still sign in with a texted code.</div>'
      :`<table class="tbl"><tr><th>User name</th><th>Who</th><th>Mobile</th><th>Last in</th><th></th></tr>
        ${mine.map(l=>`<tr class="${l.active?'':'off'}">
@@ -15676,6 +15684,7 @@ document.addEventListener('click',e=>{
     purEdit:()=>editPurchaseModal(a.dataset.no),
     billClear:()=>{billQ='';billFrom='';billTo='';billType='all';billBy='all';billCust=0;billSel=null;billLimit=150;render()},
     cuLoginNew:()=>custLoginModal(+a.dataset.id),
+    cuLoginsAgain:()=>{ custLogins={cid:0,list:null,busy:false,failed:''}; render() },
     cuLoginPw:()=>custLoginPwModal(+a.dataset.id,+a.dataset.lid),
     cuLoginOff:()=>custLoginToggle(+a.dataset.id,+a.dataset.lid,a.dataset.on==='1'),
     billCust:()=>{ billCust=+a.dataset.id; billFrom=''; billTo=''; billLimit=150; billSel=null; render();
