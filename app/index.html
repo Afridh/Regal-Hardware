@@ -6151,23 +6151,25 @@ function applyKept(kept){
   // the tills no longer carry a salesperson button, so the question at the end of the
   // bill is the way it is set — switched on once for books saved before that was true
   if(CFG.done&&!CFG.done.askMoved){ CFG.done.askSalesman=true; CFG.done.askMoved=true }
-  for(const acc of DEFAULT_ACCOUNTS){
-    const an = acc.name.toLowerCase().trim();
-    if(S.deletedUsers.includes(an)) continue;
-    const existing=S.users.find(u=>String(u.name||'').toLowerCase().trim()===an);
-    if(!existing){
+  if(S.users.length === 0){
+    for(const acc of DEFAULT_ACCOUNTS){
+      const an = acc.name.toLowerCase().trim();
+      if(S.deletedUsers.includes(an)) continue;
       S.users.push({
-        name:acc.name, role:acc.role, uid:acc.uid, pin:'',
+        name:acc.name, role:acc.role, uid:acc.uid, salesId:acc.role==='Salesman'?acc.uid:undefined, pin:'',
         passHash:hashSync(acc.pass), perms:[...acc.perms], active:true,
         lastSeen:null, prefs:{...PREF_DEFAULTS}
       });
-    } else {
-      if(acc.name==='Afridh') existing.role='Super Admin';
-      if(acc.name==='Azhad'||acc.name==='Akmal') existing.role='Admin';
-      if(acc.name==='KP') existing.role='KP';
-      if(acc.name.startsWith('Sales')) existing.role='Salesman';
-      if(!existing.passHash) existing.passHash=hashSync(acc.pass);
-      if(!Array.isArray(existing.perms) || !existing.perms.length) existing.perms=[...acc.perms];
+    }
+  } else {
+    for(const u of S.users){
+      if(!u.passHash){
+        const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === String(u.name||'').toLowerCase().trim());
+        if(def) u.passHash = hashSync(def.pass);
+      }
+      if(u.role === 'Salesman' && !u.salesId && /^S\d+$/i.test(u.uid)){
+        u.salesId = u.uid.toUpperCase();
+      }
     }
   }
   syncUsersAndStaff();
@@ -15668,7 +15670,7 @@ function users(){
         const allTot = mySales.reduce((a, s) => a + s.total, 0);
         return `<tr class="${u.active?'':'off'}">
         <td><b>${u.name}</b>${isSelf?' <span class="tag ok">on now</span>':''}${isTargetSuper?' <span class="tag gold" style="margin-left:4px">Super Admin</span>':''}
-         <div class="muted">${u.active?'active':'switched off'} · bills ${billPlain()?`${userNo(u.name)}${''.padStart(billDigits(),'0').replace(/0$/,'…')}`:`${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-…`}</div>
+         <div class="muted">${u.active?'active':'switched off'}${u.role==='Salesman'?` · <span style="display:inline-block;padding:1px 6px;border-radius:4px;background:var(--tint-blue);color:var(--ink);font-weight:700">Sales ID: ${u.salesId||u.uid||'S-'}</span>`:''}</div>
          ${isSalesStaff ? `<div style="margin-top:4px"><span class="tag sm ${todayTot>0?'ok':'blue'}" title="Today's sales">Today: ${fmt(todayTot)}</span> <span class="muted" style="font-size:11px;margin-left:4px">All-time: ${fmt(allTot)} (${mySales.length})</span></div>` : ''}</td>
         <td><b>${u.role}</b></td>
         <td><span class="tag ok">password</span>${u.pin?' <span class="tag blue">PIN</span>':''}
@@ -15880,6 +15882,24 @@ function roleModal(roleName){
   };
 }
 
+function getOrAssignSalesId(targetUser, allUsers){
+  if(targetUser && targetUser.salesId) return targetUser.salesId;
+  if(targetUser && /^S\d+$/i.test(targetUser.uid)) return targetUser.uid.toUpperCase();
+  const list = allUsers || (typeof S !== 'undefined' ? S.users : []) || [];
+  const used = new Set();
+  list.forEach(x => {
+    if(x === targetUser) return;
+    const sid = x.salesId || (/^S\d+$/i.test(x.uid) ? x.uid : null);
+    if(sid){
+      const num = parseInt(String(sid).replace(/\D/g, ''), 10);
+      if(!isNaN(num)) used.add(num);
+    }
+  });
+  let nextNum = 1;
+  while(used.has(nextNum)) nextNum++;
+  return 'S' + nextNum;
+}
+
 function userModal(name){
   const isSuperAdmin=S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||['super admin','superadmin','owner'].includes(String(S.user.role||'').toLowerCase()));
   if(name==='Afridh'&&!isSuperAdmin){
@@ -15892,14 +15912,20 @@ function userModal(name){
     : allRoles.filter(r=>r.name!=='Super Admin'&&r.name!=='Owner').map(r=>r.name);
 
   const perms=new Set(u?u.perms:(ROLE_DEFAULTS.Cashier||[]));
+  const initRole = u ? u.role : (availableRoles.includes('Salesman') ? 'Salesman' : availableRoles[0]);
+  const isSalesman = initRole === 'Salesman';
+  const autoSalesId = isSalesman ? getOrAssignSalesId(u) : '';
+
   const m=modal(`<h2>${u?'Edit '+u.name:'Add someone'}</h2>
    <div class="grid3">
-    <div class="f"><label>Name as it prints on bills</label><input id="uName" value="${u?u.name:''}" ${u&&u.name==='Afridh'&&!isSuperAdmin?'readonly':''}></div>
-    <div class="f"><label>Number on bills</label><input id="uNo" type="number" min="1" max="99" value="${u?userNo(u.name):(Math.max(0,...S.users.map(x=>+x.no||0))+1)}">
-     <div class="muted">Their bills read this number and then a running number of their own${u?` — next ${userNo(u.name)}${String(((S.seqBy||{})['N'+userNo(u.name)]||0)+1).padStart(billDigits(),'0')}`:''}</div></div>
-    <div class="f"><label>Bill id (two letters, for the older lettered numbers)</label><input id="uUid" maxlength="2" value="${u?(u.uid||''):''}" placeholder="e.g. RS" style="text-transform:uppercase"></div>
-    <div class="f"><label>Role</label><select id="uRole">${availableRoles.map(r=>`<option ${(u&&u.role===r)||(!u&&r==='Salesman')?'selected':''}>${r}</option>`).join('')}</select>
+    <div class="f"><label>Name</label><input id="uName" value="${u?u.name:''}" ${u&&u.name==='Afridh'&&!isSuperAdmin?'readonly':''}></div>
+    <div class="f"><label>Role</label><select id="uRole">${availableRoles.map(r=>`<option ${(u&&u.role===r)||(!u&&r===initRole)?'selected':''}>${r}</option>`).join('')}</select>
      <div class="muted">Changing the role ticks that role's usual boxes</div></div>
+    <div class="f" id="uSalesIdBox" style="${isSalesman?'':'display:none'}">
+     <label>Sales ID</label>
+     <input id="uSalesId" value="${autoSalesId}" readonly style="background:var(--tint-blue);font-weight:700;color:var(--ink);cursor:default">
+     <div class="muted">Automatically assigned Sales ID for salesperson performance & attribution</div>
+    </div>
     <div class="f"><label>${u?'New password (blank keeps the old one)':'Password'}</label><input id="uPass" type="password" autocomplete="new-password" placeholder="at least 6 characters"></div>
     <div class="f"><label>PIN as well (optional)</label><input id="uPin" inputmode="numeric" maxlength="6" value="${u&&u.pin?u.pin:''}" placeholder="4 to 6 digits"></div>
    </div>
@@ -15946,43 +15972,119 @@ function userModal(name){
     };
   }
   m.querySelector('#uRole').onchange=e=>{
-    const def=ROLE_DEFAULTS[e.target.value]||[];
+    const selectedRole = e.target.value;
+    const def=ROLE_DEFAULTS[selectedRole]||[];
     m.querySelectorAll('[data-perm]').forEach(cb=>cb.checked=def.includes(cb.dataset.perm));
+    const isSales = selectedRole === 'Salesman';
+    const sidBox = m.querySelector('#uSalesIdBox');
+    if(sidBox){
+      sidBox.style.display = isSales ? '' : 'none';
+      if(isSales){
+        m.querySelector('#uSalesId').value = getOrAssignSalesId(u);
+      }
+    }
   };
-  m.querySelector('#uOk').onclick=()=>{
+  m.querySelector('#uOk').onclick=async ()=>{
     const nm=(m.querySelector('#uName').value||'').trim();
     if(!nm)return toast('A name is needed');
     if(!u&&S.users.some(x=>x.name.toLowerCase()===nm.toLowerCase()))return toast(nm+' already has a login');
+    if(u&&u.name.toLowerCase()!==nm.toLowerCase()&&S.users.some(x=>x!==u&&x.name.toLowerCase()===nm.toLowerCase()))return toast(nm+' already has a login');
     const pin=(m.querySelector('#uPin').value||'').replace(/\D/g,'');
     if(pin&&pin.length<4)return toast('A PIN needs at least four digits');
     const pass=(m.querySelector('#uPass').value||'').trim();
-    const uid=(m.querySelector('#uUid').value||'').replace(/[^A-Za-z]/g,'').toUpperCase().slice(0,2)||nm.replace(/[^A-Za-z]/g,'').slice(0,2).toUpperCase();
-    if(uid.length<2)return toast('The bill id needs two letters');
-    if(S.users.some(x=>x!==u&&x.uid===uid))return toast(`${uid} is already ${S.users.find(x=>x!==u&&x.uid===uid).name}'s bill id`);
-    const no=Math.max(1,Math.min(99,+(m.querySelector('#uNo').value)||0));
-    const clash=S.users.find(x=>x!==u&&userNo(x.name)===no);
-    if(clash) return toast(`${no} is already ${clash.name}'s number on bills`);
     if(!u&&pass.length<6)return toast('A password needs at least six characters');
     if(u&&pass&&pass.length<6)return toast('A password needs at least six characters');
     const picked=[...m.querySelectorAll('[data-perm]')].filter(c=>c.checked).map(c=>c.dataset.perm);
     const active=u&&u.role==='Super Admin'?true:m.querySelector('#uActive').checked;
     const role=m.querySelector('#uRole').value;
-    if(u){
-      if(u.name===S.user.name&&!picked.includes('users')&&S.users.filter(x=>x.active&&x.perms.includes('users')).length<2)
-        return toast('Someone has to be able to manage users — leave that with yourself or give it to another person first');
-      Object.assign(u,{name:nm,role,pin,uid,no,perms:picked,active});
-      if(pass){ u.passHash=hashSync(pass); delete u.pass; hashPass(pass).then(h=>{u.passHash=h}) }
-      if(S.user.name===name){S.user={name:nm,role,perms:picked}}
+
+    if(u&&u.name===S.user.name&&!picked.includes('users')&&S.users.filter(x=>x.active&&x.perms.includes('users')).length<2)
+      return toast('Someone has to be able to manage users — leave that with yourself or give it to another person first');
+
+    let salesId = undefined;
+    let uid = u ? u.uid : undefined;
+    if(role === 'Salesman'){
+      salesId = getOrAssignSalesId(u);
+      uid = salesId;
     } else {
-      S.deletedUsers=(S.deletedUsers||[]).filter(x=>x!==nm.toLowerCase());
-      const nu={name:nm,role,pin,uid,no,passHash:hashSync(pass),perms:picked,active,lastSeen:null,prefs:{...PREF_DEFAULTS}};
-      S.users.push(nu); hashPass(pass).then(h=>{nu.passHash=h}) }
+      if(!uid || /^S\d+$/i.test(uid)){
+        let cand = nm.replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase();
+        if(cand.length < 2) cand = (cand + 'X').padEnd(2, 'X');
+        let finalUid = cand;
+        let k = 1;
+        while(S.users.some(x => x !== u && x.uid === finalUid)){
+          finalUid = cand.slice(0, 1) + k;
+          k++;
+        }
+        uid = finalUid;
+      }
+    }
+    const no = (u && u.no) ? u.no : (Math.max(0, ...S.users.map(x => +x.no || 0)) + 1);
+
+    const oldName = u ? u.name : null;
+    const lowerNm = nm.toLowerCase().trim();
+    S.deletedUsers = (S.deletedUsers || []).filter(x => x !== lowerNm);
+    try {
+      let lsDel = JSON.parse(localStorage.getItem('regal_deleted_users') || '[]');
+      lsDel = lsDel.filter(x => x !== lowerNm);
+      localStorage.setItem('regal_deleted_users', JSON.stringify(lsDel));
+    } catch(_){}
+
+    if(u){
+      u.name = nm;
+      u.role = role;
+      u.pin = pin;
+      u.uid = uid;
+      u.no = no;
+      u.perms = picked;
+      u.active = active;
+      if(role === 'Salesman'){
+        u.salesId = salesId;
+      } else {
+        delete u.salesId;
+      }
+      if(pass){
+        u.passHash = await hashPass(pass);
+        delete u.pass;
+      }
+      if(oldName && S.user && S.user.name.toLowerCase() === oldName.toLowerCase()){
+        S.user.name = nm;
+        S.user.role = role;
+        S.user.perms = picked;
+        try { localStorage.setItem('regal_user', nm); } catch(_){}
+      }
+      if(oldName && oldName.toLowerCase() !== lowerNm){
+        const emp = (S.employees || []).find(e => String(e.name||'').toLowerCase().trim() === oldName.toLowerCase().trim() || String(e.userName||'').toLowerCase().trim() === oldName.toLowerCase().trim());
+        if(emp){
+          emp.name = nm;
+          emp.userName = nm;
+          emp.position = role;
+          emp.active = active;
+          if(uid) emp.code = uid;
+        }
+      }
+    } else {
+      const nu = {
+        name: nm,
+        role,
+        pin,
+        uid,
+        no,
+        passHash: await hashPass(pass),
+        perms: picked,
+        active,
+        lastSeen: null,
+        prefs: { ...PREF_DEFAULTS }
+      };
+      if(role === 'Salesman') nu.salesId = salesId;
+      S.users.push(nu);
+    }
     syncUsersAndStaff();
     persist(true);
     if(typeof BroadcastChannel !== 'undefined'){
       try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
     }
-    m.remove(); render(); toast(u?`${nm} saved`:`${nm} can now sign in`);
+    m.remove(); render(); toast(u?`${nm} updated`:`${nm} can now sign in`);
   };
 }
 
@@ -16028,10 +16130,10 @@ async function checkPass(u,given){
       if(r.status===401) return false;
     }catch(e){ /* server unreachable: fall through to the local check */ }
   }
+  if(u.passHash){ return (await hashPass(given))===u.passHash || hashSync(given)===u.passHash }
   const defAcc=DEFAULT_ACCOUNTS.find(a=>a.name.toLowerCase()===lower);
   if(defAcc&&given===defAcc.pass) return true;
   if(u.name.toLowerCase()==='admin' && given==='admin123') return true;
-  if(u.passHash){ return (await hashPass(given))===u.passHash || hashSync(given)===u.passHash }
   return !!u.pass&&given===u.pass;          // a record from before hashing — replaced on next save
 }
 /* ---- who is at the till ---- */
@@ -16039,7 +16141,7 @@ let initialDeleted = [];
 try { initialDeleted = JSON.parse(localStorage.getItem('regal_deleted_users') || '[]'); } catch(_){}
 S.deletedUsers = Array.from(new Set([...(S.deletedUsers || []), ...initialDeleted].map(x => String(x).toLowerCase().trim())));
 S.users=DEFAULT_ACCOUNTS.filter(acc => !S.deletedUsers.includes(acc.name.toLowerCase().trim())).map(acc=>({
-  name:acc.name, role:acc.role, pin:'', uid:acc.uid,
+  name:acc.name, role:acc.role, pin:'', uid:acc.uid, salesId:acc.role==='Salesman'?acc.uid:undefined,
   passHash:hashSync(acc.pass), perms:[...acc.perms],
   active:true, lastSeen:D(today), prefs:{...PREF_DEFAULTS}
 }));

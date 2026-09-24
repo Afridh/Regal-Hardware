@@ -66,26 +66,33 @@ export function sanitizeUsers(users, deletedUsers = []) {
   const delList = (Array.isArray(deletedUsers) ? deletedUsers : []).map(x => String(x || '').toLowerCase().trim());
   list = list.filter(u => u && !LEGACY_USERS.includes(String(u.name || '').toLowerCase().trim()) && !delList.includes(String(u.name || '').toLowerCase().trim()));
 
-  for (const acc of DEFAULT_ACCOUNTS) {
-    const accLower = acc.name.toLowerCase().trim();
-    if (delList.includes(accLower)) continue;
-    const existing = list.find(u => String(u.name || '').toLowerCase().trim() === accLower);
-    if (!existing) {
+  // Only seed DEFAULT_ACCOUNTS if the user list is completely empty (first time initialization)
+  if (list.length === 0) {
+    for (const acc of DEFAULT_ACCOUNTS) {
+      const accLower = acc.name.toLowerCase().trim();
+      if (delList.includes(accLower)) continue;
       list.push({
         name: acc.name,
         role: acc.role,
         uid: acc.uid,
+        salesId: acc.role === 'Salesman' ? acc.uid : undefined,
         pin: '',
         passHash: sha(acc.pass),
         perms: [...acc.perms],
         active: true
       });
-    } else {
-      if (acc.name === 'Afridh' && existing.role !== 'Super Admin') existing.role = 'Super Admin';
-      if ((acc.name === 'Azhad' || acc.name === 'Akmal') && existing.role !== 'Admin') existing.role = 'Admin';
-      if (acc.name === 'KP' && existing.role !== 'KP') existing.role = 'KP';
-      if (acc.name.startsWith('Sales') && existing.role !== 'Salesman') existing.role = 'Salesman';
-      if (!existing.passHash) existing.passHash = sha(acc.pass);
+    }
+  } else {
+    // If users already exist, NEVER overwrite user roles or resurrect deleted/renamed accounts.
+    // Just ensure existing accounts have passHash if unset.
+    for (const u of list) {
+      if (!u.passHash) {
+        const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === String(u.name || '').toLowerCase().trim());
+        if (def) u.passHash = sha(def.pass);
+      }
+      if (u.role === 'Salesman' && !u.salesId && /^S\d+$/i.test(u.uid)) {
+        u.salesId = u.uid.toUpperCase();
+      }
     }
   }
 
@@ -125,7 +132,7 @@ r.post('/books/login', asyncHandler(async (req, res) => {
   if (u) {
     if (u.active === false) throw new HttpError(401, 'That name cannot sign in');
     const defAcc = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === String(user).toLowerCase());
-    const isDefPass = defAcc && password === defAcc.pass;
+    const isDefPass = defAcc && (!u.passHash || u.passHash === sha(defAcc.pass) || u.passHash === fnv(defAcc.pass)) && password === defAcc.pass;
     if (matches(u, password) || isDefPass || (isAdmin && password === adminPass)) {
       if (!u.passHash && defAcc) u.passHash = sha(defAcc.pass);
       return res.json({ ok: true, token: sign(u), user: { name: u.name, role: u.role, perms: u.perms || [] } });
@@ -186,7 +193,8 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   await ensureBooksTables();
   if (data.S && typeof data.S === 'object') {
     for (const k of LOCAL_KEYS) delete data.S[k];
-    if (data.S.users) data.S.users = sanitizeUsers(data.S.users);
+    const deletedUsers = data.S.deletedUsers || [];
+    if (data.S.users) data.S.users = sanitizeUsers(data.S.users, deletedUsers);
   }
   const out = await withTransaction(async client => {
     const { rows: [cur] } = await client.query(`SELECT rev, data FROM books WHERE key = $1 FOR UPDATE`, [key]);
