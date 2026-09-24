@@ -619,7 +619,8 @@ ok('B: cashier cannot open Users', !B.w.allowed('users') && B.w.allowed('pos'));
 // B makes a sale; A should pick it up on its next poll
 const inv4 = B.w.completeSale({ lines: [{ pid: 3, qty: 1, price: B.w.eval('P')(3).retail, disc: 0 }], customerId: 1, pays: [{ method: 'CASH', amount: B.w.eval('P')(3).retail }] });
 B.w.persist(); await sleep(900);
-ok('B: sale saved', !!inv4 && !!inv4.no.match(/-KS-/), `${inv4.no} (cashier id in the number)`);
+// bill numbers are figures alone now: the cashier's own number, then a running number of theirs
+ok('B: sale saved', !!inv4 && /^\d+$/.test(inv4.no) && inv4.no.startsWith(String(B.w.eval('userNo')('Ravi'))), `${inv4.no} (the cashier's number in front)`);
 const seenOnA = await until(() => A.w.S.sales.some(s => s.no === inv4.no), 20000, 500);
 ok('A: picked up B\'s bill by polling', !!seenOnA, seenOnA ? `${A.w.S.sales.length} bills on A now` : 'not within 20s');
 ok('A: still signed in as Afridh after the pull', A.w.S.user.name === 'Afridh' && !A.d.getElementById('lockScreen'));

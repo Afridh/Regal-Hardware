@@ -3113,14 +3113,42 @@ const S = {
  partyNotes:[],                                    // notes against a customer or a supplier, and the money still to sort out
  social:{posts:[]}                                 // what goes out on the Page, on Instagram and on WhatsApp
 };
-/* a bill number is prefix + till + the cashier's own id + a running number kept per
-   cashier, so INVM-T1-AF-00031 and INVM-T2-RS-00031 can both exist and neither can
-   ever be issued twice */
+/* ---- the bill number ----
+   Figures alone, the way the counter has always read them: the cashier's own number in front of a
+   running number of theirs, so 11 000123 is Afridh's hundred and twenty-third bill and nobody else
+   can ever be issued it. The older lettered form (INVM-T1-AF-00031) is still there for a shop that
+   wants it — Settings → Bills & vouchers. */
 const userUid=()=>{ const u=S.users.find(x=>x.name===S.user.name); if(u&&u.uid) return u.uid;
   const base=(S.user.name||'XX').replace(/[^A-Za-z]/g,'').slice(0,2).toUpperCase().padEnd(2,'X'); return base };
+const userNo=(name)=>{ const who=name||S.user.name; const u=S.users.find(x=>x.name===who);
+  const n=+(u&&u.no); if(n>0) return n;
+  const i=S.users.findIndex(x=>x.name===who); return i>=0?i+1:9 };
+const billDigits=()=>Math.min(8,Math.max(4,+CFG.bill.digits||6));
+const billPlain=()=>(CFG.bill.style||'plain')!=='coded';
+const billKey=()=>billPlain()?('N'+userNo()):(S.terminal+'-'+userUid());
+/* the run carries on from the numbers already issued, so nobody starts again at one */
+function billSeqNow(){
+  S.seqBy=S.seqBy||{};
+  const key=billKey();
+  if(!S.seqBy[key]&&billPlain()){
+    const pre=String(userNo()), cut=pre.length+billDigits(); let max=0;
+    for(const s of S.sales){ const t=String(s.no||'');
+      // ones this way round already: 11000123
+      if(t.length===cut&&/^\d+$/.test(t)&&t.startsWith(pre)){ const n=+t.slice(pre.length); if(n>max) max=n; continue }
+      // and the old system's, where the same number sat between the dashes: INVM-11-035178
+      const m=/^[A-Za-z]*-?(\d{1,2})-(\d{3,8})$/.exec(t);
+      if(m&&m[1]===pre){ const n=+m[2]; if(n>max) max=n }
+    }
+    S.seqBy[key]=max;
+  }
+  return S.seqBy[key]||0;
+}
+const billNoFrom=(seq)=>billPlain()
+  ? `${userNo()}${String(seq).padStart(billDigits(),'0')}`
+  : `${CFG.bill.prefix||'INVM-'}${S.terminal}-${userUid()}-${String(seq).padStart(5,'0')}`;
+const peekBillNo=()=>billNoFrom(billSeqNow()+1);      // what the next bill will be called
 const next=(k)=>{
-  if(k==='INV'){ const uid=userUid(); S.seqBy=S.seqBy||{}; const key=S.terminal+'-'+uid; S.seqBy[key]=(S.seqBy[key]||0)+1;
-    return `${CFG.bill.prefix||'INVM-'}${S.terminal}-${uid}-${String(S.seqBy[key]).padStart(5,'0')}` }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',JE:'JE-'}[k];return p+String(S.seq[k]++).padStart(5,'0')};
+  if(k==='INV'){ const seq=billSeqNow()+1; S.seqBy[billKey()]=seq; return billNoFrom(seq) }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',JE:'JE-'}[k];return p+String(S.seq[k]++).padStart(5,'0')};
 
 const GL = {'2050':'Customer advances','1010':'Cash in hand','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1023':'Bank account 4','1024':'Bank account 5','1025':'Bank account 6','1026':'Bank account 7','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other'};
 function post(date,desc,ref,lines){ // lines: [{ac,dr,cr,party}]
@@ -3415,7 +3443,7 @@ const CFG={
    line1:'Your trusted one-stop shop in Polonnaruwa for all Hardware, Paints, Electrical, PVC & Motor items.',
    line2:'We specialise in Dulux & Asian Paints colour mixing — offering the best prices.',
    hours:'8.00 am – 7.00 pm',owner:'0777849964'},
- bill:{prefix:'INVM-',warrantyNote:'Covers manufacturing faults only. Misuse, water damage and normal wear are not covered. Bring this card with the machine.',returnDays:7,quoteDays:14,showMrp:true,showSaving:true,defaultFormat:'r80',
+ bill:{prefix:'INVM-',style:'plain',digits:6,warrantyNote:'Covers manufacturing faults only. Misuse, water damage and normal wear are not covered. Bring this card with the machine.',returnDays:7,quoteDays:14,showMrp:true,showSaving:true,defaultFormat:'r80',
    title:'INVOICE',creditTitle:'CREDIT INVOICE',showLogo:true,showSinhala:true,showStrap:true,
    showCode:true,showUom:true,showQr:true,showWords:true,showCashier:true,showOutstanding:true,
    showSign:true,signLeft:'Authorised By',signRight:'Received By',showItemCount:true,showBarcode:true,t80Sign:true,showWeb:true,a5Scale:118,r80Scale:100,
@@ -3687,7 +3715,14 @@ function settings(){
     ${fld('shop.line2','Bill strapline, second line')}
     ${fld('shop.owner','Owner mobile for the daily summary')}
     <div class="card note" style="margin-top:10px">These go straight onto every bill, voucher and statement. Print one after changing to check the fit.</div>`;
-  if(setTab==='bill') body=`<div class="grid3">${fld('bill.prefix','Invoice number prefix','Bills run on from here')}
+  if(setTab==='bill') body=`<div class="card note" style="margin-bottom:10px"><b>The bill number</b>
+     <div class="muted">Figures alone: the cashier's own number, then a running number of theirs. ${S.users.filter(u=>u.active!==false).slice(0,4).map(u=>`<b>${u.name}</b> ${userNo(u.name)}${''.padStart(billDigits(),'0').replace(/0$/,'…')}`).join(' · ')}. Each person's number is set against them under Users &amp; permissions.</div></div>
+    <div class="grid3">
+     <div class="f"><label>How bills are numbered</label><select data-set="bill.style">
+      ${[['plain','Figures only — 11000123'],['coded','Lettered — INVM-T1-AF-00123']].map(o=>`<option value="${o[0]}" ${(CFG.bill.style||'plain')===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>
+     ${fld('bill.digits','Figures in the running number','6 gives 000123; the number carries on from the bills already issued','number')}
+     ${billPlain()?'<div class="f"><label>&nbsp;</label><div class="muted">The prefix and the till letters are only used by the lettered form.</div></div>':fld('bill.prefix','Invoice number prefix','Bills run on from here')}</div>
+    <div class="grid3">
     ${fld('bill.returnDays','Return window in days','','number')}${fld('bill.quoteDays','How long a quotation holds good, in days','','number')}
       ${fld('stock.allowNegative','','Let a bill go out when the stock count is short (stock goes negative until the purchase is entered)','check')}
       ${fld('pos.discFromMrp','','A discount typed as a percentage comes off the MRP, not off the counter price','check')}
@@ -5232,7 +5267,12 @@ function snapshotTxt(){ const snap=snapshot(); return JSON.stringify({S:snap,CFG
    saved and nothing is pulled from the server, so the two can never mix. Owner-only, Settings →
    Privacy screen. */
 let PRIV=null, privT=null;
-const privHash=s=>{ let h=7; for(const c of String(s||'')) h=(h*31+c.charCodeAt(0))>>>0; return h%100 };
+/* which bills the quiet screen keeps has to look arbitrary, and bill numbers now run one after another,
+   so the figures are scattered properly — otherwise a whole run of them falls on the same side. */
+const privHash=s=>{ let h=2166136261;
+  for(const c of String(s||'')){ h^=c.charCodeAt(0); h=Math.imul(h,16777619)>>>0 }
+  h^=h>>>13; h=Math.imul(h,0x5bd1e995)>>>0; h^=h>>>15;
+  return (h>>>0)%100 };
 function privacyToggle(){
   const cfg=CFG.privacy||{}; if(!cfg.on) return;
   if(PRIV){ Object.assign(S,PRIV); PRIV=null; window.privacyOn=false; clearTimeout(privT); document.body.classList.remove('privacy'); render(); drawBell(); return }
@@ -8317,7 +8357,7 @@ if(!window._posClockTimer){
 function posClassic(){
   const L=S.pos.lines, c=C(S.pos.customer||1), T=csTotals();
   const u=S.users.find(x=>x.name===S.user.name)||{};
-  const nextNo=`${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-${String(((S.seqBy||{})[S.terminal+'-'+(u.uid||'??')]||0)+1).padStart(5,'0')}`;
+  const nextNo=peekBillNo();
   const now=new Date(), sel=P(CS.pid), drag=CFG.pos.dragLines!==false;
   const owed=c.id===1?0:partyBal('C',c.id);
   const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['P on the bill','Price'],['N on the bill','Rename'],['F1','Back to item'],['F4','Customer'],
@@ -14463,7 +14503,7 @@ function users(){
         const allTot = mySales.reduce((a, s) => a + s.total, 0);
         return `<tr class="${u.active?'':'off'}">
         <td><b>${u.name}</b>${isSelf?' <span class="tag ok">on now</span>':''}${isTargetSuper?' <span class="tag gold" style="margin-left:4px">Super Admin</span>':''}
-         <div class="muted">${u.active?'active':'switched off'} · bills ${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-…</div>
+         <div class="muted">${u.active?'active':'switched off'} · bills ${billPlain()?`${userNo(u.name)}${''.padStart(billDigits(),'0').replace(/0$/,'…')}`:`${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-…`}</div>
          ${isSalesStaff ? `<div style="margin-top:4px"><span class="tag sm ${todayTot>0?'ok':'blue'}" title="Today's sales">Today: ${fmt(todayTot)}</span> <span class="muted" style="font-size:11px;margin-left:4px">All-time: ${fmt(allTot)} (${mySales.length})</span></div>` : ''}</td>
         <td><b>${u.role}</b></td>
         <td><span class="tag ok">password</span>${u.pin?' <span class="tag blue">PIN</span>':''}
@@ -14690,7 +14730,9 @@ function userModal(name){
   const m=modal(`<h2>${u?'Edit '+u.name:'Add someone'}</h2>
    <div class="grid3">
     <div class="f"><label>Name as it prints on bills</label><input id="uName" value="${u?u.name:''}" ${u&&u.name==='Afridh'&&!isSuperAdmin?'readonly':''}></div>
-    <div class="f"><label>Bill id (two letters, goes in every bill number)</label><input id="uUid" maxlength="2" value="${u?(u.uid||''):''}" placeholder="e.g. RS" style="text-transform:uppercase"></div>
+    <div class="f"><label>Number on bills</label><input id="uNo" type="number" min="1" max="99" value="${u?userNo(u.name):(Math.max(0,...S.users.map(x=>+x.no||0))+1)}">
+     <div class="muted">Their bills read this number and then a running number of their own${u?` — next ${userNo(u.name)}${String(((S.seqBy||{})['N'+userNo(u.name)]||0)+1).padStart(billDigits(),'0')}`:''}</div></div>
+    <div class="f"><label>Bill id (two letters, for the older lettered numbers)</label><input id="uUid" maxlength="2" value="${u?(u.uid||''):''}" placeholder="e.g. RS" style="text-transform:uppercase"></div>
     <div class="f"><label>Role</label><select id="uRole">${availableRoles.map(r=>`<option ${(u&&u.role===r)||(!u&&r==='Salesman')?'selected':''}>${r}</option>`).join('')}</select>
      <div class="muted">Changing the role ticks that role's usual boxes</div></div>
     <div class="f"><label>${u?'New password (blank keeps the old one)':'Password'}</label><input id="uPass" type="password" autocomplete="new-password" placeholder="at least 6 characters"></div>
@@ -14735,6 +14777,9 @@ function userModal(name){
     const uid=(m.querySelector('#uUid').value||'').replace(/[^A-Za-z]/g,'').toUpperCase().slice(0,2)||nm.replace(/[^A-Za-z]/g,'').slice(0,2).toUpperCase();
     if(uid.length<2)return toast('The bill id needs two letters');
     if(S.users.some(x=>x!==u&&x.uid===uid))return toast(`${uid} is already ${S.users.find(x=>x!==u&&x.uid===uid).name}'s bill id`);
+    const no=Math.max(1,Math.min(99,+(m.querySelector('#uNo').value)||0));
+    const clash=S.users.find(x=>x!==u&&userNo(x.name)===no);
+    if(clash) return toast(`${no} is already ${clash.name}'s number on bills`);
     if(!u&&pass.length<6)return toast('A password needs at least six characters');
     if(u&&pass&&pass.length<6)return toast('A password needs at least six characters');
     const picked=[...m.querySelectorAll('[data-perm]')].filter(c=>c.checked).map(c=>c.dataset.perm);
@@ -14743,12 +14788,12 @@ function userModal(name){
     if(u){
       if(u.name===S.user.name&&!picked.includes('users')&&S.users.filter(x=>x.active&&x.perms.includes('users')).length<2)
         return toast('Someone has to be able to manage users — leave that with yourself or give it to another person first');
-      Object.assign(u,{name:nm,role,pin,uid,perms:picked,active});
+      Object.assign(u,{name:nm,role,pin,uid,no,perms:picked,active});
       if(pass){ u.passHash=hashSync(pass); delete u.pass; hashPass(pass).then(h=>{u.passHash=h}) }
       if(S.user.name===name){S.user={name:nm,role,perms:picked}}
     } else {
       S.deletedUsers=(S.deletedUsers||[]).filter(x=>x!==nm.toLowerCase());
-      const nu={name:nm,role,pin,uid,passHash:hashSync(pass),perms:picked,active,lastSeen:null,prefs:{...PREF_DEFAULTS}};
+      const nu={name:nm,role,pin,uid,no,passHash:hashSync(pass),perms:picked,active,lastSeen:null,prefs:{...PREF_DEFAULTS}};
       S.users.push(nu); hashPass(pass).then(h=>{nu.passHash=h}) }
     persist(true);
     m.remove(); render(); toast(u?`${nm} saved`:`${nm} can now sign in`);
@@ -14825,7 +14870,7 @@ function proofBill(fmtWanted){
   const sub=L.reduce((a,l)=>a+l.qty*l.price-l.disc,0), total=+(sub-S.pos.billDisc).toFixed(2);
   const u=S.users.find(x=>x.name===S.user.name)||{};
   const proof={
-    no:`${CFG.bill.prefix||'INVM-'}${S.terminal}-${u.uid||'??'}-${String(((S.seqBy||{})[S.terminal+'-'+(u.uid||'??')]||0)+1).padStart(5,'0')}`,
+    no:peekBillNo(),
     date:D(today),type:'CASH',customerId:c.id,
     lines:L.map(l=>({...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),
     sub,billDisc:S.pos.billDisc,total,paid:total,balance:0,pays:[{method:'CASH',amount:total}],
