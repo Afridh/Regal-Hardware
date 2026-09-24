@@ -4187,10 +4187,8 @@ function stdMin(){
 function dayFigures(ds,empId){
   const r=(S.shift.days[ds]||{})[empId];
   const out={status:r?r.status:'none',in:r&&r.in,out:r&&r.out,gross:0,breakMin:0,worked:0,late:0,ot:0,reg:0,over:0,leaveEarly:r&&r.leaveEarly};
-  const isPast = ds < D(today);
-  const isAfterClose = (ds === D(today)) && (nowMin() >= toMin(shiftSet().closeTime || '19:30'));
   if(!r||r.status!=='work'||!r.in){
-    if((!r||!r.status||r.status==='none') && !isOff(ds) && (isPast || isAfterClose)){
+    if(r && r.status==='absent'){
       out.status='absent';
     }
     return out;
@@ -4254,7 +4252,7 @@ function payFor(e,mk){
   let basic=0;
   if(e.basis==='hourly') basic=hrs(t.reg)*(+e.rate);
   else if(e.basis==='daily') basic=(t.days-t.half*0.5)*(+e.rate);
-  else basic=+e.rate*(1-Math.max(0,(perDay-t.days))/perDay);   // monthly, less days not worked
+  else basic=Math.max(0, +e.rate * (1 - (t.absent / perDay) - (t.half * 0.5 / perDay)));   // monthly, only explicitly absent days deducted
   const otPay=hrs(t.ot)*hourly*(+e.otMult||shiftSet().otMultiplier);
   const fine=(+shiftSet().latePerMin||0)*t.late;
   const advance=+e.advance||0;
@@ -4374,10 +4372,17 @@ function applyShift(data){
   if(!S.shift.settings.breaks||!S.shift.settings.breaks.length) S.shift.settings.breaks=SHIFT_DEFAULTS.breaks;
   // the shift rules and the holidays are the board's to keep now, so they come down with the punches
   if(Array.isArray(data.holidays)) S.shift.holidays=data.holidays.map(h=>({date:h.date,name:h.name||'Holiday'}));
-  S.shift.days={};
+  S.shift.days = S.shift.days || {};
   Object.entries(data.days||{}).forEach(([ds,recs])=>{
-    S.shift.days[ds]={};
-    Object.entries(recs).forEach(([sid,r])=>{ if(map[sid]) S.shift.days[ds][map[sid]]=r });
+    S.shift.days[ds] = S.shift.days[ds] || {};
+    Object.entries(recs).forEach(([sid,r])=>{
+      const localId = map[sid];
+      if(!localId) return;
+      const cur = S.shift.days[ds][localId];
+      // Do not overwrite today's local check-in with an empty or non-work record
+      if(ds === D(today) && cur && cur.in && (!r || !r.in)) return;
+      S.shift.days[ds][localId] = { ...(cur||{}), ...r };
+    });
   });
   const days=Object.keys(data.days||{}).length;
   S.shift.imported={at:D(today),by:S.user.name,people:matched.length,days,from:data._from||'paste'};
@@ -4511,10 +4516,14 @@ const isOff=(ds)=>{const d=new Date(ds);
   return (shiftSet().weeklyOff||[]).includes(d.getDay())||(S.shift.holidays||[]).some(h=>h.date===ds)};
 function recFor(ds,id){ S.shift.days[ds]=S.shift.days[ds]||{}; return S.shift.days[ds][id] }
 function setRec(ds,id,patch){
+  S.shift.days=S.shift.days||{};
   S.shift.days[ds]=S.shift.days[ds]||{};
-  S.shift.days[ds][id]={...(S.shift.days[ds][id]||{}),...patch,by:S.user.name};
-  if(shiftCfg().autoPull!==false) shiftPushDay(ds,id);
+  S.shift.days[ds][id]={...(S.shift.days[ds][id]||{}),...patch,by:S.user.name,updatedAt:Date.now()};
+  try {
+    localStorage.setItem(STORE_KEY, snapshotTxt());
+  } catch(_){}
   persist(true);
+  if(shiftCfg().autoPull!==false) shiftPushDay(ds,id);
   try {
     localStorage.setItem('regal_attendance_sync', Date.now().toString());
   } catch(_){}
@@ -4533,13 +4542,6 @@ function empState(ds,id){
   if(r&&(r.breaks||[]).some(b=>!b.end)) return 'break';
   if(r&&r.in&&!r.out) return 'working';
   if(r&&r.in&&r.out) return (r.leaveEarly&&r.leaveEarly.approved) ? 'leave_early' : 'done';
-
-  // If member has not checked in the whole day (past day or today after closing 7:30 PM)
-  const isPast = ds < D(today);
-  const isAfterClose = (ds === D(today)) && (nowMin() >= toMin(shiftSet().closeTime || '19:30'));
-  if(!isOff(ds) && (isPast || isAfterClose)){
-    return 'absent';
-  }
   return 'out';
 }
 const breakWindow=()=>{const m=nowMin();
@@ -6305,8 +6307,28 @@ function applyKept(kept){
   const incoming = { ...kept.S };
   LOCAL_KEYS.forEach(k => { delete incoming[k]; });
 
+  // Preserve local shift punches so incoming server sync never wipes them out
+  const localShiftDays = (S.shift && S.shift.days) ? JSON.parse(JSON.stringify(S.shift.days)) : null;
+
   Object.assign(S, incoming);
   Object.keys(kept.CFG||{}).forEach(k=>{ CFG[k]={...(CFG[k]||{}),...(kept.CFG[k]||{})} });
+
+  if(localShiftDays){
+    S.shift = S.shift || {};
+    S.shift.days = S.shift.days || {};
+    Object.entries(localShiftDays).forEach(([ds, empMap]) => {
+      S.shift.days[ds] = S.shift.days[ds] || {};
+      Object.entries(empMap || {}).forEach(([empId, rec]) => {
+        if(!rec) return;
+        const remoteRec = S.shift.days[ds][empId];
+        if(rec.in && (!remoteRec || !remoteRec.in)){
+          S.shift.days[ds][empId] = rec;
+        } else if(rec.updatedAt && (!remoteRec || !remoteRec.updatedAt || rec.updatedAt > remoteRec.updatedAt)){
+          S.shift.days[ds][empId] = { ...(remoteRec||{}), ...rec };
+        }
+      });
+    });
+  }
 
   // Always keep current till / device state
   Object.assign(S, local);

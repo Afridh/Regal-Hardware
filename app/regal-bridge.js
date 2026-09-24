@@ -68,7 +68,8 @@
   }
 
   async function pull(quiet) {
-    if (!token) return false;
+    if (!token || busy) return false;
+    if (Date.now() - lastPushAt < 3000) return false;
     var j = await call('GET', '/books/' + KEY);
     if (j.__status !== 200) return false;
     if (j.data) {
@@ -95,6 +96,7 @@
       if (!token) throw new Error('not signed in');
       if (busy) { pendingSet = txt; return true; }
       busy = true;
+      lastPushAt = Date.now();
       try {
         var doc = strip(JSON.parse(txt));
         var j = await call('PUT', '/books/' + KEY, { data: doc, rev: rev });
