@@ -26,6 +26,7 @@ import shopRoutes from './routes/shop.js';
 import supplierRoutes from './routes/supplier.js';
 import fileRoutes from './routes/files.js';
 import printRoutes from './routes/print.js';
+import custRoutes from './routes/customer.js';
 
 if (!process.env.JWT_SECRET) console.error('JWT_SECRET is not set (copy .env.example to .env, or set it in the host\'s environment)');
 
@@ -63,6 +64,8 @@ app.use('/api/sup', supplierRoutes);
 app.use('/api/files', fileRoutes);
 // the printers are on one PC: a bill made anywhere is left here and that PC's helper takes it
 app.use('/api/print', printRoutes);
+// the customer's own page: what they owe, bill by bill, and a way to say they have paid
+app.use('/api/my', custRoutes);
 // day sheets the Shift Board publishes (on Vercel these live in /tmp, so only until the function is recycled)
 app.use('/reports', express.static(reportsDir));
 
@@ -77,6 +80,7 @@ if (!process.env.VERCEL && fs.existsSync(appDir)) {
   app.get('/', fresh, (_req, res) => res.sendFile(path.join(appDir, 'shop.html')));
   app.get(['/pos', '/pos/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'index.html')));
   app.get(['/supplier', '/supplier/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'supplier.html')));
+  app.get(['/my', '/my/', '/my/:code'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'my.html')));
   app.use(express.static(appDir, { index: false, extensions: ['html'], setHeaders: (res, p) => { if (/\.(html|js)$/.test(p)) res.set('Cache-Control', 'no-store'); } }));
 }
 const dist = path.resolve(here, '../../client/dist');
