@@ -701,6 +701,7 @@ tr.off td{opacity:.55}
 .bc-badge.done{background:#F1F5F9;color:#475569}
 .bc-badge.absent{background:#FEE2E2;color:#B91C1C}
 .bc-badge.out{background:#F8FAFC;color:#64748B;border:1px solid #E2E8F0}
+.bc-badge.extra-break{background:#FEF3C7;color:#92400E;border:1px solid #FCD34D}
 
 .bc-live-badge{display:inline-flex;align-items:center;gap:6px;font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;padding:4px 9px;border-radius:6px;width:fit-content;letter-spacing:0.2px}
 .bc-live-badge.working{background:rgba(16,185,129,.12);color:#059669;border:1px solid rgba(16,185,129,.3)}
@@ -4161,9 +4162,9 @@ function tplPreview(k){
 const SHIFT_DEFAULTS={
   startTime:'08:00',closeTime:'19:30',graceMin:0,otMultiplier:1.5,workDaysPerMonth:26,
   weeklyOff:[0],latePerMin:0,halfDayAfterMin:240,
-  breaks:[{id:'b1',name:'Breakfast',start:'08:30',end:'08:50',mins:20,extra:10,paid:true},
-          {id:'b2',name:'Lunch',start:'12:30',end:'13:00',mins:30,extra:10,paid:true},
-          {id:'b3',name:'Evening Tea',start:'15:30',end:'15:50',mins:20,extra:10,paid:true}]};
+  breaks:[{id:'b1',name:'Breakfast',start:'08:30',end:'08:45',mins:15,extra:0,paid:true},
+          {id:'b2',name:'Lunch',start:'12:30',end:'13:00',mins:30,extra:0,paid:true},
+          {id:'b3',name:'Evening Tea',start:'15:30',end:'15:40',mins:10,extra:0,paid:true}]};
 const toMin=t=>{const [h,m]=String(t||'0:0').split(':').map(Number);return (h||0)*60+(m||0)};
 const hhmm=m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(Math.round(m%60)).padStart(2,'0');
 const hrs=m=>(m/60);
@@ -4172,11 +4173,26 @@ const dur=m=>{
   const h=Math.floor(m/60), rem=m%60;
   return `${h}h ${rem}m`;
 };
+const fmtMin=m=>{
+  m=Math.max(0,Math.round(m||0));
+  const h=Math.floor(m/60), rem=m%60;
+  if(h>0 && rem>0) return `${h}h ${rem}m`;
+  if(h>0) return `${h}h`;
+  return `${rem}m`;
+};
 const shiftSet=()=>{
   if(!S.shift.settings) S.shift.settings={...SHIFT_DEFAULTS};
   if(!S.shift.settings.closeTime||S.shift.settings.closeTime==='19:00') S.shift.settings.closeTime='19:30';
   if(!S.shift.settings.startTime) S.shift.settings.startTime='08:00';
-  if(!S.shift.settings.breaks||!S.shift.settings.breaks.length) S.shift.settings.breaks=SHIFT_DEFAULTS.breaks;
+  if(!S.shift.settings.breaks||!S.shift.settings.breaks.length){
+    S.shift.settings.breaks=SHIFT_DEFAULTS.breaks;
+  } else {
+    S.shift.settings.breaks.forEach(b=>{
+      if(b.id==='b1' && (b.mins===20 || !b.mins || b.mins>15)) { b.mins=15; b.extra=0; b.end='08:45'; }
+      if(b.id==='b2' && (!b.mins || b.mins>30)) { b.mins=30; b.extra=0; b.end='13:00'; }
+      if(b.id==='b3' && (b.mins===20 || !b.mins || b.mins>10)) { b.mins=10; b.extra=0; b.end='15:40'; }
+    });
+  }
   return S.shift.settings;
 };
 function stdMin(){
@@ -4652,7 +4668,7 @@ function punchIn(id,ds=D(today)){
   const lateMin=Math.max(0,nowMin()-toMin(shiftSet().startTime||'08:00'));
   setRec(ds,id,{status:'work',in:inTime,out:null,breaks:recFor(ds,id)?.breaks||[],leaveEarly:null});
   refreshAttendanceBoard();
-  if(lateMin>0) toast(`${e?e.name:'Staff'} checked in at ${inTime} (${lateMin}m Late)`);
+  if(lateMin>0) toast(`${e?e.name:'Staff'} checked in at ${inTime} (${fmtMin(lateMin)} Late)`);
   else toast(`${e?e.name:'Staff'} checked in on time at ${inTime}`);
 }
 
@@ -4837,7 +4853,7 @@ function renderStaffCard({e, st, f, r}){
 
   let badgeClass='out', badgeLabel='NOT IN YET';
   if(st==='working'){
-    if(isLate){ badgeClass='late'; badgeLabel=`WORKING · LATE ${f.late}m`; }
+    if(isLate){ badgeClass='late'; badgeLabel=`WORKING · LATE ${fmtMin(f.late)}`; }
     else { badgeClass='working'; badgeLabel='WORKING'; }
   } else if(st==='break'){
     badgeClass='break'; badgeLabel=`ON BREAK · ${openBreak?openBreak.name:'Meal'}`;
@@ -4865,7 +4881,10 @@ function renderStaffCard({e, st, f, r}){
           <div class="bc-name" title="${e.name}">${e.name}</div>
           <div class="bc-role">${e.position||'Staff'} · <span class="mono">${e.code}</span></div>
         </div>
-        <div class="bc-badge ${badgeClass}">${badgeLabel}</div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+          <div class="bc-badge ${badgeClass}">${badgeLabel}</div>
+          ${f.over>0 ? `<div class="bc-badge extra-break">Extra break · ${fmtMin(f.over)}</div>` : ''}
+        </div>
       </div>
 
       <!-- Live Working Time Counting Badge -->
@@ -4897,14 +4916,14 @@ function renderStaffCard({e, st, f, r}){
         <div class="bc-meal-row">
           <div class="bc-meal-title">Break Options:</div>
           <div class="bc-meals">
-            <button class="bc-meal-btn ${hasB1?'taken':''}" data-act="mealStart" data-id="${e.id}" data-meal="b1" title="Breakfast 08:30 – 08:50">
-              ${hasB1?'✓ Breakfast':'☕ Breakfast'}
+            <button class="bc-meal-btn ${hasB1?'taken':''}" data-act="mealStart" data-id="${e.id}" data-meal="b1" title="Breakfast 08:30 – 08:45 (15m)">
+              ${hasB1?'✓ Breakfast':'☕ Breakfast (15m)'}
             </button>
-            <button class="bc-meal-btn ${hasB2?'taken':''}" data-act="mealStart" data-id="${e.id}" data-meal="b2" title="Lunch 12:30 – 13:00">
-              ${hasB2?'✓ Lunch':'🍛 Lunch'}
+            <button class="bc-meal-btn ${hasB2?'taken':''}" data-act="mealStart" data-id="${e.id}" data-meal="b2" title="Lunch 12:30 – 13:00 (30m)">
+              ${hasB2?'✓ Lunch':'🍛 Lunch (30m)'}
             </button>
-            <button class="bc-meal-btn ${hasB3?'taken':''}" data-act="mealStart" data-id="${e.id}" data-meal="b3" title="Evening Tea 15:30 – 15:50">
-              ${hasB3?'✓ Tea':'🫖 Evening Tea'}
+            <button class="bc-meal-btn ${hasB3?'taken':''}" data-act="mealStart" data-id="${e.id}" data-meal="b3" title="Evening Tea 15:30 – 15:40 (10m)">
+              ${hasB3?'✓ Tea':'🫖 Evening Tea (10m)'}
             </button>
           </div>
         </div>`:''}
@@ -4952,7 +4971,7 @@ function renderStaffCard({e, st, f, r}){
         <div class="bc-metrics">
           <div class="bc-metric">
             <span class="lbl">Check-In</span>
-            <span class="val ${isLate?'late-val':''}">${f.in||'—'}${isLate?` <small style="font-size:10px">(${f.late}m late)</small>`:''}</span>
+            <span class="val ${isLate?'late-val':''}">${f.in||'—'}${isLate?` <small style="font-size:10px">(${fmtMin(f.late)} late)</small>`:''}</span>
           </div>
           <div class="bc-metric">
             <span class="lbl">Check-Out</span>
@@ -5003,14 +5022,17 @@ function salesmanPortalToday(me, st, f){
               <h2 style="margin:0;font-size:18px;color:var(--ink)">${me.name}</h2>
               <div class="muted">${me.position||'Salesman'} · <span class="mono">${me.code}</span></div>
             </div>
-            <span class="bc-badge ${st==='working'?(isLate?'late':'working'):st}">${
-              st==='working'?(isLate?`WORKING · LATE ${f.late}m`:'WORKING'):
-              st==='break'?`ON BREAK (${openBreak?openBreak.name:'Meal'})`:
-              st==='leave_pending'?'LEAVE REQUESTED':
-              st==='leave_early'?'LEFT EARLY (APPROVED)':
-              st==='done'?'GONE HOME':
-              st==='absent'?'ABSENT':'NOT IN YET'
-            }</span>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+              <span class="bc-badge ${st==='working'?(isLate?'late':'working'):st}">${
+                st==='working'?(isLate?`WORKING · LATE ${fmtMin(f.late)}`:'WORKING'):
+                st==='break'?`ON BREAK (${openBreak?openBreak.name:'Meal'})`:
+                st==='leave_pending'?'LEAVE REQUESTED':
+                st==='leave_early'?'LEFT EARLY (APPROVED)':
+                st==='done'?'GONE HOME':
+                st==='absent'?'ABSENT':'NOT IN YET'
+              }</span>
+              ${f.over>0 ? `<span class="bc-badge extra-break">Extra break · ${fmtMin(f.over)}</span>` : ''}
+            </div>
           </div>
 
           <!-- Live Working Time Counting Badge for Portal -->
@@ -5025,7 +5047,7 @@ function salesmanPortalToday(me, st, f){
           <div class="bc-metrics" style="padding:14px;margin-bottom:16px;grid-template-columns:1fr 1fr">
             <div class="bc-metric">
               <span class="lbl">Check-In Time</span>
-              <span class="val ${isLate?'late-val':''}">${f.in||'—'}${isLate?` (${f.late}m late — opening 8:00 AM)`:' (on time)'}</span>
+              <span class="val ${isLate?'late-val':''}">${f.in||'—'}${isLate?` (${fmtMin(f.late)} late — opening 8:00 AM)`:' (on time)'}</span>
             </div>
             <div class="bc-metric">
               <span class="lbl">Check-Out Time</span>
@@ -5058,13 +5080,13 @@ function salesmanPortalToday(me, st, f){
               <div style="font-size:12px;font-weight:700;color:var(--steel);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Meals & Tea Break:</div>
               <div class="bc-meals" style="gap:8px">
                 <button class="bc-meal-btn ${hasB1?'taken':''}" style="padding:7px 14px;font-size:13px" data-act="mealStart" data-id="${me.id}" data-meal="b1">
-                  ${hasB1 ? '✓ Breakfast Done' : '☕ Start Breakfast'}
+                  ${hasB1 ? '✓ Breakfast Done' : '☕ Start Breakfast (15m)'}
                 </button>
                 <button class="bc-meal-btn ${hasB2?'taken':''}" style="padding:7px 14px;font-size:13px" data-act="mealStart" data-id="${me.id}" data-meal="b2">
-                  ${hasB2 ? '✓ Lunch Done' : '🍛 Start Lunch'}
+                  ${hasB2 ? '✓ Lunch Done' : '🍛 Start Lunch (30m)'}
                 </button>
                 <button class="bc-meal-btn ${hasB3?'taken':''}" style="padding:7px 14px;font-size:13px" data-act="mealStart" data-id="${me.id}" data-meal="b3">
-                  ${hasB3 ? '✓ Evening Tea Done' : '🫖 Start Evening Tea'}
+                  ${hasB3 ? '✓ Evening Tea Done' : '🫖 Start Evening Tea (10m)'}
                 </button>
               </div>
             </div>`:''}
@@ -6307,8 +6329,9 @@ function applyKept(kept){
   const incoming = { ...kept.S };
   LOCAL_KEYS.forEach(k => { delete incoming[k]; });
 
-  // Preserve local shift punches so incoming server sync never wipes them out
+  // Preserve local shift punches and local users so incoming server sync never wipes them out
   const localShiftDays = (S.shift && S.shift.days) ? JSON.parse(JSON.stringify(S.shift.days)) : null;
+  const localUsers = Array.isArray(S.users) ? JSON.parse(JSON.stringify(S.users)) : [];
 
   Object.assign(S, incoming);
   Object.keys(kept.CFG||{}).forEach(k=>{ CFG[k]={...(CFG[k]||{}),...(kept.CFG[k]||{})} });
@@ -6346,9 +6369,27 @@ function applyKept(kept){
   } catch(_){}
 
   if(Array.isArray(S.users)){
+    if(localUsers.length){
+      localUsers.forEach(lu => {
+        if(!lu || !lu.name) return;
+        const luLower = String(lu.name).toLowerCase().trim();
+        if(legacy.includes(luLower) || S.deletedUsers.includes(luLower)) return;
+        const existing = S.users.find(u => String(u.name).toLowerCase().trim() === luLower);
+        if(!existing){
+          S.users.push(lu);
+        } else {
+          if(lu.role) existing.role = lu.role;
+          if(lu.perms && lu.perms.length) existing.perms = lu.perms;
+          if(lu.active !== undefined) existing.active = lu.active;
+          if(lu.salesId) existing.salesId = lu.salesId;
+          if(lu.pin !== undefined) existing.pin = lu.pin;
+          if(lu.passHash) existing.passHash = lu.passHash;
+        }
+      });
+    }
     S.users=S.users.filter(u=>u && u.name && !legacy.includes(String(u.name).toLowerCase().trim()) && !S.deletedUsers.includes(String(u.name).toLowerCase().trim()));
   } else {
-    S.users=[];
+    S.users=localUsers.length ? localUsers : [];
   }
   if(!Array.isArray(S.roles)) S.roles=[];
   if(!Array.isArray(S.partyNotes)) S.partyNotes=[];        // books saved before notes existed
@@ -7789,6 +7830,17 @@ function renderNow(){
 
   if(S.view==='bills'||S.view==='recall') billsAfter();
   if(S.view==='trail') trailAfter();
+  if(S.view==='users'){
+    const usIn = document.getElementById('userSearchInput');
+    if(usIn){
+      usIn.oninput = (e) => {
+        userSearch = e.target.value;
+        render();
+        const el = document.getElementById('userSearchInput');
+        if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+      };
+    }
+  }
   /* who signs in for the customer or the supplier on the screen: read once, kept until another is
      opened. The attempt is recorded either way, so drawing again after it settles cannot loop —
      and it has to be drawn again, or a reader that failed would leave "Reading…" on the screen. */
@@ -15806,7 +15858,10 @@ const PERMS=[
   ['payroll','See wages and run payroll'],
   ['settings','Change settings'],
   ['users','Manage users'],
-  ['approve','Approve requests: portals, credit limits, write-offs, price changes']];
+  ['approve','Approve requests: portals, credit limits, write-offs, price changes'],
+  ['products_view','View products & stock (Read-only)'],
+  ['dashboard_view','View Sales Dashboard'],
+  ['attendance_view','View Attendance & Check in']];
 const ROLE_DEFAULTS={
   'Super Admin':PERMS.map(p=>p[0]),
   Owner:PERMS.map(p=>p[0]),
@@ -15830,12 +15885,40 @@ const can=(k)=>{
 };
 
 let userTab='users';
+let userFilter='all';
+let userSearch='';
 function users(){
   const isSuperAdmin=S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||['super admin','superadmin','owner'].includes(String(S.user.role||'').toLowerCase()));
   const isAdmin=isSuperAdmin||(S.user&&String(S.user.role||'').toLowerCase()==='admin');
-  const list=S.users;
+  if(!Array.isArray(S.users)) S.users=[];
+  const rawList=S.users;
   const allRoles=[...DEFAULT_ROLES,...(S.roles||[]).filter(r=>!DEFAULT_ROLES.some(d=>d.name.toLowerCase()===r.name.toLowerCase()))];
   
+  const totalUsers=rawList.length;
+  const activeCount=rawList.filter(u=>u.active!==false).length;
+  const inactiveCount=rawList.filter(u=>u.active===false).length;
+  const adminCount=rawList.filter(u=>['Super Admin','Admin','Owner'].includes(u.role)).length;
+  const salesCount=rawList.filter(u=>u.role==='Salesman').length;
+  const kpCount=rawList.filter(u=>u.role==='KP').length;
+  const otherCount=rawList.filter(u=>!['Super Admin','Admin','Owner','Salesman','KP'].includes(u.role)).length;
+
+  let list=rawList;
+  if(userSearch){
+    const q=userSearch.toLowerCase().trim();
+    list=list.filter(u=>u&&(
+      String(u.name||'').toLowerCase().includes(q) ||
+      String(u.role||'').toLowerCase().includes(q) ||
+      String(u.uid||'').toLowerCase().includes(q) ||
+      String(u.salesId||'').toLowerCase().includes(q)
+    ));
+  }
+  if(userFilter==='active') list=list.filter(u=>u.active!==false);
+  else if(userFilter==='inactive') list=list.filter(u=>u.active===false);
+  else if(userFilter==='admin') list=list.filter(u=>['Super Admin','Admin','Owner'].includes(u.role));
+  else if(userFilter==='sales') list=list.filter(u=>u.role==='Salesman');
+  else if(userFilter==='kp') list=list.filter(u=>u.role==='KP');
+  else if(userFilter==='other') list=list.filter(u=>!['Super Admin','Admin','Owner','Salesman','KP'].includes(u.role));
+
   let tabBody='';
   if(userTab==='roles'&&isSuperAdmin){
     tabBody=`
@@ -15869,50 +15952,110 @@ function users(){
   } else {
     tabBody=`
       <div class="row" style="margin-bottom:12px">
-       ${stat('People with a login',list.filter(u=>u.active).length,`${list.filter(u=>!u.active).length} switched off`,'b')}
-       ${stat('Super Admins & Admins',list.filter(u=>u.active&&['Super Admin','Admin','Owner'].includes(u.role)).length,'full access','g')}
-       ${stat('KP Staff',list.filter(u=>u.active&&u.role==='KP').length,'operational','y')}
-       ${stat('Salesmen',list.filter(u=>u.active&&u.role==='Salesman').length,'read-only catalog','r')}
+       ${stat('People with a login',activeCount,`${inactiveCount} switched off`,'b')}
+       ${stat('Super Admins & Admins',adminCount,'full access','g')}
+       ${stat('KP Staff',kpCount,'operational','y')}
+       ${stat('Salesmen',salesCount,'sales performance & catalog','r')}
       </div>
-      <div class="card" style="margin-bottom:12px">
-       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-        <div class="muted">Whoever signs in at the lock screen is the name printed on the bills they take. Switch someone off and they disappear from that screen straight away.</div>
-        <div style="display:flex;gap:8px">
-          ${!isSuperAdmin&&isAdmin?`<button class="btn ghost" data-act="myProfile">My Profile</button>`:''}
-          <button class="btn tape" data-act="userNew">Add someone</button>
+      <div class="card" style="margin-bottom:12px;padding:12px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="display:flex;gap:8px;align-items:center;flex:1;min-width:240px">
+            <input id="userSearchInput" value="${userSearch}" placeholder="🔍 Search by name, role, Sales ID…" style="max-width:300px;padding:6px 12px;font-size:13px;border:1px solid var(--line,#CBD5E1);border-radius:6px">
+            ${userSearch?`<button class="btn ghost sm" onclick="userSearch='';render()" style="padding:3px 8px">✕</button>`:''}
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            ${!isSuperAdmin&&isAdmin?`<button class="btn ghost" data-act="myProfile">My Profile</button>`:''}
+            <button class="btn tape" data-act="userNew" style="display:flex;align-items:center;gap:5px">
+              <span style="font-size:15px;font-weight:700">+</span> Add User
+            </button>
+          </div>
         </div>
-       </div>
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;align-items:center">
+          <span class="muted" style="font-size:11px;font-weight:700;margin-right:2px">FILTER:</span>
+          <button class="tag ${userFilter==='all'?'ok':''}" style="cursor:pointer;padding:2px 9px;font-size:11.5px" onclick="userFilter='all';render()">All (${totalUsers})</button>
+          <button class="tag ${userFilter==='admin'?'blue':''}" style="cursor:pointer;padding:2px 9px;font-size:11.5px" onclick="userFilter='admin';render()">Admins (${adminCount})</button>
+          <button class="tag ${userFilter==='sales'?'warn':''}" style="cursor:pointer;padding:2px 9px;font-size:11.5px" onclick="userFilter='sales';render()">Salesmen (${salesCount})</button>
+          <button class="tag ${userFilter==='kp'?'ok':''}" style="cursor:pointer;padding:2px 9px;font-size:11.5px" onclick="userFilter='kp';render()">KP Staff (${kpCount})</button>
+          ${otherCount?`<button class="tag ${userFilter==='other'?'blue':''}" style="cursor:pointer;padding:2px 9px;font-size:11.5px" onclick="userFilter='other';render()">Other Roles (${otherCount})</button>`:''}
+          ${inactiveCount?`<button class="tag ${userFilter==='inactive'?'bad':''}" style="cursor:pointer;padding:2px 9px;font-size:11.5px" onclick="userFilter='inactive';render()">Disabled (${inactiveCount})</button>`:''}
+        </div>
       </div>
-      <table><tr><th>Name</th><th>Role</th><th>Signs in with</th><th>Last signed in</th><th>What they may do</th><th></th></tr>
-      ${list.map(u=>{
-        const isTargetSuper=u.role==='Super Admin'||u.role==='Owner'||u.name==='Afridh'||['super admin','superadmin','owner'].includes(String(u.role||'').toLowerCase());
-        const canModify=isSuperAdmin||(!isTargetSuper&&isAdmin);
-        const isSelf=S.user.name===u.name;
-        const isSalesStaff = u.role === 'Salesman' || S.sales.some(s => s.salesman === u.name || s.by === u.name);
-        const mySales = isSalesStaff ? S.sales.filter(s => s.salesman === u.name || s.by === u.name) : [];
-        const todaySales = mySales.filter(s => s.date === D(today));
-        const todayTot = todaySales.reduce((a, s) => a + s.total, 0);
-        const allTot = mySales.reduce((a, s) => a + s.total, 0);
-        return `<tr class="${u.active?'':'off'}">
-        <td><b>${u.name}</b>${isSelf?' <span class="tag ok">on now</span>':''}${isTargetSuper?' <span class="tag gold" style="margin-left:4px">Super Admin</span>':''}
-         <div class="muted">${u.active?'active':'switched off'}${u.role==='Salesman'?` · <span style="display:inline-block;padding:1px 6px;border-radius:4px;background:var(--tint-blue);color:var(--ink);font-weight:700">Sales ID: ${u.salesId||u.uid||'S-'}</span>`:''}</div>
-         ${isSalesStaff ? `<div style="margin-top:4px"><span class="tag sm ${todayTot>0?'ok':'blue'}" title="Today's sales">Today: ${fmt(todayTot)}</span> <span class="muted" style="font-size:11px;margin-left:4px">All-time: ${fmt(allTot)} (${mySales.length})</span></div>` : ''}</td>
-        <td><b>${u.role}</b></td>
-        <td><span class="tag ok">password</span>${u.pin?' <span class="tag blue">PIN</span>':''}
-         <div class="muted">${(u.prefs&&u.prefs.nav)==='top'?'menu on top':'menu at the side'}</div></td>
-        <td class="muted">${u.lastSeen||'never'}</td>
-        <td><div class="permlist">${u.role==='Super Admin'||u.role==='Admin'||u.role==='Owner'?'<span class="tag ok">Full System Access</span>'
-           :u.role==='KP'?'<span class="tag blue">Counter · Suppliers · Stock · Online · Money · People</span>'
-           :u.role==='Salesman'?'<span class="tag warn">Dashboard · Read-Only Stock · Attendance</span>'
-           :u.perms.length?u.perms.map(p=>`<span class="permchip">${(PERMS.find(x=>x[0]===p)||[])[1]||p}</span>`).join(''):'<span class="muted">nothing yet</span>'}</div></td>
-        <td><div class="rowacts">
-         ${isSelf?`<button class="btn ghost sm" data-act="myProfile">My Profile</button>`:''}
-         ${canModify&&!isSelf?`
-           <button class="btn ghost sm" data-act="userEdit" data-n="${u.name}">Edit</button>
-           ${!isTargetSuper?`<button class="btn ghost sm" data-act="userToggle" data-n="${u.name}">${u.active?'Switch off':'Switch on'}</button>`:''}
-           ${isSuperAdmin?`<button class="btn ghost sm bad" data-act="userDel" data-n="${u.name}" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)">Remove</button>`:''}
-         `:(!isSelf?`<span class="muted">Protected</span>`:'')}
-        </div></td></tr>`}).join('')}</table>
+      <table>
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th>Signs in with</th>
+            <th>Last signed in</th>
+            <th>What they may do</th>
+            <th style="text-align:right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.map(u=>{
+            const isTargetSuper=u.role==='Super Admin'||u.role==='Owner'||u.name==='Afridh'||['super admin','superadmin','owner'].includes(String(u.role||'').toLowerCase());
+            const canModify=isSuperAdmin||(!isTargetSuper&&isAdmin);
+            const isSelf=S.user&&S.user.name===u.name;
+            const isSalesStaff = u.role === 'Salesman' || S.sales.some(s => s.salesman === u.name || s.by === u.name);
+            const mySales = isSalesStaff ? S.sales.filter(s => s.salesman === u.name || s.by === u.name) : [];
+            const todaySales = mySales.filter(s => s.date === D(today));
+            const todayTot = todaySales.reduce((a, s) => a + s.total, 0);
+            const allTot = mySales.reduce((a, s) => a + s.total, 0);
+            const initial = (u.name||'?').trim()[0].toUpperCase();
+            const roleBadgeClass = u.role==='Super Admin'?'gold':(u.role==='Admin'?'blue':(u.role==='Salesman'?'warn':(u.role==='KP'?'ok':'')));
+
+            return `<tr class="${u.active!==false?'':'off'}">
+              <td>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div style="width:32px;height:32px;border-radius:8px;background:#101E22;color:#F0A81E;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:0 0 32px">
+                    ${initial}
+                  </div>
+                  <div>
+                    <div style="font-weight:700;color:var(--ink);display:flex;align-items:center;gap:6px">
+                      ${u.name}
+                      ${isSelf?'<span class="tag ok sm">You</span>':''}
+                      ${isTargetSuper?'<span class="tag gold sm">Super Admin</span>':''}
+                    </div>
+                    <div class="muted" style="font-size:11.5px">
+                      ${u.active!==false?'<span style="color:#059669">● Active</span>':'<span style="color:#94A3B8">○ Switched off</span>'}
+                      ${u.uid?` · UID: <span class="mono">${u.uid}</span>`:''}
+                      ${u.role==='Salesman'?` · <span style="display:inline-block;padding:1px 6px;border-radius:4px;background:var(--tint-blue);color:var(--ink);font-weight:700;font-size:11px">Sales ID: ${u.salesId||u.uid||'S-'}</span>`:''}
+                    </div>
+                    ${isSalesStaff ? `<div style="margin-top:3px;font-size:11px"><span class="tag sm ${todayTot>0?'ok':'blue'}" title="Today's sales">Today: ${fmt(todayTot)}</span> <span class="muted" style="margin-left:4px">All-time: ${fmt(allTot)} (${mySales.length})</span></div>` : ''}
+                  </div>
+                </div>
+              </td>
+              <td><span class="tag ${roleBadgeClass}" style="font-weight:700">${u.role}</span></td>
+              <td><span class="tag ok">password</span>${u.pin?' <span class="tag blue">PIN</span>':''}
+               <div class="muted" style="font-size:11px;margin-top:2px">${(u.prefs&&u.prefs.nav)==='top'?'menu on top':'menu at the side'}</div></td>
+              <td class="muted">${u.lastSeen||'never'}</td>
+              <td><div class="permlist">${u.role==='Super Admin'||u.role==='Admin'||u.role==='Owner'?'<span class="tag ok">Full System Access</span>'
+                 :u.role==='KP'?'<span class="tag blue">Counter · Suppliers · Stock · Online · Money · People</span>'
+                 :u.role==='Salesman'?'<span class="tag warn">Dashboard · Read-Only Stock · Attendance</span>'
+                 :u.perms.length?u.perms.map(p=>`<span class="permchip">${(PERMS.find(x=>x[0]===p)||[])[1]||p}</span>`).join(''):'<span class="muted">nothing yet</span>'}</div></td>
+              <td style="text-align:right"><div class="rowacts" style="justify-content:flex-end">
+               ${isSelf?`<button class="btn ghost sm" data-act="myProfile">My Profile</button>`:''}
+               ${canModify&&!isSelf?`
+                 <button class="btn ghost sm" data-act="userEdit" data-n="${u.name}" title="Edit User Details">✏️ Edit</button>
+                 ${!isTargetSuper?`<button class="btn ghost sm" data-act="userToggle" data-n="${u.name}" title="${u.active!==false?'Disable sign-in':'Enable sign-in'}">${u.active!==false?'⏻ Disable':'✓ Enable'}</button>`:''}
+                 ${isSuperAdmin?`<button class="btn ghost sm bad" data-act="userDel" data-n="${u.name}" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)" title="Delete User Permanently">🗑️ Remove</button>`:''}
+               `:(!isSelf?`<span class="muted" style="font-size:11px">Protected</span>`:'')}
+              </div></td></tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      ${list.length===0?`
+        <div style="text-align:center;padding:36px 16px;color:var(--steel)">
+          <div style="font-size:28px;margin-bottom:8px">👤</div>
+          <div style="font-weight:700;font-size:15px;color:var(--ink)">No users found</div>
+          <div class="muted" style="margin-top:4px;font-size:13px">
+            ${userSearch ? `No users match "${userSearch}".` : 'No users match the selected filter.'}
+          </div>
+          <div style="margin-top:14px;display:flex;justify-content:center;gap:8px">
+            ${userSearch||userFilter!=='all'?`<button class="btn ghost sm" onclick="userSearch='';userFilter='all';render()">Clear Filters</button>`:''}
+            <button class="btn tape sm" data-act="userNew">+ Add User</button>
+          </div>
+        </div>`:''}
     `;
   }
 
@@ -16187,10 +16330,12 @@ function userModal(name){
       S.employees=(S.employees||[]).filter(x=>String(x.name||'').toLowerCase().trim()!==lowerName&&String(x.userName||'').toLowerCase().trim()!==lowerName);
 
       syncUsersAndStaff();
+      try { localStorage.setItem(STORE_KEY, snapshotTxt()); } catch(_){}
       persist(true);
       if(typeof BroadcastChannel !== 'undefined'){
         try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
       }
+      userTab = 'users';
       m.remove();
       render();
       toast(`User ${u.name} has been removed and sign-in permissions revoked`);
@@ -16305,10 +16450,12 @@ function userModal(name){
       S.users.push(nu);
     }
     syncUsersAndStaff();
+    try { localStorage.setItem(STORE_KEY, snapshotTxt()); } catch(_){}
     persist(true);
     if(typeof BroadcastChannel !== 'undefined'){
       try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
     }
+    userTab = 'users';
     m.remove(); render(); toast(u?`${nm} updated`:`${nm} can now sign in`);
   };
 }
@@ -16745,7 +16892,14 @@ document.addEventListener('click',e=>{
       if(!u) return;
       if(u.name===S.user.name) return toast('You cannot switch off the login you are using');
       if(u.role==='Super Admin'||u.name==='Afridh') return toast('Super Admin cannot be switched off');
-      u.active=!u.active; persist(true); render(); toast(`${u.name} ${u.active?'can sign in again':'can no longer sign in'}`);
+      u.active=!u.active;
+      syncUsersAndStaff();
+      try { localStorage.setItem(STORE_KEY, snapshotTxt()); } catch(_){}
+      persist(true);
+      if(typeof BroadcastChannel !== 'undefined'){
+        try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
+      }
+      render(); toast(`${u.name} ${u.active?'can sign in again':'can no longer sign in'}`);
     },
     userDel:()=>{
       const isSuperAdmin=S.user&&['super admin','superadmin','owner'].includes(String(S.user.role||'').toLowerCase());
@@ -16773,10 +16927,12 @@ document.addEventListener('click',e=>{
       S.employees=(S.employees||[]).filter(x=>String(x.name||'').toLowerCase().trim()!==lowerName&&String(x.userName||'').toLowerCase().trim()!==lowerName);
 
       syncUsersAndStaff();
+      try { localStorage.setItem(STORE_KEY, snapshotTxt()); } catch(_){}
       persist(true);
       if(typeof BroadcastChannel !== 'undefined'){
         try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
       }
+      userTab = 'users';
       render();
       toast(`User ${u.name} has been removed and sign-in permissions revoked`);
     },
