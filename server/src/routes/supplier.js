@@ -12,7 +12,8 @@ import crypto from 'node:crypto';
 import { query } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { sendViaProvider, regalAuth } from './regal.js';
-import { listLogins, findLogin, addLogin, setLogin, removeLogin, checkLogin, loginLine, cleanUser, passOk, suggestUser, inviteMany, startersFor } from '../services/portalLogins.js';
+import { listLogins, findLogin, addLogin, setLogin, removeLogin, checkLogin, loginLine, cleanUser, passOk, suggestUser, inviteMany, startersFor,
+         askForLogin, myRequests, waitingRequests, waitingCount, acceptRequest, rejectRequest } from '../services/portalLogins.js';
 
 const r = Router();
 const TZ = process.env.SHOP_TZ || 'Asia/Colombo';
@@ -226,6 +227,39 @@ r.post('/password', supAuth, asyncHandler(async (req, res) => {
 }));
 
 /* the shop's side: who may sign in for this supplier */
+/* Someone else at the supplier needs to get in. It waits for the shop. */
+r.post('/team', supAuth, asyncHandler(async (req, res) => {
+  const out = await askForLogin('S', req.sup.sid, { askedBy: req.sup.user || req.sup.rep || '', name: req.body?.name,
+    role: req.body?.role, phone: req.body?.phone, note: req.body?.note });
+  res.json({ ok: true, ...out });
+}));
+r.get('/team', supAuth, asyncHandler(async (req, res) => {
+  res.json({ ok: true, requests: await myRequests('S', req.sup.sid) });
+}));
+
+/* ---- the shop's side of those asks ---- */
+r.get('/admin/team', regalAuth, asyncHandler(async (req, res) => {
+  const sid = req.query.sid ? Number(req.query.sid) : undefined;
+  res.json({ ok: true, waiting: await waitingRequests('S', sid), count: await waitingCount('S') });
+}));
+r.post('/admin/team/:id/accept', regalAuth, asyncHandler(async (req, res) => {
+  const made = await acceptRequest('sup_logins', 'S', Number(req.params.id), req.regalUser?.name);
+  let sent = null;
+  if (made.request.phone) {
+    const data = await books();
+    const shop = data?.CFG?.shop?.name || 'Regal Hardware';
+    try {
+      sent = await sendViaProvider(data?.CFG?.msg, made.request.phone,
+        `${shop}: your sign-in for regalhw.lk/supplier — user ${made.username}, password ${made.password}`);
+    } catch (e) { sent = { ok: false, status: e.message } }
+  }
+  res.json({ ok: true, login: loginLine(made.login), username: made.username, password: made.password, sent });
+}));
+r.post('/admin/team/:id/reject', regalAuth, asyncHandler(async (req, res) => {
+  await rejectRequest('S', Number(req.params.id), req.regalUser?.name, req.body?.reason);
+  res.json({ ok: true });
+}));
+
 r.get('/admin/logins/:sid', regalAuth, asyncHandler(async (req, res) => {
   res.json({ ok: true, logins: (await listLogins(LOGINS, +req.params.sid)).map(loginLine) });
 }));

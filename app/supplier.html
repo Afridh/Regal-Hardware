@@ -102,6 +102,48 @@ async function askToBePaid(){
   }catch(e){ alert(e.message) }
   finally{ st.busy=false; render() }
 }
+
+/* Somebody else from their side needs to get in. The shop decides; until it does,
+   there is nothing to sign in with. */
+function teamCard(){
+  const asks = st.team || [];
+  const waiting = asks.filter(a => a.status === 'waiting');
+  return `<div class="card">
+   <h2>Someone else who needs to sign in</h2>
+   <div class="muted" style="margin-bottom:10px">Your own sign-in was made for you. If somebody else here needs one — the accountant, the storekeeper — ask for it and the shop will decide. They are texted the user name and the password only once the shop says yes.</div>
+   ${st.teamSent ? `<div class="card" style="text-align:center;padding:22px 14px;margin:0 0 10px"><div style="font-size:36px">📨</div>
+     <b>Asked the shop</b><div class="muted">They will see it straight away. Nobody can sign in until they say yes.</div>
+     <button class="btn" id="teamAgain" style="margin-top:12px">Ask for another</button></div>` : `
+   <div class="f"><label>Their name</label><input id="tmName" placeholder="e.g. Mr Perera" maxlength="80"></div>
+   <div class="f"><label>What they do</label><input id="tmRole" placeholder="accountant, storekeeper…" maxlength="40"></div>
+   <div class="f"><label>Their mobile</label><input id="tmPhone" inputmode="tel" placeholder="07XXXXXXXX" maxlength="15">
+    <div class="muted">The sign-in is texted here if the shop agrees.</div></div>
+   <div class="f"><label>Anything to tell the shop</label><input id="tmNote" placeholder="optional" maxlength="300"></div>
+   <div class="muted" id="tmMsg"></div>
+   <button class="btn tape big" id="tmSend" ${st.busy?'disabled':''} style="margin-top:8px">${st.busy?'Asking…':'Ask the shop'}</button>`}
+   ${asks.length ? `<h2 style="margin:14px 0 6px;font-size:15px">What you have asked for</h2>
+     ${asks.map(a => `<div class="kv"><span>${esc(a.name)}${a.role?' <span class="muted">· '+esc(a.role)+'</span>':''}</span>
+       <b>${a.status==='waiting'?'<span class="tag warn">With the shop</span>'
+         :a.status==='accepted'?'<span class="tag ok">Let in — texted to them</span>'
+         :'<span class="tag bad">Turned down</span>'}</b></div>
+       ${a.reason?`<div class="muted" style="margin:-4px 0 8px">"${esc(a.reason)}"</div>`:''}`).join('')}` : ''}
+  </div>`;
+}
+async function loadTeam(){
+  try{ const j = await api('/team'); st.team = j.requests || [] }catch(e){ st.team = [] }
+}
+async function askForPerson(){
+  const name = ($('#tmName')||{}).value || '', phone = ($('#tmPhone')||{}).value || '';
+  const msg = $('#tmMsg');
+  if(!name.trim()){ if(msg) msg.textContent = 'Who is it for?'; return }
+  if(!phone.replace(/\D/g,'')){ if(msg) msg.textContent = 'A mobile is needed — that is where the sign-in goes.'; return }
+  st.busy = true; render();
+  try{
+    await api('/team', { method:'POST', body:{ name, phone, role:($('#tmRole')||{}).value||'', note:($('#tmNote')||{}).value||'' } });
+    st.teamSent = true; await loadTeam();
+  }catch(e){ alert(e.message) }
+  finally{ st.busy = false; render() }
+}
 function signOut(redraw=true){ st.token=''; st.me=null; ls.set('token',''); if(redraw) render() }
 const PAYSTATUS={sent:['warn','With the shop'],accepted:['blue','Agreed — being made ready'],ready:['ok','Ready to collect'],issued:['ok','Paid'],rejected:['bad','Turned down']};
 const PAYACT={asked:'Asked to be paid',accepted:'The shop agreed',queried:'The shop asked about it',rejected:'The shop turned it down',ready:'The money is ready',issued:'Handed over'};
@@ -188,7 +230,7 @@ function pay(){
       <div class="ev">${(r.events||[]).map(e=>`<div><b>${esc(e.who)}</b> <span class="muted">· ${when(e.at)}</span><div>${esc(PAYACT[e.action]||e.action)}${e.note?': '+esc(e.note):''}</div></div>`).join('')}</div>
      </div>`).join('')}`:''}`;
 }
-function account(){ const me=st.me, s=me.supplier; return `<div class="card"><h2>${esc(s.name)}</h2>
+function account(){ const me=st.me, s=me.supplier; return teamCard() + `<div class="card"><h2>${esc(s.name)}</h2>
    <div class="kv"><span class="muted">Contact on file</span><b>${esc(s.contact||'—')}</b></div><div class="kv"><span class="muted">Mobile</span><b>${esc(s.phone||'—')}</b></div><div class="kv"><span class="muted">Terms</span><b>${s.terms?s.terms+' days':'—'}</b></div>
    ${s.showAccount?`<div class="kv"><span class="muted">The shop owes you</span><b>${money(s.owed)}</b></div>`:'<div class="muted" style="margin-top:8px">Ask the shop to switch on your account page to see what is owed here.</div>'}</div>
    <div class="card"><h2>${esc(me.shop.name)}</h2><div class="muted">${esc(me.shop.addr||'')}</div>${me.shop.phone?`<div style="margin-top:8px"><a class="btn" href="tel:${esc(me.shop.phone)}">📞 ${esc(me.shop.phone)}</a></div>`:''}</div>`;
@@ -207,6 +249,8 @@ function bind(){
   const pn=$('#payNote'); if(pn) pn.oninput=()=>{ st.payNote=pn.value };
   const pr=$('#payRep'); if(pr) pr.oninput=()=>{ st.rep=pr.value; ls.set('rep',pr.value) };
   const ag=$('#payAgain'); if(ag) ag.onclick=()=>{ st.paySent=null; render() };
+  const ts=$('#tmSend'); if(ts) ts.onclick=askForPerson;
+  const ta=$('#teamAgain'); if(ta) ta.onclick=()=>{ st.teamSent=null; render() };
   const ps=$('#paySend'); if(ps) ps.onclick=askToBePaid;
   const f=$('#file'); if(f) f.onchange=()=>{ [...f.files].slice(0,6-st.photos.length).forEach(file=>shrink(file).then(d=>{ st.photos.push(d); render() }).catch(()=>toast('Could not read that picture'))) };
   $$('[data-rm]',m).forEach(b=>b.onclick=()=>{ st.photos.splice(+b.dataset.rm,1); render() });

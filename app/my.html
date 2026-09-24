@@ -166,6 +166,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand);b
       <button class="btn ghost" id="doChangePw" style="margin-top:10px">Change it</button>
     </div>
 
+    <div class="card" id="teamCard"></div>
+
     <div class="card" id="shopCard"></div>
     <button class="btn ghost" id="signout">Sign out</button>
   </div>
@@ -308,9 +310,50 @@ async function load() {
   $('#saidList').innerHTML = (j.saidPaid || []).length
     ? j.saidPaid.map(s => `<div class="msg ok">You told the shop about ${money(s.amount)} by ${String(s.method || '').toLowerCase()}${s.ref ? ' (' + s.ref + ')' : ''}. Waiting for them to enter it.</div>`).join('')
     : '';
+  loadTeam();
   $('#shopCard').innerHTML = `<h2>${j.shop.name}</h2>
     <div class="muted">${[j.shop.addr, j.shop.hours].filter(Boolean).join('<br>')}</div>
     ${j.shop.phone ? `<a class="btn ghost" style="margin-top:10px;text-decoration:none" href="tel:${j.shop.phone}">Call ${j.shop.phone}</a>` : ''}`;
+}
+
+/* Somebody else at the firm needs to get in. The shop decides; until it does there is
+   nothing to sign in with, so asking gives nobody access. */
+let team = [], teamBusy = false, teamSent = false;
+async function loadTeam(){
+  try { const j = await api('/team'); team = j.requests || [] } catch (e) { team = [] }
+  drawTeam();
+}
+function drawTeam(){
+  const box = $('#teamCard'); if (!box) return;
+  const line = a => `<div class="msg ${a.status === 'accepted' ? 'ok' : a.status === 'waiting' ? 'warn' : 'bad'}">
+    <b>${a.name}</b>${a.role ? ' · ' + a.role : ''} — ${a.status === 'waiting' ? 'with the shop'
+      : a.status === 'accepted' ? 'let in, and texted to them' : 'turned down'}${a.reason ? ': ' + a.reason : ''}</div>`;
+  box.innerHTML = `<h2>Someone else who needs to sign in</h2>
+   <div class="muted">Your own sign-in was made for you. If somebody else here needs one — the accountant, the storekeeper — ask and the shop will decide. They are texted the user name and password only once the shop says yes.</div>
+   ${teamSent ? `<div class="msg ok" style="margin-top:10px"><b>Asked the shop.</b> Nobody can sign in until they say yes.</div>
+     <button class="btn ghost" id="tmAgain" style="margin-top:8px">Ask for another</button>`
+   : `<div style="margin-top:10px">
+      <input id="tmName" placeholder="Their name" maxlength="80">
+      <input id="tmRole" placeholder="What they do — optional" maxlength="40" style="margin-top:6px">
+      <input id="tmPhone" inputmode="tel" placeholder="Their mobile" maxlength="15" style="margin-top:6px">
+      <input id="tmNote" placeholder="Anything to tell the shop — optional" maxlength="300" style="margin-top:6px">
+      <button class="btn" id="tmSend" style="margin-top:8px" ${teamBusy ? 'disabled' : ''}>${teamBusy ? 'Asking…' : 'Ask the shop'}</button>
+     </div>`}
+   ${team.length ? '<div style="margin-top:10px">' + team.map(line).join('') + '</div>' : ''}`;
+  const s = $('#tmSend'); if (s) s.onclick = askForPerson;
+  const g = $('#tmAgain'); if (g) g.onclick = () => { teamSent = false; drawTeam() };
+}
+async function askForPerson(){
+  const name = ($('#tmName') || {}).value || '', phone = ($('#tmPhone') || {}).value || '';
+  if (!name.trim()) return say('Who is it for?', 'bad');
+  if (!phone.replace(/\D/g, '')) return say('A mobile is needed — that is where the sign-in goes.', 'bad');
+  teamBusy = true; drawTeam();
+  try {
+    await api('/team', { name, phone, role: ($('#tmRole') || {}).value || '', note: ($('#tmNote') || {}).value || '' });
+    teamSent = true; say('');
+    await loadTeam();
+  } catch (e) { say(e.message, 'bad') }
+  finally { teamBusy = false; drawTeam() }
 }
 
 $('#sayPaid').onclick = async () => {

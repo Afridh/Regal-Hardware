@@ -9,7 +9,8 @@ import crypto from 'node:crypto';
 import { query } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { sendViaProvider, regalAuth } from './regal.js';
-import { ensureLogins, inviteMany, startersFor, suggestUser, addLogin, setLogin, removeLogin, listLogins, findLogin, cleanUser, loginLine } from '../services/portalLogins.js';
+import { ensureLogins, inviteMany, startersFor, suggestUser, addLogin, setLogin, removeLogin, listLogins, findLogin, cleanUser, loginLine,
+         askForLogin, myRequests, waitingRequests, waitingCount, acceptRequest, rejectRequest } from '../services/portalLogins.js';
 
 const LOGINS = 'cust_logins';
 
@@ -245,6 +246,43 @@ r.post('/password', custAuth, asyncHandler(async (req, res) => {
    Who may sign in for a customer, from the till. The shop sets a password and can set a new one at
    any time; it never sees the one the person chose, and never needs to. */
 const lineOf = l => ({ ...loginLine(l), cid: l.owner });
+
+/* Someone else at the firm needs to get in. It waits for the shop — nothing is made yet. */
+r.post('/team', custAuth, asyncHandler(async (req, res) => {
+  const out = await askForLogin('C', req.cust.cid, { askedBy: req.cust.user || '', name: req.body?.name,
+    role: req.body?.role, phone: req.body?.phone, note: req.body?.note });
+  res.json({ ok: true, ...out });
+}));
+/* What they have asked for, so their own page can show it still waiting. */
+r.get('/team', custAuth, asyncHandler(async (req, res) => {
+  res.json({ ok: true, requests: await myRequests('C', req.cust.cid) });
+}));
+
+/* ---- the shop's side of those asks ---- */
+r.get('/admin/team', regalAuth, asyncHandler(async (req, res) => {
+  const cid = req.query.cid ? Number(req.query.cid) : undefined;
+  res.json({ ok: true, waiting: await waitingRequests('C', cid), count: await waitingCount('C') });
+}));
+r.post('/admin/team/:id/accept', regalAuth, asyncHandler(async (req, res) => {
+  const made = await acceptRequest('cust_logins', 'C', Number(req.params.id), req.regalUser?.name);
+  // the sign-in only exists now, and this is the first anybody hears of it
+  let sent = null;
+  if (made.request.phone) {
+    const data = await books();
+    const shop = data?.CFG?.shop?.name || 'Regal Hardware';
+    const c = (data?.S?.customers || []).find(x => x.id === made.request.owner);
+    const link = 'regalhw.lk/my/' + String(c?.code || '').toLowerCase();
+    try {
+      sent = await sendViaProvider(data?.CFG?.msg,  made.request.phone,
+        `${shop}: your sign-in for ${link} — user ${made.username}, password ${made.password}`);
+    } catch (e) { sent = { ok: false, status: e.message } }
+  }
+  res.json({ ok: true, login: loginLine(made.login), username: made.username, password: made.password, sent });
+}));
+r.post('/admin/team/:id/reject', regalAuth, asyncHandler(async (req, res) => {
+  await rejectRequest('C', Number(req.params.id), req.regalUser?.name, req.body?.reason);
+  res.json({ ok: true });
+}));
 
 r.get('/admin/logins/:cid', regalAuth, asyncHandler(async (req, res) => {
   const rows = await listLogins(LOGINS, +req.params.cid);

@@ -7,6 +7,7 @@
 // Nothing here goes into the books — passwords are hashed and stay on the shop's server.
 import bcrypt from 'bcryptjs';
 import { query } from '../db.js';
+import { HttpError } from '../lib/errors.js';
 
 const ready = new Map();
 /** The table for one kind of page: 'cust_logins' or 'sup_logins'. Made on first use. */
@@ -146,4 +147,110 @@ export async function suggestUser(table, name, code) {
   let want = base.slice(0, 28), n = 1;
   while (await findLogin(table, want)) { n++; want = `${base.slice(0, 24)}${n}` }
   return want;
+}
+
+/* ================== ASKING FOR ANOTHER SIGN-IN ==================
+   Every customer and every supplier is given one sign-in by itself: a user name made from
+   their own name and a password, texted to the mobile on the account. That is enough for
+   most of them.
+
+   A firm that wants a second person — the accountant as well as the manager — asks for it
+   from their own page rather than ringing the shop. The ask lands here and waits. Nobody
+   is let in until the shop says so: accepting it is what makes the sign-in, and only then
+   is the user name and password texted to the number they gave.
+
+   The asks live on the server beside the sign-ins themselves, not in the books. A pending
+   ask is not an account — there is nothing to sign in with until it is accepted. */
+let reqReady = null;
+export function ensureTeamRequests() {
+  if (!reqReady) {
+    reqReady = query(`
+      CREATE TABLE IF NOT EXISTS login_requests (
+        id         bigserial PRIMARY KEY,
+        kind       char(1) NOT NULL,          -- C customer, S supplier
+        owner      integer NOT NULL,
+        asked_by   varchar(80),               -- the sign-in that asked
+        name       varchar(80) NOT NULL,
+        role       varchar(40),
+        phone      varchar(20),
+        note       varchar(300),
+        status     varchar(12) NOT NULL DEFAULT 'waiting',   -- waiting · accepted · refused
+        decided_by varchar(80),
+        decided_at timestamptz,
+        reason     varchar(300),
+        created_at timestamptz NOT NULL DEFAULT now());
+      ALTER TABLE login_requests ALTER COLUMN status TYPE varchar(12);
+      CREATE INDEX IF NOT EXISTS login_requests_waiting ON login_requests (kind, owner) WHERE status = 'waiting'`)
+      .catch(e => { reqReady = null; throw e; });
+  }
+  return reqReady;
+}
+
+/** Someone on their side asks for a sign-in. It waits for the shop. */
+export async function askForLogin(kind, owner, { askedBy, name, role, phone, note }) {
+  await ensureTeamRequests();
+  const who = String(name || '').trim().slice(0, 80);
+  if (!who) throw new HttpError(400, 'A name is needed — who is it for?');
+  const mob = digits(phone).slice(0, 12);
+  if (!mob) throw new HttpError(400, 'A mobile is needed — that is where the sign-in is sent');
+  const { rows: [open] } = await query(
+    `SELECT count(*)::int AS n FROM login_requests WHERE kind=$1 AND owner=$2 AND status='waiting'`, [kind, owner]);
+  if (open.n >= 5) throw new HttpError(400, 'There are already five waiting for the shop to look at');
+  const { rows: [row] } = await query(
+    `INSERT INTO login_requests (kind, owner, asked_by, name, role, phone, note)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, created_at`,
+    [kind, owner, String(askedBy || '').slice(0, 80), who, String(role || '').trim().slice(0, 40), mob,
+     String(note || '').trim().slice(0, 300)]);
+  return { id: Number(row.id), at: row.created_at };
+}
+
+/** What a firm has asked for, for their own page — so they can see it is still waiting. */
+export async function myRequests(kind, owner) {
+  await ensureTeamRequests();
+  const { rows } = await query(
+    `SELECT id, name, role, phone, status, reason, created_at, decided_at FROM login_requests
+     WHERE kind=$1 AND owner=$2 ORDER BY id DESC LIMIT 20`, [kind, owner]);
+  return rows.map(r => ({ id: Number(r.id), name: r.name, role: r.role || '', phone: r.phone || '',
+    status: r.status, reason: r.reason || '', at: r.created_at, decidedAt: r.decided_at }));
+}
+
+/** Everything still waiting, for the shop. */
+export async function waitingRequests(kind, owner) {
+  await ensureTeamRequests();
+  const where = owner === undefined ? `kind=$1` : `kind=$1 AND owner=$2`;
+  const args = owner === undefined ? [kind] : [kind, owner];
+  const { rows } = await query(
+    `SELECT id, owner, asked_by, name, role, phone, note, created_at FROM login_requests
+     WHERE ${where} AND status='waiting' ORDER BY id`, args);
+  return rows.map(r => ({ id: Number(r.id), owner: r.owner, askedBy: r.asked_by || '', name: r.name,
+    role: r.role || '', phone: r.phone || '', note: r.note || '', at: r.created_at }));
+}
+export async function waitingCount(kind) {
+  await ensureTeamRequests();
+  const { rows: [{ n }] } = await query(`SELECT count(*)::int AS n FROM login_requests WHERE kind=$1 AND status='waiting'`, [kind]);
+  return n;
+}
+
+/** The shop says yes: the sign-in is made now, and not a moment before. */
+export async function acceptRequest(table, kind, id, by) {
+  await ensureTeamRequests();
+  const { rows: [req] } = await query(`SELECT * FROM login_requests WHERE id=$1 AND status='waiting'`, [id]);
+  if (!req) throw new HttpError(404, 'That ask has already been dealt with');
+  if (req.kind !== kind) throw new HttpError(400, 'That ask is not for this kind of account');
+  const username = await suggestUser(table, req.name, 'user');
+  const password = 'reg' + Math.random().toString(36).slice(2, 8);
+  const login = await addLogin(table, req.owner, { username, password, name: req.name, role: req.role, phone: req.phone });
+  await query(`UPDATE login_requests SET status='accepted', decided_by=$2, decided_at=now() WHERE id=$1`,
+    [id, String(by || '').slice(0, 80)]);
+  return { login, username, password, request: { owner: req.owner, name: req.name, phone: req.phone } };
+}
+
+export async function rejectRequest(kind, id, by, reason) {
+  await ensureTeamRequests();
+  const { rowCount } = await query(
+    `UPDATE login_requests SET status='refused', decided_by=$2, decided_at=now(), reason=$3
+     WHERE id=$1 AND status='waiting' AND kind=$4`,
+    [id, String(by || '').slice(0, 80), String(reason || '').trim().slice(0, 300), kind]);
+  if (!rowCount) throw new HttpError(404, 'That ask has already been dealt with');
+  return true;
 }

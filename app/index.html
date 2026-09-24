@@ -12966,19 +12966,26 @@ function portalBar(kind,p){
    the shop's server, never in the books. */
 /* Read once for the customer on the screen. Whether it works or not, the attempt is remembered —
    a reader that forgets it has tried would be asked again by the next redraw, and again, for ever. */
-let custLogins={cid:0,kind:'C',list:null,busy:false,failed:''};
+let custLogins={cid:0,kind:'C',list:null,asks:[],busy:false,failed:''};
 const loginsBase=(kind)=>kind==='S'?'/api/sup':'/api/my';
 async function loadCustLogins(cid,force,kind){
   kind=kind||'C';
   if(!force&&custLogins.cid===cid&&custLogins.kind===kind) return custLogins.list;
   if(!window.regalBridge||!regalBridge.token()){ custLogins={cid,kind,list:[],busy:false,failed:'not signed in to the shop server'}; return null }
   try{
-    const r=await fetch(loginsBase(kind)+'/admin/logins/'+cid,{headers:{'Authorization':'Bearer '+regalBridge.token()}});
+    const h={'Authorization':'Bearer '+regalBridge.token()};
+    const r=await fetch(loginsBase(kind)+'/admin/logins/'+cid,{headers:h});
     const j=await r.json().catch(()=>({}));
-    if(!r.ok||j.ok===false){ custLogins={cid,kind,list:[],busy:false,failed:j.error||('the server said '+r.status)}; return null }
-    custLogins={cid,kind,list:(j.logins||[]),busy:false,failed:''};
+    if(!r.ok||j.ok===false){ custLogins={cid,kind,list:[],asks:[],busy:false,failed:j.error||('the server said '+r.status)}; return null }
+    // who they have asked to have let in, waiting on us
+    let asks=[];
+    try{ const q=kind==='S'?'?sid=':'?cid=';
+      const t=await fetch(loginsBase(kind)+'/admin/team'+q+cid,{headers:h});
+      const tj=await t.json().catch(()=>({})); if(t.ok&&tj.ok!==false) asks=tj.waiting||[];
+    }catch(e){}
+    custLogins={cid,kind,list:(j.logins||[]),asks,busy:false,failed:''};
     return custLogins.list;
-  }catch(e){ custLogins={cid,kind,list:[],busy:false,failed:e.message}; return null }
+  }catch(e){ custLogins={cid,kind,list:[],asks:[],busy:false,failed:e.message}; return null }
 }
 function custLoginsPanel(c,kind){
   kind=kind||'C';
@@ -12987,9 +12994,20 @@ function custLoginsPanel(c,kind){
   const mine=(custLogins.cid===c.id&&custLogins.kind===kind&&custLogins.list)?custLogins.list:null;
   return `<div class="card" style="margin-top:12px" id="cuLogins">
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-     <div><b>Who signs in for ${c.name}</b>
-      <div class="muted">A firm can have as many as it needs — the manager, the accountant, the storekeeper. Each gets a name and a password for ${page.toLowerCase()}.${on?'':' <b>Their page is off</b>, so none of these will open it until it is switched on.'}</div></div>
-     <button class="btn tape sm" data-act="cuLoginNew" data-id="${c.id}" data-kind="${kind}">Add someone</button></div>
+     <div><b>How ${c.name} signs in</b>
+      <div class="muted">A user name made from their own name and a password, texted to them — made by itself, nothing to set up. If they want somebody else let in as well, they ask from their own page and it turns up here.${on?'':' <b>Their page is off</b>, so none of these will open it until it is switched on.'}</div></div>
+     </div>
+    ${(custLogins.cid===c.id&&custLogins.kind===kind&&(custLogins.asks||[]).length)?`<div class="card note" style="margin:0 0 10px;border-left:3px solid var(--chip-yellow)">
+      <b>${custLogins.asks.length} ${custLogins.asks.length===1?'person is':'people are'} waiting to be let in</b>
+      <div class="muted">${c.name} asked for ${custLogins.asks.length===1?'this':'these'}. Nobody can sign in until you say yes — saying yes makes the user name and password and texts them.</div>
+      <table class="tbl" style="margin-top:8px"><tr><th>Who</th><th>What they do</th><th>Mobile</th><th></th></tr>
+      ${custLogins.asks.map(a=>`<tr>
+        <td><b>${a.name}</b>${a.note?`<div class="muted">"${String(a.note).replace(/</g,'&lt;')}"</div>`:''}</td>
+        <td>${a.role||'—'}</td><td>${a.phone||'—'}</td>
+        <td class="n" style="white-space:nowrap">
+         <button class="btn tape sm" data-act="cuTeamOk" data-id="${c.id}" data-kind="${kind}" data-tid="${a.id}">Let them in</button>
+         <button class="btn ghost sm" data-act="cuTeamNo" data-id="${c.id}" data-kind="${kind}" data-tid="${a.id}">Turn it down</button></td></tr>`).join('')}
+      </table></div>`:''}
     ${custLogins.cid===c.id&&custLogins.failed?`<div class="muted">Could not read them — ${custLogins.failed}. <a href="#" data-act="cuLoginsAgain" data-id="${c.id}" data-kind="${kind}">Try again</a></div>`
      :mine===null?'<div class="muted">Reading…</div>'
      :!mine.length?`<div class="card note" style="margin:0"><b>Nobody has a sign-in yet.</b>
@@ -16610,6 +16628,27 @@ document.addEventListener('click',e=>{
       else { supSel=id; render() } },
     supNew:()=>supModal(null,a.dataset.q||supQ), supEdit:()=>supModal(+a.dataset.id),
     supTerms:()=>supTermsModal(+a.dataset.id),
+    cuTeamOk:async()=>{ const kind=a.dataset.kind||'C', id=+a.dataset.id, tid=a.dataset.tid;
+      const who=kind==='S'?SU(id):C(id);
+      if(!confirm(`Let them in?\n\nA user name and a password are made now and texted to them.`)) return;
+      try{
+        const r=await fetch(loginsBase(kind)+'/admin/team/'+tid+'/accept',{method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:'{}'});
+        const j=await r.json().catch(()=>({}));
+        if(!r.ok||j.ok===false) throw new Error(j.error||('the server said '+r.status));
+        await loadCustLogins(id,true,kind); render();
+        toast(`${j.username} let in${j.sent&&j.sent.ok?' and texted':' — the text did not go, read it out to them'}`);
+      }catch(e){ toast('Not done: '+e.message) } },
+    cuTeamNo:async()=>{ const kind=a.dataset.kind||'C', id=+a.dataset.id, tid=a.dataset.tid;
+      const why=prompt('Why not? They will see this.','');
+      if(why===null) return;
+      try{
+        const r=await fetch(loginsBase(kind)+'/admin/team/'+tid+'/reject',{method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify({reason:why})});
+        const j=await r.json().catch(()=>({}));
+        if(!r.ok||j.ok===false) throw new Error(j.error||('the server said '+r.status));
+        await loadCustLogins(id,true,kind); render(); toast('Turned down');
+      }catch(e){ toast('Not done: '+e.message) } },
     prSel:()=>{ prSel=a.dataset.id; const r=payReqs().find(x=>x.id===prSel); if(r) r.unreadShop=false; render() },
     prAccept:()=>{ const r=payReqs().find(x=>x.id===a.dataset.id); if(r&&canPayReq()) prNote(r,'accepted','Agree to this request','anything they should know — optional','Agree to it') },
     prQuery:()=>{ const r=payReqs().find(x=>x.id===a.dataset.id); if(r&&canPayReq()) prNote(r,'queried','Ask them about it','what is not right, or what you need from them','Send it back') },
