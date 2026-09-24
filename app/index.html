@@ -6775,6 +6775,9 @@ function renderNow(){
 
   if(S.view==='bills'||S.view==='recall') billsAfter();
   if(S.view==='trail') trailAfter();
+  // who signs in for the customer on the screen, read once and kept until another is opened
+  if(S.view==='customers'&&custSel&&document.getElementById('cuLogins')&&custLogins.cid!==custSel&&!custLogins.busy){
+    custLogins.busy=true; loadCustLogins(custSel,true).then(()=>{ custLogins.busy=false; if(S.view==='customers') renderNow() }); }
   document.querySelectorAll('[data-custfilter]').forEach(b=>b.onclick=()=>{custFilter=b.dataset.custfilter;render()});
   document.querySelectorAll('[data-custsort]').forEach(b=>b.onclick=()=>{custSort=b.dataset.custsort;render()});
   document.querySelectorAll('[data-custtab]').forEach(b=>b.onclick=()=>{custTab=b.dataset.custtab;render()});
@@ -11809,6 +11812,8 @@ function customerPanel(c){
 
    ${partyNoteFlags('C',c.id)}
 
+   ${c.portal?custLoginsPanel(c):''}
+
    <div class="cu-tabs">${tabs.map(t=>`<button class="${custTab===t[0]?'on':''}" data-custtab="${t[0]}">${t[1]}${t[2]!==undefined?`<i>${t[2]}</i>`:''}</button>`).join('')}</div>
    <div class="cu-tab-body" key="${custTab}">${({overview:()=>custOverview(c,inv,open,rc,webOrders,ag,owed),bills:()=>custBills(c,inv),payments:()=>custPayments(c,rc),notes:()=>partyNotesPanel('C',c.id),statement:()=>custStatement(c),details:()=>custDetails(c)})[custTab]()}</div>`;
 }
@@ -11832,6 +11837,99 @@ function portalBar(kind,p){
       ? `<button class="btn ghost sm" data-act="custLink" data-id="${p.id}">Text the link</button><button class="btn ghost sm" data-act="custOpen" data-id="${p.id}">Open their phone</button>`
       : `<button class="btn ghost sm" data-act="openPortal" data-id="${p.id}">Open their phone</button>`):''}
    </div></div>`;
+}
+/* ---- who signs in for a customer ----
+   A building firm has a manager, an accountant, a storekeeper: each gets their own name to sign in
+   with on their page. The shop sets a password; the person may set their own later, and the shop's
+   one goes on working, so the counter can always get them in. The names and passwords are kept on
+   the shop's server, never in the books. */
+let custLogins={cid:0,list:null,busy:false};
+async function loadCustLogins(cid,force){
+  if(!window.regalBridge||!regalBridge.token()) return null;
+  if(!force&&custLogins.cid===cid&&custLogins.list) return custLogins.list;
+  try{
+    const r=await fetch('/api/my/admin/logins/'+cid,{headers:{'Authorization':'Bearer '+regalBridge.token()}});
+    const j=await r.json().catch(()=>({}));
+    custLogins={cid,list:(j.logins||[]),busy:false};
+    return custLogins.list;
+  }catch(e){ return null }
+}
+function custLoginsPanel(c){
+  const mine=(custLogins.cid===c.id&&custLogins.list)?custLogins.list:null;
+  return `<div class="card" style="margin-top:12px" id="cuLogins">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+     <div><b>Who signs in for ${c.name}</b>
+      <div class="muted">A firm can have as many as it needs — the manager, the accountant, the storekeeper. Each gets a name and a password for ${('regalhw.lk/my/'+(c.code||'')).toLowerCase()}.</div></div>
+     <button class="btn tape sm" data-act="cuLoginNew" data-id="${c.id}">Add someone</button></div>
+    ${mine===null?'<div class="muted">Reading…</div>'
+     :!mine.length?'<div class="muted">Nobody yet. Anyone with the mobile on this account can still sign in with a texted code.</div>'
+     :`<table class="tbl"><tr><th>User name</th><th>Who</th><th>Mobile</th><th>Last in</th><th></th></tr>
+       ${mine.map(l=>`<tr class="${l.active?'':'off'}">
+         <td><b>${l.username}</b>${l.own?'<div class="muted">has set their own password</div>':'<div class="muted">on the password you gave</div>'}</td>
+         <td>${l.name||'—'}${l.role?`<div class="muted">${l.role}</div>`:''}</td>
+         <td>${l.phone||'<span class="muted">—</span>'}</td>
+         <td class="muted">${l.lastSeen?agoTxt(String(l.lastSeen).slice(0,10)):'never'}</td>
+         <td class="n" style="white-space:nowrap">
+          <button class="btn ghost sm" data-act="cuLoginPw" data-id="${c.id}" data-lid="${l.id}">New password</button>
+          <button class="btn ghost sm" data-act="cuLoginOff" data-id="${c.id}" data-lid="${l.id}" data-on="${l.active?0:1}">${l.active?'Switch off':'Switch on'}</button>
+         </td></tr>`).join('')}</table>`}
+   </div>`;
+}
+function custLoginModal(cid){
+  const c=C(cid);
+  const m=modal(`<h2>Someone who signs in for ${c.name}</h2>
+   <div class="muted" style="margin-bottom:10px">They will use this at ${('regalhw.lk/my/'+(c.code||'')).toLowerCase()}.</div>
+   <div class="grid2">
+    <div class="f"><label>User name</label><input id="clUser" autocapitalize="off" spellcheck="false" placeholder="e.g. amaya.accounts"><div class="muted">Letters, figures, dots — no spaces.</div></div>
+    <div class="f"><label>Password to give them</label><input id="clPass" value="${'reg'+Math.random().toString(36).slice(2,8)}"><div class="muted">They can set their own later; this one goes on working.</div></div></div>
+   <div class="grid3">
+    <div class="f"><label>Their name</label><input id="clName" placeholder="e.g. Mr Perera"></div>
+    <div class="f"><label>What they do</label><input id="clRole" placeholder="accountant, site manager…"></div>
+    <div class="f"><label>Their mobile</label><input id="clPhone" inputmode="tel" placeholder="07XXXXXXXX"><div class="muted">Where a forgotten password is texted.</div></div></div>
+   <div class="muted" id="clMsg" style="margin-top:6px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="clOk">Add them</button></div>`);
+  m.querySelector('#clUser').focus();
+  m.querySelector('#clOk').onclick=async()=>{
+    const g=id=>m.querySelector('#'+id).value.trim();
+    const body={username:g('clUser'),password:g('clPass'),name:g('clName'),role:g('clRole'),phone:g('clPhone')};
+    try{
+      const r=await fetch('/api/my/admin/logins/'+cid,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify(body)});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok||j.ok===false) { m.querySelector('#clMsg').textContent=j.error||('The server said '+r.status); return }
+      m.remove(); await loadCustLogins(cid,true); render();
+      toast(`${body.username} can sign in now — password ${body.password}`,'ok');
+    }catch(e){ m.querySelector('#clMsg').textContent=e.message }
+  };
+}
+function custLoginPwModal(cid,lid){
+  const l=(custLogins.list||[]).find(x=>x.id===lid)||{};
+  const m=modal(`<h2>A new password for ${l.username||'this sign-in'}</h2>
+   <div class="muted" style="margin-bottom:10px">Yours will open their page whatever they have set for themselves.</div>
+   <div class="f"><label>Password</label><input id="cpNewPw" value="${'reg'+Math.random().toString(36).slice(2,8)}"></div>
+   <label class="chk" style="margin-top:8px"><input type="checkbox" id="cpClear"> also clear the one they chose${l.own?'':' (they have not set one)'}</label>
+   <div class="muted" id="cpMsg" style="margin-top:6px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="cpOk">Set it</button></div>`);
+  m.querySelector('#cpNewPw').focus(); m.querySelector('#cpNewPw').select();
+  m.querySelector('#cpOk').onclick=async()=>{
+    const password=m.querySelector('#cpNewPw').value.trim(), clearOwn=m.querySelector('#cpClear').checked;
+    try{
+      const r=await fetch(`/api/my/admin/logins/${cid}/${lid}`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify({password,clearOwn})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok||j.ok===false){ m.querySelector('#cpMsg').textContent=j.error||('The server said '+r.status); return }
+      m.remove(); await loadCustLogins(cid,true); render();
+      toast(`${l.username}'s password is now ${password}`,'ok');
+    }catch(e){ m.querySelector('#cpMsg').textContent=e.message }
+  };
+}
+async function custLoginToggle(cid,lid,on){
+  try{
+    await fetch(`/api/my/admin/logins/${cid}/${lid}`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify({active:!!on})});
+    await loadCustLogins(cid,true); render(); toast(on?'They can sign in again':'Switched off — they cannot sign in');
+  }catch(e){ toast(e.message,'bad') }
 }
 function custOverview(c,inv,open,rc,webOrders,ag,owed){
   const ev=[
@@ -15577,6 +15675,9 @@ document.addEventListener('click',e=>{
     billAmend:()=>{closeModals();editSaleModal(a.dataset.no)},
     purEdit:()=>editPurchaseModal(a.dataset.no),
     billClear:()=>{billQ='';billFrom='';billTo='';billType='all';billBy='all';billCust=0;billSel=null;billLimit=150;render()},
+    cuLoginNew:()=>custLoginModal(+a.dataset.id),
+    cuLoginPw:()=>custLoginPwModal(+a.dataset.id,+a.dataset.lid),
+    cuLoginOff:()=>custLoginToggle(+a.dataset.id,+a.dataset.lid,a.dataset.on==='1'),
     billCust:()=>{ billCust=+a.dataset.id; billFrom=''; billTo=''; billLimit=150; billSel=null; render();
       toast(`Every bill of ${(C(billCust)||{name:'theirs'}).name}`) },
     billCustAll:()=>{ billCust=0; billLimit=150; render() },

@@ -80,10 +80,40 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand);b
   <div id="signin" class="card hide">
     <h2 id="siTitle">Your account</h2>
     <div class="muted" id="siWho" style="margin-bottom:10px"></div>
-    <div id="stepPhone">
+
+    <!-- by name and password: a firm's manager, accountant, storekeeper each have their own -->
+    <div id="stepUser" class="hide">
+      <label for="user">Your user name</label>
+      <input id="user" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="the name the shop gave you">
+      <div style="margin-top:8px"><label for="pass">Password</label>
+        <input id="pass" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+      <button class="btn" id="doSignin" style="margin-top:10px">Sign in</button>
+      <div class="row" style="margin-top:8px">
+        <button class="btn ghost" id="goForgot">Forgotten it</button>
+        <button class="btn ghost" id="goPhone">Use my mobile instead</button>
+      </div>
+    </div>
+
+    <!-- forgotten: a code to the number on that sign-in -->
+    <div id="stepForgot" class="hide">
+      <label for="fUser">Your user name</label>
+      <input id="fUser" autocapitalize="off" spellcheck="false" placeholder="the name you sign in with">
+      <button class="btn" id="askReset" style="margin-top:10px">Text me a code</button>
+      <div id="resetBox" class="hide" style="margin-top:10px">
+        <label for="fOtp">The six figures we texted you</label>
+        <input id="fOtp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
+        <div style="margin-top:8px"><label for="fPass">The password you want from now on</label>
+          <input id="fPass" type="password" autocomplete="new-password" placeholder="at least six characters"></div>
+        <button class="btn" id="doReset" style="margin-top:10px">Set it</button>
+      </div>
+      <button class="btn ghost" id="backUser" style="margin-top:8px">Back</button>
+    </div>
+
+    <div id="stepPhone" class="hide">
       <label for="phone">Your mobile, as the shop has it</label>
       <input id="phone" inputmode="tel" autocomplete="tel" placeholder="07XXXXXXXX">
       <button class="btn" id="askOtp" style="margin-top:10px">Send me a code</button>
+      <button class="btn ghost" id="backUser2" style="margin-top:8px">Sign in with a user name</button>
     </div>
     <div id="stepCode" class="hide">
       <label for="otp">The six figures we texted you</label>
@@ -126,6 +156,16 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand);b
       <div id="pays"><div class="muted">Nothing received yet.</div></div>
     </div>
 
+    <div class="card" id="pwCard">
+      <h2>Your password</h2>
+      <div class="muted" style="margin-bottom:10px">Change the one you use. The password the shop gave you goes on working, so they can always help you in.</div>
+      <div class="row">
+        <div><label for="cpOld">The one you use now</label><input id="cpOld" type="password" autocomplete="current-password"></div>
+        <div><label for="cpNew">The new one</label><input id="cpNew" type="password" autocomplete="new-password" placeholder="at least six"></div>
+      </div>
+      <button class="btn ghost" id="doChangePw" style="margin-top:10px">Change it</button>
+    </div>
+
     <div class="card" id="shopCard"></div>
     <button class="btn ghost" id="signout">Sign out</button>
   </div>
@@ -154,19 +194,70 @@ async function api(path, body) {
   return j;
 }
 
-/* ---- signing in ---- */
+/* ---- signing in ----
+   A firm with several people signs in by name and password; a one-man account can still use the
+   mobile the shop has on file and a texted code. */
+const steps = ['#stepUser', '#stepForgot', '#stepPhone', '#stepCode'];
+const step = (which) => steps.forEach(s => show(s, s === which));
 async function start() {
   if (token) { try { await load(); return } catch (e) { token = ''; try { localStorage.removeItem(KEY) } catch (e2) {} } }
   show('#signin', true);
-  if (!CODE) { $('#siWho').textContent = 'Sign in with the mobile the shop has on file for you.'; return }
+  step('#stepUser');
+  if (!CODE) { $('#siWho').textContent = 'Sign in with the user name the shop gave you.'; return }
   try {
     const w = await api('/who/' + encodeURIComponent(CODE));
     $('#shopName').textContent = w.shop.name || 'Regal Hardware';
     $('#siTitle').textContent = w.name;
-    $('#siWho').textContent = w.phone ? `We will text a code to ${w.phone}.` : 'The shop has no mobile on your account — give them a ring.';
+    if (w.logins > 0) {
+      $('#siWho').textContent = `${w.logins} ${w.logins === 1 ? 'person signs' : 'people sign'} in for this account. Use your own user name.`;
+      step('#stepUser');
+    } else {
+      $('#siWho').textContent = w.phone ? `We will text a code to ${w.phone}.` : 'The shop has no mobile on your account — give them a ring.';
+      step('#stepPhone');
+    }
     if (!w.open) say('The shop has not opened this page for you yet. Give them a ring and they will switch it on.', 'warn');
   } catch (e) { say(e.message, 'bad') }
 }
+
+$('#doSignin').onclick = async () => {
+  const user = $('#user').value.trim(), password = $('#pass').value;
+  if (!user || !password) return say('Your user name and password, please', 'bad');
+  $('#doSignin').disabled = true;
+  try {
+    const j = await api('/signin', { user, password });
+    token = j.token; try { localStorage.setItem(KEY, token) } catch (e) {}
+    say(''); show('#signin', false); await load();
+  } catch (e) { say(e.message, 'bad') }
+  $('#doSignin').disabled = false;
+};
+$('#goForgot').onclick = () => { $('#fUser').value = $('#user').value.trim(); step('#stepForgot'); say('') };
+$('#goPhone').onclick = () => { step('#stepPhone'); say('') };
+$('#backUser').onclick = $('#backUser2').onclick = () => { step('#stepUser'); say('') };
+$('#askReset').onclick = async () => {
+  const user = $('#fUser').value.trim();
+  if (!user) return say('Which user name?', 'bad');
+  try {
+    const j = await api('/forgot', { user });
+    say(j.sent ? `Code texted to ${j.phone}.` : `Texting is not set up, so here is the code: ${j.code}`, 'ok');
+    show('#resetBox', true); $('#fOtp').focus();
+  } catch (e) { say(e.message, 'bad') }
+};
+$('#doReset').onclick = async () => {
+  try {
+    await api('/reset', { user: $('#fUser').value.trim(), code: $('#fOtp').value.trim(), password: $('#fPass').value });
+    say('That is your password now. Sign in with it.', 'ok');
+    $('#user').value = $('#fUser').value.trim(); $('#pass').value = ''; step('#stepUser'); $('#pass').focus();
+  } catch (e) { say(e.message, 'bad') }
+};
+$('#doChangePw').onclick = async () => {
+  const current = $('#cpOld').value, password = $('#cpNew').value;
+  try {
+    await api('/password', { current, password });
+    $('#cpOld').value = ''; $('#cpNew').value = '';
+    say('Password changed. The one the shop gave you still works.', 'ok');
+  } catch (e) { say(e.message, 'bad') }
+};
+['#pass', '#user'].forEach(s => $(s).addEventListener('keydown', e => { if (e.key === 'Enter') $('#doSignin').click() }));
 
 $('#askOtp').onclick = async () => {
   const phone = $('#phone').value.replace(/\D/g, '');
@@ -175,11 +266,11 @@ $('#askOtp').onclick = async () => {
   try {
     const j = await api('/otp', { phone, code: CODE });
     say(j.sent ? `Code texted to ${phone}.` : `Texting is not set up, so here is the code: ${j.code}`, 'ok');
-    show('#stepPhone', false); show('#stepCode', true); $('#otp').focus();
+    step('#stepCode'); $('#otp').focus();
   } catch (e) { say(e.message, 'bad') }
   $('#askOtp').disabled = false; $('#askOtp').textContent = 'Send me a code';
 };
-$('#backPhone').onclick = () => { show('#stepCode', false); show('#stepPhone', true); say('') };
+$('#backPhone').onclick = () => { step('#stepPhone'); say('') };
 $('#doLogin').onclick = async () => {
   const phone = $('#phone').value.replace(/\D/g, ''), code = $('#otp').value.trim();
   try {
@@ -197,7 +288,8 @@ async function load() {
   const j = await api('/me');
   show('#signin', false); show('#account', true);
   $('#shopName').textContent = j.shop.name || 'Regal Hardware';
-  $('#shopSub').textContent = j.customer.name + (j.customer.code ? ' · ' + j.customer.code : '');
+  $('#shopSub').textContent = j.customer.name + (j.who ? ' · ' + j.who : (j.customer.code ? ' · ' + j.customer.code : ''));
+  show('#pwCard', !!j.who);
   $('#owed').textContent = money(j.owed);
   $('#owedSub').textContent = j.open.length
     ? `${j.open.length} unpaid bill${j.open.length === 1 ? '' : 's'}${j.limit ? ' · limit ' + money(j.limit) : ''}`
