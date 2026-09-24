@@ -11229,6 +11229,7 @@ function billCopy(no){
 const APPROVAL_KINDS=[
   ['custPortal','Customer portal switched on or off'],
   ['supPortal','Supplier portal switched on or off, or shown their account'],
+  ['custEdit','Customer name, mobile, address or notes changed'],
   ['custTerms','Customer credit limit or price level changed'],
   ['custRemove','Customer removed'],
   ['billAdjust','Amount taken off a customer bill (return, discount, write-off)'],
@@ -11254,6 +11255,10 @@ function applyApproval(a){
   switch(a.kind){
     case 'custPortal':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); custPortalSet(c,!!d.on); break }
     case 'supPortal':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supPortalSet(s,d.field,!!d.value); break }
+    case 'custEdit':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists');
+      if(d.fields&&d.fields.phone){ const dup=S.customers.find(x=>x.phone===d.fields.phone&&x.id!==c.id&&x.active!==false);
+        if(dup) throw new Error(`${dup.name} already has that number`) }
+      Object.assign(c,d.fields||{}); break }
     case 'custTerms':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); if(d.limit!==undefined) c.limit=+d.limit; if(d.level) c.level=d.level; break }
     case 'custRemove':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); if(partyBal('C',c.id)>0.005) throw new Error('They still owe money'); c.active=false; break }
     case 'billAdjust': applySaleAdjust(d.no,+d.amount,d.why,d.note,a.by); break;
@@ -11673,6 +11678,12 @@ function customerPanel(c){
        <div><b>${c.name} says they paid ${fmt(n.amount)}</b><div class="muted">${n.method}${n.ref?' · '+n.ref:''} · told us ${n.date}. Nothing has been posted yet.</div></div>
        <div style="display:flex;gap:6px"><button class="btn tape" data-act="noticeTake" data-id="${n.id}">Record it</button><button class="btn ghost" data-act="noticeDrop" data-id="${n.id}">Dismiss</button></div></div></div>`).join('')}
 
+   ${(()=>{ const waiting=apPending().filter(a=>['custEdit','custTerms','custPortal','custRemove'].includes(a.kind)&&a.data&&a.data.cid===c.id);
+     return waiting.length?`<div class="card note" style="margin-bottom:10px;border-left-color:var(--chip-yellow)">
+       <b>${waiting.length===1?'A change is waiting for the owner':waiting.length+' changes are waiting for the owner'}</b>
+       ${waiting.map(a=>`<div class="muted">${a.title} — asked by ${a.by}, ${a.at}</div>`).join('')}
+       <div style="margin-top:6px"><a href="#" data-view="approvals">Open Approvals</a></div></div>`:'' })()}
+
    ${partyNoteFlags('C',c.id)}
 
    <div class="cu-tabs">${tabs.map(t=>`<button class="${custTab===t[0]?'on':''}" data-custtab="${t[0]}">${t[1]}${t[2]!==undefined?`<i>${t[2]}</i>`:''}</button>`).join('')}</div>
@@ -11800,11 +11811,27 @@ function custModal(id,preset){
     const dup=phone&&S.customers.find(x=>x.phone===phone&&x.id!==(c?c.id:-1));
     if(dup){ g('cmMsg').textContent=`${dup.name} already has that number.`; return }
     if(c){
+      /* who they are is not changed quietly: a name, a mobile, an address or a counter note that
+         someone alters waits for the owner, with the old and the new wording side by side. */
+      const was={name:c.name,phone:c.phone||'',address:c.address||'',notes:c.notes||''};
+      const now={name,phone,address:addr,notes};
+      const LABEL={name:'Name',phone:'Mobile',address:'Address',notes:'Note'};
+      const changed=Object.keys(now).filter(k=>(was[k]||'')!==(now[k]||''));
       const termsChanged=limit!==c.limit||level!==c.level;
-      Object.assign(c,{name,phone,address:addr,notes});
+      const asks=[];
+      if(changed.length&&needsApproval('custEdit')){
+        const fields={}; changed.forEach(k=>fields[k]=now[k]);
+        asks.push(requestApproval('custEdit',
+          `Change ${c.name}: ${changed.map(k=>`${LABEL[k].toLowerCase()} ${was[k]?`“${was[k]}”`:'(empty)'} → ${now[k]?`“${now[k]}”`:'(empty)'}`).join(', ')}`,
+          `${c.code||''}${c.phone?' · '+c.phone:''} · ${S.sales.filter(s=>s.customerId===c.id).length} bills · owes ${fmt(partyBal('C',c.id))}`,
+          {cid:c.id,fields}));
+      } else if(changed.length){ Object.assign(c,now) }
       if(termsChanged&&needsApproval('custTerms')){
-        return requestApproval('custTerms',`Change ${c.name}'s terms: limit ${fmt(c.limit)} → ${fmt(limit)}, ${c.level} → ${level} prices`,`owes ${fmt(partyBal('C',c.id))} now`,{cid:c.id,limit,level}) }
-      Object.assign(c,{level,limit}); m.remove(); render(); toast('Saved'); return }
+        asks.push(requestApproval('custTerms',`Change ${c.name}'s terms: limit ${fmt(c.limit)} → ${fmt(limit)}, ${c.level} → ${level} prices`,`owes ${fmt(partyBal('C',c.id))} now`,{cid:c.id,limit,level}));
+      } else if(termsChanged){ Object.assign(c,{level,limit}) }
+      m.remove(); render();
+      if(asks.length) return;                                  // requestApproval has already said so
+      toast(changed.length||termsChanged?'Saved':'Nothing changed'); return }
     const nc={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),name,phone,address:addr,level,limit,notes,portal:false,lastLogin:null,points:0};
     S.customers.push(nc); custSel=nc.id; custQ=''; custFilter='all'; custTab='overview'; m.remove(); render(); toast(`${name} added`);
   };

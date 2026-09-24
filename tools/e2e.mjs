@@ -599,7 +599,12 @@ ok('B: cashier cannot open Users', !B.w.allowed('users') && B.w.allowed('pos'));
   B.w.eval('custSel=2; custTab="details"'); B.w.go('customers'); await sleep(30);
   B.d.querySelector('[data-act="custEdit"]').click(); await sleep(20);
   B.d.getElementById('cmLimit').value = '99999999'; B.d.getElementById('cmAddr').value = 'New Town, by the tank'; B.d.getElementById('cmOk').click(); await sleep(30);
-  ok('B: limit change becomes a request, address change applies at once', CB(2).limit !== 99999999 && CB(2).address === 'New Town, by the tank' && B.w.S.approvals.some(a => a.kind === 'custTerms' && a.status === 'pending') && !B.d.querySelector('.modal'));
+  // who the customer is and what their terms are both wait for the owner now — nothing is changed quietly
+  ok('B: the limit and the address both become requests, neither is applied',
+    CB(2).limit !== 99999999 && CB(2).address !== 'New Town, by the tank'
+    && B.w.S.approvals.some(a => a.kind === 'custTerms' && a.status === 'pending')
+    && B.w.S.approvals.some(a => a.kind === 'custEdit' && a.status === 'pending' && a.data.fields.address === 'New Town, by the tank')
+    && !B.d.querySelector('.modal'));
   B.w.go('dashboard');
   const termsA = await until(() => A.w.S.approvals.find(a => a.kind === 'custTerms' && a.status === 'pending'), 25000, 500);
   ok('A: terms request arrived', !!termsA);
