@@ -3123,7 +3123,7 @@ const userUid=()=>{ const u=S.users.find(x=>x.name===S.user.name); if(u&&u.uid) 
 const userNo=(name)=>{ const who=name||S.user.name; const u=S.users.find(x=>x.name===who);
   const n=+(u&&u.no); if(n>0) return n;
   const i=S.users.findIndex(x=>x.name===who); return i>=0?i+1:9 };
-const billDigits=()=>Math.min(8,Math.max(4,+CFG.bill.digits||6));
+const billDigits=()=>Math.min(8,Math.max(3,+CFG.bill.digits||4));
 const billPlain=()=>(CFG.bill.style||'plain')!=='coded';
 const billKey=()=>billPlain()?('N'+userNo()):(S.terminal+'-'+userUid());
 /* the run carries on from the numbers already issued, so nobody starts again at one */
@@ -3139,7 +3139,8 @@ function billSeqNow(){
       const m=/^[A-Za-z]*-?(\d{1,2})-(\d{3,8})$/.exec(t);
       if(m&&m[1]===pre){ const n=+m[2]; if(n>max) max=n }
     }
-    S.seqBy[key]=max;
+    // only carry on from the old run while it still fits the width asked for; a shorter number starts again
+    S.seqBy[key]=max<Math.pow(10,billDigits())?max:0;
   }
   return S.seqBy[key]||0;
 }
@@ -3443,7 +3444,7 @@ const CFG={
    line1:'Your trusted one-stop shop in Polonnaruwa for all Hardware, Paints, Electrical, PVC & Motor items.',
    line2:'We specialise in Dulux & Asian Paints colour mixing — offering the best prices.',
    hours:'8.00 am – 7.00 pm',owner:'0777849964'},
- bill:{prefix:'INVM-',style:'plain',digits:6,warrantyNote:'Covers manufacturing faults only. Misuse, water damage and normal wear are not covered. Bring this card with the machine.',returnDays:7,quoteDays:14,showMrp:true,showSaving:true,defaultFormat:'r80',
+ bill:{prefix:'INVM-',style:'plain',digits:4,warrantyNote:'Covers manufacturing faults only. Misuse, water damage and normal wear are not covered. Bring this card with the machine.',returnDays:7,quoteDays:14,showMrp:true,showSaving:true,defaultFormat:'r80',
    title:'INVOICE',creditTitle:'CREDIT INVOICE',showLogo:true,showSinhala:true,showStrap:true,
    showCode:true,showUom:true,showQr:true,showWords:true,showCashier:true,showOutstanding:true,
    showSign:true,signLeft:'Authorised By',signRight:'Received By',showItemCount:true,showBarcode:true,t80Sign:true,showWeb:true,a5Scale:118,r80Scale:100,
@@ -3720,7 +3721,7 @@ function settings(){
     <div class="grid3">
      <div class="f"><label>How bills are numbered</label><select data-set="bill.style">
       ${[['plain','Figures only — 11000123'],['coded','Lettered — INVM-T1-AF-00123']].map(o=>`<option value="${o[0]}" ${(CFG.bill.style||'plain')===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>
-     ${fld('bill.digits','Figures in the running number','6 gives 000123; the number carries on from the bills already issued','number')}
+     ${fld('bill.digits','Figures in the running number',`4 gives 0123, so a whole bill number is ${String(userNo(S.user.name)).length+billDigits()} figures. It carries on from the bills already issued while they still fit.`,'number')}
      ${billPlain()?'<div class="f"><label>&nbsp;</label><div class="muted">The prefix and the till letters are only used by the lettered form.</div></div>':fld('bill.prefix','Invoice number prefix','Bills run on from here')}</div>
     <div class="grid3">
     ${fld('bill.returnDays','Return window in days','','number')}${fld('bill.quoteDays','How long a quotation holds good, in days','','number')}
