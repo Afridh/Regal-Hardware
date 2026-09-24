@@ -79,6 +79,7 @@ if (!process.env.VERCEL && fs.existsSync(appDir)) {
   const fresh = (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); };
   app.get('/', fresh, (_req, res) => res.sendFile(path.join(appDir, 'shop.html')));
   app.get(['/pos', '/pos/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'index.html')));
+  app.get(['/shift', '/shift/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'shift.html')));
   app.get(['/supplier', '/supplier/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'supplier.html')));
   app.get(['/my', '/my/', '/my/:code'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'my.html')));
   app.use(express.static(appDir, { index: false, extensions: ['html'], setHeaders: (res, p) => { if (/\.(html|js)$/.test(p)) res.set('Cache-Control', 'no-store'); } }));

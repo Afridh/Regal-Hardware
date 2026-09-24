@@ -4209,10 +4209,19 @@ function dayFigures(ds,empId){
     }
     return out;
   }
-  const inM=toMin(r.in);
   const isToday=(ds===D(today));
-  const outM=r.out ? toMin(r.out) : (isToday ? nowMin() : inM);
-  out.gross=Math.max(0,outM-inM);
+  const sessions = (Array.isArray(r.sessions) && r.sessions.length) ? r.sessions : [{ in: r.in, out: r.out }];
+  const firstIn = sessions[0]?.in || r.in;
+  const inM = toMin(firstIn);
+  const outM = r.out ? toMin(r.out) : (isToday ? nowMin() : inM);
+
+  // Accumulate gross time across all active sessions in the day
+  out.gross = sessions.reduce((tot, s) => {
+    if(!s || !s.in) return tot;
+    const sIn = toMin(s.in);
+    const sOut = s.out ? toMin(s.out) : (isToday ? nowMin() : sIn);
+    return tot + Math.max(0, sOut - sIn);
+  }, 0);
   // paid breaks are free up to their allowance; anything past it comes off the day
   (r.breaks||[]).forEach(b=>{
     const def=(shiftSet().breaks||[]).find(x=>x.id===b.id);
@@ -4587,6 +4596,13 @@ function updateLiveWorkingBadges(){
       el.className='bc-live-badge out';
       el.innerHTML=`⏱️ 0h 0m · Not in yet`;
     }
+    const card = document.getElementById(`card-emp-${id}`);
+    if(card){
+      const extraWrap = card.querySelector('.bc-extra-wrap');
+      if(extraWrap){
+        extraWrap.innerHTML = f.over > 0 ? `<div class="bc-badge extra-break">Extra break · ${fmtMin(f.over)}</div>` : '';
+      }
+    }
   });
 }
 if(!window._attLiveTimer){
@@ -4599,10 +4615,6 @@ if(!window._attLiveTimer){
 function refreshAttendanceBoard(){
   const wrap=document.getElementById('attBoardWrap');
   if(!wrap){ render(); return; }
-  const openDetails=new Set();
-  wrap.querySelectorAll('.bc-details-box').forEach(el=>{
-    if(el.style.display!=='none'&&el.id) openDetails.add(el.id);
-  });
   const isSalesman=S.user&&S.user.role==='Salesman';
   if(isSalesman){
     const me=S.employees.find(e=>String(e.name||'').toLowerCase()===String(S.user.name||'').toLowerCase()
@@ -4612,15 +4624,6 @@ function refreshAttendanceBoard(){
   } else {
     wrap.innerHTML=boardToday();
   }
-  openDetails.forEach(id=>{
-    const box=document.getElementById(id);
-    if(box){
-      box.style.display='block';
-      const empId=id.replace('details-','');
-      const btn=wrap.querySelector(`[data-act="toggleDetails"][data-id="${empId}"]`);
-      if(btn) btn.innerHTML='Hide details ▴';
-    }
-  });
   bindPunchQ();
 }
 
@@ -4665,11 +4668,31 @@ function bindPunchQ(){
 function punchIn(id,ds=D(today)){
   const e=S.employees.find(x=>x.id===id);
   const inTime=hhmm(nowMin());
-  const lateMin=Math.max(0,nowMin()-toMin(shiftSet().startTime||'08:00'));
-  setRec(ds,id,{status:'work',in:inTime,out:null,breaks:recFor(ds,id)?.breaks||[],leaveEarly:null});
-  refreshAttendanceBoard();
-  if(lateMin>0) toast(`${e?e.name:'Staff'} checked in at ${inTime} (${fmtMin(lateMin)} Late)`);
-  else toast(`${e?e.name:'Staff'} checked in on time at ${inTime}`);
+  const r=recFor(ds,id)||{};
+  const shiftStart=toMin(shiftSet().startTime||'08:00');
+  let firstIn = r.in;
+  let sessions = Array.isArray(r.sessions) ? [...r.sessions] : [];
+
+  if(r.in && (r.out || sessions.length)){
+    // Checking in again in the same day: resume working hours from last checkout
+    if(!sessions.length) sessions = [{ in: r.in, out: r.out || inTime }];
+    if(sessions.length && !sessions[sessions.length-1].out){
+      sessions[sessions.length-1].out = inTime;
+    }
+    sessions.push({ in: inTime, out: null });
+    setRec(ds,id,{ status:'work', in:firstIn, out:null, sessions, breaks:r.breaks||[], leaveEarly:null });
+    refreshAttendanceBoard();
+    toast(`${e?e.name:'Staff'} checked in again at ${inTime}`);
+  } else {
+    // First check-in of the day
+    firstIn = inTime;
+    sessions = [{ in: inTime, out: null }];
+    const lateMin=Math.max(0,nowMin()-shiftStart);
+    setRec(ds,id,{ status:'work', in:inTime, out:null, sessions, breaks:r.breaks||[], leaveEarly:null });
+    refreshAttendanceBoard();
+    if(lateMin>0) toast(`${e?e.name:'Staff'} checked in at ${inTime} (${fmtMin(lateMin)} Late)`);
+    else toast(`${e?e.name:'Staff'} checked in on time at ${inTime}`);
+  }
 }
 
 function punchOut(id,ds=D(today)){
@@ -4682,7 +4705,11 @@ function punchOut(id,ds=D(today)){
   const e=S.employees.find(x=>x.id===id);
   const outTime=hhmm(nowMin());
   (r.breaks||[]).forEach(b=>{ if(!b.end) b.end=outTime });
-  setRec(ds,id,{out:outTime,breaks:r.breaks||[]});
+  let sessions = Array.isArray(r.sessions) ? [...r.sessions] : (r.in ? [{ in: r.in, out: outTime }] : []);
+  if(sessions.length){
+    sessions[sessions.length-1].out = outTime;
+  }
+  setRec(ds,id,{ out:outTime, breaks:r.breaks||[], sessions });
   refreshAttendanceBoard();
   const f=dayFigures(ds,id);
   toast(`${e?e.name:'Staff'} checked out at ${outTime} · ${dur(f.worked)} worked${f.ot?` · ${dur(f.ot)} OT`:''}`);
@@ -4883,7 +4910,7 @@ function renderStaffCard({e, st, f, r}){
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
           <div class="bc-badge ${badgeClass}">${badgeLabel}</div>
-          ${f.over>0 ? `<div class="bc-badge extra-break">Extra break · ${fmtMin(f.over)}</div>` : ''}
+          <div class="bc-extra-wrap">${f.over>0 ? `<div class="bc-badge extra-break">Extra break · ${fmtMin(f.over)}</div>` : ''}</div>
         </div>
       </div>
 
@@ -4963,40 +4990,35 @@ function renderStaffCard({e, st, f, r}){
         :''}
       </div>
 
-      <div class="bc-bottom-row">
-        <button class="bc-toggle-btn" data-act="toggleDetails" data-id="${e.id}">See details ▾</button>
-      </div>
-
-      <div class="bc-details-box" id="details-${e.id}" style="display:none">
-        <div class="bc-metrics">
-          <div class="bc-metric">
-            <span class="lbl">Check-In</span>
-            <span class="val ${isLate?'late-val':''}">${f.in||'—'}${isLate?` <small style="font-size:10px">(${fmtMin(f.late)} late)</small>`:''}</span>
-          </div>
-          <div class="bc-metric">
-            <span class="lbl">Check-Out</span>
-            <span class="val">${f.out||'—'}</span>
-          </div>
-          <div class="bc-metric">
-            <span class="lbl">Floor Time</span>
-            <span class="val">${dur(f.worked)}</span>
-          </div>
-          <div class="bc-metric">
-            <span class="lbl">OT Past 7:30 PM</span>
-            <span class="val ${f.ot?'ot-val':''}">${dur(f.ot)}</span>
-          </div>
+      <!-- Direct Metrics (Always Visible) -->
+      <div class="bc-metrics" style="margin-top:8px">
+        <div class="bc-metric">
+          <span class="lbl">Check-In</span>
+          <span class="val ${isLate?'late-val':''}">${f.in||'—'}${isLate?` <small style="font-size:10px">(${fmtMin(f.late)} late)</small>`:''}</span>
         </div>
-
-        ${breaksTaken.length?`
-          <div style="margin-top:6px;font-size:10.5px;color:var(--steel);background:#F8FAFC;padding:5px 8px;border-radius:6px;border:1px solid #E2E8F0">
-            <b>Breaks:</b> ${breaksTaken.map(b=>`${b.name||'Break'}: ${b.start}–${b.end||'now'}`).join(' · ')}
-          </div>`:''}
-
-        ${!isSalesman?`
-          <div style="display:flex;justify-content:flex-end;margin-top:6px">
-            <button class="btn ghost sm" data-act="dayEdit" data-id="${e.id}" data-d="${ds}" style="font-size:11px;padding:3px 8px">✎ Edit Times</button>
-          </div>`:''}
+        <div class="bc-metric">
+          <span class="lbl">Check-Out</span>
+          <span class="val">${f.out||'—'}</span>
+        </div>
+        <div class="bc-metric">
+          <span class="lbl">Floor Time</span>
+          <span class="val">${dur(f.worked)}</span>
+        </div>
+        <div class="bc-metric">
+          <span class="lbl">OT Past 7:30 PM</span>
+          <span class="val ${f.ot?'ot-val':''}">${dur(f.ot)}</span>
+        </div>
       </div>
+
+      ${breaksTaken.length?`
+        <div style="margin-top:6px;font-size:10.5px;color:var(--steel);background:#F8FAFC;padding:4px 8px;border-radius:6px;border:1px solid #E2E8F0">
+          <b>Breaks:</b> ${breaksTaken.map(b=>`${b.name||'Break'}: ${b.start}–${b.end||'now'}`).join(' · ')}
+        </div>`:''}
+
+      ${!isSalesman?`
+        <div style="display:flex;justify-content:flex-end;margin-top:4px">
+          <button class="btn ghost sm" data-act="dayEdit" data-id="${e.id}" data-d="${ds}" style="font-size:11px;padding:2px 8px">✎ Edit Times</button>
+        </div>`:''}
     </div>
   `;
 }
