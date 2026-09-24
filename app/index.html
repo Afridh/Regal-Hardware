@@ -6780,11 +6780,15 @@ function renderNow(){
   if(S.view==='bills'||S.view==='recall') billsAfter();
   if(S.view==='trail') trailAfter();
   // who signs in for the customer on the screen, read once and kept until another is opened
-  if(S.view==='customers'&&custSel&&document.getElementById('cuLogins')&&custLogins.cid!==custSel&&!custLogins.busy){
-    const asked=custSel; custLogins.busy=true;
-    loadCustLogins(asked,true).then(got=>{ custLogins.busy=false;
-      // only draw again when something came back, and only if that customer is still the one on the screen
-      if(got&&S.view==='customers'&&custSel===asked) renderNow(); });
+  // who signs in for the customer or the supplier on the screen, read once and kept until another is opened
+  if(document.getElementById('cuLogins')&&!custLogins.busy){
+    const forSup=S.view==='suppliers', asked=forSup?supSel:custSel, kind=forSup?'S':'C';
+    if(asked&&(custLogins.cid!==asked||custLogins.kind!==kind)){
+      custLogins.busy=true;
+      loadCustLogins(asked,true,kind).then(got=>{ custLogins.busy=false;
+        // only draw again when something came back, and only if that one is still on the screen
+        if(got&&(forSup?supSel:custSel)===asked) renderNow(); });
+    }
   }
   document.querySelectorAll('[data-custfilter]').forEach(b=>b.onclick=()=>{custFilter=b.dataset.custfilter;render()});
   document.querySelectorAll('[data-custsort]').forEach(b=>b.onclick=()=>{custSort=b.dataset.custsort;render()});
@@ -11499,14 +11503,42 @@ function approvals(){
     :`<div class="card muted">${apTab==='pending'?(mine?'You have nothing waiting.':'Nothing is waiting on you.'):'Nothing decided yet.'}</div>`}`;
 }
 /* the doing of each change, shared by the request path and the direct path */
+/* ---- switching a page on ----
+   Switching it on is the moment the shop hands someone the keys, so the system makes a sign-in for
+   them if there is none and texts the address, the user name and the password in one message. Where
+   people are already named on the account, their own sign-ins stand and only the address is sent. */
+async function portalInvite(kind,who,on){
+  const link=(kind==='C'?'regalhw.lk/my/'+(who.code||''):'regalhw.lk/supplier').toLowerCase();
+  const to=(who.phone||'').trim();
+  if(!on||!to) return;
+  const path=kind==='C'?'/api/my/admin/invite/':'/api/sup/admin/invite/';
+  try{
+    if(!window.regalBridge||!regalBridge.token()) throw new Error('not signed in to the shop server');
+    const r=await fetch(path+who.id,{method:'POST',headers:{'Authorization':'Bearer '+regalBridge.token()}});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||j.ok===false) throw new Error(j.error||('the server said '+r.status));
+    if(j.made){
+      sms(to,tpl('portalLogin',{customer:who.name,who:who.contact||who.name,user:j.username,pass:j.password,link}));
+      if(kind==='C') loadCustLogins(who.id,true).then(()=>render());
+      toast(`Page on · texted ${to} — user name ${j.username}, password ${j.password}`,'ok');
+    } else {
+      sms(to,tpl('portalInvite',{customer:who.name,link}));
+      toast(`Page on · ${to} told. ${j.logins.length} sign-in${j.logins.length===1?'':'s'} already set up, so their own names and passwords stand.`,'ok');
+    }
+  }catch(e){
+    sms(to,tpl('portalInvite',{customer:who.name,link}));      // the link at least goes out
+    toast('Page on and the link texted, but the sign-in could not be made — '+e.message,'warn');
+  }
+}
 function custPortalSet(c,on){
   c.portal=on;
   if(!on&&S.cportal&&S.cportal.session===c.id){S.cportal.session=null;S.cportal.err='The shop has switched this page off.'}
-  if(on&&c.phone) sms(c.phone,tpl('portalInvite',{customer:c.name,link:'regalhw.lk/my/'+c.code.toLowerCase()}));
+  if(on) portalInvite('C',c,true);
 }
 function supPortalSet(s,field,value){
   s[field]=value;
   if(field==='enabled'&&!value&&S.portal.session===s.id){S.portal.session=null;S.portal.err='This supplier link has been switched off by the shop.'}
+  if(field==='enabled'&&value) portalInvite('S',s,true);
 }
 function applySaleAdjust(no,v,why,note,by){
   const inv=S.sales.find(x=>x.no===no); if(!inv) throw new Error('Bill '+no+' not found');
@@ -11853,26 +11885,30 @@ function portalBar(kind,p){
    the shop's server, never in the books. */
 /* Read once for the customer on the screen. Whether it works or not, the attempt is remembered —
    a reader that forgets it has tried would be asked again by the next redraw, and again, for ever. */
-let custLogins={cid:0,list:null,busy:false,failed:''};
-async function loadCustLogins(cid,force){
-  if(!force&&custLogins.cid===cid) return custLogins.list;
-  if(!window.regalBridge||!regalBridge.token()){ custLogins={cid,list:[],busy:false,failed:'not signed in to the shop server'}; return null }
+let custLogins={cid:0,kind:'C',list:null,busy:false,failed:''};
+const loginsBase=(kind)=>kind==='S'?'/api/sup':'/api/my';
+async function loadCustLogins(cid,force,kind){
+  kind=kind||'C';
+  if(!force&&custLogins.cid===cid&&custLogins.kind===kind) return custLogins.list;
+  if(!window.regalBridge||!regalBridge.token()){ custLogins={cid,kind,list:[],busy:false,failed:'not signed in to the shop server'}; return null }
   try{
-    const r=await fetch('/api/my/admin/logins/'+cid,{headers:{'Authorization':'Bearer '+regalBridge.token()}});
+    const r=await fetch(loginsBase(kind)+'/admin/logins/'+cid,{headers:{'Authorization':'Bearer '+regalBridge.token()}});
     const j=await r.json().catch(()=>({}));
-    if(!r.ok||j.ok===false){ custLogins={cid,list:[],busy:false,failed:j.error||('the server said '+r.status)}; return null }
-    custLogins={cid,list:(j.logins||[]),busy:false,failed:''};
+    if(!r.ok||j.ok===false){ custLogins={cid,kind,list:[],busy:false,failed:j.error||('the server said '+r.status)}; return null }
+    custLogins={cid,kind,list:(j.logins||[]),busy:false,failed:''};
     return custLogins.list;
-  }catch(e){ custLogins={cid,list:[],busy:false,failed:e.message}; return null }
+  }catch(e){ custLogins={cid,kind,list:[],busy:false,failed:e.message}; return null }
 }
-function custLoginsPanel(c){
-  const mine=(custLogins.cid===c.id&&custLogins.list)?custLogins.list:null;
+function custLoginsPanel(c,kind){
+  kind=kind||'C';
+  const page=kind==='S'?'regalhw.lk/supplier':('regalhw.lk/my/'+(c.code||''));
+  const mine=(custLogins.cid===c.id&&custLogins.kind===kind&&custLogins.list)?custLogins.list:null;
   return `<div class="card" style="margin-top:12px" id="cuLogins">
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
      <div><b>Who signs in for ${c.name}</b>
-      <div class="muted">A firm can have as many as it needs — the manager, the accountant, the storekeeper. Each gets a name and a password for ${('regalhw.lk/my/'+(c.code||'')).toLowerCase()}.</div></div>
-     <button class="btn tape sm" data-act="cuLoginNew" data-id="${c.id}">Add someone</button></div>
-    ${custLogins.cid===c.id&&custLogins.failed?`<div class="muted">Could not read them — ${custLogins.failed}. <a href="#" data-act="cuLoginsAgain" data-id="${c.id}">Try again</a></div>`
+      <div class="muted">A firm can have as many as it needs — the manager, the accountant, the storekeeper. Each gets a name and a password for ${page.toLowerCase()}.</div></div>
+     <button class="btn tape sm" data-act="cuLoginNew" data-id="${c.id}" data-kind="${kind}">Add someone</button></div>
+    ${custLogins.cid===c.id&&custLogins.failed?`<div class="muted">Could not read them — ${custLogins.failed}. <a href="#" data-act="cuLoginsAgain" data-id="${c.id}" data-kind="${kind}">Try again</a></div>`
      :mine===null?'<div class="muted">Reading…</div>'
      :!mine.length?'<div class="muted">Nobody yet. Anyone with the mobile on this account can still sign in with a texted code.</div>'
      :`<table class="tbl"><tr><th>User name</th><th>Who</th><th>Mobile</th><th>Last in</th><th></th></tr>
@@ -11882,16 +11918,18 @@ function custLoginsPanel(c){
          <td>${l.phone||'<span class="muted">—</span>'}</td>
          <td class="muted">${l.lastSeen?agoTxt(String(l.lastSeen).slice(0,10)):'never'}</td>
          <td class="n" style="white-space:nowrap">
-          <button class="btn ghost sm" data-act="cuLoginSend" data-id="${c.id}" data-lid="${l.id}" ${(l.phone||c.phone)?'':'disabled title="no mobile on file"'}>Send it to them</button>
-          <button class="btn ghost sm" data-act="cuLoginPw" data-id="${c.id}" data-lid="${l.id}">New password</button>
-          <button class="btn ghost sm" data-act="cuLoginOff" data-id="${c.id}" data-lid="${l.id}" data-on="${l.active?0:1}">${l.active?'Switch off':'Switch on'}</button>
+          <button class="btn ghost sm" data-act="cuLoginSend" data-id="${c.id}" data-lid="${l.id}" data-kind="${kind}" ${(l.phone||c.phone)?'':'disabled title="no mobile on file"'}>Send it to them</button>
+          <button class="btn ghost sm" data-act="cuLoginPw" data-id="${c.id}" data-lid="${l.id}" data-kind="${kind}">New password</button>
+          <button class="btn ghost sm" data-act="cuLoginOff" data-id="${c.id}" data-lid="${l.id}" data-kind="${kind}" data-on="${l.active?0:1}">${l.active?'Switch off':'Switch on'}</button>
          </td></tr>`).join('')}</table>`}
    </div>`;
 }
-function custLoginModal(cid){
-  const c=C(cid);
+function custLoginModal(cid,kind){
+  kind=kind||'C';
+  const c=kind==='S'?SU(cid):C(cid);
+  const page=(kind==='S'?'regalhw.lk/supplier':'regalhw.lk/my/'+(c.code||'')).toLowerCase();
   const m=modal(`<h2>Someone who signs in for ${c.name}</h2>
-   <div class="muted" style="margin-bottom:10px">They will use this at ${('regalhw.lk/my/'+(c.code||'')).toLowerCase()}.</div>
+   <div class="muted" style="margin-bottom:10px">They will use this at ${page}.</div>
    <div class="grid2">
     <div class="f"><label>User name</label><input id="clUser" autocapitalize="off" spellcheck="false" placeholder="e.g. amaya.accounts"><div class="muted">Letters, figures, dots — no spaces.</div></div>
     <div class="f"><label>Password to give them</label><input id="clPass" value="${'reg'+Math.random().toString(36).slice(2,8)}"><div class="muted">They can set their own later; this one goes on working.</div></div></div>
@@ -11910,29 +11948,30 @@ function custLoginModal(cid){
     const g=id=>m.querySelector('#'+id).value.trim();
     const body={username:g('clUser'),password:g('clPass'),name:g('clName'),role:g('clRole'),phone:g('clPhone')};
     try{
-      const r=await fetch('/api/my/admin/logins/'+cid,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify(body)});
+      const r=await fetch(loginsBase(kind)+'/admin/logins/'+cid,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify(body)});
       const j=await r.json().catch(()=>({}));
       if(!r.ok||j.ok===false) { m.querySelector('#clMsg').textContent=j.error||('The server said '+r.status); return }
       const sms1=m.querySelector('#clSms'), wa1=m.querySelector('#clWa');
-      const sent=sendLoginDetails(c,body,'portalLogin',{sms:sms1&&sms1.checked,wa:wa1&&wa1.checked});
-      m.remove(); await loadCustLogins(cid,true); render();
+      const sent=sendLoginDetails(c,body,'portalLogin',{sms:sms1&&sms1.checked,wa:wa1&&wa1.checked},kind);
+      m.remove(); await loadCustLogins(cid,true,kind); render();
       toast(`${body.username} can sign in now — password ${body.password}${sent?' · sent to '+(body.phone||c.phone):''}`,'ok');
     }catch(e){ m.querySelector('#clMsg').textContent=e.message }
   };
 }
 /* The sign-in itself goes to the person it belongs to: the address, the user name and the password
    in one message, so nobody has to read them out over the counter. */
-function sendLoginDetails(c,l,key,how){
+function sendLoginDetails(c,l,key,how,kind){
   const to=(l.phone||c.phone||'').trim();
   if(!to||!(how.sms||how.wa)) return false;
   const v={customer:c.name,who:l.name||l.username,user:l.username,pass:l.password,
-    link:('regalhw.lk/my/'+(c.code||'')).toLowerCase()};
+    link:(kind==='S'?'regalhw.lk/supplier':'regalhw.lk/my/'+(c.code||'')).toLowerCase()};
   try{
     if(how.wa) wa(to,tpl(key,v),key,v); else sms(to,tpl(key,v));
     return true;
   }catch(e){ toast('Could not send it: '+e.message,'warn'); return false }
 }
-function custLoginPwModal(cid,lid){
+function custLoginPwModal(cid,lid,kind){
+  kind=kind||'C';
   const l=(custLogins.list||[]).find(x=>x.id===lid)||{};
   const m=modal(`<h2>A new password for ${l.username||'this sign-in'}</h2>
    <div class="muted" style="margin-bottom:10px">Yours will open their page whatever they have set for themselves.</div>
@@ -11947,25 +11986,26 @@ function custLoginPwModal(cid,lid){
   m.querySelector('#cpOk').onclick=async()=>{
     const password=m.querySelector('#cpNewPw').value.trim(), clearOwn=m.querySelector('#cpClear').checked;
     try{
-      const r=await fetch(`/api/my/admin/logins/${cid}/${lid}`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify({password,clearOwn})});
+      const r=await fetch(`${loginsBase(kind)}/admin/logins/${cid}/${lid}`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify({password,clearOwn})});
       const j=await r.json().catch(()=>({}));
       if(!r.ok||j.ok===false){ m.querySelector('#cpMsg').textContent=j.error||('The server said '+r.status); return }
       const box=m.querySelector('#cpSms');
-      const sent=sendLoginDetails(C(cid),{...l,password},'portalPassword',{sms:box&&box.checked&&!box.disabled});
-      m.remove(); await loadCustLogins(cid,true); render();
+      const sent=sendLoginDetails(kind==='S'?SU(cid):C(cid),{...l,password},'portalPassword',{sms:box&&box.checked&&!box.disabled},kind);
+      m.remove(); await loadCustLogins(cid,true,kind); render();
       toast(`${l.username}'s password is now ${password}${sent?' · texted to them':''}`,'ok');
     }catch(e){ m.querySelector('#cpMsg').textContent=e.message }
   };
 }
 /* Sending it again. Nobody can read a password back — not the shop either — so this sets a fresh one
    and sends that, which is also what you want when the message went astray. */
-function custLoginSend(cid,lid){
-  const c=C(cid), l=(custLogins.list||[]).find(x=>x.id===lid); if(!l) return toast('That sign-in is gone');
+function custLoginSend(cid,lid,kind){
+  kind=kind||'C';
+  const c=kind==='S'?SU(cid):C(cid), l=(custLogins.list||[]).find(x=>x.id===lid); if(!l) return toast('That sign-in is gone');
   const to=l.phone||c.phone;
   if(!to) return toast('No mobile for them — put one on the sign-in first','warn');
   const password='reg'+Math.random().toString(36).slice(2,8);
   const m=modal(`<h2>Send the sign-in to ${l.name||l.username}</h2>
-   <div class="hb-ask"><b>${to}</b><span>${('regalhw.lk/my/'+(c.code||'')).toLowerCase()} · user name ${l.username}</span></div>
+   <div class="hb-ask"><b>${to}</b><span>${(kind==='S'?'regalhw.lk/supplier':'regalhw.lk/my/'+(c.code||'')).toLowerCase()} · user name ${l.username}</span></div>
    <div class="muted" style="margin:8px 0">A password cannot be read back, so this sets a new one and sends that. ${l.own?'The one they chose for themselves still works.':''}</div>
    <div class="f"><label>Password to send</label><input id="csndPw" value="${password}"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
@@ -11974,19 +12014,20 @@ function custLoginSend(cid,lid){
   m.querySelector('#csndOk').onclick=async()=>{
     const pw=m.querySelector('#csndPw').value.trim();
     try{
-      const r=await fetch(`/api/my/admin/logins/${cid}/${lid}`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify({password:pw})});
+      const r=await fetch(`${loginsBase(kind)}/admin/logins/${cid}/${lid}`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify({password:pw})});
       const j=await r.json().catch(()=>({}));
       if(!r.ok||j.ok===false) return toast(j.error||('The server said '+r.status),'bad');
-      sendLoginDetails(c,{...l,password:pw},'portalLogin',{sms:true});
-      m.remove(); await loadCustLogins(cid,true); render();
+      sendLoginDetails(c,{...l,password:pw},'portalLogin',{sms:true},kind);
+      m.remove(); await loadCustLogins(cid,true,kind); render();
       toast(`Sent to ${to} — user name ${l.username}, password ${pw}`,'ok');
     }catch(e){ toast(e.message,'bad') }
   };
 }
-async function custLoginToggle(cid,lid,on){
+async function custLoginToggle(cid,lid,on,kind){
+  kind=kind||'C';
   try{
-    await fetch(`/api/my/admin/logins/${cid}/${lid}`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify({active:!!on})});
-    await loadCustLogins(cid,true); render(); toast(on?'They can sign in again':'Switched off — they cannot sign in');
+    await fetch(`${loginsBase(kind)}/admin/logins/${cid}/${lid}`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify({active:!!on})});
+    await loadCustLogins(cid,true,kind); render(); toast(on?'They can sign in again':'Switched off — they cannot sign in');
   }catch(e){ toast(e.message,'bad') }
 }
 function custOverview(c,inv,open,rc,webOrders,ag,owed){
@@ -13326,6 +13367,8 @@ function supplierPanel(s){
     <div class="kpi g"><div class="l">Last payment</div><div class="v ${lastPay&&fmt(lastPay.total).length>14?'small':''}">${lastPay?fmt(lastPay.total):'—'}</div><div class="s">${lastPay?`${lastPay.date} · ${lastPay.lines.map(l=>l.method.toLowerCase()).join('+')} · ${agoTxt(lastPay.date)}`:'nothing paid yet'}</div></div>
     <div class="kpi b"><div class="l">Bought in all</div><div class="v ${fmt(bought).length>14?'small':''}">${fmt(bought)}</div><div class="s">${pur.length} GRN${pur.length===1?'':'s'} · paid ${fmt(paidTot)}</div></div>
    </div>
+
+   ${s.enabled?custLoginsPanel(s,'S'):''}
 
    ${partyNoteFlags('S',s.id)}
 
@@ -15733,11 +15776,11 @@ document.addEventListener('click',e=>{
     billAmend:()=>{closeModals();editSaleModal(a.dataset.no)},
     purEdit:()=>editPurchaseModal(a.dataset.no),
     billClear:()=>{billQ='';billFrom='';billTo='';billType='all';billBy='all';billCust=0;billSel=null;billLimit=150;render()},
-    cuLoginNew:()=>custLoginModal(+a.dataset.id),
-    cuLoginsAgain:()=>{ custLogins={cid:0,list:null,busy:false,failed:''}; render() },
-    cuLoginPw:()=>custLoginPwModal(+a.dataset.id,+a.dataset.lid),
-    cuLoginSend:()=>custLoginSend(+a.dataset.id,+a.dataset.lid),
-    cuLoginOff:()=>custLoginToggle(+a.dataset.id,+a.dataset.lid,a.dataset.on==='1'),
+    cuLoginNew:()=>custLoginModal(+a.dataset.id,a.dataset.kind||'C'),
+    cuLoginsAgain:()=>{ custLogins={cid:0,kind:'C',list:null,busy:false,failed:''}; render() },
+    cuLoginPw:()=>custLoginPwModal(+a.dataset.id,+a.dataset.lid,a.dataset.kind||'C'),
+    cuLoginSend:()=>custLoginSend(+a.dataset.id,+a.dataset.lid,a.dataset.kind||'C'),
+    cuLoginOff:()=>custLoginToggle(+a.dataset.id,+a.dataset.lid,a.dataset.on==='1',a.dataset.kind||'C'),
     billCust:()=>{ billCust=+a.dataset.id; billFrom=''; billTo=''; billLimit=150; billSel=null; render();
       toast(`Every bill of ${(C(billCust)||{name:'theirs'}).name}`) },
     billCustAll:()=>{ billCust=0; billLimit=150; render() },
@@ -15770,7 +15813,7 @@ document.addEventListener('click',e=>{
     custPortal:()=>{const c=C(+a.dataset.id);
       if(needsApproval('custPortal')) return requestApproval('custPortal',`Switch ${c.portal?'off':'on'} the outstanding page for ${c.name}`,`${c.name} · ${c.phone||'no mobile'} · owes ${fmt(partyBal('C',c.id))}`,{cid:c.id,on:!c.portal});
       custPortalSet(c,!c.portal);
-      render(); drawPhone(); toast(c.portal?'Outstanding page switched on and the link texted':'Outstanding page switched off')},
+      render(); drawPhone(); if(!c.portal) toast('Outstanding page switched off')},   // switching on says its own piece, with the sign-in
     apOk:()=>decideApproval(a.dataset.id,true,($('#apn-'+a.dataset.id)||{}).value),
     apNo:()=>decideApproval(a.dataset.id,false,($('#apn-'+a.dataset.id)||{}).value),
     custLink:()=>{const c=C(+a.dataset.id); if(!c.phone)return toast('No mobile number for '+c.name);

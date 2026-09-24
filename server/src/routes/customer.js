@@ -309,6 +309,26 @@ r.delete('/admin/logins/:cid/:id', regalAuth, asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/** The shop switching the page on: make a sign-in if there is none, and hand back what to text. */
+r.post('/admin/invite/:cid', regalAuth, asyncHandler(async (req, res) => {
+  const cid = +req.params.cid;
+  const data = await books();
+  const c = (data?.S?.customers || []).find(x => x.id === cid);
+  if (!c) throw new HttpError(404, 'No such customer');
+  await ensureCustTables();
+  const { rows: have } = await query(`SELECT * FROM cust_logins WHERE cid = $1 ORDER BY id`, [cid]);
+  if (have.length) return res.json({ ok: true, made: false, logins: have.map(lineOf) });
+  // a name made from theirs, and a password to hand over; they can change it once they are in
+  const base = String(c.name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '').split('.').slice(0, 2).join('.') || cleanUser(c.code) || 'account';
+  let username = base.slice(0, 28), n = 1;
+  while ((await query(`SELECT 1 FROM cust_logins WHERE lower(username) = $1`, [username])).rowCount) { n++; username = `${base.slice(0, 24)}${n}` }
+  const password = 'reg' + Math.random().toString(36).slice(2, 8);
+  const { rows: [row] } = await query(
+    `INSERT INTO cust_logins (cid, username, name, role, phone, admin_hash) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [cid, username, String(c.contact || c.name || '').slice(0, 80), '', digits(c.phone), await hash(password)]);
+  res.json({ ok: true, made: true, username, password, login: lineOf(row) });
+}));
+
 /* ---------------------------------------------------------------- "I have paid this" */
 r.post('/paid', custAuth, asyncHandler(async (req, res) => {
   const amount = +req.body?.amount || 0;

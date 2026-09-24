@@ -156,18 +156,61 @@ function respond(no,action){
     try{ await api('/po/'+encodeURIComponent(no)+'/respond',{method:'POST',body:{action,note:$('#rNote',el).value,invoice:($('#rInv',el)||{}).value||'',eta:($('#rEta',el)||{}).value||''}}); el.remove(); toast({accepted:'Confirmed — the shop has been told',changes:'Sent to the shop',dispatched:'Marked dispatched'}[action]); load() }
     catch(e){ toast(e.message); b.disabled=false } };
 }
+/* Signing in: by the user name the shop gave you, or the old way with the mobile on file and a
+   texted code. Forgotten sends a code to the number kept against that sign-in. */
 function signIn(then){
-  const el=document.createElement('div'); el.className='sheet'; let phone=st.phone||'', stage='phone', hint='', name='';
-  const draw=()=>{ el.innerHTML=`<div class="box"><h2 style="margin-bottom:2px">${stage==='phone'?'Your mobile':'The code we sent'}</h2>
-    <div class="muted" style="margin-bottom:12px">${stage==='phone'?'The number the shop has on file for your company.':'Sent to '+esc(phone)+(name?' — '+esc(name):'')+'. It works for 5 minutes.'}</div>
-    ${stage==='phone'?`<div class="f"><label>Mobile</label><input id="sPh" inputmode="tel" value="${esc(phone)}" placeholder="07XXXXXXXX" autocomplete="tel"></div><div class="f"><label>Your name</label><input id="sRep" value="${esc(st.rep)}" placeholder="Rep's name"></div>`
+  const el=document.createElement('div'); el.className='sheet';
+  let phone=st.phone||'', stage=ls.get('user')?'user':'user', hint='', name='', user=ls.get('user')||'';
+  const draw=()=>{
+    const titles={user:'Sign in',phone:'Your mobile',code:'The code we sent',forgot:'Forgotten your password',reset:'A new password'};
+    el.innerHTML=`<div class="box"><h2 style="margin-bottom:2px">${titles[stage]}</h2>
+    <div class="muted" style="margin-bottom:12px">${
+      stage==='user'?'The user name the shop gave you.'
+      :stage==='phone'?'The number the shop has on file for your company.'
+      :stage==='forgot'?'We will text a code to the number on that sign-in.'
+      :stage==='reset'?'The code we texted you, and the password you want from now on.'
+      :'Sent to '+esc(phone)+(name?' — '+esc(name):'')+'. It works for 5 minutes.'}</div>
+    ${stage==='user'?`<div class="f"><label>User name</label><input id="sUser" value="${esc(user)}" autocapitalize="off" spellcheck="false" autocomplete="username"></div>
+       <div class="f"><label>Password</label><input id="sPass" type="password" autocomplete="current-password" placeholder="••••••••"></div>`
+     :stage==='phone'?`<div class="f"><label>Mobile</label><input id="sPh" inputmode="tel" value="${esc(phone)}" placeholder="07XXXXXXXX" autocomplete="tel"></div><div class="f"><label>Your name</label><input id="sRep" value="${esc(st.rep)}" placeholder="Rep's name"></div>`
+     :stage==='forgot'?`<div class="f"><label>User name</label><input id="sFUser" value="${esc(user)}" autocapitalize="off" spellcheck="false"></div>`
+     :stage==='reset'?`${hint?`<div class="demo">Text messages are not switched on at the shop yet — your code is <b>${hint}</b>.</div>`:''}
+       <div class="f code"><label>Code</label><input id="sFCode" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="one-time-code"></div>
+       <div class="f"><label>New password</label><input id="sFPass" type="password" autocomplete="new-password" placeholder="at least six characters"></div>`
      :`${hint?`<div class="demo">Text messages are not switched on at the shop yet — your code is <b>${hint}</b>.</div>`:''}<div class="f code"><label>Code</label><input id="sCode" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="one-time-code"></div>`}
-    <div style="display:flex;gap:8px;margin-top:6px"><button class="btn" id="sX">Cancel</button><button class="btn tape" id="sGo" style="flex:1">${stage==='phone'?'Text me a code':'Sign in'}</button></div>
-    ${stage==='code'?'<div class="muted" style="margin-top:10px"><a href="#" id="sBack">Wrong number?</a></div>':''}</div>`;
-    $('#sX',el).onclick=()=>el.remove(); const bk=$('#sBack',el); if(bk) bk.onclick=e=>{e.preventDefault();stage='phone';draw()};
-    $('#sGo',el).onclick=step; const inp=$('input',el); inp.focus(); $$('input',el).forEach(i=>i.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();step()} }) };
+    <div style="display:flex;gap:8px;margin-top:6px"><button class="btn" id="sX">Cancel</button>
+     <button class="btn tape" id="sGo" style="flex:1">${stage==='user'?'Sign in':stage==='phone'?'Text me a code':stage==='forgot'?'Text me a code':stage==='reset'?'Set it':'Sign in'}</button></div>
+    <div class="muted" style="margin-top:10px">${
+      stage==='user'?'<a href="#" id="sForgot">Forgotten your password?</a> · <a href="#" id="sPhoneWay">use my mobile instead</a>'
+      :stage==='phone'?'<a href="#" id="sUserWay">sign in with a user name</a>'
+      :stage==='code'?'<a href="#" id="sBack">Wrong number?</a>'
+      :'<a href="#" id="sUserWay">back</a>'}</div></div>`;
+    $('#sX',el).onclick=()=>el.remove();
+    const go=(s)=>e=>{ e.preventDefault(); stage=s; draw() };
+    const bk=$('#sBack',el); if(bk) bk.onclick=go('phone');
+    const fw=$('#sForgot',el); if(fw) fw.onclick=go('forgot');
+    const pw=$('#sPhoneWay',el); if(pw) pw.onclick=go('phone');
+    const uw=$('#sUserWay',el); if(uw) uw.onclick=go('user');
+    $('#sGo',el).onclick=step; const inp=$('input',el); if(inp) inp.focus();
+    $$('input',el).forEach(i=>i.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();step()} }) };
   const step=async()=>{ const go=$('#sGo',el); go.disabled=true;
-    try{ if(stage==='phone'){ phone=$('#sPh',el).value.replace(/\D/g,''); st.rep=$('#sRep',el).value.trim(); ls.set('rep',st.rep); if(!/^0\d{9}$/.test(phone)) throw new Error('Enter a mobile like 0771234567');
+    try{
+      if(stage==='user'){
+        user=$('#sUser',el).value.trim(); const password=$('#sPass',el).value;
+        if(!user||!password) throw new Error('Your user name and password, please');
+        const j=await api('/signin',{method:'POST',body:{user,password}});
+        st.token=j.token; st.rep=j.rep||st.rep; ls.set('token',j.token); ls.set('user',user); ls.set('rep',st.rep);
+        el.remove(); toast('Welcome, '+(j.rep||j.supplier)); return then&&then();
+      }
+      if(stage==='forgot'){
+        user=$('#sFUser',el).value.trim(); if(!user) throw new Error('Which user name?');
+        const j=await api('/forgot',{method:'POST',body:{user}}); hint=j.sent?'':j.code; stage='reset'; return draw();
+      }
+      if(stage==='reset'){
+        await api('/reset',{method:'POST',body:{user,code:$('#sFCode',el).value.trim(),password:$('#sFPass',el).value}});
+        toast('That is your password now'); stage='user'; return draw();
+      }
+      if(stage==='phone'){ phone=$('#sPh',el).value.replace(/\D/g,''); st.rep=$('#sRep',el).value.trim(); ls.set('rep',st.rep); if(!/^0\d{9}$/.test(phone)) throw new Error('Enter a mobile like 0771234567');
         const j=await api('/otp',{method:'POST',body:{phone}}); hint=j.sent?'':j.code; name=j.name||''; stage='code'; return draw() }
       const code=$('#sCode',el).value.trim(); if(code.length<6) throw new Error('Enter the 6-digit code');
       const j=await api('/login',{method:'POST',body:{phone,code,rep:st.rep}}); st.token=j.token; st.phone=phone; ls.set('token',j.token); ls.set('phone',phone); el.remove(); toast('Welcome, '+(st.rep||j.supplier)); if(then) then() }

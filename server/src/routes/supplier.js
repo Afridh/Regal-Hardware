@@ -11,7 +11,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { query } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
-import { sendViaProvider } from './regal.js';
+import { sendViaProvider, regalAuth } from './regal.js';
+import { listLogins, findLogin, addLogin, setLogin, removeLogin, checkLogin, loginLine, cleanUser, passOk, suggestUser } from '../services/portalLogins.js';
 
 const r = Router();
 const TZ = process.env.SHOP_TZ || 'Asia/Colombo';
@@ -152,6 +153,101 @@ r.post('/login', asyncHandler(async (req, res) => {
   if (!sup) throw new HttpError(404, 'That mobile is not on file for any supplier');
   const rep = String(req.body?.rep || '').trim().slice(0, 60);
   res.json({ ok: true, token: jwt.sign({ kind: 'sup', sid: sup.id, phone, rep }, secret(), { expiresIn: '30d' }), supplier: sup.name, sid: sup.id, rep });
+}));
+
+/* ---------------------------------------------------------------- signing in by name
+   A supplier's rep and their office each get a user name of their own. Either password opens it:
+   the one the shop set and the one the person has since chosen. */
+const LOGINS = 'sup_logins';
+r.post('/signin', asyncHandler(async (req, res) => {
+  const l = await checkLogin(LOGINS, req.body?.user, req.body?.password);
+  if (!l) throw new HttpError(401, 'That name and password do not match');
+  const data = await books();
+  const sup = (data?.S?.suppliers || []).find(s => s.id === l.owner);
+  if (!sup) throw new HttpError(404, 'That supplier is no longer on file');
+  if (sup.enabled === false) throw new HttpError(403, 'The shop has closed this page — give them a ring');
+  const rep = l.name || l.username;
+  res.json({ ok: true, token: jwt.sign({ kind: 'sup', sid: sup.id, lid: Number(l.id), phone: digits(l.phone || sup.phone), rep }, secret(), { expiresIn: '30d' }),
+    supplier: sup.name, sid: sup.id, rep });
+}));
+
+r.post('/forgot', asyncHandler(async (req, res) => {
+  const l = await findLogin(LOGINS, req.body?.user);
+  if (!l || !l.active) throw new HttpError(404, 'There is no sign-in by that name');
+  const data = await books();
+  const sup = (data?.S?.suppliers || []).find(s => s.id === l.owner);
+  const phone = digits(l.phone || sup?.phone);
+  if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'There is no mobile on that sign-in — ring the shop');
+  const code = otpFor(phone);
+  const cfg = data?.CFG?.msg;
+  if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
+    try { await sendViaProvider(cfg, phone, `${data?.CFG?.shop?.name || 'Regal Hardware'}: your code to set a new password is ${code}. It works for 5 minutes.`);
+      return res.json({ ok: true, sent: true, phone: phone.replace(/^(\d{3})\d{4}(\d{3})$/, '$1••••$2') }); }
+    catch (e) { console.error('sup forgot sms failed', e.message); }
+  }
+  res.json({ ok: true, sent: false, code, phone });
+}));
+
+r.post('/reset', asyncHandler(async (req, res) => {
+  const l = await findLogin(LOGINS, req.body?.user);
+  if (!l || !l.active) throw new HttpError(404, 'There is no sign-in by that name');
+  const pass = String(req.body?.password || '');
+  if (pass.length < 6) throw new HttpError(400, 'A password needs at least six characters');
+  const data = await books();
+  const sup = (data?.S?.suppliers || []).find(s => s.id === l.owner);
+  if (!otpOk(digits(l.phone || sup?.phone), req.body?.code)) throw new HttpError(401, 'That code is not right, or it has expired');
+  await setLogin(LOGINS, Number(l.id), l.owner, { ownPassword: pass });
+  res.json({ ok: true });
+}));
+
+r.post('/password', supAuth, asyncHandler(async (req, res) => {
+  if (!req.sup.lid) throw new HttpError(400, 'This page was opened with a code, not a sign-in');
+  const pass = String(req.body?.password || '');
+  if (pass.length < 6) throw new HttpError(400, 'A password needs at least six characters');
+  const rows = await listLogins(LOGINS, req.sup.sid);
+  const l = rows.find(x => Number(x.id) === req.sup.lid);
+  if (!l) throw new HttpError(404, 'That sign-in is no longer there');
+  if (!(await passOk(String(req.body?.current || ''), l.own_hash)) && !(await passOk(String(req.body?.current || ''), l.admin_hash)))
+    throw new HttpError(401, 'The password you have now is not right');
+  await setLogin(LOGINS, Number(l.id), l.owner, { ownPassword: pass });
+  res.json({ ok: true });
+}));
+
+/* the shop's side: who may sign in for this supplier */
+r.get('/admin/logins/:sid', regalAuth, asyncHandler(async (req, res) => {
+  res.json({ ok: true, logins: (await listLogins(LOGINS, +req.params.sid)).map(loginLine) });
+}));
+r.post('/admin/logins/:sid', regalAuth, asyncHandler(async (req, res) => {
+  const sid = +req.params.sid;
+  const username = cleanUser(req.body?.username), password = String(req.body?.password || '');
+  if (username.length < 3) throw new HttpError(400, 'A user name needs at least three letters or figures');
+  if (password.length < 6) throw new HttpError(400, 'A password needs at least six characters');
+  const data = await books();
+  if (!(data?.S?.suppliers || []).some(s => s.id === sid)) throw new HttpError(404, 'No such supplier');
+  if (await findLogin(LOGINS, username)) throw new HttpError(409, `“${username}” is already in use`);
+  res.json({ ok: true, login: loginLine(await addLogin(LOGINS, sid, { ...req.body, username, password })) });
+}));
+r.post('/admin/logins/:sid/:id', regalAuth, asyncHandler(async (req, res) => {
+  const row = await setLogin(LOGINS, +req.params.id, +req.params.sid, req.body || {});
+  if (!row) throw new HttpError(404, 'No such sign-in');
+  res.json({ ok: true, login: loginLine(row) });
+}));
+r.delete('/admin/logins/:sid/:id', regalAuth, asyncHandler(async (req, res) => {
+  await removeLogin(LOGINS, +req.params.id, +req.params.sid);
+  res.json({ ok: true });
+}));
+/** The shop switching the page on: make a sign-in if there is none, and hand back what to text. */
+r.post('/admin/invite/:sid', regalAuth, asyncHandler(async (req, res) => {
+  const sid = +req.params.sid;
+  const data = await books();
+  const sup = (data?.S?.suppliers || []).find(s => s.id === sid);
+  if (!sup) throw new HttpError(404, 'No such supplier');
+  const have = await listLogins(LOGINS, sid);
+  if (have.length) return res.json({ ok: true, made: false, logins: have.map(loginLine) });
+  const username = await suggestUser(LOGINS, sup.contact || sup.name, sup.code);
+  const password = 'reg' + Math.random().toString(36).slice(2, 8);
+  const row = await addLogin(LOGINS, sid, { username, password, name: sup.contact || '', role: 'rep', phone: sup.phone });
+  res.json({ ok: true, made: true, username, password, login: loginLine(row) });
 }));
 
 /** Everything this supplier can see: the shop's orders to them, and what they have sent. */
