@@ -12,7 +12,10 @@ import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const cfg = JSON.parse(fs.readFileSync(path.join(here, 'config.json'), 'utf8'));
+const readCfg = (f) => { try { return JSON.parse(fs.readFileSync(path.join(here, f), 'utf8').replace(/^﻿/, '')) } catch { return null } };
+// config.local.json is this PC's own — the print key lives there, never in the one that travels with the code
+const cfg = Object.assign({}, readCfg('config.json') || {}, readCfg('config.local.json') || {});
+if (!cfg.port) { console.error('config.json is missing or unreadable'); process.exit(1); }
 const chrome = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
   'C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
 if (!chrome) { console.error('No Chrome, Brave or Edge found to render bills with'); process.exit(1); }
@@ -70,6 +73,48 @@ function printImage(format, file) {
   });
 }
 
+/* ---- bills made somewhere else ----
+   A bill keyed on a phone, on a second till or on the website has no printer of its own. It is left
+   on the shop's server as a job, and this helper asks for the next one every couple of seconds and
+   prints it here. Only outgoing calls, so nothing has to be opened to this PC from outside. */
+const SERVER = String(cfg.server || process.env.PRINT_SERVER || 'http://127.0.0.1:4000').replace(/\/$/, '');
+const KEY = String(cfg.key || process.env.PRINT_DEVICE_KEY || process.env.SHIFT_DEVICE_KEY || '');
+const EVERY = Math.max(1000, +cfg.pollMs || 2000);
+let queueSaid = '';
+async function takeJobs() {
+  if (!KEY) return;                                        // no key set: the helper only serves this PC
+  try {
+    const printers = encodeURIComponent(JSON.stringify({ r80: cfg.r80.printer, a5: cfg.a5.printer }));
+    const r = await fetch(`${SERVER}/api/print/next?key=${encodeURIComponent(KEY)}&printers=${printers}`);
+    if (!r.ok) { const why = r.status === 403 ? 'the server does not know this key' : 'the server said ' + r.status;
+      if (queueSaid !== why) { queueSaid = why; log('queue:', why) } return }
+    if (queueSaid) { log('queue: talking to the shop server again'); queueSaid = '' }
+    const j = await r.json().catch(() => ({}));
+    const job = j && j.job; if (!job) return;
+    log('queue job', job.id, job.format, job.no || '', 'from', job.by || '?', job.till ? '· till ' + job.till : '');
+    try {
+      const run = busy.then(async () => {
+        const file = await render(job.format, job.html);
+        let out = '';
+        for (let i = 0; i < (job.copies || 1); i++) out = await printImage(job.format, i ? await render(job.format, job.html) : file);
+        return out;
+      });
+      busy = run.catch(() => {});
+      await run;
+      await say(job.id, { ok: true, printer: cfg[job.format].printer });
+      log('queue job', job.id, '→ printed on', cfg[job.format].printer);
+    } catch (e) {
+      await say(job.id, { ok: false, error: e.message });
+      log('queue job', job.id, 'FAILED', e.message);
+    }
+  } catch (e) {
+    const why = 'cannot reach ' + SERVER + ' (' + e.message + ')';
+    if (queueSaid !== why) { queueSaid = why; log('queue:', why) }
+  }
+}
+const say = (id, body) => fetch(`${SERVER}/api/print/${id}/done?key=${encodeURIComponent(KEY)}`,
+  { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+
 const HEADERS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Private-Network': 'true', 'Content-Type': 'application/json' };
 const send = (res, code, body) => { res.writeHead(code, HEADERS); res.end(JSON.stringify(body)); };
 let busy = Promise.resolve();
@@ -100,5 +145,9 @@ http.createServer(async (req, res) => {
     return;
   }
   send(res, 404, { ok: false, error: 'not found' });
-}).listen(cfg.port, '127.0.0.1', () => log(`Regal print helper on http://localhost:${cfg.port} — 80mm → ${cfg.r80.printer}, A5 → ${cfg.a5.printer} (rendering with ${path.basename(chrome)})`));
+}).listen(cfg.port, '127.0.0.1', () => {
+  log(`Regal print helper on http://localhost:${cfg.port} — 80mm → ${cfg.r80.printer}, A5 → ${cfg.a5.printer} (rendering with ${path.basename(chrome)})`);
+  if (KEY) { log(`Watching ${SERVER} for bills sent from anywhere else, every ${EVERY / 1000}s`); const tick = () => takeJobs().finally(() => setTimeout(tick, EVERY)); tick(); }
+  else log('No print key set, so only this PC can print through the helper (config.json: "key", and the same in the server\'s PRINT_DEVICE_KEY)');
+});
 process.on('SIGINT', async () => { if (browser) await browser.close(); process.exit(0); });

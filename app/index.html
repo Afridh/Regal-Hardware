@@ -3806,6 +3806,10 @@ function settings(){
       <div class="f"><label>Where bills go</label><div id="agentStatus" class="muted">checking…</div>
        <div style="display:flex;gap:6px;margin-top:6px"><button class="btn ghost sm" data-act="printTest" data-f="r80">Test the 80mm receipt</button><button class="btn ghost sm" data-act="printTest" data-f="a5">Test the A5 bill</button></div></div></div>
      <div class="muted">With the helper running, every bill prints by itself on the printer for its size — no print box. Without it, the browser's print box opens with the page already sized (80mm roll or A5 landscape).</div>
+     <h2 style="margin-top:14px">The shop's printers, from anywhere</h2>
+     <div class="card note" style="margin-bottom:8px"><b>A bill made on a phone, on another till or on the website prints here.</b>
+      <div class="muted">It is left on the shop's server and the helper on the PC the printers are plugged into takes it within a couple of seconds. That PC only ever calls out, so nothing has to be opened to it from outside. The helper needs the same key as the server: <span class="mono">key</span> in tools/print-agent/config.json and <span class="mono">PRINT_DEVICE_KEY</span> in server/.env.</div></div>
+     <div id="printQueue" class="muted">checking the shop printer…</div>
      <div class="card note" style="margin-top:12px">Switch the question and the animation off and a cash bill goes: Enter, printed. That is the fastest the counter can run.</div>`;
   }
   if(setTab==='layout'){
@@ -6906,7 +6910,23 @@ function renderNow(){
         img.onerror=()=>toast('That file could not be read as an image'); img.src=rd.result }; rd.readAsDataURL(file) };
     const st=$('#agentStatus'); if(st){ const url=printAgentUrl();
       if(!url) st.textContent='Browser print box (no helper set)';
-      else fetch(url+'/status').then(r=>r.json()).then(j=>{ st.innerHTML=`<span class="tag ok">helper running</span> 80mm → <b>${j.printers.r80}</b> · A5 → <b>${j.printers.a5}</b>` }).catch(()=>{ st.innerHTML='<span class="tag warn">helper not running</span> bills will use the browser\'s print box. Start it with the "Regal print helper" shortcut.' }) }
+      else fetch(url+'/status').then(r=>r.json()).then(j=>{ st.innerHTML=`<span class="tag ok">helper running</span> 80mm → <b>${j.printers.r80}</b> · A5 → <b>${j.printers.a5}</b>` }).catch(()=>{ st.innerHTML='<span class="tag warn">no helper on this machine</span> bills go to the shop printer, or to the browser\'s print box.' }) }
+    // the shop's printers as seen from here: is that PC listening, what is waiting, what has printed
+    const pq=$('#printQueue');
+    if(pq&&window.regalBridge&&regalBridge.token()){
+      const hdr={'Authorization':'Bearer '+regalBridge.token()};
+      Promise.all([fetch('/api/print/status',{headers:hdr}).then(r=>r.json()),fetch('/api/print/queue',{headers:hdr}).then(r=>r.json())])
+        .then(([s2,q2])=>{
+          const jobs=(q2.jobs||[]).slice(0,8);
+          pq.innerHTML=`<div style="margin-bottom:6px">${s2.helper
+            ? `<span class="tag ok">the shop printer is listening</span> ${s2.printers?`80mm → <b>${s2.printers.r80}</b> · A5 → <b>${s2.printers.a5}</b>`:''} ${s2.waiting?`· <b>${s2.waiting}</b> waiting`:'· nothing waiting'}`
+            : `<span class="tag bad">the shop printer is not listening</span> ${s2.seenSecondsAgo!=null?`last seen ${Math.round(s2.seenSecondsAgo/60)} minutes ago`:'it has never asked for work'} — start the “Regal print helper” on that PC${s2.waiting?`. <b>${s2.waiting}</b> bill${s2.waiting===1?'':'s'} waiting`:''}`}</div>
+           ${jobs.length?`<table class="tbl"><tr><th>Bill</th><th>Size</th><th>From</th><th>By</th><th>What happened</th></tr>
+             ${jobs.map(j2=>`<tr><td>${j2.no||'—'}</td><td>${j2.format==='a5'?'A5':'80mm'}</td><td>${j2.from_till||'—'}</td><td>${j2.by_user||'—'}</td>
+               <td>${j2.status==='printed'?`<span class="tag ok">printed</span> ${j2.printer||''}`:j2.status==='failed'?`<span class="tag bad">failed</span> ${j2.error||''}`:`<span class="tag warn">${j2.status}</span>`}</td></tr>`).join('')}</table>`
+            :'<div class="muted">Nothing has been sent to the shop printer yet.</div>'}`;
+        }).catch(()=>{ pq.textContent='The shop server did not answer about its printers.' });
+    } else if(pq) pq.textContent='Sign in to see the shop printer.';
     document.querySelectorAll('[data-mediafile]').forEach(el=>{ el.onchange=()=>{ const file=el.files[0]; if(!file) return; const key=el.dataset.mediafile, link=($(`[data-medialink="${key}"]`)||{}).value||'';
       const pic=el.closest('.mediaslot').querySelector('.mediapic'); pic.classList.remove('empty'); pic.innerHTML=`<img src="${URL.createObjectURL(file)}">`;
       shopMediaUpload(key,file,key==='logo'?600:1600,link).then(()=>toast('Picture is on the site')).catch(e=>toast('Not saved: '+e.message)) } });
@@ -12291,8 +12311,26 @@ async function agentPrint(inv,f){
     toast('Print helper could not print: '+(j.error||r.status)+' — using the browser instead'); return false;
   }catch(e){ return false }   // helper not running: the browser prints
 }
+/* Sending a bill to the shop's printers from somewhere else — a phone at the counter, a second till,
+   the site on the internet. The job is left on the shop's server and the helper on the PC the printers
+   are plugged into takes it within a couple of seconds. */
+async function queuePrint(inv,f){
+  if(!window.regalBridge||!regalBridge.token()) return false;
+  try{
+    const r=await fetch('/api/print',{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},
+      body:JSON.stringify({format:f,no:inv.no,html:billDocument(inv,f),till:S.terminal||''})});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok&&j.ok){ toast(`${inv.no} sent to the shop printer`,'ok'); return true }
+    if(r.status===401) return false;
+    toast('The shop printer would not take it: '+(j.error||r.status),'warn'); return false;
+  }catch(e){ return false }
+}
 function printBill(inv,f='a5'){
-  agentPrint(inv,f).then(done=>{ if(!done) browserPrint(inv,f) });
+  agentPrint(inv,f).then(done=>{ if(done) return;
+    // no helper on this machine: leave it for the PC the printers are on, and only then fall back to this browser
+    queuePrint(inv,f).then(sent=>{ if(!sent) browserPrint(inv,f) });
+  });
 }
 function browserPrint(inv,f='a5'){
   const html=billHtml(inv,f);

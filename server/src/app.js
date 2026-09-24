@@ -25,6 +25,7 @@ import shiftApi, { reportsDir } from './routes/shiftApi.js';
 import shopRoutes from './routes/shop.js';
 import supplierRoutes from './routes/supplier.js';
 import fileRoutes from './routes/files.js';
+import printRoutes from './routes/print.js';
 
 if (!process.env.JWT_SECRET) console.error('JWT_SECRET is not set (copy .env.example to .env, or set it in the host\'s environment)');
 
@@ -60,6 +61,8 @@ app.use('/api/shop', shopRoutes);
 app.use('/api/sup', supplierRoutes);
 // attachments (quotation requests, signed submissions) and outgoing email with them
 app.use('/api/files', fileRoutes);
+// the printers are on one PC: a bill made anywhere is left here and that PC's helper takes it
+app.use('/api/print', printRoutes);
 // day sheets the Shift Board publishes (on Vercel these live in /tmp, so only until the function is recycled)
 app.use('/reports', express.static(reportsDir));
 
