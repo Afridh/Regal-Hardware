@@ -1657,6 +1657,29 @@ tr.rowlink button{cursor:pointer}
 .cu-row .bal i{font-style:normal;font-size:10.5px;color:var(--steel)}
 .cu-row .bal.over b{color:var(--chip-rust)}
 .cu-row .bal.clear b{color:var(--chip-green);font-weight:700;font-size:12px}
+/* what is owed, by how long it has been owed */
+.cu-age{border:1px solid var(--line);border-radius:var(--r);padding:9px 12px;margin:0 0 12px;background:#fff}
+.cu-age-h{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;margin-bottom:8px}
+.cu-age-h b{font-family:Archivo,sans-serif;font-size:13.5px}
+.cu-age-h span{font-size:11.5px}
+.cu-age-bands{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.cu-band{border:1px solid var(--line2);border-radius:var(--r);padding:7px 10px;background:var(--panel)}
+.cu-band .cb-l{display:block;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--steel);font-weight:700}
+.cu-band b{display:block;font-family:Archivo,sans-serif;font-size:17px;line-height:1.2;margin-top:2px;color:var(--faint)}
+.cu-band .cb-s{display:block;font-size:11px;color:var(--steel)}
+.cu-band.has{background:#fff}
+.cu-band.g.has{border-color:#B7E0C9;box-shadow:inset 3px 0 0 var(--chip-green)} .cu-band.g.has b{color:#12613D}
+.cu-band.y.has{border-color:#F3D48A;box-shadow:inset 3px 0 0 var(--chip-yellow)} .cu-band.y.has b{color:#8A5D06}
+.cu-band.r.has{border-color:#F0B9AC;box-shadow:inset 3px 0 0 var(--chip-rust)} .cu-band.r.has b{color:var(--chip-rust)}
+.cu-age-bar{display:flex;height:7px;border-radius:4px;overflow:hidden;background:var(--line2);margin-top:9px}
+.cu-age-bar i.g{background:var(--chip-green)} .cu-age-bar i.y{background:var(--chip-yellow)} .cu-age-bar i.r{background:var(--chip-rust)}
+.cu-age-bar i:last-child{filter:brightness(.8)}
+/* the quieter figures: what they have bought in all, and points when loyalty is on */
+.cu-small{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--steel);margin:0 0 12px}
+.cu-small i{font-style:normal;text-transform:uppercase;letter-spacing:.04em;font-size:10px;font-weight:700;color:var(--faint)}
+.cu-small b{font-family:Archivo,sans-serif;font-size:13px;color:var(--ink)}
+.cu-small button{border:0;background:none;padding:0;font:inherit;color:inherit;cursor:pointer;border-bottom:1px dotted var(--line)}
+.cu-small button:hover{color:var(--ink)}
 .cu-head{display:flex;flex-direction:column;gap:12px}
 .cu-head h2{margin:0;font-size:22px;line-height:1.15}
 .cu-acts{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px dashed var(--line)}
@@ -11642,12 +11665,22 @@ let _caKey='',_caMap=new Map();
 function custAggMap(){ const key=[S.sales.length,S.payments.length,S.journal.length,D(today)].join('|');
   if(key===_caKey&&_caMap.sales===S.sales&&_caMap.pay===S.payments) return _caMap;
   const m=new Map(); m.sales=S.sales; m.pay=S.payments;
-  const get=id=>{ let v=m.get(id); if(!v){ v={now:0,mid:0,old:0,n:0,oldest:0,seen:null}; m.set(id,v) } return v };
+  // what is owed, by how long it has been owed: up to 30 days, 31–60, 61–90, over 90
+  const get=id=>{ let v=m.get(id); if(!v){ v={now:0,mid:0,late:0,vold:0,old:0,nNow:0,nMid:0,nLate:0,nVold:0,n:0,oldest:0,seen:null}; m.set(id,v) } return v };
   for(const s of S.sales){ if(!s.customerId) continue; const v=get(s.customerId); if(s.date>(v.seen||'')) v.seen=s.date;
-    if(s.balance>0){ const d=daysAgo(s.date); if(d<=30)v.now+=s.balance; else if(d<=60)v.mid+=s.balance; else v.old+=s.balance; v.n++; if(d>v.oldest)v.oldest=d } }
+    if(s.balance>0){ const d=daysAgo(s.date);
+      if(d<=30){ v.now+=s.balance; v.nNow++ }
+      else if(d<=60){ v.mid+=s.balance; v.nMid++ }
+      else if(d<=90){ v.late+=s.balance; v.nLate++ }
+      else { v.vold+=s.balance; v.nVold++ }
+      v.old=v.late+v.vold;                       // anything past sixty days, as the rest of the system reads it
+      v.n++; if(d>v.oldest)v.oldest=d } }
   for(const x of S.payments){ if(x.dir==='IN'&&x.customerId){ const v=get(x.customerId); if(x.date>(v.seen||'')) v.seen=x.date } }
   _caKey=key; _caMap=m; return m }
-function custAge(id){ const v=custAggMap().get(id); return v?{now:v.now,mid:v.mid,old:v.old,n:v.n,oldest:v.oldest}:{now:0,mid:0,old:0,n:0,oldest:0} }
+const AGE_ZERO={now:0,mid:0,late:0,vold:0,old:0,nNow:0,nMid:0,nLate:0,nVold:0,n:0,oldest:0};
+function custAge(id){ const v=custAggMap().get(id); return v?{now:v.now,mid:v.mid,late:v.late||0,vold:v.vold||0,old:v.old,nNow:v.nNow||0,nMid:v.nMid||0,nLate:v.nLate||0,nVold:v.nVold||0,n:v.n,oldest:v.oldest}:{...AGE_ZERO} }
+/* the four ages an unpaid bill can be in, in the order they are read */
+const AGE_BANDS=[['now','Up to 30 days','g'],['mid','31 – 60 days','y'],['late','61 – 90 days','r'],['vold','Over 90 days','r']];
 const custLastSeen=(id)=>{ const v=custAggMap().get(id); return v?v.seen:null };
 function custMatch(c,q){
   if(!q) return true;
@@ -11744,9 +11777,23 @@ function customerPanel(c){
      ${c.limit>0?`<div class="kpi-lim"><div class="bar"><i class="${overLimit?'bad':used>80?'warn':''}" style="width:${used}%"></i></div>
        <span>${overLimit?`${fmt(owed-c.limit)} over the ${fmt(c.limit)} limit`:`${fmt(c.limit-owed)} of the ${fmt(c.limit)} limit left`}</span></div>`:''}</div>
     <div class="kpi g"><div class="l">Last payment</div><div class="v ${lastPay&&fmt(lastPay.amount).length>14?'small':''}">${lastPay?fmt(lastPay.amount):'—'}</div><div class="s">${lastPay?`${lastPay.date} · ${lastPay.method.toLowerCase()} · ${agoTxt(lastPay.date)}`:'nothing received yet'}</div></div>
-    <div class="kpi b"><div class="l">Bought in all</div><div class="v ${fmt(lifetime).length>14?'small':''}">${fmt(lifetime)}</div><div class="s">${inv.length} bill${inv.length===1?'':'s'} · paid ${fmt(paidTot)}</div></div>
     ${credit>0?`<div class="kpi g"><div class="l">Credit held</div><div class="v">${fmt(credit)}</div><div class="s">paid ahead — comes off the next bill</div></div>`:''}
-    ${typeof extPointsValue==='function'?`<button class="kpi y" data-act="custPoints" data-id="${c.id}" style="text-align:left;cursor:pointer;font-family:inherit"><div class="l">Loyalty points</div><div class="v">${fq(c.points||0)}</div><div class="s">worth ${fmt(extPointsValue(c))} · tap to adjust</div></button>`:''}
+   </div>
+
+   ${/* how old the money is — the thing to ring about, not what they have bought since the shop opened */''}
+   ${owed>0?`<div class="cu-age">
+     <div class="cu-age-h"><b>What is owed, by how long</b><span class="muted">${open.length} unpaid bill${open.length===1?'':'s'} · oldest ${ag.oldest} days</span></div>
+     <div class="cu-age-bands">${AGE_BANDS.map(([k,label,tone])=>{const v=ag[k]||0, n=ag['n'+k[0].toUpperCase()+k.slice(1)]||0;
+       return `<div class="cu-band ${tone} ${v>0?'has':''}"><span class="cb-l">${label}</span><b>${v>0?fmt(v):'—'}</b>
+         <span class="cb-s">${v>0?`${n} bill${n===1?'':'s'} · ${(v/owed*100).toFixed(0)}%`:'nothing'}</span></div>`}).join('')}</div>
+     <div class="cu-age-bar" title="up to 30 · 31–60 · 61–90 · over 90 days">
+      ${AGE_BANDS.map(([k,,tone])=>`<i class="${tone}" style="width:${((ag[k]||0)/owed*100)}%"></i>`).join('')}</div>
+    </div>`:''}
+
+   <div class="cu-small">
+    <span><i>Bought in all</i> <b>${fmt(lifetime)}</b> · ${inv.length} bill${inv.length===1?'':'s'}, paid ${fmt(paidTot)}</span>
+    ${(typeof extPointsValue==='function'&&(CFG.loyalty||{}).enabled!==false&&((c.points||0)>0||(CFG.loyalty||{}).enabled))
+      ? `<button data-act="custPoints" data-id="${c.id}"><i>Points</i> <b>${fq(c.points||0)}</b> · worth ${fmt(extPointsValue(c))}</button>` : ''}
    </div>
 
    ${notices.map(n=>`<div class="card note" style="margin-bottom:10px">
