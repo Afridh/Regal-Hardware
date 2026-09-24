@@ -435,8 +435,19 @@ body.privacy nav .navuser{position:relative}
 .bl-row:hover{background:var(--panel)}
 .bl-row.sel{background:var(--tint-yellow);box-shadow:inset 3px 0 0 var(--chip-yellow)}
 .bl-when b{display:block;font-size:12.5px}.bl-when span{font-size:11.5px;color:var(--faint)}
-.bl-who{min-width:0}.bl-who b{display:block;font-family:Archivo,sans-serif;font-size:13.5px;letter-spacing:.01em}
+.bl-who{min-width:0}
+/* the customer is what the eye wants first; the bill number is a reference, not a headline */
+.bl-who b{display:block;font-family:Archivo,sans-serif;font-size:15.5px;line-height:1.2;letter-spacing:-.005em;
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bl-who b.walk{color:var(--steel);font-weight:600}
 .bl-who span{display:block;font-size:12px;color:var(--steel);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bl-who .bl-no2{font-family:Archivo,sans-serif;font-size:11px;color:var(--faint);letter-spacing:.02em}
+/* a bill on account reads differently from one paid at the counter — and from the row being looked at */
+.bl-row.oncredit{background:#FDF3F0;box-shadow:inset 4px 0 0 var(--chip-rust)}
+.bl-row.oncredit:hover{background:#FBE9E4}
+.bl-row.oncredit.sel{background:var(--tint-yellow);box-shadow:inset 4px 0 0 var(--chip-rust),inset 0 0 0 1px var(--chip-yellow)}
+.bl-row.oncredit .bl-who b{color:#8E3423}
+.bl-row.oncredit .bl-amt i.ok{color:#8E3423}
 .bl-amt{text-align:right}.bl-amt b{display:block;font-family:Archivo,sans-serif;font-size:14px}
 .bl-amt i{font-style:normal;font-size:11px;display:block}.bl-amt i.owe{color:var(--chip-rust);font-weight:700}.bl-amt i.ok{color:var(--chip-green)}
 .bl-detail{min-width:0}
@@ -11130,9 +11141,13 @@ function bills(){
     <div class="bl-count"><span><b>${list.length}</b> bill${list.length===1?'':'s'} · ${fmt(sum.total)} billed</span>
      <span>${sum.bal?`<b style="color:var(--chip-rust)">${fmt(sum.bal)}</b> owing`:'<span class="muted">nothing owing</span>'}</span></div>
     <div class="bl-rows" id="billRows">
-     ${list.slice(0,billLimit).map(s=>{const c=C(s.customerId)||{name:'—'};return `<div class="bl-row ${inv&&s.no===inv.no?'sel':''}" data-act="billSel" data-no="${s.no}" tabindex="-1">
+     ${list.slice(0,billLimit).map(s=>{const c=C(s.customerId)||{name:'—'}, oncredit=s.type==='CREDIT';
+       return `<div class="bl-row ${inv&&s.no===inv.no?'sel':''} ${oncredit?'oncredit':''}" data-act="billSel" data-no="${s.no}" tabindex="-1">
        <div class="bl-when"><b>${s.date===D(today)?'Today':s.date===ago(1)?'Yesterday':s.date}</b><span>${s.time||''}</span></div>
-       <div class="bl-who"><b>${s.no}</b><span>${c.id===1?`Walk-in${s.phone?' · '+s.phone:''}`:`<a href="#" data-act="billCust" data-id="${c.id}" title="every bill of theirs">${c.name}</a>${c.phone?' · '+c.phone:''}`}</span><span class="muted">${s.lines.length} line${s.lines.length===1?'':'s'} · ${s.by}${(s.remade||[]).length?' · re-made':''}${(s.edits||[]).length?' · corrected':''}</span></div>
+       ${/* who it was for reads first and biggest; the number and the rest sit under it */''}
+       <div class="bl-who"><b class="${c.id===1?'walk':''}">${c.id===1?`Walk-in${s.phone?' · '+s.phone:''}`:`<a href="#" data-act="billCust" data-id="${c.id}" title="every bill of theirs">${c.name}</a>`}</b>
+        <span class="bl-no2">${s.no}${c.id!==1&&c.phone?' · '+c.phone:''}</span>
+        <span class="muted">${s.lines.length} line${s.lines.length===1?'':'s'} · ${s.by}${(s.remade||[]).length?' · re-made':''}${(s.edits||[]).length?' · corrected':''}</span></div>
        <div class="bl-amt"><b>${fmt(s.total)}</b>${s.balance>0?`<i class="owe">${fmt(s.balance)} owing</i>`:s.type==='CREDIT'?'<i class="ok">credit · paid</i>':'<i class="ok">cash</i>'}${gpSeen()?(gpOdd(s)?'<i class="gp odd" title="The cost written on a line is far above what it sold for — check it">GP · cost looks wrong</i>':(()=>{const g=gpOf(s.lines,s.billDisc);return `<i class="gp ${g.gp<0?'neg':''}">GP ${fmt(g.gp)} · ${g.pct}%</i>`})()):''}</div></div>`}).join('')
       ||`<div class="muted" style="padding:20px 8px">No bill matches that. Try the last few digits of the number, or their mobile.</div>`}
      ${list.length>billLimit?`<div style="padding:8px"><button class="btn ghost sm" data-act="billMore">Show 150 more</button> <span class="muted">of ${list.length}</span></div>`:''}
