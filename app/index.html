@@ -702,6 +702,15 @@ tr.off td{opacity:.55}
 .bc-badge.absent{background:#FEE2E2;color:#B91C1C}
 .bc-badge.out{background:#F8FAFC;color:#64748B;border:1px solid #E2E8F0}
 
+.bc-live-badge{display:inline-flex;align-items:center;gap:6px;font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;padding:4px 9px;border-radius:6px;width:fit-content;letter-spacing:0.2px}
+.bc-live-badge.working{background:rgba(16,185,129,.12);color:#059669;border:1px solid rgba(16,185,129,.3)}
+.bc-live-badge.working .live-dot{width:6px;height:6px;border-radius:50%;background:#10B981;display:inline-block;animation:pulseDot 1.5s infinite}
+@keyframes pulseDot{0%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(0.8)}100%{opacity:1;transform:scale(1)}}
+.bc-live-badge.break{background:rgba(99,102,241,.12);color:#4F46E5;border:1px solid rgba(99,102,241,.25)}
+.bc-live-badge.done{background:#F1F5F9;color:#475569;border:1px solid #E2E8F0}
+.bc-live-badge.out{background:#F8FAFC;color:#94A3B8;border:1px solid #E2E8F0;font-size:11px}
+.bc-live-badge.absent{background:#FEE2E2;color:#DC2626;border:1px solid #FECACA}
+
 .bc-meal-row{display:flex;flex-direction:column;gap:4px}
 .bc-meal-title{font-size:10.5px;font-weight:700;color:var(--steel);text-transform:uppercase;letter-spacing:.05em}
 .bc-meals{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
@@ -3173,10 +3182,17 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 </div>
 <script>
 /* ============================ DATA + LEDGER ENGINE ============================ */
-const today = (()=>{ const d=new Date(); d.setHours(0,0,0,0); return d })();   // the actual day, midnight local
+let today = (()=>{ const d=new Date(); d.setHours(0,0,0,0); return d })();   // the actual day, midnight local
+function checkMidnightReset(){
+  const now=new Date(); now.setHours(0,0,0,0);
+  if(now.getTime()!==today.getTime()){
+    today=now; window.today=now;
+    if(typeof refreshAttendanceBoard==='function') refreshAttendanceBoard();
+  }
+}
 // local calendar date, not UTC — toISOString() would date a bill keyed after midnight in Colombo as the day before
-window.today=today; window.D=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;   // exposed so tests can date things the same way
-const D = (d)=> `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;   // local calendar date, never UTC
+window.today=today; window.D=(d)=>{ if(!d) d=today; return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };   // exposed so tests can date things the same way
+const D = (d)=> { if(!d) d=today; checkMidnightReset(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };   // local calendar date, never UTC
 const ago = (n)=>{const x=new Date(today);x.setDate(x.getDate()-n);return D(x)};
 const fmt = (n)=> (n<0?'-':'')+'Rs '+Math.abs(n).toLocaleString('en-LK',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fq = (n)=> Number(n).toLocaleString('en-LK',{maximumFractionDigits:3});
@@ -4150,6 +4166,11 @@ const SHIFT_DEFAULTS={
 const toMin=t=>{const [h,m]=String(t||'0:0').split(':').map(Number);return (h||0)*60+(m||0)};
 const hhmm=m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(Math.round(m%60)).padStart(2,'0');
 const hrs=m=>(m/60);
+const dur=m=>{
+  m=Math.max(0,Math.round(m||0));
+  const h=Math.floor(m/60), rem=m%60;
+  return `${h}h ${rem}m`;
+};
 const shiftSet=()=>{
   if(!S.shift.settings) S.shift.settings={...SHIFT_DEFAULTS};
   if(!S.shift.settings.closeTime||S.shift.settings.closeTime==='19:00') S.shift.settings.closeTime='19:30';
@@ -4165,7 +4186,14 @@ function stdMin(){
 function dayFigures(ds,empId){
   const r=(S.shift.days[ds]||{})[empId];
   const out={status:r?r.status:'none',in:r&&r.in,out:r&&r.out,gross:0,breakMin:0,worked:0,late:0,ot:0,reg:0,over:0,leaveEarly:r&&r.leaveEarly};
-  if(!r||r.status!=='work'||!r.in) return out;
+  const isPast = ds < D(today);
+  const isAfterClose = (ds === D(today)) && (nowMin() >= toMin(shiftSet().closeTime || '19:30'));
+  if(!r||r.status!=='work'||!r.in){
+    if((!r||!r.status||r.status==='none') && !isOff(ds) && (isPast || isAfterClose)){
+      out.status='absent';
+    }
+    return out;
+  }
   const inM=toMin(r.in);
   const isToday=(ds===D(today));
   const outM=r.out ? toMin(r.out) : (isToday ? nowMin() : inM);
@@ -4416,17 +4444,56 @@ function setRec(ds,id,patch){ S.shift.days[ds]=S.shift.days[ds]||{};
 let attFilter='all';
 function empState(ds,id){
   const r=recFor(ds,id);
-  if(!r) return 'out';
-  if(r.status==='absent') return 'absent';
-  if(r.status==='leave') return 'leave';
-  if(r.leaveEarly&&r.leaveEarly.pending) return 'leave_pending';
-  if((r.breaks||[]).some(b=>!b.end)) return 'break';
-  if(r.in&&!r.out) return 'working';
-  if(r.in&&r.out) return (r.leaveEarly&&r.leaveEarly.approved) ? 'leave_early' : 'done';
+  if(r&&r.status==='absent') return 'absent';
+  if(r&&r.status==='leave') return 'leave';
+  if(r&&r.leaveEarly&&r.leaveEarly.pending) return 'leave_pending';
+  if(r&&(r.breaks||[]).some(b=>!b.end)) return 'break';
+  if(r&&r.in&&!r.out) return 'working';
+  if(r&&r.in&&r.out) return (r.leaveEarly&&r.leaveEarly.approved) ? 'leave_early' : 'done';
+
+  // If member has not checked in the whole day (past day or today after closing 7:30 PM)
+  const isPast = ds < D(today);
+  const isAfterClose = (ds === D(today)) && (nowMin() >= toMin(shiftSet().closeTime || '19:30'));
+  if(!isOff(ds) && (isPast || isAfterClose)){
+    return 'absent';
+  }
   return 'out';
 }
 const breakWindow=()=>{const m=nowMin();
   return shiftSet().breaks.find(b=>m>=toMin(b.start)-5&&m<=toMin(b.end)+20)||null};
+
+function updateLiveWorkingBadges(){
+  const ds=D(today);
+  document.querySelectorAll('[data-emp-live]').forEach(el=>{
+    const id=+el.dataset.empLive;
+    const st=empState(ds,id);
+    const f=dayFigures(ds,id);
+    if(st==='working'){
+      el.className='bc-live-badge working';
+      el.innerHTML=`<span class="live-dot"></span>⏱️ ${dur(f.worked)} working`;
+    } else if(st==='break'){
+      const r=recFor(ds,id)||{};
+      const ob=(r.breaks||[]).find(b=>!b.end);
+      el.className='bc-live-badge break';
+      el.innerHTML=`☕ ${ob?ob.name:'Break'} · ${dur(f.worked)} floor time`;
+    } else if(st==='done'||st==='leave_early'){
+      el.className='bc-live-badge done';
+      el.innerHTML=`✓ ${dur(f.worked)} worked today`;
+    } else if(st==='absent'){
+      el.className='bc-live-badge absent';
+      el.innerHTML=`✕ Absent today`;
+    } else {
+      el.className='bc-live-badge out';
+      el.innerHTML=`⏱️ 0h 0m · Not in yet`;
+    }
+  });
+}
+if(!window._attLiveTimer){
+  window._attLiveTimer=setInterval(()=>{
+    checkMidnightReset();
+    updateLiveWorkingBadges();
+  },10000);
+}
 
 function refreshAttendanceBoard(){
   const wrap=document.getElementById('attBoardWrap');
@@ -4505,6 +4572,11 @@ function punchIn(id,ds=D(today)){
 }
 
 function punchOut(id,ds=D(today)){
+  const now=nowMin(), closeM=toMin(shiftSet().closeTime||'19:30');
+  const isSalesman=S.user&&S.user.role==='Salesman';
+  if(now < closeM && isSalesman){
+    return leaveShopModal(id);
+  }
   const r=recFor(ds,id)||{};
   const e=S.employees.find(x=>x.id===id);
   const outTime=hhmm(nowMin());
@@ -4512,7 +4584,7 @@ function punchOut(id,ds=D(today)){
   setRec(ds,id,{out:outTime,breaks:r.breaks||[]});
   refreshAttendanceBoard();
   const f=dayFigures(ds,id);
-  toast(`${e?e.name:'Staff'} checked out at ${outTime} · ${hrs(f.worked).toFixed(2)}h worked${f.ot?` · ${hrs(f.ot).toFixed(2)}h OT`:''}`);
+  toast(`${e?e.name:'Staff'} checked out at ${outTime} · ${dur(f.worked)} worked${f.ot?` · ${dur(f.ot)} OT`:''}`);
 }
 
 function startMeal(id, mealId){
@@ -4660,8 +4732,6 @@ function smartPunch(id){
     return toast(`${e.name} has an early leave request waiting for Admin approval`);
   }
   if(st==='working'){
-    const now=nowMin(), closeM=toMin(shiftSet().closeTime||'19:30');
-    if(now < closeM && (!can('approve')&&S.user.role==='Salesman')) return leaveShopModal(id);
     return punchOut(id);
   }
   if(st==='done'||st==='leave_early'){
@@ -4711,6 +4781,15 @@ function renderStaffCard({e, st, f, r}){
           <div class="bc-role">${e.position||'Staff'} · <span class="mono">${e.code}</span></div>
         </div>
         <div class="bc-badge ${badgeClass}">${badgeLabel}</div>
+      </div>
+
+      <!-- Live Working Time Counting Badge -->
+      <div class="bc-live-badge ${st}" data-emp-live="${e.id}">
+        ${st==='working' ? `<span class="live-dot"></span>⏱️ ${dur(f.worked)} working` :
+          st==='break' ? `☕ ${openBreak?openBreak.name:'Break'} · ${dur(f.worked)} floor time` :
+          st==='done'||st==='leave_early' ? `✓ ${dur(f.worked)} worked today` :
+          st==='absent' ? `✕ Absent today` :
+          `⏱️ 0h 0m · Not in yet`}
       </div>
 
       ${st==='leave_pending'?`
@@ -4763,12 +4842,10 @@ function renderStaffCard({e, st, f, r}){
         :''}
 
         ${st==='working'?`
-          <button class="btn ghost sm" data-act="leaveShop" data-id="${e.id}" title="Leave shop before 7:30 PM (requires admin approval)">🚪 Leave Shop</button>
           <button class="btn tape sm" data-act="punchOut" data-id="${e.id}">Check Out</button>`
         :''}
 
         ${st==='break'?`
-          <button class="btn ghost sm" data-act="leaveShop" data-id="${e.id}">🚪 Leave Shop</button>
           <button class="btn ghost sm" data-act="punchOut" data-id="${e.id}">Check Out</button>`
         :''}
 
@@ -4798,11 +4875,11 @@ function renderStaffCard({e, st, f, r}){
           </div>
           <div class="bc-metric">
             <span class="lbl">Floor Time</span>
-            <span class="val">${f.worked ? hrs(f.worked).toFixed(2)+'h ('+Math.floor(f.worked/60)+'h '+(f.worked%60)+'m)' : '—'}</span>
+            <span class="val">${dur(f.worked)}</span>
           </div>
           <div class="bc-metric">
             <span class="lbl">OT Past 7:30 PM</span>
-            <span class="val ${f.ot?'ot-val':''}">${f.ot ? hrs(f.ot).toFixed(2)+'h ('+Math.floor(f.ot/60)+'h '+(f.ot%60)+'m)' : '0.00h'}</span>
+            <span class="val ${f.ot?'ot-val':''}">${dur(f.ot)}</span>
           </div>
         </div>
 
@@ -4851,6 +4928,15 @@ function salesmanPortalToday(me, st, f){
             }</span>
           </div>
 
+          <!-- Live Working Time Counting Badge for Portal -->
+          <div class="bc-live-badge ${st}" data-emp-live="${me.id}" style="margin-bottom:14px;font-size:13px;padding:6px 12px">
+            ${st==='working' ? `<span class="live-dot"></span>⏱️ ${dur(f.worked)} working` :
+              st==='break' ? `☕ ${openBreak?openBreak.name:'Break'} · ${dur(f.worked)} floor time` :
+              st==='done'||st==='leave_early' ? `✓ ${dur(f.worked)} worked today` :
+              st==='absent' ? `✕ Absent today` :
+              `⏱️ 0h 0m · Not in yet`}
+          </div>
+
           <div class="bc-metrics" style="padding:14px;margin-bottom:16px;grid-template-columns:1fr 1fr">
             <div class="bc-metric">
               <span class="lbl">Check-In Time</span>
@@ -4862,11 +4948,11 @@ function salesmanPortalToday(me, st, f){
             </div>
             <div class="bc-metric">
               <span class="lbl">Live Working Hours Today</span>
-              <span class="val" style="color:var(--accent,#F0A81E);font-size:16px">${f.worked ? hrs(f.worked).toFixed(2)+' hrs ('+Math.floor(f.worked/60)+'h '+(f.worked%60)+'m)' : '0.00 hrs'}</span>
+              <span class="val" style="color:var(--accent,#F0A81E);font-size:16px">${dur(f.worked)}</span>
             </div>
             <div class="bc-metric">
               <span class="lbl">Overtime (Past 7:30 PM)</span>
-              <span class="val ${f.ot?'ot-val':''}">${f.ot ? hrs(f.ot).toFixed(2)+' hrs ('+Math.floor(f.ot/60)+'h '+(f.ot%60)+'m)' : '0.00 hrs'}</span>
+              <span class="val ${f.ot?'ot-val':''}">${dur(f.ot)}</span>
             </div>
           </div>
 
@@ -4913,11 +4999,10 @@ function salesmanPortalToday(me, st, f){
               <button class="btn tape" style="flex:1;padding:11px 18px;font-size:15px" data-act="punchIn" data-id="${me.id}">⚡ Check In for Today</button>`:''}
 
             ${st==='working'?`
-              <button class="btn ghost" style="padding:10px 16px" data-act="leaveShop" data-id="${me.id}">🚪 Leave from Shop</button>
               <button class="btn tape" style="flex:1;padding:10px 18px" data-act="punchOut" data-id="${me.id}">Check Out for the Day</button>`:''}
 
             ${st==='break'?`
-              <button class="btn ghost" style="padding:10px 16px" data-act="leaveShop" data-id="${me.id}">🚪 Leave from Shop</button>`:''}
+              <button class="btn ghost" style="padding:10px 16px" data-act="punchOut" data-id="${me.id}">Check Out for the Day</button>`:''}
 
             ${st==='done'||st==='leave_early'?`
               <button class="btn tape" style="flex:1;padding:10px 18px" data-act="punchIn" data-id="${me.id}">⚡ Check In Again</button>`:''}
