@@ -87,7 +87,7 @@ export async function injectSupplierInbox(data) {
   const { rows } = await query(`SELECT i.id, i.sid, i.kind, i.data, i.created_at, coalesce(array_agg(m.id ORDER BY m.id) FILTER (WHERE m.id IS NOT NULL), '{}') AS photos
                                 FROM sup_inbox i LEFT JOIN sup_media m ON m.inbox_id = i.id WHERE i.imported_at IS NULL GROUP BY i.id ORDER BY i.id`);
   if (!rows.length) return 0;
-  const S = data.S; S.orders = S.orders || []; S.notif = S.notif || [];
+  const S = data.S; S.orders = S.orders || []; S.notif = S.notif || []; S.payReqs = S.payReqs || [];
   let added = 0;
   for (const row of rows) {
     const sup = (S.suppliers || []).find(s => s.id === row.sid);
@@ -100,6 +100,17 @@ export async function injectSupplierInbox(data) {
         files: row.photos.map(photoUrl), unreadShop: true, unreadSup: false, src: 'portal', needsOwner: true,
         events: [{ id: 'e' + row.id, actor: 'supplier', name: d.rep || name, action: 'uploaded', note: d.text || '', at: new Date(row.created_at).getTime() }] });
       S.notif.unshift({ id: 'n' + row.id.toString(36) + 's', kind: 'order', text: `${name} sent an order (${row.photos.length} photo${row.photos.length === 1 ? '' : 's'}) — needs the owner's approval`, view: 'orders', at: localTime(), read: false, forApprovers: true });
+      added++;
+    } else if (row.kind === 'payreq') {
+      const id = 'pr' + row.id;
+      if (S.payReqs.some(x => x.id === id)) continue;
+      const d = row.data;
+      S.payReqs.push({ id, inboxId: row.id, sid: row.sid, rep: d.rep || 'Rep', date: d.date || localDate(),
+        lines: d.lines || [], total: +d.total || 0, note: d.note || '', status: 'sent', unreadShop: true,
+        events: [{ actor: 'supplier', name: d.rep || name, action: 'asked', note: d.note || '', at: new Date(row.created_at).getTime() }] });
+      S.notif.unshift({ id: 'n' + row.id.toString(36) + 'p', kind: 'info',
+        text: `${name} is asking to be paid — ${(d.lines || []).length} bill${(d.lines || []).length === 1 ? '' : 's'}`,
+        view: 'payreqs', at: localTime(), read: false, forApprovers: true });
       added++;
     } else if (row.kind === 'reply') {
       const d = row.data, po = S.orders.find(o => o.no === d.no && o.dir === 'OUT');
@@ -123,6 +134,7 @@ export async function markSupplierImported(data) {
   const S = data?.S; if (!S) return 0;
   const ids = new Set();
   for (const o of (S.orders || [])) { if (o.inboxId) ids.add(o.inboxId); for (const e of (o.events || [])) if (e.inboxId) ids.add(e.inboxId); }
+  for (const p of (S.payReqs || [])) if (p.inboxId) ids.add(p.inboxId);
   if (!ids.size) return 0;
   await ensureSupplierTables();
   const { rowCount } = await query(`UPDATE sup_inbox SET imported_at = now() WHERE imported_at IS NULL AND id = ANY($1::bigint[])`, [[...ids]]);
@@ -285,7 +297,25 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
   // what the shop owes them, from the journal, like the till does
   let dr = 0, cr = 0;
   for (const j of (S.journal || [])) for (const l of (j.lines || [])) if (l.ac === '2100' && l.party && l.party.type === 'S' && l.party.id === sup.id) { dr += l.dr; cr += l.cr; }
+  // the bills that make up that figure, so a request can name the ones it is for
+  const bills = !sup.showAccount ? [] : (S.purchases || [])
+    .filter(p => p.supplierId === sup.id && (p.total - (+p.paid || 0)) > 0.005)
+    .map(p => ({ no: p.no, supInv: p.supInv || '', date: p.date, total: +p.total || 0,
+                 paid: +p.paid || 0, owing: Math.round((p.total - (+p.paid || 0)) * 100) / 100 }))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  // their own payment requests: the ones the shop has, and the one still on its way
+  const mine = (S.payReqs || []).filter(x => x.sid === sup.id).map(x => ({
+    id: x.id, date: x.date, total: x.total, note: x.note, status: x.status, lines: x.lines,
+    events: (x.events || []).map(e => ({ who: e.actor === 'shop' ? (CFG.shop?.name || 'The shop') : e.name, action: e.action, note: e.note, at: e.at })),
+    pay: x.pay || null }));
+  const waiting = pending.filter(p => p.kind === 'payreq').map(p => ({
+    id: 'pending' + p.id, date: p.data.date, total: p.data.total, note: p.data.note, lines: p.data.lines,
+    status: 'sent', waiting: true,
+    events: [{ who: p.data.rep || 'You', action: 'asked', note: p.data.note || '', at: new Date(p.created_at).getTime() }] }));
+  const payReqs = waiting.concat(mine).sort((a, b) => (b.events[0]?.at || 0) - (a.events[0]?.at || 0));
+
   res.json({ ok: true, supplier: { name: sup.name, contact: sup.contact || '', phone: sup.phone || '', terms: sup.days || 0, owed: Math.round((cr - dr) * 100) / 100, showAccount: !!sup.showAccount },
+    bills, payReqs,
     shop: { name: CFG.shop?.name || 'Regal Hardware', phone: CFG.shop?.phone || '', addr: CFG.shop?.addr || '' }, rep: req.sup.rep || '', pos, sent });
 }));
 
@@ -307,6 +337,42 @@ r.post('/order', supAuth, asyncHandler(async (req, res) => {
   const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'order', $2) RETURNING id`, [req.sup.sid, JSON.stringify({ text, rep, date: localDate(), time: localTime() })]);
   for (const [mime, b] of bufs) await query(`INSERT INTO sup_media (inbox_id, mime, data) VALUES ($1, $2, $3)`, [id, mime, b]);
   res.json({ ok: true, id, photos: bufs.length });
+}));
+
+/**
+ * "Please pay me for these." The supplier ticks the bills they want settled and may say a
+ * different figure for any of them — a credit note they have raised, a short delivery, a price
+ * agreed after the invoice was cut. Nothing here changes a bill or moves any money: it is a
+ * request, and it waits in the inbox until a till pulls it in, exactly like an order does.
+ */
+r.post('/payreq', supAuth, asyncHandler(async (req, res) => {
+  const data = await books();
+  const S = data?.S || {};
+  const sup = (S.suppliers || []).find(s => s.id === req.sup.sid);
+  if (!sup) throw new HttpError(404, 'Supplier no longer on file');
+  if (!sup.showAccount) throw new HttpError(403, 'The shop has not opened your account page yet — ask them to switch it on');
+  const wanted = Array.isArray(req.body?.lines) ? req.body.lines.slice(0, 80) : [];
+  if (!wanted.length) throw new HttpError(400, 'Tick at least one bill');
+  const open = (S.purchases || []).filter(p => p.supplierId === sup.id && (p.total - (+p.paid || 0)) > 0.005);
+  const lines = [];
+  for (const w of wanted) {
+    const p = open.find(x => x.no === String(w?.no || ''));
+    if (!p) continue;                                   // not theirs, already settled, or made up
+    if (lines.some(l => l.no === p.no)) continue;       // the same bill twice
+    const owing = Math.round((p.total - (+p.paid || 0)) * 100) / 100;
+    const asked = w.claim === undefined || w.claim === null || w.claim === '' ? owing : +w.claim;
+    if (!Number.isFinite(asked) || asked < 0) throw new HttpError(400, 'An amount must be a number, and not below nothing');
+    lines.push({ no: p.no, supInv: p.supInv || '', date: p.date, billed: +p.total || 0, owing,
+                 claim: Math.round(asked * 100) / 100, note: String(w.note || '').trim().slice(0, 200) });
+  }
+  if (!lines.length) throw new HttpError(400, 'None of those bills are still open');
+  const total = Math.round(lines.reduce((a, l) => a + l.claim, 0) * 100) / 100;
+  if (total <= 0) throw new HttpError(400, 'The request adds up to nothing');
+  await ensureSupplierTables();
+  const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'payreq', $2) RETURNING id`,
+    [req.sup.sid, JSON.stringify({ lines, total, note: String(req.body?.note || '').trim().slice(0, 1000),
+      rep: String(req.body?.rep || req.sup.rep || '').trim().slice(0, 60), date: localDate(), time: localTime() })]);
+  res.json({ ok: true, id, lines: lines.length, total });
 }));
 
 /** The supplier's answer to an order the shop sent: accepted / changes / dispatched (+ invoice no). */

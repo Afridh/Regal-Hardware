@@ -21,6 +21,15 @@ h1,h2{font-family:Archivo,sans-serif;margin:0 0 8px;letter-spacing:-.01em}h2{fon
 .brand{font-family:Archivo,sans-serif;font-weight:800;font-size:18px;white-space:nowrap}.brand span{color:var(--yellow)}.brand small{display:block;font:400 10.5px 'IBM Plex Sans';color:#9BB0AE;letter-spacing:.08em;margin-top:-2px}
 .who{margin-left:auto;font-size:12.5px;color:#D7E0DF;text-align:right}.who a{color:var(--yellow)}
 main{max-width:760px;margin:0 auto;padding:14px 12px 90px}
+.paytbl{width:100%;border-collapse:collapse}
+.paytbl th{text-align:left;font-size:11px;color:var(--steel);text-transform:uppercase;letter-spacing:.06em;padding:4px 6px;border-bottom:1px solid var(--line)}
+.paytbl td{padding:7px 6px;border-bottom:1px solid var(--line2);vertical-align:top}
+.paytbl th.n,.paytbl td.n{text-align:right}
+.paytbl tr.on td{background:var(--tint-yellow)}
+.paytbl tr.sub td{border-bottom:1px solid var(--line2);padding-top:0}
+.paytbl tr.sub input{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px}
+.paytbl input[type=checkbox]{width:18px;height:18px}
+.paytbl .payamt{width:112px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;text-align:right}
 .card{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(16,30,34,.05)}
 .muted{color:var(--steel);font-size:13px}
 .btn{border:1px solid var(--line);background:#fff;border-radius:var(--r);padding:11px 16px;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:6px}
@@ -81,7 +90,22 @@ async function api(path,opts={}){ const h={'Content-Type':'application/json'}; i
   const r=await fetch(API+path,{...opts,headers:h,body:opts.body?JSON.stringify(opts.body):undefined}); let j={}; try{ j=await r.json() }catch(e){}
   if(r.status===401&&st.token&&!/^\/(otp|login)/.test(path)) signOut(false);
   if(!r.ok) throw new Error(j.error||('Request failed ('+r.status+')')); return j }
+async function askToBePaid(){
+  const picked=st.payPick||{}, nos=Object.keys(picked);
+  if(!nos.length) return;
+  st.busy=true; render();
+  try{
+    const lines=nos.map(no=>({ no, claim:picked[no].claim===''?undefined:+picked[no].claim, note:picked[no].note||'' }));
+    const j=await api('/payreq',{method:'POST',body:{lines,note:st.payNote||'',rep:st.rep||''}});
+    st.payPick={}; st.payNote=''; st.paySent={lines:j.lines,total:j.total};
+    await load();                                   // so what was asked for shows straight away
+  }catch(e){ alert(e.message) }
+  finally{ st.busy=false; render() }
+}
 function signOut(redraw=true){ st.token=''; st.me=null; ls.set('token',''); if(redraw) render() }
+const PAYSTATUS={sent:['warn','With the shop'],accepted:['blue','Agreed — being made ready'],ready:['ok','Ready to collect'],issued:['ok','Paid'],rejected:['bad','Turned down']};
+const PAYACT={asked:'Asked to be paid',accepted:'The shop agreed',queried:'The shop asked about it',rejected:'The shop turned it down',ready:'The money is ready',issued:'Handed over'};
+const paytag=s=>{const x=PAYSTATUS[s]||['',s];return `<span class="tag ${x[0]}">${esc(x[1])}</span>`};
 const STATUS={sent:['warn','Waiting for your answer'],accepted:['ok','You confirmed it'],changes:['warn','You asked for a change'],dispatched:['blue','On its way'],received:['ok','Received by the shop'],cancelled:['bad','Cancelled by the shop'],pending:['warn','Waiting for the shop'],rejected:['bad','Not accepted'],adjusted:['warn','Shop asked for a change'],revised:['','Replaced']};
 const tag=s=>{const x=STATUS[s]||['',s];return `<span class="tag ${x[0]}">${esc(x[1])}</span>`};
 const ACT={sent:'Order sent',accepted:'Accepted',changes:'Asked for a change',dispatched:'Dispatched',received:'Goods received',cancelled:'Cancelled',uploaded:'Order sent in',rejected:'Not accepted',adjusted:'Change requested',comment:''};
@@ -93,8 +117,9 @@ function render(){
     <div class="card"><h2>Sign in</h2><div class="muted" style="margin-bottom:10px">Use the mobile number the shop has for your company. We text you a code.</div><button class="btn tape big" id="signin">Sign in with my mobile</button></div>`; $('#signin').onclick=()=>signIn(load); return }
   if(!st.me){ m.innerHTML='<div class="card muted">Loading…</div>'; return }
   const me=st.me, open=me.pos.filter(o=>['sent','changes'].includes(o.status)).length;
-  m.innerHTML=`<div class="tabs"><button class="${st.tab==='orders'?'on':''}" data-t="orders">Orders from the shop${open?`<i>${open}</i>`:''}</button><button class="${st.tab==='send'?'on':''}" data-t="send">Send an order</button><button class="${st.tab==='sent'?'on':''}" data-t="sent">Sent</button><button class="${st.tab==='account'?'on':''}" data-t="account">Account</button></div>
-   ${({orders,send,sent,account})[st.tab]()}`;
+  const payDue=(st.me.payReqs||[]).filter(r=>r.status==='ready').length;
+  m.innerHTML=`<div class="tabs"><button class="${st.tab==='orders'?'on':''}" data-t="orders">Orders from the shop${open?`<i>${open}</i>`:''}</button><button class="${st.tab==='send'?'on':''}" data-t="send">Send an order</button><button class="${st.tab==='sent'?'on':''}" data-t="sent">Sent</button><button class="${st.tab==='pay'?'on':''}" data-t="pay">Get paid${payDue?`<i>${payDue}</i>`:''}</button><button class="${st.tab==='account'?'on':''}" data-t="account">Account</button></div>
+   ${({orders,send,sent,pay,account})[st.tab]()}`;
   $$('[data-t]',m).forEach(b=>b.onclick=()=>{st.tab=b.dataset.t;render()}); bind();
 }
 function orders(){ const me=st.me; if(!me.pos.length) return '<div class="card muted">The shop has not sent you an order yet.</div>';
@@ -120,6 +145,49 @@ function sent(){ const me=st.me; if(!me.sent.length) return '<div class="card mu
    ${o.note&&o.status!=='pending'?`<div class="muted"><b>Shop:</b> ${esc(o.note)}</div>`:''}
    <div class="ev">${o.events.map(e=>`<div><b>${esc(e.who)}</b> <span class="muted">· ${when(e.at)}</span><div>${esc(ACT[e.action]||e.action)}${e.note&&e.action!=='uploaded'?': '+esc(e.note):''}</div></div>`).join('')}</div></div>`).join('');
 }
+/* Asking to be paid: tick the bills, change a figure where it is wrong, say why, send it.
+   Nothing here settles anything — the shop goes through it and tells you where it is. */
+function pay(){
+  const me=st.me, s=me.supplier;
+  if(!s.showAccount) return '<div class="card muted">The shop has not switched your account page on yet. Ask them to, and you will be able to see what is outstanding and ask to be paid from here.</div>';
+  const bills=me.bills||[], reqs=me.payReqs||[];
+  const asked=new Set(reqs.filter(r=>['sent','accepted','ready'].includes(r.status)).flatMap(r=>(r.lines||[]).map(l=>l.no)));
+  const picked=st.payPick||{};
+  const chosen=bills.filter(b=>picked[b.no]);
+  const total=chosen.reduce((a,b)=>a+(picked[b.no].claim===''?b.owing:+picked[b.no].claim||0),0);
+  return `${st.paySent?`<div class="card" style="text-align:center;padding:26px 16px"><div style="font-size:40px">📨</div>
+     <h2>Sent to the shop</h2><div class="muted">${st.paySent.lines} bill${st.paySent.lines===1?'':'s'} · ${money(st.paySent.total)}. You will see it move below as they go through it.</div>
+     <button class="btn tape" id="payAgain" style="margin-top:14px">Ask for something else</button></div>`:
+   bills.length?`<div class="card">
+     <h2>What is outstanding</h2>
+     <div class="muted" style="margin-bottom:10px">Tick the bills you want settled. If a figure is wrong — a credit note, short delivery, a price agreed later — put what it should be and say why.</div>
+     <table class="paytbl">
+      <tr><th></th><th>Invoice</th><th class="n">Owing</th><th class="n">Asking for</th></tr>
+      ${bills.map(b=>{ const p=picked[b.no], on=!!p, already=asked.has(b.no);
+        return `<tr class="${on?'on':''}">
+        <td><input type="checkbox" data-paypick="${esc(b.no)}" ${on?'checked':''} ${already?'disabled':''}></td>
+        <td><b>${esc(b.supInv||b.no)}</b><div class="muted">${esc(b.date)}${already?' · already asked for':''}</div></td>
+        <td class="n">${money(b.owing)}</td>
+        <td class="n">${on?`<input class="payamt" type="number" step="any" data-payamt="${esc(b.no)}" value="${p.claim}" placeholder="${b.owing}">`:'<span class="muted">—</span>'}</td>
+       </tr>${on?`<tr class="sub"><td></td><td colspan="3"><input data-paynote="${esc(b.no)}" value="${esc(p.note||'')}" placeholder="why it is different, if it is — optional"></td></tr>`:''}`}).join('')}
+     </table>
+     <div class="kv" style="margin-top:10px"><span class="muted">${chosen.length} bill${chosen.length===1?'':'s'} ticked</span><b>${money(total)}</b></div>
+     <div class="f" style="margin-top:8px"><label>Anything else the shop should know</label>
+      <textarea id="payNote" placeholder="e.g. cheque please, the rep will collect on Friday">${esc(st.payNote||'')}</textarea></div>
+     <div class="f"><label>Your name</label><input id="payRep" value="${esc(st.rep)}" placeholder="Rep's name"></div>
+     <button class="btn tape big" id="paySend" ${chosen.length&&!st.busy?'':'disabled'}>${st.busy?'Sending…':`Ask to be paid ${chosen.length?money(total):''}`}</button>
+    </div>`:'<div class="card muted">Nothing is outstanding — every bill of yours is settled.</div>'}
+
+   ${reqs.length?`<h2 style="margin:16px 0 8px">What you have asked for</h2>
+    ${reqs.map(r=>`<div class="card o">
+      <div class="h"><div><b>${money(r.total)}</b><div class="muted">${esc(r.date)} · ${(r.lines||[]).length} bill${(r.lines||[]).length===1?'':'s'}</div></div>
+       ${r.waiting?'<span class="tag warn">Reaching the shop</span>':paytag(r.status)}</div>
+      ${r.status==='ready'?'<div class="card" style="margin:8px 0;background:var(--tint-green);border-color:var(--green)"><b>The money is ready.</b> <span class="muted">Call in for the cheque or the cash.</span></div>':''}
+      <table>${(r.lines||[]).map(l=>`<tr><td>${esc(l.supInv||l.no)}${l.note?`<div class="muted">${esc(l.note)}</div>`:''}</td><td class="n">${money(l.claim)}</td></tr>`).join('')}</table>
+      ${r.pay?`<div class="muted" style="margin-top:6px">Handed over ${esc(r.pay.date)} · ${esc(r.pay.what||'')}</div>`:''}
+      <div class="ev">${(r.events||[]).map(e=>`<div><b>${esc(e.who)}</b> <span class="muted">· ${when(e.at)}</span><div>${esc(PAYACT[e.action]||e.action)}${e.note?': '+esc(e.note):''}</div></div>`).join('')}</div>
+     </div>`).join('')}`:''}`;
+}
 function account(){ const me=st.me, s=me.supplier; return `<div class="card"><h2>${esc(s.name)}</h2>
    <div class="kv"><span class="muted">Contact on file</span><b>${esc(s.contact||'—')}</b></div><div class="kv"><span class="muted">Mobile</span><b>${esc(s.phone||'—')}</b></div><div class="kv"><span class="muted">Terms</span><b>${s.terms?s.terms+' days':'—'}</b></div>
    ${s.showAccount?`<div class="kv"><span class="muted">The shop owes you</span><b>${money(s.owed)}</b></div>`:'<div class="muted" style="margin-top:8px">Ask the shop to switch on your account page to see what is owed here.</div>'}</div>
@@ -129,6 +197,17 @@ function bind(){
   const m=$('#main');
   $$('[data-resp]',m).forEach(b=>b.onclick=()=>respond(b.dataset.no,b.dataset.resp));
   const sn=$('#snap'); if(sn) sn.onclick=()=>$('#file').click();
+  // ticking a bill, changing what is asked for, and sending it
+  $('[data-paypick]',m).forEach(cb=>cb.onchange=()=>{ st.payPick=st.payPick||{};
+    if(cb.checked) st.payPick[cb.dataset.paypick]={claim:'',note:''}; else delete st.payPick[cb.dataset.paypick];
+    render() });
+  $('[data-payamt]',m).forEach(el=>{ el.oninput=()=>{ st.payPick[el.dataset.payamt].claim=el.value };
+    el.onblur=()=>render() });
+  $('[data-paynote]',m).forEach(el=>el.oninput=()=>{ st.payPick[el.dataset.paynote].note=el.value });
+  const pn=$('#payNote'); if(pn) pn.oninput=()=>{ st.payNote=pn.value };
+  const pr=$('#payRep'); if(pr) pr.oninput=()=>{ st.rep=pr.value; ls.set('rep',pr.value) };
+  const ag=$('#payAgain'); if(ag) ag.onclick=()=>{ st.paySent=null; render() };
+  const ps=$('#paySend'); if(ps) ps.onclick=askToBePaid;
   const f=$('#file'); if(f) f.onchange=()=>{ [...f.files].slice(0,6-st.photos.length).forEach(file=>shrink(file).then(d=>{ st.photos.push(d); render() }).catch(()=>toast('Could not read that picture'))) };
   $$('[data-rm]',m).forEach(b=>b.onclick=()=>{ st.photos.splice(+b.dataset.rm,1); render() });
   const t=$('#text'); if(t) t.oninput=()=>{ st.text=t.value };

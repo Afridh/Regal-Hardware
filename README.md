@@ -224,6 +224,40 @@ owe money.
 * **On WhatsApp, free text only reaches someone who has written to the shop in the last 24 hours.** Everyone else
   needs a template Meta has approved (*Settings → Messaging → WhatsApp → Templates*). A run is capped at 200.
 
+## A supplier asking to be paid
+
+A rep used to ring up and ask. Now they can do it from their own page, and the asking leaves a
+trail: *Suppliers → Payment requests*.
+
+**Their end** (`/supplier` → **Get paid**, once the shop has switched their account page on).
+They see every bill of theirs still outstanding, tick the ones they want settled, and — where a
+figure is wrong because of a credit note, a short delivery or a price agreed after the invoice was
+cut — put what it should be and say why. A note for the shop, their name, send.
+
+**Your end.** It arrives like an order does: into the inbox, into the books the next time a till
+pulls, and the bell rings for the owner, admins and accounts. The page shows what they are asking
+for beside what the books say, and calls out every line where the two differ.
+
+From there it walks one way, and every step is written against it with who did it:
+
+| Step | What it means |
+|---|---|
+| **Asked for** | the supplier sent it |
+| **Agreed** | the owner, an admin or accounts has been through it |
+| **Ready** | the money is put aside — the supplier sees *ready to collect* on their page |
+| **Paid** | accounts has handed the cheque or the cash over |
+
+**Only the last step moves money.** It posts through the same supplier payment the till has always
+used, so the ledger, the cheque book and the supplier's balance all agree, and the bills the
+request named are the ones it settles.
+
+**A request never changes a bill.** If the supplier is right about a figure, the bill is changed
+where bills are changed — *Suppliers → their bills → Change it* — so there is one way a bill's
+value ever moves. The page says so and offers the way there.
+
+Agreeing, putting the money aside and handing it over need the *paySupplier* right (accounts, KP,
+admins, the owner). Everyone else can read.
+
 ## Purchasing & the cash plan
 
 *Suppliers → Purchasing & cash plan.* The shop buys on credit and sells for cash and cheques, so what can safely be
