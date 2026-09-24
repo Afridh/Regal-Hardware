@@ -3346,12 +3346,14 @@ const P = id => st.cat && st.cat.products.find(p => String(p.id) === String(id))
 const cartN = () => st.cart.reduce((a, l) => a + l.qty, 0);
 const selLines = () => st.cart.filter(l => l.sel !== false && P(l.pid));
 function totals(lines = selLines()) {
-  const w = st.cat ? st.cat.settings : { delivery: 0, freeOver: 0 };
+  const w = (st.cat && st.cat.settings) ? st.cat.settings : { delivery: 0, freeOver: 0 };
   const goods = lines.reduce((a, l) => {
     const p = P(l.pid);
     return a + (p ? l.qty * priceFor(p, l.qty) : 0);
   }, 0);
-  const del = (st.deliver && goods < w.freeOver && goods > 0) ? w.delivery : 0;
+  const freeOver = +w.freeOver || 0;
+  const delivery = +w.delivery || 0;
+  const del = (st.deliver && goods < freeOver && goods > 0) ? delivery : 0;
   return { goods, del, total: goods + del, n: lines.length };
 }
 function priceFor(p, qty) {
@@ -4913,7 +4915,6 @@ function donePage() {
   // WhatsApp receipt text generator (exact Amore pattern)
   const itemsText = (o.items || []).map((it, idx) => `${idx + 1}. ${it.name} ${it.option ? `(${it.option})` : ''} × ${it.qty} = Rs. ${(it.total || 0).toLocaleString()}`).join('%0A');
   const waMsg = `Hi Regal Hardware Kaduruwela,%0A%0A*NEW ORDER RECEIPT:* %23${o.ref || o.no}%0A*Customer:* ${encodeURIComponent(o.customerName || 'Customer')}%0A*Phone:* ${encodeURIComponent(o.phone || '')}%0A*Address:* ${encodeURIComponent(o.address || '')}%0A*Payment:* ${o.pay === 'cod' ? 'Cash on Delivery' : (o.pay === 'card' ? 'Card at Jobsite' : 'Pay at Depot')}%0A%0A*MATERIALS:*%0A${itemsText}%0A%0A*TOTAL AMOUNT:* Rs. ${(o.total || 0).toLocaleString()}%0A%0APlease confirm jobsite fleet dispatch. Thank you!`;
-  const waLink = `https://wa.me/94771234567?text=${waMsg}`;
   const waLink = `https://wa.me/94772222259?text=${waMsg}`;
 
   return `
@@ -5476,42 +5477,23 @@ function signIn(then) {
 
 async function loadCatalog() {
   try {
-    st.cat = await api('/catalog');
     const live = await api('/catalog');
     if (live && live.products && live.products.length > 0) {
       st.cat = live;
+      if (!st.cat.settings) st.cat.settings = DEFAULT_CATALOG.settings;
       render();
     }
   } catch (e) {
-    st.cat = {
-      shop: { name: 'Regal Hardware' },
-      settings: { open: true },
-      categories: [
-        { name: 'Power Tools', count: 18 },
-        { name: 'Paints & Finishes', count: 32 },
-        { name: 'Hand Tools', count: 26 },
-        { name: 'Hardware & Fasteners', count: 48 },
-        { name: 'Plumbing & PVC', count: 40 },
-        { name: 'Safety & Tools', count: 20 },
-        { name: 'House Construction', count: 35 }
-      ],
-      products: []
-    };
-    // Keep using DEFAULT_CATALOG seamlessly
+    st.cat = { ...DEFAULT_CATALOG };
   }
   if (!st.cat.products || st.cat.products.length === 0) {
     st.cat.products = DEFAULT_PRODUCTS;
   }
   if (!st.cat.categories || st.cat.categories.length === 0) {
-    st.cat.categories = [
-      { name: 'Power Tools', count: 18 },
-      { name: 'Paints & Finishes', count: 32 },
-      { name: 'Hand Tools', count: 26 },
-      { name: 'Hardware & Fasteners', count: 48 },
-      { name: 'Plumbing & PVC', count: 40 },
-      { name: 'Safety & Tools', count: 20 },
-      { name: 'House Construction', count: 35 }
-    ];
+    st.cat.categories = DEFAULT_CATALOG.categories;
+  }
+  if (!st.cat.settings) {
+    st.cat.settings = DEFAULT_CATALOG.settings;
   }
 }
 
