@@ -6779,15 +6779,15 @@ function renderNow(){
 
   if(S.view==='bills'||S.view==='recall') billsAfter();
   if(S.view==='trail') trailAfter();
-  // who signs in for the customer on the screen, read once and kept until another is opened
-  // who signs in for the customer or the supplier on the screen, read once and kept until another is opened
+  /* who signs in for the customer or the supplier on the screen: read once, kept until another is
+     opened. The attempt is recorded either way, so drawing again after it settles cannot loop —
+     and it has to be drawn again, or a reader that failed would leave "Reading…" on the screen. */
   if(document.getElementById('cuLogins')&&!custLogins.busy){
     const forSup=S.view==='suppliers', asked=forSup?supSel:custSel, kind=forSup?'S':'C';
     if(asked&&(custLogins.cid!==asked||custLogins.kind!==kind)){
       custLogins.busy=true;
-      loadCustLogins(asked,true,kind).then(got=>{ custLogins.busy=false;
-        // only draw again when something came back, and only if that one is still on the screen
-        if(got&&(forSup?supSel:custSel)===asked) renderNow(); });
+      loadCustLogins(asked,true,kind).finally(()=>{ custLogins.busy=false;
+        if((forSup?supSel:custSel)===asked&&(S.view==='customers'||S.view==='suppliers')) renderNow(); });
     }
   }
   document.querySelectorAll('[data-custfilter]').forEach(b=>b.onclick=()=>{custFilter=b.dataset.custfilter;render()});
@@ -11519,8 +11519,8 @@ async function portalInvite(kind,who,on){
     if(!r.ok||j.ok===false) throw new Error(j.error||('the server said '+r.status));
     if(j.made){
       sms(to,tpl('portalLogin',{customer:who.name,who:who.contact||who.name,user:j.username,pass:j.password,link}));
-      if(kind==='C') loadCustLogins(who.id,true).then(()=>render());
-      toast(`Page on · texted ${to} — user name ${j.username}, password ${j.password}`,'ok');
+      loadCustLogins(who.id,true,kind).finally(()=>render());
+      toast(`Texted ${to} — user name ${j.username}, password ${j.password}`,'ok');
     } else {
       sms(to,tpl('portalInvite',{customer:who.name,link}));
       toast(`Page on · ${to} told. ${j.logins.length} sign-in${j.logins.length===1?'':'s'} already set up, so their own names and passwords stand.`,'ok');
@@ -11910,7 +11910,9 @@ function custLoginsPanel(c,kind){
      <button class="btn tape sm" data-act="cuLoginNew" data-id="${c.id}" data-kind="${kind}">Add someone</button></div>
     ${custLogins.cid===c.id&&custLogins.failed?`<div class="muted">Could not read them — ${custLogins.failed}. <a href="#" data-act="cuLoginsAgain" data-id="${c.id}" data-kind="${kind}">Try again</a></div>`
      :mine===null?'<div class="muted">Reading…</div>'
-     :!mine.length?'<div class="muted">Nobody yet. Anyone with the mobile on this account can still sign in with a texted code.</div>'
+     :!mine.length?`<div class="card note" style="margin:0"><b>Nobody has a sign-in yet.</b>
+        <div class="muted">One is made and texted by itself when the page is switched on. This page was switched on before that, so it can be done now${c.phone?` — to ${c.phone}`:', though there is no mobile on this account'}.</div>
+        <button class="btn tape sm" style="margin-top:8px" data-act="cuLoginAuto" data-id="${c.id}" data-kind="${kind}" ${c.phone?'':'disabled'}>Make one and text it</button></div>`
      :`<table class="tbl"><tr><th>User name</th><th>Who</th><th>Mobile</th><th>Last in</th><th></th></tr>
        ${mine.map(l=>`<tr class="${l.active?'':'off'}">
          <td><b>${l.username}</b>${l.own?'<div class="muted">has set their own password</div>':'<div class="muted">on the password you gave</div>'}</td>
@@ -15777,6 +15779,8 @@ document.addEventListener('click',e=>{
     purEdit:()=>editPurchaseModal(a.dataset.no),
     billClear:()=>{billQ='';billFrom='';billTo='';billType='all';billBy='all';billCust=0;billSel=null;billLimit=150;render()},
     cuLoginNew:()=>custLoginModal(+a.dataset.id,a.dataset.kind||'C'),
+    cuLoginAuto:()=>{ const kind=a.dataset.kind||'C', id=+a.dataset.id;
+      portalInvite(kind,kind==='S'?SU(id):C(id),true) },
     cuLoginsAgain:()=>{ custLogins={cid:0,kind:'C',list:null,busy:false,failed:''}; render() },
     cuLoginPw:()=>custLoginPwModal(+a.dataset.id,+a.dataset.lid,a.dataset.kind||'C'),
     cuLoginSend:()=>custLoginSend(+a.dataset.id,+a.dataset.lid,a.dataset.kind||'C'),
