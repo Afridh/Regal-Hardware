@@ -124,7 +124,8 @@ nav .navout{width:30px;height:30px;flex:0 0 30px;border-radius:8px;background:no
  display:flex;align-items:center;justify-content:center;transition:all .15s}
 nav .navout:hover{background:var(--chip-rust);border-color:var(--chip-rust);color:#fff}
 
-/* narrow: smooth expand on hover, icons fixed in position */
+@media (min-width:901px){
+/* narrow: smooth expand on hover on desktop only, icons fixed in position */
 body.navmini #app,body.pos-narrow #app{grid-template-columns:66px 1fr}
 body.navmini.withPhone #app,body.pos-narrow.withPhone #app{grid-template-columns:66px 1fr 392px}
 body.navmini nav,body.pos-narrow nav{width:66px;overflow-x:hidden}
@@ -163,6 +164,7 @@ body.navmini nav:hover .navuser .who,body.pos-narrow nav:hover .navuser .who{opa
 
 body.navmini nav .tip,body.navmini nav:hover .tip,body.pos-narrow nav:hover .tip{display:none!important}
 body.navmini nav:not(:hover) .nbadge,body.pos-narrow nav:not(:hover) .nbadge{position:absolute;top:2px;right:6px;margin:0}
+}
 
 /* across the top */
 body.navtop #app{grid-template-columns:1fr;grid-template-rows:52px auto 1fr;grid-template-areas:"head" "nav" "main"}
@@ -3123,18 +3125,24 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
  body.csfull .burger{display:none}
  .burger{display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid rgba(255,255,255,.3);
   color:#fff;border-radius:var(--r);width:38px;height:34px;font-size:17px;cursor:pointer;margin-right:auto}
- nav,body.navmini nav,body.navtop nav{position:fixed;top:0;left:0;bottom:0;width:250px;z-index:45;display:block;
-  overflow:auto;padding:10px 0 20px;transform:translateX(-100%);transition:transform .2s ease;box-shadow:0 0 40px rgba(0,0,0,.4)}
- body.drawer nav{transform:none}
- .scrim{position:fixed;inset:0;background:rgba(16,22,20,.5);z-index:44;opacity:0;pointer-events:none;transition:opacity .2s}
- body.drawer .scrim{opacity:1;pointer-events:auto}
+ nav,body.navmini nav,body.pos-narrow nav,body.navtop nav{position:fixed!important;top:0!important;left:0!important;bottom:0!important;width:250px!important;z-index:100!important;display:block!important;
+  overflow:auto!important;padding:10px 0 20px!important;transform:translateX(-100%)!important;transition:transform .24s cubic-bezier(0.16,1,0.3,1)!important;box-shadow:0 0 40px rgba(0,0,0,.5)!important}
+ body.drawer nav,body.drawer.navmini nav,body.drawer.pos-narrow nav{transform:translateX(0)!important}
+ body.navmini nav:hover,body.pos-narrow nav:hover{width:250px!important}
+ .scrim{position:fixed!important;inset:0!important;background:rgba(16,22,20,.55)!important;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);z-index:99!important;opacity:0!important;pointer-events:none!important;transition:opacity .2s}
+ body.drawer .scrim{opacity:1!important;pointer-events:auto!important}
  nav .grp{display:flex!important;padding:12px 16px 5px}
  nav .grp i,nav .navtools,nav .tip{display:none!important}
  nav .k{display:inline!important}
- nav button[data-view],body.navmini nav button[data-view]{width:100%;justify-content:flex-start;border-left:3px solid transparent;
-  border-bottom:0;margin:0;padding:11px 16px;white-space:nowrap}
- nav button[data-view].on{border-left-color:var(--chip-yellow);border-bottom-color:transparent}
- nav button[data-view] span{display:inline;flex:1}
+ nav button[data-view],body.navmini nav button[data-view],body.pos-narrow nav button[data-view]{width:100%!important;justify-content:flex-start!important;border-left:3px solid transparent!important;
+  border-bottom:0!important;margin:0!important;padding:11px 16px!important;white-space:nowrap!important}
+ nav button[data-view].on{border-left-color:var(--chip-yellow)!important;border-bottom-color:transparent!important}
+ nav button[data-view] span,body.navmini nav button[data-view] span,body.pos-narrow nav button[data-view] span,
+ nav .navbrand .bname,body.navmini nav .navbrand .bname,body.pos-narrow nav .navbrand .bname,
+ nav .grp span,body.navmini nav .grp span,body.pos-narrow nav .grp span,
+ nav .navsaved,body.navmini nav .navsaved,body.pos-narrow nav .navsaved,
+ nav .navsignout span,body.navmini nav .navsignout span,body.pos-narrow nav .navsignout span,
+ nav .navuser .who,body.navmini nav .navuser .who,body.pos-narrow nav .navuser .who{display:inline!important;opacity:1!important;transform:none!important;pointer-events:auto!important}
 
 }
 
@@ -16611,6 +16619,20 @@ function shopLock(){
    </div>`;
   document.body.appendChild(el);
 
+  if(window.regalBridge && typeof regalBridge.serverUsers === 'function'){
+    regalBridge.serverUsers().then(list => {
+      if(Array.isArray(list) && list.length){
+        list.forEach(su => {
+          const sl = String(su.name || '').toLowerCase().trim();
+          if(!S.users.some(x => String(x.name || '').toLowerCase().trim() === sl)){
+            S.users.push({ name: su.name, role: su.role, uid: su.uid, pin: su.pin ? '?' : '', perms: [], active: true, prefs: { ...PREF_DEFAULTS } });
+          }
+        });
+        if(typeof updateRoleBadge === 'function') updateRoleBadge();
+      }
+    }).catch(() => {});
+  }
+
   const uInp = el.querySelector('#lockUser');
   const pInp = el.querySelector('#lockPw');
   const badge = el.querySelector('#lockRoleBadge');
@@ -16693,21 +16715,50 @@ function shopLock(){
         return;
       }
       let u = S.users.find(x => String(x.name || '').toLowerCase().trim() === lower);
-      if(!u || u.active === false){
-        msg.textContent = 'This account does not exist or has been disabled. Sign in is not permitted.';
-        msg.style.color = 'var(--chip-rust)';
-        if(btn){ btn.disabled = false; btn.textContent = 'Sign In'; }
-        return;
+
+      // On multi-device system: authenticate against backend server so new users created anywhere sign in seamlessly
+      let serverLoginSuccess = false;
+      let serverErr = '';
+      if(window.regalBridge && typeof regalBridge.login === 'function'){
+        try {
+          const r = await regalBridge.login(uName, pInp.value);
+          if(r.ok){
+            serverLoginSuccess = true;
+            u = (S.users && S.users.find(x => String(x.name || '').toLowerCase().trim() === lower)) || { name: r.user.name, role: r.user.role, perms: r.user.perms || [] };
+          } else if(r.status === 401){
+            serverErr = r.error || 'That password is not right';
+          }
+        } catch(e){
+          console.warn('Bridge login error:', e);
+        }
       }
-      const passOk = await checkPass(u, pInp.value);
-      if(!passOk){
-        tries++;
-        msg.textContent = tries >= 5 ? 'Too many wrong passwords. Ask an administrator.' : 'That password is not right.';
-        msg.style.color = 'var(--chip-rust)';
-        if(tries >= 5) pInp.disabled = true;
-        if(btn){ btn.disabled = false; btn.textContent = 'Sign In'; }
-        pInp.focus();
-        return;
+
+      if(!serverLoginSuccess){
+        if(serverErr){
+          tries++;
+          msg.textContent = serverErr;
+          msg.style.color = 'var(--chip-rust)';
+          if(tries >= 5) pInp.disabled = true;
+          if(btn){ btn.disabled = false; btn.textContent = 'Sign In'; }
+          pInp.focus();
+          return;
+        }
+        if(!u || u.active === false){
+          msg.textContent = 'This account does not exist or has been disabled. Sign in is not permitted.';
+          msg.style.color = 'var(--chip-rust)';
+          if(btn){ btn.disabled = false; btn.textContent = 'Sign In'; }
+          return;
+        }
+        const passOk = await checkPass(u, pInp.value);
+        if(!passOk){
+          tries++;
+          msg.textContent = tries >= 5 ? 'Too many wrong passwords. Ask an administrator.' : 'That password is not right.';
+          msg.style.color = 'var(--chip-rust)';
+          if(tries >= 5) pInp.disabled = true;
+          if(btn){ btn.disabled = false; btn.textContent = 'Sign In'; }
+          pInp.focus();
+          return;
+        }
       }
       const freshU = S.users.find(x => x.active !== false && String(x.name || '').toLowerCase() === uName.toLowerCase());
       if(freshU) u = freshU;
@@ -17415,9 +17466,32 @@ document.addEventListener('keydown',e=>{
   if(e.key==='+'&&S.pos.sel>=0){e.preventDefault();const l=S.pos.lines[S.pos.sel];const onBill=S.pos.lines.filter(x=>x.pid===l.pid).reduce((a,x)=>a+x.qty,0);
     if(onBill+1>P(l.pid).stock+1e-9) toast(`Only ${fq(P(l.pid).stock)} ${P(l.pid).unit} in stock`); l.qty++; if(l.auto)l.price=priceFor(P(l.pid),l.qty); render()} if(e.key==='-'&&S.pos.sel>=0){e.preventDefault();const l=S.pos.lines[S.pos.sel];l.qty--;if(l.qty<=0)S.pos.lines.splice(S.pos.sel,1);render()} if(e.key==='Delete'&&S.pos.sel>=0){S.pos.lines.splice(S.pos.sel,1);S.pos.sel=-1;render()} });
 $('#logoutBtn').onclick=signOut;
-/* the dim behind the drawer on a phone */
-(function(){ const bg=document.createElement('div'); bg.className='scrim'; bg.id='scrim';
-  bg.onclick=()=>document.body.classList.remove('drawer'); document.body.appendChild(bg); })();
+/* the dim behind the drawer on a phone & click outside to close */
+(function(){
+  const bg=document.createElement('div'); bg.className='scrim'; bg.id='scrim';
+  bg.onclick=()=>document.body.classList.remove('drawer');
+  document.body.appendChild(bg);
+
+  // Click outside menu bar to close on mobile
+  document.addEventListener('pointerdown', (e) => {
+    if(document.body.classList.contains('drawer')){
+      const nav = document.querySelector('nav');
+      const isBurger = e.target.closest('#burger, .burger, .cs-burger, [data-act="drawer"]');
+      if(nav && !nav.contains(e.target) && !isBurger){
+        document.body.classList.remove('drawer');
+      }
+    }
+  }, true);
+
+  // Clicking any menu item inside nav also closes drawer
+  document.addEventListener('click', (e) => {
+    if(document.body.classList.contains('drawer')){
+      if(e.target.closest('nav button[data-view], nav .navuser, nav .navsignout, nav [data-act]')){
+        document.body.classList.remove('drawer');
+      }
+    }
+  });
+})();
 window.boot=boot; window.GL=GL;
 if(typeof extInstall==='function') extInstall();   // loyalty, vouchers, locations (regal-ext.js)
 

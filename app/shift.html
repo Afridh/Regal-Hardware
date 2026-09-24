@@ -460,6 +460,17 @@ header {
   color: var(--steel);
 }
 .empty-box h3 { margin: 0 0 6px; font-size: 16px; color: var(--ink); }
+
+/* Sign in */
+.signin { position: fixed; inset: 0; background: rgba(16,30,34,.72); z-index: 500; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.signin form { background: #fff; border-radius: var(--r); padding: 22px; width: 100%; max-width: 340px; box-shadow: 0 20px 50px rgba(0,0,0,.35); }
+.signin h3 { margin: 0 0 4px; font-family: Archivo, sans-serif; }
+.signin p { margin: 0 0 14px; color: var(--steel); font-size: 13px; }
+.signin input { width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px; }
+.signin button { width: 100%; font: inherit; font-weight: 700; padding: 11px; border: 0; border-radius: 8px; background: var(--brand); color: #fff; cursor: pointer; }
+.signin button:disabled { opacity: .6; }
+.signin .err { color: var(--rust); font-size: 13px; min-height: 18px; margin-bottom: 6px; }
+.signout-btn { background: transparent; border: 1px solid rgba(255,255,255,.3); color: #fff; border-radius: 999px; font: inherit; font-size: 11px; padding: 2px 9px; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -477,7 +488,8 @@ header {
       <div class="digital-clock" id="digitalClock">--:--:--</div>
       <div style="display:flex;align-items:center;gap:8px">
         <span class="date-str" id="dateStr">--</span>
-        <span class="sync-pill"><span class="sync-dot"></span><span id="syncStatus">Synced</span></span>
+        <span class="sync-pill"><span class="sync-dot"></span><span id="syncStatus">Connecting…</span></span>
+        <button class="signout-btn" id="signOutBtn" onclick="signOut()" style="display:none">Sign out</button>
       </div>
     </div>
   </div>
@@ -503,7 +515,7 @@ header {
 <div id="toast"></div>
 
 <script>
-const STORE_KEY = 'regalhw-erp-v1';
+const STORE_KEY = 'regal_shift_cache';          // this page's own copy — never the shop system's
 let S = { employees: [], shift: { days: {}, settings: {}, holidays: [] } };
 let currentFilter = 'all';
 let searchQuery = '';
@@ -795,6 +807,24 @@ function render() {
             `⏱️ 0h 0m · Not in yet`}
         </div>
 
+        <div class="metrics-grid">
+          <div class="m-item">
+            <span class="m-lbl">Check-In</span>
+            <span class="m-val ${isLate ? 'late-txt' : ''}">${f.in || '—'}${isLate ? ` (${fmtMin(f.late)} late)` : ''}</span>
+          </div>
+          <div class="m-item">
+            <span class="m-lbl">Check-Out</span>
+            <span class="m-val">${f.out || '—'}</span>
+          </div>
+          <div class="m-item">
+            <span class="m-lbl">Floor Time</span>
+            <span class="m-val">${dur(f.worked)}</span>
+          </div>
+          <div class="m-item">
+            <span class="m-lbl">OT (Past 7:30 PM)</span>
+            <span class="m-val ${f.ot ? 'ot-txt' : ''}">${dur(f.ot)}</span>
+          </div>
+        </div>
 
         ${st === 'working' ? `
           <div class="meal-row">
@@ -819,6 +849,11 @@ function render() {
           </button>
         ` : ''}
 
+        ${breaksTaken.length ? `
+          <div class="breaks-list">
+            <b>Breaks:</b> ${breaksTaken.map(b => `${b.name || 'Break'}: ${b.start}–${b.end || 'now'}`).join(' · ')}
+          </div>
+        ` : ''}
 
         <div class="card-actions">
           ${st === 'out' ? `<button class="btn tape" onclick="punchIn(${e.id})">⚡ Check In</button>` : ''}
@@ -882,75 +917,119 @@ function toast(msg) {
   t._timer = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-/* Save to localStorage and sync to server API */
-async function saveAndSync(ds, id) {
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ S, CFG: {} }));
-  } catch(e) {}
-  try {
-    if(typeof BroadcastChannel !== 'undefined') {
-      new BroadcastChannel('regal_books_sync').postMessage('attendance_updated');
-    }
-  } catch(e) {}
+/* ---- the server: the same sign-in as the shop system, and the same books ----
+   The page is given the staff and the attendance only, asks every two seconds whether anything
+   changed anywhere (a user added at the till, a punch on another phone), and saves a punch as that
+   one record — never the whole books. */
+const API = '/api';
+const POLL_MS = 2000;
+let token = '';
+try { token = localStorage.getItem('regal_token') || ''; } catch(e) {}
+let rev = 0, polling = null, loading = false;
 
-  // Push to server background Shift API
-  const e = (S.employees || []).find(x => x.id === id);
-  if(e) {
-    const sbId = e.sbId || ('e' + e.id);
-    const rec = (S.shift.days[ds] || {})[id] || null;
-    fetch('/shift-api.php?action=day', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: ds, empId: sbId, rec })
-    }).catch(() => {});
-  }
+function setStatus(txt) { const el = document.getElementById('syncStatus'); if(el) el.textContent = txt; }
 
-  // Push to server Regal books store
+async function call(method, path, body) {
   try {
-    const token = localStorage.getItem('regal_token') || '';
-    fetch('/api/books/regal', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token ? ('Bearer ' + token) : ''
-      },
-      body: JSON.stringify({ data: S })
-    }).catch(() => {});
-  } catch(e) {}
+    const r = await fetch(API + path, {
+      method,
+      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    let j = {}; try { j = await r.json(); } catch(e) {}
+    j.__status = r.status;
+    if(r.status === 401) { token = ''; try { localStorage.removeItem('regal_token'); } catch(e) {} askSignIn(); }
+    return j;
+  } catch(e) { return { __status: 0, error: 'Server unreachable' }; }
 }
 
-/* Load initial state */
-async function loadState() {
-  try {
-    const local = localStorage.getItem(STORE_KEY);
-    if(local) {
-      const parsed = JSON.parse(local);
-      if(parsed && parsed.S) {
-        S = parsed.S;
-        render();
-      }
-    }
-  } catch(e) {}
+/* Keep a copy on this phone so the board shows at once and survives a dropped signal
+   (its own key: the shop system's copy on this browser is never touched from here) */
+function cache() { try { localStorage.setItem(STORE_KEY, JSON.stringify({ rev, S })); } catch(e) {} }
 
-  try {
-    const r = await fetch('/api/books/regal');
-    if(r.ok) {
-      const j = await r.json();
-      if(j && j.data) {
-        // Merge without losing any local unsaved shift punches
-        const localDays = S.shift && S.shift.days ? S.shift.days : {};
-        S = j.data;
-        if(localDays) {
-          S.shift = S.shift || {};
-          S.shift.days = { ...(S.shift.days || {}), ...localDays };
-        }
-        document.getElementById('syncStatus').textContent = 'Synced';
-        render();
-      }
-    }
-  } catch(e) {
-    document.getElementById('syncStatus').textContent = 'Offline';
+async function saveAndSync(ds, id) {
+  const rec = (S.shift.days[ds] || {})[id] || null;
+  cache();
+  try { if(typeof BroadcastChannel !== 'undefined') new BroadcastChannel('regal_books_sync').postMessage('attendance_updated'); } catch(e) {}
+  const j = await call('POST', '/books/regal/shift', { date: ds, empId: id, rec });
+  if(j.__status === 200) { rev = j.rev; setStatus('Live'); cache(); return; }
+  if(j.__status === 409 && j.rec) {
+    // someone else punched this person a moment later: theirs stands
+    S.shift.days[ds] = S.shift.days[ds] || {};
+    S.shift.days[ds][id] = j.rec;
+    render(); toast('Updated on another device just now — showing the latest');
+    return;
   }
+  if(j.__status !== 401) { setStatus('Not saved — offline'); toast('Could not reach the server — the punch was not saved'); }
+}
+
+async function loadState(quiet) {
+  if(!token || loading) return;
+  loading = true;
+  try {
+    const j = await call('GET', '/books/regal/shift');
+    if(j.__status !== 200) { if(j.__status !== 401) setStatus('Offline'); return; }
+    rev = j.rev || 0;
+    S = { employees: j.employees || [], shift: j.shift || { days: {}, settings: {} } };
+    cache();
+    setStatus('Live');
+    if(!quiet || !busyTyping()) render();
+  } finally { loading = false; }
+}
+
+// never redraw under someone typing in the search box with the keyboard up
+function busyTyping() { const a = document.activeElement; return !!(a && a.id === 'searchInput' && a.value); }
+
+async function poll() {
+  if(!token || document.hidden) return;
+  const j = await call('GET', '/books/regal/rev');
+  if(j.__status !== 200) { if(j.__status === 0) setStatus('Offline'); return; }
+  if(Number(j.rev) !== rev) await loadState(true);
+  else setStatus('Live');
+}
+function startPolling() { clearInterval(polling); polling = setInterval(poll, POLL_MS); }
+
+function askSignIn() {
+  clearInterval(polling);
+  setStatus('Signed out');
+  document.getElementById('signOutBtn').style.display = 'none';
+  if(document.getElementById('signin')) return;
+  const el = document.createElement('div');
+  el.className = 'signin'; el.id = 'signin';
+  el.innerHTML = `<form autocomplete="on">
+      <h3>Sign in</h3>
+      <p>Use your Regal Hardware login — the same as the shop system.</p>
+      <input id="siUser" name="username" autocomplete="username" placeholder="Username" required>
+      <input id="siPass" name="password" type="password" autocomplete="current-password" placeholder="Password" required>
+      <div class="err" id="siErr"></div>
+      <button type="submit" id="siGo">Sign in</button>
+    </form>`;
+  document.body.appendChild(el);
+  el.querySelector('form').onsubmit = async ev => {
+    ev.preventDefault();
+    const btn = el.querySelector('#siGo'), err = el.querySelector('#siErr');
+    btn.disabled = true; btn.textContent = 'Signing in…'; err.textContent = '';
+    const j = await call('POST', '/books/login', { user: el.querySelector('#siUser').value.trim(), password: el.querySelector('#siPass').value });
+    btn.disabled = false; btn.textContent = 'Sign in';
+    if(j.__status !== 200 || !j.token) { err.textContent = j.__status === 0 ? 'The server cannot be reached.' : (j.error || 'Could not sign in'); return; }
+    token = j.token;
+    try { localStorage.setItem('regal_token', token); } catch(e) {}
+    el.remove();
+    signedIn();
+  };
+  setTimeout(() => el.querySelector('#siUser').focus(), 50);
+}
+
+async function signedIn() {
+  document.getElementById('signOutBtn').style.display = '';
+  await loadState();
+  startPolling();
+}
+
+function signOut() {
+  token = '';
+  try { localStorage.removeItem('regal_token'); } catch(e) {}
+  askSignIn();
 }
 
 // Clock updates
@@ -966,24 +1045,20 @@ setInterval(updateClock, 1000);
 updateClock();
 setInterval(updateLiveTimers, 10000);
 
+// the shop system open in another tab of this browser: its saves show here at once
 if(typeof BroadcastChannel !== 'undefined') {
   try {
     const bc = new BroadcastChannel('regal_books_sync');
-    bc.onmessage = e => {
-      if(e.data === 'attendance_updated' || e.data === 'books_updated') {
-        const local = localStorage.getItem(STORE_KEY);
-        if(local) {
-          try {
-            const parsed = JSON.parse(local);
-            if(parsed && parsed.S) { S = parsed.S; render(); }
-          } catch(_){}
-        }
-      }
-    };
+    bc.onmessage = e => { if(e.data === 'attendance_updated' || e.data === 'books_updated') loadState(true); };
   } catch(_){}
 }
+document.addEventListener('visibilitychange', () => { if(!document.hidden) poll(); });
 
-loadState();
+try {
+  const c = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+  if(c && c.S && Array.isArray(c.S.employees)) { S = c.S; rev = c.rev || 0; render(); }
+} catch(e) {}
+if(token) signedIn(); else askSignIn();
 </script>
 </body>
 </html>

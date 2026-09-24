@@ -185,6 +185,51 @@ r.get('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   res.json({ rev: Number(row.rev), data: row.data, updated_at: row.updated_at, updated_by: row.updated_by, inbox });
 }));
 
+r.get('/books/:key/shift', regalAuth, asyncHandler(async (req, res) => {
+  const row = await loadBooks(req.params.key);
+  if (!row || !row.data) return res.json({ ok: true, rev: 0, employees: [], shift: { days: {}, settings: {} }, users: [] });
+  const s = row.data.S || {};
+  res.json({
+    ok: true,
+    rev: Number(row.rev),
+    employees: s.employees || [],
+    shift: s.shift || { days: {}, settings: {}, holidays: [] },
+    users: s.users || []
+  });
+}));
+
+r.post('/books/:key/shift', regalAuth, asyncHandler(async (req, res) => {
+  const { date, empId, rec } = req.body || {};
+  if (!date || !empId) throw new HttpError(400, 'date and empId required');
+  const key = req.params.key;
+  await ensureBooksTables();
+  const out = await withTransaction(async client => {
+    const { rows: [cur] } = await client.query(`SELECT rev, data FROM books WHERE key = $1 FOR UPDATE`, [key]);
+    if (!cur || !cur.data) throw new HttpError(404, 'Books not found');
+    const data = cur.data;
+    if (!data.S) data.S = {};
+    if (!data.S.shift) data.S.shift = { days: {}, settings: {} };
+    if (!data.S.shift.days) data.S.shift.days = {};
+    if (rec === null || rec === undefined) {
+      if (data.S.shift.days[date]) {
+        delete data.S.shift.days[date][empId];
+        if (!Object.keys(data.S.shift.days[date]).length) delete data.S.shift.days[date];
+      }
+    } else {
+      data.S.shift.days[date] = data.S.shift.days[date] || {};
+      data.S.shift.days[date][empId] = rec;
+    }
+    const next = (cur ? Number(cur.rev) : 0) + 1;
+    await client.query(
+      `INSERT INTO books (key, rev, data, updated_at, updated_by) VALUES ($1,$2,$3,now(),$4)
+       ON CONFLICT (key) DO UPDATE SET rev = EXCLUDED.rev, data = EXCLUDED.data, updated_at = now(), updated_by = EXCLUDED.updated_by`,
+      [key, next, JSON.stringify(data), req.regalUser?.name || 'shift']);
+    await client.query(`INSERT INTO books_history (key, rev, data, saved_by) VALUES ($1,$2,$3,$4)`, [key, next, JSON.stringify(data), req.regalUser?.name || 'shift']);
+    return { ok: true, rev: next };
+  });
+  res.json(out);
+}));
+
 /** Save.  body: { data, rev }  — rev is the revision the client loaded; a mismatch returns 409 with the newer copy. */
 r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   const { data, rev } = req.body || {};
