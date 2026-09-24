@@ -83,9 +83,7 @@ nav .navfooter{margin-top:auto;border-top:1px solid rgba(255,255,255,.08);backgr
 nav .navfoot-actions{display:flex;align-items:center;gap:8px;padding:8px 12px 6px}
 nav .navfoot-actions .bellwrap .bell{width:32px;height:32px;padding:0;display:flex;align-items:center;justify-content:center;border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.05);border-radius:9px;cursor:pointer;transition:all .15s}
 nav .navfoot-actions .bellwrap .bell:hover{background:rgba(255,255,255,.12)}
-nav .bellpanel{position:fixed;left:236px;bottom:16px;top:auto;z-index:90;box-shadow:var(--shadow-lift);max-height:calc(100vh - 32px);transition:left 0.28s cubic-bezier(0.16,1,0.3,1)}
-body.navmini nav:not(:hover) .bellpanel,body.pos-narrow nav:not(:hover) .bellpanel{left:76px}
-body.navmini nav:hover .bellpanel,body.pos-narrow nav:hover .bellpanel{left:236px}
+
 nav .navsaved{flex:1;font-size:11px;color:#8DA09A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 nav .navsignout{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#E6ECEA;border-radius:9px;
  padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s}
@@ -781,6 +779,9 @@ tr.off td{opacity:.55}
 .bellpanel{position:absolute;right:0;top:calc(100% + 8px);width:330px;background:#fff;border:1px solid var(--line);
  border-top:3px solid var(--chip-yellow);border-radius:var(--r);box-shadow:0 16px 40px rgba(16,22,20,.3);z-index:40;
  max-height:70vh;overflow:auto;color:var(--ink);animation:rise .16s ease-out}
+.global-bellpanel{position:fixed!important;z-index:99999!important;width:340px;background:#fff;border:1px solid var(--line);
+ border-top:3px solid var(--chip-yellow);border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.45);
+ max-height:calc(100vh - 32px);overflow-y:auto;color:var(--ink);animation:rise .18s ease-out}
 .bp-h{display:flex;justify-content:space-between;align-items:center;padding:9px 11px;border-bottom:1px solid var(--line2)}
 .bp-i{display:flex;gap:9px;align-items:baseline;width:100%;text-align:left;background:none;border:0;
  border-bottom:1px solid var(--line2);padding:9px 11px;cursor:pointer;font-family:inherit;font-size:13px}
@@ -6675,7 +6676,7 @@ function renderNav(){
         : `<button class="${S.view===v[0]?'on':''}" data-view="${v[0]}" title="${v[1]}${v[2]?' · '+v[2]:''}">
             ${icon(v[0])}<span>${v[1]}</span>${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}</button>`).join('');
   $('#hdr').innerHTML=`${S.user.name}, ${S.user.role.toLowerCase()} &nbsp;|&nbsp; till ${S.terminal}, drawer open since ${S.drawer.opened}<br>${today.toDateString()}`;
-  if(side&&S.notif) drawBell();                       // the menu has its own bell now that the header is out of the way
+  drawBell();
   const list=$('#nav .navlist');
   if(list){ list.scrollTop=keepScroll;
     const on=list.querySelector('button.on');           // only nudge if the current page's button is actually out of sight
@@ -6707,18 +6708,53 @@ const NKIND={order:'📦',money:'₨',cheque:'🧾',stock:'📉',people:'👤',w
 const notifMine=(n)=>!(n.forUser&&n.forUser!==(S.user||{}).name)&&!(n.forApprovers&&typeof canApprove==='function'&&!canApprove());
 function drawBell(){
   const wraps=[...document.querySelectorAll('.bellwrap')]; if(!wraps.length) return;
-  const mine=S.notif.filter(notifMine);
+  const mine=(S.notif||[]).filter(notifMine);
   const unread=mine.filter(n=>!n.read).length;
-  wraps.forEach((wrap,i)=>wrap.innerHTML=`<button class="bell" ${i===0?'id="bellBtn"':''} data-act="bellOpen" title="What has changed">
+  wraps.forEach((wrap,i)=>wrap.innerHTML=`<button class="bell" data-act="bellOpen" title="What has changed">
      <svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
       <path d="M18 8a6 6 0 10-12 0c0 7-3 8-3 8h18s-3-1-3-8M13.7 21a2 2 0 01-3.4 0"/></svg>
-     ${unread?`<i class="bdot">${unread>9?'9+':unread}</i>`:''}</button>
-   ${S.notifOpen?`<div class="bellpanel">
+     ${unread?`<i class="bdot">${unread>9?'9+':unread}</i>`:''}</button>`);
+
+  let panel=document.getElementById('bellPanel');
+  if(S.notifOpen){
+    if(!panel){
+      panel=document.createElement('div');
+      panel.id='bellPanel';
+      panel.className='bellpanel global-bellpanel';
+      document.body.appendChild(panel);
+    }
+    const bellBtn=wraps.map(w=>w.querySelector('.bell')).find(b=>{
+      if(!b) return false;
+      const r=b.getBoundingClientRect();
+      return r.width>0 && r.height>0;
+    }) || document.querySelector('.bellwrap .bell') || wraps[0];
+    if(bellBtn){
+      const rect=bellBtn.getBoundingClientRect();
+      const isTopNav=document.body.classList.contains('navtop')||rect.top<70;
+      if(isTopNav){
+        panel.style.left='auto';
+        panel.style.right=Math.max(12,Math.round(window.innerWidth-rect.right))+'px';
+        panel.style.top=Math.round(rect.bottom+8)+'px';
+        panel.style.bottom='auto';
+        panel.style.maxHeight='calc(100vh - '+Math.round(rect.bottom+20)+'px)';
+      }else{
+        panel.style.left=Math.max(12,Math.round(rect.right+12))+'px';
+        panel.style.right='auto';
+        const bot=Math.max(12,Math.round(window.innerHeight-rect.bottom-4));
+        panel.style.bottom=bot+'px';
+        panel.style.top='auto';
+        panel.style.maxHeight='calc(100vh - '+(bot+20)+'px)';
+      }
+    }
+    panel.innerHTML=`
      <div class="bp-h"><b>What has changed</b>
       ${mine.length?`<button class="btn ghost sm" data-act="bellClear">Mark all read</button>`:''}</div>
      ${mine.length?mine.map(n=>`<button class="bp-i ${n.read?'':'new'}" data-act="bellGo" data-id="${n.id}">
        <span class="bp-k">${NKIND[n.kind]||'•'}</span><span class="bp-t">${n.text}</span><span class="bp-w">${n.at}</span></button>`).join('')
-      :'<div class="muted" style="padding:14px">Nothing yet today.</div>'}</div>`:''}`);
+      :'<div class="muted" style="padding:14px">Nothing yet today.</div>'}`;
+  }else if(panel){
+    panel.remove();
+  }
 }
 /* a notice at the top of the screen: green for done, amber for a warning, red for a refusal, blue for information —
    the kind is read from the words unless given */
@@ -15352,13 +15388,14 @@ function shopLock(){
 }
 
 /* ---- events ---- */
+window.addEventListener('resize',()=>{ if(S.notifOpen) drawBell(); });
 document.addEventListener('click',e=>{
-  if(S.notifOpen&&!e.target.closest('.bellwrap')){ S.notifOpen=false; drawBell() }
+  if(S.notifOpen && !e.target.closest('.bellwrap') && !e.target.closest('#bellPanel')){ S.notifOpen=false; drawBell() }
   const nb=e.target.closest('[data-view]'); if(nb){go(nb.dataset.view);return}
   const tb=e.target.closest('[data-tab]'); if(tb){invTab=tb.dataset.tab;invLimit=200;render();return} const ab=e.target.closest('[data-acc]'); if(ab){accTab=ab.dataset.acc;render();return}
   const a=e.target.closest('[data-act]'); if(!a)return; e.preventDefault(); const act=a.dataset.act;
   // while the privacy screen is up only looking is allowed — nothing that writes, so the real books cannot be touched
-  if(window.privacyOn&&!/^(closeModal|invoice|showInv|doPrint|billSel|billKind|billDay|billAllDates|billMore|billClear|cust|siteTab|siteShow|wpView|ordTab|tdSel|tdFilter|bellOpen|bellClear|navMin|prefNav|prefMini|repRun|repPick|rep|acc|tab|zoom|prodHist|supShow|pickCust|pickSalesman|showHeld|csToggleSum|dashSync)$/.test(act)){ toast('Till is busy — try again in a moment'); return }
+  if(window.privacyOn&&!/^(closeModal|invoice|showInv|doPrint|billSel|billKind|billDay|billAllDates|billMore|billClear|bellGo|cust|siteTab|siteShow|wpView|ordTab|tdSel|tdFilter|bellOpen|bellClear|navMin|prefNav|prefMini|repRun|repPick|rep|acc|tab|zoom|prodHist|supShow|pickCust|pickSalesman|showHeld|csToggleSum|dashSync)$/.test(act)){ toast('Till is busy — try again in a moment'); return }
   ({ del:()=>{S.pos.lines.splice(+a.dataset.i,1);render()}, pay:openPay, pickCust:pickCustomer, pickSalesman:()=>pickSalesman(), clear:()=>{S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()}, hold:()=>holdCurrentBill(true), showHeld:()=>showHeldBillsModal(),
     csToggleSum:()=>{ const el=document.getElementById('csTillSum'); if(el) el.classList.toggle('expanded'); const b=document.querySelector('.cs-sum-btn'); if(b&&el) b.textContent=el.classList.contains('expanded')?'Details ▴':'Details ▾' },
     invoice:()=>showInvoice(S.sales.find(s=>s.no===a.dataset.no)), showInv:()=>{closeModals();showInvoice(S.sales.find(s=>s.no===a.dataset.no),a.dataset.f)}, closeModal:closeModals,
