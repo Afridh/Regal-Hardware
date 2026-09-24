@@ -4260,6 +4260,75 @@ function payFor(e,mk){
   return {t,hourly,basic:+basic.toFixed(2),otPay:+otPay.toFixed(2),fine:+fine.toFixed(2),
     advance,net:+(basic+otPay-fine-advance).toFixed(2)};
 }
+
+/* Keep Staff & Attendance roster strictly unified with Admin-created Users */
+function syncUsersAndStaff(){
+  if(!Array.isArray(S.users)) S.users=[];
+  if(!Array.isArray(S.employees)) S.employees=[];
+  if(!Array.isArray(S.deletedUsers)) S.deletedUsers=[];
+
+  try {
+    const fromLs = JSON.parse(localStorage.getItem('regal_deleted_users')||'[]');
+    if(Array.isArray(fromLs)){
+      fromLs.forEach(x=>{
+        const lx=String(x).toLowerCase().trim();
+        if(lx && !S.deletedUsers.includes(lx)) S.deletedUsers.push(lx);
+      });
+    }
+  } catch(_){}
+
+  // Purge any user who is deleted
+  S.users = S.users.filter(u => u && u.name && !S.deletedUsers.includes(String(u.name).toLowerCase().trim()));
+
+  const legacyNames = ['asaath kp','raslan','kasun','sampath','nuwan','chaminda','fathima','ruwan','dilan','suresh'];
+
+  // Clean out legacy demo employees or deleted employees from S.employees
+  S.employees = S.employees.filter(e => {
+    if(!e || !e.name) return false;
+    const nl = String(e.name).toLowerCase().trim();
+    if(legacyNames.includes(nl)) return false;
+    if(S.deletedUsers.includes(nl)) return false;
+    return S.users.some(u => String(u.name).toLowerCase().trim() === nl);
+  });
+
+  // Ensure every active user in S.users has a matching entry in S.employees
+  S.users.forEach((u, i) => {
+    if(u.active === false) return;
+    const nl = String(u.name).toLowerCase().trim();
+    if(S.deletedUsers.includes(nl)) return;
+
+    let emp = S.employees.find(e => String(e.name).toLowerCase().trim() === nl || String(e.userName||'').toLowerCase().trim() === nl);
+    if(emp){
+      emp.name = u.name;
+      emp.position = u.role;
+      emp.userName = u.name;
+      emp.active = u.active !== false;
+      if(!emp.code) emp.code = u.uid || ('E' + String(emp.id || (i+1)).padStart(3, '0'));
+    } else {
+      const nextId = (S.employees.reduce((max, x) => Math.max(max, +x.id || 0), 0)) + 1;
+      const defRate = u.role === 'Super Admin' ? 120000 : (u.role === 'Admin' ? 90000 : (u.role === 'KP' ? 85000 : 55000));
+      S.employees.push({
+        id: nextId,
+        code: u.uid || ('E' + String(nextId).padStart(3, '0')),
+        name: u.name,
+        position: u.role,
+        userName: u.name,
+        basis: 'monthly',
+        rate: defRate,
+        otMult: 1.5,
+        days: 26,
+        ot: 0,
+        advance: 0,
+        phone: '',
+        card: '',
+        deviceId: '',
+        joined: D(today),
+        active: u.active !== false
+      });
+    }
+  });
+}
+
 /* the punches themselves, generated the way a month at the shop actually runs */
 function seedShift(){
   S.shift={settings:{...SHIFT_DEFAULTS},days:{},imported:null};
@@ -4373,9 +4442,11 @@ async function shiftPull(quiet){
 /* one day for one person goes back up, so the board and the fingerprint machine see it too */
 async function shiftPushDay(ds,empId){
   const e=S.employees.find(x=>x.id===empId);
-  if(!e||!e.sbId) return;                      // not matched to anyone on the board yet
-  try{ await shiftCall('day',{date:ds,empId:e.sbId,rec:(S.shift.days[ds]||{})[empId]||null}) }
-  catch(err){ if(err.status!==401) toast('The punch is saved here but did not reach the attendance server: '+err.message,'warn') }
+  if(!e) return;
+  const sbId=e.sbId || ('e'+e.id);
+  e.sbId=sbId;
+  try{ await shiftCall('day',{date:ds,empId:sbId,rec:(S.shift.days[ds]||{})[empId]||null}) }
+  catch(err){ if(err.status!==401) console.warn('Attendance server push:', err.message) }
 }
 /* the staff on the roll here become the people on the board (owner only) */
 async function shiftPushStaff(){
@@ -4438,9 +4509,20 @@ const nowMin=()=>{const d=new Date();return d.getHours()*60+d.getMinutes()};
 const isOff=(ds)=>{const d=new Date(ds);
   return (shiftSet().weeklyOff||[]).includes(d.getDay())||(S.shift.holidays||[]).some(h=>h.date===ds)};
 function recFor(ds,id){ S.shift.days[ds]=S.shift.days[ds]||{}; return S.shift.days[ds][id] }
-function setRec(ds,id,patch){ S.shift.days[ds]=S.shift.days[ds]||{};
+function setRec(ds,id,patch){
+  S.shift.days[ds]=S.shift.days[ds]||{};
   S.shift.days[ds][id]={...(S.shift.days[ds][id]||{}),...patch,by:S.user.name};
-  if(shiftCfg().autoPull!==false) shiftPushDay(ds,id); }   // and straight on to the shared board
+  if(shiftCfg().autoPull!==false) shiftPushDay(ds,id);
+  persist(true);
+  try {
+    localStorage.setItem('regal_attendance_sync', Date.now().toString());
+  } catch(_){}
+  if(typeof BroadcastChannel !== 'undefined'){
+    try {
+      new BroadcastChannel('regal_books_sync').postMessage('attendance_updated');
+    } catch(_){}
+  }
+}
 let attFilter='all';
 function empState(ds,id){
   const r=recFor(ds,id);
@@ -4504,10 +4586,10 @@ function refreshAttendanceBoard(){
   });
   const isSalesman=S.user&&S.user.role==='Salesman';
   if(isSalesman){
-    const me=S.employees.find(e=>String(e.name||'').toLowerCase()===String(S.user.name||'').toLowerCase())
-           ||S.employees.find(e=>/sales/i.test(e.position))||S.employees[0];
+    const me=S.employees.find(e=>String(e.name||'').toLowerCase()===String(S.user.name||'').toLowerCase()
+           ||String(e.userName||'').toLowerCase()===String(S.user.name||'').toLowerCase());
     const st=me?empState(D(today),me.id):'out', f=me?dayFigures(D(today),me.id):{};
-    wrap.innerHTML=salesmanPortalToday(me,st,f);
+    wrap.innerHTML=me ? salesmanPortalToday(me,st,f) : `<div class="muted" style="padding:30px;text-align:center">No staff profile linked to user account "${S.user.name}". Please ask an administrator to check your staff profile.</div>`;
   } else {
     wrap.innerHTML=boardToday();
   }
@@ -5204,6 +5286,22 @@ function employeeModal(id){
       joined:m.querySelector('#emJoined').value,active:m.querySelector('#emActive').checked};
     if(e) Object.assign(e,data);
     else S.employees.push({id:Math.max(0,...S.employees.map(x=>x.id))+1,advance:0,...data});
+    const existsInUsers = S.users.some(u => String(u.name).toLowerCase().trim() === name.toLowerCase());
+    if(!existsInUsers && data.active){
+      S.deletedUsers=(S.deletedUsers||[]).filter(x=>x!==name.toLowerCase().trim());
+      S.users.push({
+        name, role: data.position || 'Salesman',
+        pin: '', uid: data.code || name.slice(0,2).toUpperCase(),
+        passHash: hashSync('123456'),
+        perms: ROLE_DEFAULTS[data.position] || ROLE_DEFAULTS.Salesman || [],
+        active: true, lastSeen: null, prefs: { ...PREF_DEFAULTS }
+      });
+    }
+    syncUsersAndStaff();
+    persist(true);
+    if(typeof BroadcastChannel !== 'undefined'){
+      try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
+    }
     m.remove(); render(); toast(e?`${name} saved`:`${name} added to the roll`);
   };
 }
@@ -5757,8 +5855,8 @@ function payroll(){
 
   /* A Salesman sees their own punches and nothing else — no rates, nobody else on the page. */
   if(isSalesman){
-    const me=S.employees.find(e=>String(e.name||'').toLowerCase()===String(S.user.name||'').toLowerCase())
-           ||S.employees.find(e=>/sales/i.test(e.position))||S.employees[0];
+    const me=S.employees.find(e=>String(e.name||'').toLowerCase()===String(S.user.name||'').toLowerCase()
+           ||String(e.userName||'').toLowerCase()===String(S.user.name||'').toLowerCase());
     if(payTab!=='today'&&payTab!=='sheet') payTab='today';
     const st=me?empState(D(today),me.id):'out', f=me?dayFigures(D(today),me.id):{};
     return `
@@ -5769,7 +5867,7 @@ function payroll(){
       <div class="tabs" style="margin-bottom:12px">${[['today','Today Portal'],['sheet','My Month']].map(t=>
         `<button class="${payTab===t[0]?'on':''}" data-act="payTab" data-t="${t[0]}">${t[1]}</button>`).join('')}</div>
       <div id="attBoardWrap">
-        ${payTab==='today'?salesmanPortalToday(me,st,f):(me?attendPerson(me,mk):'<div class="muted">You are not on the roll yet — ask the owner to add you.</div>')}
+        ${payTab==='today'?(me ? salesmanPortalToday(me,st,f) : `<div class="muted" style="padding:30px;text-align:center">No staff profile linked to user account "${S.user.name}". Please ask an administrator to check your staff profile.</div>`):(me?attendPerson(me,mk):'<div class="muted">You are not on the roll yet — ask the owner to add you.</div>')}
       </div>`;
   }
 
@@ -5887,7 +5985,7 @@ function seed(){
    {id:4,code:'S0004',name:'National PVC Industries',phone:'0332290111',contact:'Mr. Dias',days:30,pin:'',showAccounts:false,enabled:true,lastLogin:null},
    {id:5,code:'S0005',name:'Bosch / Tool Mart Colombo',phone:'0114455667',contact:'Mr. Fazil',days:14,pin:'',showAccounts:true,enabled:true,lastLogin:null}];
   S.banks=[{id:1,name:'HNB Kaduruwela',ac:'1020',no:'0034 ****  2259',nextChq:124},{id:2,name:'BOC Polonnaruwa',ac:'1021',no:'0071 **** 8890',nextChq:301},{id:3,name:'Sampath Polonnaruwa',ac:'1022',no:'0110 **** 4411',nextChq:57}];
-  S.employees=[['E001','Asaath KP','Manager','monthly',85000],['E002','Raslan','Cashier','monthly',52000],['E003','Kasun','Cashier','daily',2200],['E004','Sampath','Sales – paint','monthly',58000],['E005','Nuwan','Store','daily',2000],['E006','Chaminda','Store','daily',2000],['E007','Fathima','Accounts','monthly',65000],['E008','Ruwan','Delivery driver','daily',2400],['E009','Dilan','Helper','hourly',250],['E010','Suresh','Helper','hourly',250]].map((e,i)=>({id:i+1,code:e[0],name:e[1],position:e[2],basis:e[3],rate:e[4],otMult:1.5,days:i%3===0?25:26,ot:[4,2,6,0,8,3,1,5,10,7][i],advance:[0,5000,0,10000,0,0,0,3000,0,2000][i]}));
+  syncUsersAndStaff();
   // opening balances
   const stockVal=S.products.reduce((a,p)=>a+p.stock*p.cost,0);
   S.products.forEach(p=>{ if(p.stock>0){ const q=p.stock; p.stock=0; move(p.id,q,'OPENING','Opening',p.cost,ago(40)) } });
@@ -6030,9 +6128,20 @@ function applyKept(kept){
   // Always keep current till / device state
   Object.assign(S, local);
   S.phoneOpen=false; S.notifOpen=false;
-  const legacy=['asaath kp','raslan','kasun','fathima'];
+  const legacy=['asaath kp','raslan','kasun','sampath','nuwan','chaminda','fathima','ruwan','dilan','suresh'];
+  if(!Array.isArray(S.deletedUsers)) S.deletedUsers=[];
+  try {
+    const lsDel = JSON.parse(localStorage.getItem('regal_deleted_users')||'[]');
+    if(Array.isArray(lsDel)){
+      lsDel.forEach(d => {
+        const dl = String(d).toLowerCase().trim();
+        if(dl && !S.deletedUsers.includes(dl)) S.deletedUsers.push(dl);
+      });
+    }
+  } catch(_){}
+
   if(Array.isArray(S.users)){
-    S.users=S.users.filter(u=>!legacy.includes(String(u.name).toLowerCase()));
+    S.users=S.users.filter(u=>u && u.name && !legacy.includes(String(u.name).toLowerCase().trim()) && !S.deletedUsers.includes(String(u.name).toLowerCase().trim()));
   } else {
     S.users=[];
   }
@@ -6042,10 +6151,10 @@ function applyKept(kept){
   // the tills no longer carry a salesperson button, so the question at the end of the
   // bill is the way it is set — switched on once for books saved before that was true
   if(CFG.done&&!CFG.done.askMoved){ CFG.done.askSalesman=true; CFG.done.askMoved=true }
-  if(!Array.isArray(S.deletedUsers)) S.deletedUsers=[];
   for(const acc of DEFAULT_ACCOUNTS){
-    if(S.deletedUsers.includes(acc.name.toLowerCase())) continue;
-    const existing=S.users.find(u=>String(u.name||'').toLowerCase()===acc.name.toLowerCase());
+    const an = acc.name.toLowerCase().trim();
+    if(S.deletedUsers.includes(an)) continue;
+    const existing=S.users.find(u=>String(u.name||'').toLowerCase().trim()===an);
     if(!existing){
       S.users.push({
         name:acc.name, role:acc.role, uid:acc.uid, pin:'',
@@ -6061,10 +6170,11 @@ function applyKept(kept){
       if(!Array.isArray(existing.perms) || !existing.perms.length) existing.perms=[...acc.perms];
     }
   }
-  if(!S.user||!S.user.name||legacy.includes(String(S.user.name).toLowerCase())||String(S.user.name).toLowerCase()==='admin'){
+  syncUsersAndStaff();
+  if(!S.user||!S.user.name||legacy.includes(String(S.user.name).toLowerCase().trim())||String(S.user.name).toLowerCase().trim()==='admin'||S.deletedUsers.includes(String(S.user.name).toLowerCase().trim())){
     const af=S.users.find(u=>u.name==='Afridh')||S.users[0];
-    const afPerms=Array.isArray(af.perms)&&af.perms.length?[...af.perms]:[...DEFAULT_ACCOUNTS[0].perms];
-    S.user={name:af.name,role:af.role,perms:afPerms,prefs:{...PREF_DEFAULTS,...(af.prefs||{})}};
+    const afPerms=Array.isArray(af?.perms)&&af.perms.length?[...af.perms]:[...DEFAULT_ACCOUNTS[0].perms];
+    S.user={name:af?af.name:'Afridh',role:af?af.role:'Super Admin',perms:afPerms,prefs:{...PREF_DEFAULTS,...((af&&af.prefs)||{})}};
   }
   if(!Array.isArray(S.heldBills)) S.heldBills = [];
   S._fromStore=true;
@@ -15808,14 +15918,31 @@ function userModal(name){
     delBtn.onclick=()=>{
       if(u.name==='Afridh'&&S.user.name!=='Afridh') return toast('The primary Super Admin Afridh cannot be removed');
       if(!confirm(`Are you sure you want to permanently remove user "${u.name}" (${u.role})?`)) return;
+      const lowerName = u.name.toLowerCase().trim();
       S.deletedUsers=S.deletedUsers||[];
-      if(!S.deletedUsers.includes(u.name.toLowerCase())) S.deletedUsers.push(u.name.toLowerCase());
-      const idx=S.users.findIndex(x=>x.name===u.name);
-      if(idx!==-1) S.users.splice(idx,1);
+      if(!S.deletedUsers.includes(lowerName)) S.deletedUsers.push(lowerName);
+      try {
+        let lsDel = JSON.parse(localStorage.getItem('regal_deleted_users')||'[]');
+        if(!lsDel.includes(lowerName)) lsDel.push(lowerName);
+        localStorage.setItem('regal_deleted_users', JSON.stringify(lsDel));
+      } catch(_){}
+
+      u.active=false;
+      u.perms=[];
+      delete u.pass;
+      delete u.passHash;
+
+      S.users=S.users.filter(x=>String(x.name||'').toLowerCase().trim()!==lowerName);
+      S.employees=(S.employees||[]).filter(x=>String(x.name||'').toLowerCase().trim()!==lowerName&&String(x.userName||'').toLowerCase().trim()!==lowerName);
+
+      syncUsersAndStaff();
       persist(true);
+      if(typeof BroadcastChannel !== 'undefined'){
+        try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
+      }
       m.remove();
       render();
-      toast(`User ${u.name} has been removed`);
+      toast(`User ${u.name} has been removed and sign-in permissions revoked`);
     };
   }
   m.querySelector('#uRole').onchange=e=>{
@@ -15850,7 +15977,11 @@ function userModal(name){
       S.deletedUsers=(S.deletedUsers||[]).filter(x=>x!==nm.toLowerCase());
       const nu={name:nm,role,pin,uid,no,passHash:hashSync(pass),perms:picked,active,lastSeen:null,prefs:{...PREF_DEFAULTS}};
       S.users.push(nu); hashPass(pass).then(h=>{nu.passHash=h}) }
+    syncUsersAndStaff();
     persist(true);
+    if(typeof BroadcastChannel !== 'undefined'){
+      try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
+    }
     m.remove(); render(); toast(u?`${nm} saved`:`${nm} can now sign in`);
   };
 }
@@ -15867,7 +15998,12 @@ async function hashPass(str){
   return hashSync(str);
 }
 async function checkPass(u,given){
-  if(!u) return false;
+  if(!u || u.active === false) return false;
+  const lower = String(u.name || '').toLowerCase().trim();
+  let lsDel = [];
+  try { lsDel = JSON.parse(localStorage.getItem('regal_deleted_users') || '[]'); } catch(_){}
+  if((S.deletedUsers || []).includes(lower) || lsDel.includes(lower)) return false;
+
   // on the server build the password is checked by the Node backend, which also hands back
   // the shared books; the local hash is only the fallback when the server cannot be reached
   if(window.regalBridge){
@@ -15892,7 +16028,7 @@ async function checkPass(u,given){
       if(r.status===401) return false;
     }catch(e){ /* server unreachable: fall through to the local check */ }
   }
-  const defAcc=DEFAULT_ACCOUNTS.find(a=>a.name.toLowerCase()===String(u.name||'').toLowerCase());
+  const defAcc=DEFAULT_ACCOUNTS.find(a=>a.name.toLowerCase()===lower);
   if(defAcc&&given===defAcc.pass) return true;
   if(u.name.toLowerCase()==='admin' && given==='admin123') return true;
   if(u.passHash){ return (await hashPass(given))===u.passHash || hashSync(given)===u.passHash }
@@ -15986,8 +16122,15 @@ function shopLock(){
       badge.innerHTML = '';
       return;
     }
-    const matched = S.users.find(u => u.active !== false && String(u.name || '').toLowerCase() === val.toLowerCase())
-      || DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === val.toLowerCase());
+    const lower = val.toLowerCase().trim();
+    let lsDel = [];
+    try { lsDel = JSON.parse(localStorage.getItem('regal_deleted_users') || '[]'); } catch(_){}
+    if((S.deletedUsers || []).includes(lower) || lsDel.includes(lower)){
+      badge.style.display = 'none';
+      badge.innerHTML = '';
+      return;
+    }
+    const matched = S.users.find(u => u.active !== false && String(u.name || '').toLowerCase().trim() === lower);
     if(matched){
       badge.style.display = 'inline-flex';
       const roleLower = String(matched.role || '').toLowerCase();
@@ -16037,15 +16180,22 @@ function shopLock(){
         uInp.focus();
         return;
       }
-      let u = S.users.find(x => x.active !== false && String(x.name || '').toLowerCase() === uName.toLowerCase());
-      if(!u){
-        const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === uName.toLowerCase());
-        if(def){
-          u = { name: def.name, role: def.role, uid: def.uid, pin: '', perms: [...def.perms], active: true, prefs: { ...PREF_DEFAULTS } };
-          S.users.push(u);
-        } else {
-          u = { name: uName, role: 'Cashier', perms: [], active: true, prefs: { ...PREF_DEFAULTS } };
-        }
+      const lower = uName.toLowerCase().trim();
+      let lsDel = [];
+      try { lsDel = JSON.parse(localStorage.getItem('regal_deleted_users') || '[]'); } catch(_){}
+      const isDel = (S.deletedUsers || []).includes(lower) || lsDel.includes(lower);
+      if(isDel){
+        msg.textContent = 'This user account has been removed. Sign in is not permitted.';
+        msg.style.color = 'var(--chip-rust)';
+        if(btn){ btn.disabled = false; btn.textContent = 'Sign In'; }
+        return;
+      }
+      let u = S.users.find(x => String(x.name || '').toLowerCase().trim() === lower);
+      if(!u || u.active === false){
+        msg.textContent = 'This account does not exist or has been disabled. Sign in is not permitted.';
+        msg.style.color = 'var(--chip-rust)';
+        if(btn){ btn.disabled = false; btn.textContent = 'Sign In'; }
+        return;
       }
       const passOk = await checkPass(u, pInp.value);
       if(!passOk){
@@ -16736,15 +16886,18 @@ const rememberedUser = (() => {
 
 const backAtTheTill=(name)=>{
   if(!name){ S.signedOut=true; shopLock(); return; }
-  let u=S.users.find(x=>String(x.name||'').toLowerCase()===String(name).toLowerCase()&&x.active!==false);
-  if(!u){
-    const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === String(name).toLowerCase());
-    if(def){
-      u = { name: def.name, role: def.role, uid: def.uid, pin: '', perms: [...def.perms], active: true, prefs: { ...PREF_DEFAULTS } };
-      S.users.push(u);
-    }
+  const lower = String(name).toLowerCase().trim();
+  let lsDel = [];
+  try { lsDel = JSON.parse(localStorage.getItem('regal_deleted_users') || '[]'); } catch(_){}
+  if((S.deletedUsers || []).includes(lower) || lsDel.includes(lower)){
+    try { localStorage.removeItem('regal_user'); } catch(_){}
+    S.signedOut=true; shopLock(); return;
   }
-  if(!u){ S.signedOut=true; shopLock(); return; }
+  let u=S.users.find(x=>String(x.name||'').toLowerCase().trim()===lower && x.active!==false);
+  if(!u){
+    try { localStorage.removeItem('regal_user'); } catch(_){}
+    S.signedOut=true; shopLock(); return;
+  }
   const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === u.name.toLowerCase());
   const uPerms = Array.isArray(u.perms) && u.perms.length ? [...u.perms] : (def ? [...def.perms] : (Array.isArray(u.perms) ? [...u.perms] : []));
   u.perms = uPerms;
@@ -16784,7 +16937,7 @@ if(typeof BroadcastChannel !== 'undefined'){
   try {
     const syncBc = new BroadcastChannel('regal_books_sync');
     syncBc.onmessage = async (msg) => {
-      if(msg.data === 'sale_completed' || msg.data === 'books_updated'){
+      if(msg.data === 'sale_completed' || msg.data === 'books_updated' || msg.data === 'attendance_updated'){
         let pulled = false;
         if(window.regalBridge && typeof regalBridge.pull === 'function' && regalBridge.online()){
           pulled = await regalBridge.pull(true);
@@ -16794,16 +16947,17 @@ if(typeof BroadcastChannel !== 'undefined'){
         } else if(!pulled && typeof boot === 'function'){
           await boot();
         }
-        if(S.view === 'dashboard' || S.view === 'bills' || S.view === 'receipts' || S.view === 'users'){
-          render();
+        if(S.view === 'payroll'){
+          refreshAttendanceBoard();
         }
+        render();
       }
     };
   } catch(_){}
 }
 
 window.addEventListener('storage', async (e) => {
-  if(e.key === STORE_KEY || e.key === 'regal_books_sync'){
+  if(e.key === STORE_KEY || e.key === 'regal_books_sync' || e.key === 'regal_attendance_sync'){
     let pulled = false;
     if(window.regalBridge && typeof regalBridge.pull === 'function' && regalBridge.online()){
       pulled = await regalBridge.pull(true);
@@ -16813,9 +16967,10 @@ window.addEventListener('storage', async (e) => {
     } else if(!pulled && typeof boot === 'function'){
       await boot();
     }
-    if(S.view === 'dashboard' || S.view === 'bills' || S.view === 'receipts' || S.view === 'users'){
-      render();
+    if(S.view === 'payroll'){
+      refreshAttendanceBoard();
     }
+    render();
   }
 });
 
@@ -16838,13 +16993,19 @@ if(window.regalBridge){
   } else {
     regalBridge.serverUsers().then(list=>{
       if(list.length) {
-        S.users=list.map(u=>{
-          const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === u.name.toLowerCase());
-          return {
-            name:u.name,role:u.role,uid:u.uid,pin:u.pin?'?':'',
-            perms:def?[...def.perms]:[],active:true,prefs:{...PREF_DEFAULTS}
-          };
+        list.forEach(u=>{
+          const lower = u.name.toLowerCase().trim();
+          if((S.deletedUsers||[]).includes(lower)) return;
+          const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === lower);
+          const existing = S.users.find(x => String(x.name||'').toLowerCase().trim() === lower);
+          if(!existing){
+            S.users.push({
+              name:u.name,role:u.role,uid:u.uid,pin:u.pin?'?':'',
+              perms:def?[...def.perms]:[],active:true,prefs:{...PREF_DEFAULTS}
+            });
+          }
         });
+        syncUsersAndStaff();
       }
     }).catch(()=>{})
     .finally(()=>{

@@ -56,9 +56,12 @@
     var local = keepLocal();
     window.applyKept(doc);
     restoreLocal(local);
-    if (typeof window.markSaved === 'function') window.markSaved();   // what we hold now is what the server holds
+    if (typeof window.markSaved === 'function') window.markSaved();
     if (window.S) { window.S._fromStore = true; window.S.terminal = localStorage.getItem(TERMINAL_KEY) || window.S.terminal || 'T1'; }
     if (typeof window.applyLayout === 'function') window.applyLayout();
+    if (window.S && window.S.view === 'payroll' && typeof window.refreshAttendanceBoard === 'function') {
+      window.refreshAttendanceBoard();
+    }
     if (typeof window.render === 'function') window.render();
     if (typeof window.drawPhone === 'function') window.drawPhone();
     if (typeof window.drawBell === 'function') window.drawBell();
