@@ -3501,6 +3501,10 @@ const CFG={
     text:'{shop} statement for {customer}: {count} unpaid bill(s), total {outstanding}. See them at {link} or call {phone}.'},
   portalInvite:{label:'Inviting a customer to their page',vars:'{shop} {customer} {link}',
     text:'{shop}: check what you owe any time at {link} — sign in with a code we text you.'},
+  portalLogin:{label:'A sign-in given to a customer’s person',vars:'{shop} {customer} {who} {user} {pass} {link}',
+    text:'{shop}: your sign-in for {customer} is ready. Open {link}, user name {user}, password {pass}. Change the password once you are in.'},
+  portalPassword:{label:'A new password for a customer’s person',vars:'{shop} {customer} {who} {user} {pass} {link}',
+    text:'{shop}: a new password for {user} at {link} — {pass}. Change it once you are in.'},
   otp:{label:'Sign-in code',vars:'{shop} {code} — the code itself is never stored',
     text:'{shop}: your sign-in code is {code}. It expires in 10 minutes. Do not share it.'},
   orderAccepted:{label:'Supplier order accepted',vars:'{shop} {supplier} {date}',
@@ -11878,6 +11882,7 @@ function custLoginsPanel(c){
          <td>${l.phone||'<span class="muted">—</span>'}</td>
          <td class="muted">${l.lastSeen?agoTxt(String(l.lastSeen).slice(0,10)):'never'}</td>
          <td class="n" style="white-space:nowrap">
+          <button class="btn ghost sm" data-act="cuLoginSend" data-id="${c.id}" data-lid="${l.id}" ${(l.phone||c.phone)?'':'disabled title="no mobile on file"'}>Send it to them</button>
           <button class="btn ghost sm" data-act="cuLoginPw" data-id="${c.id}" data-lid="${l.id}">New password</button>
           <button class="btn ghost sm" data-act="cuLoginOff" data-id="${c.id}" data-lid="${l.id}" data-on="${l.active?0:1}">${l.active?'Switch off':'Switch on'}</button>
          </td></tr>`).join('')}</table>`}
@@ -11893,7 +11898,9 @@ function custLoginModal(cid){
    <div class="grid3">
     <div class="f"><label>Their name</label><input id="clName" placeholder="e.g. Mr Perera"></div>
     <div class="f"><label>What they do</label><input id="clRole" placeholder="accountant, site manager…"></div>
-    <div class="f"><label>Their mobile</label><input id="clPhone" inputmode="tel" placeholder="07XXXXXXXX"><div class="muted">Where a forgotten password is texted.</div></div></div>
+    <div class="f"><label>Their mobile</label><input id="clPhone" inputmode="tel" placeholder="07XXXXXXXX"><div class="muted">Where the sign-in and any forgotten password are texted.</div></div></div>
+   <label class="chk" style="margin-top:8px"><input type="checkbox" id="clSms" checked> text them the link, the user name and the password</label>
+   ${CFG.msg&&CFG.msg.waMode?'<label class="chk"><input type="checkbox" id="clWa"> send it on WhatsApp instead</label>':''}
    <div class="muted" id="clMsg" style="margin-top:6px"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
     <button class="btn ghost" data-act="closeModal">Cancel</button>
@@ -11906,10 +11913,24 @@ function custLoginModal(cid){
       const r=await fetch('/api/my/admin/logins/'+cid,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify(body)});
       const j=await r.json().catch(()=>({}));
       if(!r.ok||j.ok===false) { m.querySelector('#clMsg').textContent=j.error||('The server said '+r.status); return }
+      const sms1=m.querySelector('#clSms'), wa1=m.querySelector('#clWa');
+      const sent=sendLoginDetails(c,body,'portalLogin',{sms:sms1&&sms1.checked,wa:wa1&&wa1.checked});
       m.remove(); await loadCustLogins(cid,true); render();
-      toast(`${body.username} can sign in now — password ${body.password}`,'ok');
+      toast(`${body.username} can sign in now — password ${body.password}${sent?' · sent to '+(body.phone||c.phone):''}`,'ok');
     }catch(e){ m.querySelector('#clMsg').textContent=e.message }
   };
+}
+/* The sign-in itself goes to the person it belongs to: the address, the user name and the password
+   in one message, so nobody has to read them out over the counter. */
+function sendLoginDetails(c,l,key,how){
+  const to=(l.phone||c.phone||'').trim();
+  if(!to||!(how.sms||how.wa)) return false;
+  const v={customer:c.name,who:l.name||l.username,user:l.username,pass:l.password,
+    link:('regalhw.lk/my/'+(c.code||'')).toLowerCase()};
+  try{
+    if(how.wa) wa(to,tpl(key,v),key,v); else sms(to,tpl(key,v));
+    return true;
+  }catch(e){ toast('Could not send it: '+e.message,'warn'); return false }
 }
 function custLoginPwModal(cid,lid){
   const l=(custLogins.list||[]).find(x=>x.id===lid)||{};
@@ -11917,6 +11938,7 @@ function custLoginPwModal(cid,lid){
    <div class="muted" style="margin-bottom:10px">Yours will open their page whatever they have set for themselves.</div>
    <div class="f"><label>Password</label><input id="cpNewPw" value="${'reg'+Math.random().toString(36).slice(2,8)}"></div>
    <label class="chk" style="margin-top:8px"><input type="checkbox" id="cpClear"> also clear the one they chose${l.own?'':' (they have not set one)'}</label>
+   <label class="chk"><input type="checkbox" id="cpSms" ${(l.phone||C(cid).phone)?'checked':'disabled'}> text it to ${l.phone||C(cid).phone||'— no mobile on file —'}</label>
    <div class="muted" id="cpMsg" style="margin-top:6px"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
     <button class="btn ghost" data-act="closeModal">Cancel</button>
@@ -11928,9 +11950,37 @@ function custLoginPwModal(cid,lid){
       const r=await fetch(`/api/my/admin/logins/${cid}/${lid}`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify({password,clearOwn})});
       const j=await r.json().catch(()=>({}));
       if(!r.ok||j.ok===false){ m.querySelector('#cpMsg').textContent=j.error||('The server said '+r.status); return }
+      const box=m.querySelector('#cpSms');
+      const sent=sendLoginDetails(C(cid),{...l,password},'portalPassword',{sms:box&&box.checked&&!box.disabled});
       m.remove(); await loadCustLogins(cid,true); render();
-      toast(`${l.username}'s password is now ${password}`,'ok');
+      toast(`${l.username}'s password is now ${password}${sent?' · texted to them':''}`,'ok');
     }catch(e){ m.querySelector('#cpMsg').textContent=e.message }
+  };
+}
+/* Sending it again. Nobody can read a password back — not the shop either — so this sets a fresh one
+   and sends that, which is also what you want when the message went astray. */
+function custLoginSend(cid,lid){
+  const c=C(cid), l=(custLogins.list||[]).find(x=>x.id===lid); if(!l) return toast('That sign-in is gone');
+  const to=l.phone||c.phone;
+  if(!to) return toast('No mobile for them — put one on the sign-in first','warn');
+  const password='reg'+Math.random().toString(36).slice(2,8);
+  const m=modal(`<h2>Send the sign-in to ${l.name||l.username}</h2>
+   <div class="hb-ask"><b>${to}</b><span>${('regalhw.lk/my/'+(c.code||'')).toLowerCase()} · user name ${l.username}</span></div>
+   <div class="muted" style="margin:8px 0">A password cannot be read back, so this sets a new one and sends that. ${l.own?'The one they chose for themselves still works.':''}</div>
+   <div class="f"><label>Password to send</label><input id="csndPw" value="${password}"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="csndOk">Set it and send</button></div>`);
+  m.querySelector('#csndOk').onclick=async()=>{
+    const pw=m.querySelector('#csndPw').value.trim();
+    try{
+      const r=await fetch(`/api/my/admin/logins/${cid}/${lid}`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify({password:pw})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok||j.ok===false) return toast(j.error||('The server said '+r.status),'bad');
+      sendLoginDetails(c,{...l,password:pw},'portalLogin',{sms:true});
+      m.remove(); await loadCustLogins(cid,true); render();
+      toast(`Sent to ${to} — user name ${l.username}, password ${pw}`,'ok');
+    }catch(e){ toast(e.message,'bad') }
   };
 }
 async function custLoginToggle(cid,lid,on){
@@ -15686,6 +15736,7 @@ document.addEventListener('click',e=>{
     cuLoginNew:()=>custLoginModal(+a.dataset.id),
     cuLoginsAgain:()=>{ custLogins={cid:0,list:null,busy:false,failed:''}; render() },
     cuLoginPw:()=>custLoginPwModal(+a.dataset.id,+a.dataset.lid),
+    cuLoginSend:()=>custLoginSend(+a.dataset.id,+a.dataset.lid),
     cuLoginOff:()=>custLoginToggle(+a.dataset.id,+a.dataset.lid,a.dataset.on==='1'),
     billCust:()=>{ billCust=+a.dataset.id; billFrom=''; billTo=''; billLimit=150; billSel=null; render();
       toast(`Every bill of ${(C(billCust)||{name:'theirs'}).name}`) },
