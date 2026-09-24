@@ -3,6 +3,7 @@
 //   node db/push-books-api.js --site https://www.regalhw.lk --user Afridh --pass Afridh123
 // It signs in as a user of the shop, so nothing here needs the database password.
 import 'dotenv/config';
+import { gzipSync } from 'node:zlib';
 import { pool, query } from '../src/db.js';
 
 const args = process.argv.slice(2);
@@ -11,14 +12,18 @@ const site = (opt('--site') || '').replace(/\/$/, '');
 const user = opt('--user'), pass = opt('--pass');
 if (!site || !user || !pass) { console.error('usage: node db/push-books-api.js --site https://your-site --user NAME --pass PASSWORD'); process.exit(1); }
 
-const post = async (path, body, token) => {
+/* The books are bigger than a host will take in one request, so they go up squeezed — the server
+   unpacks a gzipped body by itself. 4.5 MB of books travels as about half a megabyte. */
+const post = async (path, body, token, squeeze) => {
+  const text = body ? JSON.stringify(body) : undefined;
+  const packed = squeeze && text ? gzipSync(Buffer.from(text)) : null;
   const r = await fetch(site + path, {
     method: body ? (path.includes('/books/regal') ? 'PUT' : 'POST') : 'GET',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
+    headers: { 'Content-Type': 'application/json', ...(packed ? { 'Content-Encoding': 'gzip' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+    body: packed || text,
   });
-  const text = await r.text();
-  let j = null; try { j = JSON.parse(text) } catch { j = { raw: text.slice(0, 200) } }
+  const back = await r.text();
+  let j = null; try { j = JSON.parse(back) } catch { j = { raw: back.slice(0, 200) } }
   return { status: r.status, j };
 };
 
@@ -38,8 +43,8 @@ try {
   const rev = Number(cur?.rev || 0);
   console.log(`There: rev ${rev}${cur?.data?.S ? `, ${cur.data.S.products?.length || 0} products` : ', empty'}`);
 
-  const put = await post('/api/books/regal', { data: b.data, rev }, token);
-  if (put.status === 413) { console.error('The site refused it as too large — the host caps what one request may carry. Use db/push-books.js with the database address instead.'); process.exit(3); }
+  const put = await post('/api/books/regal', { data: b.data, rev }, token, true);
+  if (put.status === 413) { console.error('The site refused it as too large even squeezed — use db/push-books.js with the database address instead.'); process.exit(3); }
   if (!put.j?.ok) { console.error('Not saved:', put.status, put.j?.error || put.j?.raw); process.exit(4); }
   console.log(`Sent. The site now holds rev ${put.j.rev}.`);
 } catch (e) { console.error('FAILED:', e.message); process.exitCode = 5; }
