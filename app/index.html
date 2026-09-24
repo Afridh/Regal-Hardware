@@ -16035,7 +16035,10 @@ async function checkPass(u,given){
   return !!u.pass&&given===u.pass;          // a record from before hashing — replaced on next save
 }
 /* ---- who is at the till ---- */
-S.users=DEFAULT_ACCOUNTS.map(acc=>({
+let initialDeleted = [];
+try { initialDeleted = JSON.parse(localStorage.getItem('regal_deleted_users') || '[]'); } catch(_){}
+S.deletedUsers = Array.from(new Set([...(S.deletedUsers || []), ...initialDeleted].map(x => String(x).toLowerCase().trim())));
+S.users=DEFAULT_ACCOUNTS.filter(acc => !S.deletedUsers.includes(acc.name.toLowerCase().trim())).map(acc=>({
   name:acc.name, role:acc.role, pin:'', uid:acc.uid,
   passHash:hashSync(acc.pass), perms:[...acc.perms],
   active:true, lastSeen:D(today), prefs:{...PREF_DEFAULTS}
@@ -16396,15 +16399,30 @@ document.addEventListener('click',e=>{
       if(u.name===S.user.name) return toast('You cannot remove the account you are currently logged in as');
       if(u.name==='Afridh'&&S.user.name!=='Afridh') return toast('The primary Super Admin Afridh cannot be removed');
       if(!confirm(`Are you sure you want to permanently remove user "${u.name}" (${u.role})?`)) return;
+      const lowerName = u.name.toLowerCase().trim();
       S.deletedUsers=S.deletedUsers||[];
-      if(!S.deletedUsers.includes(u.name.toLowerCase())) S.deletedUsers.push(u.name.toLowerCase());
-      const idx=S.users.findIndex(x=>x.name===u.name);
-      if(idx!==-1){
-        S.users.splice(idx,1);
-        persist(true);
-        render();
-        toast(`User ${u.name} has been removed`);
+      if(!S.deletedUsers.includes(lowerName)) S.deletedUsers.push(lowerName);
+      try {
+        let lsDel = JSON.parse(localStorage.getItem('regal_deleted_users')||'[]');
+        if(!lsDel.includes(lowerName)) lsDel.push(lowerName);
+        localStorage.setItem('regal_deleted_users', JSON.stringify(lsDel));
+      } catch(_){}
+
+      u.active=false;
+      u.perms=[];
+      delete u.pass;
+      delete u.passHash;
+
+      S.users=S.users.filter(x=>String(x.name||'').toLowerCase().trim()!==lowerName);
+      S.employees=(S.employees||[]).filter(x=>String(x.name||'').toLowerCase().trim()!==lowerName&&String(x.userName||'').toLowerCase().trim()!==lowerName);
+
+      syncUsersAndStaff();
+      persist(true);
+      if(typeof BroadcastChannel !== 'undefined'){
+        try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
       }
+      render();
+      toast(`User ${u.name} has been removed and sign-in permissions revoked`);
     },
     chqPickDay:()=>{chqDay=a.dataset.d;chqScope='day';chqPicked.clear();render()},
     chqDayStep:()=>{const n=+a.dataset.d;

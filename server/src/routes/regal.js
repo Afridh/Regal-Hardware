@@ -48,7 +48,7 @@ export function ensureBooksTables() {
     CREATE INDEX IF NOT EXISTS idx_books_history ON books_history (key, rev)`).catch(e => { booksReady = null; throw e; });
   return booksReady;
 }
-const LEGACY_USERS = ['asaath kp', 'raslan', 'kasun', 'fathima'];
+const LEGACY_USERS = ['asaath kp', 'raslan', 'kasun', 'sampath', 'nuwan', 'chaminda', 'fathima', 'ruwan', 'dilan', 'suresh'];
 
 export const DEFAULT_ACCOUNTS = [
   { name: 'Afridh', role: 'Super Admin', uid: 'AF', pass: 'Afridh123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
@@ -61,12 +61,15 @@ export const DEFAULT_ACCOUNTS = [
   { name: 'Sales4', role: 'Salesman', uid: 'S4', pass: 'Sales423', perms: ['products_view', 'dashboard_view', 'attendance_view'] }
 ];
 
-export function sanitizeUsers(users) {
+export function sanitizeUsers(users, deletedUsers = []) {
   let list = Array.isArray(users) ? users : [];
-  list = list.filter(u => !LEGACY_USERS.includes(String(u.name || '').toLowerCase()));
+  const delList = (Array.isArray(deletedUsers) ? deletedUsers : []).map(x => String(x || '').toLowerCase().trim());
+  list = list.filter(u => u && !LEGACY_USERS.includes(String(u.name || '').toLowerCase().trim()) && !delList.includes(String(u.name || '').toLowerCase().trim()));
 
   for (const acc of DEFAULT_ACCOUNTS) {
-    const existing = list.find(u => String(u.name || '').toLowerCase() === acc.name.toLowerCase());
+    const accLower = acc.name.toLowerCase().trim();
+    if (delList.includes(accLower)) continue;
+    const existing = list.find(u => String(u.name || '').toLowerCase().trim() === accLower);
     if (!existing) {
       list.push({
         name: acc.name,
@@ -93,7 +96,8 @@ async function loadBooks(key = BOOKS_KEY) {
   await ensureBooksTables();
   const { rows: [row] } = await query(`SELECT key, rev, data, updated_at, updated_by FROM books WHERE key = $1`, [key]);
   if (row?.data?.S) {
-    row.data.S.users = sanitizeUsers(row.data.S.users);
+    const deletedUsers = row.data.S.deletedUsers || [];
+    row.data.S.users = sanitizeUsers(row.data.S.users, deletedUsers);
     // who is signed in belongs to the till, not to the shared books: a till that has nobody
     // signed in picks its own (see applyKept in the app), so nothing is put here.
     delete row.data.S.user;
@@ -105,7 +109,8 @@ async function loadBooks(key = BOOKS_KEY) {
 async function usersFromBooks() {
   const row = await loadBooks();
   const users = row?.data?.S?.users;
-  return sanitizeUsers(users);
+  const deletedUsers = row?.data?.S?.deletedUsers || [];
+  return sanitizeUsers(users, deletedUsers);
 }
 
 // ---------------------------------------------------------------- sign in
