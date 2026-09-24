@@ -461,16 +461,6 @@ header {
 }
 .empty-box h3 { margin: 0 0 6px; font-size: 16px; color: var(--ink); }
 
-/* Sign in */
-.signin { position: fixed; inset: 0; background: rgba(16,30,34,.72); z-index: 500; display: flex; align-items: center; justify-content: center; padding: 16px; }
-.signin form { background: #fff; border-radius: var(--r); padding: 22px; width: 100%; max-width: 340px; box-shadow: 0 20px 50px rgba(0,0,0,.35); }
-.signin h3 { margin: 0 0 4px; font-family: Archivo, sans-serif; }
-.signin p { margin: 0 0 14px; color: var(--steel); font-size: 13px; }
-.signin input { width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px; }
-.signin button { width: 100%; font: inherit; font-weight: 700; padding: 11px; border: 0; border-radius: 8px; background: var(--brand); color: #fff; cursor: pointer; }
-.signin button:disabled { opacity: .6; }
-.signin .err { color: var(--rust); font-size: 13px; min-height: 18px; margin-bottom: 6px; }
-.signout-btn { background: transparent; border: 1px solid rgba(255,255,255,.3); color: #fff; border-radius: 999px; font: inherit; font-size: 11px; padding: 2px 9px; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -489,7 +479,6 @@ header {
       <div style="display:flex;align-items:center;gap:8px">
         <span class="date-str" id="dateStr">--</span>
         <span class="sync-pill"><span class="sync-dot"></span><span id="syncStatus">Connecting…</span></span>
-        <button class="signout-btn" id="signOutBtn" onclick="signOut()" style="display:none">Sign out</button>
       </div>
     </div>
   </div>
@@ -938,7 +927,6 @@ async function call(method, path, body) {
     });
     let j = {}; try { j = await r.json(); } catch(e) {}
     j.__status = r.status;
-    if(r.status === 401) { token = ''; try { localStorage.removeItem('regal_token'); } catch(e) {} askSignIn(); }
     return j;
   } catch(e) { return { __status: 0, error: 'Server unreachable' }; }
 }
@@ -964,11 +952,11 @@ async function saveAndSync(ds, id) {
 }
 
 async function loadState(quiet) {
-  if(!token || loading) return;
+  if(loading) return;
   loading = true;
   try {
     const j = await call('GET', '/books/regal/shift');
-    if(j.__status !== 200) { if(j.__status !== 401) setStatus('Offline'); return; }
+    if(j.__status !== 200) { setStatus('Offline'); return; }
     rev = j.rev || 0;
     S = { employees: j.employees || [], shift: j.shift || { days: {}, settings: {} } };
     cache();
@@ -981,56 +969,13 @@ async function loadState(quiet) {
 function busyTyping() { const a = document.activeElement; return !!(a && a.id === 'searchInput' && a.value); }
 
 async function poll() {
-  if(!token || document.hidden) return;
+  if(document.hidden) return;
   const j = await call('GET', '/books/regal/rev');
   if(j.__status !== 200) { if(j.__status === 0) setStatus('Offline'); return; }
   if(Number(j.rev) !== rev) await loadState(true);
   else setStatus('Live');
 }
 function startPolling() { clearInterval(polling); polling = setInterval(poll, POLL_MS); }
-
-function askSignIn() {
-  clearInterval(polling);
-  setStatus('Signed out');
-  document.getElementById('signOutBtn').style.display = 'none';
-  if(document.getElementById('signin')) return;
-  const el = document.createElement('div');
-  el.className = 'signin'; el.id = 'signin';
-  el.innerHTML = `<form autocomplete="on">
-      <h3>Sign in</h3>
-      <p>Use your Regal Hardware login — the same as the shop system.</p>
-      <input id="siUser" name="username" autocomplete="username" placeholder="Username" required>
-      <input id="siPass" name="password" type="password" autocomplete="current-password" placeholder="Password" required>
-      <div class="err" id="siErr"></div>
-      <button type="submit" id="siGo">Sign in</button>
-    </form>`;
-  document.body.appendChild(el);
-  el.querySelector('form').onsubmit = async ev => {
-    ev.preventDefault();
-    const btn = el.querySelector('#siGo'), err = el.querySelector('#siErr');
-    btn.disabled = true; btn.textContent = 'Signing in…'; err.textContent = '';
-    const j = await call('POST', '/books/login', { user: el.querySelector('#siUser').value.trim(), password: el.querySelector('#siPass').value });
-    btn.disabled = false; btn.textContent = 'Sign in';
-    if(j.__status !== 200 || !j.token) { err.textContent = j.__status === 0 ? 'The server cannot be reached.' : (j.error || 'Could not sign in'); return; }
-    token = j.token;
-    try { localStorage.setItem('regal_token', token); } catch(e) {}
-    el.remove();
-    signedIn();
-  };
-  setTimeout(() => el.querySelector('#siUser').focus(), 50);
-}
-
-async function signedIn() {
-  document.getElementById('signOutBtn').style.display = '';
-  await loadState();
-  startPolling();
-}
-
-function signOut() {
-  token = '';
-  try { localStorage.removeItem('regal_token'); } catch(e) {}
-  askSignIn();
-}
 
 // Clock updates
 function updateClock() {
@@ -1058,7 +1003,8 @@ try {
   const c = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
   if(c && c.S && Array.isArray(c.S.employees)) { S = c.S; rev = c.rev || 0; render(); }
 } catch(e) {}
-if(token) signedIn(); else askSignIn();
+loadState();
+startPolling();
 </script>
 </body>
 </html>

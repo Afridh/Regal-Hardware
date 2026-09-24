@@ -21,11 +21,7 @@ export function fnv(str) {
 /** true when `given` matches a stored Regal user record ({passHash} or legacy {pass}). */
 export function matches(user, given) {
   if (!user || typeof given !== 'string') return false;
-  if (user.passHash) {
-    if (user.passHash === sha(given) || user.passHash === fnv(given)) return true;
-    const rawSha = createHash('sha256').update(given, 'utf8').digest('hex');
-    if (user.passHash === 's' + rawSha || user.passHash === rawSha) return true;
-  }
+  if (user.passHash) return user.passHash === sha(given) || user.passHash === fnv(given);
   return !!user.pass && user.pass === given;
 }
 

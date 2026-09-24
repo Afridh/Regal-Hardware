@@ -172,7 +172,7 @@ export function appBuild() {
   catch { return process.env.VERCEL_GIT_COMMIT_SHA || 'static'; }
 }
 
-r.get('/books/:key/rev', regalAuth, asyncHandler(async (req, res) => {
+r.get('/books/:key/rev', asyncHandler(async (req, res) => {
   const row = await loadBooks(req.params.key);
   const inbox = req.params.key === BOOKS_KEY ? await pendingCount() : 0;
   res.json({ rev: row ? Number(row.rev) : 0, updated_at: row?.updated_at || null, updated_by: row?.updated_by || null, inbox, build: appBuild() });
@@ -185,20 +185,24 @@ r.get('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   res.json({ rev: Number(row.rev), data: row.data, updated_at: row.updated_at, updated_by: row.updated_by, inbox });
 }));
 
-r.get('/books/:key/shift', regalAuth, asyncHandler(async (req, res) => {
+r.get('/books/:key/shift', asyncHandler(async (req, res) => {
   const row = await loadBooks(req.params.key);
   if (!row || !row.data) return res.json({ ok: true, rev: 0, employees: [], shift: { days: {}, settings: {} }, users: [] });
   const s = row.data.S || {};
+  const emps = Array.isArray(s.employees) ? s.employees.map(e => {
+    const { rate, payType, otMult, pin, ...rest } = e;
+    return rest;
+  }) : [];
   res.json({
     ok: true,
     rev: Number(row.rev),
-    employees: s.employees || [],
+    employees: emps,
     shift: s.shift || { days: {}, settings: {}, holidays: [] },
-    users: s.users || []
+    users: Array.isArray(s.users) ? s.users.map(u => ({ name: u.name, role: u.role, uid: u.uid })) : []
   });
 }));
 
-r.post('/books/:key/shift', regalAuth, asyncHandler(async (req, res) => {
+r.post('/books/:key/shift', asyncHandler(async (req, res) => {
   const { date, empId, rec } = req.body || {};
   if (!date || !empId) throw new HttpError(400, 'date and empId required');
   const key = req.params.key;
@@ -223,8 +227,8 @@ r.post('/books/:key/shift', regalAuth, asyncHandler(async (req, res) => {
     await client.query(
       `INSERT INTO books (key, rev, data, updated_at, updated_by) VALUES ($1,$2,$3,now(),$4)
        ON CONFLICT (key) DO UPDATE SET rev = EXCLUDED.rev, data = EXCLUDED.data, updated_at = now(), updated_by = EXCLUDED.updated_by`,
-      [key, next, JSON.stringify(data), req.regalUser?.name || 'shift']);
-    await client.query(`INSERT INTO books_history (key, rev, data, saved_by) VALUES ($1,$2,$3,$4)`, [key, next, JSON.stringify(data), req.regalUser?.name || 'shift']);
+      [key, next, JSON.stringify(data), 'shift-terminal']);
+    await client.query(`INSERT INTO books_history (key, rev, data, saved_by) VALUES ($1,$2,$3,$4)`, [key, next, JSON.stringify(data), 'shift-terminal']);
     return { ok: true, rev: next };
   });
   res.json(out);
