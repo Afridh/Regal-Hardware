@@ -12164,6 +12164,54 @@ async function portalInvite(kind,who,on){
     toast('Page on and the link texted, but the sign-in could not be made — '+e.message,'warn');
   }
 }
+/* ---- one for everybody ----
+   Every customer and every supplier has a sign-in of their own. New ones get theirs the moment the
+   books are saved; this is for the ones who were already on the books before that. Nothing is texted
+   here — 500 passwords going out at once is the shop's call, not a side effect of pressing a button. */
+async function custLoginsAll(kind){
+  const what=kind==='S'?'supplier':'customer';
+  if(!window.regalBridge||!regalBridge.token()) return toast('Sign in to the shop server first','warn');
+  if(!confirm(`Give every ${what} who has none a user name and a password, and show the whole list?\n\nNothing is texted — you choose who to send them to afterwards.`)) return;
+  toast('Making them…');
+  try{
+    const r=await fetch(loginsBase(kind)+'/admin/invite-all',{method:'POST',headers:{'Authorization':'Bearer '+regalBridge.token()}});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||j.ok===false) throw new Error(j.error||('the server said '+r.status));
+    custLogins={cid:0,kind,list:null,busy:false,failed:''};      // read them again for whoever is on screen
+    render();
+    if(!(j.logins||[]).length) return toast(`All ${j.of} ${what}s have signed in and set their own passwords.`,'ok');
+    custLoginsMadeModal(kind,j.logins,j.made,j.of);
+  }catch(e){ toast('Could not make them — '+e.message,'warn') }
+}
+function custLoginsMadeModal(kind,made,fresh,of){
+  const what=kind==='S'?'supplier':'customer';
+  const withPhone=made.filter(l=>l.phone);
+  const m=modal(`<h2>${made.length} sign-in${made.length===1?'':'s'}${fresh?` · ${fresh} new`:''}</h2>
+   <div class="muted" style="margin-bottom:10px">Every one of the ${of} ${what}s has a name and a password of their own. These are the ones still on the password we gave them — the list can be saved or read out at any time, and drops off once they set their own.</div>
+   <div style="max-height:46vh;overflow:auto"><table class="tbl"><tr><th>${kind==='S'?'Supplier':'Customer'}</th><th>User name</th><th>Password</th><th>Mobile</th></tr>
+    ${made.map(l=>`<tr><td>${l.who||l.name||'—'}</td><td><b>${l.username}</b></td><td><code>${l.password}</code></td><td>${l.phone||'<span class="muted">none</span>'}</td></tr>`).join('')}</table></div>
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-wrap:wrap">
+    <span style="display:flex;gap:8px"><button class="btn ghost" id="clAllCsv">Save as CSV</button>
+     <button class="btn ghost" id="clAllSms" ${withPhone.length?'':'disabled'}>Text all ${withPhone.length}</button></span>
+    <button class="btn tape" data-act="closeModal">Done</button></div>`);
+  m.querySelector('#clAllCsv').onclick=()=>{
+    const csv=[[kind==='S'?'Supplier':'Customer','User name','Password','Mobile'],
+      ...made.map(l=>[l.who||l.name||'',l.username,l.password,l.phone||''])]
+      .map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}));
+    a.download=`${what}-signins-${D(today)}.csv`; a.click();
+  };
+  const smsBtn=m.querySelector('#clAllSms');
+  if(smsBtn) smsBtn.onclick=()=>{
+    if(!confirm(`Text ${withPhone.length} ${what}s their user name and password?\n\nThat is ${withPhone.length} message${withPhone.length===1?'':'s'}.`)) return;
+    let n=0;
+    for(const l of withPhone){
+      const who=kind==='S'?SU(l.owner):C(l.owner); if(!who) continue;
+      if(sendLoginDetails(who,l,'portalLogin',{sms:true},kind)) n++;
+    }
+    toast(`${n} text${n===1?'':'s'} sent.`,'ok');
+  };
+}
 function custPortalSet(c,on){
   c.portal=on;
   if(!on&&S.cportal&&S.cportal.session===c.id){S.cportal.session=null;S.cportal.err='The shop has switched this page off.'}
@@ -12395,7 +12443,8 @@ function customers(){
   const totOwed=all.reduce((a,x)=>a+Math.max(0,partyBal('C',x.id)),0);
   const nOver=all.filter(x=>partyBal('C',x.id)>x.limit).length, nLate=all.filter(x=>custAge(x.id).old>0).length;
   return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Customers
-    <span style="display:flex;gap:6px"><button class="btn tape" data-act="custNew">+ New customer <i class="kbd">Ctrl+N</i></button></span></h1>
+    <span style="display:flex;gap:6px"><button class="btn ghost" data-act="cuLoginsAll" data-kind="C" title="Every customer gets a user name and a password of their own">Sign-ins for everyone</button>
+     <button class="btn tape" data-act="custNew">+ New customer <i class="kbd">Ctrl+N</i></button></span></h1>
   <div class="cu-wrap">
    <div class="card cu-list">
     <div class="cu-strip">
@@ -12486,7 +12535,7 @@ function customerPanel(c){
 
    ${partyNoteFlags('C',c.id)}
 
-   ${c.portal?custLoginsPanel(c):''}
+   ${custLoginsPanel(c)}
 
    <div class="cu-tabs">${tabs.map(t=>`<button class="${custTab===t[0]?'on':''}" data-custtab="${t[0]}">${t[1]}${t[2]!==undefined?`<i>${t[2]}</i>`:''}</button>`).join('')}</div>
    <div class="cu-tab-body" key="${custTab}">${({overview:()=>custOverview(c,inv,open,rc,webOrders,ag,owed),bills:()=>custBills(c,inv),payments:()=>custPayments(c,rc),notes:()=>partyNotesPanel('C',c.id),statement:()=>custStatement(c),details:()=>custDetails(c)})[custTab]()}</div>`;
@@ -12536,20 +12585,23 @@ async function loadCustLogins(cid,force,kind){
 function custLoginsPanel(c,kind){
   kind=kind||'C';
   const page=kind==='S'?'regalhw.lk/supplier':('regalhw.lk/my/'+(c.code||''));
+  const on=kind==='S'?!!c.enabled:!!c.portal;
   const mine=(custLogins.cid===c.id&&custLogins.kind===kind&&custLogins.list)?custLogins.list:null;
   return `<div class="card" style="margin-top:12px" id="cuLogins">
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
      <div><b>Who signs in for ${c.name}</b>
-      <div class="muted">A firm can have as many as it needs — the manager, the accountant, the storekeeper. Each gets a name and a password for ${page.toLowerCase()}.</div></div>
+      <div class="muted">A firm can have as many as it needs — the manager, the accountant, the storekeeper. Each gets a name and a password for ${page.toLowerCase()}.${on?'':' <b>Their page is off</b>, so none of these will open it until it is switched on.'}</div></div>
      <button class="btn tape sm" data-act="cuLoginNew" data-id="${c.id}" data-kind="${kind}">Add someone</button></div>
     ${custLogins.cid===c.id&&custLogins.failed?`<div class="muted">Could not read them — ${custLogins.failed}. <a href="#" data-act="cuLoginsAgain" data-id="${c.id}" data-kind="${kind}">Try again</a></div>`
      :mine===null?'<div class="muted">Reading…</div>'
      :!mine.length?`<div class="card note" style="margin:0"><b>Nobody has a sign-in yet.</b>
-        <div class="muted">One is made and texted by itself when the page is switched on. This page was switched on before that, so it can be done now${c.phone?` — to ${c.phone}`:', though there is no mobile on this account'}.</div>
+        <div class="muted">Everyone on the books gets one by themselves the next time the books are saved. To make theirs now and text it${c.phone?` to ${c.phone}`:' — though there is no mobile on this account'}:</div>
         <button class="btn tape sm" style="margin-top:8px" data-act="cuLoginAuto" data-id="${c.id}" data-kind="${kind}" ${c.phone?'':'disabled'}>Make one and text it</button></div>`
-     :`<table class="tbl"><tr><th>User name</th><th>Who</th><th>Mobile</th><th>Last in</th><th></th></tr>
+     :`<table class="tbl"><tr><th>User name</th><th>Password</th><th>Who</th><th>Mobile</th><th>Last in</th><th></th></tr>
        ${mine.map(l=>`<tr class="${l.active?'':'off'}">
-         <td><b>${l.username}</b>${l.own?'<div class="muted">has set their own password</div>':'<div class="muted">on the password you gave</div>'}</td>
+         <td><b>${l.username}</b></td>
+         <td>${l.own?'<span class="muted">theirs — not ours to read</span>'
+           :l.starter?`<code>${l.starter}</code>`:'<span class="muted">already changed or sent</span>'}</td>
          <td>${l.name||'—'}${l.role?`<div class="muted">${l.role}</div>`:''}</td>
          <td>${l.phone||'<span class="muted">—</span>'}</td>
          <td class="muted">${l.lastSeen?agoTxt(String(l.lastSeen).slice(0,10)):'never'}</td>
@@ -12632,17 +12684,19 @@ function custLoginPwModal(cid,lid,kind){
     }catch(e){ m.querySelector('#cpMsg').textContent=e.message }
   };
 }
-/* Sending it again. Nobody can read a password back — not the shop either — so this sets a fresh one
-   and sends that, which is also what you want when the message went astray. */
+/* Sending it again. The password the shop set is still here to send as it is; once the person has
+   chosen one of their own it is gone, so this sets a fresh one instead — which is also what you want
+   when the message went astray. */
 function custLoginSend(cid,lid,kind){
   kind=kind||'C';
   const c=kind==='S'?SU(cid):C(cid), l=(custLogins.list||[]).find(x=>x.id===lid); if(!l) return toast('That sign-in is gone');
   const to=l.phone||c.phone;
   if(!to) return toast('No mobile for them — put one on the sign-in first','warn');
-  const password='reg'+Math.random().toString(36).slice(2,8);
+  const password=l.starter||('reg'+Math.random().toString(36).slice(2,8));
   const m=modal(`<h2>Send the sign-in to ${l.name||l.username}</h2>
    <div class="hb-ask"><b>${to}</b><span>${(kind==='S'?'regalhw.lk/supplier':'regalhw.lk/my/'+(c.code||'')).toLowerCase()} · user name ${l.username}</span></div>
-   <div class="muted" style="margin:8px 0">A password cannot be read back, so this sets a new one and sends that. ${l.own?'The one they chose for themselves still works.':''}</div>
+   <div class="muted" style="margin:8px 0">${l.starter?'This is the password already on the sign-in — send it as it is, or type another.'
+     :'A password they have changed cannot be read back, so this sets a new one and sends that.'} ${l.own?'The one they chose for themselves goes on working.':''}</div>
    <div class="f"><label>Password to send</label><input id="csndPw" value="${password}"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
     <button class="btn ghost" data-act="closeModal">Cancel</button>
@@ -13942,7 +13996,8 @@ function suppliers(){
   const nLate=all.filter(x=>supAge(x.id).old>0).length;
   const compact=v=>v>=1e6?'Rs '+(v/1e6).toFixed(2)+'M':v>=1e5?'Rs '+Math.round(v/1e3)+'k':fmt(v);
   return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Suppliers
-    <span style="display:flex;gap:6px"><button class="btn tape" data-act="supNew">+ New supplier <i class="kbd">Ctrl+N</i></button></span></h1>
+    <span style="display:flex;gap:6px"><button class="btn ghost" data-act="cuLoginsAll" data-kind="S" title="Every supplier gets a user name and a password of their own">Sign-ins for everyone</button>
+     <button class="btn tape" data-act="supNew">+ New supplier <i class="kbd">Ctrl+N</i></button></span></h1>
   <div class="cu-wrap">
    <div class="card cu-list">
     <div class="cu-strip">
@@ -14004,7 +14059,7 @@ function supplierPanel(s){
     <div class="kpi b"><div class="l">Bought in all</div><div class="v ${fmt(bought).length>14?'small':''}">${fmt(bought)}</div><div class="s">${pur.length} GRN${pur.length===1?'':'s'} · paid ${fmt(paidTot)}</div></div>
    </div>
 
-   ${s.enabled?custLoginsPanel(s,'S'):''}
+   ${custLoginsPanel(s,'S')}
 
    ${partyNoteFlags('S',s.id)}
 
@@ -16426,6 +16481,7 @@ document.addEventListener('click',e=>{
     cuLoginAuto:()=>{ const kind=a.dataset.kind||'C', id=+a.dataset.id;
       portalInvite(kind,kind==='S'?SU(id):C(id),true) },
     cuLoginsAgain:()=>{ custLogins={cid:0,kind:'C',list:null,busy:false,failed:''}; render() },
+    cuLoginsAll:()=>custLoginsAll(a.dataset.kind||'C'),
     cuLoginPw:()=>custLoginPwModal(+a.dataset.id,+a.dataset.lid,a.dataset.kind||'C'),
     cuLoginSend:()=>custLoginSend(+a.dataset.id,+a.dataset.lid,a.dataset.kind||'C'),
     cuLoginOff:()=>custLoginToggle(+a.dataset.id,+a.dataset.lid,a.dataset.on==='1',a.dataset.kind||'C'),

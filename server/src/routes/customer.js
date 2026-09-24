@@ -9,6 +9,9 @@ import crypto from 'node:crypto';
 import { query } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { sendViaProvider, regalAuth } from './regal.js';
+import { ensureLogins, inviteMany, startersFor, suggestUser, addLogin, setLogin, removeLogin, listLogins, findLogin, cleanUser, loginLine } from '../services/portalLogins.js';
+
+const LOGINS = 'cust_logins';
 
 const r = Router();
 const TZ = process.env.SHOP_TZ || 'Asia/Colombo';
@@ -20,7 +23,8 @@ const norm = s => String(s || '').trim().toLowerCase();
 
 let ready = null;
 export function ensureCustTables() {
-  if (!ready) ready = query(`
+  // the sign-ins table is the shared one (it also renames the column this file first used, cid → owner)
+  if (!ready) ready = ensureLogins(LOGINS).then(() => query(`
     CREATE TABLE IF NOT EXISTS cust_inbox (
       id          bigserial PRIMARY KEY,
       cid         integer NOT NULL,
@@ -28,29 +32,12 @@ export function ensureCustTables() {
       data        jsonb NOT NULL,
       created_at  timestamptz NOT NULL DEFAULT now(),
       imported_at timestamptz);
-    CREATE INDEX IF NOT EXISTS cust_inbox_pending ON cust_inbox (imported_at) WHERE imported_at IS NULL;
-    -- who may sign in for a customer. A building firm has a manager, an accountant, a storekeeper:
-    -- each gets their own name to sign in with. Two passwords can open it — the one the shop set and
-    -- the one the person chose for themselves — so the counter can always get in to help.
-    CREATE TABLE IF NOT EXISTS cust_logins (
-      id         bigserial PRIMARY KEY,
-      cid        integer NOT NULL,
-      username   varchar(40) NOT NULL,
-      name       varchar(80),
-      role       varchar(40),
-      phone      varchar(20),
-      admin_hash text,
-      own_hash   text,
-      active     boolean NOT NULL DEFAULT true,
-      last_seen  timestamptz,
-      created_at timestamptz NOT NULL DEFAULT now());
-    CREATE UNIQUE INDEX IF NOT EXISTS cust_logins_user ON cust_logins (lower(username))`)
+    CREATE INDEX IF NOT EXISTS cust_inbox_pending ON cust_inbox (imported_at) WHERE imported_at IS NULL`))
     .catch(e => { ready = null; throw e; });
   return ready;
 }
 const hash = (p) => bcrypt.hash(String(p), 10);
 const hashOk = async (p, h) => !!h && bcrypt.compare(String(p || ''), h).catch(() => false);
-const cleanUser = (u) => String(u || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
 
 async function books() {
   const { rows: [row] } = await query(`SELECT data FROM books WHERE key = 'regal'`);
@@ -119,7 +106,7 @@ r.get('/who/:code', asyncHandler(async (req, res) => {
   const c = byCode(data?.S || {}, req.params.code);
   if (!c) throw new HttpError(404, 'That page does not belong to anyone');
   await ensureCustTables();
-  const { rows: [{ n }] } = await query(`SELECT count(*)::int AS n FROM cust_logins WHERE cid = $1 AND active`, [c.id]);
+  const { rows: [{ n }] } = await query(`SELECT count(*)::int AS n FROM cust_logins WHERE owner = $1 AND active`, [c.id]);
   res.json({ ok: true, name: c.name, phone: c.phone ? mask(c.phone) : null, logins: n,
     open: c.portal !== false, shop: { name: data?.CFG?.shop?.name || 'Regal Hardware', phone: data?.CFG?.shop?.phone || '', addr: data?.CFG?.shop?.addr || '' } });
 }));
@@ -136,11 +123,11 @@ r.post('/signin', asyncHandler(async (req, res) => {
   if (!l || !l.active) throw new HttpError(401, 'That name and password do not match');
   if (!(await hashOk(pass, l.own_hash)) && !(await hashOk(pass, l.admin_hash))) throw new HttpError(401, 'That name and password do not match');
   const data = await books();
-  const c = (data?.S?.customers || []).find(x => x.id === l.cid);
+  const c = (data?.S?.customers || []).find(x => x.id === l.owner);
   if (!c) throw new HttpError(404, 'That account is no longer on file');
   if (c.portal === false) throw new HttpError(403, 'The shop has closed this page — give them a ring');
   await query(`UPDATE cust_logins SET last_seen = now() WHERE id = $1`, [l.id]);
-  res.json({ ok: true, token: jwt.sign({ kind: 'cust', cid: l.cid, lid: Number(l.id), user: l.username }, secret(), { expiresIn: '30d' }),
+  res.json({ ok: true, token: jwt.sign({ kind: 'cust', cid: l.owner, lid: Number(l.id), user: l.username }, secret(), { expiresIn: '30d' }),
     name: c.name, code: c.code, who: l.name || l.username });
 }));
 
@@ -151,7 +138,7 @@ r.post('/forgot', asyncHandler(async (req, res) => {
   const { rows: [l] } = await query(`SELECT * FROM cust_logins WHERE lower(username) = $1 AND active`, [user]);
   if (!l) throw new HttpError(404, 'There is no sign-in by that name');
   const data = await books();
-  const c = (data?.S?.customers || []).find(x => x.id === l.cid);
+  const c = (data?.S?.customers || []).find(x => x.id === l.owner);
   const phone = digits(l.phone || c?.phone);
   if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'There is no mobile on that sign-in — ring the shop and they will set it');
   const code = otpFor(phone);
@@ -172,10 +159,10 @@ r.post('/reset', asyncHandler(async (req, res) => {
   const { rows: [l] } = await query(`SELECT * FROM cust_logins WHERE lower(username) = $1 AND active`, [user]);
   if (!l) throw new HttpError(404, 'There is no sign-in by that name');
   const data = await books();
-  const c = (data?.S?.customers || []).find(x => x.id === l.cid);
+  const c = (data?.S?.customers || []).find(x => x.id === l.owner);
   const phone = digits(l.phone || c?.phone);
   if (!otpOk(phone, req.body?.code)) throw new HttpError(401, 'That code is not right, or it has expired');
-  await query(`UPDATE cust_logins SET own_hash = $2 WHERE id = $1`, [l.id, await hash(pass)]);
+  await query(`UPDATE cust_logins SET own_hash = $2, starter = NULL WHERE id = $1`, [l.id, await hash(pass)]);
   res.json({ ok: true });
 }));
 
@@ -250,19 +237,17 @@ r.post('/password', custAuth, asyncHandler(async (req, res) => {
   if (!l) throw new HttpError(404, 'That sign-in is no longer there');
   const cur = String(req.body?.current || '');
   if (!(await hashOk(cur, l.own_hash)) && !(await hashOk(cur, l.admin_hash))) throw new HttpError(401, 'The password you have now is not right');
-  await query(`UPDATE cust_logins SET own_hash = $2 WHERE id = $1`, [l.id, await hash(pass)]);
+  await query(`UPDATE cust_logins SET own_hash = $2, starter = NULL WHERE id = $1`, [l.id, await hash(pass)]);
   res.json({ ok: true });
 }));
 
 /* ---------------------------------------------------------------- the shop's side
    Who may sign in for a customer, from the till. The shop sets a password and can set a new one at
    any time; it never sees the one the person chose, and never needs to. */
-const lineOf = l => ({ id: Number(l.id), cid: l.cid, username: l.username, name: l.name || '', role: l.role || '',
-  phone: l.phone || '', active: l.active, own: !!l.own_hash, lastSeen: l.last_seen });
+const lineOf = l => ({ ...loginLine(l), cid: l.owner });
 
 r.get('/admin/logins/:cid', regalAuth, asyncHandler(async (req, res) => {
-  await ensureCustTables();
-  const { rows } = await query(`SELECT * FROM cust_logins WHERE cid = $1 ORDER BY id`, [+req.params.cid]);
+  const rows = await listLogins(LOGINS, +req.params.cid);
   res.json({ ok: true, logins: rows.map(lineOf) });
 }));
 
@@ -274,39 +259,34 @@ r.post('/admin/logins/:cid', regalAuth, asyncHandler(async (req, res) => {
   if (pass.length < 6) throw new HttpError(400, 'A password needs at least six characters');
   const data = await books();
   if (!(data?.S?.customers || []).some(c => c.id === cid)) throw new HttpError(404, 'No such customer');
-  await ensureCustTables();
-  const { rows: [taken] } = await query(`SELECT cid FROM cust_logins WHERE lower(username) = $1`, [username]);
-  if (taken) throw new HttpError(409, `“${username}” is already in use`);
-  const { rows: [row] } = await query(
-    `INSERT INTO cust_logins (cid, username, name, role, phone, admin_hash) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [cid, username, String(req.body?.name || '').slice(0, 80), String(req.body?.role || '').slice(0, 40), digits(req.body?.phone), await hash(pass)]);
+  if (await findLogin(LOGINS, username)) throw new HttpError(409, `“${username}” is already in use`);
+  const row = await addLogin(LOGINS, cid, { username, password: pass, name: req.body?.name, role: req.body?.role, phone: req.body?.phone });
   res.json({ ok: true, login: lineOf(row) });
 }));
 
 r.post('/admin/logins/:cid/:id', regalAuth, asyncHandler(async (req, res) => {
-  await ensureCustTables();
-  const { rows: [l] } = await query(`SELECT * FROM cust_logins WHERE id = $1 AND cid = $2`, [+req.params.id, +req.params.cid]);
-  if (!l) throw new HttpError(404, 'No such sign-in');
-  const set = [], vals = [l.id];
-  const put = (sql, v) => { vals.push(v); set.push(`${sql} = $${vals.length}`) };
-  if (req.body?.password !== undefined) {
-    if (String(req.body.password).length < 6) throw new HttpError(400, 'A password needs at least six characters');
-    put('admin_hash', await hash(req.body.password));
-    if (req.body.clearOwn) put('own_hash', null);       // asked for when the person has forgotten theirs for good
-  }
-  if (req.body?.name !== undefined) put('name', String(req.body.name).slice(0, 80));
-  if (req.body?.role !== undefined) put('role', String(req.body.role).slice(0, 40));
-  if (req.body?.phone !== undefined) put('phone', digits(req.body.phone));
-  if (req.body?.active !== undefined) put('active', !!req.body.active);
-  if (!set.length) throw new HttpError(400, 'Nothing to change');
-  const { rows: [row] } = await query(`UPDATE cust_logins SET ${set.join(', ')} WHERE id = $1 RETURNING *`, vals);
+  if (req.body?.password !== undefined && String(req.body.password).length < 6)
+    throw new HttpError(400, 'A password needs at least six characters');
+  const row = await setLogin(LOGINS, +req.params.id, +req.params.cid, req.body || {});
+  if (!row) throw new HttpError(404, 'No such sign-in, or nothing to change');
   res.json({ ok: true, login: lineOf(row) });
 }));
 
 r.delete('/admin/logins/:cid/:id', regalAuth, asyncHandler(async (req, res) => {
-  await ensureCustTables();
-  await query(`DELETE FROM cust_logins WHERE id = $1 AND cid = $2`, [+req.params.id, +req.params.cid]);
+  await removeLogin(LOGINS, +req.params.id, +req.params.cid);
   res.json({ ok: true });
+}));
+
+/** One for everybody: any customer with no sign-in gets one, and the whole list comes back with it —
+    everyone still on the password the shop gave, so it can be read out, saved or texted. */
+r.post('/admin/invite-all', regalAuth, asyncHandler(async (req, res) => {
+  const data = await books();
+  const people = (data?.S?.customers || []).filter(c => c.id !== 1 && c.active !== false);
+  const made = await inviteMany(LOGINS, people);
+  const byId = new Map(people.map(c => [c.id, c]));
+  const logins = (await startersFor(LOGINS)).filter(l => byId.has(l.owner))
+    .map(l => ({ ...l, who: byId.get(l.owner).name, phone: l.phone || byId.get(l.owner).phone || '' }));
+  res.json({ ok: true, made: made.length, of: people.length, logins });
 }));
 
 /** The shop switching the page on: make a sign-in if there is none, and hand back what to text. */
@@ -316,16 +296,12 @@ r.post('/admin/invite/:cid', regalAuth, asyncHandler(async (req, res) => {
   const c = (data?.S?.customers || []).find(x => x.id === cid);
   if (!c) throw new HttpError(404, 'No such customer');
   await ensureCustTables();
-  const { rows: have } = await query(`SELECT * FROM cust_logins WHERE cid = $1 ORDER BY id`, [cid]);
+  const { rows: have } = await query(`SELECT * FROM cust_logins WHERE owner = $1 ORDER BY id`, [cid]);
   if (have.length) return res.json({ ok: true, made: false, logins: have.map(lineOf) });
   // a name made from theirs, and a password to hand over; they can change it once they are in
-  const base = String(c.name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '').split('.').slice(0, 2).join('.') || cleanUser(c.code) || 'account';
-  let username = base.slice(0, 28), n = 1;
-  while ((await query(`SELECT 1 FROM cust_logins WHERE lower(username) = $1`, [username])).rowCount) { n++; username = `${base.slice(0, 24)}${n}` }
+  const username = await suggestUser(LOGINS, c.name, c.code);
   const password = 'reg' + Math.random().toString(36).slice(2, 8);
-  const { rows: [row] } = await query(
-    `INSERT INTO cust_logins (cid, username, name, role, phone, admin_hash) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [cid, username, String(c.contact || c.name || '').slice(0, 80), '', digits(c.phone), await hash(password)]);
+  const row = await addLogin(LOGINS, cid, { username, password, name: c.contact || c.name, role: '', phone: c.phone });
   res.json({ ok: true, made: true, username, password, login: lineOf(row) });
 }));
 

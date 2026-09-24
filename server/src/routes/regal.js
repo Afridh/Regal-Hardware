@@ -7,6 +7,7 @@ import { matches, demoPassword, sha } from '../services/regalHash.js';
 import { injectInbox as injectShopInbox, markImported as markShopImported, pendingCount as pendingShopCount } from './shop.js';
 import { injectSupplierInbox, markSupplierImported, pendingSupplierCount } from './supplier.js';
 import { injectCustInbox, markCustImported, pendingCustCount } from './customer.js';
+import { catchUpLogins } from '../services/portalLogins.js';
 // everything that arrived from outside the tills — the website's orders, the suppliers', and what a
 // customer said on their own page — in one go
 const injectInbox = async data => (await injectShopInbox(data)) + (await injectSupplierInbox(data)) + (await injectCustInbox(data));
@@ -203,6 +204,9 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   }
   if (key === BOOKS_KEY) await markImported(data);
   res.json({ ok: true, rev: out.rev });
+  // everyone on the books has a sign-in of their own: a customer added at the till gets one straight
+  // away. It is nothing the save has to wait for, and it makes no text — the shop sends that.
+  if (key === BOOKS_KEY) catchUpLogins(data).catch(e => console.error('sign-ins catch-up failed', e.message));
 }));
 
 r.delete('/books/:key', regalAuth, asyncHandler(async (req, res) => {

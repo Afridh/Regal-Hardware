@@ -12,7 +12,7 @@ import crypto from 'node:crypto';
 import { query } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { sendViaProvider, regalAuth } from './regal.js';
-import { listLogins, findLogin, addLogin, setLogin, removeLogin, checkLogin, loginLine, cleanUser, passOk, suggestUser } from '../services/portalLogins.js';
+import { listLogins, findLogin, addLogin, setLogin, removeLogin, checkLogin, loginLine, cleanUser, passOk, suggestUser, inviteMany, startersFor } from '../services/portalLogins.js';
 
 const r = Router();
 const TZ = process.env.SHOP_TZ || 'Asia/Colombo';
@@ -236,6 +236,18 @@ r.delete('/admin/logins/:sid/:id', regalAuth, asyncHandler(async (req, res) => {
   await removeLogin(LOGINS, +req.params.id, +req.params.sid);
   res.json({ ok: true });
 }));
+/** One for everybody: any supplier with no sign-in gets one, and the whole list comes back with it —
+    everyone still on the password the shop gave, so it can be read out, saved or texted. */
+r.post('/admin/invite-all', regalAuth, asyncHandler(async (req, res) => {
+  const data = await books();
+  const people = (data?.S?.suppliers || []).filter(s => s.active !== false);
+  const made = await inviteMany(LOGINS, people);
+  const byId = new Map(people.map(s => [s.id, s]));
+  const logins = (await startersFor(LOGINS)).filter(l => byId.has(l.owner))
+    .map(l => ({ ...l, who: byId.get(l.owner).name, phone: l.phone || byId.get(l.owner).phone || '' }));
+  res.json({ ok: true, made: made.length, of: people.length, logins });
+}));
+
 /** The shop switching the page on: make a sign-in if there is none, and hand back what to text. */
 r.post('/admin/invite/:sid', regalAuth, asyncHandler(async (req, res) => {
   const sid = +req.params.sid;
