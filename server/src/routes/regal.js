@@ -3,7 +3,7 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { query, withTransaction } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
-import { matches, demoPassword, sha } from '../services/regalHash.js';
+import { matches, demoPassword, sha, fnv } from '../services/regalHash.js';
 import { injectInbox as injectShopInbox, markImported as markShopImported, pendingCount as pendingShopCount } from './shop.js';
 import { injectSupplierInbox, markSupplierImported, pendingSupplierCount } from './supplier.js';
 import { injectCustInbox, markCustImported, pendingCustCount } from './customer.js';

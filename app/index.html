@@ -12639,8 +12639,17 @@ async function portalInvite(kind,who,on){
       loadCustLogins(who.id,true,kind).finally(()=>render());
       toast(`Texted ${to} — user name ${j.username}, password ${j.password}`,'ok');
     } else {
-      sms(to,tpl('portalInvite',{customer:who.name,link}));
-      toast(`Page on · ${to} told. ${j.logins.length} sign-in${j.logins.length===1?'':'s'} already set up, so their own names and passwords stand.`,'ok');
+      // they already have one — everybody does now. Send the name and password with the link, so long
+      // as the password is still the one we gave; once they have chosen their own there is none to send.
+      const ready=(j.logins||[]).find(l=>l.active&&l.starter);
+      if(ready){
+        sms(to,tpl('portalLogin',{customer:who.name,who:ready.name||who.contact||who.name,user:ready.username,pass:ready.starter,link}));
+        loadCustLogins(who.id,true,kind).finally(()=>render());
+        toast(`Texted ${to} — user name ${ready.username}, password ${ready.starter}`,'ok');
+      } else {
+        sms(to,tpl('portalInvite',{customer:who.name,link}));
+        toast(`Page on · ${to} told. ${j.logins.length} sign-in${j.logins.length===1?'':'s'} here, all on passwords they chose themselves, so only the link went.`,'ok');
+      }
     }
   }catch(e){
     sms(to,tpl('portalInvite',{customer:who.name,link}));      // the link at least goes out
@@ -17362,8 +17371,7 @@ document.addEventListener('click',e=>{
     apOk:()=>decideApproval(a.dataset.id,true,($('#apn-'+a.dataset.id)||{}).value),
     apNo:()=>decideApproval(a.dataset.id,false,($('#apn-'+a.dataset.id)||{}).value),
     custLink:()=>{const c=C(+a.dataset.id); if(!c.phone)return toast('No mobile number for '+c.name);
-      sms(c.phone,tpl('portalInvite',{customer:c.name,link:'regalhw.lk/my/'+c.code.toLowerCase()}));
-      render(); toast('Link texted to '+c.phone)},
+      portalInvite('C',c,true).finally(()=>render())},        // the link is no use on its own — it goes with the sign-in
     custOpen:()=>{const c=C(+a.dataset.id); S.cportal.pick=c.id; S.cportal.session=c.id; c.lastLogin=D(today);
       S.phoneMode='customer'; S.phoneOpen=true; document.body.classList.add('withPhone'); drawPhone(); render()},
     ord:()=>ordAct(a.dataset.no,a.dataset.st), ordAdjust:()=>ordBox(a.dataset.no,'adjusted'), ordReply:()=>ordBox(a.dataset.no,'comment'),
