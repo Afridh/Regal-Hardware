@@ -1,7 +1,7 @@
 // API for the Regal front-end (app/index.html): the books document store, sign-in, SMS relay.
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
-import { query, withTransaction } from '../db.js';
+import { query, withTransaction, dbKind } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { matches, demoPassword, sha, fnv } from '../services/regalHash.js';
 import { injectInbox as injectShopInbox, markImported as markShopImported, pendingCount as pendingShopCount } from './shop.js';
@@ -39,9 +39,18 @@ export function regalAuth(req, _res, next) {
   }
 }
 
+// the books' key column: a plain name to PostgreSQL, a reserved word MySQL needs quoted
+const KEY_COL = dbKind === 'mysql' ? '`key`' : 'key';
+
 // a fresh hosted database (Neon, Supabase…) has no tables yet: make the two the books need on first use
 let booksReady = null;
 export function ensureBooksTables() {
+  // MySQL: `key` is a reserved word there and one call runs one statement, so the same two tables are
+  // made its way (as in db/schema.mysql.sql)
+  if (!booksReady && dbKind === 'mysql') booksReady = (async () => {
+    await query('CREATE TABLE IF NOT EXISTS `books` (`key` VARCHAR(50) NOT NULL, `rev` BIGINT NOT NULL DEFAULT 0, `data` JSON, `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP, `updated_by` VARCHAR(80), PRIMARY KEY (`key`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci');
+    await query('CREATE TABLE IF NOT EXISTS `books_history` (`id` BIGINT AUTO_INCREMENT NOT NULL, `key` VARCHAR(50) NOT NULL, `rev` BIGINT NOT NULL, `data` JSON, `saved_at` DATETIME DEFAULT CURRENT_TIMESTAMP, `saved_by` VARCHAR(80), PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci');
+  })().catch(e => { booksReady = null; throw e; });
   if (!booksReady) booksReady = query(`
     CREATE TABLE IF NOT EXISTS books (key varchar(50) PRIMARY KEY, rev bigint NOT NULL DEFAULT 0, data jsonb, updated_at timestamptz DEFAULT now(), updated_by varchar(80));
     CREATE TABLE IF NOT EXISTS books_history (id bigserial PRIMARY KEY, key varchar(50) NOT NULL, rev bigint NOT NULL, data jsonb, saved_at timestamptz DEFAULT now(), saved_by varchar(80));
@@ -175,8 +184,13 @@ export function appBuild() {
 // polled every few seconds by every till and phone: read the revision only, never the whole books document
 r.get('/books/:key/rev', asyncHandler(async (req, res) => {
   await ensureBooksTables();
-  const { rows: [row] } = await query(`SELECT rev, updated_at, updated_by FROM books WHERE key = $1`, [req.params.key]);
-  const inbox = req.params.key === BOOKS_KEY ? await pendingCount() : 0;
+  const { rows: [row] } = await query(`SELECT rev, updated_at, updated_by FROM books WHERE ${KEY_COL} = $1`, [req.params.key]);
+  // the waiting-orders count is extra: if those tables cannot be read, the revision still goes out,
+  // or every till and the shift page would stop seeing changes
+  let inbox = 0;
+  if (req.params.key === BOOKS_KEY) {
+    try { inbox = await pendingCount(); } catch (e) { console.error('pending orders count failed:', e.message); }
+  }
   res.json({ rev: row ? Number(row.rev) : 0, updated_at: row?.updated_at || null, updated_by: row?.updated_by || null, inbox, build: appBuild() });
 }));
 
@@ -224,23 +238,58 @@ r.post('/books/shift-login', asyncHandler(async (req, res) => {
   res.json({ ok: true, token, user: { name: u.name, role: u.role } });
 }));
 
+// PostgreSQL gives JSON back as objects; MySQL may give it back as text (MariaDB always does, its
+// JSON is text underneath)
+const asJson = v => typeof v === 'string' ? (v ? JSON.parse(v) : null) : (v ?? null);
+
+/** What the shift page is shown: staff without wages or PINs, and only the recent days. */
+function shiftView(rev, employees, shift, deleted) {
+  const gone = (Array.isArray(deleted) ? deleted : []).map(x => String(x || '').toLowerCase().trim());
+  const staff = (Array.isArray(employees) ? employees : [])
+    .filter(e => e && e.name && !gone.includes(String(e.name).toLowerCase().trim()))    // deleted users do not come back as cards
+    .map(({ rate, payType, otMult, pin, advance, basis, days, ot, phone, ...rest }) => rest);
+  const s = shift || {};
+  // a punch clock shows today and the days just gone; the full history stays in the books
+  const since = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+  const recent = Object.fromEntries(Object.entries(s.days || {}).filter(([d]) => d >= since));
+  return { ok: true, rev: Number(rev), employees: staff, shift: { settings: s.settings || {}, holidays: s.holidays || [], days: recent } };
+}
+
 r.get('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
   await ensureBooksTables();
+  const empty = { ok: true, rev: 0, employees: [], shift: { days: {}, settings: {}, holidays: [] } };
+  if (dbKind === 'mysql') {
+    // MySQL has no #> path reach-in: the document is read and the parts taken out here
+    const { rows: [row] } = await query('SELECT rev, data FROM books WHERE `key` = ?', [req.params.key]);
+    const S = asJson(row?.data)?.S;
+    return res.json(row ? shiftView(row.rev, S?.employees, S?.shift, S?.deletedUsers) : empty);
+  }
   const { rows: [row] } = await query(
     `SELECT rev, data#>'{S,employees}' AS employees, data#>'{S,shift}' AS shift, data#>'{S,deletedUsers}' AS deleted
        FROM books WHERE key = $1`, [req.params.key]);
-  if (!row) return res.json({ ok: true, rev: 0, employees: [], shift: { days: {}, settings: {}, holidays: [] } });
-  const deleted = (Array.isArray(row.deleted) ? row.deleted : []).map(x => String(x || '').toLowerCase().trim());
-  // no wages or PINs leave the server; deleted users do not come back as cards
-  const employees = (Array.isArray(row.employees) ? row.employees : [])
-    .filter(e => e && e.name && !deleted.includes(String(e.name).toLowerCase().trim()))
-    .map(({ rate, payType, otMult, pin, advance, basis, days, ot, phone, ...rest }) => rest);
-  const shift = row.shift || {};
-  // a punch clock shows today and the days just gone; the full history stays in the books
-  const since = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
-  const recent = Object.fromEntries(Object.entries(shift.days || {}).filter(([d]) => d >= since));
-  res.json({ ok: true, rev: Number(row.rev), employees, shift: { settings: shift.settings || {}, holidays: shift.holidays || [], days: recent } });
+  res.json(row ? shiftView(row.rev, row.employees, row.shift, row.deleted) : empty);
 }));
+
+/** One punch on MySQL: the document is locked, the one record changed in it, and it is written back.
+ *  No history row, as on PostgreSQL. */
+async function shiftPunchMySQL(key, date, id, r0, by) {
+  return withTransaction(async client => {
+    const { rows: [cur] } = await client.query('SELECT rev, data FROM books WHERE `key` = ? FOR UPDATE', [key]);
+    if (!cur) throw new HttpError(404, 'The books are not on the server yet — open the shop system once first');
+    const data = asJson(cur.data) || {};
+    const had = data.S?.shift?.days?.[date]?.[id];
+    if (had && r0 && Number(had.updatedAt || 0) > Number(r0.updatedAt || 0)) return { stale: true, rev: Number(cur.rev), rec: had };
+    const next = Number(cur.rev) + 1;
+    data.S = data.S || {};
+    data.S.shift = data.S.shift || {};
+    const days = data.S.shift.days = data.S.shift.days || {};
+    if (r0) (days[date] = days[date] || {})[id] = { ...r0, _srv: next };   // stamped as on PostgreSQL, for the till's merge
+    else if (days[date]) { delete days[date][id]; if (!Object.keys(days[date]).length) delete days[date]; }
+    await client.query('UPDATE books SET data = ?, rev = ?, updated_at = NOW(), updated_by = ? WHERE `key` = ?',
+      [JSON.stringify(data), next, by, key]);
+    return { stale: false, rev: next };
+  });
+}
 
 /** body: { date, empId, rec } — rec null clears the day. A record older than the one on the server is refused (409). */
 r.post('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
@@ -250,7 +299,7 @@ r.post('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
   const key = req.params.key, id = String(empId);
   const r0 = rec && typeof rec === 'object' ? { ...rec, by: req.shiftUser.name } : null;
   await ensureBooksTables();
-  const out = await withTransaction(async client => {
+  const out = dbKind === 'mysql' ? await shiftPunchMySQL(key, date, id, r0, req.shiftUser.name) : await withTransaction(async client => {
     const { rows: [cur] } = await client.query(
       `SELECT rev, data#>ARRAY['S','shift','days',$2::text,$3::text] AS rec FROM books WHERE key = $1 FOR UPDATE`, [key, date, id]);
     if (!cur) throw new HttpError(404, 'The books are not on the server yet — open the shop system once first');
