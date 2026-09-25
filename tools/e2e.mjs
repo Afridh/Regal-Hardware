@@ -378,7 +378,9 @@ ok('A: no script errors so far', A.errors.length === 0, A.errors.slice(0, 2).joi
   const good = await fetch(BASE + '/api/wa/webhook?hub.mode=subscribe&hub.verify_token=e2e-verify&hub.challenge=abc123');
   ok('M: webhook verifies only with the shop\'s token', bad.status === 403 && good.status === 200 && (await good.text()) === 'abc123');
   const hook = await fetch(BASE + '/api/wa/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entry: [{ changes: [{ value: { contacts: [{ wa_id: '94771234501', profile: { name: 'Nimal' } }], messages: [{ id: 'wamid.e2e.' + Date.now(), from: '94771234501', timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: 'Is my order ready?' } }] } }] }] }) });
-  const inbox = await j('/api/wa/inbox');
+  // the webhook answers Meta first and saves the message just after: give it a moment to land
+  let inbox = await j('/api/wa/inbox');
+  for (let i = 0; i < 30 && !inbox.inbox?.some(r => /order ready/.test(r.body)); i++) { await sleep(100); inbox = await j('/api/wa/inbox'); }
   ok('M: a customer\'s WhatsApp reply lands in the inbox', hook.status === 200 && inbox.ok && inbox.inbox.some(r => r.from_no === '94771234501' && /order ready/.test(r.body)) && inbox.unread >= 1);
   w.eval("CFG.msg.live=false; CFG.msg.apiKey=''; CFG.msg.testOnly=''; CFG.msg.waVerifyToken=''"); w.persist(true); await sleep(900);
 }

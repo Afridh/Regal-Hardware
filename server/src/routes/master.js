@@ -1,7 +1,7 @@
 // Master data: categories, sub-categories, customers, suppliers, employees, items, banks, expense categories, locations, terminals
 import { Router } from 'express';
 import { crudRouter } from '../lib/crud.js';
-import { query } from '../db.js';
+import { query, dbKind } from '../db.js';
 import { asyncHandler, HttpError } from '../lib/errors.js';
 import { requirePerm } from '../middleware/auth.js';
 
@@ -111,6 +111,23 @@ items.get('/lookup/pos', asyncHandler(async (req, res) => {
   const q = (req.query.q || '').trim();
   if (!q) return res.json([]);
   const locationId = req.locationId;
+  if (dbKind === 'mysql') {
+    // MySQL cannot order or filter inside a JSON aggregate: the items first, then their batches, put together here
+    const { rows: found } = await query(
+      `SELECT i.id, i.code, i.barcode, i.name, i.unit, i.item_type, i.allow_decimal, i.allow_discount, i.allow_wholesale, i.allow_loyalty,
+              i.allow_edit_price_on_invoice, i.ask_serial_on_invoice, i.warranty_months, i.track_inventory,
+              (CASE WHEN i.barcode = $2 OR i.barcode1 = $2 OR i.barcode2 = $2 OR i.code = $2 THEN 0 ELSE 1 END) AS rank
+       FROM items i
+       WHERE i.company_id = $1 AND i.active
+         AND (i.barcode = $2 OR i.barcode1 = $2 OR i.barcode2 = $2 OR i.code = $2 OR i.name ILIKE $3 OR i.name2 ILIKE $3)
+       ORDER BY rank, i.name LIMIT 30`,
+      [req.user.company_id, q, `%${q}%`]);
+    const ids = found.map(r => r.id);
+    const { rows: batches } = ids.length ? await query(
+      `SELECT id, item_id, batch_no, cost_price, selling_price, discount_price, wholesale_price, mrp, offer_price, cus_cat_price, qty_remain, expiry_date, warranty_months
+       FROM stock_batches WHERE location_id = $1 AND item_id = ANY($2) ORDER BY id`, [locationId, ids]) : { rows: [] };
+    return res.json(found.map(r => ({ ...r, batches: batches.filter(b => b.item_id === r.id).map(({ item_id, ...b }) => b) })));
+  }
   const { rows } = await query(
     `SELECT i.id, i.code, i.barcode, i.name, i.unit, i.item_type, i.allow_decimal, i.allow_discount, i.allow_wholesale, i.allow_loyalty,
             i.allow_edit_price_on_invoice, i.ask_serial_on_invoice, i.warranty_months, i.track_inventory,

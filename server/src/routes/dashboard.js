@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { query } from '../db.js';
+import { query, dbKind } from '../db.js';
 import { asyncHandler } from '../lib/errors.js';
 import { requirePerm } from '../middleware/auth.js';
 import { today } from '../lib/util.js';
@@ -15,7 +15,13 @@ r.get('/', requirePerm('view_home'), asyncHandler(async (req, res) => {
   ] = await Promise.all([
     query(`SELECT COUNT(*) FILTER (WHERE inv_mode='INV')::int AS invoices, COALESCE(SUM(${sign}*net_total),0) AS sales, COALESCE(SUM(${sign}*profit),0) AS profit, COALESCE(SUM(${sign}*cash_paid),0) AS cash ${base} AND invoice_date = $3`, [c, loc, d]),
     query(`SELECT COUNT(*) FILTER (WHERE inv_mode='INV')::int AS invoices, COALESCE(SUM(${sign}*net_total),0) AS sales, COALESCE(SUM(${sign}*profit),0) AS profit ${base} AND date_trunc('month', invoice_date) = date_trunc('month', $3::date)`, [c, loc, d]),
-    query(`SELECT g.day::date::text AS day, COALESCE(SUM(${sign}*i.net_total),0) AS sales, COUNT(i.id) FILTER (WHERE i.inv_mode='INV')::int AS invoices
+    // the last 14 days, each one present even with no sales; MySQL has no generate_series, so it counts them out
+    dbKind === 'mysql'
+      ? query(`WITH RECURSIVE g(day) AS (SELECT DATE_SUB(CAST(? AS DATE), INTERVAL 13 DAY) UNION ALL SELECT DATE_ADD(day, INTERVAL 1 DAY) FROM g WHERE day < CAST(? AS DATE))
+           SELECT CAST(g.day AS CHAR) AS day, COALESCE(SUM(${sign}*i.net_total),0) AS sales, CAST(COUNT(CASE WHEN i.inv_mode='INV' THEN i.id END) AS SIGNED) AS invoices
+           FROM g LEFT JOIN invoices i ON i.invoice_date = g.day AND i.company_id = ? AND i.invoice_status='PRINTED' AND (? IS NULL OR i.location_id = ?)
+           GROUP BY g.day ORDER BY g.day`, [d, d, c, loc, loc])
+      : query(`SELECT g.day::date::text AS day, COALESCE(SUM(${sign}*i.net_total),0) AS sales, COUNT(i.id) FILTER (WHERE i.inv_mode='INV')::int AS invoices
            FROM generate_series($3::date - INTERVAL '13 days', $3::date, INTERVAL '1 day') g(day)
            LEFT JOIN invoices i ON i.invoice_date = g.day::date AND i.company_id = $1 AND i.invoice_status='PRINTED' AND ($2::bigint IS NULL OR i.location_id = $2)
            GROUP BY g.day ORDER BY g.day`, [c, loc, d]),

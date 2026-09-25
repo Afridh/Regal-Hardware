@@ -9,7 +9,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
-import { query } from '../db.js';
+import { query, dbKind } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { sendViaProvider, regalAuth, mayRevealCode } from './regal.js';
 import { listLogins, findLogin, addLogin, setLogin, removeLogin, checkLogin, loginLine, cleanUser, passOk, suggestUser, inviteMany, startersFor,
@@ -86,8 +86,13 @@ export async function pendingSupplierCount() {
 export async function injectSupplierInbox(data) {
   if (!data || !data.S) return 0;
   await ensureSupplierTables();
-  const { rows } = await query(`SELECT i.id, i.sid, i.kind, i.data, i.created_at, coalesce(array_agg(m.id ORDER BY m.id) FILTER (WHERE m.id IS NOT NULL), '{}') AS photos
-                                FROM sup_inbox i LEFT JOIN sup_media m ON m.inbox_id = i.id WHERE i.imported_at IS NULL GROUP BY i.id ORDER BY i.id`);
+  const rows = dbKind === 'mysql'
+    // no arrays in MySQL: the photo ids come as a list of text and are split here
+    ? (await query(`SELECT i.id, i.sid, i.kind, i.data, i.created_at, GROUP_CONCAT(m.id ORDER BY m.id) AS photos
+                    FROM sup_inbox i LEFT JOIN sup_media m ON m.inbox_id = i.id WHERE i.imported_at IS NULL GROUP BY i.id ORDER BY i.id`))
+        .rows.map(r => ({ ...r, photos: String(r.photos || '').split(',').filter(Boolean).map(Number) }))
+    : (await query(`SELECT i.id, i.sid, i.kind, i.data, i.created_at, coalesce(array_agg(m.id ORDER BY m.id) FILTER (WHERE m.id IS NOT NULL), '{}') AS photos
+                                FROM sup_inbox i LEFT JOIN sup_media m ON m.inbox_id = i.id WHERE i.imported_at IS NULL GROUP BY i.id ORDER BY i.id`)).rows;
   if (!rows.length) return 0;
   const S = data.S; S.orders = S.orders || []; S.notif = S.notif || []; S.payReqs = S.payReqs || [];
   let added = 0;

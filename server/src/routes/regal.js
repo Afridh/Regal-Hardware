@@ -371,7 +371,9 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
        ON CONFLICT (key) DO UPDATE SET rev = EXCLUDED.rev, data = EXCLUDED.data, updated_at = now(), updated_by = EXCLUDED.updated_by`,
       [key, next, JSON.stringify(data), req.regalUser.name]);
     await client.query(`INSERT INTO books_history (key, rev, data, saved_by) VALUES ($1,$2,$3,$4)`, [key, next, JSON.stringify(data), req.regalUser.name]);
-    await client.query(`DELETE FROM books_history WHERE key = $1 AND id NOT IN (SELECT id FROM books_history WHERE key = $1 ORDER BY id DESC LIMIT ${HISTORY_KEEP})`, [key]);
+    // everything older than the HISTORY_KEEP-th newest copy goes (written so MySQL takes it too: it has no
+    // LIMIT inside IN (…), and the extra SELECT around the LIMIT is what lets it read the table it deletes from)
+    await client.query(`DELETE FROM books_history WHERE key = $1 AND id < (SELECT id FROM (SELECT id FROM books_history WHERE key = $1 ORDER BY id DESC LIMIT 1 OFFSET ${HISTORY_KEEP - 1}) t)`, [key]);
     return { conflict: false, rev: next, merged };
   });
   if (out.conflict) {

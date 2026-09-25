@@ -27,7 +27,9 @@ r.get('/', asyncHandler(async (req, res) => {
   const { rows } = await query(
     `SELECT i.id AS item_id, i.code, i.barcode, i.name, i.unit, c.name AS category_name, s.name AS supplier_name,
             COALESCE(SUM(sb.qty_remain),0) AS qty_on_hand, COALESCE(MAX(sb.qty_min),0) AS qty_min,
-            (ARRAY_AGG(sb.selling_price ORDER BY sb.id DESC))[1] AS selling_price, (ARRAY_AGG(sb.cost_price ORDER BY sb.id DESC))[1] AS cost_price,
+            -- the newest batch's prices (asked of that batch directly, so MySQL reads it the same way)
+            (SELECT lb.selling_price FROM stock_batches lb WHERE lb.item_id = i.id AND lb.location_id = $2 ORDER BY lb.id DESC LIMIT 1) AS selling_price,
+            (SELECT lb.cost_price FROM stock_batches lb WHERE lb.item_id = i.id AND lb.location_id = $2 ORDER BY lb.id DESC LIMIT 1) AS cost_price,
             MIN(sb.expiry_date) FILTER (WHERE sb.qty_remain > 0) AS next_expiry,
             COALESCE(SUM(sb.qty_remain * sb.cost_price),0) AS value_cost, COALESCE(SUM(sb.qty_remain * sb.selling_price),0) AS value_selling
      ${core} ORDER BY i.name LIMIT ${limit} OFFSET ${offset}`, params);

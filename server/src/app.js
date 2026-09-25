@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { authenticate } from './middleware/auth.js';
 import { errorHandler } from './lib/errors.js';
-import { pool } from './db.js';
+import { pool, dbKind } from './db.js';
 
 import authRoutes from './routes/auth.js';
 import masterRoutes from './routes/master.js';
@@ -39,8 +39,8 @@ app.use(express.json({ limit: '12mb' }));       // the books, and attachments of
 app.get('/api/health', async (_req, res) => {
   // which setting the address came from, so a host that names it its own way can be told apart from none at all
   const from = ['DATABASE_URL', 'POSTGRES_URL', 'POSTGRES_PRISMA_URL', 'POSTGRES_URL_NON_POOLING', 'SUPABASE_DB_URL'].find(k => process.env[k]) || null;
-  try { await pool.query('SELECT 1'); res.json({ ok: true, db: 'up', from, time: new Date().toISOString() }); }
-  catch (e) { res.status(500).json({ ok: false, db: 'down', from, error: e.message }); }
+  try { await pool.query('SELECT 1'); res.json({ ok: true, db: 'up', kind: dbKind, from, time: new Date().toISOString() }); }
+  catch (e) { res.status(500).json({ ok: false, db: 'down', kind: dbKind, from, error: e.message }); }
 });
 
 app.use('/api/auth', authRoutes);

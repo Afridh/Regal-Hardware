@@ -8,7 +8,7 @@
 //   GET  /api/print/queue      …                               what is waiting and what happened (till sign-in)
 //   GET  /api/print/status     …                               whether the helper is listening   (till sign-in)
 import { Router } from 'express';
-import { query } from '../db.js';
+import { query, withTransaction, dbKind } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { regalAuth } from './regal.js';
 
@@ -87,7 +87,15 @@ r.get('/next', asyncHandler(async (req, res) => {
   // anything a helper took but never finished (it was closed mid-job) comes back
   await query(`UPDATE print_jobs SET status = 'waiting', taken_at = NULL
                WHERE status = 'taken' AND taken_at < now() - ($1 || ' milliseconds')::interval`, [TAKE_BACK_MS]);
-  const { rows: [job] } = await query(
+  const { rows: [job] } = dbKind === 'mysql'
+    // MySQL will not update a table it is reading in the same statement: take the row's lock, then mark it
+    ? await withTransaction(async client => {
+        const { rows: [w] } = await client.query(`SELECT id FROM print_jobs WHERE status = 'waiting' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`);
+        if (!w) return { rows: [] };
+        await client.query(`UPDATE print_jobs SET status = 'taken', taken_at = now() WHERE id = $1`, [w.id]);
+        return client.query(`SELECT id, format, no, copies, html, by_user, from_till FROM print_jobs WHERE id = $1`, [w.id]);
+      })
+    : await query(
     `UPDATE print_jobs SET status = 'taken', taken_at = now()
       WHERE id = (SELECT id FROM print_jobs WHERE status = 'waiting' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
       RETURNING id, format, no, copies, html, by_user, from_till`);

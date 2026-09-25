@@ -59,7 +59,7 @@ const real = toMySQL(
   `INSERT INTO books (key, rev, data, updated_at, updated_by) VALUES ($1,$2,$3,now(),$4)
      ON CONFLICT (key) DO UPDATE SET rev = EXCLUDED.rev, data = EXCLUDED.data`, ['regal', 5, '{}', 'Afridh']);
 is('a real upsert', real.sql,
-  'INSERT INTO books (key, rev, data, updated_at, updated_by) VALUES (?,?,?,now(),?) ON DUPLICATE KEY UPDATE rev = VALUES(rev), data = VALUES(data)');
+  'INSERT INTO books (`key`, rev, data, updated_at, updated_by) VALUES (?,?,?,now(),?) ON DUPLICATE KEY UPDATE rev = VALUES(rev), data = VALUES(data)');
 is('with its values', real.params, ['regal', 5, '{}', 'Afridh']);
 
 const del = toMySQL(`DELETE FROM books_history WHERE key = $1 AND id NOT IN (SELECT id FROM books_history WHERE key = $1 ORDER BY id DESC LIMIT 200)`, ['regal']);

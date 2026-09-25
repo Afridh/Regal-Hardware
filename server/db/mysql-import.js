@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { query, pool } from '../src/db.js';
+import { mysqlSchema } from './mysql-schema.js';
 
 const dir = process.argv[2];
 if (!dir) { console.error('usage: node db/mysql-import.js <exportDir>'); process.exit(1) }
@@ -23,6 +24,19 @@ function value(v, col) {
   if (t === 'boolean') return v ? 1 : 0;
   if (typeof v === 'object') return JSON.stringify(v);
   return v;
+}
+
+// a table the server makes on first use (files, …) may be in the export but not in schema.mysql.sql:
+// it is made here from the export's own description, the same way the schema file was
+const { rows: have } = await query('SELECT table_name AS t FROM information_schema.tables WHERE table_schema = DATABASE()');
+const present = new Set(have.map(r => r.t || r.TABLE_NAME));
+const missing = Object.keys(man.tables).filter(t => !present.has(t));
+if (missing.length) {
+  for (const stmt of mysqlSchema(man, { only: missing, drop: false })) {
+    if (/^SET /.test(stmt) || /^--/.test(stmt)) continue;
+    await query(stmt.replace(/;\s*(--.*)?$/, ''));
+  }
+  console.log('made the tables the database did not have:', missing.join(', '));
 }
 
 await query('SET FOREIGN_KEY_CHECKS = 0');
@@ -55,4 +69,13 @@ for (const t of Object.keys(man.tables)) {
 }
 await query('SET FOREIGN_KEY_CHECKS = 1');
 console.log('\n' + grand.toLocaleString() + ' rows loaded');
+
+// every table counted again against what the export said it held
+let bad = 0;
+for (const [t, info] of Object.entries(man.tables)) {
+  const { rows: [{ n }] } = await query(`SELECT COUNT(*) AS n FROM \`${t}\``);
+  if (Number(n) !== Number(info.rows)) { bad++; console.log(`  MISMATCH ${t}: exported ${info.rows}, in MySQL ${n}`); }
+}
+console.log(bad ? `${bad} table(s) do not match — do not switch over yet` : `checked: all ${Object.keys(man.tables).length} tables match the export`);
+if (bad) process.exitCode = 1;
 await pool.end();
