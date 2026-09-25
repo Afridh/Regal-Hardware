@@ -7,6 +7,11 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { pool, query } from '../src/db.js';
+import { ensureBooksTables } from '../src/routes/regal.js';
+
+// per-till state, the same list the server strips from every save (routes/regal.js)
+const LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'held', 'heldBills', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId'];
+await ensureBooksTables();
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dir = path.join(here, 'backups');
@@ -15,13 +20,18 @@ const restore = args.includes('--restore') ? args[args.indexOf('--restore') + 1]
 
 try {
   if (restore) {
+    // a file from this script ({ data }), or the copy a till keeps in its browser ({ v, at, S, CFG })
     const doc = JSON.parse(fs.readFileSync(path.resolve(restore), 'utf8'));
     const data = doc.data || doc;
     if (!data.S) throw new Error('that file does not hold the books (no S)');
+    // what belongs to the till the copy came from — who was signed in, the bill on its screen — is not shared
+    for (const k of LOCAL_KEYS) delete data.S[k];
     const { rows: [cur] } = await query(`SELECT rev FROM books WHERE key = 'regal'`);
     const rev = Number(cur?.rev || 0) + 1;
+    data._fullRev = rev;                         // a whole-document save, as far as the tills' merge is concerned
     await query(`INSERT INTO books (key, rev, data, updated_at, updated_by) VALUES ('regal', $1, $2, now(), 'restore')
                  ON CONFLICT (key) DO UPDATE SET rev = EXCLUDED.rev, data = EXCLUDED.data, updated_at = now(), updated_by = 'restore'`, [rev, JSON.stringify(data)]);
+    await query(`INSERT INTO books_history (key, rev, data, saved_by) VALUES ('regal', $1, $2, 'restore')`, [rev, JSON.stringify(data)]);
     console.log(`Books put back from ${path.basename(restore)} as rev ${rev} (${data.S.products?.length || 0} products, ${data.S.customers?.length || 0} customers, ${data.S.sales?.length || 0} bills). Tills pick it up on their next poll.`);
   } else {
     const { rows: [b] } = await query(`SELECT rev, data, updated_at, updated_by FROM books WHERE key = 'regal'`);
