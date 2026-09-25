@@ -172,8 +172,10 @@ export function appBuild() {
   catch { return process.env.VERCEL_GIT_COMMIT_SHA || 'static'; }
 }
 
+// polled every few seconds by every till and phone: read the revision only, never the whole books document
 r.get('/books/:key/rev', asyncHandler(async (req, res) => {
-  const row = await loadBooks(req.params.key);
+  await ensureBooksTables();
+  const { rows: [row] } = await query(`SELECT rev, updated_at, updated_by FROM books WHERE key = $1`, [req.params.key]);
   const inbox = req.params.key === BOOKS_KEY ? await pendingCount() : 0;
   res.json({ rev: row ? Number(row.rev) : 0, updated_at: row?.updated_at || null, updated_by: row?.updated_by || null, inbox, build: appBuild() });
 }));
