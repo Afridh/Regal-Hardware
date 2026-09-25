@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { makeMySQL } from './sql/mysql.js';
 
 const { Pool, types } = pg;
 
@@ -27,19 +28,26 @@ const conn = (() => {
   catch { return url.replace(/([?&])sslmode=[^&]*&?/g, '$1').replace(/[?&]$/, ''); }
 })();
 
-export const pool = new Pool({
+// Which database this is talking to. A mysql:// or mariadb:// address picks MySQL; anything else is
+// PostgreSQL, as it always was. The two are interchangeable from here up: query() takes the same SQL
+// with the same $1, $2 and hands back the same { rows, rowCount }.
+const isMySQL = /^(mysql|mariadb):\/\//i.test(url);
+const my = isMySQL ? makeMySQL(url) : null;
+
+export const pool = my ? my.pool : new Pool({
   connectionString: conn,
   max: process.env.VERCEL ? 3 : 10,      // a serverless instance should hold few connections
   ssl: hosted ? { rejectUnauthorized: false } : undefined,
 });
 
-pool.on('error', err => console.error('pg pool error', err));
+if (!isMySQL) pool.on('error', err => console.error('pg pool error', err));
 if (!url) console.error('No database address: set DATABASE_URL (or attach a database — POSTGRES_URL is read too).');
 
-export const query = (text, params) => pool.query(text, params);
+export const dbKind = isMySQL ? 'mysql' : 'postgres';
+export const query = my ? my.query : ((text, params) => pool.query(text, params));
 
 /** Run fn(client) inside a transaction. */
-export async function withTransaction(fn) {
+export const withTransaction = my ? my.withTransaction : async function withTransaction(fn) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -52,4 +60,4 @@ export async function withTransaction(fn) {
   } finally {
     client.release();
   }
-}
+};
