@@ -300,6 +300,14 @@ export function intlPhone(to) {
   if (d.length === 9) d = '94' + d;
   return d;
 }
+/* Whether a sign-in code may be shown on the screen instead of texted.
+   Only on a shop's own machine that has no way to text at all — never on the live site. Anyone can
+   type anyone's mobile into the sign-in box, so handing the code straight back there would let a
+   stranger read a customer's account. If the text cannot go, nobody gets in and they ring the shop. */
+export function mayRevealCode() {
+  return !(process.env.NODE_ENV === 'production' || process.env.VERCEL);
+}
+
 /** Only these numbers get texts while the shop is trying the system out (Settings → Messaging → test mode). */
 export function heldByTestMode(cfg, to) {
   const list = String(cfg?.testOnly || '').split(/[,\s;]+/).map(intlPhone).filter(Boolean);

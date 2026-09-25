@@ -327,14 +327,14 @@ function signIn(then){
       }
       if(stage==='forgot'){
         user=$('#sFUser',el).value.trim(); if(!user) throw new Error('Which user name?');
-        const j=await api('/forgot',{method:'POST',body:{user}}); hint=j.sent?'':j.code; stage='reset'; return draw();
+        const j=await api('/forgot',{method:'POST',body:{user}}); hint=j.sent?'':(j.code||''); if(!j.sent&&!j.code) throw new Error(j.note||'Could not text you — please ring the shop'); stage='reset'; return draw();
       }
       if(stage==='reset'){
         await api('/reset',{method:'POST',body:{user,code:$('#sFCode',el).value.trim(),password:$('#sFPass',el).value}});
         toast('That is your password now'); stage='user'; return draw();
       }
       if(stage==='phone'){ phone=$('#sPh',el).value.replace(/\D/g,''); st.rep=$('#sRep',el).value.trim(); ls.set('rep',st.rep); if(!/^0\d{9}$/.test(phone)) throw new Error('Enter a mobile like 0771234567');
-        const j=await api('/otp',{method:'POST',body:{phone}}); hint=j.sent?'':j.code; name=j.name||''; stage='code'; return draw() }
+        const j=await api('/otp',{method:'POST',body:{phone}}); hint=j.sent?'':(j.code||''); if(!j.sent&&!j.code) throw new Error(j.note||'Could not text you — please ring the shop'); name=j.name||''; stage='code'; return draw() }
       const code=$('#sCode',el).value.trim(); if(code.length<6) throw new Error('Enter the 6-digit code');
       const j=await api('/login',{method:'POST',body:{phone,code,rep:st.rep}}); st.token=j.token; st.phone=phone; ls.set('token',j.token); ls.set('phone',phone); el.remove(); toast('Welcome, '+(st.rep||j.supplier)); if(then) then() }
     catch(e){ toast(e.message); go.disabled=false } };

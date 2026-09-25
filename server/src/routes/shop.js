@@ -12,9 +12,10 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { query } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
-import { sendViaProvider, regalAuth } from './regal.js';
+import { sendViaProvider, regalAuth, mayRevealCode } from './regal.js';
 
 const r = Router();
+const NO_TEXT = 'Sorry — we could not text you just now. Please ring the shop.';
 const TZ = process.env.SHOP_TZ || 'Asia/Colombo';
 const OTP_WINDOW_MS = 5 * 60 * 1000;
 
@@ -253,8 +254,8 @@ r.post('/otp', asyncHandler(async (req, res) => {
     try { await sendViaProvider(cfg, phone, `${name}: your sign-in code is ${code}. It works for 5 minutes.`); return res.json({ ok: true, sent: true }); }
     catch (e) { console.error('shop otp sms failed', e.message); }
   }
-  // no working SMS: hand the code back (dev / until Settings → Messaging is set up)
-  res.json({ ok: true, sent: false, code });
+  // the code only comes back on a shop's own machine with no gateway — never on the live site
+  res.json({ ok: true, sent: false, ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });
 }));
 
 /** Step 2: the code, plus a name if we have not met this customer before. */

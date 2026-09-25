@@ -11,11 +11,12 @@ import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { query } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
-import { sendViaProvider, regalAuth } from './regal.js';
+import { sendViaProvider, regalAuth, mayRevealCode } from './regal.js';
 import { listLogins, findLogin, addLogin, setLogin, removeLogin, checkLogin, loginLine, cleanUser, passOk, suggestUser, inviteMany, startersFor,
          askForLogin, myRequests, waitingRequests, waitingCount, acceptRequest, rejectRequest } from '../services/portalLogins.js';
 
 const r = Router();
+const NO_TEXT = 'Sorry — we could not text you just now. Please ring the shop.';
 const TZ = process.env.SHOP_TZ || 'Asia/Colombo';
 const OTP_WINDOW_MS = 5 * 60 * 1000;
 const digits = s => String(s || '').replace(/\D/g, '');
@@ -155,7 +156,7 @@ r.post('/otp', asyncHandler(async (req, res) => {
     try { await sendViaProvider(cfg, phone, `${data?.CFG?.shop?.name || 'Regal Hardware'}: your supplier sign-in code is ${code}. It works for 5 minutes.`); return res.json({ ok: true, sent: true, name: sup.name }); }
     catch (e) { console.error('sup otp sms failed', e.message); }
   }
-  res.json({ ok: true, sent: false, code, name: sup.name });
+  res.json({ ok: true, sent: false, name: sup.name, ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });
 }));
 
 r.post('/login', asyncHandler(async (req, res) => {
@@ -198,7 +199,7 @@ r.post('/forgot', asyncHandler(async (req, res) => {
       return res.json({ ok: true, sent: true, phone: phone.replace(/^(\d{3})\d{4}(\d{3})$/, '$1••••$2') }); }
     catch (e) { console.error('sup forgot sms failed', e.message); }
   }
-  res.json({ ok: true, sent: false, code, phone });
+  res.json({ ok: true, sent: false, phone, ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });
 }));
 
 r.post('/reset', asyncHandler(async (req, res) => {

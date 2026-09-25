@@ -8,13 +8,14 @@ import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { query } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
-import { sendViaProvider, regalAuth } from './regal.js';
+import { sendViaProvider, regalAuth, mayRevealCode } from './regal.js';
 import { ensureLogins, inviteMany, startersFor, suggestUser, addLogin, setLogin, removeLogin, listLogins, findLogin, cleanUser, loginLine,
          askForLogin, myRequests, waitingRequests, waitingCount, acceptRequest, rejectRequest } from '../services/portalLogins.js';
 
 const LOGINS = 'cust_logins';
 
 const r = Router();
+const NO_TEXT = 'Sorry — we could not text you just now. Please ring the shop.';
 const TZ = process.env.SHOP_TZ || 'Asia/Colombo';
 const OTP_WINDOW_MS = 5 * 60 * 1000;
 const digits = s => String(s || '').replace(/\D/g, '');
@@ -149,7 +150,7 @@ r.post('/forgot', asyncHandler(async (req, res) => {
       return res.json({ ok: true, sent: true, phone: mask(phone) }); }
     catch (e) { console.error('cust forgot sms failed', e.message); }
   }
-  res.json({ ok: true, sent: false, code, phone: mask(phone) });
+  res.json({ ok: true, sent: false, phone: mask(phone), ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });
 }));
 
 /** The code from that text, and the password they want from now on. The shop's one still works. */
@@ -182,7 +183,7 @@ r.post('/otp', asyncHandler(async (req, res) => {
     try { await sendViaProvider(cfg, phone, `${data?.CFG?.shop?.name || 'Regal Hardware'}: your sign-in code is ${code}. It works for 5 minutes.`); return res.json({ ok: true, sent: true, name: c.name }); }
     catch (e) { console.error('cust otp sms failed', e.message); }
   }
-  res.json({ ok: true, sent: false, code, name: c.name });        // no gateway set up: shown on the screen instead
+  res.json({ ok: true, sent: false, name: c.name, ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });
 }));
 
 r.post('/login', asyncHandler(async (req, res) => {
