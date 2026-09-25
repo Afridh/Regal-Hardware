@@ -67,6 +67,18 @@
     if (typeof window.drawBell === 'function') window.drawBell();
   }
 
+  /** Punches made on /shift that the server laid over our last save: hold them, so the next save keeps them. */
+  function takeShiftDays(days) {
+    var S = window.S; if (!S || !days) return;
+    S.shift = S.shift || {}; S.shift.days = S.shift.days || {};
+    Object.keys(days).forEach(function (ds) {
+      S.shift.days[ds] = S.shift.days[ds] || {};
+      Object.keys(days[ds] || {}).forEach(function (id) { S.shift.days[ds][id] = days[ds][id]; });
+    });
+    if (S.view === 'payroll' && typeof window.refreshAttendanceBoard === 'function') window.refreshAttendanceBoard();
+    else if (typeof window.render === 'function' && !typing() && !tillBusy()) window.render();
+  }
+
   async function pull(quiet) {
     if (!token || busy) return false;
     if (Date.now() - lastPushAt < 3000) return false;
@@ -100,7 +112,12 @@
       try {
         var doc = strip(JSON.parse(txt));
         var j = await call('PUT', '/books/' + KEY, { data: doc, rev: rev });
-        if (j.__status === 200) { rev = j.rev; lastPushAt = Date.now(); offlineSince = 0; badge('saved ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' · shared'); return true; }
+        if (j.__status === 200) {
+          rev = j.rev; lastPushAt = Date.now(); offlineSince = 0;
+          if (j.shiftDays) takeShiftDays(j.shiftDays);
+          badge('saved ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' · shared');
+          return true;
+        }
         if (j.__status === 409) {
           rev = j.rev; applyRemote(j.data);
           say('Another till saved first — the books were reloaded. Please re-enter what you were doing.');

@@ -3,7 +3,7 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { query, withTransaction } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
-import { matches, demoPassword, sha } from '../services/regalHash.js';
+import { matches, demoPassword, sha, fnv } from '../services/regalHash.js';
 import { injectInbox as injectShopInbox, markImported as markShopImported, pendingCount as pendingShopCount } from './shop.js';
 import { injectSupplierInbox, markSupplierImported, pendingSupplierCount } from './supplier.js';
 import { injectCustInbox, markCustImported, pendingCustCount } from './customer.js';
@@ -187,54 +187,111 @@ r.get('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   res.json({ rev: Number(row.rev), data: row.data, updated_at: row.updated_at, updated_by: row.updated_by, inbox });
 }));
 
-r.get('/books/:key/shift', asyncHandler(async (req, res) => {
-  const row = await loadBooks(req.params.key);
-  if (!row || !row.data) return res.json({ ok: true, rev: 0, employees: [], shift: { days: {}, settings: {} }, users: [] });
-  const s = row.data.S || {};
-  const emps = Array.isArray(s.employees) ? s.employees.map(e => {
-    const { rate, payType, otMult, pin, ...rest } = e;
-    return rest;
-  }) : [];
-  res.json({
-    ok: true,
-    rev: Number(row.rev),
-    employees: emps,
-    shift: s.shift || { days: {}, settings: {}, holidays: [] },
-    users: Array.isArray(s.users) ? s.users.map(u => ({ name: u.name, role: u.role, uid: u.uid })) : []
-  });
+// ---------------------------------------------------------------- the shift page (/shift)
+// Opened by an admin (Super Admin / Admin / Owner) with their till login. Its sign-in lasts 30 days, so a
+// phone left at the door as the punch clock does not ask every morning; it can read the staff and the
+// attendance and write punches, nothing else.
+const SHIFT_ADMIN_ROLES = ['super admin', 'superadmin', 'admin', 'owner'];
+const isShiftAdmin = role => SHIFT_ADMIN_ROLES.includes(String(role || '').toLowerCase().trim());
+
+function shiftAuth(req, _res, next) {
+  try {
+    const h = req.headers.authorization || '';
+    const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+    if (!token) throw new HttpError(401, 'An admin has to sign in on this device');
+    const p = jwt.verify(token, process.env.JWT_SECRET);
+    // the shift page's own sign-in, or an admin's till sign-in
+    if ((p.kind !== 'shift-admin' && p.kind !== 'regal') || !isShiftAdmin(p.role)) throw new HttpError(403, 'Only an admin can open the shift page');
+    req.shiftUser = p;
+    next();
+  } catch (e) {
+    if (e.name === 'JsonWebTokenError' || e.name === 'TokenExpiredError') return next(new HttpError(401, 'Sign in again'));
+    next(e);
+  }
+}
+
+r.post('/books/shift-login', asyncHandler(async (req, res) => {
+  const { user, password } = req.body || {};
+  if (!user || typeof password !== 'string') throw new HttpError(400, 'Name and password required');
+  const users = await usersFromBooks();
+  const u = users.find(x => String(x.name).toLowerCase() === String(user).toLowerCase().trim());
+  if (!u || u.active === false) throw new HttpError(401, 'That name cannot sign in');
+  const defAcc = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === String(u.name).toLowerCase());
+  const isDefPass = defAcc && (!u.passHash || u.passHash === sha(defAcc.pass) || u.passHash === fnv(defAcc.pass)) && password === defAcc.pass;
+  if (!matches(u, password) && !isDefPass) throw new HttpError(401, 'That password is not right');
+  if (!isShiftAdmin(u.role)) throw new HttpError(403, 'Only a Super Admin or Admin can open the shift page');
+  const token = jwt.sign({ kind: 'shift-admin', name: u.name, role: u.role }, process.env.JWT_SECRET, { expiresIn: process.env.SHIFT_JWT_EXPIRES || '30d' });
+  res.json({ ok: true, token, user: { name: u.name, role: u.role } });
 }));
 
-r.post('/books/:key/shift', asyncHandler(async (req, res) => {
+r.get('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
+  await ensureBooksTables();
+  const { rows: [row] } = await query(
+    `SELECT rev, data#>'{S,employees}' AS employees, data#>'{S,shift}' AS shift, data#>'{S,deletedUsers}' AS deleted
+       FROM books WHERE key = $1`, [req.params.key]);
+  if (!row) return res.json({ ok: true, rev: 0, employees: [], shift: { days: {}, settings: {}, holidays: [] } });
+  const deleted = (Array.isArray(row.deleted) ? row.deleted : []).map(x => String(x || '').toLowerCase().trim());
+  // no wages or PINs leave the server; deleted users do not come back as cards
+  const employees = (Array.isArray(row.employees) ? row.employees : [])
+    .filter(e => e && e.name && !deleted.includes(String(e.name).toLowerCase().trim()))
+    .map(({ rate, payType, otMult, pin, advance, basis, days, ot, phone, ...rest }) => rest);
+  const shift = row.shift || {};
+  // a punch clock shows today and the days just gone; the full history stays in the books
+  const since = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+  const recent = Object.fromEntries(Object.entries(shift.days || {}).filter(([d]) => d >= since));
+  res.json({ ok: true, rev: Number(row.rev), employees, shift: { settings: shift.settings || {}, holidays: shift.holidays || [], days: recent } });
+}));
+
+/** body: { date, empId, rec } — rec null clears the day. A record older than the one on the server is refused (409). */
+r.post('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
   const { date, empId, rec } = req.body || {};
-  if (!date || !empId) throw new HttpError(400, 'date and empId required');
-  const key = req.params.key;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) throw new HttpError(400, 'Bad date');
+  if (empId === undefined || empId === null || empId === '') throw new HttpError(400, 'empId required');
+  const key = req.params.key, id = String(empId);
+  const r0 = rec && typeof rec === 'object' ? { ...rec, by: req.shiftUser.name } : null;
   await ensureBooksTables();
   const out = await withTransaction(async client => {
-    const { rows: [cur] } = await client.query(`SELECT rev, data FROM books WHERE key = $1 FOR UPDATE`, [key]);
-    if (!cur || !cur.data) throw new HttpError(404, 'Books not found');
-    const data = cur.data;
-    if (!data.S) data.S = {};
-    if (!data.S.shift) data.S.shift = { days: {}, settings: {} };
-    if (!data.S.shift.days) data.S.shift.days = {};
-    if (rec === null || rec === undefined) {
-      if (data.S.shift.days[date]) {
-        delete data.S.shift.days[date][empId];
-        if (!Object.keys(data.S.shift.days[date]).length) delete data.S.shift.days[date];
-      }
-    } else {
-      data.S.shift.days[date] = data.S.shift.days[date] || {};
-      data.S.shift.days[date][empId] = rec;
-    }
-    const next = (cur ? Number(cur.rev) : 0) + 1;
-    await client.query(
-      `INSERT INTO books (key, rev, data, updated_at, updated_by) VALUES ($1,$2,$3,now(),$4)
-       ON CONFLICT (key) DO UPDATE SET rev = EXCLUDED.rev, data = EXCLUDED.data, updated_at = now(), updated_by = EXCLUDED.updated_by`,
-      [key, next, JSON.stringify(data), 'shift-terminal']);
-    await client.query(`INSERT INTO books_history (key, rev, data, saved_by) VALUES ($1,$2,$3,$4)`, [key, next, JSON.stringify(data), 'shift-terminal']);
-    return { ok: true, rev: next };
+    const { rows: [cur] } = await client.query(
+      `SELECT rev, data#>ARRAY['S','shift','days',$2::text,$3::text] AS rec FROM books WHERE key = $1 FOR UPDATE`, [key, date, id]);
+    if (!cur) throw new HttpError(404, 'The books are not on the server yet — open the shop system once first');
+    if (cur.rec && r0 && Number(cur.rec.updatedAt || 0) > Number(r0.updatedAt || 0)) return { stale: true, rev: Number(cur.rev), rec: cur.rec };
+    // written in place, stamped with the revision it made (_srv) so a till's save can lay it over its own;
+    // the whole document is never read out, rewritten or copied into the history for a punch
+    const { rows: [u] } = r0
+      ? await client.query(
+          `UPDATE books SET data = jsonb_set(
+              jsonb_set(jsonb_set(data, '{S,shift}', COALESCE(data#>'{S,shift}', '{}'::jsonb), true),
+                        '{S,shift,days}', COALESCE(data#>'{S,shift,days}', '{}'::jsonb), true),
+              ARRAY['S','shift','days',$2::text],
+              COALESCE(data#>ARRAY['S','shift','days',$2::text], '{}'::jsonb) || jsonb_build_object($3::text, $4::jsonb || jsonb_build_object('_srv', rev + 1)), true),
+             rev = rev + 1, updated_at = now(), updated_by = $5
+           WHERE key = $1 RETURNING rev`, [key, date, id, JSON.stringify(r0), req.shiftUser.name])
+      : await client.query(
+          `UPDATE books SET data = data #- ARRAY['S','shift','days',$2::text,$3::text], rev = rev + 1, updated_at = now(), updated_by = $4
+           WHERE key = $1 RETURNING rev`, [key, date, id, req.shiftUser.name]);
+    return { stale: false, rev: Number(u.rev) };
   });
-  res.json(out);
+  if (out.stale) return res.status(409).json({ error: 'A newer punch is already on the server', rev: out.rev, rec: out.rec });
+  res.json({ ok: true, rev: out.rev });
 }));
+
+/** Punches the shift page wrote after revision `since` (each carries the revision it made, _srv) are laid
+ *  over a till's save, unless the till holds a later version of the same record. Returns what was taken. */
+function mergeShiftDays(data, cur, since) {
+  const taken = {};
+  const theirs = cur?.S?.shift?.days;
+  if (!theirs || !data?.S) return taken;
+  data.S.shift = data.S.shift || {};
+  const mine = data.S.shift.days = data.S.shift.days || {};
+  for (const [ds, recs] of Object.entries(theirs)) {
+    for (const [id, rec] of Object.entries(recs || {})) {
+      if (!rec || Number(rec._srv || 0) <= since) continue;
+      const have = (mine[ds] || {})[id];
+      if (!have || Number(rec.updatedAt || 0) >= Number(have.updatedAt || 0)) (mine[ds] = mine[ds] || {})[id] = (taken[ds] = taken[ds] || {})[id] = rec;
+    }
+  }
+  return taken;
+}
 
 /** Save.  body: { data, rev }  — rev is the revision the client loaded; a mismatch returns 409 with the newer copy. */
 r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
@@ -250,24 +307,31 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   const out = await withTransaction(async client => {
     const { rows: [cur] } = await client.query(`SELECT rev, data FROM books WHERE key = $1 FOR UPDATE`, [key]);
     const curRev = cur ? Number(cur.rev) : 0;
+    let merged = null;
     if (cur && rev !== undefined && rev !== null && Number(rev) !== curRev) {
-      return { conflict: true, rev: curRev, data: cur.data };
+      // _fullRev is the revision of the last whole-document save. If the till loaded that one or later,
+      // everything since has been punches from the shift page: keep this save and lay those punches over it.
+      const full = cur.data && cur.data._fullRev;
+      if (full === undefined || full === null || Number(rev) < Number(full)) return { conflict: true, rev: curRev, data: cur.data };
+      merged = mergeShiftDays(data, cur.data, Number(rev));
     }
     const next = curRev + 1;
+    data._fullRev = next;
     await client.query(
       `INSERT INTO books (key, rev, data, updated_at, updated_by) VALUES ($1,$2,$3,now(),$4)
        ON CONFLICT (key) DO UPDATE SET rev = EXCLUDED.rev, data = EXCLUDED.data, updated_at = now(), updated_by = EXCLUDED.updated_by`,
       [key, next, JSON.stringify(data), req.regalUser.name]);
     await client.query(`INSERT INTO books_history (key, rev, data, saved_by) VALUES ($1,$2,$3,$4)`, [key, next, JSON.stringify(data), req.regalUser.name]);
     await client.query(`DELETE FROM books_history WHERE key = $1 AND id NOT IN (SELECT id FROM books_history WHERE key = $1 ORDER BY id DESC LIMIT ${HISTORY_KEEP})`, [key]);
-    return { conflict: false, rev: next };
+    return { conflict: false, rev: next, merged };
   });
   if (out.conflict) {
     const inbox = key === BOOKS_KEY ? await injectInbox(out.data) : 0;
     return res.status(409).json({ error: 'Someone else saved first', rev: out.rev, data: out.data, inbox });
   }
   if (key === BOOKS_KEY) await markImported(data);
-  res.json({ ok: true, rev: out.rev });
+  // punches laid over this save go back with the answer, so the till holds them before it saves again
+  res.json({ ok: true, rev: out.rev, ...(out.merged && Object.keys(out.merged).length ? { shiftDays: out.merged } : {}) });
   // everyone on the books has a sign-in of their own: a customer added at the till gets one straight
   // away. It is nothing the save has to wait for, and it makes no text — the shop sends that.
   if (key === BOOKS_KEY) catchUpLogins(data).catch(e => console.error('sign-ins catch-up failed', e.message));
@@ -290,6 +354,7 @@ r.post('/books/:key/restore/:rev', regalAuth, asyncHandler(async (req, res) => {
   if (!h) throw new HttpError(404, 'No such revision');
   const { rows: [cur] } = await query(`SELECT rev FROM books WHERE key = $1`, [req.params.key]);
   const next = (cur ? Number(cur.rev) : 0) + 1;
+  if (h.data && typeof h.data === 'object') h.data._fullRev = next;          // a restore is a whole-document save
   await query(`UPDATE books SET rev = $2, data = $3, updated_at = now(), updated_by = $4 WHERE key = $1`, [req.params.key, next, JSON.stringify(h.data), req.regalUser.name]);
   res.json({ ok: true, rev: next });
 }));
