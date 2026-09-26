@@ -6321,6 +6321,13 @@ const privacyKeyMatch=(e)=>{ const k=(CFG.privacy&&CFG.privacy.key)||'ctrl+shift
 let saveForce=false;
 function persist(force){
   if(window.privacyOn) return;
+  if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){
+    try {
+      sessionStorage.setItem('regal_demo_store', snapshotTxt());
+      ['savedAt','savedAtNav','csSync'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent='saved (demo sandbox)'; });
+    } catch(e){}
+    return;
+  }
   saveForce=saveForce||!!force;
   clearTimeout(saveTimer);
   const doSave=async()=>{
@@ -6344,6 +6351,7 @@ function persist(force){
 }
 window.markSaved=()=>{ lastSavedTxt=snapshotTxt() };   // books just came from the server: nothing to push back
 const DEFAULT_ACCOUNTS = [
+  { name: 'demo', role: 'Demo Admin', uid: 'DM', pass: 'demo123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve','products_view','dashboard_view','attendance_view'] },
   { name: 'Afridh', role: 'Super Admin', uid: 'AF', pass: 'Afridh123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
   { name: 'Azhad', role: 'Admin', uid: 'AZ', pass: 'Azhad123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
   { name: 'Akmal', role: 'Admin', uid: 'AK', pass: 'Akmal123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
@@ -16562,6 +16570,16 @@ S.users=DEFAULT_ACCOUNTS.filter(acc => !S.deletedUsers.includes(acc.name.toLower
 S.user={name:'Afridh', role:'Super Admin', perms:[...DEFAULT_ACCOUNTS[0].perms], prefs:{...PREF_DEFAULTS}};
 
 function signOut(){
+  if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){
+    window.isDemo = false;
+    try {
+      sessionStorage.removeItem('regal_is_demo');
+      sessionStorage.removeItem('regal_demo_store');
+    } catch(e){}
+    const banner = document.getElementById('demoModeBanner');
+    if(banner) banner.remove();
+    document.body.style.paddingTop = '';
+  }
   if(S.pos.lines.length&&!confirm('There is a bill on the screen that has not been paid. Sign out anyway and lose it?'))return;
   S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:CFG.bill.defaultFormat};
   closeModals(); closePhone(); S.signedOut=true;
@@ -16589,6 +16607,114 @@ function proofBill(fmtWanted){
     link:'regalhw.lk/b/proof',proof:true};
   showInvoice(proof,fmtWanted||S.pos.lastBill||CFG.bill.defaultFormat);
 }
+/* ==================== DEMO POS MODE ==================== */
+function renderDemoBanner(){
+  if(!window.isDemo && !(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')) return;
+  let banner = document.getElementById('demoModeBanner');
+  if(!banner){
+    banner = document.createElement('div');
+    banner.id = 'demoModeBanner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;width:100%;height:34px;background:linear-gradient(90deg,#6D28D9 0%,#4F46E5 100%);color:#fff;padding:0 16px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between;z-index:999999;box-shadow:0 2px 6px rgba(0,0,0,0.22);box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif;';
+    banner.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        <span style="font-size:15px;line-height:1">🧪</span>
+        <span><b>DEMO POS MODE</b> — Trial & Sandbox. All operations are local and do not modify live store data.</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <button onclick="resetDemoData()" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.45);color:#fff;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;font-weight:600;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.18)'">↺ Reset Demo</button>
+        <button onclick="exitDemoMode()" style="background:#EF4444;border:none;color:#fff;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;font-weight:600;transition:background .15s" onmouseover="this.style.background='#DC2626'" onmouseout="this.style.background='#EF4444'">Exit Demo ✕</button>
+      </div>
+    `;
+    document.body.prepend(banner);
+  }
+  document.body.style.paddingTop = '34px';
+}
+
+function activateDemoMode(){
+  window.isDemo = true;
+  try {
+    sessionStorage.setItem('regal_is_demo', '1');
+    localStorage.removeItem('regal_signed_out');
+  } catch(e){}
+  S.isDemo = true;
+
+  // Neutralize BroadcastChannel in demo mode so sync messages never cross between live and demo
+  if(typeof window.BroadcastChannel !== 'undefined' && !window._origBroadcastChannel){
+    window._origBroadcastChannel = window.BroadcastChannel;
+    window.BroadcastChannel = class extends window._origBroadcastChannel {
+      constructor(name){
+        super(name === 'regal_books_sync' ? 'regal_demo_isolated_sync' : name);
+      }
+    };
+  }
+
+  // Load demo data if available in sessionStorage, otherwise seed demo products
+  let demoStore = null;
+  try {
+    const raw = sessionStorage.getItem('regal_demo_store');
+    if(raw) demoStore = JSON.parse(raw);
+  } catch(e){}
+
+  if(demoStore && demoStore.S){
+    applyKept(demoStore);
+  } else {
+    seed();
+    try { sessionStorage.setItem('regal_demo_store', snapshotTxt()); } catch(e){}
+  }
+
+  const demoPerms = ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve','products_view','dashboard_view','attendance_view'];
+  S.user = {
+    name: 'Demo User',
+    role: 'Demo Admin',
+    perms: [...demoPerms],
+    prefs: { ...PREF_DEFAULTS }
+  };
+  S.signedOut = false;
+
+  // Cleanly remove all lock overlays
+  document.querySelectorAll('.lock, #lockScreen').forEach(x => x.remove());
+  document.body.classList.remove('locked');
+  closeModals();
+
+  renderDemoBanner();
+  applyLayout();
+  go('pos');
+  toast('Welcome to Regal Hardware Demo POS Trial');
+}
+
+function resetDemoData(){
+  if(!confirm('Reset all demo products, stock, and cart to default trial state?')) return;
+  try {
+    sessionStorage.removeItem('regal_demo_store');
+  } catch(e){}
+  seed();
+  try {
+    sessionStorage.setItem('regal_demo_store', snapshotTxt());
+  } catch(e){}
+  applyLayout();
+  go('pos');
+  toast('Demo products & stock reset to initial state');
+}
+
+function exitDemoMode(){
+  if(!confirm('Exit Demo mode and return to sign in screen?')) return;
+  window.isDemo = false;
+  try {
+    sessionStorage.removeItem('regal_is_demo');
+    sessionStorage.removeItem('regal_demo_store');
+  } catch(e){}
+  const banner = document.getElementById('demoModeBanner');
+  if(banner) banner.remove();
+  document.body.style.paddingTop = '';
+  if(location.search.includes('demo=1')){
+    const url = new URL(location.href);
+    url.searchParams.delete('demo');
+    history.replaceState(null, '', url.pathname + (url.search || '') + (url.hash || ''));
+  }
+  S.signedOut = true;
+  shopLock();
+}
+
 /* the shop's own lock screen — username + password with dynamic role badge */
 function shopLock(){
   document.querySelectorAll('.lock, #lockScreen').forEach(x => x.remove());
@@ -16648,6 +16774,15 @@ function shopLock(){
   const msg = el.querySelector('#lockMsg');
   let tries = 0;
 
+  const urlParams = (typeof location !== 'undefined') ? new URLSearchParams(location.search) : null;
+  const isDemoUrl = (urlParams && urlParams.get('demo') === '1') || (typeof location !== 'undefined' && location.pathname.startsWith('/demo'));
+  if(isDemoUrl){
+    uInp.value = 'demo';
+    pInp.value = 'demo123';
+    setTimeout(() => { if(typeof updateRoleBadge === 'function') updateRoleBadge(); }, 50);
+    msg.innerHTML = '<span style="color:#6D28D9;font-weight:600">🎮 Demo POS Mode: Click Sign In to start trial</span>';
+  }
+
   const updateRoleBadge = () => {
     const val = (uInp.value || '').trim();
     if(!val){
@@ -16656,6 +16791,14 @@ function shopLock(){
       return;
     }
     const lower = val.toLowerCase().trim();
+    if(lower === 'demo'){
+      badge.style.display = 'inline-flex';
+      badge.style.background = '#EDE9FE';
+      badge.style.color = '#6D28D9';
+      badge.style.border = '1px solid #8B5CF6';
+      badge.innerHTML = '<b>🎮 Demo POS Sandbox</b>';
+      return;
+    }
     let lsDel = [];
     try { lsDel = JSON.parse(localStorage.getItem('regal_deleted_users') || '[]'); } catch(_){}
     if((S.deletedUsers || []).includes(lower) || lsDel.includes(lower)){
@@ -16714,6 +16857,18 @@ function shopLock(){
         return;
       }
       const lower = uName.toLowerCase().trim();
+      if(lower === 'demo'){
+        if(pInp.value !== 'demo123'){
+          tries++;
+          msg.textContent = 'Demo password is demo123';
+          msg.style.color = 'var(--chip-rust)';
+          if(btn){ btn.disabled = false; btn.textContent = 'Sign In'; }
+          pInp.focus();
+          return;
+        }
+        activateDemoMode();
+        return;
+      }
       let lsDel = [];
       try { lsDel = JSON.parse(localStorage.getItem('regal_deleted_users') || '[]'); } catch(_){}
       const isDel = (S.deletedUsers || []).includes(lower) || lsDel.includes(lower);
@@ -17574,6 +17729,7 @@ if(typeof BroadcastChannel !== 'undefined'){
   try {
     const syncBc = new BroadcastChannel('regal_books_sync');
     syncBc.onmessage = async (msg) => {
+      if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')) return;
       if(msg.data === 'sale_completed' || msg.data === 'books_updated' || msg.data === 'attendance_updated'){
         let pulled = false;
         if(window.regalBridge && typeof regalBridge.pull === 'function' && regalBridge.online()){
@@ -17594,6 +17750,7 @@ if(typeof BroadcastChannel !== 'undefined'){
 }
 
 window.addEventListener('storage', async (e) => {
+  if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')) return;
   if(e.key === STORE_KEY || e.key === 'regal_books_sync' || e.key === 'regal_attendance_sync'){
     let pulled = false;
     if(window.regalBridge && typeof regalBridge.pull === 'function' && regalBridge.online()){
@@ -17611,7 +17768,14 @@ window.addEventListener('storage', async (e) => {
   }
 });
 
-if(window.regalBridge){
+const urlDemoParam = (typeof location !== 'undefined') ? new URLSearchParams(location.search).get('demo') : null;
+const isDemoParam = urlDemoParam === '1' || (typeof location !== 'undefined' && location.pathname.startsWith('/demo'));
+if(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1'){
+  activateDemoMode();
+} else if(isDemoParam){
+  S.signedOut = true;
+  shopLock();
+} else if(window.regalBridge){
   if(regalBridge.terminal()) S.terminal=regalBridge.terminal();
   if(regalBridge.online()){
     boot().then(()=>{
@@ -17675,7 +17839,12 @@ if(window.regalBridge){
     persist();
   });
 }
-window.addEventListener('beforeunload',()=>{ clearTimeout(saveTimer); if(PRIV){ Object.assign(S,PRIV); PRIV=null }   // never keep the privacy screen's figures
+window.addEventListener('beforeunload',()=>{
+  if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){
+    try{ sessionStorage.setItem('regal_demo_store', snapshotTxt()) }catch(e){}
+    return;
+  }
+  clearTimeout(saveTimer); if(PRIV){ Object.assign(S,PRIV); PRIV=null }   // never keep the privacy screen's figures
   const snap={}; Object.keys(S).forEach(k=>{ if(!TRANSIENT.includes(k)) snap[k]=S[k] });
   try{ localStorage.setItem(STORE_KEY,JSON.stringify({v:1,at:new Date().toISOString(),S:snap,CFG})) }catch(e){} });
 </script>

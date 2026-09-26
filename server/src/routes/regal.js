@@ -31,6 +31,9 @@ export function regalAuth(req, _res, next) {
     if (!token) throw new HttpError(401, 'Sign in first');
     const p = jwt.verify(token, process.env.JWT_SECRET);
     if (p.kind !== 'regal') throw new HttpError(401, 'Wrong kind of token');
+    if (p.isDemo && req.method !== 'GET') {
+      throw new HttpError(403, 'Demo mode is trial-only and cannot modify live store data');
+    }
     req.regalUser = p;
     next();
   } catch (e) {
@@ -133,6 +136,20 @@ async function usersFromBooks() {
 r.post('/books/login', asyncHandler(async (req, res) => {
   const { user, password } = req.body || {};
   if (!user || typeof password !== 'string') throw new HttpError(400, 'Name and password required');
+  if (String(user).toLowerCase() === 'demo') {
+    if (password !== 'demo123') throw new HttpError(401, 'Demo password is demo123');
+    const demoUser = {
+      name: 'Demo User',
+      role: 'Demo Admin',
+      perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve']
+    };
+    return res.json({
+      ok: true,
+      token: jwt.sign({ kind: 'regal', name: 'Demo User', role: 'Demo Admin', perms: demoUser.perms, isDemo: true }, process.env.JWT_SECRET, { expiresIn: '12h' }),
+      user: demoUser,
+      isDemo: true
+    });
+  }
   const adminPass = process.env.SEED_ADMIN_PASSWORD || 'admin123';
   const isAdmin = String(user).toLowerCase() === 'admin';
   const users = await usersFromBooks();

@@ -15,6 +15,10 @@
 
   var rev = 0, token = localStorage.getItem(TOKEN_KEY) || '', busy = false, lastPushAt = 0, pollTimer = null, offlineSince = 0, build = '', toldBuild = false;
 
+  function isDemoSession() {
+    return !!(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1'));
+  }
+
   function headers(json) {
     var h = {};
     if (json) h['Content-Type'] = 'application/json';
@@ -80,6 +84,7 @@
   }
 
   async function pull(quiet) {
+    if (isDemoSession()) return false;
     if (!token || busy) return false;
     if (Date.now() - lastPushAt < 3000) return false;
     var j = await call('GET', '/books/' + KEY);
@@ -97,6 +102,12 @@
   /* ---------------- window.storage : what the app calls ---------------- */
   window.storage = {
     get: async function () {
+      if (isDemoSession()) {
+        try {
+          var d = sessionStorage.getItem('regal_demo_store');
+          return d ? { value: d } : null;
+        } catch(e){ return null; }
+      }
       if (!token) return null;
       var j = await call('GET', '/books/' + KEY);
       if (j.__status !== 200 || !j.data) return null;
@@ -105,6 +116,11 @@
       return { value: JSON.stringify(d) };
     },
     set: async function (_k, txt) {
+      if (isDemoSession()) {
+        try { sessionStorage.setItem('regal_demo_store', txt); } catch(e){}
+        badge('demo trial · not shared');
+        return true;
+      }
       if (!token) throw new Error('not signed in');
       if (busy) { pendingSet = txt; return true; }
       busy = true;
@@ -131,6 +147,10 @@
       }
     },
     delete: async function () {
+      if (isDemoSession()) {
+        try { sessionStorage.removeItem('regal_demo_store'); } catch(e){}
+        return;
+      }
       if (!token) return;
       await call('DELETE', '/books/' + KEY);
       rev = 0;
@@ -140,6 +160,18 @@
 
   /* ---------------- sign in ---------------- */
   async function login(name, password) {
+    if (String(name).toLowerCase() === 'demo') {
+      if (password !== 'demo123') return { ok: false, status: 401, error: 'Demo password is demo123' };
+      window.isDemo = true;
+      try { sessionStorage.setItem('regal_is_demo', '1'); } catch(e){}
+      stopPolling();
+      var demoUser = {
+        name: 'Demo User',
+        role: 'Demo Admin',
+        perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve']
+      };
+      return { ok: true, isDemo: true, user: demoUser };
+    }
     var j = await call('POST', '/books/login', { user: name, password: password });
     if (j.__status !== 200 || !j.ok) return { ok: false, status: j.__status, error: j.error || 'Could not sign in' };
     token = j.token; localStorage.setItem(TOKEN_KEY, token);
@@ -161,6 +193,7 @@
 
   /* ---------------- other tills ---------------- */
   async function poll() {
+    if (isDemoSession()) return;
     if (!token || busy || document.hidden) return;       // a tab nobody is looking at does not poll
     if (window.privacyOn) return;                          // the privacy screen is up: nothing moves until it is taken down
     if (Date.now() - lastPushAt < 3000) return;          // our own save is still settling
