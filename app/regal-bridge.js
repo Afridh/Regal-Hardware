@@ -92,7 +92,9 @@
     if (!token || busy) return false;
     if (Date.now() - lastPushAt < 3000) return false;
     var j = await call('GET', '/books/' + KEY);
-    if (j.__status !== 200) return false;
+    // the books are there but would not come down: nothing may be saved until they do
+    if (j.__status !== 200) { window.booksUnreadable = true; return false; }
+    window.booksUnreadable = false;
     if (j.data) {
       rev = j.rev; applyRemote(j.data);
       if (!quiet) say('Books picked up from the server');
@@ -114,8 +116,17 @@
       }
       if (!token) return null;
       var j = await call('GET', '/books/' + KEY);
-      if (j.__status !== 200 || !j.data) return null;
+      // a shop with no books yet answers 200 with nothing, and that is fine \u2014 the till seeds itself.
+      // Anything else means the books are there but could not be read, which the till must not paper over.
+      if (j.__status === 200 && !j.data) { window.booksUnreadable = false; return null; }
+      if (j.__status !== 200) {
+        // the books are on the server but would not come down. Whoever asked, the till must not now
+        // save what it is holding \u2014 that is sample data, and it would wipe the real shop.
+        window.booksUnreadable = true;
+        throw new Error('the books could not be read (' + j.__status + ')');
+      }
       rev = j.rev;
+      window.booksUnreadable = false;                    // they came down: saving is safe again
       var d = j.data; if (d && d.S) LOCAL_KEYS.forEach(function (k) { delete d.S[k]; });
       return { value: JSON.stringify(d) };
     },
@@ -126,6 +137,12 @@
         return true;
       }
       if (!token) throw new Error('not signed in');
+      // Last gate before anything reaches the server. If the books would not come down, whatever this
+      // till is holding is the sample data the page starts with, and writing it would wipe the shop.
+      if (window.booksUnreadable) {
+        badge('not saved \u2014 the books did not load');
+        return false;
+      }
       if (busy) { pendingSet = txt; return true; }
       busy = true;
       lastPushAt = Date.now();

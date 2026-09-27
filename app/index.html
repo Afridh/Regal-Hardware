@@ -6480,6 +6480,12 @@ const privacyKeyMatch=(e)=>{ const k=(CFG.privacy&&CFG.privacy.key)||'ctrl+shift
 let saveForce=false;
 function persist(force){
   if(window.privacyOn||window.leavingDemo) return;
+  // the books are on the server but would not come down, so this till is holding sample data:
+  // saving it would wipe the real shop
+  if(window.booksUnreadable&&!window.isDemo){
+    ['savedAt','savedAtNav','csSync'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent='not saved — books did not load' });
+    return;
+  }
   if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){
     try {
       sessionStorage.setItem('regal_demo_store', snapshotTxt());
@@ -6666,10 +6672,17 @@ function bootSync(){
   if(keptOk(kept)) applyKept(kept); else { seed(); S._fromStore=false; }
 }
 async function boot(){
-  if(!window.storage) return;
-  try{ const r=await window.storage.get(STORE_KEY); const kept=r?JSON.parse(r.value):null;
-    if(keptOk(kept)){ applyKept(kept); return true } }catch(e){}
-  return false;
+  if(!window.storage) return 'new';
+  try{
+    const r=await window.storage.get(STORE_KEY); const kept=r?JSON.parse(r.value):null;
+    if(keptOk(kept)){ applyKept(kept); return true }
+    return 'new';                      // the server answered and has no books yet: a shop starting out
+  }catch(e){
+    // the books are there but could not be read. What is in memory is the sample data this file starts
+    // with, and it must never be written over a real shop's — that is 588 customers gone in one save.
+    window.booksUnreadable=true;
+    return false;
+  }
 }
 
 /* ==================== SUPPLIER ORDERS + SUPPLIER PORTAL ==================== */
@@ -18358,7 +18371,7 @@ if(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_dem
 } else if(window.regalBridge){
   if(regalBridge.terminal()) S.terminal=regalBridge.terminal();
   if(regalBridge.online()){
-    boot().then(()=>{
+    boot().then((ok)=>{
       let name = rememberedUser;
       if(!name){
         try{ name=JSON.parse(atob(regalBridge.token().split('.')[1])).name }catch(e){}
@@ -18369,7 +18382,8 @@ if(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_dem
         S.signedOut=true;
         shopLock();
       }
-      persist();
+      if(ok!==false) persist();          // nothing goes back to the server unless the books came down
+      else toast('The books could not be read from the server — nothing will be saved from this till until they do','bad');
     });
   } else {
     regalBridge.serverUsers().then(list=>{
