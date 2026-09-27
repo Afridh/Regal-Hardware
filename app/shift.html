@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="sl-holidays.js"></script>
 <style>
 /* the till's own look (index.html): the same tokens, buttons and attendance cards, so the board here
    and the Attendance screen at the till are one thing on two screens */
@@ -191,7 +192,7 @@ const CACHE_KEY = 'regal_shift_cache';          // this page's own copy — neve
 const POLL_MS = 2000;
 
 const DEFAULTS = {
-  startTime: '08:00', closeTime: '19:30', graceMin: 0, weeklyOff: [0],
+  startTime: '08:00', closeTime: '19:30', graceMin: 0, weeklyOff: [],
   breaks: [
     { id: 'b1', name: 'Breakfast', start: '08:30', end: '08:45', mins: 15, extra: 0, paid: true },
     { id: 'b2', name: 'Lunch', start: '12:30', end: '13:00', mins: 30, extra: 0, paid: true },
@@ -219,13 +220,17 @@ const ampm = t => { const m = toMin(t), h = Math.floor(m / 60) % 24; return `${h
 
 function set() {
   const s = { ...DEFAULTS, ...(S.shift.settings || {}) };
+  if (!(S.shift.settings || {}).slCalendar) s.weeklyOff = [];      // as the till: Sundays open until a weekly off is chosen
   if (!s.breaks || !s.breaks.length) s.breaks = DEFAULTS.breaks;
   return s;
 }
 const stdMin = () => Math.max(60, toMin(set().closeTime) - toMin(set().startTime)
   - set().breaks.filter(b => !b.paid).reduce((a, b) => a + (toMin(b.end) - toMin(b.start)), 0));
 const recOf = (ds, id) => ((S.shift.days || {})[ds] || {})[id];
-const isOff = ds => (set().weeklyOff || []).includes(new Date(ds + 'T00:00').getDay()) || (S.shift.holidays || []).some(h => h.date === ds);
+// index.html isOff: Sri Lankan public holidays and Poya days, the shop's own, a weekly off — unless opened
+const holidayOf = ds => window.slHoliday ? window.slHoliday(S.shift, ds) : null;
+const isOff = ds => !(S.shift.openDays || []).includes(ds)
+  && ((set().weeklyOff || []).includes(new Date(ds + 'T00:00').getDay()) || !!holidayOf(ds));
 
 /* index.html empState */
 function state(ds, id) {
@@ -385,9 +390,8 @@ function draw() {
   document.getElementById('rules').innerHTML =
     `<span>⏰ ${ampm(set().startTime)} – ${ampm(set().closeTime)}</span><span>⚡ Late past ${ampm(set().startTime)}</span><span>🌙 OT past ${ampm(set().closeTime)}</span>`;
   if (online !== false) {
-    const hol = (S.shift.holidays || []).find(h => h.date === ds);
-    document.getElementById('notice').innerHTML = isOff(ds) ? `<div class="card note"><b>Today is a scheduled day off</b>
-      <div class="muted">${esc(hol ? hol.name : 'Weekly off')} — check-ins and overtime still track normally if staff report to duty.</div></div>` : '';
+    document.getElementById('notice').innerHTML = isOff(ds) ? `<div class="card note"><b>The shop is closed today</b>
+      <div class="muted">${esc(holidayOf(ds) || 'Weekly off')} — check-ins and overtime still track normally if staff report to duty.</div></div>` : '';
   }
 
   const grid = document.getElementById('grid');

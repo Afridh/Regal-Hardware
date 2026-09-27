@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Regal Hardware</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 84'%3E%3Cpath d='M50 4 96 80H72L50 40 28 80H4z' fill='%23F0A81E'/%3E%3C/svg%3E">
+<script src="sl-holidays.js"></script>
 <script src="regal-bridge.js"></script>
 <script src="regal-ext.js"></script>
 <style>
@@ -856,6 +857,9 @@ tr.off td{opacity:.55}
 .attsheet th{position:sticky;top:0;background:var(--panel);z-index:2;font-weight:700;text-align:center}
 .attsheet th i{display:block;font-style:normal;font-weight:400;font-size:10px;opacity:.65}
 .attsheet th.offday{background:var(--line2)}
+.attsheet th.daytoggle{cursor:pointer}
+.attsheet th.daytoggle:hover{outline:2px solid var(--chip-yellow);outline-offset:-2px}
+.attsheet th .holmark{display:block;font-size:9px;line-height:1.1;color:var(--steel)}
 .attsheet .who{position:sticky;left:0;background:var(--page);z-index:3;text-align:left;min-width:150px}
 .attsheet th.who{z-index:4}
 .attsheet .cell{text-align:center;cursor:pointer;min-width:34px;font-weight:700;font-size:12px}
@@ -4266,7 +4270,7 @@ function tplPreview(k){
    A Shift Board export can be pasted in; nothing is invented on top of it. */
 const SHIFT_DEFAULTS={
   startTime:'08:00',closeTime:'19:30',graceMin:0,otMultiplier:1.5,workDaysPerMonth:26,
-  weeklyOff:[0],latePerMin:0,halfDayAfterMin:240,
+  weeklyOff:[],latePerMin:0,halfDayAfterMin:240,        // the shop opens on Sundays; it closes on public holidays and Poya days (sl-holidays.js)
   breaks:[{id:'b1',name:'Breakfast',start:'08:30',end:'08:45',mins:15,extra:0,paid:true},
           {id:'b2',name:'Lunch',start:'12:30',end:'13:00',mins:30,extra:0,paid:true},
           {id:'b3',name:'Evening Tea',start:'15:30',end:'15:40',mins:10,extra:0,paid:true}]};
@@ -4287,6 +4291,9 @@ const fmtMin=m=>{
 };
 const shiftSet=()=>{
   if(!S.shift.settings) S.shift.settings={...SHIFT_DEFAULTS};
+  // books from before the Sri Lankan calendar had Sunday as the weekly off: taken off once, after that
+  // the Rules tab's choice stands
+  if(!S.shift.settings.slCalendar){ S.shift.settings.weeklyOff=[]; S.shift.settings.slCalendar=1 }
   if(!S.shift.settings.closeTime||S.shift.settings.closeTime==='19:00') S.shift.settings.closeTime='19:30';
   if(!S.shift.settings.startTime) S.shift.settings.startTime='08:00';
   if(!S.shift.settings.breaks||!S.shift.settings.breaks.length){
@@ -4700,8 +4707,39 @@ function importShift(){
 }
 /* ---- the board itself: punching in and out ---- */
 const nowMin=()=>{const d=new Date();return d.getHours()*60+d.getMinutes()};
-const isOff=(ds)=>{const d=new Date(ds);
-  return (shiftSet().weeklyOff||[]).includes(d.getDay())||(S.shift.holidays||[]).some(h=>h.date===ds)};
+/* a day is closed when it is a Sri Lankan public holiday or Poya day, a day the shop added, or a weekly
+   off — unless the Super Admin has opened it (S.shift.openDays). The same rule runs on /shift. */
+const holidayOf=ds=>window.slHoliday?window.slHoliday(S.shift,ds):((S.shift.holidays||[]).find(h=>h.date===ds)||{}).name||null;
+const isOff=(ds)=>{
+  if((S.shift.openDays||[]).includes(ds)) return false;
+  const d=new Date(ds+'T00:00:00');
+  return (shiftSet().weeklyOff||[]).includes(d.getDay())||!!holidayOf(ds)};
+/* the Super Admin turns a day into a holiday or back into a working day, from the Attendance sheet */
+function toggleHoliday(ds){
+  if(!isSuperUser()) return toast('Only the Super Admin can change which days are holidays','warn');
+  const sh=S.shift; sh.holidays=sh.holidays||[]; sh.openDays=sh.openDays||[];
+  const label=new Date(ds+'T00:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  if(isOff(ds)){
+    const name=holidayOf(ds)||'Weekly off';
+    if(!confirm(`Open the shop on ${label}?\n\nIt is marked closed (${name}). Staff will be expected at work that day.`)) return;
+    sh.holidays=sh.holidays.filter(h=>h.date!==ds);                 // a day the shop added is simply taken off
+    if(isOff(ds)&&!sh.openDays.includes(ds)) sh.openDays.push(ds);   // a calendar holiday or weekly off is opened, not deleted
+    toast(`${label} is a working day`);
+  } else {
+    const cal=(window.SL_HOLIDAYS||{})[ds];
+    const wasOpened=sh.openDays.includes(ds);
+    // a calendar day that was opened just closes again; any other day is asked what the holiday is for
+    const name=wasOpened&&(cal||(shiftSet().weeklyOff||[]).includes(new Date(ds+'T00:00:00').getDay()))
+      ? (cal||'Weekly off')
+      : (prompt(`Close the shop on ${label}?\n\nWhat is the holiday for?`,cal||'Shop holiday')||'').trim();
+    if(!name) return;
+    sh.openDays=sh.openDays.filter(x=>x!==ds);
+    if(!isOff(ds)) sh.holidays.push({date:ds,name});
+    toast(`${label} is a holiday — ${holidayOf(ds)||name}`);
+  }
+  try { localStorage.setItem(STORE_KEY, snapshotTxt()); } catch(_){}
+  persist(true); render();
+}
 function recFor(ds,id){ S.shift.days[ds]=S.shift.days[ds]||{}; return S.shift.days[ds][id] }
 function setRec(ds,id,patch){
   S.shift.days=S.shift.days||{};
@@ -5414,7 +5452,7 @@ function boardToday(){
     </div>
 
     ${off?`<div class="card note" style="margin-bottom:12px"><b>Today is a scheduled day off</b>
-      <div class="muted">${(S.shift.holidays||[]).find(h=>h.date===ds)?.name||'Weekly off'} — check-ins and overtime still track normally if staff report to duty.</div></div>`:''}
+      <div class="muted">${holidayOf(ds)||'Weekly off'} — check-ins and overtime still track normally if staff report to duty.</div></div>`:''}
 
     <div class="att-search-bar">
       <div class="att-search-box">
@@ -6092,9 +6130,12 @@ const DAY_MARK={work:['P','ok'],absent:['A','bad'],holiday:['H','muted'],leave:[
 function attendSheet(mk){
   const days=monthDays(mk);
   const list=S.employees.filter(e=>e.active!==false);
+  const su=isSuperUser();
   const dayHead=days.map(ds=>{
-    const d=new Date(ds+'T00:00:00');
-    return `<th class="${isOff(ds)?'offday':''}" title="${ds}">${d.getDate()}<i>${['S','M','T','W','T','F','S'][d.getDay()]}</i></th>`}).join('');
+    const d=new Date(ds+'T00:00:00'), off=isOff(ds), hn=off?(holidayOf(ds)||'Weekly off'):'';
+    const poya=/poya/i.test(hn), opened=(S.shift.openDays||[]).includes(ds);
+    const tip=`${ds}${off?' · Closed — '+hn:(opened?' · Opened by the Super Admin':' · Working day')}${su?' · tap to change':''}`;
+    return `<th class="${off?'offday':''} ${su?'daytoggle':''}" title="${tip}" ${su?`data-act="holToggle" data-d="${ds}"`:''}>${d.getDate()}<i>${['S','M','T','W','T','F','S'][d.getDay()]}</i>${off?`<b class="holmark">${poya?'🌕':'H'}</b>`:''}</th>`}).join('');
   const row=(e)=>{
     const t=monthFigures(mk,e.id);
     let holidaysCount = 0;
@@ -6120,8 +6161,7 @@ function attendSheet(mk){
         cellTxt = 'H';
         cls = 'off';
         holidaysCount++;
-        const hol = (S.shift && S.shift.holidays || []).find(h=>h.date===ds);
-        tip = `${ds} · Holiday / Day off${hol ? ` (${hol.name})` : ''}`;
+        tip = `${ds} · Closed — ${holidayOf(ds)||'Weekly off'}`;
       } else {
         tip = `${ds} · Not recorded`;
       }
@@ -6134,7 +6174,7 @@ function attendSheet(mk){
      <td class="n"><span class="tag ${t.absent?'bad':'muted'} sm" style="font-weight:700" title="Absent days">${t.absent}</span></td>
      <td class="n"><span class="tag sm" style="background:var(--line2);font-weight:700;color:var(--ink)" title="Holidays / Days off">${holidaysCount}</span></td></tr>`;
   };
-  return `<div class="muted" style="margin-bottom:8px">Every day of the month, everyone on the roll. Tap a cell to fix times, mark somebody absent or put them on leave. Shaded columns are holidays / days off.</div>
+  return `<div class="muted" style="margin-bottom:8px">Every day of the month, everyone on the roll. Tap a cell to fix times, mark somebody absent or put them on leave. Shaded columns are the days the shop is closed — Sri Lankan public holidays and Poya days (🌕). ${isSuperUser()?'<b>Tap a date at the top to make it a holiday or a working day.</b>':'Only the Super Admin can change them.'}</div>
    <div class="sheetwrap"><table class="attsheet">
     <tr><th class="who">Employee</th>${dayHead}<th class="n" style="color:#059669;font-weight:700" title="Present days">Present</th><th class="n" style="color:#DC2626;font-weight:700" title="Absent days">Absent</th><th class="n" style="color:var(--steel);font-weight:700" title="Holidays / Days off">Holiday</th></tr>
     ${list.map(row).join('')||'<tr><td colspan="40" class="muted">Nobody on the roll yet — add the staff under <b>Staff</b>.</td></tr>'}
@@ -6143,6 +6183,7 @@ function attendSheet(mk){
     <span class="tag ok"><b>P</b> Present</span>
     <span class="tag bad"><b>A</b> Absent</span>
     <span class="tag" style="background:var(--line2);color:var(--ink)"><b>H</b> Holiday</span>
+    <span class="tag" style="background:var(--line2);color:var(--ink)"><b>🌕</b> Poya day</span>
     <span class="tag blue"><b>L</b> On leave</span>
    </div>`;
 }
@@ -6315,6 +6356,7 @@ function rulesTab(){
    <div class="grid3">
     <div class="f"><label>Half day under, in minutes</label><input data-sh="halfDayAfterMin" type="number" value="${st.halfDayAfterMin}"></div>
     <div class="f"><label>Weekly off</label><select data-sh="weeklyOff">
+      <option value="" ${(st.weeklyOff||[]).length?'':'selected'}>None — open every day of the week</option>
       ${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d2,i)=>`<option value="${i}" ${(st.weeklyOff||[]).includes(i)?'selected':''}>${d2}</option>`).join('')}</select></div>
     <div class="f" style="padding-top:20px"><div class="muted">A standard day works out at <b>${(stdMin()/60).toFixed(2)} hours</b></div></div></div>
    <h2 style="margin-top:12px">Breaks</h2>
@@ -6331,7 +6373,7 @@ function rulesTab(){
    ${(S.shift.holidays||[]).length?`<table><tr><th>Date</th><th>What for</th><th></th></tr>
     ${S.shift.holidays.slice().sort((a,b)=>a.date.localeCompare(b.date)).map((h,i)=>`<tr><td>${h.date}</td><td>${h.name}</td>
      <td><button class="btn ghost sm" data-act="holDel" data-i="${i}">✕</button></td></tr>`).join('')}</table>`
-    :'<div class="muted">None set. Poya days and the like go here so nobody shows as absent.</div>'}
+    :'<div class="muted">No extra holidays. Sri Lankan public holidays and Poya days are already built in — the Super Admin changes any day by tapping its date in the Attendance sheet.</div>'}
    <div class="findbar" style="margin-top:8px">
     <div class="f"><label>Date</label><input id="holDate" type="date" value="${D(today)}"></div>
     <div class="f"><label>What for</label><input id="holName" placeholder="e.g. Poya"></div>
@@ -8232,8 +8274,8 @@ function renderNow(){
     const pd=$('#payDay'); if(pd) pd.onchange=e=>{paySel=e.target.value;render()};
     document.querySelectorAll('[data-sh]').forEach(el=>el.onchange=()=>{
       const k=el.dataset.sh;
-      shiftSet()[k]= k==='weeklyOff'?[+el.value] : (el.type==='number'?+el.value:el.value);
-      render(); toast('Rule saved') });
+      shiftSet()[k]= k==='weeklyOff'?(el.value===''?[]:[+el.value]) : (el.type==='number'?+el.value:el.value);
+      persist(true); render(); toast('Rule saved') });
     document.querySelectorAll('[data-br]').forEach(el=>el.onchange=()=>{
       const b=shiftSet().breaks[+el.dataset.br], k=el.dataset.k;
       b[k]= k==='paid'?el.checked : (el.type==='number'?+el.value:el.value); render(); toast('Break saved') });
@@ -18211,6 +18253,7 @@ document.addEventListener('click',e=>{
     payRun:()=>payRun(payMonth||D(today).slice(0,7)),
     brAdd:()=>{shiftSet().breaks.push({id:'b'+(shiftSet().breaks.length+1),name:'New break',start:'10:00',end:'10:15',mins:15,extra:5,paid:true});render()},
     brDel:()=>{shiftSet().breaks.splice(+a.dataset.i,1);render()},
+    holToggle:()=>toggleHoliday(a.dataset.d),
     holAdd:()=>{const d2=$('#holDate').value, n=($('#holName').value||'').trim();
       if(!d2||!n)return toast('A date and a reason, please');
       if((S.shift.holidays||[]).some(h=>h.date===d2)) return toast('That day is already a holiday');

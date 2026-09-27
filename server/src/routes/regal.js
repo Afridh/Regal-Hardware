@@ -323,7 +323,7 @@ function shiftView(rev, employees, shift, deleted, users) {
   // a punch clock shows today and the days just gone; the full history stays in the books
   const since = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
   const recent = Object.fromEntries(Object.entries(s.days || {}).filter(([d]) => d >= since));
-  return { ok: true, rev: Number(rev), employees: staff, shift: { settings: s.settings || {}, holidays: s.holidays || [], days: recent } };
+  return { ok: true, rev: Number(rev), employees: staff, shift: { settings: s.settings || {}, holidays: s.holidays || [], openDays: s.openDays || [], days: recent } };
 }
 
 r.get('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
