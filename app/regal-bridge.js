@@ -42,6 +42,96 @@
     if (d && d.S) LOCAL_KEYS.forEach(function (k) { delete d.S[k]; });
     return d;
   }
+  /* ---------------- two tills saving at once ----------------
+     base   the books as this till last had them from the server
+     mine   this till's books now (base + what was done here)
+     theirs the server's books now (base + what other tills did)
+     The result keeps both sides' work: a bill made here and a bill made there are both kept, stock sold
+     on both tills comes off twice (numbers changed on both sides add their changes), entries added to the
+     journal or the stock movements on either side are all kept, and of two changes to one attendance
+     record the newer stands. Only where both sides changed the same text does this till's version win. */
+  var base = null;
+  var same = function (a, b) { return a === b || JSON.stringify(a) === JSON.stringify(b); };
+  var isObj = function (v) { return v && typeof v === 'object' && !Array.isArray(v); };
+  function keyOf(arrs) {
+    var cand = ['id', 'no', 'code'];
+    for (var c = 0; c < cand.length; c++) {
+      var k = cand[c], ok = true, any = false;
+      for (var a = 0; a < arrs.length && ok; a++) {
+        var seen = {};
+        for (var i = 0; i < arrs[a].length; i++) {
+          var x = arrs[a][i];
+          if (!isObj(x) || x[k] === undefined || x[k] === null || x[k] === '') { ok = false; break; }
+          var kk = String(x[k]); if (seen[kk]) { ok = false; break; } seen[kk] = 1; any = true;
+        }
+      }
+      if (ok && any) return k;
+    }
+    return null;
+  }
+  function mergeArr(b, m, t) {
+    var k = keyOf([b, m, t]);
+    var out = [], front = [], end = [];
+    if (k) {
+      var B = Object.create(null), M = Object.create(null), T = Object.create(null);
+      b.forEach(function (x) { B[x[k]] = x; }); m.forEach(function (x) { M[x[k]] = x; }); t.forEach(function (x) { T[x[k]] = x; });
+      // what both knew, in the server's order, each merged
+      var order = t.filter(function (x) { return x[k] in B; }).map(function (x) { return x[k]; });
+      b.forEach(function (x) { if (!(x[k] in T) && x[k] in M) order.push(x[k]); });
+      order.forEach(function (id) {
+        var bb = B[id], mm = M[id], tt = T[id];
+        if (mm === undefined && tt === undefined) return;
+        if (mm === undefined) { if (!same(tt, bb)) out.push(tt); return; }           // deleted here, unless changed there
+        if (tt === undefined) { if (!same(mm, bb)) out.push(mm); return; }           // deleted there, unless changed here
+        out.push(merge3(bb, mm, tt, true));
+      });
+      // new on either side: those added before the first known item go first, the rest at the end
+      var addNew = function (arr) {
+        var firstKnown = arr.findIndex(function (x) { return x[k] in B; });
+        arr.forEach(function (x, i) {
+          if (x[k] in B) return;
+          if (arr === m && x[k] in T) { if (!same(x, T[x[k]])) (firstKnown >= 0 && i < firstKnown ? front : end).push(x); return; }
+          (firstKnown >= 0 && i < firstKnown ? front : end).push(x);
+        });
+      };
+      addNew(t); addNew(m);
+      return front.concat(out, end);
+    }
+    // no key (journal lines, stock movements): as a bag — the server's, less what was taken out here,
+    // plus what was added here
+    var count = function (arr) { var c = {}; arr.forEach(function (x) { var s = JSON.stringify(x); c[s] = (c[s] || 0) + 1; }); return c; };
+    var cb = count(b), cm = count(m);
+    var gone = {}; Object.keys(cb).forEach(function (s) { var d = cb[s] - (cm[s] || 0); if (d > 0) gone[s] = d; });
+    var res = t.filter(function (x) { var s = JSON.stringify(x); if (gone[s]) { gone[s]--; return false; } return true; });
+    var extra = {}; Object.keys(cm).forEach(function (s) { var d = cm[s] - (cb[s] || 0); if (d > 0) extra[s] = d; });
+    m.forEach(function (x) { var s = JSON.stringify(x); if (extra[s]) { extra[s]--; res.push(x); } });
+    return res;
+  }
+  function merge3(b, m, t, deep) {
+    if (same(m, b)) return t;
+    if (same(t, b)) return m;
+    // the same books on both sides: nothing to put together (a save that went through twice)
+    if (!deep && same(m, t)) return m;
+    // a number both sides moved (stock, a balance, a counter): both moves — even when they moved it
+    // by the same amount (both tills sold one of the same thing)
+    if (typeof m === 'number' && typeof t === 'number' && typeof b === 'number') return t + (m - b);
+    if (Array.isArray(m) && Array.isArray(t)) return mergeArr(Array.isArray(b) ? b : [], m, t);
+    if (isObj(m) && isObj(t)) {
+      // one record changed on both sides (an attendance day): the newer whole record
+      if (m.updatedAt && t.updatedAt) return Number(m.updatedAt) >= Number(t.updatedAt) ? m : t;
+      var bo = isObj(b) ? b : {}, o = {};
+      Object.keys(Object.assign({}, bo, m, t)).forEach(function (key) {
+        var inM = key in m, inT = key in t, inB = key in bo;
+        if (!inM && !inT) return;
+        if (!inM) { if (inB && same(t[key], bo[key])) return; o[key] = t[key]; return; }
+        if (!inT) { if (inB && same(m[key], bo[key])) return; o[key] = m[key]; return; }
+        o[key] = merge3(bo[key], m[key], t[key], true);
+      });
+      return o;
+    }
+    return m;                                                          // text changed on both: this till's
+  }
+
   function keepLocal() {
     var S = window.S; if (!S) return null;
     var k = {}; LOCAL_KEYS.forEach(function (n) { if (S[n] !== undefined) k[n] = S[n]; });
@@ -92,12 +182,14 @@
     if (isDemoSession()) return false;
     if (!token || busy) return false;
     if (Date.now() - lastPushAt < 3000) return false;
+    // a bill or an edit made here and not saved yet would be wiped by the server's copy: save first
+    if (!window.booksUnreadable && typeof window.hasUnsaved === 'function' && window.hasUnsaved()) { if (typeof window.persist === 'function') window.persist(true); return false; }
     var j = await call('GET', '/books/' + KEY);
     // the books are there but would not come down: nothing may be saved until they do
     if (j.__status !== 200) { window.booksUnreadable = true; return false; }
     window.booksUnreadable = false;
     if (j.data) {
-      rev = j.rev; applyRemote(j.data);
+      rev = j.rev; base = strip(j.data); applyRemote(j.data);
       if (!quiet) say('Books picked up from the server');
       // orders from the shop site ride in with the books; saving is what hands them to the shop for good
       if (j.inbox > 0) { say(j.inbox === 1 ? 'A new order from the website' : j.inbox + ' new orders from the website'); if (typeof window.persist === 'function') window.persist(true); }
@@ -129,6 +221,7 @@
       rev = j.rev;
       window.booksUnreadable = false;                    // they came down: saving is safe again
       var d = j.data; if (d && d.S) LOCAL_KEYS.forEach(function (k) { delete d.S[k]; });
+      base = JSON.parse(JSON.stringify(d));
       return { value: JSON.stringify(d) };
     },
     set: async function (_k, txt) {
@@ -151,13 +244,40 @@
         var doc = strip(JSON.parse(txt));
         var j = await call('PUT', '/books/' + KEY, { data: doc, rev: rev });
         if (j.__status === 200) {
-          rev = j.rev; lastPushAt = Date.now(); offlineSince = 0;
+          rev = j.rev; lastPushAt = Date.now(); offlineSince = 0; base = doc;
           if (j.shiftDays) takeShiftDays(j.shiftDays);
           badge('saved ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' · shared');
           return true;
         }
+        if (j.__status === 409 && base) {
+          // another till saved first: put both tills' work together and save that (again, if yet another
+          // till gets in between)
+          var b = base, mine = doc, theirs = strip(j.data), srvRev = j.rev;
+          for (var tries = 0; tries < 4; tries++) {
+            var merged = merge3(b, mine, theirs);
+            merged.at = new Date().toISOString();
+            var r2 = await call('PUT', '/books/' + KEY, { data: merged, rev: srvRev });
+            if (r2.__status === 200) {
+              rev = r2.rev; base = merged; lastPushAt = Date.now(); offlineSince = 0;
+              // work done here while this was saving is laid over the merged books, not lost
+              var show = merged;
+              if (pendingSet) { show = merge3(doc, strip(JSON.parse(pendingSet)), merged); pendingSet = JSON.stringify(show); }
+              applyRemote(show);
+              if (r2.shiftDays) takeShiftDays(r2.shiftDays);
+              badge('saved ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' · shared');
+              return true;
+            }
+            if (r2.__status !== 409) { j = r2; break; }
+            b = theirs; mine = merged; theirs = strip(r2.data); srvRev = r2.rev;
+          }
+          if (j.__status === 409) {
+            rev = srvRev; base = theirs; applyRemote(theirs);
+            say('The tills are very busy — the books were reloaded. Please check the last thing you did.');
+            return true;
+          }
+        }
         if (j.__status === 409) {
-          rev = j.rev; applyRemote(j.data);
+          rev = j.rev; base = strip(j.data); applyRemote(j.data);
           say('Another till saved first — the books were reloaded. Please re-enter what you were doing.');
           return true;
         }

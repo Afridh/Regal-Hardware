@@ -3308,6 +3308,13 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
     }
   }
 })();
+/* tabs of this till in one browser tell each other the books moved. It is one channel object for the
+   page, sending and listening: a BroadcastChannel never hands a message back to the object that sent it,
+   so this page does not hear its own "sale completed" — hearing it made the page reload its older saved
+   copy over the bill it had just made, and save that. */
+let booksBc=null;
+const booksChannel=()=>{ if(!booksBc&&typeof BroadcastChannel!=='undefined') booksBc=new BroadcastChannel('regal_books_sync'); return booksBc };
+const bcSend=(msg)=>{ try{ const c=booksChannel(); if(c) c.postMessage(msg) }catch(_){} };
 /* ============================ DATA + LEDGER ENGINE ============================ */
 let today = (()=>{ const d=new Date(); d.setHours(0,0,0,0); return d })();   // the actual day, midnight local
 function checkMidnightReset(){
@@ -3552,7 +3559,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>({...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true}).toUpperCase(),link:'regalhw.lk/b/'+Math.random().toString(36).slice(2,10)};
   S.sales.push(inv);
   if(typeof BroadcastChannel !== 'undefined'){
-    try { new BroadcastChannel('regal_books_sync').postMessage('sale_completed'); }catch(_){}
+    try { bcSend('sale_completed'); }catch(_){}
   }
   let cogs=0; for(const l of inv.lines){ move(l.pid,-l.qty,'SALE',inv.no,l.cost); cogs+=l.qty*l.cost }
   const jl=[{ac:'4100',cr:total}];
@@ -4775,7 +4782,7 @@ function setRec(ds,id,patch){
   } catch(_){}
   if(typeof BroadcastChannel !== 'undefined'){
     try {
-      new BroadcastChannel('regal_books_sync').postMessage('attendance_updated');
+      bcSend('attendance_updated');
     } catch(_){}
   }
 }
@@ -5632,7 +5639,7 @@ function employeeModal(id){
     syncUsersAndStaff();
     persist(true);
     if(typeof BroadcastChannel !== 'undefined'){
-      try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
+      try { bcSend('books_updated'); }catch(_){}
     }
     m.remove(); render(); toast(e?`${name} saved`:`${name} added to the roll`);
   };
@@ -6671,12 +6678,14 @@ function persist(force){
     lastSaved=ok?new Date():null;
     ['savedAt','savedAtNav','csSync'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=ok?'saved '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'not saved'; });
     if(ok && typeof BroadcastChannel !== 'undefined'){
-      try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
+      try { bcSend('books_updated'); }catch(_){}
     }
   };
   if(force){ doSave(); } else { saveTimer=setTimeout(doSave, 400); }
 }
-window.markSaved=()=>{ lastSavedTxt=snapshotTxt() };   // books just came from the server: nothing to push back
+window.markSaved=()=>{ lastSavedTxt=snapshotTxt() };
+// work on this till that has not gone to the server yet (the bridge does not pull over it)
+window.hasUnsaved=()=>{ try{ return !!lastSavedTxt && snapshotTxt()!==lastSavedTxt }catch(e){ return false } };   // books just came from the server: nothing to push back
 const DEFAULT_ACCOUNTS = [
   { name: 'Afridh', role: 'Super Admin', uid: 'AF', pass: 'Afridh123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
   { name: 'Azhad', role: 'Admin', uid: 'AZ', pass: 'Azhad123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
@@ -16879,7 +16888,7 @@ function userModal(name){
       try { localStorage.setItem(STORE_KEY, snapshotTxt()); } catch(_){}
       persist(true);
       if(typeof BroadcastChannel !== 'undefined'){
-        try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
+        try { bcSend('books_updated'); }catch(_){}
       }
       userTab = 'users';
       m.remove();
@@ -17013,7 +17022,7 @@ function userModal(name){
     try { localStorage.setItem(STORE_KEY, snapshotTxt()); } catch(_){}
     persist(true);
     if(typeof BroadcastChannel !== 'undefined'){
-      try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
+      try { bcSend('books_updated'); }catch(_){}
     }
     userTab = 'users';
     m.remove(); render();
@@ -17992,7 +18001,7 @@ document.addEventListener('click',e=>{
       try { localStorage.setItem(STORE_KEY, snapshotTxt()); } catch(_){}
       persist(true);
       if(typeof BroadcastChannel !== 'undefined'){
-        try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
+        try { bcSend('books_updated'); }catch(_){}
       }
       render(); toast(`${u.name} ${u.active?'can sign in again':'can no longer sign in'}`);
     },
@@ -18025,7 +18034,7 @@ document.addEventListener('click',e=>{
       try { localStorage.setItem(STORE_KEY, snapshotTxt()); } catch(_){}
       persist(true);
       if(typeof BroadcastChannel !== 'undefined'){
-        try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
+        try { bcSend('books_updated'); }catch(_){}
       }
       userTab = 'users';
       render();
@@ -18584,13 +18593,17 @@ if(S._fromStore) toast('Books picked up where you left off');
 
 if(typeof BroadcastChannel !== 'undefined'){
   try {
-    const syncBc = new BroadcastChannel('regal_books_sync');
+    const syncBc = booksChannel();
     syncBc.onmessage = async (msg) => {
       if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')) return;
       if(msg.data === 'sale_completed' || msg.data === 'books_updated' || msg.data === 'attendance_updated'){
         let pulled = false;
-        if(window.regalBridge && typeof regalBridge.pull === 'function' && regalBridge.online()){
+        const online = window.regalBridge && typeof regalBridge.pull === 'function' && regalBridge.online();
+        if(online){
           pulled = await regalBridge.pull(true);
+          // with the server, the server's copy is the only one taken: not pulled now (this till is saving,
+          // or has work not saved yet) means the next poll brings it — never the browser's older copy
+          if(!pulled) return;
         }
         if(!pulled && typeof bootSync === 'function'){
           bootSync();
@@ -18612,6 +18625,7 @@ window.addEventListener('storage', async (e) => {
     let pulled = false;
     if(window.regalBridge && typeof regalBridge.pull === 'function' && regalBridge.online()){
       pulled = await regalBridge.pull(true);
+      if(!pulled) return;                    // as above: another tab's saved copy is never laid over this one
     }
     if(!pulled && typeof bootSync === 'function'){
       bootSync();
