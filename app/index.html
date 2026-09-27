@@ -71,19 +71,22 @@ nav .navbrand .mark{width:36px;height:36px;flex:0 0 36px;border-radius:10px;back
  font-family:Archivo,sans-serif;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;overflow:hidden;
  box-shadow:0 6px 14px rgba(240,168,30,.35),inset 0 1px 0 rgba(255,255,255,.5)}
 nav .navbrand .mark img{width:100%;height:100%;object-fit:cover;background:#fff}
-nav .navbrand{position:relative}
-nav .navpin{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:26px;height:26px;
-  display:grid;place-items:center;border:1px solid rgba(255,255,255,.14);border-radius:7px;
-  background:rgba(255,255,255,.05);color:rgba(255,255,255,.62);cursor:pointer;padding:0;
-  opacity:0;pointer-events:none;transition:opacity .18s,color .18s,background .18s,border-color .18s}
-nav .navpin svg{width:14px;height:14px;transform:rotate(38deg);transition:transform .22s cubic-bezier(.2,.7,.3,1)}
-nav .navpin:hover{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.28)}
+/* the pin sits with the menu's own buttons: it does not move when the menu widens, so it cannot
+   slide out from under the pointer on the way to it */
+nav .navpin{display:flex;align-items:center;gap:12px;width:calc(100% - 16px);margin:0 8px 6px;
+  padding:9px 10px;border:1px solid rgba(255,255,255,.10);border-radius:9px;
+  background:rgba(255,255,255,.04);color:rgba(255,255,255,.66);cursor:pointer;font:inherit;
+  font-size:13px;text-align:left;transition:background .16s,color .16s,border-color .16s}
+nav .navpin .nvi{width:18px;height:18px;flex:0 0 18px;transform:rotate(38deg);
+  transition:transform .22s cubic-bezier(.2,.7,.3,1)}
+nav .navpin:hover{background:rgba(255,255,255,.11);color:#fff;border-color:rgba(255,255,255,.22)}
 nav .navpin.on{color:#101E22;background:linear-gradient(145deg,#F7BB3C,#E0960F);border-color:#D08F09}
-nav .navpin.on svg{transform:rotate(0deg)}
-/* it shows when the menu is open, or while the mouse is over a narrow one */
-body:not(.navmini):not(.pos-narrow) nav .navpin{opacity:1;pointer-events:auto}
-body.navmini nav:hover .navpin,body.pos-narrow nav:hover .navpin{opacity:1;pointer-events:auto;transition-delay:.04s}
-@media(max-width:900px){nav .navpin{display:none}}
+nav .navpin.on .nvi{transform:rotate(0deg)}
+/* narrow menu: the icon alone, centred, still a full-size target */
+body.navmini nav .navpin span,body.pos-narrow nav .navpin span{opacity:0;transform:translateX(-6px);
+  pointer-events:none;transition:opacity .18s,transform .18s;white-space:nowrap}
+body.navmini nav:hover .navpin span,body.pos-narrow nav:hover .navpin span{opacity:1;transform:none;transition-delay:.04s}
+body.navtop nav .navpin{display:none}
 
 nav .navbrand .bname{flex:1;min-width:0;line-height:1.1}
 nav .navbrand .bname b{display:block;font-family:Archivo,sans-serif;font-weight:800;font-size:12.5px;color:#fff;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -8011,10 +8014,6 @@ function renderNav(){
   $('#nav').innerHTML= side
     ? `<div class="navbrand">
         <span class="mark">${CFG.shop&&CFG.shop.logo?`<img src="${CFG.shop.logo}" alt="">`:'RH'}</span>
-        <button class="navpin ${pref('collapsed')!==false?'':'on'}" data-act="navMin" type="button"
-          title="${pref('collapsed')!==false?'Pin the menu open':'Unpin — let it slide away'}"
-          aria-label="${pref('collapsed')!==false?'Pin the menu open':'Unpin the menu'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8V4h6v6.8l2 2.2v2H7v-2z"/></svg></button>
         <span class="bname"><b>${(CFG.shop&&CFG.shop.name||'REGAL HARDWARE').replace(/ hardware$/i,'')} <span>${/hardware/i.test(CFG.shop&&CFG.shop.name||'')?'HARDWARE':''}</span></b><small>till ${S.terminal} · ${S.user.role}</small></span>
        </div>
        <div class="navlist">` +
@@ -8024,6 +8023,12 @@ function renderNav(){
             <i class="ic">${icon(v[0])}</i><span>${v[1]}</span>${v[2]?`<em class="k">${v[2]}</em>`:''}${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}<i class="tip">${v[1]}${v[2]?' · '+v[2]:''}</i></button>`).join('')
       +`</div>
        <div class="navfooter">
+         <button class="navpin ${pref('collapsed')!==false?'':'on'}" data-act="navMin" type="button"
+           title="${pref('collapsed')!==false?'Pin the menu open':'Unpin — let it slide away when you move off'}">
+           <svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8V4h6v6.8l2 2.2v2H7v-2z"/></svg>
+           <span>${pref('collapsed')!==false?'Pin the menu':'Menu pinned'}</span>
+         </button>
          <div class="navfoot-actions">
            <div class="bellwrap"></div>
            <span class="navsaved" id="savedAtNav">${lastSaved?'saved '+lastSaved.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):''}</span>
