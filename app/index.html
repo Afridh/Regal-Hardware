@@ -3281,6 +3281,14 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
     } catch(_){}
     return false;
   }
+  // the demo till (/demo) is sealed by demo-sandbox.js and has nothing to do with this old mode
+  if(window.__sandboxDemo) return;
+  // an old demo link or a demo left open in this tab: the demo lives on its own page now
+  if(isDemoUrlOrSession() && location.pathname !== '/demo'){
+    try { sessionStorage.removeItem('regal_is_demo'); sessionStorage.removeItem('regal_demo_store'); } catch(_){}
+    location.replace('/demo');
+    return;
+  }
   if(isDemoUrlOrSession()){
     window.isDemo = true;
     try { sessionStorage.setItem('regal_is_demo', '1'); } catch(_){}
@@ -17712,7 +17720,7 @@ function shopLock(){
           pInp.focus();
           return;
         }
-        activateDemoMode();
+        location.href = '/demo';              // the demo till is its own page, sealed off from the shop
         return;
       }
       let lsDel = [];
@@ -18617,9 +18625,29 @@ window.addEventListener('storage', async (e) => {
   }
 });
 
+/* the demo till (/demo, sealed by demo-sandbox.js): the sample books this file starts with, with the
+   owners' names swapped for made-up ones, signed in as the demo owner with every screen open */
+function sandboxBoot(){
+  if(!S.sandboxPeople){
+    const names={Afridh:'Demo Owner',Azhad:'Nimal Perera',Akmal:'Kamal Silva'};
+    let txt=JSON.stringify(S);
+    Object.entries(names).forEach(([a,b])=>{ txt=txt.split('"'+a+'"').join('"'+b+'"') });
+    const fresh=JSON.parse(txt);
+    Object.keys(fresh).forEach(k=>{ S[k]=fresh[k] });
+    (S.users||[]).forEach(u=>{ delete u.passHash; delete u.pass });
+    S.sandboxPeople=1;
+  }
+  const owner=(S.users||[]).find(u=>u.name==='Demo Owner');
+  S.user={name:'Demo Owner',role:'Super Admin',perms:PERMS.map(p=>p[0]),prefs:{...PREF_DEFAULTS,...((owner&&owner.prefs)||{})}};
+  S.signedOut=false;
+  window.signOut=()=>toast('This is the demo till — press Reset demo at the bottom to start again');
+  applyLayout(); render(); drawPhone(); persist();
+}
 const urlDemoParam = (typeof location !== 'undefined') ? new URLSearchParams(location.search).get('demo') : null;
 const isDemoParam = urlDemoParam === '1' || (typeof location !== 'undefined' && location.pathname.startsWith('/demo'));
-if(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1'){
+if(window.__sandboxDemo){
+  sandboxBoot();
+} else if(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1'){
   activateDemoMode();
 } else if(isDemoParam){
   S.signedOut = true;

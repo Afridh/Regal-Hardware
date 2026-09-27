@@ -80,7 +80,16 @@ if (!process.env.VERCEL && fs.existsSync(appDir)) {
   app.get('/', fresh, (_req, res) => res.sendFile(path.join(appDir, 'shop.html')));
   app.get(['/pos', '/pos/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'index.html')));
   app.get(['/shift', '/shift/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'shift.html')));
-  app.get(['/demo', '/demo/'], fresh, (_req, res) => res.redirect('/pos?demo=1'));
+  // the demo till: the till page itself, cut off from the shop — no regal-bridge.js (so no sign-in and
+  // no books from the server) and demo-sandbox.js first, which seals its storage, network and channels
+  app.get(['/demo', '/demo/'], fresh, (req, res) => {
+    // Express matches both paths here; /demo/ is sent to /demo so the page's own files load from the root
+    if (req.originalUrl.split('?')[0].endsWith('/')) return res.redirect(302, '/demo');
+    const html = fs.readFileSync(path.join(appDir, 'index.html'), 'utf8')
+      .replace(/<script src="regal-bridge\.js"><\/script>\r?\n?/, '')
+      .replace(/<head>/i, '<head>\n<script src="demo-sandbox.js"></script>');
+    res.type('html').send(html);
+  });
   app.get(['/supplier', '/supplier/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'supplier.html')));
   app.get(['/my', '/my/', '/my/:code'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'my.html')));
   app.use(express.static(appDir, { index: false, extensions: ['html'], setHeaders: (res, p) => { if (/\.(html|js)$/.test(p)) res.set('Cache-Control', 'no-store'); } }));
