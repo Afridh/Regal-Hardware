@@ -712,6 +712,7 @@ tr.off td{opacity:.55}
 .bc-badge.absent{background:#FEE2E2;color:#B91C1C}
 .bc-badge.out{background:#F8FAFC;color:#64748B;border:1px solid #E2E8F0}
 .bc-badge.extra-break{background:#FEF3C7;color:#92400E;border:1px solid #FCD34D}
+.bc-badge.ot-badge{background:#ECFDF5;color:#047857;border:1px solid #6EE7B7}
 
 .bc-live-badge{display:inline-flex;align-items:center;gap:6px;font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;padding:4px 9px;border-radius:6px;width:fit-content;letter-spacing:0.2px}
 .bc-live-badge.working{background:rgba(16,185,129,.12);color:#059669;border:1px solid rgba(16,185,129,.3)}
@@ -4259,48 +4260,85 @@ function dayFigures(ds,empId){
     return out;
   }
   const isToday=(ds===D(today));
+  const now = isToday ? nowMin() : (r.out ? toMin(r.out) : toMin(r.in));
+  const shiftStart=toMin(shiftSet().startTime||'08:00');
+  const shiftClose=toMin(shiftSet().closeTime||'19:30');
+  const grace=+shiftSet().graceMin||0;
+
+  // Build sessions list
   const sessions = (Array.isArray(r.sessions) && r.sessions.length) ? r.sessions : [{ in: r.in, out: r.out }];
   const firstIn = sessions[0]?.in || r.in;
   const inM = toMin(firstIn);
-  const outM = r.out ? toMin(r.out) : (isToday ? nowMin() : inM);
 
-  // Accumulate gross time across all active sessions in the day
-  out.gross = sessions.reduce((tot, s) => {
-    if(!s || !s.in) return tot;
+  // Late arrival calculation based on the first check-in of the day
+  out.late = Math.max(0, inM - (shiftStart + grace));
+
+  // Breaks processing: 15m Breakfast, 30m Lunch, 10m Evening Tea
+  const breaksTaken = r.breaks || [];
+  const breakIntervals = breaksTaken.map(b => {
+    const def = (shiftSet().breaks || []).find(x => x.id === b.id);
+    let allowance = 15;
+    const bid = (b.id || '').toLowerCase();
+    const bname = (b.name || '').toLowerCase();
+    if(bid === 'b1' || bname.includes('breakfast')) allowance = 15;
+    else if(bid === 'b2' || bname.includes('lunch')) allowance = 30;
+    else if(bid === 'b3' || bname.includes('tea')) allowance = 10;
+    else if(def && def.mins) allowance = +def.mins;
+
+    const bs = toMin(b.start);
+    const be = b.end ? toMin(b.end) : (isToday ? now : bs);
+    const bDur = Math.max(0, be - bs);
+    if(bDur > allowance){
+      out.over += (bDur - allowance);
+    }
+    out.breakMin += bDur;
+    return { start: bs, end: be, dur: bDur };
+  });
+
+  // Calculate gross and worked time across all sessions
+  out.gross = 0;
+  out.worked = 0;
+  out.ot = 0;
+
+  sessions.forEach(s => {
+    if(!s || !s.in) return;
     const sIn = toMin(s.in);
-    const sOut = s.out ? toMin(s.out) : (isToday ? nowMin() : sIn);
-    return tot + Math.max(0, sOut - sIn);
-  }, 0);
-  // paid breaks are free up to their allowance; anything past it comes off the day
-  (r.breaks||[]).forEach(b=>{
-    const def=(shiftSet().breaks||[]).find(x=>x.id===b.id);
-    const bs=toMin(b.start), be=b.end ? toMin(b.end) : (isToday ? nowMin() : bs);
-    const actual=Math.max(0,Math.min(be,outM)-Math.max(bs,inM));
-    if(!def){ out.breakMin+=actual; return }
-    const free=def.paid?(+def.mins||0)+(+def.extra||0):0;
-    if(actual>free){ out.breakMin+=actual-free; out.over+=actual-free }
-  });
-  shiftSet().breaks.filter(b=>!b.paid).forEach(b=>{
-    if((r.breaks||[]).some(x=>x.id===b.id)) return;
-    out.breakMin+=Math.max(0,Math.min(outM,toMin(b.end))-Math.max(inM,toMin(b.start)));
-  });
-  out.worked=Math.max(0,out.gross-out.breakMin);
+    const sOut = s.out ? toMin(s.out) : (isToday ? now : sIn);
+    const sessionGross = Math.max(0, sOut - sIn);
+    out.gross += sessionGross;
 
-  // Opening time: 8:00 AM (08:00 = 480 min). Check-in required by 8:00 AM
-  const shiftStart=toMin(shiftSet().startTime||'08:00');
-  const grace=+shiftSet().graceMin||0;
-  out.late=Math.max(0,inM-(shiftStart+grace));
+    // Deduct any break time that occurred within this session window (pausing floor time)
+    let sessionBreak = 0;
+    breakIntervals.forEach(bk => {
+      const overlap = Math.max(0, Math.min(bk.end, sOut) - Math.max(bk.start, sIn));
+      sessionBreak += overlap;
+    });
 
-  // Closing time: 7:30 PM (19:30 = 1170 min). Past 7:30 PM is overtime
-  const shiftClose=toMin(shiftSet().closeTime||'19:30');
-  if(outM > shiftClose){
-    out.ot = Math.max(0, outM - shiftClose);
-  } else if(out.worked > stdMin()){
-    out.ot = Math.max(0, out.worked - stdMin());
-  } else {
-    out.ot = 0;
+    const sessionWorked = Math.max(0, sessionGross - sessionBreak);
+    out.worked += sessionWorked;
+
+    // OT past 7:30 PM (19:30): Any time worked after 19:30 in this session counts as OT
+    if(sOut > shiftClose){
+      const otStart = Math.max(sIn, shiftClose);
+      const otEnd = sOut;
+      const otGross = Math.max(0, otEnd - otStart);
+
+      // Deduct any breaks during OT
+      let otBreak = 0;
+      breakIntervals.forEach(bk => {
+        const overlap = Math.max(0, Math.min(bk.end, otEnd) - Math.max(bk.start, otStart));
+        otBreak += overlap;
+      });
+      out.ot += Math.max(0, otGross - otBreak);
+    }
+  });
+
+  // Also include any hours exceeding standard daily limit if greater
+  if(out.worked > stdMin()){
+    out.ot = Math.max(out.ot, out.worked - stdMin());
   }
-  out.reg=Math.max(0,out.worked-out.ot);
+
+  out.reg = Math.max(0, out.worked - out.ot);
   return out;
 }
 function monthDays(mk){                       // mk = 'YYYY-MM'
@@ -4633,18 +4671,19 @@ function updateLiveWorkingBadges(){
     const id=+el.dataset.empLive;
     const st=empState(ds,id);
     const f=dayFigures(ds,id);
+    const r=recFor(ds,id)||{};
+    const openBreak=(r.breaks||[]).find(b=>!b.end);
+    const bname=openBreak ? (openBreak.name.charAt(0).toUpperCase() + openBreak.name.slice(1).toLowerCase()) : 'Break';
+
     if(st==='working'){
       el.className='bc-live-badge working';
-      el.innerHTML=`<span class="live-dot"></span>⏱️ ${dur(f.worked)} working`;
+      el.innerHTML=`<span class="live-dot"></span>⏱️ ${dur(f.worked)} working${f.ot>0 ? ` · ${fmtMin(f.ot)} OT` : ''}`;
     } else if(st==='break'){
-      const r=recFor(ds,id)||{};
-      const ob=(r.breaks||[]).find(b=>!b.end);
-      const bname=ob ? (ob.name.charAt(0).toUpperCase() + ob.name.slice(1).toLowerCase()) : 'Break';
       el.className='bc-live-badge break';
       el.innerHTML=`☕ ${bname} · ${dur(f.worked)} floor time`;
     } else if(st==='done'||st==='leave_early'){
       el.className='bc-live-badge done';
-      el.innerHTML=`✓ ${dur(f.worked)} worked today`;
+      el.innerHTML=`✓ ${dur(f.worked)} worked today${f.ot>0 ? ` · ${fmtMin(f.ot)} OT` : ''}`;
     } else if(st==='absent'){
       el.className='bc-live-badge absent';
       el.innerHTML=`✕ Absent today`;
@@ -4658,6 +4697,23 @@ function updateLiveWorkingBadges(){
       if(extraWrap){
         extraWrap.innerHTML = f.over > 0 ? `<div class="bc-badge extra-break">EXTRA BREAK · ${fmtMin(f.over).toUpperCase()}</div>` : '';
       }
+      const otWrap = card.querySelector('.bc-ot-wrap');
+      if(otWrap){
+        otWrap.innerHTML = f.ot > 0 ? `<div class="bc-badge ot-badge">🌙 OT · ${fmtMin(f.ot).toUpperCase()}</div>` : '';
+      }
+      const topBadge = card.querySelector('.bc-badge:not(.extra-break):not(.ot-badge)');
+      if(topBadge && st === 'working'){
+        if(f.ot > 0){
+          topBadge.className = 'bc-badge working';
+          topBadge.textContent = f.late > 0 ? `WORKING · LATE ${fmtMin(f.late).toUpperCase()} · OT` : `WORKING · OT`;
+        } else if(f.late > 0){
+          topBadge.className = 'bc-badge late';
+          topBadge.textContent = `WORKING · LATE ${fmtMin(f.late).toUpperCase()}`;
+        } else {
+          topBadge.className = 'bc-badge working';
+          topBadge.textContent = 'WORKING';
+        }
+      }
     }
   });
 }
@@ -4665,7 +4721,7 @@ if(!window._attLiveTimer){
   window._attLiveTimer=setInterval(()=>{
     checkMidnightReset();
     updateLiveWorkingBadges();
-  },10000);
+  },1000);
 }
 
 function refreshAttendanceBoard(){
@@ -4936,10 +4992,19 @@ function renderStaffCard({e, st, f, r}){
 
   let badgeClass='out', badgeLabel='';
   if(st==='working'){
-    if(isLate){ badgeClass='late'; badgeLabel=`WORKING · LATE ${fmtMin(f.late).toUpperCase()}`; }
-    else { badgeClass='working'; badgeLabel='WORKING'; }
+    if(f.ot>0){
+      badgeClass='working';
+      badgeLabel=isLate ? `WORKING · LATE ${fmtMin(f.late).toUpperCase()} · OT` : 'WORKING · OT';
+    } else if(isLate){
+      badgeClass='late';
+      badgeLabel=`WORKING · LATE ${fmtMin(f.late).toUpperCase()}`;
+    } else {
+      badgeClass='working';
+      badgeLabel='WORKING';
+    }
   } else if(st==='break'){
-    badgeClass='break'; badgeLabel=`ON BREAK · ${(openBreak?openBreak.name:'MEAL').toUpperCase()}`;
+    badgeClass='break';
+    badgeLabel=`ON BREAK · ${(openBreak?openBreak.name:'MEAL').toUpperCase()}`;
   } else if(st==='leave_pending'){
     badgeClass='pending'; badgeLabel='LEAVE REQUESTED';
   } else if(st==='leave_early'){
@@ -4967,14 +5032,15 @@ function renderStaffCard({e, st, f, r}){
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
           ${st !== 'out' && badgeLabel ? `<div class="bc-badge ${badgeClass}">${badgeLabel}</div>` : ''}
           <div class="bc-extra-wrap">${f.over>0 ? `<div class="bc-badge extra-break">EXTRA BREAK · ${fmtMin(f.over).toUpperCase()}</div>` : ''}</div>
+          <div class="bc-ot-wrap">${f.ot>0 ? `<div class="bc-badge ot-badge">🌙 OT · ${fmtMin(f.ot).toUpperCase()}</div>` : ''}</div>
         </div>
       </div>
 
       <!-- Live Working Time Counting Badge -->
       <div class="bc-live-badge ${st}" data-emp-live="${e.id}">
-        ${st==='working' ? `<span class="live-dot"></span>⏱️ ${dur(f.worked)} working` :
+        ${st==='working' ? `<span class="live-dot"></span>⏱️ ${dur(f.worked)} working${f.ot>0 ? ` · ${fmtMin(f.ot)} OT` : ''}` :
           st==='break' ? `☕ ${openBreak?(openBreak.name.charAt(0).toUpperCase() + openBreak.name.slice(1).toLowerCase()):'Break'} · ${dur(f.worked)} floor time` :
-          st==='done'||st==='leave_early' ? `✓ ${dur(f.worked)} worked today` :
+          st==='done'||st==='leave_early' ? `✓ ${dur(f.worked)} worked today${f.ot>0 ? ` · ${fmtMin(f.ot)} OT` : ''}` :
           st==='absent' ? `✕ Absent today` :
           `⏱️ 0h 0m · Not in yet`}
       </div>
