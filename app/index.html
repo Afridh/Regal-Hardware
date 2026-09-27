@@ -477,6 +477,45 @@ body.privacy nav .navuser{position:relative}
   font-size:10px;font-weight:700;padding:1px 5px;letter-spacing:.04em;vertical-align:middle}
 .retline td{color:#9F1239}
 .tag.ret{background:#FFE4E6;color:#9F1239;border-color:#FDA4AF}
+/* ---- the top of the dashboard: what is waiting, then the figures ---- */
+.pulse{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:14px}
+.pulsecard{position:relative;overflow:hidden;text-align:left;border:1px solid var(--line);border-radius:12px;
+  background:var(--white);padding:14px 16px;cursor:pointer;font:inherit;color:inherit;
+  box-shadow:var(--shadow);animation:pulseIn .5s cubic-bezier(.2,.7,.3,1) both;animation-delay:var(--d,0ms)}
+.pulsecard:hover{transform:translateY(-2px);box-shadow:var(--shadow-lift);transition:.16s}
+.pulsecard b{display:block;font-family:Archivo,sans-serif;font-size:30px;line-height:1.05}
+.pulsecard .t{display:block;font-size:12.5px;color:var(--steel);margin-top:2px}
+.pulsecard .s{display:block;font-size:11.5px;color:var(--faint);margin-top:3px}
+.pulsecard .ring{position:absolute;right:-26px;top:-26px;width:86px;height:86px;border-radius:50%;
+  background:var(--tint-yellow);opacity:.85}
+.pulsecard.approvals{border-left:4px solid var(--chip-yellow)}
+.pulsecard.approvals .ring{background:var(--tint-yellow);animation:breathe 2.6s ease-in-out infinite}
+.pulsecard.web{border-left:4px solid var(--chip-blue)}      .pulsecard.web .ring{background:var(--tint-blue)}
+.pulsecard.orders{border-left:4px solid var(--chip-green)}  .pulsecard.orders .ring{background:var(--tint-green)}
+@keyframes pulseIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:.75}50%{transform:scale(1.12);opacity:.95}}
+
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:6px}
+.fig{position:relative;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--white);
+  padding:13px 14px 11px;cursor:pointer;font:inherit;color:inherit;box-shadow:var(--shadow);
+  animation:pulseIn .5s cubic-bezier(.2,.7,.3,1) both;animation-delay:var(--d,0ms)}
+.fig:hover{transform:translateY(-2px);box-shadow:var(--shadow-lift);transition:.16s}
+.fig .l{display:block;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--steel)}
+.fig .v{display:block;font-family:Archivo,sans-serif;font-size:23px;margin-top:4px;line-height:1.1}
+.fig .s{display:block;font-size:11.5px;color:var(--faint);margin-top:2px}
+.fig .bar{display:block;height:4px;border-radius:99px;background:var(--line2);margin-top:9px;overflow:hidden}
+.fig .bar i{display:block;height:100%;width:0;border-radius:99px;background:var(--chip-blue);
+  animation:grow .9s cubic-bezier(.2,.7,.3,1) forwards;animation-delay:calc(var(--d,0ms) + 160ms)}
+.fig.good .v{color:var(--chip-green)}  .fig.good .bar i{background:var(--chip-green)}
+.fig.warn .v{color:var(--chip-yellow)} .fig.warn .bar i{background:var(--chip-yellow)}
+.fig.bad  .v{color:var(--chip-rust)}   .fig.bad  .bar i{background:var(--chip-rust)}
+.fig.blue .v{color:var(--chip-blue)}
+@keyframes grow{to{width:var(--w,0%)}}
+@media (prefers-reduced-motion: reduce){
+  .pulsecard,.fig{animation:none}
+  .pulsecard .ring{animation:none}
+  .fig .bar i{animation:none;width:var(--w,0%)}
+}
 .bl-gp{color:#1F7A5A;font-weight:600}.bl-gp b{font-family:Archivo,sans-serif}.bl-gp.neg{color:var(--chip-rust)}
 .bl-odd{color:#8A5D06;font-weight:600;border-bottom:1px dotted #C9A227;margin-left:4px}
 .bl-lines{overflow:auto;border:1px solid var(--line);border-radius:var(--r)}
@@ -8404,6 +8443,8 @@ function sparkline(vals,w=260,h=54){
    the sections run in this order and a section with nothing in it is not drawn. */
 const DASH_GROUPS=[['top',''],['sell','Sales & profit'],['cust','Customers'],['sup','Suppliers'],['cash','Money & costs']];
 const DASH_PANELS=[
+  ['pulse','Waiting on you','approvals and website orders, across the top','top'],
+  ['figures','The shop at a glance','the day’s cash and credit, profit, what is owed both ways, cheques','top'],
   ['day','Today at the counter','the day board with the big number','top'],
   ['alerts','Things that need you','orders, notices, cheques, low stock, notes to settle','top'],
   ['sales','Sales, last 14 days','bars, cash against credit','sell'],
@@ -8681,6 +8722,47 @@ function dashboard(){
     <div class="pt-s">${sub}</div><div class="pt-bar"><i style="--w:${Math.max(3,share*100)}%"></i></div></button>`;
 
   const panels={
+   /* Across the very top: what is standing still until somebody acts. It only draws when there is
+      something, so a quiet shop gets a quiet screen. */
+   pulse:()=>{
+     const ap=(typeof apPending==='function')?apPending():[];
+     const web=(S.web&&S.web.orders||[]).filter(o=>o.status==='placed');
+     const sup=S.orders.filter(o=>o.dir!=='OUT'&&(o.status==='pending'||o.unreadShop));
+     const items=[
+       ap.length?['approvals','approvals',ap.length,ap.length===1?'approval waiting on you':'approvals waiting on you',ap[0].what||'']:null,
+       web.length?['web','shop',web.length,web.length===1?'website order to pick':'website orders to pick',fmt(web.reduce((a,o)=>a+(o.total||0),0))]:null,
+       sup.length?['orders','orders',sup.length,sup.length===1?'supplier order to answer':'supplier orders to answer','']:null,
+     ].filter(Boolean);
+     if(!items.length) return '';
+     return `<div class="pulse">${items.map(([k,view,n,label,sub],i)=>`
+       <button class="pulsecard ${k}" data-view="${view}" style="--d:${i*90}ms">
+        <span class="ring"></span>
+        <b class="count" data-plain="1" data-to="${n}">${n}</b>
+        <span class="t">${label}</span>
+        ${sub?`<span class="s">${sub}</span>`:''}
+       </button>`).join('')}</div>`;
+   },
+   /* The six figures the counter is asked for most, in one line. */
+   figures:()=>{
+     const gpToday=ts.reduce((a,s)=>a+s.lines.reduce((x,l)=>x+l.qty*(l.price-l.cost)-(l.disc||0),0),0);
+     const gpPct=sum(ts,'total')?gpToday/sum(ts,'total')*100:0;
+     const chqIn=inHand.reduce((a,c)=>a+c.amount,0);
+     const tiles=[
+       ['Cash sales today',sum(cashS,'total'),`${cashS.length} bill${cashS.length===1?'':'s'}`,'good','pos'],
+       ['Credit sales today',sum(credS,'total'),`${credS.length} bill${credS.length===1?'':'s'}`,'warn','receipts'],
+       ['Gross profit today',gpToday,`${gpPct.toFixed(1)}% margin`,gpToday>=0?'good':'bad','reports'],
+       ['Receivable from customers',ar,`${owingCust} account${owingCust===1?'':'s'}`,age.old>0?'bad':'','receipts'],
+       ['Payable to suppliers',ap,`${owedSup} supplier${owedSup===1?'':'s'}`,'','payments'],
+       ['Cheques in the drawer',chqIn,`${inHand.length} to bank`,inHand.length?'blue':'','chequesIn'],
+     ];
+     return `<div class="figs">${tiles.map(([l,v,s,k,view],i)=>`
+       <button class="fig ${k}" data-view="${view}" style="--d:${i*70}ms">
+        <span class="l">${l}</span>
+        <span class="v count" data-to="${(+v||0).toFixed(2)}">${fmt(v)}</span>
+        <span class="s">${s}</span>
+        <span class="bar"><i style="--w:${Math.min(100,Math.abs(v)/(Math.max(1,ar,ap,sum(ts,'total')))*100)}%"></i></span>
+       </button>`).join('')}</div>`;
+   },
    day:()=>`<div class="board">
     <div class="lead"><div class="l"><span class="live"></span>Sales so far today</div>
      <div class="v"><span class="count" data-to="${sum(ts,'total').toFixed(2)}">${fmt(sum(ts,'total'))}</span></div>
@@ -8760,7 +8842,7 @@ function dashboard(){
       :'<div class="muted">Everything is above its reorder level.</div>'}</div>`
   };
   const dp=dashPrefs();
-  const wide=new Set(['day','alerts','position']);
+  const wide=new Set(['pulse','figures','day','alerts','position']);
   const live=dp.order.filter(k=>!dp.hidden.includes(k)&&panels[k]);
   let html=`<div class="dash-h"><h1>Dashboard</h1><button class="btn ghost sm" data-act="dashSet">Arrange</button></div>`;
   let i=0;
@@ -8830,8 +8912,10 @@ function dashboardAfter(){
   document.querySelectorAll('.count').forEach(el=>{
     const to=+el.dataset.to; if(!(to>0))return;
     const started=performance.now(), dur=650;
+    const plain=el.dataset.plain==='1';        // a count of things, not an amount of money
     const step=(now)=>{ const k=Math.min(1,(now-started)/dur);
-      el.textContent=fmt(to*(1-Math.pow(1-k,3)));
+      const v=to*(1-Math.pow(1-k,3));
+      el.textContent=plain?String(Math.round(v)):fmt(v);
       if(k<1)requestAnimationFrame(step) };
     requestAnimationFrame(step);
   });
