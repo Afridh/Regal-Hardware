@@ -469,6 +469,14 @@ body.privacy nav .navuser{position:relative}
 .bl-amt i.gp.neg{color:var(--chip-rust)}
 .bl-amt i.gp.odd{color:#8A5D06}
 .bl-strip .gp.odd{background:var(--tint-yellow);border-color:var(--chip-yellow)}.bl-strip .gp.odd span,.bl-strip .gp.odd small{color:#8A5D06}.bl-strip .gp.odd b{color:#7A5A05}
+/* a return line: goods coming back, so the row reads the other way round */
+.retline{background:#FFF5F5}
+.till-tbl tr.retline{background:#FFF5F5}
+.till-tbl tr.retline td,.till-tbl tr.retline td b{color:#9F1239}
+.rettag{background:#FFE4E6;color:#9F1239;border:1px solid #FDA4AF;border-radius:4px;
+  font-size:10px;font-weight:700;padding:1px 5px;letter-spacing:.04em;vertical-align:middle}
+.retline td{color:#9F1239}
+.tag.ret{background:#FFE4E6;color:#9F1239;border-color:#FDA4AF}
 .bl-gp{color:#1F7A5A;font-weight:600}.bl-gp b{font-family:Archivo,sans-serif}.bl-gp.neg{color:var(--chip-rust)}
 .bl-odd{color:#8A5D06;font-weight:600;border-bottom:1px dotted #C9A227;margin-left:4px}
 .bl-lines{overflow:auto;border:1px solid var(--line);border-radius:var(--r)}
@@ -3416,9 +3424,11 @@ function recost(pid){
 function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.name,salesman=undefined,override=false,no=null}){
   if(window.privacyOn) throw new Error('Till is busy — try again in a moment');
   if(!lines.length) throw new Error('A bill needs at least one line');
-  lines.forEach(l=>{ if(!(l.qty>0)) throw new Error('Quantity must be above zero') });
+  // a minus quantity is a return: the customer is handing goods back on this same bill
+  lines.forEach(l=>{ if(!l.qty||Math.abs(l.qty)<1e-9) throw new Error('Quantity cannot be nothing') });
   // the same item twice on a bill is checked as one quantity against the floor
   if(!CFG.stock.allowNegative){
+    // goods coming back add to the floor, so a line's return quantity offsets what is sold
     const want={}; lines.forEach(l=>{ want[l.pid]=(want[l.pid]||0)+l.qty });
     // with more than one location, the till sells from its own (regal-ext.js)
     const multi=Array.isArray(S.locations)&&S.locations.length>1&&typeof extHere==='function';
@@ -3434,16 +3444,18 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   }
   const sub0=lines.reduce((a,l)=>a+l.qty*l.price-(l.disc||0),0);
   if(billDisc<0) throw new Error('A bill discount cannot be negative');
-  if(billDisc>sub0+1e-9) throw new Error(`A discount of ${fmt(billDisc)} is more than the bill (${fmt(sub0)})`);
+  if(sub0<0&&billDisc>0.005) throw new Error('A bill that comes back to the customer cannot carry a discount');
+  if(sub0>0&&billDisc>sub0+1e-9) throw new Error(`A discount of ${fmt(billDisc)} is more than the bill (${fmt(sub0)})`);
   lines.forEach(l=>{ if(!P(l.pid)) throw new Error('Unknown item on the bill') });
   const sub=lines.reduce((a,l)=>a+l.qty*l.price-l.disc,0);
   if(billDisc<0) billDisc=0;
-  if(billDisc>sub) throw new Error(`The bill discount (${fmt(billDisc)}) is more than the bill (${fmt(sub)})`);
+  if(sub>0&&billDisc>sub) throw new Error(`The bill discount (${fmt(billDisc)}) is more than the bill (${fmt(sub)})`);
   const total=+(sub-billDisc).toFixed(2);
   const paid=pays.filter(p=>p.method!=='CREDIT').reduce((a,p)=>a+p.amount,0);
   let credit=+(total-paid).toFixed(2);
   if(credit>0.005 && !customerId) throw new Error('Credit sale needs a customer');
-  lines.forEach(l=>{ const p=P(l.pid), net=l.qty>0?(l.qty*l.price-(l.disc||0))/l.qty:l.price;
+  lines.forEach(l=>{ if(l.qty<0) return;                      // a return goes back at what it was sold for
+    const p=P(l.pid), net=(l.qty*l.price-(l.disc||0))/l.qty;
     if(net<p.cost-0.005&&!l.belowCost&&!override) throw new Error(`${p.name} is under cost — an admin has to allow it`) });
   let overLimit=false;
   if(credit>0.005){ const c=C(customerId);
@@ -3469,9 +3481,9 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   if(credit>0.005) jl.push({ac:'1100',dr:credit,party:{type:'C',id:customerId}});
   if(usedCredit>0.005){ jl.push({ac:'2050',dr:usedCredit,party:{type:'C',id:customerId}}); inv.paid=+(paid+usedCredit).toFixed(2); inv.usedCredit=usedCredit;
     const cc=C(customerId); cc.advance=+Math.max(0,(cc.advance||0)-usedCredit).toFixed(2); }
-  post(date,'Sale '+inv.no,inv.no,jl);
+  post(date,(total<0?'Return ':'Sale ')+inv.no,inv.no,jl);
   inv.lines.forEach(l=>{ if(l.serials&&l.serials.length) sellSerials(l.pid,l.serials,inv) });
-  post(date,'COGS '+inv.no,inv.no,[{ac:'5100',dr:+cogs.toFixed(2)},{ac:'1200',cr:+cogs.toFixed(2)}]);
+  post(date,(total<0?'Goods back ':'COGS ')+inv.no,inv.no,[{ac:'5100',dr:+cogs.toFixed(2)},{ac:'1200',cr:+cogs.toFixed(2)}]);
   const c=C(customerId);
   if(typeof extAfterSale==='function') extAfterSale(inv,c,pays);   // loyalty points earned / spent, vouchers used
   inv.lines.forEach(l=>{ const pp=P(l.pid);
@@ -8750,10 +8762,11 @@ function pos(){
      : `<input id="q" placeholder="Scan a barcode, or type the item name or code…  (F1)" autocomplete="off"><div id="sug"></div>`}
    </div>
    <div class="card items"><table id="posTable"><tr><th>#</th><th>Item</th><th>Unit</th><th class="n">Qty</th><th class="n">MRP</th><th class="n">Price</th><th class="n">Disc</th><th class="n">Amount</th><th></th></tr>
-   ${L.length?L.map((l,i)=>{const p=P(l.pid);return `<tr class="${i===S.pos.sel?'sel':''}" data-i="${i}"><td>${i+1}</td><td>${p.name}<div class="muted">${p.code}${CFG.cost.atTill&&can('cost')?` · <span class="cc">${costCode(p.cost)}</span>`:''}${(()=>{const sp=lastSupplier(p.id);return sp?` · <span class="linesup">${sp.name.split(/[–(]/)[0].trim()}</span>`:''})()}</div></td><td>${p.unit}</td><td class="n"><input type="number" step="any" value="${l.qty}" data-edit="qty" data-i="${i}"></td>
+   ${L.length?L.map((l,i)=>{const p=P(l.pid);return `<tr class="${i===S.pos.sel?'sel':''}${l.qty<0?' retline':''}" data-i="${i}"><td>${i+1}</td><td>${p.name}<div class="muted">${p.code}${CFG.cost.atTill&&can('cost')?` · <span class="cc">${costCode(p.cost)}</span>`:''}${(()=>{const sp=lastSupplier(p.id);return sp?` · <span class="linesup">${sp.name.split(/[–(]/)[0].trim()}</span>`:''})()}</div></td><td>${p.unit}</td><td class="n"><input type="number" step="any" value="${l.qty}" data-edit="qty" data-i="${i}"></td>
     <td class="n"><span class="muted">${money2(p.mrp)}</span>${p.mrp>l.price?`<div class="savetag sm">−${money2((p.mrp-l.price)*l.qty)}</div>`:''}
       ${l.belowCost?`<div class="tag bad" style="margin-top:2px">under cost · ${l.belowCost.split(' ')[0]}</div>`:''}
-      ${l.qty>p.stock+1e-9?`<div class="tag warn" style="margin-top:2px">only ${fq(p.stock)} on the floor</div>`:''}</td>
+      ${l.qty>0&&l.qty>p.stock+1e-9?`<div class="tag warn" style="margin-top:2px">only ${fq(p.stock)} on the floor</div>`:''}
+      ${l.qty<0?`<div class="tag ret" style="margin-top:2px">returned — back on the floor</div>`:''}</td>
     <td class="n"><input type="number" step="any" value="${l.price}" data-edit="price" data-i="${i}"></td><td class="n"><input type="number" step="any" value="${l.discPct!==undefined?l.discPct:l.disc}" data-edit="disc" data-i="${i}" title="${CFG.pos.discFromMrp?'a plain number is a percentage off the MRP':'a plain number is rupees off'}"></td><td class="n">${fmt(l.qty*l.price-l.disc)}</td><td><button class="btn ghost sm" data-act="del" data-i="${i}">✕</button></td></tr>`}).reverse().join(''):'<tr><td colspan="9" class="muted" style="padding:34px;text-align:center">Scan an item or start typing its name. Then quantity, then price — Enter between each.</td></tr>'}
    </table></div>
    <div class="side">
@@ -8835,15 +8848,15 @@ function posAfter(){
       }
       // a slash from anywhere in the item jumps straight to the discount
       if(ev.key==='/'){ ev.preventDefault();
-        if(e.step==='qty'){ const v=+f.value; if(v>0)e.qty=v }
+        if(e.step==='qty'){ const v=+f.value; if(v)e.qty=v }
         if(e.step==='price'){ const v=+f.value; if(v>0)e.price=v }
         if(e.step!=='disc'){ e.step='disc'; render() }
         return;
       }
       if(ev.key==='Enter'){ ev.preventDefault();
-        if(e.step==='qty'){ const v=+f.value; if(!(v>0)){toast('Enter a quantity above zero');return}
+        if(e.step==='qty'){ const v=+f.value; if(!v){toast('Enter a quantity, or -5 to take five back');return}
           const onBill=S.pos.lines.filter(l=>l.pid===e.pid).reduce((a,l)=>a+l.qty,0);
-          if(v+onBill>P(e.pid).stock+1e-9) toast(`Only ${fq(P(e.pid).stock)} ${P(e.pid).unit} in stock${onBill?' — '+fq(onBill)+' already on the bill':''}`);
+          if(v>0&&v+onBill>P(e.pid).stock+1e-9) toast(`Only ${fq(P(e.pid).stock)} ${P(e.pid).unit} in stock${onBill?' — '+fq(onBill)+' already on the bill':''}`);
           e.qty=v; e.price=priceFor(P(e.pid),v); e.auto=true; e.step='price'; render(); return }
         if(e.step==='price'){ const v=+f.value; if(!(v>0)){toast('Enter a price above zero');return}
           e.auto=Math.abs(v-priceFor(P(e.pid),e.qty))<0.005; e.price=v; finish(); return }
@@ -9158,6 +9171,7 @@ function billTotal(){ return +(S.pos.lines.reduce((a,l)=>a+l.qty*l.price-l.disc,
 function openPay(resume){
   const L=S.pos.lines; if(!L.length) return;
   const total=billTotal();
+  const refund=total<-0.005;          // more came back than went out: the shop owes the customer
   let taken=(resume&&resume.taken)||[], note=(resume&&resume.note)||'';
   const resumeBox=resume&&resume.box;
   const c=()=>C(S.pos.customer||1);
@@ -9171,14 +9185,14 @@ function openPay(resume){
   const stage=m.querySelector('#payStage');
 
   const draw=(focusBox=true)=>{
-    const rem=left(); let inBox=rem>0.005?rem:0;
+    const rem=left(); let inBox=refund?rem:(rem>0.005?rem:0);
     if(resumeBox&&resumeBox>0&&!m._resumed){ inBox=resumeBox; m._resumed=true }
     const shown=+(rem-inBox).toFixed(2);     // what would be left if the box were taken as it stands
     stage.innerHTML=`
      <div class="payw-g">
       <div class="payw-l">
-       <div class="pw-f"><label>NET TOTAL</label><b class="pw-net">${money2(total)}</b></div>
-       <div class="pw-f on"><label>AMOUNT PAID</label>
+       <div class="pw-f"><label>${refund?'REFUND DUE':'NET TOTAL'}</label><b class="pw-net">${money2(refund?-total:total)}</b></div>
+       <div class="pw-f on"><label>${refund?'GIVEN BACK':'AMOUNT PAID'}</label>
         <input id="payAmt" type="number" step="any" inputmode="decimal" value="${inBox?inBox.toFixed(2):''}" placeholder="0.00">
         <div class="pw-presets">
          <button type="button" class="pw-preset-btn" data-preset="exact">Exact</button>
@@ -9188,7 +9202,7 @@ function openPay(resume){
          <button type="button" class="pw-preset-btn" data-preset="5000">+5,000</button>
         </div>
        </div>
-       <div class="pw-f"><label>${shown<-0.005?'CHANGE':'CREDIT AMOUNT'}</label>
+       <div class="pw-f"><label>${refund?'STILL TO GIVE BACK':(shown<-0.005?'CHANGE':'CREDIT AMOUNT')}</label>
         <b class="pw-cr ${shown<-0.005?'chg':(shown>0.005?'due':'nil')}" id="payLeft">${money2(Math.abs(shown))}</b></div>
        <div class="pw-f"><label>NOTE</label><input id="payNote" value="${note}" placeholder="anything for the bill"></div>
       </div>
@@ -9674,10 +9688,10 @@ function posClassic(){
       ${L.length?[...L].map((l,i)=>{const p=P(l.pid), sp=lastSupplier(l.pid);
         const ed=CS.editLine===i;   // Space on a highlighted line: qty and price become boxes in the row itself
         const chk=CS.chk&&CS.chk.has(l);   // walked onto with the arrows: checked against the goods
-        return `<tr class="${i===S.pos.sel?'on':''} ${ed?'editing':''} ${chk?'ln-checked':''}" data-act="csSel" data-i="${i}">
+        return `<tr class="${i===S.pos.sel?'on':''} ${ed?'editing':''} ${chk?'ln-checked':''} ${l.qty<0?'retline':''}" data-act="csSel" data-i="${i}">
          ${drag?`<td class="g"><span class="ln-grip" title="drag to move this line · Ctrl+↑ / Ctrl+↓">⠿</span></td>`:''}
          <td class="c"><i class="ln-chk" title="checked">✓</i>${p.num||p.code}</td>
-         <td class="d"><b>${lineName(l).toUpperCase()}</b>
+         <td class="d"><b>${lineName(l).toUpperCase()}</b>${l.qty<0?' <span class="rettag">RETURN</span>':''}
           ${(l.serials&&l.serials.length)?`<em>serial ${l.serials.join(', ')}</em>`:''}
           ${l.fromLast?`<span class="tag blue">their last price · ${l.fromLast}</span>`:''}
           ${l.qty>p.stock+1e-9&&CFG.stock.track!==false?'<span class="tag bad">short on the floor</span>':''}
@@ -9941,7 +9955,8 @@ function csCommit(){
   if(wrEl&&wrEl.value) CS.warranty=wrEl.value;
   const p=P(CS.pid); if(!p) return toast('Pick an item first');
   const qty=+CS.qty||0, price=+CS.price||0;
-  if(!(qty>0)) return toast('Quantity must be above zero');
+  // a minus quantity is a return — "-5" is five coming back, the way the old system took it
+  if(!qty) return toast('Enter a quantity, or -5 to take five back');
   if(!(price>0)) return toast('Price must be above zero');
   const d=+CS.disc||0;
   const disc=+(qty*price-csLineNet()).toFixed(2);
@@ -9950,7 +9965,7 @@ function csCommit(){
   const put=(by,serials)=>{
     // the same item keyed again joins its line on the bill (same price, same warranty, same wording, no serial numbers)
     const asked=((CS.name||'').trim()&&(CS.name||'').trim().toUpperCase()!==p.name.toUpperCase())?(CS.name||'').trim():null;
-    const same=(!serials||!serials.length)?S.pos.lines.findIndex(l=>l.pid===p.id&&Math.abs(l.price-price)<0.005&&(l.warranty||'0')===(CS.warranty||'0')&&!(l.serials&&l.serials.length)&&(l.discPct||0)===(pctGiven||0)&&(l.name||null)===asked):-1;
+    const same=(!serials||!serials.length)?S.pos.lines.findIndex(l=>l.pid===p.id&&Math.abs(l.price-price)<0.005&&(l.warranty||'0')===(CS.warranty||'0')&&!(l.serials&&l.serials.length)&&(l.discPct||0)===(pctGiven||0)&&(l.name||null)===asked&&(l.qty<0)===(qty<0)):-1;
     if(same>=0){
       const l=S.pos.lines[same]; l.qty=+(l.qty+qty).toFixed(3);
       l.disc=+((l.disc||0)+disc).toFixed(2);          // same price and same % means the same discount per piece, so the rupees simply add up
@@ -9964,7 +9979,7 @@ function csCommit(){
       S.pos.sel=S.pos.lines.length-1;
     }
     CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null,name:null};
-    if(!CFG.stock.allowNegative&&CFG.stock.track!==false){ const on=S.pos.lines.filter(l=>l.pid===p.id).reduce((a,l)=>a+l.qty,0);
+    if(qty>0&&!CFG.stock.allowNegative&&CFG.stock.track!==false){ const on=S.pos.lines.filter(l=>l.pid===p.id).reduce((a,l)=>a+l.qty,0);
       if(on>p.stock+1e-9) toast(`Only ${fq(p.stock)} ${p.unit} of ${p.name} on the floor`) }
     render(); const f=$('#csQ'); if(f) f.focus();
   };
