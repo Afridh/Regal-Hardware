@@ -73,8 +73,20 @@ const oldOpenInv = sql(`SELECT SerialNo AS InvoiceNo, CusCode, CONVERT(varchar(1
 console.log(`  read in ${((Date.now() - T0) / 1000).toFixed(1)}s: ${oldCus.length} customers, ${oldSup.length} suppliers, ${oldItems.length} items / ${oldLinks.length} price links, ${oldBanks.length} banks, ${oldInv.length} bills / ${oldLines.length} lines since ${CUT}, ${oldChq.length} pending cheques`);
 
 // ---------------------------------------------------------------- the books as they are
-const { rows: [cur] } = await query(`SELECT rev, data FROM books WHERE key = 'regal'`);
-if (!cur) { console.error('No books on the server yet — sign in once at /pos so the shop settings exist, then run this again.'); process.exit(1); }
+// --base <file>: the shop's settings, users and templates from a saved copy of the books (a backup or a
+// till's copy) instead of the database — for when the database cannot be reached
+const BASE = args.includes('--base') ? args[args.indexOf('--base') + 1] : null;
+const OUT = args.includes('--out') ? args[args.indexOf('--out') + 1] : null;
+let cur;
+if (BASE) {
+  const d = JSON.parse(fs.readFileSync(path.resolve(BASE), 'utf8'));
+  cur = { rev: 0, data: d.data || d };
+  if (!cur.data.S) { console.error(`${BASE} does not hold the books (no S)`); process.exit(1); }
+  console.log(`Settings, users and templates taken from ${path.basename(BASE)}`);
+} else {
+  ({ rows: [cur] } = await query(`SELECT rev, data FROM books WHERE key = 'regal'`));
+  if (!cur) { console.error('No books on the server yet — sign in once at /pos so the shop settings exist, then run this again.'); process.exit(1); }
+}
 const S = cur.data.S, CFG = cur.data.CFG;
 const OPEN_DATE = new Date().toISOString().slice(0, 10);
 const seqs = { JE: 1 };
@@ -269,7 +281,7 @@ Bills       ${histCount} from the last ${DAYS} days as history · ${linkedCount}
 Staff       ${employees.length} · logins ${users.length} (${newUsers} added: ${users.slice(-newUsers).map(u => u.name).join(', ') || 'none'})
 Ledger      ${journal.length} opening entries`);
 
-if (!WRITE) { console.log('\nDry run — nothing written. Add --write to replace the books with this.'); await pool.end(); process.exit(0); }
+if (!WRITE && !OUT) { console.log('\nDry run — nothing written. Add --write to replace the books with this, or --out <file> to save them to a file.'); await pool.end(); process.exit(0); }
 
 // ---------------------------------------------------------------- write: backup, then the new books
 const bdir = path.join(here, 'backups'); fs.mkdirSync(bdir, { recursive: true });
@@ -287,6 +299,13 @@ delete NS.user; delete NS.pos; delete NS.view; delete NS.terminal; delete NS.hel
 const NC = { ...CFG, stock: { ...(CFG.stock || {}), allowNegative: true, track: false }, shop: { ...(CFG.shop || {}), name: title(company.CompName) || CFG.shop?.name, addr: addr(company.CompAddress1, company.CompAddress2) || CFG.shop?.addr, phone: s(company.CompContact1) || CFG.shop?.phone } };
 const doc = { v: 1, at: new Date().toISOString(), S: NS, CFG: NC };
 const txt = JSON.stringify(doc);
+if (OUT) {
+  // a file to carry to the new server and load there: node db/export-books.js --restore <file>
+  fs.writeFileSync(path.resolve(OUT), txt);
+  console.log(`\nBooks saved to ${path.resolve(OUT)} (${(txt.length / 1048576).toFixed(1)} MB). Upload it to the server and load it with:\n  node db/export-books.js --restore ~/${path.basename(OUT)}`);
+  await pool.end().catch(() => {});
+  process.exit(0);
+}
 const nextRev = Number(cur.rev) + 1;
 await query(`UPDATE books SET rev = $1, data = $2, updated_at = now(), updated_by = 'SePOS import' WHERE key = 'regal'`, [nextRev, txt]);
 await query(`INSERT INTO books_history (key, rev, data, saved_by) VALUES ('regal', $1, $2, 'SePOS import')`, [nextRev, txt]);
