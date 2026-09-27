@@ -187,6 +187,7 @@
 
   /** Names for the lock screen from the server, so a fresh browser lists the real staff. */
   async function serverUsers() {
+    if (isDemoSession()) return [];
     var j = await call('GET', '/books/users');
     if (j.__status === 200 && Array.isArray(j.users)) {
       return j.users.filter(function (u) {

@@ -3190,6 +3190,35 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 <div id="phoneWrap"></div>
 </div>
 <script>
+/* ==================== 100% API CANCELLATION GUARD FOR DEMO ==================== */
+(function initDemoApiGuard(){
+  function isDemoUrlOrSession(){
+    try {
+      if(typeof window !== 'undefined' && window.isDemo) return true;
+      if(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1') return true;
+      if(typeof location !== 'undefined' && (location.search.includes('demo=1') || location.pathname.startsWith('/demo'))) return true;
+    } catch(_){}
+    return false;
+  }
+  if(isDemoUrlOrSession()){
+    window.isDemo = true;
+    try { sessionStorage.setItem('regal_is_demo', '1'); } catch(_){}
+    if(typeof window.fetch === 'function' && !window._origFetch){
+      window._origFetch = window.fetch;
+      window.fetch = async function(url, opts){
+        const u = String(url || '');
+        if(u.startsWith('/api') || u.includes('/books') || u.includes('/sms') || u.includes('/shift') || u.includes('/supplier') || u.includes('/files')){
+          console.warn('[DEMO MODE - 100% API CANCELLED]', u);
+          if(u.includes('/users')) return new Response(JSON.stringify({ ok: true, users: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          if(u.includes('/rev')) return new Response(JSON.stringify({ ok: true, rev: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          if(u.includes('/shift')) return new Response(JSON.stringify({ ok: true, employees: [], shift: { days: {}, settings: {} } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          return new Response(JSON.stringify({ ok: true, demo: true, message: 'API cancelled in demo mode' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        return window._origFetch.apply(this, arguments);
+      };
+    }
+  }
+})();
 /* ============================ DATA + LEDGER ENGINE ============================ */
 let today = (()=>{ const d=new Date(); d.setHours(0,0,0,0); return d })();   // the actual day, midnight local
 function checkMidnightReset(){
@@ -7585,7 +7614,7 @@ const views=[
  ['grp','Out'],['trail','The trail'],['messages','Messages'],['reports','Reports'],
  ['grp','System'],['settings','Settings']];
 
-const ownerOnly=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'));
+const ownerOnly=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||S.user.role==='Demo Admin'||window.isDemo||(S&&S.isDemo)));
 
 const SECTIONS = {
   Counter: ['dashboard', 'pos', 'bills', 'docs'],
@@ -7642,8 +7671,9 @@ function allowed(v){
   const roleName = String(S.user.role || '');
   const rLower = roleName.toLowerCase();
 
+  // In demo mode: allow viewing of ALL sections on the Admin panel (100% API cancelled)
   if(rLower === 'demo admin' || window.isDemo || (S && S.isDemo)){
-    return ['pos', 'payroll', 'products', 'dashboard', 'bills', 'customers', 'inventory'].includes(v);
+    return true;
   }
   
   if(rLower === 'super admin' || rLower === 'superadmin' || rLower === 'owner') return true;
@@ -15981,7 +16011,69 @@ const can=(k)=>{
 let userTab='users';
 let userFilter='all';
 let userSearch='';
+function demoUsersView(){
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h1 style="margin:0;font-size:22px;display:flex;align-items:center;gap:8px">
+          <span>👥 Users & Permissions</span>
+          <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:12px;background:#EDE9FE;color:#6D28D9;border:1px solid #DDD6FE">Demo Sandbox View</span>
+        </h1>
+        <div style="font-size:12px;color:var(--steel,#64748B);margin-top:3px">Demo preview of the store's user accounts, hierarchy, and permissions model. Read-only demonstration.</div>
+      </div>
+      <div>
+        <button class="btn primary" onclick="toast('Demo Mode: User editing is disabled in trial preview (all sections are view-only)', 'info')">+ Add User</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <div style="background:var(--panel,#fff);border:1px solid var(--line,#E2E8F0);padding:8px 14px;border-radius:8px;font-size:12px"><b style="font-size:16px;color:#1E293B">7</b> <span style="color:#64748B">Staff Accounts</span></div>
+      <div style="background:var(--panel,#fff);border:1px solid var(--line,#E2E8F0);padding:8px 14px;border-radius:8px;font-size:12px"><b style="font-size:16px;color:#059669">7</b> <span style="color:#64748B">Active</span></div>
+      <div style="background:var(--panel,#fff);border:1px solid var(--line,#E2E8F0);padding:8px 14px;border-radius:8px;font-size:12px"><b style="font-size:16px;color:#D97706">3</b> <span style="color:#64748B">Admins</span></div>
+      <div style="background:var(--panel,#fff);border:1px solid var(--line,#E2E8F0);padding:8px 14px;border-radius:8px;font-size:12px"><b style="font-size:16px;color:#2563EB">4</b> <span style="color:#64748B">Sales Staff</span></div>
+    </div>
+
+    <div style="background:var(--panel,#fff);border:1px solid var(--line,#E2E8F0);border-radius:10px;overflow:hidden">
+      <table style="width:100%;font-size:13px;border-collapse:collapse">
+        <thead>
+          <tr style="background:#F8FAFC;border-bottom:2px solid var(--line,#E2E8F0);text-align:left">
+            <th style="padding:10px 14px">Staff Name</th>
+            <th style="padding:10px 14px">Role & Level</th>
+            <th style="padding:10px 14px">Identifier (UID)</th>
+            <th style="padding:10px 14px">Access Permissions</th>
+            <th style="padding:10px 14px">Status</th>
+            <th style="padding:10px 14px;text-align:right">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${[
+            { name: 'Store Owner', role: 'Super Admin', uid: 'AF', perms: 'All 9 Sections (Full Access)', badge: 'Owner' },
+            { name: 'General Manager', role: 'Admin', uid: 'AZ', perms: 'All Operations & Reports', badge: 'Admin' },
+            { name: 'Inventory Controller', role: 'Admin', uid: 'AK', perms: 'Stock, Purchasing, Ledgers', badge: 'Admin' },
+            { name: 'Cash Counter KP', role: 'KP', uid: 'KP', perms: 'Billing, Held Bills, Receipts', badge: 'KP' },
+            { name: 'Sales Floor Senior', role: 'Salesman', uid: 'S1', perms: 'POS, Products, Shift Board', badge: 'Sales' },
+            { name: 'Sales Floor Junior', role: 'Salesman', uid: 'S2', perms: 'POS, Products, Shift Board', badge: 'Sales' },
+            { name: 'Delivery Logistics', role: 'Salesman', uid: 'S3', perms: 'POS, Products, Shift Board', badge: 'Sales' }
+          ].map(u => `
+            <tr style="border-bottom:1px solid var(--line,#F1F5F9)">
+              <td style="padding:12px 14px;font-weight:700">${u.name}</td>
+              <td style="padding:12px 14px"><span style="padding:3px 8px;border-radius:10px;font-size:11px;font-weight:700;background:#F1F5F9;color:#334155">${u.role}</span></td>
+              <td style="padding:12px 14px;font-family:monospace;color:var(--steel,#64748B)">${u.uid}</td>
+              <td style="padding:12px 14px;color:var(--steel,#64748B)">${u.perms}</td>
+              <td style="padding:12px 14px"><span style="color:#059669;font-weight:700">● Active</span></td>
+              <td style="padding:12px 14px;text-align:right"><button class="btn ghost sm" onclick="toast('Demo Mode: User editing is view-only (no changes saved to live store)', 'info')">View Details</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function users(){
+  if(window.isDemo || (S && S.isDemo)){
+    return demoUsersView();
+  }
   const isSuperAdmin=S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||['super admin','superadmin','owner'].includes(String(S.user.role||'').toLowerCase()));
   const isAdmin=isSuperAdmin||(S.user&&String(S.user.role||'').toLowerCase()==='admin');
   if(!Array.isArray(S.users)) S.users=[];
@@ -16923,13 +17015,17 @@ function renderDemoBanner(){
     banner.id = 'demoModeBanner';
     banner.style.cssText = 'position:fixed;top:0;left:0;right:0;width:100%;height:34px;background:linear-gradient(90deg,#6D28D9 0%,#4F46E5 100%);color:#fff;padding:0 16px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between;z-index:999999;box-shadow:0 2px 6px rgba(0,0,0,0.22);box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif;';
     banner.innerHTML = `
-      <div style="display:flex;align-items:center;gap:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+      <div style="display:flex;align-items:center;gap:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
         <span style="font-size:15px;line-height:1">🧪</span>
-        <span><b>DEMO MODE</b> — Sandbox Trial</span>
-        <span style="opacity:.4">|</span>
-        <button onclick="go('pos')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.4);color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:700">🛒 POS Billing</button>
-        <button onclick="go('payroll')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.4);color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:700">⏱️ Attendance Board</button>
-        <button onclick="go('products')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.4);color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:700">📦 Products</button>
+        <span><b>DEMO ADMIN</b> (100% API Cancelled · View All)</span>
+        <span style="opacity:.35">|</span>
+        <button onclick="go('dashboard')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">Dashboard</button>
+        <button onclick="go('pos')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">POS</button>
+        <button onclick="go('payroll')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">Attendance</button>
+        <button onclick="go('inventory')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">Stock</button>
+        <button onclick="go('accounting')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">Money</button>
+        <button onclick="go('users')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">Users</button>
+        <button onclick="go('reports')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">Reports</button>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
         <button onclick="resetDemoData()" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.45);color:#fff;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;font-weight:600;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.18)'">↺ Reset Demo</button>
@@ -16956,6 +17052,22 @@ function activateDemoMode(){
       constructor(name){
         super(name === 'regal_books_sync' ? 'regal_demo_isolated_sync' : name);
       }
+    };
+  }
+
+  // 100% API CANCELLED: Intercept window.fetch so zero network requests reach the backend API
+  if(typeof window.fetch === 'function' && !window._origFetch){
+    window._origFetch = window.fetch;
+    window.fetch = async function(url, opts){
+      const u = String(url || '');
+      if(u.startsWith('/api') || u.includes('/books') || u.includes('/sms') || u.includes('/shift') || u.includes('/supplier') || u.includes('/files')){
+        console.warn('[DEMO MODE - 100% API CANCELLED]', u);
+        if(u.includes('/users')) return new Response(JSON.stringify({ ok: true, users: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        if(u.includes('/rev')) return new Response(JSON.stringify({ ok: true, rev: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        if(u.includes('/shift')) return new Response(JSON.stringify({ ok: true, employees: [], shift: { days: {}, settings: {} } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ ok: true, demo: true, message: 'API cancelled in demo mode' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return window._origFetch.apply(this, arguments);
     };
   }
 
