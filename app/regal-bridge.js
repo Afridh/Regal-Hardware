@@ -188,7 +188,13 @@
   /** Names for the lock screen from the server, so a fresh browser lists the real staff. */
   async function serverUsers() {
     var j = await call('GET', '/books/users');
-    return (j.__status === 200 && Array.isArray(j.users)) ? j.users : [];
+    if (j.__status === 200 && Array.isArray(j.users)) {
+      return j.users.filter(function (u) {
+        var n = String(u.name || '').toLowerCase().trim();
+        return n !== 'demo' && n !== 'demo user';
+      });
+    }
+    return [];
   }
 
   /* ---------------- other tills ---------------- */

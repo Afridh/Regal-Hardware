@@ -76,7 +76,14 @@ export const DEFAULT_ACCOUNTS = [
 export function sanitizeUsers(users, deletedUsers = []) {
   let list = Array.isArray(users) ? users : [];
   const delList = (Array.isArray(deletedUsers) ? deletedUsers : []).map(x => String(x || '').toLowerCase().trim());
-  list = list.filter(u => u && !LEGACY_USERS.includes(String(u.name || '').toLowerCase().trim()) && !delList.includes(String(u.name || '').toLowerCase().trim()));
+  list = list.filter(u => {
+    if (!u || !u.name) return false;
+    const nl = String(u.name || '').toLowerCase().trim();
+    if (nl === 'demo' || nl === 'demo user') return false;
+    if (LEGACY_USERS.includes(nl)) return false;
+    if (delList.includes(nl)) return false;
+    return true;
+  });
 
   // Only seed DEFAULT_ACCOUNTS if the user list is completely empty (first time initialization)
   if (list.length === 0) {
@@ -117,8 +124,19 @@ async function loadBooks(key = BOOKS_KEY) {
   if (row?.data?.S) {
     const deletedUsers = row.data.S.deletedUsers || [];
     row.data.S.users = sanitizeUsers(row.data.S.users, deletedUsers);
-    // who is signed in belongs to the till, not to the shared books: a till that has nobody
-    // signed in picks its own (see applyKept in the app), so nothing is put here.
+    if (Array.isArray(row.data.S.employees)) {
+      row.data.S.employees = row.data.S.employees.filter(e => {
+        const n = String(e?.name || '').toLowerCase().trim();
+        return n !== 'demo' && n !== 'demo user';
+      });
+    }
+    if (row.data.S.shift?.days) {
+      Object.keys(row.data.S.shift.days).forEach(d => {
+        Object.keys(row.data.S.shift.days[d] || {}).forEach(k => {
+          if (String(k).toLowerCase().includes('demo')) delete row.data.S.shift.days[d][k];
+        });
+      });
+    }
     delete row.data.S.user;
   }
   return row || null;
@@ -263,7 +281,12 @@ const asJson = v => typeof v === 'string' ? (v ? JSON.parse(v) : null) : (v ?? n
 function shiftView(rev, employees, shift, deleted) {
   const gone = (Array.isArray(deleted) ? deleted : []).map(x => String(x || '').toLowerCase().trim());
   const staff = (Array.isArray(employees) ? employees : [])
-    .filter(e => e && e.name && !gone.includes(String(e.name).toLowerCase().trim()))    // deleted users do not come back as cards
+    .filter(e => {
+      if (!e || !e.name) return false;
+      const nl = String(e.name || '').toLowerCase().trim();
+      if (nl === 'demo' || nl === 'demo user') return false;
+      return !gone.includes(nl);
+    })
     .map(({ rate, payType, otMult, pin, advance, basis, days, ot, phone, ...rest }) => rest);
   const s = shift || {};
   // a punch clock shows today and the days just gone; the full history stays in the books
@@ -369,6 +392,19 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
     for (const k of LOCAL_KEYS) delete data.S[k];
     const deletedUsers = data.S.deletedUsers || [];
     if (data.S.users) data.S.users = sanitizeUsers(data.S.users, deletedUsers);
+    if (Array.isArray(data.S.employees)) {
+      data.S.employees = data.S.employees.filter(e => {
+        const n = String(e?.name || '').toLowerCase().trim();
+        return n !== 'demo' && n !== 'demo user';
+      });
+    }
+    if (data.S.shift?.days) {
+      Object.keys(data.S.shift.days).forEach(d => {
+        Object.keys(data.S.shift.days[d] || {}).forEach(k => {
+          if (String(k).toLowerCase().includes('demo')) delete data.S.shift.days[d][k];
+        });
+      });
+    }
   }
   const out = await withTransaction(async client => {
     const { rows: [cur] } = await client.query(`SELECT rev, data FROM books WHERE key = $1 FOR UPDATE`, [key]);

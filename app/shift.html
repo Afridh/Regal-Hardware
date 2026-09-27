@@ -305,7 +305,11 @@ const CHIPS = [['all', 'All'], ['working', 'Working'], ['break', 'On break'], ['
 
 function draw() {
   const ds = D();
-  const staff = (S.employees || []).filter(e => e && e.active !== false).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const staff = (S.employees || []).filter(e => {
+    if (!e || e.active === false || !e.name) return false;
+    const n = String(e.name || '').toLowerCase().trim();
+    return n !== 'demo' && n !== 'demo user';
+  }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const st = new Map(staff.map(e => [e.id, state(ds, e.id)]));
   const count = k => k === 'all' ? staff.length : staff.filter(e => k === 'away' ? ['absent', 'leave'].includes(st.get(e.id)) : st.get(e.id) === k).length;
   document.getElementById('chips').innerHTML = CHIPS.map(([k, l]) => `<button class="chip ${filter === k ? 'on' : ''}" onclick="filter='${k}';draw()">${l} ${count(k)}</button>`).join('');
@@ -419,7 +423,13 @@ async function load(quiet) {
     }
     online = true;
     rev = j.rev || 0;
-    S = { employees: j.employees || [], shift: j.shift || { days: {}, settings: {}, holidays: [] } };
+    S = {
+      employees: (j.employees || []).filter(e => {
+        const n = String(e?.name || '').toLowerCase().trim();
+        return n !== 'demo' && n !== 'demo user';
+      }),
+      shift: j.shift || { days: {}, settings: {}, holidays: [] }
+    };
     cache(); status('Live', 'live');
     if (!document.querySelector('.veil')) draw();
   } finally { loading = false; }

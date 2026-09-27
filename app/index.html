@@ -4309,8 +4309,13 @@ function syncUsersAndStaff(){
     }
   } catch(_){}
 
-  // Purge any user who is deleted
-  S.users = S.users.filter(u => u && u.name && !S.deletedUsers.includes(String(u.name).toLowerCase().trim()));
+  // Purge any user who is deleted or demo
+  S.users = S.users.filter(u => {
+    if(!u || !u.name) return false;
+    const nl = String(u.name).toLowerCase().trim();
+    if(nl === 'demo' || nl === 'demo user') return false;
+    return !S.deletedUsers.includes(nl);
+  });
 
   const legacyNames = ['asaath kp','raslan','kasun','sampath','nuwan','chaminda','fathima','ruwan','dilan','suresh'];
 
@@ -4318,6 +4323,7 @@ function syncUsersAndStaff(){
   S.employees = S.employees.filter(e => {
     if(!e || !e.name) return false;
     const nl = String(e.name).toLowerCase().trim();
+    if(nl === 'demo' || nl === 'demo user') return false;
     if(legacyNames.includes(nl)) return false;
     if(S.deletedUsers.includes(nl)) return false;
     return S.users.some(u => String(u.name).toLowerCase().trim() === nl);
@@ -5124,7 +5130,11 @@ function salesmanPortalToday(me, st, f){
 
 function boardToday(){
   const ds=D(today);
-  const allRows=S.employees.filter(e=>e.active!==false).map(e=>({
+  const allRows=S.employees.filter(e=>{
+    if(!e || e.active===false || !e.name) return false;
+    const nl=String(e.name).toLowerCase().trim();
+    return nl!=='demo' && nl!=='demo user';
+  }).map(e=>({
     e,
     st:empState(ds,e.id),
     f:dayFigures(ds,e.id),
@@ -5334,7 +5344,11 @@ function employeeModal(id){
 }
 /* ---- paying the month, and posting it ---- */
 function payRun(mk){
-  const rows=S.employees.filter(e=>e.active!==false).map(e=>({e,p:payFor(e,mk)}));
+  const rows=S.employees.filter(e=>{
+    if(!e || e.active===false || !e.name) return false;
+    const nl=String(e.name).toLowerCase().trim();
+    return nl!=='demo' && nl!=='demo user';
+  }).map(e=>({e,p:payFor(e,mk)}));
   const gross=rows.reduce((a,r)=>a+r.p.basic+r.p.otPay-r.p.fine,0);
   const adv=rows.reduce((a,r)=>a+r.p.advance,0), net=rows.reduce((a,r)=>a+r.p.net,0);
   const month=new Date(mk+'-01').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
@@ -6351,7 +6365,6 @@ function persist(force){
 }
 window.markSaved=()=>{ lastSavedTxt=snapshotTxt() };   // books just came from the server: nothing to push back
 const DEFAULT_ACCOUNTS = [
-  { name: 'demo', role: 'Demo Admin', uid: 'DM', pass: 'demo123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve','products_view','dashboard_view','attendance_view'] },
   { name: 'Afridh', role: 'Super Admin', uid: 'AF', pass: 'Afridh123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
   { name: 'Azhad', role: 'Admin', uid: 'AZ', pass: 'Azhad123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
   { name: 'Akmal', role: 'Admin', uid: 'AK', pass: 'Akmal123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
@@ -6372,7 +6385,30 @@ function applyKept(kept){
 
   // Preserve local shift punches and local users so incoming server sync never wipes them out
   const localShiftDays = (S.shift && S.shift.days) ? JSON.parse(JSON.stringify(S.shift.days)) : null;
-  const localUsers = Array.isArray(S.users) ? JSON.parse(JSON.stringify(S.users)) : [];
+  const localUsers = Array.isArray(S.users) ? JSON.parse(JSON.stringify(S.users)).filter(u => {
+    const nl = String(u?.name || '').toLowerCase().trim();
+    return nl !== 'demo' && nl !== 'demo user';
+  }) : [];
+
+  if(incoming && incoming.users && Array.isArray(incoming.users)){
+    incoming.users = incoming.users.filter(u => {
+      const nl = String(u?.name || '').toLowerCase().trim();
+      return nl !== 'demo' && nl !== 'demo user';
+    });
+  }
+  if(incoming && incoming.employees && Array.isArray(incoming.employees)){
+    incoming.employees = incoming.employees.filter(e => {
+      const nl = String(e?.name || '').toLowerCase().trim();
+      return nl !== 'demo' && nl !== 'demo user';
+    });
+  }
+  if(incoming && incoming.shift && incoming.shift.days){
+    Object.keys(incoming.shift.days).forEach(ds => {
+      Object.keys(incoming.shift.days[ds] || {}).forEach(k => {
+        if(String(k).toLowerCase().includes('demo')) delete incoming.shift.days[ds][k];
+      });
+    });
+  }
 
   Object.assign(S, incoming);
   Object.keys(kept.CFG||{}).forEach(k=>{ CFG[k]={...(CFG[k]||{}),...(kept.CFG[k]||{})} });
@@ -15941,7 +15977,11 @@ function users(){
   const isSuperAdmin=S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||['super admin','superadmin','owner'].includes(String(S.user.role||'').toLowerCase()));
   const isAdmin=isSuperAdmin||(S.user&&String(S.user.role||'').toLowerCase()==='admin');
   if(!Array.isArray(S.users)) S.users=[];
-  const rawList=S.users;
+  const rawList=S.users.filter(u => {
+    if(!u || !u.name) return false;
+    const nl = String(u.name).toLowerCase().trim();
+    return nl !== 'demo' && nl !== 'demo user';
+  });
   const allRoles=[...DEFAULT_ROLES,...(S.roles||[]).filter(r=>!DEFAULT_ROLES.some(d=>d.name.toLowerCase()===r.name.toLowerCase()))];
   
   const totalUsers=rawList.length;
@@ -16759,6 +16799,7 @@ function shopLock(){
       if(Array.isArray(list) && list.length){
         list.forEach(su => {
           const sl = String(su.name || '').toLowerCase().trim();
+          if(sl === 'demo' || sl === 'demo user') return;
           if(!S.users.some(x => String(x.name || '').toLowerCase().trim() === sl)){
             S.users.push({ name: su.name, role: su.role, uid: su.uid, pin: su.pin ? '?' : '', perms: [], active: true, prefs: { ...PREF_DEFAULTS } });
           }
@@ -17796,6 +17837,7 @@ if(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_dem
       if(list.length) {
         list.forEach(u=>{
           const lower = u.name.toLowerCase().trim();
+          if(lower === 'demo' || lower === 'demo user') return;
           if((S.deletedUsers||[]).includes(lower)) return;
           const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === lower);
           const existing = S.users.find(x => String(x.name||'').toLowerCase().trim() === lower);
