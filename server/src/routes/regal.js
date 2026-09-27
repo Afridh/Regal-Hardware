@@ -277,16 +277,38 @@ r.post('/books/shift-login', asyncHandler(async (req, res) => {
 // JSON is text underneath)
 const asJson = v => typeof v === 'string' ? (v ? JSON.parse(v) : null) : (v ?? null);
 
-/** What the shift page is shown: staff without wages or PINs, and only the recent days. */
-function shiftView(rev, employees, shift, deleted) {
+/** The people on the board are the shop's users, as the till's syncUsersAndStaff makes them: a staff
+ *  record is kept only while a user of that name exists, and a user with no record yet gets the id the
+ *  till will give them (the next one up, in user order) — so a punch here lands on the same card there. */
+export function staffForUsers(users, employees, deleted) {
   const gone = (Array.isArray(deleted) ? deleted : []).map(x => String(x || '').toLowerCase().trim());
+  const low = x => String(x || '').toLowerCase().trim();
+  const us = sanitizeUsers(Array.isArray(users) ? users.map(u => ({ ...u })) : [], gone).filter(u => u && u.name);
   const staff = (Array.isArray(employees) ? employees : [])
-    .filter(e => {
-      if (!e || !e.name) return false;
-      const nl = String(e.name || '').toLowerCase().trim();
-      if (nl === 'demo' || nl === 'demo user') return false;
-      return !gone.includes(nl);
-    })
+    .filter(e => e && e.name && !LEGACY_USERS.includes(low(e.name)) && !gone.includes(low(e.name)) && us.some(u => low(u.name) === low(e.name)))
+    .map(e => ({ ...e }));
+  const today = new Date().toISOString().slice(0, 10);
+  us.forEach((u, i) => {
+    if (u.active === false) return;
+    const n = low(u.name);
+    const e = staff.find(x => low(x.name) === n || low(x.userName) === n);
+    if (e) {
+      Object.assign(e, { name: u.name, position: u.role, userName: u.name, active: true });
+      if (!e.code) e.code = u.uid || ('E' + String(e.id || (i + 1)).padStart(3, '0'));
+      return;
+    }
+    const id = staff.reduce((m, x) => Math.max(m, +x.id || 0), 0) + 1;
+    staff.push({ id, code: u.uid || ('E' + String(id).padStart(3, '0')), name: u.name, position: u.role, userName: u.name,
+      basis: 'monthly', rate: 0, otMult: 1.5, days: 26, ot: 0, advance: 0, phone: '', card: '', deviceId: '', joined: today, active: true });
+  });
+  // a user switched off in Users is off the board too
+  staff.forEach(e => { const u = us.find(x => low(x.name) === low(e.name)); if (u && u.active === false) e.active = false; });
+  return staff;
+}
+
+/** What the shift page is shown: the shop's users as staff, without wages or PINs, and only the recent days. */
+function shiftView(rev, employees, shift, deleted, users) {
+  const staff = staffForUsers(users, employees, deleted)
     .map(({ rate, payType, otMult, pin, advance, basis, days, ot, phone, ...rest }) => rest);
   const s = shift || {};
   // a punch clock shows today and the days just gone; the full history stays in the books
@@ -302,12 +324,13 @@ r.get('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
     // MySQL has no #> path reach-in: the document is read and the parts taken out here
     const { rows: [row] } = await query('SELECT rev, data FROM books WHERE `key` = ?', [req.params.key]);
     const S = asJson(row?.data)?.S;
-    return res.json(row ? shiftView(row.rev, S?.employees, S?.shift, S?.deletedUsers) : empty);
+    return res.json(row ? shiftView(row.rev, S?.employees, S?.shift, S?.deletedUsers, S?.users) : empty);
   }
   const { rows: [row] } = await query(
-    `SELECT rev, data#>'{S,employees}' AS employees, data#>'{S,shift}' AS shift, data#>'{S,deletedUsers}' AS deleted
+    `SELECT rev, data#>'{S,employees}' AS employees, data#>'{S,shift}' AS shift, data#>'{S,deletedUsers}' AS deleted,
+            data#>'{S,users}' AS users
        FROM books WHERE key = $1`, [req.params.key]);
-  res.json(row ? shiftView(row.rev, row.employees, row.shift, row.deleted) : empty);
+  res.json(row ? shiftView(row.rev, row.employees, row.shift, row.deleted, row.users) : empty);
 }));
 
 /** One punch on MySQL: the document is locked, the one record changed in it, and it is written back.
