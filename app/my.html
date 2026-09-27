@@ -50,6 +50,32 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand);b
 .bill .no{font-family:Archivo,sans-serif;font-weight:700}
 .bill .d{font-size:12px;color:var(--steel)}
 .bill .amt{text-align:right;white-space:nowrap}
+.bill.open{cursor:pointer;border-radius:8px;margin:0 -8px;padding-left:8px;padding-right:8px}
+.bill.open:hover,.bill.open:focus{background:#F4F7F6;outline:none}
+.seeit{font-family:inherit;font-size:11px;font-weight:600;color:var(--steel);border:1px solid var(--line);
+  border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:middle}
+/* one bill, opened over the page */
+.billbox{position:fixed;inset:0;background:rgba(15,23,26,.45);display:flex;align-items:flex-end;
+  justify-content:center;z-index:60;padding:0}
+.billbox.hide{display:none}
+.billsheet{background:#fff;width:100%;max-width:560px;max-height:88vh;overflow:auto;
+  border-radius:14px 14px 0 0;padding:16px}
+@media(min-width:620px){.billbox{align-items:center}.billsheet{border-radius:14px}}
+.billtop{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.billtop b{font-family:Archivo,sans-serif;font-size:18px}
+.billx{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 12px;font:inherit;cursor:pointer}
+.bhead{display:flex;justify-content:space-between;font-size:12px;color:var(--steel);margin-bottom:8px}
+.btbl{width:100%;border-collapse:collapse;font-size:13px}
+.btbl th{text-align:left;font-size:11px;color:var(--steel);border-bottom:1px solid var(--line);padding:6px 4px}
+.btbl td{padding:7px 4px;border-bottom:1px solid var(--line2);vertical-align:top}
+.btbl .n{text-align:right;white-space:nowrap}
+.btbl .d{font-size:11px;color:var(--steel)}
+.btbl tr.ret td{color:#9F1239}
+.rtag{background:#FFE4E6;color:#9F1239;border-radius:999px;font-size:10px;padding:1px 6px}
+.btot{display:flex;justify-content:space-between;padding:5px 4px;font-size:13px}
+.btot b{font-family:Archivo,sans-serif}
+.btot.big{border-top:1px solid var(--line);margin-top:4px;padding-top:8px;font-size:16px}
+.btot.due b{color:#9F1239}
 .bill .amt b{display:block;font-family:Archivo,sans-serif}
 .age{font-size:11px;padding:1px 7px;border-radius:99px;background:var(--tint-green);color:#12613D}
 .age.mid{background:var(--tint-yellow);color:#8A5D06} .age.old{background:var(--tint-rust);color:#8E3423}
@@ -139,6 +165,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand);b
       <div id="bills"><div class="muted">Nothing owing — thank you.</div></div>
     </div>
 
+    <div id="billBox" class="billbox hide">
+      <div class="billsheet">
+        <div class="billtop"><b id="billNo">Bill</b><button type="button" id="billX" class="billx">Close</button></div>
+        <div id="billBody"></div>
+      </div>
+    </div>
+
     <div class="card">
       <h2>Tell the shop you have paid</h2>
       <div class="muted" style="margin-bottom:10px">It waits on your account until the shop enters it. Nothing changes here straight away.</div>
@@ -184,6 +217,35 @@ try { token = localStorage.getItem(KEY) || '' } catch (e) {}
 const money = (n) => 'Rs ' + (+n || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const say = (text, kind) => { $('#msg').innerHTML = text ? `<div class="msg ${kind || 'warn'}">${text}</div>` : ''; };
 const show = (id, on) => $(id).classList.toggle('hide', !on);
+
+/* A bill of their own, opened from the list: what was bought, at what price, and what is left on it. */
+async function openBill(no) {
+  const box = document.getElementById('billBox'), body = document.getElementById('billBody');
+  document.getElementById('billNo').textContent = 'Bill ' + no;
+  body.innerHTML = '<div class="muted">Reading…</div>';
+  box.classList.remove('hide');
+  try {
+    const { bill: b } = await api('/bill/' + encodeURIComponent(no));
+    body.innerHTML = `
+      <div class="bhead"><div>${b.date}${b.time ? ' · ' + b.time : ''}</div><div>${b.type === 'CREDIT' ? 'on account' : 'cash'}</div></div>
+      <table class="btbl"><thead><tr><th>Item</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th></tr></thead><tbody>
+      ${b.lines.map(l => `<tr class="${l.returned ? 'ret' : ''}"><td>${l.name}${l.returned ? ' <span class="rtag">returned</span>' : ''}${l.code ? `<div class="d">${l.code}</div>` : ''}</td>
+        <td class="n">${l.qty}${l.unit ? ' ' + l.unit : ''}</td><td class="n">${money(l.price)}</td><td class="n">${money(l.amount)}</td></tr>`).join('')}
+      </tbody></table>
+      <div class="btot"><span>Subtotal</span><b>${money(b.sub)}</b></div>
+      ${b.billDisc > 0 ? `<div class="btot"><span>Discount</span><b>− ${money(b.billDisc)}</b></div>` : ''}
+      <div class="btot big"><span>Total</span><b>${money(b.total)}</b></div>
+      <div class="btot"><span>Paid</span><b>${money(b.paid)}</b></div>
+      ${b.balance > 0.005 ? `<div class="btot due"><span>Still owing</span><b>${money(b.balance)}</b></div>` : '<div class="btot"><span>Settled</span><b>✓</b></div>'}`;
+  } catch (e) { body.innerHTML = `<div class="msg bad">${e.message}</div>` }
+}
+function closeBill() { document.getElementById('billBox').classList.add('hide') }
+document.addEventListener('DOMContentLoaded', () => {
+  const x = document.getElementById('billX'), box = document.getElementById('billBox');
+  if (x) x.onclick = closeBill;
+  if (box) box.onclick = (e) => { if (e.target === box) closeBill() };
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeBill() });
 
 async function api(path, body) {
   const r = await fetch('/api/my' + path, {
@@ -299,10 +361,14 @@ async function load() {
   const bands = [['d0', 'Up to 30 days'], ['d30', '31 – 60 days'], ['d60', '61 – 90 days'], ['d90', 'Over 90 days']];
   $('#bands').innerHTML = j.owed > 0 ? bands.map(([k, l]) =>
     `<div class="band ${k === 'd60' || k === 'd90' ? 'late' : ''}"><span>${l}</span><b>${j.ageing[k] > 0 ? money(j.ageing[k]) : '—'}</b></div>`).join('') : '';
-  $('#bills').innerHTML = j.open.length ? j.open.map(s => `<div class="bill">
-      <div><div class="no">${s.no}</div><div class="d">${s.date} · ${s.lines} line${s.lines === 1 ? '' : 's'} ${ageTag(s.days)}</div></div>
+  $('#bills').innerHTML = j.open.length ? j.open.map(s => `<div class="bill open" data-bill="${s.no}" tabindex="0" role="button">
+      <div><div class="no">${s.no} <span class="seeit">see it</span></div><div class="d">${s.date} · ${s.lines} line${s.lines === 1 ? '' : 's'} ${ageTag(s.days)}</div></div>
       <div class="amt"><b>${money(s.balance)}</b>${s.paid ? `<div class="d">of ${money(s.total)}</div>` : ''}</div></div>`).join('')
     : '<div class="muted">Nothing owing — thank you.</div>';
+  $('#bills').querySelectorAll('[data-bill]').forEach(el => {
+    el.onclick = () => openBill(el.dataset.bill);
+    el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBill(el.dataset.bill) } };
+  });
   $('#pays').innerHTML = j.pays.length ? j.pays.map(p => `<div class="bill">
       <div><div class="no">${p.no}</div><div class="d">${p.date} · ${String(p.method || '').toLowerCase()}${p.ref ? ' · ' + p.ref : ''}</div></div>
       <div class="amt"><b>${money(p.amount)}</b></div></div>`).join('')

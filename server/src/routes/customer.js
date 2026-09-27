@@ -229,6 +229,28 @@ r.get('/me', custAuth, asyncHandler(async (req, res) => {
     today: localDate() });
 }));
 
+/** One bill of theirs, line by line. Only ever their own — the account on the token decides. */
+r.get('/bill/:no', custAuth, asyncHandler(async (req, res) => {
+  const data = await books();
+  const S = data?.S || {}, CFG = data?.CFG || {};
+  const inv = (S.sales || []).find(s => String(s.no) === String(req.params.no) && s.customerId === req.cust.cid);
+  if (!inv) throw new HttpError(404, 'That bill is not on this account');
+  const name = (pid) => (S.products || []).find(p => p.id === pid);
+  res.json({ ok: true, bill: {
+    no: inv.no, date: inv.date, time: inv.time || '', type: inv.type,
+    sub: inv.sub, billDisc: inv.billDisc || 0, total: inv.total, paid: inv.paid, balance: inv.balance,
+    by: inv.by || '', salesman: inv.salesman || '',
+    lines: (inv.lines || []).map(l => {
+      const p = name(l.pid) || {};
+      return { name: l.name || p.name || 'Item', code: p.code || '', unit: p.unit || '',
+        qty: l.qty, price: l.price, disc: l.disc || 0,
+        amount: +(l.qty * l.price - (l.disc || 0)).toFixed(2), returned: l.qty < 0 };
+    }),
+    pays: (inv.pays || []).map(x => ({ method: x.method, amount: x.amount, ref: x.ref || '' })),
+    shop: { name: CFG.shop?.name || 'Regal Hardware', phone: CFG.shop?.phone || '', addr: CFG.shop?.addr || '' },
+  } });
+}));
+
 /** Their own password, changed from inside. The one the shop set goes on working. */
 r.post('/password', custAuth, asyncHandler(async (req, res) => {
   if (!req.cust.lid) throw new HttpError(400, 'This page was opened with a code, not a sign-in');
