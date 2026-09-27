@@ -72,22 +72,34 @@ nav .navbrand .mark{width:36px;height:36px;flex:0 0 36px;border-radius:10px;back
  font-family:Archivo,sans-serif;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;overflow:hidden;
  box-shadow:0 6px 14px rgba(240,168,30,.35),inset 0 1px 0 rgba(255,255,255,.5)}
 nav .navbrand .mark img{width:100%;height:100%;object-fit:cover;background:#fff}
-/* the pin sits with the menu's own buttons: it does not move when the menu widens, so it cannot
-   slide out from under the pointer on the way to it */
-nav .navpin{display:flex;align-items:center;gap:12px;width:calc(100% - 16px);margin:0 8px 6px;
-  padding:9px 10px;border:1px solid rgba(255,255,255,.10);border-radius:9px;
-  background:rgba(255,255,255,.04);color:rgba(255,255,255,.66);cursor:pointer;font:inherit;
-  font-size:13px;text-align:left;transition:background .16s,color .16s,border-color .16s}
-nav .navpin .nvi{width:18px;height:18px;flex:0 0 18px;transform:rotate(38deg);
-  transition:transform .22s cubic-bezier(.2,.7,.3,1)}
-nav .navpin:hover{background:rgba(255,255,255,.11);color:#fff;border-color:rgba(255,255,255,.22)}
-nav .navpin.on{color:#101E22;background:linear-gradient(145deg,#F7BB3C,#E0960F);border-color:#D08F09}
-nav .navpin.on .nvi{transform:rotate(0deg)}
-/* narrow menu: the icon alone, centred, still a full-size target */
-body.navmini nav .navpin span,body.pos-narrow nav .navpin span{opacity:0;transform:translateX(-6px);
-  pointer-events:none;transition:opacity .18s,transform .18s;white-space:nowrap}
-body.navmini nav:hover .navpin span,body.pos-narrow nav:hover .navpin span{opacity:1;transform:none;transition-delay:.04s}
+/* A small pin beside the shop name. It is only ever shown once the menu is open — pinned, or the
+   mouse already on it — so it is always in the same place when it is clicked. Showing it on a narrow
+   menu is what broke it before: the menu widens as the pointer comes near, and the pin moved. */
+nav .navbrand{position:relative}
+nav .navpin{position:absolute;right:10px;top:50%;transform:translateY(-50%);z-index:3;
+  width:24px;height:24px;display:grid;place-items:center;padding:0;cursor:pointer;
+  border:1px solid rgba(255,255,255,.14);border-radius:7px;background:rgba(255,255,255,.05);
+  color:rgba(255,255,255,.6);opacity:0;pointer-events:none;
+  transition:opacity .16s,color .16s,background .16s,border-color .16s}
+nav .navpin svg{width:13px;height:13px;transform:rotate(38deg);transition:transform .22s cubic-bezier(.2,.7,.3,1)}
+nav .navpin:hover{background:rgba(255,255,255,.13);color:#fff;border-color:rgba(255,255,255,.28)}
+nav .navpin.on{color:#101E22;background:linear-gradient(145deg,#F7BB3C,#E0960F);border-color:#D08F09;
+  box-shadow:0 0 0 3px rgba(240,168,30,.16)}
+nav .navpin.on svg{transform:rotate(0deg)}
+body:not(.navmini):not(.pos-narrow) nav .navpin{opacity:1;pointer-events:auto}
+body.navmini nav:hover .navpin,body.pos-narrow nav:hover .navpin{opacity:1;pointer-events:auto;transition-delay:.06s}
 body.navtop nav .navpin{display:none}
+nav .navbrand .bname{padding-right:30px}      /* the name stops short, so the two never overlap */
+
+/* sign out is the icon on its own, small, at the foot of the menu */
+nav .navsignout{width:30px;height:30px;flex:0 0 30px;justify-content:center;gap:0;padding:0}
+nav .navsignout .nvi{width:16px;height:16px}
+
+/* the page needs air between it and the menu */
+@media (min-width:901px){
+  body:not(.navtop) main{padding-left:14px}
+  body:not(.navtop) nav{border-right:1px solid rgba(255,255,255,.08)}
+}
 
 nav .navbrand .bname{flex:1;min-width:0;line-height:1.1}
 nav .navbrand .bname b{display:block;font-family:Archivo,sans-serif;font-weight:800;font-size:12.5px;color:#fff;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -8056,6 +8068,9 @@ function renderNav(){
   $('#nav').innerHTML= side
     ? `<div class="navbrand">
         <span class="mark">${CFG.shop&&CFG.shop.logo?`<img src="${CFG.shop.logo}" alt="">`:'RH'}</span>
+        <button class="navpin ${pref('collapsed')!==false?'':'on'}" data-act="navMin" type="button"
+          title="${pref('collapsed')!==false?'Pin the menu open':'Unpin — let it slide away when you move off'}"><svg viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8V4h6v6.8l2 2.2v2H7v-2z"/></svg></button>
         <span class="bname"><b>${(CFG.shop&&CFG.shop.name||'REGAL HARDWARE').replace(/ hardware$/i,'')} <span>${/hardware/i.test(CFG.shop&&CFG.shop.name||'')?'HARDWARE':''}</span></b><small>till ${S.terminal} · ${S.user.role}</small></span>
        </div>
        <div class="navlist">` +
@@ -8065,18 +8080,11 @@ function renderNav(){
             <i class="ic">${icon(v[0])}</i><span>${v[1]}</span>${v[2]?`<em class="k">${v[2]}</em>`:''}${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}<i class="tip">${v[1]}${v[2]?' · '+v[2]:''}</i></button>`).join('')
       +`</div>
        <div class="navfooter">
-         <button class="navpin ${pref('collapsed')!==false?'':'on'}" data-act="navMin" type="button"
-           title="${pref('collapsed')!==false?'Pin the menu open':'Unpin — let it slide away when you move off'}">
-           <svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.8"
-             stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8V4h6v6.8l2 2.2v2H7v-2z"/></svg>
-           <span>${pref('collapsed')!==false?'Pin the menu':'Menu pinned'}</span>
-         </button>
          <div class="navfoot-actions">
            <div class="bellwrap"></div>
            <span class="navsaved" id="savedAtNav">${lastSaved?'saved '+lastSaved.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):''}</span>
-           <button class="navsignout" data-act="navSignOut" title="Sign out">
+           <button class="navsignout" data-act="navSignOut" title="Sign out" aria-label="Sign out">
              <svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17l5-5-5-5M15 12H3M21 4v16"/></svg>
-             <span>Sign out</span>
            </button>
          </div>
          <div class="navuser" data-act="myProfile" style="cursor:pointer" title="Edit your account or password"><span class="avatar">${initial}</span><span class="who"><b>${S.user.name}</b><small>${S.user.role} · ${S.drawer&&S.drawer.opened?'drawer since '+S.drawer.opened:'signed in'} · ${today.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</small></span></div>
