@@ -170,26 +170,32 @@ r.post('/books/login', asyncHandler(async (req, res) => {
   }
   const adminPass = process.env.SEED_ADMIN_PASSWORD || 'admin123';
   const isAdmin = String(user).toLowerCase() === 'admin';
-  const users = await usersFromBooks();
+  const row = await loadBooks();
+  // The setup ways in (admin + the seed password, or any name + its demo password, as Owner) are for a
+  // shop that has no books yet. Once the books are there only a real user's own password opens them:
+  // otherwise anyone who typed "name" / "name123" was the owner of a live shop. A locked-out shop is
+  // recovered with `npm run reset:admin`, which writes a real admin user.
+  const fresh = !row;
+  const users = sanitizeUsers(row?.data?.S?.users, row?.data?.S?.deletedUsers || []);
   const u = users.find(x => String(x.name).toLowerCase() === String(user).toLowerCase());
 
   if (u) {
     if (u.active === false || u.canLogin === false) throw new HttpError(401, 'That name cannot sign in');
     const defAcc = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === String(user).toLowerCase());
     const isDefPass = defAcc && (!u.passHash || u.passHash === sha(defAcc.pass) || u.passHash === fnv(defAcc.pass)) && password === defAcc.pass;
-    if (matches(u, password) || isDefPass || (isAdmin && password === adminPass)) {
+    if (matches(u, password) || isDefPass || (fresh && isAdmin && password === adminPass)) {
       if (!u.passHash && defAcc) u.passHash = sha(defAcc.pass);
       return res.json({ ok: true, token: sign(u), user: { name: u.name, role: u.role, perms: u.perms || [] } });
     }
     throw new HttpError(401, 'That password is not right');
   }
 
-  if (isAdmin && password === adminPass) {
+  if (fresh && isAdmin && password === adminPass) {
     const adminUser = { name: 'admin', role: 'Owner', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] };
     return res.json({ ok: true, token: sign(adminUser), user: { name: adminUser.name, role: 'Owner', perms: adminUser.perms || [] } });
   }
 
-  if (password === adminPass || password === demoPassword(user)) {
+  if (fresh && (password === adminPass || password === demoPassword(user))) {
     return res.json({ ok: true, token: sign({ name: user, role: 'Owner', perms: [] }), user: { name: user, role: 'Owner', perms: [] }, bootstrap: true });
   }
   throw new HttpError(401, 'That password is not right');

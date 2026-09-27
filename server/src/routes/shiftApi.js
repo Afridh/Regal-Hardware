@@ -134,7 +134,8 @@ r.all('/shift-api.php', asyncHandler(async (req, res) => {
     } catch {}
 
     if (String(user || '').toLowerCase() === 'admin') {
-      if (String(password || '') === adminPass || (u && await bcrypt.compare(String(password || ''), u.password_hash))) {
+      // the seed password only counts when the host has set one of its own — the default is in the code
+      if ((process.env.SEED_ADMIN_PASSWORD && String(password || '') === adminPass) || (u && await bcrypt.compare(String(password || ''), u.password_hash))) {
         const token = jwt.sign({ kind: 'shift', user: 'admin', role: 'owner' }, process.env.JWT_SECRET, { expiresIn: '30d' });
         return res.json({ ok: true, token, user: 'admin', role: 'owner' });
       }
