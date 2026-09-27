@@ -61,6 +61,7 @@
     window.keptLocalPunches = false;
     window.applyKept(doc);
     restoreLocal(local);
+    if (typeof window.refreshMe === 'function') window.refreshMe();
     if (typeof window.markSaved === 'function') window.markSaved();
     // punches made here that the server copy did not have yet: marked saved above, so send them up now
     // or they stay on this till only

@@ -6618,6 +6618,10 @@ function privacyToggle(){
 const privacyKeyMatch=(e)=>{ const k=(CFG.privacy&&CFG.privacy.key)||'ctrl+shift+x'; const key=e.key.toLowerCase();
   return k==='ctrl+shift+x'?(e.ctrlKey&&e.shiftKey&&key==='x'):k==='f12'?(e.key==='F12'):k==='ctrl+`'?(e.ctrlKey&&(key==='`'||e.code==='Backquote')):k==='ctrl+shift+h'?(e.ctrlKey&&e.shiftKey&&key==='h'):k==='scrolllock'?(e.key==='ScrollLock'):false };
 let saveForce=false;
+/* users changed on this till and not saved yet (lower-case names): while a name is here, a copy of the
+   books coming in keeps this till's version of that user. A save that lands clears it. */
+const dirtyUsers=new Set();
+const markUserDirty=(...names)=>names.forEach(n=>{ if(n) dirtyUsers.add(String(n).toLowerCase().trim()) });
 function persist(force){
   if(window.privacyOn||window.leavingDemo) return;
   // the books are on the server but would not come down, so this till is holding sample data:
@@ -6641,9 +6645,11 @@ function persist(force){
     const txt=snapshotTxt();
     if(!f&&txt===lastSavedTxt) return;
     lastSavedTxt=txt;
+    const pendingUsers=[...dirtyUsers];
     const ok=await store.set({v:1,at:new Date().toISOString(),S:snapshot(),CFG});
     if(!ok) lastSavedTxt='';
     else {
+      pendingUsers.forEach(n=>dirtyUsers.delete(n));        // those changes are on the server now
       try { window._lastLocalStoreTxt = localStorage.getItem(STORE_KEY) || ''; }catch(_){}
     }
     lastSaved=ok?new Date():null;
@@ -6727,7 +6733,13 @@ function applyKept(kept){
   S.phoneOpen=false; S.notifOpen=false;
   if(!Array.isArray(S.deletedUsers)) S.deletedUsers=[];
   try {
-    const lsDel = JSON.parse(localStorage.getItem('regal_deleted_users')||'[]');
+    let lsDel = JSON.parse(localStorage.getItem('regal_deleted_users')||'[]');
+    // a name this browser saw removed, but that the books hold as a user again, was added back
+    const back = new Set((incoming.users||[]).map(u => String(u&&u.name||'').toLowerCase().trim()));
+    if(Array.isArray(lsDel) && lsDel.some(d => back.has(String(d).toLowerCase().trim()))){
+      lsDel = lsDel.filter(d => !back.has(String(d).toLowerCase().trim()));
+      localStorage.setItem('regal_deleted_users', JSON.stringify(lsDel));
+    }
     if(Array.isArray(lsDel)){
       lsDel.forEach(d => {
         const dl = String(d).toLowerCase().trim();
@@ -6737,23 +6749,22 @@ function applyKept(kept){
   } catch(_){}
 
   if(Array.isArray(S.users)){
+    // The user list that came in is the shop's: an edit, a removal or a rename made on another till is
+    // in it, and this till's older copy must not be laid back over it (that is how Azhad's, Akmal's and
+    // KP's screens kept showing removed and old users). Only a user changed here and not saved yet
+    // (dirtyUsers) keeps this till's version; the signed-in person keeps their own screen preferences.
     if(localUsers.length){
+      const me = String(S.user && S.user.name || '').toLowerCase().trim();
       localUsers.forEach(lu => {
         if(!lu || !lu.name) return;
         const luLower = String(lu.name).toLowerCase().trim();
         if(isLegacyUser(lu) || S.deletedUsers.includes(luLower)) return;
         const existing = S.users.find(u => String(u.name).toLowerCase().trim() === luLower);
-        if(!existing){
-          S.users.push(lu);
-        } else {
-          if(lu.role) existing.role = lu.role;
-          if(lu.perms && lu.perms.length) existing.perms = lu.perms;
-          if(lu.active !== undefined) existing.active = lu.active;
-          if(lu.salesId) existing.salesId = lu.salesId;
-          if(lu.pin !== undefined) existing.pin = lu.pin;
-          if(lu.passHash) existing.passHash = lu.passHash;
-          if(lu.canLogin !== undefined) existing.canLogin = lu.canLogin;
-          if(lu.addedAt && !existing.addedAt) existing.addedAt = lu.addedAt;
+        if(dirtyUsers.has(luLower)){
+          if(!existing) S.users.push(lu); else Object.assign(existing, lu);
+          window.keptLocalPunches = true;                  // not on the server yet: send it up after this
+        } else if(existing && luLower === me && lu.prefs){
+          existing.prefs = { ...(existing.prefs||{}), ...lu.prefs };
         }
       });
     }
@@ -16666,6 +16677,7 @@ function myProfileModal(){
     const navChoice=m.querySelector('#mpNav').value;
     const startChoice=m.querySelector('#mpStart').value;
     
+    markUserDirty(u.name, nm);
     u.name=nm;
     u.uid=uid;
     u.pin=pin;
@@ -16922,6 +16934,7 @@ function userModal(name){
 
     const oldName = u ? u.name : null;
     const lowerNm = nm.toLowerCase().trim();
+    markUserDirty(nm, oldName);
     S.deletedUsers = (S.deletedUsers || []).filter(x => x !== lowerNm);
     try {
       let lsDel = JSON.parse(localStorage.getItem('regal_deleted_users') || '[]');
@@ -17053,6 +17066,26 @@ S.users=DEFAULT_ACCOUNTS.filter(acc => !S.deletedUsers.includes(acc.name.toLower
 }));
 S.user={name:'Afridh', role:'Super Admin', perms:[...DEFAULT_ACCOUNTS[0].perms], prefs:{...PREF_DEFAULTS}};
 
+/* after the books come in from the server: the person signed in here takes their role and permissions
+   from the shop's list, so a change made by the Super Admin on another till reaches this one — and
+   someone removed, switched off or left without a sign-in there is signed out here */
+window.refreshMe=function(){
+  if(!S.user||S.signedOut||window.isDemo) return;
+  const me=String(S.user.name||'').toLowerCase().trim();
+  const u=(S.users||[]).find(x=>String(x.name||'').toLowerCase().trim()===me);
+  if(!u||u.active===false||u.canLogin===false||(S.deletedUsers||[]).includes(me)){
+    if(me==='admin') return;                                 // the recovery login is not on the list
+    S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:CFG.bill.defaultFormat};
+    closeModals(); S.signedOut=true;
+    try{ localStorage.removeItem('regal_user'); localStorage.setItem('regal_signed_out','1') }catch(e){}
+    if(window.regalBridge) regalBridge.logout();
+    shopLock();
+    toast('Your sign-in was changed by an admin — please sign in again','warn');
+    return;
+  }
+  S.user.role=u.role;
+  S.user.perms=[...(u.perms||[])];
+};
 function signOut(){
   if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){ leaveDemo(); return }
   if(S.pos.lines.length&&!confirm('There is a bill on the screen that has not been paid. Sign out anyway and lose it?'))return;
@@ -17940,6 +17973,7 @@ document.addEventListener('click',e=>{
       if(u.name===S.user.name) return toast('You cannot switch off the login you are using');
       if(u.role==='Super Admin'||u.name==='Afridh') return toast('Super Admin cannot be switched off');
       u.active=u.active===false;              // a user saved without the flag is switched on
+      markUserDirty(u.name);
       syncUsersAndStaff();
       try { localStorage.setItem(STORE_KEY, snapshotTxt()); } catch(_){}
       persist(true);
