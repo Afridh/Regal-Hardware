@@ -58,9 +58,13 @@
   function applyRemote(doc) {
     if (!doc || typeof window.applyKept !== 'function') return;
     var local = keepLocal();
+    window.keptLocalPunches = false;
     window.applyKept(doc);
     restoreLocal(local);
     if (typeof window.markSaved === 'function') window.markSaved();
+    // punches made here that the server copy did not have yet: marked saved above, so send them up now
+    // or they stay on this till only
+    if (window.keptLocalPunches && typeof window.persist === 'function') { window.keptLocalPunches = false; setTimeout(function () { window.persist(true); }, 0); }
     if (window.S) { window.S._fromStore = true; window.S.terminal = localStorage.getItem(TERMINAL_KEY) || window.S.terminal || 'T1'; }
     if (typeof window.applyLayout === 'function') window.applyLayout();
     if (window.S && window.S.view === 'payroll' && typeof window.refreshAttendanceBoard === 'function') {

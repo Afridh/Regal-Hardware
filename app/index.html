@@ -4497,8 +4497,8 @@ function applyShift(data){
       const localId = map[sid];
       if(!localId) return;
       const cur = S.shift.days[ds][localId];
-      // Do not overwrite today's local check-in with an empty or non-work record
-      if(ds === D(today) && cur && cur.in && (!r || !r.in)) return;
+      // a change made here after the attendance server's copy is kept
+      if(cur && cur.updatedAt && (!r || !r.updatedAt || cur.updatedAt > r.updatedAt)) return;
       S.shift.days[ds][localId] = { ...(cur||{}), ...r };
     });
   });
@@ -5382,7 +5382,8 @@ function dayEditModal(id,ds){
   m.querySelector('#deAdd').onclick=()=>{const w=shiftSet().breaks[0];brs.push({id:w.id,start:w.start,end:w.end});draw()};
   m.querySelector('#deOk').onclick=()=>{
     const st=m.querySelector('#deSt').value;
-    if(st==='none'){ if(S.shift.days[ds]) delete S.shift.days[ds][id]; m.remove(); render(); return toast('Record cleared') }
+    // cleared is kept as a dated empty record, not deleted, so the other tills take it instead of keeping theirs
+    if(st==='none'){ setRec(ds,id,{status:'none',in:null,out:null,breaks:[],sessions:[],leaveEarly:null,note:''}); m.remove(); render(); return toast('Record cleared') }
     if(st==='work'&&!m.querySelector('#deIn').value) return toast('An in time is needed for a worked day');
     setRec(ds,id,{status:st,in:m.querySelector('#deIn').value||null,out:m.querySelector('#deOut').value||null,
       breaks:st==='work'?brs:[],note:m.querySelector('#deNote').value||''});
@@ -6562,13 +6563,14 @@ function applyKept(kept){
     S.shift.days = S.shift.days || {};
     Object.entries(localShiftDays).forEach(([ds, empMap]) => {
       S.shift.days[ds] = S.shift.days[ds] || {};
+      // the newer change to a record wins, whichever till made it — an admin marking someone absent
+      // on another till has to reach this one even though this one still holds the check-in
       Object.entries(empMap || {}).forEach(([empId, rec]) => {
         if(!rec) return;
         const remoteRec = S.shift.days[ds][empId];
-        if(rec.in && (!remoteRec || !remoteRec.in)){
+        if(!remoteRec || (rec.updatedAt && (!remoteRec.updatedAt || rec.updatedAt > remoteRec.updatedAt))){
+          if(JSON.stringify(remoteRec) !== JSON.stringify(rec)) window.keptLocalPunches = true;
           S.shift.days[ds][empId] = rec;
-        } else if(rec.updatedAt && (!remoteRec || !remoteRec.updatedAt || rec.updatedAt > remoteRec.updatedAt)){
-          S.shift.days[ds][empId] = { ...(remoteRec||{}), ...rec };
         }
       });
     });
