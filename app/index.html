@@ -4639,8 +4639,9 @@ function updateLiveWorkingBadges(){
     } else if(st==='break'){
       const r=recFor(ds,id)||{};
       const ob=(r.breaks||[]).find(b=>!b.end);
+      const bname=ob ? (ob.name.charAt(0).toUpperCase() + ob.name.slice(1).toLowerCase()) : 'Break';
       el.className='bc-live-badge break';
-      el.innerHTML=`☕ ${ob?ob.name:'Break'} · ${dur(f.worked)} floor time`;
+      el.innerHTML=`☕ ${bname} · ${dur(f.worked)} floor time`;
     } else if(st==='done'||st==='leave_early'){
       el.className='bc-live-badge done';
       el.innerHTML=`✓ ${dur(f.worked)} worked today`;
@@ -4655,7 +4656,7 @@ function updateLiveWorkingBadges(){
     if(card){
       const extraWrap = card.querySelector('.bc-extra-wrap');
       if(extraWrap){
-        extraWrap.innerHTML = f.over > 0 ? `<div class="bc-badge extra-break">Extra break · ${fmtMin(f.over)}</div>` : '';
+        extraWrap.innerHTML = f.over > 0 ? `<div class="bc-badge extra-break">EXTRA BREAK · ${fmtMin(f.over).toUpperCase()}</div>` : '';
       }
     }
   });
@@ -4933,12 +4934,12 @@ function renderStaffCard({e, st, f, r}){
 
   const openBreak=breaksTaken.find(b=>!b.end);
 
-  let badgeClass='out', badgeLabel='NOT IN YET';
+  let badgeClass='out', badgeLabel='';
   if(st==='working'){
-    if(isLate){ badgeClass='late'; badgeLabel=`WORKING · LATE ${fmtMin(f.late)}`; }
+    if(isLate){ badgeClass='late'; badgeLabel=`WORKING · LATE ${fmtMin(f.late).toUpperCase()}`; }
     else { badgeClass='working'; badgeLabel='WORKING'; }
   } else if(st==='break'){
-    badgeClass='break'; badgeLabel=`ON BREAK · ${openBreak?openBreak.name:'Meal'}`;
+    badgeClass='break'; badgeLabel=`ON BREAK · ${(openBreak?openBreak.name:'MEAL').toUpperCase()}`;
   } else if(st==='leave_pending'){
     badgeClass='pending'; badgeLabel='LEAVE REQUESTED';
   } else if(st==='leave_early'){
@@ -4964,15 +4965,15 @@ function renderStaffCard({e, st, f, r}){
           <div class="bc-role">${e.position||'Staff'} · <span class="mono">${e.code}</span></div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-          <div class="bc-badge ${badgeClass}">${badgeLabel}</div>
-          <div class="bc-extra-wrap">${f.over>0 ? `<div class="bc-badge extra-break">Extra break · ${fmtMin(f.over)}</div>` : ''}</div>
+          ${st !== 'out' && badgeLabel ? `<div class="bc-badge ${badgeClass}">${badgeLabel}</div>` : ''}
+          <div class="bc-extra-wrap">${f.over>0 ? `<div class="bc-badge extra-break">EXTRA BREAK · ${fmtMin(f.over).toUpperCase()}</div>` : ''}</div>
         </div>
       </div>
 
       <!-- Live Working Time Counting Badge -->
       <div class="bc-live-badge ${st}" data-emp-live="${e.id}">
         ${st==='working' ? `<span class="live-dot"></span>⏱️ ${dur(f.worked)} working` :
-          st==='break' ? `☕ ${openBreak?openBreak.name:'Break'} · ${dur(f.worked)} floor time` :
+          st==='break' ? `☕ ${openBreak?(openBreak.name.charAt(0).toUpperCase() + openBreak.name.slice(1).toLowerCase()):'Break'} · ${dur(f.worked)} floor time` :
           st==='done'||st==='leave_early' ? `✓ ${dur(f.worked)} worked today` :
           st==='absent' ? `✕ Absent today` :
           `⏱️ 0h 0m · Not in yet`}
@@ -4996,16 +4997,16 @@ function renderStaffCard({e, st, f, r}){
       <!-- Meal & Tea Options -->
       ${st==='working'?`
         <div class="bc-meal-row">
-          <div class="bc-meal-title">Break Options:</div>
+          <div class="bc-meal-title">BREAK OPTIONS:</div>
           <div class="bc-meals">
             <button class="bc-meal-btn ${hasB1?'taken':''}" data-act="mealStart" data-id="${e.id}" data-meal="b1" title="Breakfast 08:30 – 08:45 (15m)">
               ${hasB1?'✓ Breakfast':'☕ Breakfast (15m)'}
             </button>
             <button class="bc-meal-btn ${hasB2?'taken':''}" data-act="mealStart" data-id="${e.id}" data-meal="b2" title="Lunch 12:30 – 13:00 (30m)">
-              ${hasB2?'✓ Lunch':'🍛 Lunch (30m)'}
+              ${hasB2?'✓ Lunch':'🍲 Lunch (30m)'}
             </button>
             <button class="bc-meal-btn ${hasB3?'taken':''}" data-act="mealStart" data-id="${e.id}" data-meal="b3" title="Evening Tea 15:30 – 15:40 (10m)">
-              ${hasB3?'✓ Tea':'🫖 Evening Tea (10m)'}
+              ${hasB3?'✓ Evening Tea':'🫖 Evening Tea (10m)'}
             </button>
           </div>
         </div>`:''}
@@ -5045,7 +5046,40 @@ function renderStaffCard({e, st, f, r}){
         :''}
       </div>
 
+      <div class="bc-bottom-row">
+        <button class="bc-toggle-btn" data-act="toggleDetails" data-id="${e.id}">See details ▾</button>
+      </div>
 
+      <div class="bc-details-box" id="details-${e.id}" style="display:none">
+        <div class="bc-metrics">
+          <div class="bc-metric">
+            <span class="lbl">Check-In</span>
+            <span class="val ${isLate?'late-val':''}">${f.in||'—'}${isLate?` <small style="font-size:10px">(${fmtMin(f.late)} late)</small>`:''}</span>
+          </div>
+          <div class="bc-metric">
+            <span class="lbl">Check-Out</span>
+            <span class="val">${f.out||'—'}</span>
+          </div>
+          <div class="bc-metric">
+            <span class="lbl">Floor Time</span>
+            <span class="val">${f.worked ? hrs(f.worked).toFixed(2)+'h ('+Math.floor(f.worked/60)+'h '+(f.worked%60)+'m)' : '—'}</span>
+          </div>
+          <div class="bc-metric">
+            <span class="lbl">OT Past 7:30 PM</span>
+            <span class="val ${f.ot?'ot-val':''}">${f.ot ? hrs(f.ot).toFixed(2)+'h ('+Math.floor(f.ot/60)+'h '+(f.ot%60)+'m)' : '0.00h'}</span>
+          </div>
+        </div>
+
+        ${breaksTaken.length?`
+          <div style="margin-top:6px;font-size:10.5px;color:var(--steel);background:#F8FAFC;padding:5px 8px;border-radius:6px;border:1px solid #E2E8F0">
+            <b>Breaks:</b> ${breaksTaken.map(b=>`${b.name||'Break'}: ${b.start}–${b.end||'now'}`).join(' · ')}
+          </div>`:''}
+
+        ${!isSalesman?`
+          <div style="display:flex;justify-content:flex-end;margin-top:6px">
+            <button class="btn ghost sm" data-act="dayEdit" data-id="${e.id}" data-d="${ds}" style="font-size:11px;padding:3px 8px">✎ Edit Times</button>
+          </div>`:''}
+      </div>
     </div>
   `;
 }
@@ -16897,55 +16931,101 @@ function demoAttendanceView(){
       </div>
 
       <div class="bgrid">
-        ${list.map(e => `
-          <div class="bcard ${e.state}">
+        ${list.map(e => {
+          const isLate = e.state === 'late';
+          const isWorking = e.state === 'working' || isLate;
+          const isOnBreak = e.state === 'break';
+          const isOut = e.state === 'out';
+          const isDone = e.state === 'done';
+          const isAbsent = e.state === 'absent';
+          return `
+          <div class="bcard ${isLate ? 'late' : e.state}">
             <div class="bc-top">
               <div class="bc-avatar">${e.avatar}</div>
               <div class="bc-meta">
                 <div class="bc-name">${e.name}</div>
                 <div class="bc-role">${e.role}</div>
               </div>
-              <span class="bc-badge ${e.state}">
-                ${e.state === 'working' ? 'WORKING' : e.state === 'late' ? 'LATE 14M' : e.state === 'break' ? 'ON BREAK' : e.state === 'done' ? 'DONE' : e.state === 'absent' ? 'ABSENT' : 'NOT IN'}
-              </span>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+                ${!isOut ? `<div class="bc-badge ${isLate ? 'late' : e.state}">${isLate ? 'WORKING · LATE 15H 37M' : isWorking ? 'WORKING' : isOnBreak ? 'ON BREAK · EVENING TEA' : isDone ? 'GONE HOME' : isAbsent ? 'ABSENT' : ''}</div>` : ''}
+                ${isOnBreak ? `<div class="bc-badge extra-break">EXTRA BREAK · 1M</div>` : ''}
+              </div>
             </div>
 
-            <div style="margin-top:4px">
-              ${e.state === 'working' || e.state === 'late' ? `
-                <div class="bc-live-badge working"><span class="live-dot"></span> In shop since ${e.checkIn} · ${e.workedHours}</div>
-                <div style="font-size:11.5px;color:var(--steel,#64748B);margin-top:6px">☕ Break taken: <b>${e.breakMins}m</b></div>
-              ` : e.state === 'break' ? `
-                <div class="bc-live-badge break">☕ Break since ${e.breakSince || '11:30 AM'} (${e.breakMins}m)</div>
-                <div style="font-size:11.5px;color:var(--steel,#64748B);margin-top:6px">⏱️ Worked prior: <b>${e.workedHours}</b></div>
-              ` : e.state === 'done' ? `
-                <div class="bc-live-badge done">🚪 Checked out · Completed shift</div>
-                <div style="font-size:11.5px;color:var(--steel,#64748B);margin-top:6px">⏱️ Total worked: <b>${e.workedHours}</b></div>
-              ` : e.state === 'absent' ? `
-                <div class="bc-live-badge absent">🔴 ${e.reason || 'Absent'}</div>
-                <div style="font-size:11.5px;color:var(--steel,#64748B);margin-top:6px">Note: Approved leave on file</div>
+            <!-- Live Working Time Counting Badge -->
+            <div class="bc-live-badge ${e.state}">
+              ${isWorking ? `<span class="live-dot"></span>⏱️ ${e.workedHours || '1h 42m'} working` :
+                isOnBreak ? `☕ Evening tea · ${e.workedHours || '2h 10m'} floor time` :
+                isDone ? `✓ ${e.workedHours || '8h 24m'} worked today` :
+                isAbsent ? `✕ Absent today` :
+                `⏱️ 0h 0m · Not in yet`}
+            </div>
+
+            <!-- Meal & Tea Options -->
+            ${isWorking ? `
+              <div class="bc-meal-row">
+                <div class="bc-meal-title">BREAK OPTIONS:</div>
+                <div class="bc-meals">
+                  <button class="bc-meal-btn taken" onclick="demoSimulatePunch(${e.id}, 'break')">✓ Breakfast</button>
+                  <button class="bc-meal-btn taken" onclick="demoSimulatePunch(${e.id}, 'break')">✓ Lunch</button>
+                  <button class="bc-meal-btn ${e.name === 'Zarook' ? 'taken' : ''}" onclick="demoSimulatePunch(${e.id}, 'break')">
+                    ${e.name === 'Zarook' ? '✓ Evening Tea' : '🫖 Evening Tea (10m)'}
+                  </button>
+                </div>
+              </div>
+            ` : ''}
+
+            ${isOnBreak ? `
+              <div style="margin:2px 0">
+                <button class="btn tape sm" style="width:100%;padding:8px 12px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px" onclick="demoSimulatePunch(${e.id}, 'resume')">
+                  ✓ Back from Evening tea
+                </button>
+                <div class="muted" style="font-size:10.5px;text-align:center;margin-top:3px">
+                  Break started at ${e.breakSince || '23:45'}
+                </div>
+              </div>
+            ` : ''}
+
+            <div class="bc-acts">
+              ${isOut ? `
+                <button class="btn tape sm" onclick="demoSimulatePunch(${e.id}, 'checkin')">⚡ Check In</button>
+              ` : isWorking ? `
+                <button class="btn tape sm" onclick="demoSimulatePunch(${e.id}, 'checkout')">Check Out</button>
+              ` : isOnBreak ? `
+                <button class="btn ghost sm" onclick="demoSimulatePunch(${e.id}, 'checkout')">Check Out</button>
+              ` : isDone ? `
+                <button class="btn tape sm" onclick="demoSimulatePunch(${e.id}, 'checkin')">⚡ Check In Again</button>
               ` : `
-                <div class="bc-live-badge out">⚪ Scheduled 08:00 AM · Not checked in</div>
-                <div style="font-size:11.5px;color:var(--steel,#64748B);margin-top:6px">Shift: Full day (08:00 AM – 07:30 PM)</div>
+                <span class="muted" style="font-size:12px;align-self:center">Marked absent today</span>
               `}
             </div>
 
-            <div style="display:flex;gap:6px;margin-top:8px;border-top:1px solid #F1F5F9;padding-top:8px">
-              ${e.state === 'working' || e.state === 'late' ? `
-                <button class="btn ghost sm" onclick="demoSimulatePunch(${e.id}, 'break')">☕ Break</button>
-                <button class="btn ghost sm" onclick="demoSimulatePunch(${e.id}, 'checkout')">🚪 Check Out</button>
-              ` : e.state === 'break' ? `
-                <button class="btn primary sm" onclick="demoSimulatePunch(${e.id}, 'resume')">▶ Resume</button>
-                <button class="btn ghost sm" onclick="demoSimulatePunch(${e.id}, 'checkout')">🚪 Check Out</button>
-              ` : e.state === 'out' ? `
-                <button class="btn primary sm" onclick="demoSimulatePunch(${e.id}, 'checkin')">🟢 Check In</button>
-              ` : e.state === 'done' ? `
-                <button class="btn ghost sm" onclick="demoSimulatePunch(${e.id}, 'checkin')">↺ Re-enter</button>
-              ` : `
-                <span style="font-size:11px;color:#94A3B8;font-style:italic">No action needed</span>
-              `}
+            <div class="bc-bottom-row">
+              <button class="bc-toggle-btn" onclick="demoToggleDetails(${e.id})">See details ▾</button>
+            </div>
+
+            <div class="bc-details-box" id="details-demo-${e.id}" style="display:none">
+              <div class="bc-metrics">
+                <div class="bc-metric">
+                  <span class="lbl">Check-In</span>
+                  <span class="val ${isLate ? 'late-val' : ''}">${e.checkIn || '—'}${isLate ? ' <small style="font-size:10px">(14m late)</small>' : ''}</span>
+                </div>
+                <div class="bc-metric">
+                  <span class="lbl">Check-Out</span>
+                  <span class="val">—</span>
+                </div>
+                <div class="bc-metric">
+                  <span class="lbl">Floor Time</span>
+                  <span class="val">${e.workedHours || '—'}</span>
+                </div>
+                <div class="bc-metric">
+                  <span class="lbl">OT Past 7:30 PM</span>
+                  <span class="val">0.00h</span>
+                </div>
+              </div>
             </div>
           </div>
-        `).join('')}
+        `;}).join('')}
       </div>
     ` : demoAttTab === 'sheet' ? `
       <div style="background:var(--panel,#fff);border:1px solid var(--line,#E2E8F0);border-radius:10px;padding:16px">
