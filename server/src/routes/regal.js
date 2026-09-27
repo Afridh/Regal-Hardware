@@ -286,7 +286,7 @@ const asJson = v => typeof v === 'string' ? (v ? JSON.parse(v) : null) : (v ?? n
 /** The people on the board are the shop's users, as the till's syncUsersAndStaff makes them: a staff
  *  record is kept only while a user of that name exists, and a user with no record yet gets the id the
  *  till will give them (the next one up, in user order) — so a punch here lands on the same card there. */
-export function staffForUsers(users, employees, deleted) {
+export function staffForUsers(users, employees, deleted, days) {
   const gone = (Array.isArray(deleted) ? deleted : []).map(x => String(x || '').toLowerCase().trim());
   const low = x => String(x || '').toLowerCase().trim();
   const us = sanitizeUsers(Array.isArray(users) ? users.map(u => ({ ...u })) : [], gone).filter(u => u && u.name);
@@ -303,7 +303,10 @@ export function staffForUsers(users, employees, deleted) {
       if (!e.code) e.code = u.uid || ('E' + String(e.id || (i + 1)).padStart(3, '0'));
       return;
     }
-    const id = staff.reduce((m, x) => Math.max(m, +x.id || 0), 0) + 1;
+    // as the till's nextEmpId: a number that has punches (a removed person's) is never given out again
+    let id = staff.reduce((m, x) => Math.max(m, +x.id || 0), 0);
+    Object.values(days || {}).forEach(d => Object.keys(d || {}).forEach(k => { if (/^\d+$/.test(k)) id = Math.max(id, +k); }));
+    id += 1;
     staff.push({ id, code: u.uid || ('E' + String(id).padStart(3, '0')), name: u.name, position: u.role, userName: u.name,
       basis: 'monthly', rate: 0, otMult: 1.5, days: 26, ot: 0, advance: 0, phone: '', card: '', deviceId: '', joined: today, active: true });
   });
@@ -314,7 +317,7 @@ export function staffForUsers(users, employees, deleted) {
 
 /** What the shift page is shown: the shop's users as staff, without wages or PINs, and only the recent days. */
 function shiftView(rev, employees, shift, deleted, users) {
-  const staff = staffForUsers(users, employees, deleted)
+  const staff = staffForUsers(users, employees, deleted, (shift || {}).days)
     .map(({ rate, payType, otMult, pin, advance, basis, days, ot, phone, ...rest }) => rest);
   const s = shift || {};
   // a punch clock shows today and the days just gone; the full history stays in the books
@@ -339,15 +342,18 @@ r.get('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
   res.json(row ? shiftView(row.rev, row.employees, row.shift, row.deleted, row.users) : empty);
 }));
 
+const isSuperRole = r => ['super admin', 'superadmin', 'owner'].includes(String(r || '').toLowerCase());
+
 /** One punch on MySQL: the document is locked, the one record changed in it, and it is written back.
  *  No history row, as on PostgreSQL. */
-async function shiftPunchMySQL(key, date, id, r0, by) {
+async function shiftPunchMySQL(key, date, id, r0, by, role) {
   return withTransaction(async client => {
     const { rows: [cur] } = await client.query('SELECT rev, data FROM books WHERE `key` = ? FOR UPDATE', [key]);
     if (!cur) throw new HttpError(404, 'The books are not on the server yet — open the shop system once first');
     const data = asJson(cur.data) || {};
     const had = data.S?.shift?.days?.[date]?.[id];
     if (had && r0 && Number(had.updatedAt || 0) > Number(r0.updatedAt || 0)) return { stale: true, rev: Number(cur.rev), rec: had };
+    if (had?.status === 'absent' && r0?.status !== 'absent' && !isSuperRole(role)) return { stale: true, rev: Number(cur.rev), rec: had };   // only the Super Admin lifts an absence
     const next = Number(cur.rev) + 1;
     data.S = data.S || {};
     data.S.shift = data.S.shift || {};
@@ -368,11 +374,12 @@ r.post('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
   const key = req.params.key, id = String(empId);
   const r0 = rec && typeof rec === 'object' ? { ...rec, by: req.shiftUser.name } : null;
   await ensureBooksTables();
-  const out = dbKind === 'mysql' ? await shiftPunchMySQL(key, date, id, r0, req.shiftUser.name) : await withTransaction(async client => {
+  const out = dbKind === 'mysql' ? await shiftPunchMySQL(key, date, id, r0, req.shiftUser.name, req.shiftUser.role) : await withTransaction(async client => {
     const { rows: [cur] } = await client.query(
       `SELECT rev, data#>ARRAY['S','shift','days',$2::text,$3::text] AS rec FROM books WHERE key = $1 FOR UPDATE`, [key, date, id]);
     if (!cur) throw new HttpError(404, 'The books are not on the server yet — open the shop system once first');
     if (cur.rec && r0 && Number(cur.rec.updatedAt || 0) > Number(r0.updatedAt || 0)) return { stale: true, rev: Number(cur.rev), rec: cur.rec };
+    if (cur.rec?.status === 'absent' && r0?.status !== 'absent' && !isSuperRole(req.shiftUser.role)) return { stale: true, rev: Number(cur.rev), rec: cur.rec };   // only the Super Admin lifts an absence
     // written in place, stamped with the revision it made (_srv) so a till's save can lay it over its own;
     // the whole document is never read out, rewritten or copied into the history for a punch
     const { rows: [u] } = r0

@@ -4163,7 +4163,6 @@ function settings(){
       ${fld('shift.user','Sign-in name there','Only needed for an outside server — this till signs itself in on its own server')}</div>
      ${fld('shift.autoPull','','Take the punches down when Attendance is opened, and send punches made here straight up','check')}
      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-      <button class="btn tape" data-act="shiftSync">Sync now</button>
       <button class="btn ghost" data-act="shiftStaffUp">Send the roll up</button>
       <button class="btn ghost" data-act="shiftSignIn">Sign in to an outside server</button>
       <button class="btn ghost" data-view="payroll">Open Attendance &amp; pay</button></div>
@@ -4432,6 +4431,16 @@ function payFor(e,mk){
 const LEGACY_NAMES=['asaath kp','raslan','kasun','sampath','nuwan','chaminda','fathima','ruwan','dilan','suresh'];
 const isLegacyName=n=>LEGACY_NAMES.includes(String(n||'').toLowerCase().trim());
 const isLegacyUser=u=>!!u&&!u.addedAt&&isLegacyName(u.name);
+/* the next staff number. A removed person's punches stay in the books under their number, so a number
+   that has any punches is never handed out again — a new person would start with someone else's hours.
+   The server's staffForUsers counts the same way, so both give a new user the same number. */
+function nextEmpId(emps){
+  let max=(emps||S.employees||[]).reduce((m,x)=>Math.max(m,+x.id||0),0);
+  Object.values((S.shift&&S.shift.days)||{}).forEach(day=>Object.keys(day||{}).forEach(k=>{ if(/^\d+$/.test(k)) max=Math.max(max,+k) }));
+  return max+1;
+}
+const isSuperUser=()=>['super admin','superadmin','owner'].includes(String(S.user&&S.user.role||'').toLowerCase());
+const isAdminUser=()=>isSuperUser()||String(S.user&&S.user.role||'').toLowerCase()==='admin';
 function syncUsersAndStaff(){
   if(!Array.isArray(S.users)) S.users=[];
   if(!Array.isArray(S.employees)) S.employees=[];
@@ -4480,7 +4489,7 @@ function syncUsersAndStaff(){
       emp.active = u.active !== false;
       if(!emp.code) emp.code = u.uid || ('E' + String(emp.id || (i+1)).padStart(3, '0'));
     } else {
-      const nextId = (S.employees.reduce((max, x) => Math.max(max, +x.id || 0), 0)) + 1;
+      const nextId = nextEmpId(S.employees);
       const defRate = u.role === 'Super Admin' ? 120000 : (u.role === 'Admin' ? 90000 : (u.role === 'KP' ? 85000 : 55000));
       S.employees.push({
         id: nextId,
@@ -4837,6 +4846,7 @@ function bindPunchQ(){
 
 function punchIn(id,ds=D(today)){
   const e=S.employees.find(x=>x.id===id);
+  if((recFor(ds,id)||{}).status==='absent') return toast(`${e?e.name:'Staff'} is marked absent today — only the Super Admin can remove it`,'warn');
   const inTime=hhmm(nowMin());
   const r=recFor(ds,id)||{};
   const shiftStart=toMin(shiftSet().startTime||'08:00');
@@ -5002,6 +5012,7 @@ function approveEarlyLeave(empId,approve=true){
 function confirmAbsentModal(empId){
   const e=S.employees.find(x=>x.id===empId);
   if(!e) return;
+  if(!isAdminUser()) return toast('Only an Admin can mark someone absent','warn');
   const ds=D(today);
   const m=modal(`<h2>⚠️ Verify Absence · ${e.name}</h2>
     <div style="padding:10px 0;line-height:1.6;font-size:14px">
@@ -5021,6 +5032,28 @@ function confirmAbsentModal(empId){
   };
 }
 
+/* an absence is the Super Admin's to take back: the day is cleared and the card offers Check In again */
+function undoAbsentModal(empId){
+  const e=S.employees.find(x=>x.id===empId);
+  if(!e) return;
+  if(!isSuperUser()) return toast('Only the Super Admin can remove an absence','warn');
+  const ds=D(today);
+  const m=modal(`<h2>↺ Remove Absence · ${e.name}</h2>
+    <div style="padding:10px 0;line-height:1.6;font-size:14px">
+      Remove the <b style="color:var(--chip-rust)">Absent</b> mark for <b>${e.name}</b> today (<b>${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</b>)?
+      <div class="muted" style="margin-top:8px">Their card goes back to Not in yet, with 0h 0m, and they can check in.</div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+      <button class="btn ghost" data-act="closeModal">Cancel</button>
+      <button class="btn tape" id="undoAbsBtn">Remove Absent</button>
+    </div>`);
+  m.querySelector('#undoAbsBtn').onclick=()=>{
+    setRec(ds,empId,{status:'none',in:null,out:null,breaks:[],sessions:[],leaveEarly:null,note:'',absentRemovedBy:S.user.name,absentRemovedAt:hhmm(nowMin())});
+    m.remove(); refreshAttendanceBoard();
+    toast(`${e.name}'s absence removed — they can check in now`);
+  };
+}
+
 function smartPunch(id){
   const ds=D(today), e=S.employees.find(x=>x.id===id), st=empState(ds,id);
   if(st==='out') return punchIn(id);
@@ -5036,7 +5069,7 @@ function smartPunch(id){
     punchIn(id);
     return toast(`${e.name} checked in again`);
   }
-  toast(`${e.name} is marked ${st} today — use Fix Times to change it`);
+  toast(st==='absent'?`${e.name} is marked absent today — only the Super Admin can remove it`:`${e.name} is marked ${st} today — use Fix Times to change it`);
 }
 
 function renderStaffCard({e, st, f, r}){
@@ -5148,7 +5181,7 @@ function renderStaffCard({e, st, f, r}){
       <div class="bc-acts">
         ${st==='out'?`
           <button class="btn tape sm" data-act="punchIn" data-id="${e.id}">⚡ Check In</button>
-          ${!isSalesman?`
+          ${isAdminUser()?`
             <button class="btn ghost sm" data-act="confirmAbsent" data-id="${e.id}" title="Mark absent with verification">Mark Absent</button>`:''}`
         :''}
 
@@ -5165,8 +5198,9 @@ function renderStaffCard({e, st, f, r}){
         :''}
 
         ${st==='absent'?`
-          <span class="muted" style="font-size:12px;align-self:center">Marked absent today</span>
-          ${!isSalesman?`<button class="btn ghost sm" data-act="dayEdit" data-id="${e.id}" data-d="${ds}">Fix</button>`:''}`
+          ${isSuperUser()
+            ?`<button class="btn ghost sm" data-act="undoAbsent" data-id="${e.id}" title="Take the absence off so they can check in">↺ Remove Absent</button>`
+            :`<span class="muted" style="font-size:12px;align-self:center">Marked absent today · only the Super Admin can undo it</span>`}`
         :''}
       </div>
 
@@ -5199,7 +5233,7 @@ function renderStaffCard({e, st, f, r}){
             <b>Breaks:</b> ${breaksTaken.map(b=>`${b.name||'Break'}: ${b.start}–${b.end||'now'}`).join(' · ')}
           </div>`:''}
 
-        ${!isSalesman?`
+        ${!isSalesman&&(st!=='absent'||isSuperUser())?`
           <div style="display:flex;justify-content:flex-end;margin-top:6px">
             <button class="btn ghost sm" data-act="dayEdit" data-id="${e.id}" data-d="${ds}" style="font-size:11px;padding:3px 8px">✎ Edit Times</button>
           </div>`:''}
@@ -5394,6 +5428,7 @@ function boardToday(){
 }
 function dayEditModal(id,ds){
   const e=S.employees.find(x=>x.id===id), r=recFor(ds,id)||{};
+  if(r.status==='absent'&&!isSuperUser()) return toast('Only the Super Admin can change a day marked absent','warn');
   const m=modal(`<h2>${e.name} — ${ds}</h2>
    <div class="muted">${new Date(ds).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}${isOff(ds)?' · a day off':''}</div>
    <div class="grid3" style="margin-top:10px">
@@ -5521,7 +5556,7 @@ function employeeModal(id){
       deviceId:(m.querySelector('#emDev').value||'').trim(),userName:m.querySelector('#emUser').value,
       joined:m.querySelector('#emJoined').value,active:m.querySelector('#emActive').checked};
     if(e) Object.assign(e,data);
-    else S.employees.push({id:Math.max(0,...S.employees.map(x=>x.id))+1,advance:0,...data});
+    else S.employees.push({id:nextEmpId(S.employees),advance:0,...data});
     const existsInUsers = S.users.some(u => String(u.name).toLowerCase().trim() === name.toLowerCase());
     if(!existsInUsers && data.active){
       S.deletedUsers=(S.deletedUsers||[]).filter(x=>x!==name.toLowerCase().trim());
@@ -18120,6 +18155,7 @@ document.addEventListener('click',e=>{
     approveLeave:()=>approveEarlyLeave(+a.dataset.id, true),
     rejectLeave:()=>approveEarlyLeave(+a.dataset.id, false),
     confirmAbsent:()=>confirmAbsentModal(+a.dataset.id),
+    undoAbsent:()=>undoAbsentModal(+a.dataset.id),
     toggleDetails:()=>{
       const b=document.getElementById('details-'+a.dataset.id);
       if(!b)return;
