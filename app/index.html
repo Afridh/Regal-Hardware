@@ -6435,7 +6435,7 @@ const store={
     try{ localStorage.setItem(STORE_KEY,txt); return true }catch(e){ return false } },
   async clear(){ try{ if(window.storage) await window.storage.delete(STORE_KEY) }catch(e){} try{ localStorage.removeItem(STORE_KEY) }catch(e){} }
 };
-const LOCAL_KEYS=['user','pos','view','terminal','held','heldBills','portal','cportal','phoneOpen','phoneMode','notifOpen','signedOut','drawer','_fromStore','locId'];
+const LOCAL_KEYS=['user','pos','view','terminal','held','heldBills','portal','cportal','phoneOpen','phoneMode','notifOpen','signedOut','drawer','_fromStore','locId','isDemo'];
 const TRANSIENT=[...LOCAL_KEYS];
 let saveTimer=null, lastSaved=null, lastSavedTxt='';
 try { window._lastLocalStoreTxt = localStorage.getItem(STORE_KEY) || ''; } catch(_){}
@@ -6478,7 +6478,7 @@ const privacyKeyMatch=(e)=>{ const k=(CFG.privacy&&CFG.privacy.key)||'ctrl+shift
   return k==='ctrl+shift+x'?(e.ctrlKey&&e.shiftKey&&key==='x'):k==='f12'?(e.key==='F12'):k==='ctrl+`'?(e.ctrlKey&&(key==='`'||e.code==='Backquote')):k==='ctrl+shift+h'?(e.ctrlKey&&e.shiftKey&&key==='h'):k==='scrolllock'?(e.key==='ScrollLock'):false };
 let saveForce=false;
 function persist(force){
-  if(window.privacyOn) return;
+  if(window.privacyOn||window.leavingDemo) return;
   if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){
     try {
       sessionStorage.setItem('regal_demo_store', snapshotTxt());
@@ -16825,16 +16825,7 @@ S.users=DEFAULT_ACCOUNTS.filter(acc => !S.deletedUsers.includes(acc.name.toLower
 S.user={name:'Afridh', role:'Super Admin', perms:[...DEFAULT_ACCOUNTS[0].perms], prefs:{...PREF_DEFAULTS}};
 
 function signOut(){
-  if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){
-    window.isDemo = false;
-    try {
-      sessionStorage.removeItem('regal_is_demo');
-      sessionStorage.removeItem('regal_demo_store');
-    } catch(e){}
-    const banner = document.getElementById('demoModeBanner');
-    if(banner) banner.remove();
-    document.body.style.paddingTop = '';
-  }
+  if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){ leaveDemo(); return }
   if(S.pos.lines.length&&!confirm('There is a bill on the screen that has not been paid. Sign out anyway and lose it?'))return;
   S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:CFG.bill.defaultFormat};
   closeModals(); closePhone(); S.signedOut=true;
@@ -17282,21 +17273,23 @@ function resetDemoData(){
 
 function exitDemoMode(){
   if(!confirm('Exit Demo mode and return to sign in screen?')) return;
-  window.isDemo = false;
+  leaveDemo();
+}
+/* the demo leaves its sample books, S.isDemo and the fetch guard in this page's memory —
+   a fresh load of the till without ?demo=1 is the only clean way back to the live shop */
+function leaveDemo(){
+  window.leavingDemo = true;             // beforeunload must not keep the demo books as this till's copy
+  window.isDemo = false; S.isDemo = false;
+  clearTimeout(saveTimer);
   try {
     sessionStorage.removeItem('regal_is_demo');
     sessionStorage.removeItem('regal_demo_store');
+    localStorage.setItem('regal_signed_out', '1');
   } catch(e){}
-  const banner = document.getElementById('demoModeBanner');
-  if(banner) banner.remove();
-  document.body.style.paddingTop = '';
-  if(location.search.includes('demo=1')){
-    const url = new URL(location.href);
-    url.searchParams.delete('demo');
-    history.replaceState(null, '', url.pathname + (url.search || '') + (url.hash || ''));
-  }
-  S.signedOut = true;
-  shopLock();
+  const url = new URL(location.href);
+  url.searchParams.delete('demo');
+  const path = url.pathname.startsWith('/demo') ? '/pos' : url.pathname;
+  location.replace(path + url.search + url.hash);
 }
 
 /* the shop's own lock screen — username + password with dynamic role badge */
@@ -18426,6 +18419,7 @@ if(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_dem
   });
 }
 window.addEventListener('beforeunload',()=>{
+  if(window.leavingDemo) return;
   if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){
     try{ sessionStorage.setItem('regal_demo_store', snapshotTxt()) }catch(e){}
     return;
