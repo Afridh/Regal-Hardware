@@ -6102,6 +6102,9 @@ function rulesTab(){
 }
 
 function payroll(){
+  if(window.isDemo || (S && S.isDemo)){
+    return demoAttendanceView();
+  }
   const isSalesman=S.user&&S.user.role==='Salesman';
   const mk=payMonth||D(today).slice(0,7);
   const monthName=new Date(mk+'-01').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
@@ -7638,6 +7641,10 @@ function allowed(v){
   if(v === 'trail') return ownerOnly();
   const roleName = String(S.user.role || '');
   const rLower = roleName.toLowerCase();
+
+  if(rLower === 'demo admin' || window.isDemo || (S && S.isDemo)){
+    return ['pos', 'payroll', 'products', 'dashboard', 'bills', 'customers', 'inventory'].includes(v);
+  }
   
   if(rLower === 'super admin' || rLower === 'superadmin' || rLower === 'owner') return true;
   if(rLower === 'admin') return true;
@@ -7906,6 +7913,7 @@ function renderNow(){
     if(document.activeElement===document.body) sq.focus() } } if(S.view==='labels') labelsAfter(); if(S.view==='receipts') receiptsAfter(); if(S.view==='dashboard') dashboardAfter();
 
   if(S.view==='bills'||S.view==='recall') billsAfter();
+  if(S.view==='payroll' && (window.isDemo || (S && S.isDemo))) demoAttendanceAfter();
   if(S.view==='trail') trailAfter();
   if(S.view==='users'){
     const usIn = document.getElementById('userSearchInput');
@@ -16647,6 +16655,265 @@ function proofBill(fmtWanted){
     link:'regalhw.lk/b/proof',proof:true};
   showInvoice(proof,fmtWanted||S.pos.lastBill||CFG.bill.defaultFormat);
 }
+/* ==================== DEMO ATTENDANCE SIMULATION ==================== */
+let demoAttFilter = 'all';
+let demoAttTab = 'today';
+let demoAttDateOffset = 0;
+let demoAttClockTimer = null;
+let demoAttSearch = '';
+
+let demoStaffList = [
+  { id: 101, name: 'Kamal Perera', role: 'Head Salesman & Counter', state: 'working', checkIn: '08:02 AM', breakMins: 25, workedHours: '4h 15m', avatar: 'KP', card: 'C101' },
+  { id: 102, name: 'Nimal Silva', role: 'Cashier & KP Desk', state: 'working', checkIn: '07:55 AM', breakMins: 0, workedHours: '4h 22m', avatar: 'NS', card: 'C102' },
+  { id: 103, name: 'Sunil Shantha', role: 'Warehouse & Stock', state: 'break', checkIn: '08:00 AM', breakSince: '11:30 AM', breakMins: 32, workedHours: '3h 30m', avatar: 'SS', card: 'C103' },
+  { id: 104, name: 'Ruwan Jayasinghe', role: 'Counter Salesman', state: 'late', checkIn: '08:14 AM', breakMins: 15, workedHours: '4h 03m', avatar: 'RJ', card: 'C104' },
+  { id: 105, name: 'Priyantha Bandara', role: 'Lorry Driver & Transport', state: 'out', checkIn: null, breakMins: 0, workedHours: '0h 00m', avatar: 'PB', card: 'C105' },
+  { id: 106, name: 'Dinesh Kumara', role: 'Store Associate', state: 'absent', checkIn: null, breakMins: 0, workedHours: '0h 00m', reason: 'Approved Medical Leave', avatar: 'DK', card: 'C106' }
+];
+
+window.demoSetAttFilter = function(f){
+  demoAttFilter = f;
+  render();
+};
+
+window.demoSetAttTab = function(t){
+  demoAttTab = t;
+  render();
+};
+
+window.demoNavAttDate = function(offset){
+  demoAttDateOffset = offset;
+  render();
+};
+
+window.demoSimulatePunch = function(id, action){
+  const emp = demoStaffList.find(e => e.id === id);
+  if(!emp) return;
+  const nowStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  if(action === 'checkin'){
+    emp.state = 'working';
+    emp.checkIn = nowStr;
+    emp.workedHours = 'Just checked in';
+    toast('Demo punch: ' + emp.name + ' checked in at ' + nowStr + ' (Simulated · No API called)', 'ok');
+  } else if(action === 'break'){
+    emp.state = 'break';
+    emp.breakSince = nowStr;
+    toast('Demo punch: ' + emp.name + ' started break at ' + nowStr + ' (Simulated · No API called)', 'ok');
+  } else if(action === 'resume'){
+    emp.state = 'working';
+    emp.breakSince = null;
+    toast('Demo punch: ' + emp.name + ' resumed work at ' + nowStr + ' (Simulated · No API called)', 'ok');
+  } else if(action === 'checkout'){
+    emp.state = 'done';
+    toast('Demo punch: ' + emp.name + ' checked out at ' + nowStr + ' (Simulated · No API called)', 'ok');
+  }
+  render();
+};
+
+function demoAttendanceView(){
+  const now = new Date();
+  const d = new Date(now);
+  d.setDate(d.getDate() + demoAttDateOffset);
+  const dateStr = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const isToday = demoAttDateOffset === 0;
+
+  const inShopCount = demoStaffList.filter(e => e.state === 'working' || e.state === 'late' || e.state === 'break').length;
+  const workingCount = demoStaffList.filter(e => e.state === 'working' || e.state === 'late').length;
+  const breakCount = demoStaffList.filter(e => e.state === 'break').length;
+  const outCount = demoStaffList.filter(e => e.state === 'out' || e.state === 'done').length;
+  const absentCount = demoStaffList.filter(e => e.state === 'absent').length;
+
+  let list = demoStaffList;
+  if(demoAttFilter === 'working') list = list.filter(e => e.state === 'working' || e.state === 'late');
+  else if(demoAttFilter === 'break') list = list.filter(e => e.state === 'break');
+  else if(demoAttFilter === 'out') list = list.filter(e => e.state === 'out' || e.state === 'done');
+  else if(demoAttFilter === 'absent') list = list.filter(e => e.state === 'absent');
+
+  if(demoAttSearch){
+    const q = demoAttSearch.toLowerCase().trim();
+    list = list.filter(e => e.name.toLowerCase().includes(q) || e.role.toLowerCase().includes(q) || (e.card && e.card.toLowerCase().includes(q)));
+  }
+
+  return `
+    <div class="att-banner">
+      <div class="att-banner-row">
+        <div>
+          <div class="att-banner-title">
+            <span style="color:var(--accent,#F0A81E)">🏪</span> Regal Hardware · Attendance & Shifts
+            <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:12px;background:#4F46E5;color:#fff;margin-left:6px">DEMO SANDBOX · NO API</span>
+          </div>
+          <div class="att-banner-rules">
+            <span>⏰ 8:00 AM – 7:30 PM</span>
+            <span>⚡ Late past 8:00 AM</span>
+            <span>🌙 OT past 7:30 PM</span>
+            <span style="color:#34D399">● Simulated View</span>
+          </div>
+        </div>
+        <div class="att-header-right">
+          <div class="att-summary-chips">
+            <span class="att-chip green"><b>${inShopCount}</b> In Shop</span>
+            <span class="att-chip amber"><b>${breakCount}</b> Break</span>
+            <span class="att-chip slate"><b>${outCount}</b> Out</span>
+            <span class="att-chip red"><b>${absentCount}</b> Absent</span>
+          </div>
+          <div class="att-clock" id="demoLiveClock">🕒 ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:gap:10px;margin-bottom:12px">
+      <div class="tabs" style="margin:0">
+        <button class="${demoAttTab==='today'?'on':''}" onclick="demoSetAttTab('today')">Today Shift Board</button>
+        <button class="${demoAttTab==='sheet'?'on':''}" onclick="demoSetAttTab('sheet')">Month Timesheet</button>
+        <button class="${demoAttTab==='rules'?'on':''}" onclick="demoSetAttTab('rules')">Shop Rules</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button class="btn ghost sm" onclick="demoNavAttDate(-1)">‹ Yesterday</button>
+        <button class="btn sm ${isToday?'primary':'ghost'}" onclick="demoNavAttDate(0)">Today</button>
+        <button class="btn ghost sm" onclick="demoNavAttDate(1)">Tomorrow ›</button>
+        <span style="font-size:12px;font-weight:700;color:var(--steel,#64748B);margin-left:6px" id="demoLiveDate">${dateStr}</span>
+      </div>
+    </div>
+
+    ${demoAttTab === 'today' ? `
+      <div class="att-search-bar" style="margin-bottom:12px">
+        <div class="att-search-box">
+          <input id="demoAttSearchInp" placeholder="Search staff by name or role…" value="${demoAttSearch}">
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="chip ${demoAttFilter==='all'?'on':''}" onclick="demoSetAttFilter('all')">All (${demoStaffList.length})</button>
+          <button class="chip ${demoAttFilter==='working'?'on':''}" onclick="demoSetAttFilter('working')">🟢 Working (${workingCount})</button>
+          <button class="chip ${demoAttFilter==='break'?'on':''}" onclick="demoSetAttFilter('break')">☕ On Break (${breakCount})</button>
+          <button class="chip ${demoAttFilter==='out'?'on':''}" onclick="demoSetAttFilter('out')">⚪ Not In (${outCount})</button>
+          <button class="chip ${demoAttFilter==='absent'?'on':''}" onclick="demoSetAttFilter('absent')">🔴 Absent (${absentCount})</button>
+        </div>
+      </div>
+
+      <div class="bgrid">
+        ${list.map(e => `
+          <div class="bcard ${e.state}">
+            <div class="bc-top">
+              <div class="bc-avatar">${e.avatar}</div>
+              <div class="bc-meta">
+                <div class="bc-name">${e.name}</div>
+                <div class="bc-role">${e.role}</div>
+              </div>
+              <span class="bc-badge ${e.state}">
+                ${e.state === 'working' ? 'WORKING' : e.state === 'late' ? 'LATE 14M' : e.state === 'break' ? 'ON BREAK' : e.state === 'done' ? 'DONE' : e.state === 'absent' ? 'ABSENT' : 'NOT IN'}
+              </span>
+            </div>
+
+            <div style="margin-top:4px">
+              ${e.state === 'working' || e.state === 'late' ? `
+                <div class="bc-live-badge working"><span class="live-dot"></span> In shop since ${e.checkIn} · ${e.workedHours}</div>
+                <div style="font-size:11.5px;color:var(--steel,#64748B);margin-top:6px">☕ Break taken: <b>${e.breakMins}m</b></div>
+              ` : e.state === 'break' ? `
+                <div class="bc-live-badge break">☕ Break since ${e.breakSince || '11:30 AM'} (${e.breakMins}m)</div>
+                <div style="font-size:11.5px;color:var(--steel,#64748B);margin-top:6px">⏱️ Worked prior: <b>${e.workedHours}</b></div>
+              ` : e.state === 'done' ? `
+                <div class="bc-live-badge done">🚪 Checked out · Completed shift</div>
+                <div style="font-size:11.5px;color:var(--steel,#64748B);margin-top:6px">⏱️ Total worked: <b>${e.workedHours}</b></div>
+              ` : e.state === 'absent' ? `
+                <div class="bc-live-badge absent">🔴 ${e.reason || 'Absent'}</div>
+                <div style="font-size:11.5px;color:var(--steel,#64748B);margin-top:6px">Note: Approved leave on file</div>
+              ` : `
+                <div class="bc-live-badge out">⚪ Scheduled 08:00 AM · Not checked in</div>
+                <div style="font-size:11.5px;color:var(--steel,#64748B);margin-top:6px">Shift: Full day (08:00 AM – 07:30 PM)</div>
+              `}
+            </div>
+
+            <div style="display:flex;gap:6px;margin-top:8px;border-top:1px solid #F1F5F9;padding-top:8px">
+              ${e.state === 'working' || e.state === 'late' ? `
+                <button class="btn ghost sm" onclick="demoSimulatePunch(${e.id}, 'break')">☕ Break</button>
+                <button class="btn ghost sm" onclick="demoSimulatePunch(${e.id}, 'checkout')">🚪 Check Out</button>
+              ` : e.state === 'break' ? `
+                <button class="btn primary sm" onclick="demoSimulatePunch(${e.id}, 'resume')">▶ Resume</button>
+                <button class="btn ghost sm" onclick="demoSimulatePunch(${e.id}, 'checkout')">🚪 Check Out</button>
+              ` : e.state === 'out' ? `
+                <button class="btn primary sm" onclick="demoSimulatePunch(${e.id}, 'checkin')">🟢 Check In</button>
+              ` : e.state === 'done' ? `
+                <button class="btn ghost sm" onclick="demoSimulatePunch(${e.id}, 'checkin')">↺ Re-enter</button>
+              ` : `
+                <span style="font-size:11px;color:#94A3B8;font-style:italic">No action needed</span>
+              `}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    ` : demoAttTab === 'sheet' ? `
+      <div style="background:var(--panel,#fff);border:1px solid var(--line,#E2E8F0);border-radius:10px;padding:16px">
+        <h2 style="margin:0 0 12px;font-size:16px">September 2026 Timesheet (Demo Simulation)</h2>
+        <table style="width:100%;font-size:13px">
+          <thead>
+            <tr style="text-align:left;border-bottom:2px solid var(--line,#E2E8F0)">
+              <th style="padding:8px">Employee</th>
+              <th style="padding:8px">Role</th>
+              <th style="padding:8px">Present Days</th>
+              <th style="padding:8px">Regular Hours</th>
+              <th style="padding:8px">OT Hours</th>
+              <th style="padding:8px">Attendance Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${demoStaffList.map(e => `
+              <tr style="border-bottom:1px solid var(--line,#F1F5F9)">
+                <td style="padding:10px 8px;font-weight:700">${e.name}</td>
+                <td style="padding:10px 8px;color:var(--steel,#64748B)">${e.role}</td>
+                <td style="padding:10px 8px">${e.state==='absent'?'23 / 26':'26 / 26'}</td>
+                <td style="padding:10px 8px">${e.state==='absent'?'242 hrs':'273 hrs'}</td>
+                <td style="padding:10px 8px;color:#059669;font-weight:700">${e.state==='absent'?'8.5 hrs':'16.0 hrs'}</td>
+                <td style="padding:10px 8px"><span style="background:#ECFDF5;color:#065F46;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${e.state==='absent'?'88.5%':'100%'}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    ` : `
+      <div style="background:var(--panel,#fff);border:1px solid var(--line,#E2E8F0);border-radius:10px;padding:18px">
+        <h2 style="margin:0 0 12px;font-size:16px">Regal Hardware Shift Rules & OT Policy</h2>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;font-size:13px">
+          <div style="border:1px solid var(--line,#E2E8F0);border-radius:8px;padding:12px">
+            <h3 style="margin:0 0 6px;font-size:14px;color:#1E293B">⏰ Working Hours</h3>
+            <p style="margin:0;color:#64748B">Standard store shift starts at <b>08:00 AM</b> and ends at <b>07:30 PM</b>. Staff checking in after 08:00 AM are flagged with the late margin.</p>
+          </div>
+          <div style="border:1px solid var(--line,#E2E8F0);border-radius:8px;padding:12px">
+            <h3 style="margin:0 0 6px;font-size:14px;color:#1E293B">☕ Break Time Allowance</h3>
+            <p style="margin:0;color:#64748B">Tea breaks are 15–20 minutes. Lunch break is 30–45 minutes. Total permitted daily break time is 60 minutes.</p>
+          </div>
+          <div style="border:1px solid var(--line,#E2E8F0);border-radius:8px;padding:12px">
+            <h3 style="margin:0 0 6px;font-size:14px;color:#1E293B">🌙 Overtime (OT) Policy</h3>
+            <p style="margin:0;color:#64748B">Work performed after 07:30 PM counts as Overtime (OT) at 1.5x regular hourly rate.</p>
+          </div>
+        </div>
+      </div>
+    `}
+  `;
+}
+
+function demoAttendanceAfter(){
+  if(demoAttClockTimer) clearInterval(demoAttClockTimer);
+  const updateClock = () => {
+    const el = document.getElementById('demoLiveClock');
+    if(!el){
+      if(demoAttClockTimer){ clearInterval(demoAttClockTimer); demoAttClockTimer = null; }
+      return;
+    }
+    const now = new Date();
+    el.textContent = '🕒 ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  };
+  demoAttClockTimer = setInterval(updateClock, 1000);
+
+  const inp = document.getElementById('demoAttSearchInp');
+  if(inp){
+    inp.oninput = (e) => {
+      demoAttSearch = e.target.value;
+      render();
+      const el = document.getElementById('demoAttSearchInp');
+      if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    };
+  }
+}
+
 /* ==================== DEMO POS MODE ==================== */
 function renderDemoBanner(){
   if(!window.isDemo && !(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')) return;
@@ -16656,9 +16923,13 @@ function renderDemoBanner(){
     banner.id = 'demoModeBanner';
     banner.style.cssText = 'position:fixed;top:0;left:0;right:0;width:100%;height:34px;background:linear-gradient(90deg,#6D28D9 0%,#4F46E5 100%);color:#fff;padding:0 16px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between;z-index:999999;box-shadow:0 2px 6px rgba(0,0,0,0.22);box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif;';
     banner.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+      <div style="display:flex;align-items:center;gap:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
         <span style="font-size:15px;line-height:1">🧪</span>
-        <span><b>DEMO POS MODE</b> — Trial & Sandbox. All operations are local and do not modify live store data.</span>
+        <span><b>DEMO MODE</b> — Sandbox Trial</span>
+        <span style="opacity:.4">|</span>
+        <button onclick="go('pos')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.4);color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:700">🛒 POS Billing</button>
+        <button onclick="go('payroll')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.4);color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:700">⏱️ Attendance Board</button>
+        <button onclick="go('products')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.4);color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:700">📦 Products</button>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
         <button onclick="resetDemoData()" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.45);color:#fff;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;font-weight:600;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.18)'">↺ Reset Demo</button>
