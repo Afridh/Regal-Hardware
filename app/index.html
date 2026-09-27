@@ -4373,6 +4373,12 @@ function payFor(e,mk){
 }
 
 /* Keep Staff & Attendance roster strictly unified with Admin-created Users */
+/* the sample staff this file used to ship with. They are cleared out of old books — but only records
+   nobody added: the names are common ones, and a real Ruwan or Kasun added in Users (who carries addedAt)
+   must never be purged as sample data */
+const LEGACY_NAMES=['asaath kp','raslan','kasun','sampath','nuwan','chaminda','fathima','ruwan','dilan','suresh'];
+const isLegacyName=n=>LEGACY_NAMES.includes(String(n||'').toLowerCase().trim());
+const isLegacyUser=u=>!!u&&!u.addedAt&&isLegacyName(u.name);
 function syncUsersAndStaff(){
   if(!Array.isArray(S.users)) S.users=[];
   if(!Array.isArray(S.employees)) S.employees=[];
@@ -4396,14 +4402,13 @@ function syncUsersAndStaff(){
     return !S.deletedUsers.includes(nl);
   });
 
-  const legacyNames = ['asaath kp','raslan','kasun','sampath','nuwan','chaminda','fathima','ruwan','dilan','suresh'];
-
-  // Clean out legacy demo employees or deleted employees from S.employees
+  // Clean out legacy demo employees or deleted employees from S.employees — a real person with one of
+  // the old sample names (someone added in Users) keeps their card
   S.employees = S.employees.filter(e => {
     if(!e || !e.name) return false;
     const nl = String(e.name).toLowerCase().trim();
     if(nl === 'demo' || nl === 'demo user') return false;
-    if(legacyNames.includes(nl)) return false;
+    if(isLegacyName(nl) && !S.users.some(u => String(u.name).toLowerCase().trim() === nl && u.addedAt)) return false;
     if(S.deletedUsers.includes(nl)) return false;
     return S.users.some(u => String(u.name).toLowerCase().trim() === nl);
   });
@@ -6585,7 +6590,6 @@ function applyKept(kept){
   // Always keep current till / device state
   Object.assign(S, local);
   S.phoneOpen=false; S.notifOpen=false;
-  const legacy=['asaath kp','raslan','kasun','sampath','nuwan','chaminda','fathima','ruwan','dilan','suresh'];
   if(!Array.isArray(S.deletedUsers)) S.deletedUsers=[];
   try {
     const lsDel = JSON.parse(localStorage.getItem('regal_deleted_users')||'[]');
@@ -6602,7 +6606,7 @@ function applyKept(kept){
       localUsers.forEach(lu => {
         if(!lu || !lu.name) return;
         const luLower = String(lu.name).toLowerCase().trim();
-        if(legacy.includes(luLower) || S.deletedUsers.includes(luLower)) return;
+        if(isLegacyUser(lu) || S.deletedUsers.includes(luLower)) return;
         const existing = S.users.find(u => String(u.name).toLowerCase().trim() === luLower);
         if(!existing){
           S.users.push(lu);
@@ -6613,10 +6617,12 @@ function applyKept(kept){
           if(lu.salesId) existing.salesId = lu.salesId;
           if(lu.pin !== undefined) existing.pin = lu.pin;
           if(lu.passHash) existing.passHash = lu.passHash;
+          if(lu.canLogin !== undefined) existing.canLogin = lu.canLogin;
+          if(lu.addedAt && !existing.addedAt) existing.addedAt = lu.addedAt;
         }
       });
     }
-    S.users=S.users.filter(u=>u && u.name && !legacy.includes(String(u.name).toLowerCase().trim()) && !S.deletedUsers.includes(String(u.name).toLowerCase().trim()));
+    S.users=S.users.filter(u=>u && u.name && !isLegacyUser(u) && !S.deletedUsers.includes(String(u.name).toLowerCase().trim()));
   } else {
     S.users=localUsers.length ? localUsers : [];
   }
@@ -6649,7 +6655,7 @@ function applyKept(kept){
     }
   }
   syncUsersAndStaff();
-  if(!S.user||!S.user.name||legacy.includes(String(S.user.name).toLowerCase().trim())||String(S.user.name).toLowerCase().trim()==='admin'||S.deletedUsers.includes(String(S.user.name).toLowerCase().trim())){
+  if(!S.user||!S.user.name||(isLegacyName(S.user.name)&&!S.users.some(u=>u.addedAt&&String(u.name).toLowerCase().trim()===String(S.user.name).toLowerCase().trim()))||String(S.user.name).toLowerCase().trim()==='admin'||S.deletedUsers.includes(String(S.user.name).toLowerCase().trim())){
     const af=S.users.find(u=>u.name==='Afridh')||S.users[0];
     const afPerms=Array.isArray(af?.perms)&&af.perms.length?[...af.perms]:[...DEFAULT_ACCOUNTS[0].perms];
     S.user={name:af?af.name:'Afridh',role:af?af.role:'Super Admin',perms:afPerms,prefs:{...PREF_DEFAULTS,...((af&&af.prefs)||{})}};
@@ -16346,7 +16352,7 @@ function users(){
                 </div>
               </td>
               <td><span class="tag ${roleBadgeClass}" style="font-weight:700">${u.role}</span></td>
-              <td><span class="tag ok">password</span>${u.pin?' <span class="tag blue">PIN</span>':''}
+              <td>${u.canLogin===false?'<span class="tag">no sign-in</span>':'<span class="tag ok">password</span>'+(u.pin?' <span class="tag blue">PIN</span>':'')}
                <div class="muted" style="font-size:11px;margin-top:2px">${(u.prefs&&u.prefs.nav)==='top'?'menu on top':'menu at the side'}</div></td>
               <td class="muted">${u.lastSeen||'never'}</td>
               <td><div class="permlist">${u.role==='Super Admin'||u.role==='Admin'||u.role==='Owner'?'<span class="tag ok">Full System Access</span>'
@@ -16603,6 +16609,8 @@ function userModal(name){
   const initRole = u ? u.role : (availableRoles.includes('Salesman') ? 'Salesman' : availableRoles[0]);
   const isSalesman = initRole === 'Salesman';
   const autoSalesId = isSalesman ? getOrAssignSalesId(u) : '';
+  // a sign-in is optional: staff who only need an attendance card are added with a name and a role
+  const initLogin = u ? u.canLogin !== false : false;
 
   const m=modal(`<h2>${u?'Edit '+u.name:'Add someone'}</h2>
    <div class="grid3">
@@ -16614,13 +16622,21 @@ function userModal(name){
      <input id="uSalesId" value="${autoSalesId}" readonly style="background:var(--tint-blue);font-weight:700;color:var(--ink);cursor:default">
      <div class="muted">Automatically assigned Sales ID for salesperson performance & attribution</div>
     </div>
-    <div class="f"><label>${u?'New password (blank keeps the old one)':'Password'}</label><input id="uPass" type="password" autocomplete="new-password" placeholder="at least 6 characters"></div>
-    <div class="f"><label>PIN as well (optional)</label><input id="uPin" inputmode="numeric" maxlength="6" value="${u&&u.pin?u.pin:''}" placeholder="4 to 6 digits"></div>
    </div>
-   <h2 style="margin-top:6px">Fine-grained permissions</h2>
-   <div class="permgrid" id="uPerms">${PERMS.map(p=>`<label class="chk"><input type="checkbox" data-perm="${p[0]}" ${perms.has(p[0])?'checked':''}> ${p[1]}</label>`).join('')}</div>
-   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:8px;flex-wrap:wrap">
-    <label class="chk" style="flex:0 0 auto"><input type="checkbox" id="uActive" ${!u||u.active?'checked':''} ${u&&u.role==='Super Admin'?'disabled':''}> can sign in</label>
+   <label class="chk" style="margin:4px 0 8px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel);display:flex;gap:8px;align-items:center;font-weight:600">
+    <input type="checkbox" id="uLogin" ${initLogin?'checked':''} ${u&&u.role==='Super Admin'?'disabled':''}> 🔑 Can sign in to the POS
+    <span class="muted" style="font-weight:400">— tick to give them a password. Leave it off for staff who only need an attendance card.</span></label>
+   <div id="uLoginBox" style="${initLogin?'':'display:none'}">
+    <div class="grid3">
+     <div class="f"><label>${u&&u.passHash?'New password (blank keeps the old one)':'Password'}</label><input id="uPass" type="password" autocomplete="new-password" placeholder="at least 6 characters"></div>
+     <div class="f"><label>PIN as well (optional)</label><input id="uPin" inputmode="numeric" maxlength="6" value="${u&&u.pin?u.pin:''}" placeholder="4 to 6 digits"></div>
+    </div>
+    <h2 style="margin-top:6px">Fine-grained permissions</h2>
+    <div class="permgrid" id="uPerms">${PERMS.map(p=>`<label class="chk"><input type="checkbox" data-perm="${p[0]}" ${perms.has(p[0])?'checked':''}> ${p[1]}</label>`).join('')}</div>
+   </div>
+   <div id="uErr" style="color:var(--chip-rust);font-weight:600;font-size:13px;min-height:18px;margin-top:8px"></div>
+   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;gap:8px;flex-wrap:wrap">
+    <label class="chk" style="flex:0 0 auto"><input type="checkbox" id="uActive" ${!u||u.active!==false?'checked':''} ${u&&u.role==='Super Admin'?'disabled':''}> still working here (switched on)</label>
     <div style="display:flex;gap:8px;align-items:center">
      ${u&&isSuperAdmin&&u.name!==S.user.name?`<button class="btn ghost bad" id="uDelBtn" type="button" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)">Remove User</button>`:''}
      <button class="btn ghost" data-act="closeModal">Cancel</button>
@@ -16661,6 +16677,8 @@ function userModal(name){
       toast(`User ${u.name} has been removed and sign-in permissions revoked`);
     };
   }
+  const loginCb=m.querySelector('#uLogin');
+  loginCb.onchange=()=>{ m.querySelector('#uLoginBox').style.display=loginCb.checked?'':'none'; m.querySelector('#uErr').textContent=''; if(loginCb.checked) m.querySelector('#uPass').focus() };
   m.querySelector('#uRole').onchange=e=>{
     const selectedRole = e.target.value;
     const def=ROLE_DEFAULTS[selectedRole]||[];
@@ -16674,22 +16692,29 @@ function userModal(name){
       }
     }
   };
+  // what is wrong is said inside the form as well, where it is seen, not only in a toast that fades
+  const fail=msg=>{ m.querySelector('#uErr').textContent=msg; toast(msg,'warn') };
   m.querySelector('#uOk').onclick=async ()=>{
+    const okBtn=m.querySelector('#uOk');
     const nm=(m.querySelector('#uName').value||'').trim();
-    if(!nm)return toast('A name is needed');
-    if(!u&&S.users.some(x=>x.name.toLowerCase()===nm.toLowerCase()))return toast(nm+' already has a login');
-    if(u&&u.name.toLowerCase()!==nm.toLowerCase()&&S.users.some(x=>x!==u&&x.name.toLowerCase()===nm.toLowerCase()))return toast(nm+' already has a login');
-    const pin=(m.querySelector('#uPin').value||'').replace(/\D/g,'');
-    if(pin&&pin.length<4)return toast('A PIN needs at least four digits');
-    const pass=(m.querySelector('#uPass').value||'').trim();
-    if(!u&&pass.length<6)return toast('A password needs at least six characters');
-    if(u&&pass&&pass.length<6)return toast('A password needs at least six characters');
+    if(!nm)return fail('A name is needed');
+    if(!u&&S.users.some(x=>String(x.name||'').toLowerCase()===nm.toLowerCase()))return fail(nm+' is already a user');
+    if(u&&u.name.toLowerCase()!==nm.toLowerCase()&&S.users.some(x=>x!==u&&String(x.name||'').toLowerCase()===nm.toLowerCase()))return fail(nm+' is already a user');
+    const canLogin=(u&&u.role==='Super Admin')?true:m.querySelector('#uLogin').checked;
+    const pin=canLogin?(m.querySelector('#uPin').value||'').replace(/\D/g,''):'';
+    if(pin&&pin.length<4)return fail('A PIN needs at least four digits');
+    const pass=canLogin?(m.querySelector('#uPass').value||'').trim():'';
+    if(canLogin&&!(u&&u.passHash)&&pass.length<6)return fail('Give them a password of at least six characters, or untick "Can sign in"');
+    if(pass&&pass.length<6)return fail('A password needs at least six characters');
     const picked=[...m.querySelectorAll('[data-perm]')].filter(c=>c.checked).map(c=>c.dataset.perm);
     const active=u&&u.role==='Super Admin'?true:m.querySelector('#uActive').checked;
     const role=m.querySelector('#uRole').value;
 
-    if(u&&u.name===S.user.name&&!picked.includes('users')&&S.users.filter(x=>x.active&&x.perms.includes('users')).length<2)
-      return toast('Someone has to be able to manage users — leave that with yourself or give it to another person first');
+    if(u&&u.name===S.user.name&&(!canLogin||!active))
+      return fail('You cannot take the sign-in away from the login you are using');
+    if(u&&u.name===S.user.name&&!picked.includes('users')&&S.users.filter(x=>x.active!==false&&x.canLogin!==false&&(x.perms||[]).includes('users')).length<2)
+      return fail('Someone has to be able to manage users — leave that with yourself or give it to another person first');
+    okBtn.disabled=true;
 
     let salesId = undefined;
     let uid = u ? u.uid : undefined;
@@ -16728,6 +16753,8 @@ function userModal(name){
       u.no = no;
       u.perms = picked;
       u.active = active;
+      u.canLogin = canLogin;
+      u.addedAt = u.addedAt || Date.now();
       if(role === 'Salesman'){
         u.salesId = salesId;
       } else {
@@ -16760,7 +16787,9 @@ function userModal(name){
         pin,
         uid,
         no,
-        passHash: await hashPass(pass),
+        ...(pass ? { passHash: await hashPass(pass) } : {}),
+        canLogin,
+        addedAt: Date.now(),
         perms: picked,
         active,
         lastSeen: null,
@@ -16776,7 +16805,8 @@ function userModal(name){
       try { new BroadcastChannel('regal_books_sync').postMessage('books_updated'); }catch(_){}
     }
     userTab = 'users';
-    m.remove(); render(); toast(u?`${nm} updated`:`${nm} can now sign in`);
+    m.remove(); render();
+    toast(u?`${nm} updated`:(canLogin?`${nm} added — they can sign in now`:`${nm} added — on the attendance board, no sign-in`),'ok');
   };
 }
 
@@ -16792,7 +16822,7 @@ async function hashPass(str){
   return hashSync(str);
 }
 async function checkPass(u,given){
-  if(!u || u.active === false) return false;
+  if(!u || u.active === false || u.canLogin === false) return false;
   const lower = String(u.name || '').toLowerCase().trim();
   let lsDel = [];
   try { lsDel = JSON.parse(localStorage.getItem('regal_deleted_users') || '[]'); } catch(_){}
@@ -17725,7 +17755,7 @@ document.addEventListener('click',e=>{
       if(!u) return;
       if(u.name===S.user.name) return toast('You cannot switch off the login you are using');
       if(u.role==='Super Admin'||u.name==='Afridh') return toast('Super Admin cannot be switched off');
-      u.active=!u.active;
+      u.active=u.active===false;              // a user saved without the flag is switched on
       syncUsersAndStaff();
       try { localStorage.setItem(STORE_KEY, snapshotTxt()); } catch(_){}
       persist(true);

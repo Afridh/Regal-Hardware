@@ -80,7 +80,7 @@ export function sanitizeUsers(users, deletedUsers = []) {
     if (!u || !u.name) return false;
     const nl = String(u.name || '').toLowerCase().trim();
     if (nl === 'demo' || nl === 'demo user') return false;
-    if (LEGACY_USERS.includes(nl)) return false;
+    if (LEGACY_USERS.includes(nl) && !u.addedAt) return false;       // sample staff, not a real person added in Users
     if (delList.includes(nl)) return false;
     return true;
   });
@@ -174,7 +174,7 @@ r.post('/books/login', asyncHandler(async (req, res) => {
   const u = users.find(x => String(x.name).toLowerCase() === String(user).toLowerCase());
 
   if (u) {
-    if (u.active === false) throw new HttpError(401, 'That name cannot sign in');
+    if (u.active === false || u.canLogin === false) throw new HttpError(401, 'That name cannot sign in');
     const defAcc = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === String(user).toLowerCase());
     const isDefPass = defAcc && (!u.passHash || u.passHash === sha(defAcc.pass) || u.passHash === fnv(defAcc.pass)) && password === defAcc.pass;
     if (matches(u, password) || isDefPass || (isAdmin && password === adminPass)) {
@@ -200,7 +200,7 @@ r.get('/books/me', regalAuth, (req, res) => res.json({ ok: true, user: req.regal
 /** Names + roles only, for the lock screen of a browser that has never opened the books. */
 r.get('/books/users', asyncHandler(async (_req, res) => {
   const users = await usersFromBooks();
-  res.json({ users: users.filter(u => u.active !== false).map(u => ({ name: u.name, role: u.role, uid: u.uid || 'AD', pin: u.pin ? true : false })) });
+  res.json({ users: users.filter(u => u.active !== false && u.canLogin !== false).map(u => ({ name: u.name, role: u.role, uid: u.uid || 'AD', pin: u.pin ? true : false })) });
 }));
 
 // ---------------------------------------------------------------- books document
@@ -264,7 +264,7 @@ r.post('/books/shift-login', asyncHandler(async (req, res) => {
   if (!user || typeof password !== 'string') throw new HttpError(400, 'Name and password required');
   const users = await usersFromBooks();
   const u = users.find(x => String(x.name).toLowerCase() === String(user).toLowerCase().trim());
-  if (!u || u.active === false) throw new HttpError(401, 'That name cannot sign in');
+  if (!u || u.active === false || u.canLogin === false) throw new HttpError(401, 'That name cannot sign in');
   const defAcc = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === String(u.name).toLowerCase());
   const isDefPass = defAcc && (!u.passHash || u.passHash === sha(defAcc.pass) || u.passHash === fnv(defAcc.pass)) && password === defAcc.pass;
   if (!matches(u, password) && !isDefPass) throw new HttpError(401, 'That password is not right');
@@ -285,7 +285,7 @@ export function staffForUsers(users, employees, deleted) {
   const low = x => String(x || '').toLowerCase().trim();
   const us = sanitizeUsers(Array.isArray(users) ? users.map(u => ({ ...u })) : [], gone).filter(u => u && u.name);
   const staff = (Array.isArray(employees) ? employees : [])
-    .filter(e => e && e.name && !LEGACY_USERS.includes(low(e.name)) && !gone.includes(low(e.name)) && us.some(u => low(u.name) === low(e.name)))
+    .filter(e => e && e.name && !gone.includes(low(e.name)) && us.some(u => low(u.name) === low(e.name)))
     .map(e => ({ ...e }));
   const today = new Date().toISOString().slice(0, 10);
   us.forEach((u, i) => {
