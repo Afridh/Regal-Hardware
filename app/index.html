@@ -10066,7 +10066,7 @@ function posClassic(){
       <tbody>
       ${L.length?[...L].map((l,i)=>{const p=P(l.pid), sp=lastSupplier(l.pid);
         const ed=CS.editLine===i;   // Space on a highlighted line: qty and price become boxes in the row itself
-        const chk=CS.chk&&CS.chk.has(l);   // walked onto with the arrows: checked against the goods
+        const chk=l.checked===true;        // walked onto with the arrows, or ticked by hand
         return `<tr class="${i===S.pos.sel?'on':''} ${ed?'editing':''} ${chk?'ln-checked':''} ${l.qty<0?'retline':''}" data-act="csSel" data-i="${i}">
          ${drag?`<td class="g"><span class="ln-grip" title="drag to move this line · Ctrl+↑ / Ctrl+↓">⠿</span></td>`:''}
          <td class="c"><i class="ln-chk" title="checked">✓</i>${p.num||p.code}</td>
@@ -10375,7 +10375,7 @@ function csCommit(){
 function fastUpdatePosSel(idx){
   S.pos.sel = idx;
   // a line the cashier has walked onto counts as checked against the goods — it keeps a tick until the bill changes
-  if(idx>=0&&S.pos.lines[idx]){ if(!CS.chk) CS.chk=new WeakSet(); CS.chk.add(S.pos.lines[idx]) }
+  if(idx>=0&&S.pos.lines[idx]&&S.pos.lines[idx].checked===undefined) S.pos.lines[idx].checked=true;
   const linesEl = document.querySelector('.till-lines');
   if(linesEl){
     const rows = linesEl.querySelectorAll('.till-tbl tbody tr[data-act="csSel"]');
@@ -10864,6 +10864,11 @@ function bindClassic(){
         return;
       }
       if(e.key===' '){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csLineEdit(S.pos.sel); return }
+      // C turns the tick on the line under the cursor on or off, so a piece that is not in the bag
+      // can be left unticked and found again on the printed bill
+      if(e.key==='c'||e.key==='C'){ e.preventDefault(); e.stopPropagation();
+        if(S.pos.sel>=0){ const l=S.pos.lines[S.pos.sel]; l.checked=!(l.checked===true);
+          toast(l.checked?'Checked':'Not checked — it will show on the bill'); render() } return }
       // P goes straight to the price of the line under the cursor, N to what it is called on this bill
       if(!e.ctrlKey&&!e.altKey&&e.key.toLowerCase()==='p'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csLineEdit(S.pos.sel,'price'); return }
       if(!e.ctrlKey&&!e.altKey&&e.key.toLowerCase()==='n'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csLineRename(S.pos.sel); return }
@@ -14126,6 +14131,9 @@ function billHtml(inv,f='a5'){
   const pays=(inv.pays||[]).filter(p=>p.method!=='CREDIT');
   const payWord=pays.length===1?({CASH:'Cash',CARD:'Card',BANK:'Bank',CHEQUE:'Cheque',POINTS:'Points',VOUCHER:'Voucher'}[pays[0].method]||pays[0].method):pays.length>1?'Paid':'Cash';
   const B=CFG.bill, SH=CFG.shop;
+  // a bill only carries the tick column once somebody has checked the bag against it
+  const anyChecked=inv.lines.some(l=>l.checked!==undefined);
+  const notChecked=inv.lines.filter(l=>anyChecked&&l.checked!==true).length;
   const heading=credit?(B.creditTitle||'Credit Invoice'):(B.title||'Invoice');
   const copy=inv.proof?'PROOF — NOT A BILL':(inv.reprint?heading+'-Copy':heading);
   const logo=(h)=>SH.logo?`<img src="${SH.logo}" alt="" class="bill-logo" style="height:${h}px;max-width:${Math.round(h*2.4)}px;object-fit:contain;display:block;margin:0 auto;filter:grayscale(1) brightness(0)">`:mark(h);
@@ -14146,11 +14154,11 @@ function billHtml(inv,f='a5'){
    <div class="sb-rule"></div>
    ${B.showSaving!==false?`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>MRP</th><th>D.Price</th><th>Amount</th></tr>
    ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}</td></tr>
-     <tr class="qt"><td class="l">${l.qty.toFixed(3)}</td><td>${money2(p.mrp)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}
+     <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l">${l.qty.toFixed(3)}</td><td>${money2(p.mrp)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`}).join('')}
    </table>`
    :`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>Qty</th><th>Price</th><th>Amount</th></tr>
    ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}</td></tr>
-     <tr class="qt"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}
+     <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`}).join('')}
    </table>`}
    <div class="sb-rule"></div>
    <div class="sb-tot"><span>Gross Total Rs.</span><b>${money2(gross)}</b></div>
@@ -14164,14 +14172,15 @@ function billHtml(inv,f='a5'){
    ${B.showBarcode!==false?`<div class="sb-bc">${barcode128(inv.no,40)}</div>`:''}
    ${B.t80Sign!==false?`<div class="sb-sign"><span>${B.signLeft||'Authorised By'}</span><span>${B.signRight||'Received By'}</span></div>`:''}
    <div class="sb-cnt">No of Item / Qty - &nbsp; ${inv.lines.length.toFixed(2)} &nbsp;/&nbsp; ${qty.toFixed(2)}</div>
+   ${notChecked?`<div class="sb-notck">✗ ${notChecked} item${notChecked===1?'':'s'} NOT CHECKED</div>`:''}
    ${B.footer?`<div class="sb-foot">${B.footer.replace('{days}',B.returnDays)}</div>`:''}
    ${B.t80Thanks?`<div class="sb-thanks">${B.t80Thanks}</div>`:''}
    ${B.showWeb!==false&&(SH.web||(S.web&&S.web.settings&&S.web.settings.domain))?`<div class="sb-web">${SH.web||S.web.settings.domain}</div>`:''}
   </div>`;
   // ---------- A5 landscape ----------
   const showCode=B.showCode!==false, showUom=B.showUom!==false, showMrp=B.showMrp!==false;
-  const rows=inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr><td>${i+1})</td>${showCode?`<td>${p.num||p.code}</td>`:''}<td class="d">${lineName(l).toUpperCase()}</td>
-    <td class="n">${l.qty.toFixed(2)}</td>${showUom?`<td class="u">${(p.unit||'').toUpperCase()}</td>`:''}${showMrp?`<td class="n">${money2(p.mrp)}</td>`:''}<td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('');
+  const rows=inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="${anyChecked&&l.checked!==true?'notck':''}"><td>${i+1})</td>${showCode?`<td>${p.num||p.code}</td>`:''}<td class="d">${lineName(l).toUpperCase()}</td>
+    <td class="n">${l.qty.toFixed(2)}</td>${showUom?`<td class="u">${(p.unit||'').toUpperCase()}</td>`:''}${showMrp?`<td class="n">${money2(p.mrp)}</td>`:''}<td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td>${anyChecked?`<td class="ck">${l.checked===true?'✓':'✗'}</td>`:''}</tr>`}).join('');
   const nm=(SH.name||'REGAL HARDWARE');
   return `<div class="print a5 sba5" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5})">
    <div class="sb-top"><span>${copy}</span><span>Printed on ${billWhen({date:D(today),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})})}</span></div>
@@ -14192,7 +14201,7 @@ function billHtml(inv,f='a5'){
    </div>
    <div class="sb-addrline"><b>${SH.addr||SHOP.addr}</b> <i>${SH.near||''}</i><span>${phones}</span></div>
    <table class="sb-tbl">
-    <tr><th>#</th>${showCode?'<th>Code</th>':''}<th class="d">Description</th><th class="n">Qty</th>${showUom?'<th>UOM</th>':''}${showMrp?'<th class="n">MRP</th>':''}<th class="n">${showMrp?'D.Price':'Price'}</th><th class="n">Amount</th></tr>
+    <tr><th>#</th>${showCode?'<th>Code</th>':''}<th class="d">Description</th><th class="n">Qty</th>${showUom?'<th>UOM</th>':''}${showMrp?'<th class="n">MRP</th>':''}<th class="n">${showMrp?'D.Price':'Price'}</th><th class="n">Amount</th>${anyChecked?'<th class="ck">✓</th>':''}</tr>
     ${rows}
    </table>
    ${B.showWords?`<div class="sb-words"><span>Amount in words :</span> <b>${words(inv.total)} Rupees Only</b></div>`:''}
