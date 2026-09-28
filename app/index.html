@@ -9077,16 +9077,25 @@ function cashExpected(d,loc){
 
 function cashGrid(kind){
   const draft=cashDraft[kind]||{};
-  const row=(d)=>`<tr>
-    <td style="white-space:nowrap"><b>${d>=20?'Rs '+d.toLocaleString('en-US'):d}</b> ${d>=20?'note':'coin'}</td>
-    <td style="width:120px"><input type="number" min="0" step="1" inputmode="numeric" class="cd-in"
-        data-cash="${kind}" data-d="${d}" value="${draft[d]!==undefined?draft[d]:''}" placeholder="0"></td>
-    <td class="n" id="cv-${kind}-${d}">${draft[d]?money2(d*(+draft[d]||0)):'—'}</td></tr>`;
-  return `<table class="cd-grid"><tr><th>Denomination</th><th>How many</th><th class="n">Comes to</th></tr>
-    ${CASH_NOTES.map(row).join('')}
-    <tr><td colspan="3" style="padding:2px 0"><div style="border-top:1px dashed var(--line,#ddd)"></div></td></tr>
-    ${CASH_COINS.map(row).join('')}
-    <tr><td><b>Counted</b></td><td></td><td class="n"><b id="ct-${kind}">${money2(cashTotal(draft))}</b></td></tr></table>`;
+  const row=(d,i)=>`<div style="display:flex;align-items:center;gap:6px;padding:2px 0">
+     <b style="width:72px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums">${d>=20?d.toLocaleString('en-US'):d+'/-'}</b>
+     <button type="button" class="btn ghost cd-step" data-cash="${kind}" data-d="${d}" data-step="-1" tabindex="-1"
+       title="one fewer" style="padding:1px 9px;line-height:1.3">&minus;</button>
+     <input type="number" min="0" step="1" inputmode="numeric" class="cd-in"
+       data-cash="${kind}" data-d="${d}" data-i="${i}" value="${draft[d]!==undefined?draft[d]:''}" placeholder="0"
+       style="width:62px;text-align:center;padding:4px 2px">
+     <button type="button" class="btn ghost cd-step" data-cash="${kind}" data-d="${d}" data-step="1" tabindex="-1"
+       title="one more" style="padding:1px 9px;line-height:1.3">+</button>
+     <span id="cv-${kind}-${d}" style="flex:1;text-align:right;font-variant-numeric:tabular-nums;${draft[d]?'':'opacity:.3'}">${money2(d*(+draft[d]||0))}</span>
+   </div>`;
+  let i=0;
+  return `<div class="muted" style="font-size:12px;margin:2px 0 6px">Type how many, then <b>Enter</b> for the next one. Leave a row empty for none.</div>
+   ${CASH_NOTES.map(d=>row(d,i++)).join('')}
+   <div style="border-top:1px dashed rgba(127,127,127,.35);margin:6px 0"></div>
+   ${CASH_COINS.map(d=>row(d,i++)).join('')}
+   <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:10px;padding-top:8px;border-top:2px solid rgba(127,127,127,.35)">
+     <b>Counted</b><b id="ct-${kind}" style="font-size:22px;font-variant-numeric:tabular-nums">${money2(cashTotal(draft))}</b></div>
+   ${kind==='close'?'<div id="cdDiff" style="text-align:right;margin-top:6px;min-height:22px"></div>':''}`;
 }
 
 function cashup(){
@@ -9128,7 +9137,10 @@ function cashup(){
      <div class="muted">Count what is in the drawer before the first bill.</div>
      ${open?done(open,'Opening float'):`${cashGrid('open')}
        <input id="cashNoteOpen" placeholder="A note — optional" maxlength="120" style="margin-top:8px">
-       <button class="btn tape" style="margin-top:8px" data-act="cashSave" data-k="open">Save the opening count</button>`}
+       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn tape" data-act="cashSave" data-k="open">Save the opening count</button>
+        ${cashList().some(c=>c.kind==='open'&&(c.loc||0)===loc)?'<button class="btn ghost" data-act="cashLast">Same as last time</button>':''}
+       </div>`}
      ${open?diffLine(open.total,booksOpen,`Counted ${money2(open.total)} · the books said ${money2(booksOpen)}`):''}
     </div>
 
@@ -9176,16 +9188,59 @@ function cashup(){
 function cashupAfter(){
   const dt=document.getElementById('cashDate');
   if(dt) dt.onchange=()=>{ cashDate=dt.value||D(today); cashDraft={open:{},close:{}}; render() };
-  document.querySelectorAll('.cd-in').forEach(el=>{
-    el.oninput=()=>{
-      const kind=el.dataset.cash, d=+el.dataset.d, n=Math.max(0,Math.floor(+el.value||0));
-      if(el.value==='') delete cashDraft[kind][d]; else cashDraft[kind][d]=n;
-      const cell=document.getElementById('cv-'+kind+'-'+d);
-      if(cell) cell.textContent=n?money2(d*n):'—';
-      const tot=document.getElementById('ct-'+kind);
-      if(tot) tot.textContent=money2(cashTotal(cashDraft[kind]));
+
+  /* While the closing drawer is being counted, say how far off it still is. That is the
+     whole question the person counting is trying to answer, and waiting until they press
+     Save to answer it just means counting the same notes twice. */
+  const live=(kind)=>{
+    const tot=document.getElementById('ct-'+kind);
+    if(tot) tot.textContent=money2(cashTotal(cashDraft[kind]));
+    if(kind!=='close') return;
+    const box=document.getElementById('cdDiff'); if(!box) return;
+    const counted=cashTotal(cashDraft.close);
+    if(!counted){ box.innerHTML='<span class="muted" style="font-size:12px">The difference shows here as you count.</span>'; return }
+    const diff=+(counted-cashExpected(cashDay(),cashStore()).expected).toFixed(2);
+    box.innerHTML=Math.abs(diff)<0.005?'<span class="tag ok">that agrees</span>'
+      :diff>0?`<span class="tag warn">${money2(diff)} more than there should be</span>`
+             :`<span class="tag bad">${money2(-diff)} still to find</span>`;
+  };
+  const setRow=(kind,d,n)=>{
+    if(n>0) cashDraft[kind][d]=n; else delete cashDraft[kind][d];
+    const cell=document.getElementById('cv-'+kind+'-'+d);
+    if(cell){ cell.textContent=money2(d*(n||0)); cell.style.opacity=n?'':'.3' }
+    live(kind);
+  };
+
+  let first=null;
+  for(const kind of ['open','close']){
+    const ins=[...document.querySelectorAll('.cd-in[data-cash="'+kind+'"]')];
+    if(!ins.length) continue;
+    if(!first) first=ins[0];
+    ins.forEach(el=>{
+      el.oninput=()=>setRow(kind,+el.dataset.d,Math.max(0,Math.floor(+el.value||0)));
+      el.onfocus=()=>{ try{ el.select() }catch(e){} };      // typing over replaces, it does not append
+      el.onkeydown=e=>{
+        const i=+el.dataset.i, go=j=>{ const t=ins[j]; if(t){ e.preventDefault(); t.focus() } };
+        if(e.key==='ArrowUp'&&i>0) return go(i-1);
+        if(e.key==='Enter'||e.key==='ArrowDown'){
+          if(i<ins.length-1) return go(i+1);
+          e.preventDefault();                                // the end of the list: on to Save
+          const s=document.querySelector('[data-act="cashSave"][data-k="'+kind+'"]'); if(s) s.focus();
+        }
+      };
+    });
+    live(kind);
+  }
+  document.querySelectorAll('.cd-step').forEach(b=>{
+    b.onclick=()=>{ const kind=b.dataset.cash, d=+b.dataset.d;
+      const n=Math.max(0,(+((cashDraft[kind]||{})[d])||0)+(+b.dataset.step||0));
+      const el=document.querySelector('.cd-in[data-cash="'+kind+'"][data-d="'+d+'"]');
+      if(el) el.value=n?n:'';
+      setRow(kind,d,n);
     };
   });
+  // ready to count the moment the page opens, without reaching for the mouse
+  if(first&&document.activeElement===document.body) first.focus();
 }
 
 function cashSave(kind){
@@ -19424,6 +19479,9 @@ document.addEventListener('click',e=>{
       toast(`${p.name} saved${webHasOwn(p)?` · ${fmt(+p.webPrice)} on the site`:''}`) },
     siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
     cashSave:()=>cashSave(a.dataset.k),
+    cashLast:()=>{ const prev=cashList().filter(c=>c.kind==='open'&&(c.loc||0)===cashStore()).slice(-1)[0];
+      if(!prev) return toast('There is no earlier float to copy');
+      cashDraft.open={...prev.counts}; render(); toast(`Filled in from ${prev.date} — change anything that is different`) },
     cashPrint:()=>cashPrintSlip(a.dataset.k),
     cashUndo:()=>{ const c=cashFind(a.dataset.k,cashDay()); if(!c) return;
       if(!confirm('Take that count off and count again? What was counted is kept on the trail.')) return;
