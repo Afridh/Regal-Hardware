@@ -507,6 +507,31 @@ body.privacy nav .navuser{position:relative}
   font-size:10px;font-weight:700;padding:1px 5px;letter-spacing:.04em;vertical-align:middle}
 .retline td{color:#9F1239}
 .tag.ret{background:#FFE4E6;color:#9F1239;border-color:#FDA4AF}
+/* ---- the label that goes on damaged goods and on repair jobs ---- */
+.dlbl{width:62mm;border:1px solid #111;border-radius:4px;padding:8px 9px;font-family:Archivo,sans-serif;
+  color:#000;background:#fff}
+.dlbl .dl-top{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1.5px solid #000;
+  padding-bottom:4px;margin-bottom:6px}
+.dlbl .dl-top b{font-size:11px;letter-spacing:.08em}
+.dlbl .dl-top span{font-size:8.5px}
+.dlbl.job .dl-top b{letter-spacing:.06em}
+.dlbl .dl-bc{text-align:center;margin:2px 0 6px}
+.dlbl .dl-bc svg{max-width:100%}
+.dlbl .dl-code{font-size:11px;letter-spacing:.14em;margin-top:1px}
+.dlbl .dl-l{font-size:12px;line-height:1.25;margin-bottom:4px}
+.dlbl .dl-r{display:flex;justify-content:space-between;font-size:9.5px;gap:8px}
+.dlbl .dl-w{margin-top:5px;padding-top:4px;border-top:1px dashed #666;font-size:9px}
+.prn{background:#fff;padding:10px;border-radius:8px}
+@media print{
+  body *{visibility:hidden}
+  .prn,.prn *{visibility:visible}
+  .prn{position:absolute;left:0;top:0;padding:0}
+  .noprint{display:none!important}
+}
+.hits{display:flex;flex-direction:column;gap:2px;margin-top:4px;max-height:190px;overflow:auto}
+.hits button{text-align:left;border:1px solid var(--line);background:var(--white);border-radius:6px;
+  padding:6px 8px;font:inherit;cursor:pointer}
+.hits button:hover{background:var(--panel)}
 /* ---- the top of the dashboard: what is waiting, then the figures ---- */
 .pulse{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:14px}
 .pulsecard{position:relative;overflow:hidden;text-align:left;border:1px solid var(--line);border-radius:12px;
@@ -3333,11 +3358,11 @@ const fq = (n)=> Number(n).toLocaleString('en-LK',{maximumFractionDigits:3});
 
 const S = {
  user:{name:'Afridh',role:'Super Admin'}, terminal:'T1', view:'dashboard',
- seq:{PRN:1,STK:1,WEB:1,PO:1,QTN:1,DN:1,INV:31975,PUR:212,PAY:88,RCT:145,VCH:301,EXP:77,DMG:12,JE:1500},
+ seq:{PRN:1,STK:1,WEB:1,PO:1,QTN:1,DN:1,INV:31975,PUR:212,PAY:88,RCT:145,VCH:301,EXP:77,DMG:12,JOB:1,JE:1500},
  products:[], customers:[], suppliers:[], banks:[], cheques:[], employees:[],
  docs:[], sales:[], purchases:[], payments:[], expenses:[], damages:[], movements:[], journal:[], messages:[], orders:[],
  phoneOpen:false, phoneMode:'supplier',
- web:{settings:{},orders:[],cart:[],session:null,delivery:true}, prns:[], stocktakes:[], counts:[], serials:[], notif:[], notifOpen:false, notices:[], payruns:[], advances:[], shift:{settings:{},days:{},imported:null},
+ web:{settings:{},orders:[],cart:[],session:null,delivery:true}, prns:[], stocktakes:[], counts:[], serials:[], jobs:[], notif:[], notifOpen:false, notices:[], payruns:[], advances:[], shift:{settings:{},days:{},imported:null},
  cportal:{session:null,pick:2,tab:'owed',stage:'phone',code:'',inbox:'',err:'',flash:''},
  portal:{session:null,pick:'1',tab:'new',filter:'all',stage:'phone',code:'',tries:0,left:0,timer:null,inbox:'',err:'',flash:'',rep:'Nimal',photos:[],replaces:null}, drawer:{opened:'08:02',float:5000},
  pos:{lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:'r80'}, heldBills:[], trail:[], roles:[],
@@ -3381,7 +3406,7 @@ const billNoFrom=(seq)=>billPlain()
   : `${CFG.bill.prefix||'INVM-'}${S.terminal}-${userUid()}-${String(seq).padStart(5,'0')}`;
 const peekBillNo=()=>billNoFrom(billSeqNow()+1);      // what the next bill will be called
 const next=(k)=>{
-  if(k==='INV'){ const seq=billSeqNow()+1; S.seqBy[billKey()]=seq; return billNoFrom(seq) }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',JE:'JE-'}[k];return p+String(S.seq[k]++).padStart(5,'0')};
+  if(k==='INV'){ const seq=billSeqNow()+1; S.seqBy[billKey()]=seq; return billNoFrom(seq) }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',JOB:'JOB-',JE:'JE-'}[k];if(!(S.seq[k]>0))S.seq[k]=1;return p+String(S.seq[k]++).padStart(5,'0')};
 
 const GL = {'2050':'Customer advances','1010':'Cash in hand','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1023':'Bank account 4','1024':'Bank account 5','1025':'Bank account 6','1026':'Bank account 7','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other'};
 function post(date,desc,ref,lines){ // lines: [{ac,dr,cr,party}]
@@ -3665,6 +3690,85 @@ function addExpense({cat,amount,method,bank,desc,date=D(today)}){
   post(date,'Expense '+e.no+' '+GL[cat],e.no,[{ac:cat,dr:amount},method==='CASH'?{ac:'1010',cr:amount}:{ac:B(bank).ac,cr:amount}]);
   return e;
 }
+/* ================== DAMAGED GOODS GOING BACK TO THE SUPPLIER ==================
+   A bulb that arrived broken or a tap that leaks is not a loss until the supplier says so. Each piece
+   is booked against the supplier it came from, gets a serial of its own so a label can go on the
+   goods, and waits in the bin until it is sent back. What it is worth comes off what we owe them the
+   moment it is raised; if they turn it down it becomes a loss then, and not before. */
+function damageSerial(d){ return 'DR' + String(d.no).replace(/\D/g,'').padStart(6,'0') }
+const DMG_STATUS={held:['In the bin','warn'],sent:['Sent back','blue'],credited:['Credited','ok'],
+  replaced:['Replaced','ok'],refused:['Turned down — our loss','bad']};
+function addSupplierDamage({pid,sid,qty,reason,note,date=D(today)}){
+  const p=P(pid); if(!p) throw new Error('Pick an item');
+  const s=SU(sid); if(!s) throw new Error('Which supplier is it going back to?');
+  if(!(qty>0)) throw new Error('Quantity must be above zero');
+  if(qty>p.stock+1e-9) throw new Error(`Only ${fq(p.stock)} ${p.unit} of ${p.name} on the floor`);
+  const v=+(qty*p.cost).toFixed(2);
+  const d={no:next('DMG'),date,pid,sid,qty,reason,note:note||'',value:v,cost:p.cost,
+    status:'held',by:S.user.name,events:[{at:Date.now(),what:'Put in the damage bin',by:S.user.name}]};
+  d.serial=damageSerial(d);
+  S.damages.push(d);
+  move(pid,-qty,'DAMAGE',d.no,p.cost,date);
+  // it comes off what we owe them: the goods were never ours to keep
+  post(date,'Damaged back to '+s.name+' '+d.no,d.no,[{ac:'2100',dr:v,party:{type:'S',id:sid}},{ac:'1200',cr:v}]);
+  notify('stock',`${fq(qty)} ${p.unit} of ${p.name} put aside to go back to ${s.name}`,'damages');
+  return d;
+}
+function damageSet(no,status,note){
+  const d=S.damages.find(x=>x.no===no); if(!d) throw new Error('No such damage note');
+  const was=d.status; d.status=status;
+  d.events=(d.events||[]).concat([{at:Date.now(),what:DMG_STATUS[status][0],by:S.user.name,note:note||''}]);
+  if(status==='sent') d.sentDate=D(today);
+  if(status==='refused'&&was!=='refused'){
+    // they will not take it, so it becomes ours to lose: put the claim back and expense it
+    post(D(today),'Damage turned down '+d.no,d.no,[{ac:'5200',dr:d.value},{ac:'2100',cr:d.value,party:{type:'S',id:d.sid}}]);
+  }
+  if(was==='refused'&&status!=='refused'){
+    post(D(today),'Damage claim back on '+d.no,d.no,[{ac:'2100',dr:d.value,party:{type:'S',id:d.sid}},{ac:'5200',cr:d.value}]);
+  }
+  if(status==='replaced'){ const p=P(d.pid); move(d.pid,d.qty,'DAMAGE-REPLACED',d.no,d.cost,D(today));
+    post(D(today),'Replacement for '+d.no,d.no,[{ac:'1200',dr:d.value},{ac:'2100',cr:d.value,party:{type:'S',id:d.sid}}]); }
+  return d;
+}
+/** What a supplier is holding of ours, in damaged goods not yet settled. */
+const damageValue=(sid)=>S.damages.filter(d=>d.sid===sid&&['held','sent'].includes(d.status))
+  .reduce((a,d)=>a+d.value,0);
+const damageOpen=(sid)=>S.damages.filter(d=>d.sid===sid&&['held','sent'].includes(d.status));
+
+/* ================== JOB NOTES: SOMETHING LEFT IN FOR REPAIR ==================
+   A customer leaves a machine on the counter. It is not stock and it is not a sale — it is theirs and
+   the shop is holding it. Most go on to the maker and come back. The note carries a tag of its own so
+   a label can go on the item, because by the time it comes back nobody remembers whose it was. */
+const JOB_STATUS={in:['With us','warn'],sent:['Away at the maker','blue'],back:['Back, ready','ok'],
+  given:['Given back','ok'],scrapped:['Beyond repair','bad']};
+const jobTagFor=(no)=>'JOB'+String(no).replace(/[^0-9]/g,'').padStart(6,'0');
+function addJob({customerId,phone,who,item,pid,serial,fault,sid,est,date=D(today)}){
+  if(!String(item||'').trim()) throw new Error('What was left in?');
+  if(!customerId&&!String(phone||'').trim()&&!String(who||'').trim())
+    throw new Error('A name or a mobile, so it can be given back to the right person');
+  const j={no:next('JOB'),date,customerId:customerId||null,phone:String(phone||'').trim(),
+    who:String(who||'').trim(),item:String(item).trim(),pid:pid||null,
+    theirSerial:String(serial||'').trim(),fault:String(fault||'').trim(),
+    sid:sid||null,est:+est||0,charge:0,status:'in',by:S.user.name,
+    events:[{at:Date.now(),what:'Taken in',by:S.user.name}]};
+  j.tag=jobTagFor(j.no);
+  S.jobs.push(j);
+  notify('job',j.item+' taken in for repair — '+j.tag,'jobs');
+  return j;
+}
+function jobSet(no,status,note,charge){
+  const j=S.jobs.find(x=>x.no===no); if(!j) throw new Error('No such job note');
+  if(status==='sent'&&!j.sid) throw new Error('Which maker is it going to? Put that on the note first');
+  j.status=status;
+  if(status==='sent') j.sentDate=D(today);
+  if(status==='back') j.backDate=D(today);
+  if(status==='given'){ j.givenDate=D(today); if(charge!==undefined) j.charge=+charge||0 }
+  j.events=(j.events||[]).concat([{at:Date.now(),what:JOB_STATUS[status][0],by:S.user.name,note:note||''}]);
+  return j;
+}
+const jobsOpen=()=>S.jobs.filter(j=>['in','sent','back'].includes(j.status));
+const jobName=(j)=>j.customerId?(C(j.customerId)||{}).name:(j.who||j.phone||'Walk-in');
+
 function addDamage({pid,qty,reason,date=D(today)}){
   const p=P(pid); const v=+(qty*p.cost).toFixed(2); if(!(qty>0)) throw new Error('Quantity must be above zero');
   if(qty>p.stock+1e-9) throw new Error(`Only ${fq(p.stock)} ${p.unit} in stock`);
@@ -7912,6 +8016,7 @@ const views=[
  ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['tenders','Quotations & tenders'],
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['payreqs','Payment requests'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],
  ['grp','Stock'],['products','Products'],['inventory','Inventory & ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
+ ['damages','Damage returns'],['jobs','Repair job notes'],
  ['grp','Online'],['weborders','Online orders'],['webproducts','Online products'],['site','The shop site'],['social','Social'],
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],
  ['grp','People'],['approvals','Approvals'],['payroll','Attendance & pay'],['users','Users & permissions'],
@@ -8234,7 +8339,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={recall,stocktake:stockTake,serials,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={recall,stocktake:stockTake,serials,damages,jobs,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
@@ -8274,6 +8379,8 @@ function renderNow(){
     }
   }
   document.querySelectorAll('[data-custfilter]').forEach(b=>b.onclick=()=>{custFilter=b.dataset.custfilter;render()});
+  document.querySelectorAll('[data-dmgtab]').forEach(b=>b.onclick=()=>{dmgTab=b.dataset.dmgtab;render()});
+  document.querySelectorAll('[data-jobtab]').forEach(b=>b.onclick=()=>{jobTab=b.dataset.jobtab;render()});
   document.querySelectorAll('[data-custsort]').forEach(b=>b.onclick=()=>{custSort=b.dataset.custsort;render()});
   document.querySelectorAll('[data-custtab]').forEach(b=>b.onclick=()=>{custTab=b.dataset.custtab;render()});
   document.querySelectorAll('[data-custbills]').forEach(b=>b.onclick=()=>{custBillsF=b.dataset.custbills;render()});
@@ -14987,6 +15094,7 @@ function supplierPanel(s){
      <button class="btn ghost" data-act="newPur" data-id="${s.id}">New purchase <i class="kbd">F6</i></button>
      <button class="btn ghost" data-act="supStmt" data-id="${s.id}">Statement <i class="kbd">F8</i></button>
      <button class="btn ghost" data-act="prn" data-id="${s.id}">Goods back</button>
+     <button class="btn ghost" data-act="supDamage" data-id="${s.id}">Damage returns${damageOpen(s.id).length?' · '+damageOpen(s.id).length:''}</button>
      <button class="btn ghost" data-act="phoneToggle">${S.phoneOpen&&S.phoneMode==='supplier'?'Hide':'Show'} the rep's phone</button>
      <button class="btn ghost" data-act="supTerms" data-id="${s.id}">Credit periods</button>
      <button class="btn ghost" data-act="noteAdd" data-ptype="S" data-id="${s.id}">Add a note</button>
@@ -15002,6 +15110,9 @@ function supplierPanel(s){
      ${owed>0?`<div class="agebars" title="up to 30 · 31–60 · over 60 days"><i style="width:${ag.now/owed*100}%;background:var(--chip-green)"></i><i style="width:${ag.mid/owed*100}%;background:var(--chip-yellow)"></i><i style="width:${ag.old/owed*100}%;background:var(--chip-rust)"></i></div>`:''}</div>
     <div class="kpi y"><div class="l">Cheques out</div><div class="v ${fmt(pend.reduce((a,c)=>a+c.amount,0)).length>14?'small':''}">${fmt(pend.reduce((a,c)=>a+c.amount,0))}</div><div class="s">${pend.length?`${pend.length} not yet cleared`:'none pending'}</div></div>
     <div class="kpi g"><div class="l">Last payment</div><div class="v ${lastPay&&fmt(lastPay.total).length>14?'small':''}">${lastPay?fmt(lastPay.total):'—'}</div><div class="s">${lastPay?`${lastPay.date} · ${lastPay.lines.map(l=>l.method.toLowerCase()).join('+')} · ${agoTxt(lastPay.date)}`:'nothing paid yet'}</div></div>
+    ${(()=>{const dv=damageValue(s.id),dn=damageOpen(s.id);return dv>0?`<div class="kpi r"><div class="l">Damaged, back to them</div>
+      <div class="v ${fmt(dv).length>14?'small':''}">${fmt(dv)}</div>
+      <div class="s"><a href="#" data-view="damages">${dn.length} piece${dn.length===1?'':'s'} · ${dn.filter(d=>d.status==='held').length} still here</a></div></div>`:''})()}
     <div class="kpi b"><div class="l">Bought in all</div><div class="v ${fmt(bought).length>14?'small':''}">${fmt(bought)}</div><div class="s">${pur.length} GRN${pur.length===1?'':'s'} · paid ${fmt(paidTot)}</div></div>
    </div>
 
@@ -15364,6 +15475,256 @@ function labelHtml(p,type,o={}){
     ${dates||bits?`<div class="ldate">${[dates,bits].filter(Boolean).join(' · ')}</div>`:''}</div>`;
 }
 function labelTotal(){ return LAB.queue.reduce((a,x)=>a+x.copies,0) }
+/* ---- taking a damaged piece in, sending it on, and the label that goes on the goods ---- */
+function damageModal(){
+  const m=modal(`<h2>Something arrived damaged</h2>
+   <div class="muted" style="margin-bottom:10px">It comes off the floor and off what we owe the supplier straight away.</div>
+   <div class="grid2">
+    <div class="f"><label>Item</label><input id="dmItem" placeholder="type a name or code…" autocomplete="off"><div id="dmHits" class="hits"></div></div>
+    <div class="f"><label>Back to</label><select id="dmSup">${S.suppliers.filter(s=>s.active!==false).map(s=>`<option value="${s.id}">${s.name}</option>`).join('')}</select></div></div>
+   <div class="grid3">
+    <div class="f"><label>How many</label><input id="dmQty" type="number" step="any" value="1"></div>
+    <div class="f"><label>What is wrong</label><select id="dmWhy">
+      <option>Broken in the box</option><option>Leaking</option><option>Not working</option>
+      <option>Wrong item sent</option><option>Short delivered</option><option>Other</option></select></div>
+    <div class="f"><label>Worth</label><div class="till-amt" id="dmVal">—</div></div></div>
+   <div class="f"><label>Note</label><input id="dmNote" placeholder="anything the supplier should be told"></div>
+   <div class="muted" id="dmMsg" style="margin-top:6px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="dmOk">Put it in the bin</button></div>`);
+  let pid=null;
+  const it=m.querySelector('#dmItem'), hits=m.querySelector('#dmHits');
+  const worth=()=>{ const p=pid?P(pid):null; const q=+m.querySelector('#dmQty').value||0;
+    m.querySelector('#dmVal').textContent=p?fmt(q*p.cost):'—' };
+  it.oninput=()=>{ const q=it.value.trim().toLowerCase(); pid=null; worth();
+    if(q.length<2){ hits.innerHTML=''; return }
+    const found=S.products.filter(p=>p.active!==false&&((p.name||'').toLowerCase().includes(q)||String(p.code||'').toLowerCase().includes(q)||String(p.num||'')===q)).slice(0,6);
+    hits.innerHTML=found.map(p=>`<button type="button" data-pid="${p.id}">${p.name} <span class="muted">${p.code} · ${fq(p.stock)} ${p.unit} · cost ${fmt(p.cost)}</span></button>`).join('');
+    hits.querySelectorAll('[data-pid]').forEach(x=>x.onclick=()=>{ pid=+x.dataset.pid; const p=P(pid);
+      it.value=p.name; hits.innerHTML='';
+      const sup=lastSupplier(pid); if(sup) m.querySelector('#dmSup').value=sup.id;
+      worth() }) };
+  m.querySelector('#dmQty').oninput=worth;
+  m.querySelector('#dmOk').onclick=()=>{
+    try{
+      const d=addSupplierDamage({pid,sid:+m.querySelector('#dmSup').value,qty:+m.querySelector('#dmQty').value,
+        reason:m.querySelector('#dmWhy').value,note:m.querySelector('#dmNote').value});
+      m.remove(); persist(true); render();
+      toast(`${d.no} in the bin · ${fmt(d.value)} off ${SU(d.sid).name}`,'ok');
+      damageLabel(d.no);
+    }catch(e){ m.querySelector('#dmMsg').textContent=e.message }
+  };
+  it.focus();
+}
+function damageMoveModal(no){
+  const d=S.damages.find(x=>x.no===no); if(!d) return;
+  const opts=[['sent','Sent back to them'],['credited','They credited us'],['replaced','They replaced it'],['refused','They would not take it'],['held','Back in the bin']];
+  const m=modal(`<h2>${d.no} — ${(P(d.pid)||{}).name||''}</h2>
+   <div class="muted" style="margin-bottom:10px">${fq(d.qty)} ${(P(d.pid)||{}).unit||''} · ${fmt(d.value)} · ${SU(d.sid)?SU(d.sid).name:''}</div>
+   <div class="f"><label>Where is it now</label><select id="dvTo">${opts.map(([k,l])=>`<option value="${k}" ${d.status===k?'selected':''}>${l}</option>`).join('')}</select></div>
+   <div class="f"><label>Note</label><input id="dvNote" placeholder="credit note number, who took it…"></div>
+   <div class="muted" style="margin-top:6px">Turning it down puts the money back on us as a loss. Replaced puts the piece back on the floor.</div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="dvOk">Save</button></div>`);
+  m.querySelector('#dvOk').onclick=()=>{
+    try{ damageSet(no,m.querySelector('#dvTo').value,m.querySelector('#dvNote').value);
+      m.remove(); persist(true); render(); toast(d.no+' updated','ok');
+    }catch(e){ toast(e.message,'bad') }
+  };
+}
+/** The label that goes on the goods: the serial as a scannable barcode, so it can be read back. */
+function damageLabel(no){
+  const d=S.damages.find(x=>x.no===no); if(!d) return;
+  const p=P(d.pid)||{}, s=SU(d.sid)||{};
+  modal(`<div class="prn">
+    <div class="dlbl">
+      <div class="dl-top"><b>DAMAGED — RETURN</b><span>${CFG.shop.name}</span></div>
+      <div class="dl-bc">${barcode128(d.serial,44)}<div class="dl-code">${d.serial}</div></div>
+      <div class="dl-l"><b>${p.name||''}</b></div>
+      <div class="dl-r"><span>${d.no}</span><span>${fq(d.qty)} ${p.unit||''}</span></div>
+      <div class="dl-r"><span>To: ${s.name||''}</span><span>${d.date}</span></div>
+      <div class="dl-w">${d.reason||''}${d.note?' · '+d.note:''}</div>
+    </div>
+    <div class="noprint" style="text-align:right;margin-top:12px">
+      <button class="btn ghost" data-act="closeModal">Close</button>
+      <button class="btn tape" onclick="window.print()">Print the label</button></div>
+   </div>`);
+}
+function damageScanModal(){
+  const m=modal(`<h2>Scan a damage label</h2>
+   <div class="muted" style="margin-bottom:10px">Scan the label on the goods to find its note.</div>
+   <div class="f"><input id="dsCode" placeholder="scan or type the code…" autocomplete="off"></div>
+   <div id="dsOut" style="margin-top:10px"></div>
+   <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn ghost" data-act="closeModal">Close</button></div>`);
+  const out=m.querySelector('#dsOut');
+  const look=()=>{ const c=m.querySelector('#dsCode').value.trim().toUpperCase(); if(!c) return out.innerHTML='';
+    const d=S.damages.find(x=>String(x.serial||'').toUpperCase()===c||String(x.no).toUpperCase()===c);
+    if(!d) return out.innerHTML='<div class="msg warn">Nothing matches that code.</div>';
+    const p=P(d.pid)||{}, s=SU(d.sid)||{};
+    out.innerHTML=`<div class="card"><b>${d.no}</b> · ${p.name||''}
+      <div class="muted">${fq(d.qty)} ${p.unit||''} · ${fmt(d.value)} · back to ${s.name||''} · ${d.reason||''}</div>
+      <div style="margin-top:8px"><span class="tag ${DMG_STATUS[d.status][1]}">${DMG_STATUS[d.status][0]}</span>
+      <button class="btn tape sm" style="margin-left:8px" data-act="dmgMove" data-no="${d.no}">Move it on</button></div></div>` };
+  m.querySelector('#dsCode').oninput=look;
+  m.querySelector('#dsCode').focus();
+}
+
+/* ================== DAMAGE RETURNS ==================
+   The bin by the goods door. Everything in it belongs to a supplier and is waiting to go back. */
+let dmgTab='held', dmgScan='';
+function damages(){
+  const all=S.damages.filter(d=>d.sid);                 // older write-offs had no supplier
+  const by=(k)=>all.filter(d=>d.status===k);
+  const shown=dmgTab==='all'?all:by(dmgTab);
+  const worth=(list)=>list.reduce((a,d)=>a+d.value,0);
+  const tabs=[['held','In the bin'],['sent','Sent back'],['credited','Credited'],['replaced','Replaced'],['refused','Turned down'],['all','Everything']];
+  return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Damage returns
+    <span style="display:flex;gap:6px">
+      <button class="btn ghost" data-act="dmgScan">Scan a label</button>
+      <button class="btn tape" data-act="dmgNew">+ Damaged item</button></span></h1>
+  <div class="row" style="gap:12px;flex-wrap:wrap;margin-bottom:12px">
+    ${stat('In the bin',fmt(worth(by('held'))),by('held').length+' piece'+(by('held').length===1?'':'s'))}
+    ${stat('Sent back, not settled',fmt(worth(by('sent'))),by('sent').length+' waiting on a supplier')}
+    ${stat('Settled this way',fmt(worth(by('credited'))+worth(by('replaced'))),'credited or replaced')}
+    ${stat('Our loss',fmt(worth(by('refused'))),'they would not take it','bad')}
+  </div>
+  <div class="chips">${tabs.map(([k,l])=>`<button class="${dmgTab===k?'on':''}" data-dmgtab="${k}">${l} ${k==='all'?all.length:by(k).length}</button>`).join('')}</div>
+  <div class="card" style="margin-top:10px">
+  ${shown.length?`<table class="tbl"><tr><th>Note</th><th>Item</th><th class="n">Qty</th><th class="n">Worth</th><th>Back to</th><th>Why</th><th>Where it is</th><th></th></tr>
+    ${shown.slice().reverse().map(d=>{const p=P(d.pid)||{},s=SU(d.sid)||{};return `<tr>
+      <td><b>${d.no}</b><div class="muted">${d.date} · <code>${d.serial||''}</code></div></td>
+      <td>${p.name||'—'}<div class="muted">${p.code||''}</div></td>
+      <td class="n">${fq(d.qty)} ${p.unit||''}</td>
+      <td class="n">${fmt(d.value)}</td>
+      <td>${s.name||'—'}</td>
+      <td>${d.reason||''}${d.note?`<div class="muted">${d.note}</div>`:''}</td>
+      <td><span class="tag ${DMG_STATUS[d.status][1]}">${DMG_STATUS[d.status][0]}</span></td>
+      <td class="n" style="white-space:nowrap">
+        <button class="btn ghost sm" data-act="dmgLabel" data-no="${d.no}">Label</button>
+        <button class="btn ghost sm" data-act="dmgMove" data-no="${d.no}">Move on</button></td></tr>`}).join('')}</table>`
+   :'<div class="muted">Nothing here. Anything that arrives broken goes in with <b>+ Damaged item</b>.</div>'}
+  </div>`;
+}
+
+/* ---- taking something in, sending it to the maker, and the tag that goes on it ---- */
+function jobModal(){
+  const m=modal(`<h2>Something left in for repair</h2>
+   <div class="muted" style="margin-bottom:10px">It is theirs, not ours — this is a note, not a sale.</div>
+   <div class="grid2">
+    <div class="f"><label>What is it</label><input id="jbItem" placeholder="e.g. Makita grinder GA5030"></div>
+    <div class="f"><label>Their serial, if it has one</label><input id="jbSer" placeholder="off the plate"></div></div>
+   <div class="grid3">
+    <div class="f"><label>Customer</label><select id="jbCust"><option value="">walk-in — type a name</option>
+      ${S.customers.filter(c=>c.id!==1&&c.active!==false).map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
+    <div class="f"><label>Name</label><input id="jbWho" placeholder="if they have no account"></div>
+    <div class="f"><label>Mobile</label><input id="jbPh" inputmode="tel" placeholder="07XXXXXXXX"></div></div>
+   <div class="grid2">
+    <div class="f"><label>What is wrong</label><input id="jbFault" placeholder="what the customer says it does"></div>
+    <div class="f"><label>Send it to</label><select id="jbSup"><option value="">decide later</option>
+      ${S.suppliers.filter(s=>s.active!==false).map(s=>`<option value="${s.id}">${s.name}</option>`).join('')}</select></div></div>
+   <div class="f" style="max-width:220px"><label>Rough charge, if quoted</label><input id="jbEst" type="number" step="any" value="0"></div>
+   <div class="muted" id="jbMsg" style="margin-top:6px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="jbOk">Take it in</button></div>`);
+  m.querySelector('#jbCust').onchange=()=>{ const c=C(+m.querySelector('#jbCust').value);
+    if(c){ m.querySelector('#jbWho').value=c.name; m.querySelector('#jbPh').value=c.phone||'' } };
+  m.querySelector('#jbOk').onclick=()=>{
+    const g=id=>m.querySelector('#'+id).value.trim();
+    try{
+      const j=addJob({customerId:+m.querySelector('#jbCust').value||null,phone:g('jbPh'),who:g('jbWho'),
+        item:g('jbItem'),serial:g('jbSer'),fault:g('jbFault'),sid:+m.querySelector('#jbSup').value||null,est:g('jbEst')});
+      m.remove(); persist(true); render();
+      toast(`${j.no} taken in · tag ${j.tag}`,'ok');
+      jobLabel(j.no);
+    }catch(e){ m.querySelector('#jbMsg').textContent=e.message }
+  };
+  m.querySelector('#jbItem').focus();
+}
+function jobMoveModal(no){
+  const j=S.jobs.find(x=>x.no===no); if(!j) return;
+  const opts=[['in','On the shelf here'],['sent','Sent to the maker'],['back','Back from the maker'],['given','Given back to the customer'],['scrapped','Beyond repair']];
+  const m=modal(`<h2>${j.no} — ${j.item}</h2>
+   <div class="muted" style="margin-bottom:10px">${jobName(j)}${j.phone?' · '+j.phone:''} · tag ${j.tag}</div>
+   <div class="grid2">
+    <div class="f"><label>Where is it now</label><select id="jvTo">${opts.map(([k,l])=>`<option value="${k}" ${j.status===k?'selected':''}>${l}</option>`).join('')}</select></div>
+    <div class="f"><label>Maker</label><select id="jvSup"><option value="">—</option>
+      ${S.suppliers.filter(s=>s.active!==false).map(s=>`<option value="${s.id}" ${j.sid===s.id?'selected':''}>${s.name}</option>`).join('')}</select></div></div>
+   <div class="grid2">
+    <div class="f"><label>Note</label><input id="jvNote" placeholder="what they said, docket number…"></div>
+    <div class="f"><label>Charge to the customer</label><input id="jvChg" type="number" step="any" value="${j.charge||0}"></div></div>
+   <div class="muted" id="jvMsg" style="margin-top:6px"></div>
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px">
+    <button class="btn ghost" id="jvSms" ${j.phone||(j.customerId&&C(j.customerId)&&C(j.customerId).phone)?'':'disabled'}>Text them it is ready</button>
+    <span><button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="jvOk">Save</button></span></div>`);
+  m.querySelector('#jvOk').onclick=()=>{
+    try{
+      j.sid=+m.querySelector('#jvSup').value||null;
+      jobSet(no,m.querySelector('#jvTo').value,m.querySelector('#jvNote').value,m.querySelector('#jvChg').value);
+      m.remove(); persist(true); render(); toast(j.no+' updated','ok');
+    }catch(e){ m.querySelector('#jvMsg').textContent=e.message }
+  };
+  m.querySelector('#jvSms').onclick=()=>{
+    const to=j.phone||(j.customerId&&C(j.customerId)?C(j.customerId).phone:'');
+    if(!to) return toast('No mobile on the note','warn');
+    sms(to,`${CFG.shop.name}: your ${j.item} is back and ready to collect. Note ${j.no}.`);
+    toast('Texted '+to,'ok');
+  };
+}
+function jobLabel(no){
+  const j=S.jobs.find(x=>x.no===no); if(!j) return;
+  const s=j.sid?SU(j.sid):null;
+  modal(`<div class="prn">
+    <div class="dlbl job">
+      <div class="dl-top"><b>REPAIR — JOB NOTE</b><span>${CFG.shop.name}</span></div>
+      <div class="dl-bc">${barcode128(j.tag,44)}<div class="dl-code">${j.tag}</div></div>
+      <div class="dl-l"><b>${j.item}</b></div>
+      <div class="dl-r"><span>${j.no}</span><span>${j.date}</span></div>
+      <div class="dl-r"><span>${jobName(j)}</span><span>${j.phone||''}</span></div>
+      ${j.theirSerial?`<div class="dl-r"><span>Serial</span><span>${j.theirSerial}</span></div>`:''}
+      <div class="dl-w">${j.fault||''}${s?' · to '+s.name:''}</div>
+    </div>
+    <div class="noprint" style="text-align:right;margin-top:12px">
+      <button class="btn ghost" data-act="closeModal">Close</button>
+      <button class="btn tape" onclick="window.print()">Print the tag</button></div>
+   </div>`);
+}
+
+/* ================== REPAIR JOB NOTES ================== */
+let jobTab='open';
+function jobs(){
+  const all=S.jobs||[];
+  const by=(k)=>all.filter(j=>j.status===k);
+  const shown=jobTab==='open'?all.filter(j=>['in','sent','back'].includes(j.status))
+             :jobTab==='all'?all:by(jobTab);
+  const tabs=[['open','Still with us'],['in','On the shelf'],['sent','At the maker'],['back','Back, ready'],['given','Given back'],['all','Everything']];
+  return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Repair job notes
+    <span style="display:flex;gap:6px"><button class="btn tape" data-act="jobNew">+ Take something in</button></span></h1>
+  <div class="row" style="gap:12px;flex-wrap:wrap;margin-bottom:12px">
+    ${stat('On the shelf',by('in').length,'waiting to go')}
+    ${stat('At the maker',by('sent').length,'away being repaired')}
+    ${stat('Back, ready',by('back').length,'tell the customer','ok')}
+  </div>
+  <div class="chips">${tabs.map(([k,l])=>`<button class="${jobTab===k?'on':''}" data-jobtab="${k}">${l} ${k==='all'?all.length:k==='open'?all.filter(j=>['in','sent','back'].includes(j.status)).length:by(k).length}</button>`).join('')}</div>
+  <div class="card" style="margin-top:10px">
+  ${shown.length?`<table class="tbl"><tr><th>Note</th><th>What it is</th><th>Whose</th><th>Fault</th><th>Maker</th><th>Where it is</th><th></th></tr>
+    ${shown.slice().reverse().map(j=>{const s=j.sid?SU(j.sid):null;return `<tr>
+      <td><b>${j.no}</b><div class="muted">${j.date} · <code>${j.tag||''}</code></div></td>
+      <td>${j.item}${j.theirSerial?`<div class="muted">serial ${j.theirSerial}</div>`:''}</td>
+      <td>${jobName(j)}${j.phone?`<div class="muted">${j.phone}</div>`:''}</td>
+      <td>${j.fault||''}</td>
+      <td>${s?s.name:'<span class="muted">not sent</span>'}</td>
+      <td><span class="tag ${JOB_STATUS[j.status][1]}">${JOB_STATUS[j.status][0]}</span>${j.sentDate&&j.status==='sent'?`<div class="muted">since ${j.sentDate}</div>`:''}</td>
+      <td class="n" style="white-space:nowrap">
+        <button class="btn ghost sm" data-act="jobLabel" data-no="${j.no}">Label</button>
+        <button class="btn ghost sm" data-act="jobMove" data-no="${j.no}">Move on</button></td></tr>`}).join('')}</table>`
+   :'<div class="muted">Nothing in for repair.</div>'}
+  </div>`;
+}
+
 function labels(){
   const e=LAB.entry, p=e?P(e.pid):(LAB.queue.length?P(LAB.queue.at(-1).pid):null);
   const total=labelTotal();
@@ -18353,6 +18714,11 @@ document.addEventListener('click',e=>{
       portalInvite(kind,kind==='S'?SU(id):C(id),true) },
     cuLoginsAgain:()=>{ custLogins={cid:0,kind:'C',list:null,busy:false,failed:''}; render() },
     cuLoginsAll:()=>custLoginsAll(a.dataset.kind||'C'),
+    dmgNew:()=>damageModal(), dmgMove:()=>damageMoveModal(a.dataset.no),
+    supDamage:()=>{ dmgTab='all'; go('damages') },
+    dmgLabel:()=>damageLabel(a.dataset.no), dmgScan:()=>damageScanModal(),
+    jobNew:()=>jobModal(), jobMove:()=>jobMoveModal(a.dataset.no),
+    jobLabel:()=>jobLabel(a.dataset.no),
     cuLoginPw:()=>custLoginPwModal(+a.dataset.id,+a.dataset.lid,a.dataset.kind||'C'),
     cuLoginSend:()=>custLoginSend(+a.dataset.id,+a.dataset.lid,a.dataset.kind||'C'),
     cuLoginOff:()=>custLoginToggle(+a.dataset.id,+a.dataset.lid,a.dataset.on==='1',a.dataset.kind||'C'),
