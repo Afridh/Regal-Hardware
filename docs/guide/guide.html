@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Regal Hardware — How the system works</title>
+<style>
+  /* ---------- page ---------- */
+  @page { size: A4; margin: 18mm 16mm 20mm 16mm; }
+  @media print {
+    .part, .appendix { break-before: page }
+    h2, h3, h4 { break-after: avoid }              /* a heading never ends a page on its own */
+    .box, .cards { break-inside: avoid }           /* these are short; keep them whole */
+    table { break-inside: auto }                   /* a long table may run over — better than
+                                                      shunting the whole thing and leaving a gap */
+    tr, td, th { break-inside: avoid }             /* but never split a row down the middle */
+    thead { display: table-header-group }          /* and repeat the heading on the next page */
+    p { orphans: 2; widows: 2 }
+  }
+
+  :root{
+    --ink:#1b2430; --ink2:#38434f; --muted:#6a7482;
+    --rust:#b1441e; --amber:#b4791a; --green:#2f6b4f; --blue:#2a5d86;
+    --line:#dfd9cf; --paper:#fffdf9; --tint:#f7f3ec;
+  }
+  *{ box-sizing:border-box }
+  html{ -webkit-print-color-adjust:exact; print-color-adjust:exact }
+  body{ margin:0; background:var(--paper); color:var(--ink);
+        font:10.5pt/1.55 "Segoe UI",system-ui,-apple-system,sans-serif; }
+  h1,h2,h3,h4{ font-family:Georgia,"Times New Roman",serif; font-weight:700; color:var(--ink); margin:0 }
+  p{ margin:0 0 8px }
+  b,strong{ color:var(--ink) }
+  code{ font:9.5pt/1.4 Consolas,"Courier New",monospace; background:var(--tint);
+        border:1px solid var(--line); border-radius:3px; padding:1px 5px; }
+
+  /* ---------- cover ---------- */
+  /* Paged media clips to the content box, so a full-bleed cover is not possible here.
+     Instead it fills the printable area exactly — 297mm less the 18mm and 20mm margins —
+     so the white sits as an even frame on all four sides rather than a gap at the bottom. */
+  .cover{ height:259mm; display:flex; flex-direction:column; justify-content:space-between;
+          background:linear-gradient(160deg,#1b2430 0%,#2b3846 55%,#3a2a20 100%);
+          color:#f4efe7; margin:0; padding:24mm 20mm; }
+  .cover .mark{ font:700 13pt/1 Georgia,serif; letter-spacing:.32em; color:#e6b98a; text-transform:uppercase }
+  .cover h1{ font-size:44pt; line-height:1.03; color:#fff; margin:0 0 10mm; letter-spacing:-.5pt }
+  .cover .sub{ font-size:13pt; color:#cdbfae; max-width:120mm; line-height:1.5 }
+  .cover .rule{ width:30mm; height:3px; background:#c2703a; margin:9mm 0 }
+  .cover .foot{ font-size:9.5pt; color:#a4988a; line-height:1.7 }
+  .cover .foot b{ color:#e6b98a }
+
+  /* ---------- contents ---------- */
+  .toc{ break-before:page }
+  .toc ol{ list-style:none; margin:0; padding:0; column-count:2; column-gap:12mm }
+  .toc li{ break-inside:avoid; margin:0 0 3.5mm }
+  .toc .n{ display:inline-block; width:9mm; color:var(--rust); font-weight:700 }
+  .toc .t{ font-weight:600 }
+  .toc .d{ display:block; margin-left:9mm; color:var(--muted); font-size:9pt; line-height:1.4 }
+
+  /* ---------- parts ---------- */
+  .part{ padding-top:2mm }
+  .parthead{ border-bottom:3px solid var(--rust); padding-bottom:4mm; margin-bottom:7mm;
+             display:flex; align-items:flex-end; gap:6mm }
+  .parthead .num{ font:700 40pt/0.8 Georgia,serif; color:var(--rust); opacity:.24 }
+  .parthead h2{ font-size:22pt; line-height:1.1 }
+  .parthead .lede{ color:var(--muted); font-size:10pt; margin-top:2mm; max-width:135mm }
+
+  h3{ font-size:13pt; margin:7mm 0 2mm; color:var(--ink) }
+  h3 .sn{ color:var(--rust); margin-right:2mm; font-size:11pt }
+  h4{ font-size:10.5pt; margin:4mm 0 1mm; font-family:"Segoe UI",sans-serif; letter-spacing:.02em }
+
+  ul,ol.steps{ margin:0 0 8px; padding-left:5.5mm }
+  li{ margin:0 0 2mm }
+  ol.steps{ padding-left:6mm }
+  ol.steps li{ margin-bottom:2.5mm }
+
+  /* ---------- boxes ---------- */
+  .box{ border-left:3px solid var(--line); background:var(--tint); padding:3.5mm 5mm;
+        margin:4mm 0; font-size:9.8pt; line-height:1.5 }
+  .box .lbl{ display:block; font:700 8.5pt/1 "Segoe UI",sans-serif; letter-spacing:.14em;
+             text-transform:uppercase; margin-bottom:2mm }
+  .box.warn{ border-left-color:var(--rust); background:#fbf1ec } .box.warn .lbl{ color:var(--rust) }
+  .box.tip{ border-left-color:var(--green); background:#eef5f1 } .box.tip .lbl{ color:var(--green) }
+  .box.why{ border-left-color:var(--blue); background:#eef3f8 } .box.why .lbl{ color:var(--blue) }
+  .box.note{ border-left-color:var(--amber); background:#fbf6ea } .box.note .lbl{ color:var(--amber) }
+  .box p:last-child{ margin-bottom:0 }
+
+  /* ---------- tables ---------- */
+  table{ width:100%; border-collapse:collapse; margin:3mm 0 5mm; font-size:9.5pt }
+  th{ text-align:left; background:var(--ink); color:#fff; font-weight:600; padding:2mm 3mm;
+      font-size:9pt; letter-spacing:.02em }
+  td{ padding:1.8mm 3mm; border-bottom:1px solid var(--line); vertical-align:top }
+  tr:nth-child(even) td{ background:#faf7f2 }
+  td.k{ white-space:nowrap; font-weight:600; width:32mm }
+  table.tight td.k{ width:24mm }
+  /* the report lists (Part 9) are the only tables that follow an h4 — giving them one
+     column width makes the eight groups line up as a single list rather than eight */
+  h4 + table.tight td.k{ width:48mm; white-space:normal }
+
+  /* ---------- key caps ---------- */
+  kbd{ display:inline-block; font:600 8.5pt/1 "Segoe UI",sans-serif; background:#fff;
+       border:1px solid #b9b2a7; border-bottom-width:2px; border-radius:3px;
+       padding:1.2mm 2mm; color:var(--ink); white-space:nowrap }
+
+  /* ---------- little cards ---------- */
+  .cards{ display:grid; grid-template-columns:1fr 1fr; gap:3mm; margin:3mm 0 5mm }
+  .cards .c{ border:1px solid var(--line); border-radius:4px; padding:3mm 4mm; background:#fff }
+  .cards .c b{ display:block; font-size:10pt; margin-bottom:1mm }
+  .cards .c span{ color:var(--muted); font-size:9pt; line-height:1.45; display:block }
+
+  .lead{ font-size:11pt; color:var(--ink2); margin-bottom:5mm }
+  .muted{ color:var(--muted) }
+  .appendix .parthead{ border-bottom-color:var(--ink) }
+  .appendix .parthead .num{ color:var(--ink); font-size:26pt; opacity:.38 }  /* a letter needs
+     more weight than a numeral to read at this size */
+</style>
+</head>
+<body>
+
+<!-- ============================ COVER ============================ -->
+<section class="cover">
+  <div>
+    <div class="mark">Regal Hardware · Polonnaruwa</div>
+  </div>
+  <div>
+    <h1>How the<br>system works</h1>
+    <div class="rule"></div>
+    <div class="sub">The counter, the customers, the suppliers, the stock, the money and
+      the people — the whole shop, and how to run it from one screen.</div>
+  </div>
+  <div class="foot">
+    <b>Everything in one place.</b><br>
+    Written for the people who use it every day.<br>
+    Keep a copy by the till.
+  </div>
+</section>
+
+<!-- ============================ CONTENTS ============================ -->
+<section class="toc">
+  <h2 style="font-size:19pt;margin-bottom:6mm;border-bottom:2px solid var(--rust);padding-bottom:3mm">What is in here</h2>
+  <ol>
+    <li><span class="n">1</span><span class="t">Getting started</span>
+        <span class="d">The addresses, signing in, the menu, who sees what, and how your work is saved.</span></li>
+    <li><span class="n">2</span><span class="t">At the counter</span>
+        <span class="d">The dashboard, the till, making a bill, taking payment, holding a bill, quotations.</span></li>
+    <li><span class="n">3</span><span class="t">Customers</span>
+        <span class="d">The list, taking a payment, credit limits, notes, statements, their own page.</span></li>
+    <li><span class="n">4</span><span class="t">Suppliers</span>
+        <span class="d">Orders, purchases, payment requests, and the purchasing &amp; cash plan.</span></li>
+    <li><span class="n">5</span><span class="t">Stock</span>
+        <span class="d">Products and prices, the cost code, the ledger, stock take, labels, damages.</span></li>
+    <li><span class="n">6</span><span class="t">Online</span>
+        <span class="d">The shop site, a different price online, online orders, and social posts.</span></li>
+    <li><span class="n">7</span><span class="t">Money</span>
+        <span class="d">Cheques in and out, expenses, and the accounting behind it all.</span></li>
+    <li><span class="n">8</span><span class="t">People</span>
+        <span class="d">Approvals, attendance and pay, users, roles and permissions.</span></li>
+    <li><span class="n">9</span><span class="t">Looking back</span>
+        <span class="d">The trail, messages, and all thirty-three reports.</span></li>
+    <li><span class="n">10</span><span class="t">AI support</span>
+        <span class="d">Claude reading your own figures — what it can do, and what to check.</span></li>
+    <li><span class="n">11</span><span class="t">Settings</span>
+        <span class="d">Every tab, and what each one changes.</span></li>
+    <li><span class="n">A</span><span class="t">Keyboard shortcuts</span>
+        <span class="d">The whole cheat sheet, for the counter.</span></li>
+    <li><span class="n">B</span><span class="t">The addresses</span>
+        <span class="d">Which web address is for whom.</span></li>
+    <li><span class="n">C</span><span class="t">A routine</span>
+        <span class="d">What to check every day, every week, every month.</span></li>
+    <li><span class="n">D</span><span class="t">When something goes wrong</span>
+        <span class="d">The handful of things that actually happen, and what to do.</span></li>
+  </ol>
+
+  <div class="box why" style="margin-top:8mm">
+    <span class="lbl">How to read this</span>
+    <p>You do not have to read it end to end. Part 1 is worth ten minutes for anybody new.
+    After that, go to the part that matches what you are doing. Every part stands on its own.</p>
+    <p style="margin-top:2mm">Boxes down the side mean something. <b style="color:var(--rust)">Watch out</b>
+    is a mistake that costs money. <b style="color:var(--green)">Worth knowing</b> saves you time.
+    <b style="color:var(--blue)">Why it works this way</b> explains a decision, so it stops feeling arbitrary.</p>
+  </div>
+</section>
+
+<!-- ============================ PART 1 ============================ -->
+<section class="part">
+  <div class="parthead">
+    <div class="num">1</div>
+    <div>
+      <h2>Getting started</h2>
+      <div class="lede">What the system is, how to get into it, and how to make the screen yours.</div>
+    </div>
+  </div>
+
+  <h3><span class="sn">1.1</span>What this system is</h3>
+  <p>It is the whole shop on one screen. The till that makes the bill is the same system that
+  knows what stock is left, what the customer owes, what you owe the supplier, what the staff
+  worked this month and what the shop made today. Nothing is typed twice.</p>
+  <p>Because it is one system, a bill made at the counter changes seven things at once: the stock
+  comes down, the customer's balance goes up if it was on credit, the day's takings go up, the
+  profit is worked out from what that item cost, the accounts are posted, the cheque is recorded
+  if one was given, and the customer gets a text if you have that switched on.</p>
+
+  <h3><span class="sn">1.2</span>The addresses</h3>
+  <p>The same system answers on several addresses, and each one is for different people.
+  Give out the right one.</p>
+  <table>
+    <tr><th style="width:36mm">Address</th><th>Who it is for</th></tr>
+    <tr><td class="k"><code>/pos</code></td><td><b>You and your staff.</b> The till and everything behind it. This is the main system, behind the lock screen.</td></tr>
+    <tr><td class="k"><code>/</code></td><td><b>Customers, in public.</b> The shop's own website — what you sell, at the prices you set for online.</td></tr>
+    <tr><td class="k"><code>/supplier</code></td><td><b>Your suppliers.</b> They sign in and see your orders, confirm them, mark goods dispatched, and ask to be paid.</td></tr>
+    <tr><td class="k"><code>/my/…</code></td><td><b>One customer.</b> Their own page — what they owe, their bills, and a way to tell you they have paid.</td></tr>
+    <tr><td class="k"><code>/shift</code></td><td><b>Staff clocking in.</b> The shift clock.</td></tr>
+    <tr><td class="k"><code>/b/…</code></td><td><b>Anybody with the link.</b> One bill, to look at on a phone. This is what goes in the text message.</td></tr>
+  </table>
+
+  <h3><span class="sn">1.3</span>Signing in</h3>
+  <p>Open <code>/pos</code> and you get the lock screen with the staff list on it. Pick your name,
+  put in your password, and you are in. The system remembers who you are on that machine, so you
+  are not picking your name off the list twenty times a day.</p>
+  <div class="box warn">
+    <span class="lbl">Watch out</span>
+    <p>Your sign-in is <b>you</b>, not the machine. Every bill, every price change, every discount
+    carries the name of whoever was signed in. If you walk away and somebody else uses the till
+    under your name, it is your name on it. Sign out when you leave the counter for good.</p>
+  </div>
+
+  <h3><span class="sn">1.4</span>Making the screen yours</h3>
+  <p>Under <b>Settings → My screen</b>, four things are yours alone. They travel with your sign-in,
+  so your screen is your screen on whichever machine you sit at.</p>
+  <table class="tight">
+    <tr><th>Setting</th><th>What it does</th></tr>
+    <tr><td class="k">The menu</td><td>Down the side, or across the top. Across the top gives the width to the work, which suits the till.</td></tr>
+    <tr><td class="k">Narrow menu</td><td>Icons only, with names appearing when you hover. More room for the work.</td></tr>
+    <tr><td class="k">Where you land</td><td>The page you get after signing in. A cashier probably wants the till; you probably want the dashboard.</td></tr>
+    <tr><td class="k">Which till</td><td>Three styles — see 2.2. Pick the one that suits how you work, not how somebody else works.</td></tr>
+  </table>
+
+  <h3><span class="sn">1.5</span>Who can see what</h3>
+  <p>Not everybody sees the whole menu. What a person sees is decided by their <b>role</b>.</p>
+  <table>
+    <tr><th style="width:32mm">Role</th><th>Sees</th></tr>
+    <tr><td class="k">Super Admin<br>Owner<br>Admin</td><td>Everything, including costs, margins, the trail and AI support.</td></tr>
+    <tr><td class="k">KP</td><td>The counter, suppliers, stock, online, money and people — but not users, and not the trail.</td></tr>
+    <tr><td class="k">Salesman</td><td>The dashboard, products and their own attendance. Nothing else.</td></tr>
+    <tr><td class="k">Your own roles</td><td>You can make roles of your own and tick exactly which sections they get. See 8.3.</td></tr>
+  </table>
+  <div class="box why">
+    <span class="lbl">Why it works this way</span>
+    <p>Cost and margin are the two figures that should not be on a screen a customer can lean over
+    and read. That is why the trail and AI support are kept to the owner and admins, and why the
+    cost code (5.3) exists at all.</p>
+  </div>
+
+  <h3><span class="sn">1.6</span>How your work is saved</h3>
+  <p>Everything the shop knows is kept together and shared between every till. When you finish a
+  bill on one machine, the other machines have it seconds later. You do not save anything by hand.</p>
+  <div class="box note">
+    <span class="lbl">If two people change the same thing</span>
+    <p>The system notices and keeps both people honest rather than letting one quietly overwrite the
+    other. If you are told your copy is out of date, let it pick up the newer one and do your change
+    again — it takes a moment and it means nothing is lost.</p>
+  </div>
+</section>
+
+<!-- ============================ PART 2 ============================ -->
+<section class="part">
+  <div class="parthead">
+    <div class="num">2</div>
+    <div>
+      <h2>At the counter</h2>
+      <div class="lede">The work that pays for everything else: making the bill, and taking the money.</div>
+    </div>
+  </div>
+
+  <h3><span class="sn">2.1</span>The dashboard</h3>
+  <p>The first thing most people see. It is laid out in headed sections so you can go straight to
+  the part you care about instead of hunting through a wall of numbers:</p>
+  <div class="cards">
+    <div class="c"><b>Sales &amp; profit</b><span>What went out today, what it made, how the week is going.</span></div>
+    <div class="c"><b>Customers</b><span>Who owes what, who has gone past their limit, what came in.</span></div>
+    <div class="c"><b>Suppliers</b><span>What you owe, what is falling due, what is on order.</span></div>
+    <div class="c"><b>Money &amp; costs</b><span>Cash, bank, cheques in hand, cheques out, expenses.</span></div>
+  </div>
+  <p>It keeps itself up to date quietly in the background. You do not need to refresh it.</p>
+
+  <h3><span class="sn">2.2</span>The till — three styles</h3>
+  <p>The same bill, three ways of keying it. Choose under <b>Settings → My screen → Which till</b>.</p>
+  <table>
+    <tr><th style="width:32mm">Style</th><th>Suits</th></tr>
+    <tr><td class="k">Classic till</td><td>Keyboard first. Scan, quantity, price, <kbd>Enter</kbd>. The payment window has a key for each way of paying. Fastest once you know it, and the least mouse.</td></tr>
+    <tr><td class="k">The screen you know</td><td>The familiar counter layout, with the customer band along the top and the held bills and clear buttons up there with it.</td></tr>
+    <tr><td class="k">Quick</td><td>Fewer things on screen, bigger targets. Good on a touch screen.</td></tr>
+  </table>
+
+  <h3><span class="sn">2.3</span>Making a bill</h3>
+  <ol class="steps">
+    <li><b>Put the item on.</b> Scan the barcode, or type part of the name and pick it. The price
+      comes from the product — the retail price, or the wholesale price if the customer is set to
+      that level, or a tier price if the quantity earns one.</li>
+    <li><b>Change the quantity</b> if it is not one.</li>
+    <li><b>Change the price or give a discount</b> if you are allowed to. See the warning below.</li>
+    <li><b>Repeat</b> until the bill is complete.</li>
+    <li><b>Take the payment</b> — see 2.5.</li>
+  </ol>
+  <div class="box warn">
+    <span class="lbl">Watch out — selling under cost</span>
+    <p>If a line ends up below what the item cost the shop, the system stops the bill and an admin
+    has to allow it. That is not the system being difficult: it is the one mistake that turns a
+    busy day into a losing day, and it is almost always a typing slip in the price.</p>
+  </div>
+
+  <h3><span class="sn">2.4</span>The customer on the bill</h3>
+  <p>A cash sale to somebody passing does not need a name. Anything on credit does — the system
+  will not let a credit sale go through without one, because there would be nobody to collect from.</p>
+  <p>On <b>the screen you know</b>, the customer button sits in the customer band along the top.
+  On the classic till, <kbd>F4</kbd> opens the customer picker.</p>
+
+  <h3><span class="sn">2.5</span>Taking payment</h3>
+  <p>Six ways, and you can mix them on one bill — part cash, part cheque, the rest on credit.</p>
+  <table class="tight">
+    <tr><th>Way</th><th>What happens</th></tr>
+    <tr><td class="k">Cash</td><td>Into the drawer, and into the day's cash figure.</td></tr>
+    <tr><td class="k">Card</td><td>Into the bank account you pick.</td></tr>
+    <tr><td class="k">Bank</td><td>A transfer, into the account you pick.</td></tr>
+    <tr><td class="k">Cheque</td><td>Recorded as a cheque in hand, with its number, bank and date, so it turns up in <b>Cheques in</b> until you bank it.</td></tr>
+    <tr><td class="k">Points</td><td>Against what the customer has earned. Needs a named customer.</td></tr>
+    <tr><td class="k">Voucher</td><td>Against a voucher's remaining balance, which is checked before anything is posted.</td></tr>
+  </table>
+  <p>Whatever is left unpaid becomes credit, and the bill becomes a credit sale.</p>
+
+  <h3><span class="sn">2.6</span>Credit, and limits</h3>
+  <p>Every customer can have a credit limit. If a bill would take them past it, the system stops
+  and a manager has to allow it. If they have paid money in advance, that advance is used up first
+  before anything goes on credit.</p>
+  <div class="box tip">
+    <span class="lbl">Worth knowing</span>
+    <p>A limit is not a wall, it is a question. The point is that somebody senior sees it happen
+    rather than finding out a month later. When you do allow it, that decision is recorded.</p>
+  </div>
+
+  <h3><span class="sn">2.7</span>Holding a bill</h3>
+  <p>A customer goes to fetch something, or wants to pay later in the day. Hold the bill and serve
+  the next person. The <b>Held</b> button at the top carries a count of how many are waiting; press
+  it and you see every held bill and what is inside each one, so you can pick the right one back up.</p>
+  <p><kbd>F7</kbd> holds the bill. <kbd>F5</kbd> shows what is being held.</p>
+
+  <h3><span class="sn">2.8</span>Quotations and delivery notes</h3>
+  <p>A bill that is not a sale yet. Put the items on as normal and save it as a quotation instead of
+  taking payment. You will be asked whether to save it as a quotation or to put a reference on it —
+  a job name, a site, the customer's own order number. Leaving the reference blank is fine.</p>
+  <p>Quotations and delivery notes live under <b>Quotes &amp; delivery notes</b>, and a quotation can
+  be turned into a real bill when the customer says yes, without keying it again.</p>
+
+  <h3><span class="sn">2.9</span>Returns</h3>
+  <p>Put the item on the bill with a <b>negative quantity</b>. It goes back into stock at what it was
+  sold for, so the profit figures stay true rather than being flattered by a return at today's price.</p>
+
+  <h3><span class="sn">2.10</span>The questions at the end of a bill</h3>
+  <p>When a bill finishes, the system can ask two things. Both are switched on or off under
+  <b>Settings → Finishing a bill</b>.</p>
+  <table class="tight">
+    <tr><th>Question</th><th>What it is for</th></tr>
+    <tr><td class="k">The mobile number</td><td>Type the customer's number and the bill goes to their name. Leave it blank and it stays a counter sale. This is the easiest way to build the customer list without slowing the queue.</td></tr>
+    <tr><td class="k">Who sold it</td><td>Puts the salesperson on the bill, so <b>Sales by Cashier</b> and any commission actually mean something.</td></tr>
+  </table>
+
+  <h3><span class="sn">2.11</span>Bills</h3>
+  <p><b>Bills</b> (<kbd>F9</kbd>) is every bill you have made — search it, reprint, look at what was
+  on it, send the link again. The link in the text message opens one bill on a phone, and nothing else.</p>
+</section>
+
+<!-- ============================ PART 3 ============================ -->
+<section class="part">
+  <div class="parthead">
+    <div class="num">3</div>
+    <div>
+      <h2>Customers</h2>
+      <div class="lede">Who owes you, how to collect it, and how to let them see it themselves.</div>
+    </div>
+  </div>
+
+  <h3><span class="sn">3.1</span>The customer list</h3>
+  <p>Search, sort and filter down the left; everything about the customer they are on down the right —
+  their balance, their bills, their payments, their statement. Their credit limit is there but kept
+  quiet rather than shouted, because what matters day to day is what they owe.</p>
+
+  <h3><span class="sn">3.2</span>Taking a payment</h3>
+  <p><b>Take a payment</b> (<kbd>F7</kbd>) is for money coming in against what is already owed —
+  not a sale. Pick the customer, put in what they gave you and how, and it comes off their balance.
+  A cheque taken here lands in <b>Cheques in</b> exactly as one taken at the till does.</p>
+
+  <h3><span class="sn">3.3</span>Notes and reminders</h3>
+  <p>Some things are not transactions but you still need to remember them — an overpayment to sort
+  out, a dispute, a promise made. Put a note on the customer, with a number on it if there is a
+  figure involved.</p>
+  <div class="box why">
+    <span class="lbl">Why it works this way</span>
+    <p>A note with a number on it is deliberately <b>not</b> posted to the ledger. It is a flag, not
+    an entry. If it posted, every half-remembered promise would quietly change what the books say the
+    customer owes. Settle it properly when you know the answer, and clear the note.</p>
+  </div>
+
+  <h3><span class="sn">3.4</span>Statements</h3>
+  <p>A statement is the customer's own account, over a stretch of time — what they bought, what they
+  paid, what is left. This is what you send when somebody says they have already paid.</p>
+
+  <h3><span class="sn">3.5</span>The customer's own page</h3>
+  <p>Each customer can have their own page at <code>/my/…</code>, where they see what they owe, their
+  bills, and can tell you they have paid. It saves a great many phone calls.</p>
+  <p>You do not manage a list of who signs in. The system makes a user name from the customer's name
+  and a password, and you text it to them. If they need somebody else from their side to have access —
+  their accountant, their storekeeper — <b>they ask from their own page</b>, the request comes to you,
+  and the new sign-in is only made once you accept it.</p>
+</section>
+
+<!-- ============================ PART 4 ============================ -->
+<section class="part">
+  <div class="parthead">
+    <div class="num">4</div>
+    <div>
+      <h2>Suppliers</h2>
+      <div class="lede">What you owe, when it is due, and how to buy without running yourself short.</div>
+    </div>
+  </div>
+
+  <h3><span class="sn">4.1</span>Suppliers and orders</h3>
+  <p>The supplier list works like the customer list. <b>Supplier orders</b> is what you have asked for
+  and not yet received. A supplier with a sign-in can see their orders on their own page, confirm them,
+  ask for a change, or mark them dispatched with the invoice number.</p>
+
+  <h3><span class="sn">4.2</span>Purchases — booking goods in</h3>
+  <p>Goods arrive; you book them in against the supplier's invoice. Stock goes up, what you owe goes
+  up, and the cost on each line becomes the cost the system uses for profit from then on. Transport
+  and other charges are spread across the lines by value, so the cost of the goods is the real cost of
+  getting them onto the floor.</p>
+  <p>A purchase can also be booked by its invoice total with the invoice photographed, when there is
+  no time to key every line.</p>
+
+  <h3><span class="sn">4.3</span>Payment requests</h3>
+  <p>Instead of a supplier ringing to ask when they will be paid, they ask through the system, and the
+  request moves through the shop in the open.</p>
+  <ol class="steps">
+    <li><b>The supplier checks what is outstanding</b> on their own page.</li>
+    <li><b>They pick the bills</b> they want paying, and note anything that has changed — an invoice
+      value that is wrong, a credit note, a short delivery.</li>
+    <li><b>They send the request.</b></li>
+    <li><b>You, the admins and accounts all see it</b>, with a count on the menu so it is not missed.</li>
+    <li><b>Somebody checks it and accepts it.</b></li>
+    <li><b>The payment is made ready</b>, and the supplier is told it is ready.</li>
+    <li><b>Accounts issues the cheque or the cash</b> and marks it issued.</li>
+  </ol>
+  <p>Every step is recorded with who did it, so "nobody told me" stops being a possible answer.</p>
+
+  <h3><span class="sn">4.4</span>Purchasing &amp; cash plan</h3>
+  <p>This is the part that keeps the shop out of trouble. It puts what you are going to owe next to
+  what is going to come in, and tells you the first day you run short. Four tabs:</p>
+  <table>
+    <tr><th style="width:36mm">Tab</th><th>What it shows</th></tr>
+    <tr><td class="k">The plan</td><td>Week by week: what is coming in, what is going out, and what is left. If there is a day you run short, it names the day, says what lands on it, and says how far under you go.</td></tr>
+    <tr><td class="k">What falls due</td><td>Every bill part and every cheque you have written, nearest first. Anything here can be cut into cheques under your ceiling.</td></tr>
+    <tr><td class="k">Credit periods</td><td>How long each supplier gives you — and where a supplier gives different terms for different kinds of goods, that is set per category, not per supplier.</td></tr>
+    <tr><td class="k">Season &amp; rules</td><td>Your cheque ceiling, how far back to look when judging normal takings, how much cash to keep back, and the season dial for the months when trade drops.</td></tr>
+  </table>
+  <div class="box tip">
+    <span class="lbl">Worth knowing</span>
+    <p>The cheque ceiling is the figure you almost never go above — a hundred thousand, in your case.
+    When something falls due that is bigger, the system will cut it into several cheques under the
+    ceiling and space them out, rather than leaving you to work it out on paper.</p>
+  </div>
+  <div class="box warn">
+    <span class="lbl">Watch out</span>
+    <p>The plan is only as honest as the credit periods you have put in. A supplier whose terms are
+    blank is assumed to want paying sooner than they really do, and that makes the plan look tighter
+    than it is. Filling in <b>Credit periods</b> properly is an hour that pays for itself.</p>
+  </div>
+</section>
+
+<!-- ============================ PART 5 ============================ -->
+<section class="part">
+  <div class="parthead">
+    <div class="num">5</div>
+    <div>
+      <h2>Stock</h2>
+      <div class="lede">What you have, what it cost, what it sells for, and what is not moving.</div>
+    </div>
+  </div>
+
+  <h3><span class="sn">5.1</span>A product</h3>
+  <table class="tight">
+    <tr><th>Field</th><th>What it means</th></tr>
+    <tr><td class="k">Name</td><td>What you and your staff call it. This is what gets searched, so name it the way somebody would ask for it.</td></tr>
+    <tr><td class="k">Barcode</td><td>Scanned at the till.</td></tr>
+    <tr><td class="k">Category</td><td>Groups it for reports, for online, and for supplier credit periods.</td></tr>
+    <tr><td class="k">Unit</td><td>Bag, length, piece, tin.</td></tr>
+    <tr><td class="k">Cost</td><td>What it cost you. Everything about profit rests on this being right. See 5.2.</td></tr>
+    <tr><td class="k">Retail</td><td>The counter price.</td></tr>
+    <tr><td class="k">Wholesale</td><td>For customers set to that level.</td></tr>
+    <tr><td class="k">MRP</td><td>The printed price, where there is one.</td></tr>
+    <tr><td class="k">Online price</td><td>A different price on the website. See 6.2.</td></tr>
+    <tr><td class="k">Minimum</td><td>The level at which you want telling. Below it, the item shows up as running low and in the reorder report.</td></tr>
+  </table>
+
+  <h3><span class="sn">5.2</span>Prices, and which one is used</h3>
+  <p>An item does not have one price, it has a ladder. Knowing which rung gets used, and when,
+  is the difference between a healthy margin and a puzzling one.</p>
+  <table>
+    <tr><th style="width:30mm">Price</th><th>When it is used</th></tr>
+    <tr><td class="k">Cost</td><td>Never charged. It is what the goods cost you, and it is what every profit figure in the system is measured against. It is set when you book the goods in, with transport spread across the lines.</td></tr>
+    <tr><td class="k">Retail</td><td>The normal counter price. What most bills use.</td></tr>
+    <tr><td class="k">Wholesale</td><td>Used automatically when the customer on the bill is set to the wholesale level. You do not have to remember who gets trade prices — the customer record does.</td></tr>
+    <tr><td class="k">Tier price</td><td>A price that depends on how many they take. Ten bags at one price, a hundred at another. Applied by quantity, without anybody having to work it out.</td></tr>
+    <tr><td class="k">Online price</td><td>Only on the website. See 6.2.</td></tr>
+    <tr><td class="k">MRP</td><td>The printed price, where the manufacturer sets one. For showing, not for charging.</td></tr>
+  </table>
+  <div class="box why">
+    <span class="lbl">Why it works this way</span>
+    <p>The cost is stored <b>on the bill line</b>, not just on the product. That means the profit on
+    a bill from three months ago is worked out from what the goods cost <b>then</b>, not what they
+    cost today. If it used today's cost, every price rise from a supplier would quietly rewrite
+    your history and make old months look worse than they were.</p>
+  </div>
+  <div class="box tip">
+    <span class="lbl">Worth knowing</span>
+    <p>If a customer should always get trade prices, set their <b>level</b> on their record once,
+    rather than typing the wholesale price by hand every time. Typed prices are where margin leaks —
+    and a typed price is the thing that trips the under-cost stop at the worst moment.</p>
+  </div>
+
+  <h3><span class="sn">5.3</span>The cost code</h3>
+  <p>A way of writing the cost on the label so your staff can read it and the customer cannot.
+  Set it under <b>Settings → Cost code</b>.</p>
+
+  <h3><span class="sn">5.4</span>Inventory and the ledger</h3>
+  <p>Every movement of every item is kept — sold, bought, returned, damaged, adjusted, transferred —
+  with what it was, when, on which document, and what the stock stood at afterwards. When a figure
+  looks wrong, this is where you find out what happened rather than guessing.</p>
+
+  <h3><span class="sn">5.5</span>Stock take</h3>
+  <p>Count what is actually on the floor, put the counts in, and the system shows you the difference
+  and posts the adjustment. Do it in sections rather than trying to do the whole shop in one go.</p>
+
+  <h3><span class="sn">5.6</span>Barcode labels</h3>
+  <p>Pick items, pick a label size, print the sheet. On this page <kbd>F1</kbd> jumps to the search,
+  <kbd>F4</kbd> <kbd>F5</kbd> <kbd>F6</kbd> pick the label type, and <kbd>F10</kbd> prints the sheet.</p>
+
+  <h3><span class="sn">5.7</span>Damage returns and repair jobs</h3>
+  <p><b>Damage returns</b> takes broken or unsellable stock off the floor and records why, so it shows
+  as a loss rather than silently vanishing. <b>Repair job notes</b> keeps track of things taken in for
+  repair, so nothing sits in the back for three months with nobody knowing whose it is.</p>
+</section>
+
+<!-- ============================ PART 6 ============================ -->
+<section class="part">
+  <div class="parthead">
+    <div class="num">6</div>
+    <div>
+      <h2>Online</h2>
+      <div class="lede">The website, the prices on it, the orders off it, and telling people about it.</div>
+    </div>
+  </div>
+
+  <h3><span class="sn">6.1</span>The shop site</h3>
+  <p>The public website at <code>/</code> is fed by the same products as the till. Under
+  <b>The shop site</b> you set what it looks like and what it shows. Under <b>Online products</b> you
+  choose which items appear, write their descriptions and set which are featured.</p>
+
+  <h3><span class="sn">6.2</span>A different price online</h3>
+  <p>What you charge over the counter and what you charge online do not have to be the same. Set an
+  <b>online price</b> on a product and the website uses that; leave it empty and the website uses the
+  normal price. You can set them one at a time or in bulk, and the difference from the counter price
+  is shown as you go so you can see what you are doing.</p>
+  <div class="box warn">
+    <span class="lbl">Watch out</span>
+    <p>An online price that is below cost is still below cost. The website will sell at whatever you
+    put there — it does not stop you the way the till does.</p>
+  </div>
+
+  <h3><span class="sn">6.3</span>Online orders</h3>
+  <p>Orders from the website come into <b>Online orders</b> to be looked at and turned into real bills.
+  They do not touch stock until you accept them.</p>
+
+  <h3><span class="sn">6.4</span>Social</h3>
+  <p>Write once, and post to Facebook, Instagram and WhatsApp. You can send it now or set it for later.
+  The page walks you through connecting each one the first time.</p>
+  <div class="box note">
+    <span class="lbl">On WhatsApp</span>
+    <p>WhatsApp is not a noticeboard — it goes to people one at a time, and there is a sensible ceiling
+    on how many in one go. Use it for things that are genuinely worth a customer's attention, or people
+    stop reading anything you send.</p>
+  </div>
+</section>
+
+<!-- ============================ PART 7 ============================ -->
+<section class="part">
+  <div class="parthead">
+    <div class="num">7</div>
+    <div>
+      <h2>Money</h2>
+      <div class="lede">Cheques both ways, what the shop spends, and the books underneath.</div>
+    </div>
+  </div>
+
+  <h3><span class="sn">7.1</span>Cheques in</h3>
+  <p>Every cheque taken from a customer, with its number, its bank, its date and who it came from.
+  It sits here as a cheque in hand until you bank it, and then it moves on. This page answers
+  "how much have we got in cheques that is not in the bank yet", which is a different question
+  from how much cash you have.</p>
+
+  <h3><span class="sn">7.2</span>Cheques out</h3>
+  <p>Every cheque the shop has written, and when it falls due. These feed straight into the
+  purchasing plan (4.4), because a cheque you have written is money that is going to leave.</p>
+
+  <h3><span class="sn">7.3</span>Expenses</h3>
+  <p>Everything the shop spends that is not stock — transport, electricity, wages, rent, repairs.
+  Each one has a category, and the categories are what make <b>Expenses by Category</b> worth reading.</p>
+  <div class="box tip">
+    <span class="lbl">Worth knowing</span>
+    <p>Gross profit is what you made on the goods. It is not what the shop made. The gap between the
+    two is this page. If expenses are not being entered properly, the shop looks more profitable
+    than it is — which is the most expensive kind of wrong.</p>
+  </div>
+
+  <h3><span class="sn">7.4</span>Accounting</h3>
+  <p>The double entry behind everything else. You do not have to work here day to day — every bill,
+  payment, purchase and expense posts itself. It is here for when your accountant asks, and for the
+  reports in 9.3 that come straight off it.</p>
+  <p>The accounts you will meet most often:</p>
+  <table class="tight">
+    <tr><th style="width:22mm">Account</th><th>What it holds</th></tr>
+    <tr><td class="k">1010</td><td>Cash in hand</td></tr>
+    <tr><td class="k">1030</td><td>Cheques received, not yet banked</td></tr>
+    <tr><td class="k">1100</td><td>What customers owe you</td></tr>
+    <tr><td class="k">2050</td><td>Money a customer paid in advance, held until a bill uses it</td></tr>
+    <tr><td class="k">2100</td><td>What you owe suppliers</td></tr>
+    <tr><td class="k">2110</td><td>Cheques you have written that have not cleared</td></tr>
+    <tr><td class="k">4100</td><td>Sales</td></tr>
+  </table>
+</section>
+
+<!-- ============================ PART 8 ============================ -->
+<section class="part">
+  <div class="parthead">
+    <div class="num">8</div>
+    <div>
+      <h2>People</h2>
+      <div class="lede">Who may do what, who was here, and what they are owed.</div>
+    </div>
+  </div>
+
+  <h3><span class="sn">8.1</span>Approvals</h3>
+  <p>Some things should not happen just because somebody clicked. Those things raise an approval,
+  which the owner or an approver sees and decides on. Approvals are <b>on by default</b>.</p>
+  <table class="tight">
+    <tr><th>What needs one</th><th>Why</th></tr>
+    <tr><td class="k">Changing a price</td><td>A price is the shop's margin. A slip here is money, every time it sells.</td></tr>
+    <tr><td class="k">Adjusting a bill</td><td>Changing a bill after the fact is the classic way money goes missing.</td></tr>
+    <tr><td class="k">Adjusting a purchase</td><td>Same reason, from the other side.</td></tr>
+    <tr><td class="k">Editing or removing a customer</td><td>Their balance and history hang off that record.</td></tr>
+    <tr><td class="k">Changing a customer's terms</td><td>Credit terms are a commercial decision, not a counter one.</td></tr>
+    <tr><td class="k">Giving portal access</td><td>To a customer or a supplier — it lets somebody outside the shop see your figures.</td></tr>
+  </table>
+  <p>Each of these can be switched off under <b>Settings → Approvals</b>, but think hard before you do.</p>
+
+  <h3><span class="sn">8.2</span>Attendance and pay</h3>
+  <p>The whole thing in seven tabs:</p>
+  <table class="tight">
+    <tr><th style="width:26mm">Tab</th><th>What it is</th></tr>
+    <tr><td class="k">Today</td><td>Who is in, who is not, who came late.</td></tr>
+    <tr><td class="k">Attendance</td><td>The month as a sheet. Present, absent, holiday, leave — marked per person per day.</td></tr>
+    <tr><td class="k">Payroll</td><td>What each person has earned for the month, worked out from the sheet and the rules.</td></tr>
+    <tr><td class="k">Payments</td><td>What has actually been paid out, and what is still owed.</td></tr>
+    <tr><td class="k">Trends</td><td>Lateness and absence over time, per person.</td></tr>
+    <tr><td class="k">Staff</td><td>The people, their rates and their details.</td></tr>
+    <tr><td class="k">Rules</td><td>Hours, overtime, what counts as late, and how pay is worked out.</td></tr>
+  </table>
+  <p>Staff clock in at <code>/shift</code>, and the fingerprint machine feeds the same record.</p>
+
+  <h3><span class="sn">8.3</span>Users, roles and permissions</h3>
+  <p>Add people, set their password, give them a role. You can build roles of your own and tick exactly
+  which sections they get, which is better than giving somebody Admin because it was quicker.</p>
+  <div class="box warn">
+    <span class="lbl">Watch out</span>
+    <p>Giving somebody Admin gives them costs, margins, the trail and AI support. If what they really
+    need is to take payments and look at stock, make a role that does that.</p>
+  </div>
+</section>
+
+<!-- ============================ PART 9 ============================ -->
+<section class="part">
+  <div class="parthead">
+    <div class="num">9</div>
+    <div>
+      <h2>Looking back</h2>
+      <div class="lede">What happened, who did it, and what the figures say.</div>
+    </div>
+  </div>
+
+  <h3><span class="sn">9.1</span>The trail</h3>
+  <p>Owner and admins only. Every change of consequence, with who made it and when. This is what you
+  read when a figure is not what you expected, and it is why arguments about what happened are short.</p>
+
+  <h3><span class="sn">9.2</span>Messages</h3>
+  <p>Every text and WhatsApp message the system has sent, and whether it went. Useful when a customer
+  says they were never told.</p>
+
+  <h3><span class="sn">9.3</span>Reports</h3>
+  <p>Thirty-three reports in eight groups. Pick one, pick the dates, read it.</p>
+
+  <h4>Business overview</h4>
+  <table class="tight">
+    <tr><td class="k">Profit and Loss</td><td>What the shop made over a stretch, after expenses.</td></tr>
+    <tr><td class="k">Balance Sheet</td><td>What the shop owns and owes, at a date.</td></tr>
+    <tr><td class="k">Statement of Cash Flows</td><td>Where the money actually came from and went.</td></tr>
+    <tr><td class="k">Day Book</td><td>One day, everything that happened in it.</td></tr>
+    <tr><td class="k">Sales by Day</td><td>Day by day, for spotting the pattern.</td></tr>
+  </table>
+
+  <h4>Who owes you</h4>
+  <table class="tight">
+    <tr><td class="k">A/R Ageing Summary</td><td>How overdue the money is, in bands. <b>Read this one weekly.</b></td></tr>
+    <tr><td class="k">A/R Ageing Detail</td><td>The same, bill by bill.</td></tr>
+    <tr><td class="k">Customer Balance Summary</td><td>What each customer owes.</td></tr>
+    <tr><td class="k">Open Invoices</td><td>Every bill not yet settled.</td></tr>
+    <tr><td class="k">Collections Report</td><td>What to chase, and who to chase it from.</td></tr>
+    <tr><td class="k">Customer Balance Detail</td><td>One customer's account in full.</td></tr>
+  </table>
+
+  <h4>Sales and customers</h4>
+  <table class="tight">
+    <tr><td class="k">Sales by Customer</td><td>Who your business actually comes from.</td></tr>
+    <tr><td class="k">Sales by Product</td><td>What sells.</td></tr>
+    <tr><td class="k">Discounts and Returns</td><td>What is being given away, and by whom.</td></tr>
+    <tr><td class="k">Sales by Cashier</td><td>Only as good as the salesperson question (2.10) being answered.</td></tr>
+  </table>
+
+  <h4>What you owe</h4>
+  <table class="tight">
+    <tr><td class="k">A/P Ageing Summary</td><td>How overdue what you owe is.</td></tr>
+    <tr><td class="k">Supplier Balance Summary</td><td>What you owe each supplier.</td></tr>
+    <tr><td class="k">Unpaid Bills</td><td>Everything outstanding.</td></tr>
+    <tr><td class="k">Purchases by Supplier</td><td>Where your buying goes.</td></tr>
+    <tr><td class="k">Cheque Register</td><td>Every cheque, both ways.</td></tr>
+  </table>
+
+  <h4>Expenses and cash</h4>
+  <table class="tight">
+    <tr><td class="k">Expenses by Category</td><td>Where the money goes that is not stock.</td></tr>
+    <tr><td class="k">Cash and Bank Movement</td><td>In and out, account by account.</td></tr>
+    <tr><td class="k">Cash in Hand — day by day</td><td>For checking the drawer against the books.</td></tr>
+  </table>
+
+  <h4>Products and stock</h4>
+  <table class="tight">
+    <tr><td class="k">Inventory Valuation</td><td>What the stock on the floor is worth at cost.</td></tr>
+    <tr><td class="k">Stock Movement Detail</td><td>Every movement of an item.</td></tr>
+    <tr><td class="k">Below Reorder Level</td><td>What to buy. <b>Read this one weekly.</b></td></tr>
+    <tr><td class="k">Profit by Product</td><td>What actually earns, as against what merely sells.</td></tr>
+  </table>
+
+  <h4>Payroll</h4>
+  <table class="tight">
+    <tr><td class="k">Payroll Summary</td><td>What was paid, and to whom.</td></tr>
+    <tr><td class="k">Attendance Summary</td><td>Days worked, per person.</td></tr>
+  </table>
+
+  <h4>For my accountant</h4>
+  <table class="tight">
+    <tr><td class="k">Trial Balance</td><td>Every account, debits against credits.</td></tr>
+    <tr><td class="k">General Ledger</td><td>Every account, entry by entry.</td></tr>
+    <tr><td class="k">Journal</td><td>Every posting the system made.</td></tr>
+    <tr><td class="k">Transaction List by Date</td><td>Everything, in order.</td></tr>
+    <tr><td class="k">Audit Log</td><td>What was changed after the fact.</td></tr>
+  </table>
+</section>
+
+<!-- ============================ PART 10 ============================ -->
+<section class="part">
+  <div class="parthead">
+    <div class="num">10</div>
+    <div>
+      <h2>AI support</h2>
+      <div class="lede">Claude, reading your own figures. Owner and admins only.</div>
+    </div>
+  </div>
+
+  <h3><span class="sn">10.1</span>What it is</h3>
+  <p>A page where you ask about the shop in plain words and get an answer worked out from your own
+  books. Not a search box, and not general advice off the internet — it is shown a summary of your
+  actual sales, balances, stock, cheques and expenses, and told to answer only from those.</p>
+
+  <h3><span class="sn">10.2</span>The four tabs</h3>
+  <table>
+    <tr><th style="width:26mm">Tab</th><th>What it is for</th></tr>
+    <tr><td class="k">Ask</td><td>Any question. "How much does Sunil owe me?" · "Which suppliers do I owe most, and when is it due?" · "What am I holding that is not selling?" · "Is anything being sold below cost?"</td></tr>
+    <tr><td class="k">Today</td><td>One button. A short review of where the shop stands, covering only what needs attention.</td></tr>
+    <tr><td class="k">Ideas</td><td>Ideas for growing the shop, each one tied to a figure in your books.</td></tr>
+    <tr><td class="k">Writing</td><td>A product description for the website, or a post for Facebook, Instagram or WhatsApp.</td></tr>
+  </table>
+
+  <h3><span class="sn">10.3</span>Connecting it</h3>
+  <p>Until a key is set, the page shows the setup guide instead. In short: make an account at
+  <b>console.anthropic.com</b>, add some credit and <b>set a monthly spend limit</b>, create an API key,
+  and put it in the server's environment settings as <code>ANTHROPIC_API_KEY</code>. For the live site
+  that is Vercel → Settings → Environment Variables, followed by a redeploy.</p>
+  <div class="box warn">
+    <span class="lbl">Watch out</span>
+    <p>The key goes on the <b>server</b>, never into the app. Anything in the app is downloaded by every
+    browser that opens the shop website, and a key taken from there could be used to spend your money.
+    The spend limit on the account is the only hard stop on what this costs.</p>
+  </div>
+
+  <h3><span class="sn">10.4</span>What to trust</h3>
+  <p>The figures it is given are worked out the same way the till works them out — what a customer owes
+  and what you owe a supplier come off the ledger, and profit is the bill total less what the goods cost.
+  It is told to quote the figure it is reasoning from, so you can check it.</p>
+  <div class="box tip">
+    <span class="lbl">Worth knowing</span>
+    <p>It can read, and it can advise. It <b>cannot change anything</b> — it does not make bills, move
+    stock or touch a balance. The worst it can do is be wrong, which is why it shows its figures.
+    Check anything before you act on it, the same as you would check a person.</p>
+  </div>
+</section>
+
+<!-- ============================ PART 11 ============================ -->
+<section class="part">
+  <div class="parthead">
+    <div class="num">11</div>
+    <div>
+      <h2>Settings</h2>
+      <div class="lede">Every tab, and what it changes. There is a search box at the top — use it.</div>
+    </div>
+  </div>
+  <table>
+    <tr><th style="width:38mm">Tab</th><th>What it changes</th></tr>
+    <tr><td class="k">My screen</td><td>Yours alone: the menu, how narrow it is, where you land, and which till. See 1.4.</td></tr>
+    <tr><td class="k">Finishing a bill</td><td>Whether to ask for the customer's mobile, and whether to ask who sold it. See 2.10.</td></tr>
+    <tr><td class="k">Privacy screen</td><td>Owner and admins. Blurs the figures on screen when somebody is leaning over the counter.</td></tr>
+    <tr><td class="k">Shop details</td><td>Name, Sinhala name, address, landmark, phone, opening hours — what prints on the bill.</td></tr>
+    <tr><td class="k">Bills &amp; vouchers</td><td>Numbering and how documents behave.</td></tr>
+    <tr><td class="k">What the bill shows</td><td>What is printed and what is left off.</td></tr>
+    <tr><td class="k">Cost code</td><td>The letters that stand for digits on the price label. See 5.3.</td></tr>
+    <tr><td class="k">Messaging</td><td>Texts and WhatsApp — whether they are live, and how they are sent.</td></tr>
+    <tr><td class="k">Message templates</td><td>The wording of each message the system sends.</td></tr>
+    <tr><td class="k">Attendance</td><td>Hours, the shift clock and the staff list behind it.</td></tr>
+    <tr><td class="k">Approvals</td><td>Which actions need approving. See 8.1.</td></tr>
+  </table>
+</section>
+
+<!-- ============================ APPENDIX A ============================ -->
+<section class="part appendix">
+  <div class="parthead">
+    <div class="num">A</div>
+    <div>
+      <h2>Keyboard shortcuts</h2>
+      <div class="lede">Tear this page out and stick it by the till.</div>
+    </div>
+  </div>
+
+  <h3>Anywhere in the system</h3>
+  <table class="tight">
+    <tr><th style="width:30mm">Key</th><th>Goes to</th></tr>
+    <tr><td class="k"><kbd>F2</kbd></td><td>Dashboard</td></tr>
+    <tr><td class="k"><kbd>F3</kbd></td><td>The till</td></tr>
+    <tr><td class="k"><kbd>F7</kbd></td><td>Take a payment</td></tr>
+    <tr><td class="k"><kbd>F9</kbd></td><td>Bills</td></tr>
+  </table>
+
+  <h3>On the till</h3>
+  <table class="tight">
+    <tr><th style="width:30mm">Key</th><th>Does</th></tr>
+    <tr><td class="k"><kbd>F1</kbd></td><td>Back to the item box, ready to scan or type</td></tr>
+    <tr><td class="k"><kbd>F3</kbd></td><td>Pick who sold it</td></tr>
+    <tr><td class="k"><kbd>F4</kbd></td><td>Pick the customer</td></tr>
+    <tr><td class="k"><kbd>F5</kbd></td><td>Show the held bills</td></tr>
+    <tr><td class="k"><kbd>F6</kbd></td><td>Credit sale</td></tr>
+    <tr><td class="k"><kbd>F7</kbd></td><td>Hold this bill</td></tr>
+    <tr><td class="k"><kbd>F8</kbd></td><td>Bill discount</td></tr>
+    <tr><td class="k"><kbd>F10</kbd></td><td>Take payment</td></tr>
+    <tr><td class="k"><kbd>F12</kbd></td><td>Show the last bill again</td></tr>
+    <tr><td class="k"><kbd>Ctrl</kbd> + <kbd>P</kbd></td><td>Print</td></tr>
+    <tr><td class="k"><kbd>Ctrl</kbd> + <kbd>Q</kbd></td><td>Save as a quotation</td></tr>
+    <tr><td class="k"><kbd>Ctrl</kbd> + <kbd>H</kbd></td><td>Hold</td></tr>
+    <tr><td class="k"><kbd>Ctrl</kbd> + <kbd>R</kbd></td><td>Recall a held bill</td></tr>
+  </table>
+  <p class="muted" style="font-size:9.5pt">On the classic till, <kbd>F2</kbd> with an item selected
+  shows what that item has sold for before — useful when a customer says they paid less last time.</p>
+
+  <h3>On the labels page</h3>
+  <table class="tight">
+    <tr><td class="k"><kbd>F1</kbd></td><td>Search</td></tr>
+    <tr><td class="k"><kbd>F4</kbd> <kbd>F5</kbd> <kbd>F6</kbd></td><td>Label size</td></tr>
+    <tr><td class="k"><kbd>F10</kbd></td><td>Print the sheet</td></tr>
+  </table>
+</section>
+
+<!-- ============================ APPENDIX B ============================ -->
+<section class="part appendix">
+  <div class="parthead">
+    <div class="num">B</div>
+    <div>
+      <h2>The addresses</h2>
+      <div class="lede">Who to give which one to.</div>
+    </div>
+  </div>
+  <table>
+    <tr><th style="width:44mm">Give this out to</th><th>Address</th></tr>
+    <tr><td class="k">Nobody outside the shop</td><td><code>/pos</code> — the till and the whole system</td></tr>
+    <tr><td class="k">Everybody</td><td><code>/</code> — the shop's website</td></tr>
+    <tr><td class="k">A supplier</td><td><code>/supplier</code> — with their own sign-in</td></tr>
+    <tr><td class="k">A customer</td><td><code>/my/…</code> — with their own sign-in</td></tr>
+    <tr><td class="k">Your staff</td><td><code>/shift</code> — clocking in</td></tr>
+    <tr><td class="k">Anyone, for one bill</td><td><code>/b/…</code> — the link in the text message</td></tr>
+  </table>
+</section>
+
+<!-- ============================ APPENDIX C ============================ -->
+<section class="part appendix">
+  <div class="parthead">
+    <div class="num">C</div>
+    <div>
+      <h2>A routine</h2>
+      <div class="lede">The system will tell you plenty. These are the things worth looking at on purpose.</div>
+    </div>
+  </div>
+
+  <h3>Every day</h3>
+  <ul>
+    <li>The dashboard, once, before you open.</li>
+    <li>Cash in the drawer against <b>Cash in Hand — day by day</b>, at close.</li>
+    <li>Any approval waiting on you. They sit there until somebody decides.</li>
+    <li>Any payment request from a supplier.</li>
+  </ul>
+
+  <h3>Every week</h3>
+  <ul>
+    <li><b>A/R Ageing Summary</b> — who is slipping, before it becomes a year old.</li>
+    <li><b>Below Reorder Level</b> — what to buy.</li>
+    <li><b>The plan</b> in Purchasing &amp; cash plan — is there a day coming where you run short?</li>
+    <li>Cheques in hand that have not been banked.</li>
+  </ul>
+
+  <h3>Every month</h3>
+  <ul>
+    <li><b>Profit and Loss</b> — what the shop actually made, not what it sold.</li>
+    <li><b>Expenses by Category</b> — what crept up.</li>
+    <li><b>Profit by Product</b> — what earns as against what merely moves.</li>
+    <li>Payroll, and the attendance sheet behind it.</li>
+    <li>A stock take on one section, rotating through the shop.</li>
+  </ul>
+
+  <div class="box tip">
+    <span class="lbl">Worth knowing</span>
+    <p>If you only ever do one of these, make it the weekly <b>A/R Ageing Summary</b>. Money owed to a
+    hardware shop does not usually vanish in one go — it ages quietly until it is too old to ask for.</p>
+  </div>
+</section>
+
+<!-- ============================ APPENDIX D ============================ -->
+<section class="part appendix">
+  <div class="parthead">
+    <div class="num">D</div>
+    <div>
+      <h2>When something goes wrong</h2>
+      <div class="lede">The handful of things that actually happen.</div>
+    </div>
+  </div>
+  <table>
+    <tr><th style="width:52mm">What you see</th><th>What to do</th></tr>
+    <tr><td class="k">"Not enough stock" when there plainly is</td>
+        <td>The floor and the books disagree. Sell it, then put it right with a stock take on that item rather than fighting the message — and look at the movement ledger (5.4) to see where they parted company.</td></tr>
+    <tr><td class="k">A price change will not go through</td>
+        <td>It needs approving (8.1). An owner or admin has to allow it.</td></tr>
+    <tr><td class="k">"Under cost — an admin has to allow it"</td>
+        <td>Check the price you typed first. Nine times in ten it is a slip, not a decision.</td></tr>
+    <tr><td class="k">A credit sale is refused</td>
+        <td>Either there is no customer on the bill, or they are at their limit. Both are deliberate.</td></tr>
+    <tr><td class="k">Your copy is out of date</td>
+        <td>Somebody else changed the same thing first. Let it pick up the newer one and do your change again.</td></tr>
+    <tr><td class="k">A customer says they never got the text</td>
+        <td><b>Messages</b> (9.2) shows every message and whether it went.</td></tr>
+    <tr><td class="k">A figure is not what you expected</td>
+        <td><b>The trail</b> (9.1) for who changed what. The <b>Audit Log</b> report for what was changed after the fact. The movement ledger for stock.</td></tr>
+    <tr><td class="k">The whole system will not load</td>
+        <td>Check the internet first — it is nearly always that. The shop's own machines cannot reach the books without it.</td></tr>
+  </table>
+
+  <div class="box why" style="margin-top:10mm">
+    <span class="lbl">One last thing</span>
+    <p>Almost everything in this system is recoverable, because almost nothing is truly deleted — it is
+    recorded as having happened, and then recorded as having been put right. That is why the trail
+    exists, and it is why you should never be afraid to fix a mistake properly rather than hiding it.</p>
+  </div>
+</section>
+
+</body>
+</html>
