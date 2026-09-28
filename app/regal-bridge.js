@@ -348,6 +348,15 @@
     if (Date.now() - lastPushAt < 3000) return;          // our own save is still settling
     var j = await call('GET', '/books/' + KEY + '/rev');
     if (j.__status !== 200) return;
+    // A till that could not read the books refuses to save, so that it never writes its sample data
+    // over a real shop. The books are only pulled when the revision moves, though — and a till that is
+    // not saving cannot move it. That deadlocked: one failed read and the till went quiet for good.
+    // While the flag is up, read the books outright to see whether the server is answering again.
+    if (window.booksUnreadable) {
+      try { await window.storage.get(STORE_KEY); } catch (e) { return; }   // get() clears the flag if it works
+      if (!window.booksUnreadable) say('The books are readable again — this till is saving once more');
+      return;
+    }
     // a newer version of the app on the server: reload as soon as the till is idle
     if (j.build) {
       if (!build) build = j.build;
