@@ -2395,7 +2395,14 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-tbl tr.on td:first-child{box-shadow:inset 5px 0 0 var(--chip-rust),inset 0 -1px 0 #E5B93A}
 .till-tbl tr.on td.d b{color:#7A3A0E}
 .till-tbl tr.on td.n.am b{color:var(--chip-rust)}
-.ln-chk{display:none;font-style:normal;color:#1f8f4e;font-weight:800;font-size:12px;margin-right:4px}
+/* the checking box on each bill line: click it, or press C on the line under the cursor */
+.ln-box{width:16px;height:16px;flex:0 0 16px;display:inline-grid;place-items:center;vertical-align:middle;
+  margin-right:6px;padding:0;border:1.5px solid var(--line);border-radius:4px;background:var(--white);
+  color:#0f7a43;font:800 11px/1 Inter,sans-serif;cursor:pointer;transition:background .12s,border-color .12s}
+.ln-box:hover{border-color:#0f7a43}
+.ln-box.on{background:#DCF1E7;border-color:#0f7a43}
+.till-tbl tr.on .ln-box{border-color:#b9863a}
+.ln-chk{display:none}
 .till-tbl tr.ln-checked .ln-chk{display:inline}
 .till-tbl tr.ln-checked:not(.on) td{background:#F2FAF5}
 .till-tbl tr.ln-checked:not(.on) td.d b{color:#245C3D}
@@ -10012,7 +10019,7 @@ function posClassic(){
   const now=new Date(), sel=P(CS.pid), drag=CFG.pos.dragLines!==false;
   const owed=c.id===1?0:partyBal('C',c.id);
   const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['P on the bill','Price'],['N on the bill','Rename'],['F1','Back to item'],['F4','Customer'],
-              ['F5 / Ctrl+R','Held bills'],['F7 / Ctrl+H','Hold bill'],['F8','Bill disc.'],['F10','Pay'],['F6','On account'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['S in price','Past prices'],['Ctrl+Shift+W / R','Wholesale · retail'],['Ctrl+Shift+L / N','Large · normal bill'],['Clear','Reset bill']];
+              ['F5 / Ctrl+R','Held bills'],['F7 / Ctrl+H','Hold bill'],['F8','Bill disc.'],['F10','Pay'],['F6','On account'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['S in price','Past prices'],['C','Tick · untick a line'],['Ctrl+Shift+W / R','Wholesale · retail'],['Ctrl+Shift+L / N','Large · normal bill'],['Clear','Reset bill']];
 
   const sync=(document.getElementById('savedAt')||{}).textContent||'';
   return `<div class="till">
@@ -10069,7 +10076,9 @@ function posClassic(){
         const chk=l.checked===true;        // walked onto with the arrows, or ticked by hand
         return `<tr class="${i===S.pos.sel?'on':''} ${ed?'editing':''} ${chk?'ln-checked':''} ${l.qty<0?'retline':''}" data-act="csSel" data-i="${i}">
          ${drag?`<td class="g"><span class="ln-grip" title="drag to move this line · Ctrl+↑ / Ctrl+↓">⠿</span></td>`:''}
-         <td class="c"><i class="ln-chk" title="checked">✓</i>${p.num||p.code}</td>
+         <td class="c"><button type="button" class="ln-box ${chk?'on':''}" data-act="csTick" data-i="${i}"
+            title="${chk?'Checked — click or press C to take it off':'Not checked — click or press C'}"
+            aria-label="checked">${chk?'✓':''}</button>${p.num||p.code}</td>
          <td class="d"><b>${lineName(l).toUpperCase()}</b>${l.qty<0?' <span class="rettag">RETURN</span>':''}
           ${(l.serials&&l.serials.length)?`<em>serial ${l.serials.join(', ')}</em>`:''}
           ${l.fromLast?`<span class="tag blue">their last price · ${l.fromLast}</span>`:''}
@@ -18660,6 +18669,8 @@ document.addEventListener('click',e=>{
       portalInvite(kind,kind==='S'?SU(id):C(id),true) },
     cuLoginsAgain:()=>{ custLogins={cid:0,kind:'C',list:null,busy:false,failed:''}; render() },
     cuLoginsAll:()=>custLoginsAll(a.dataset.kind||'C'),
+    csTick:()=>{ const i=+a.dataset.i, l=S.pos.lines[i]; if(!l) return;
+      l.checked=!(l.checked===true); render(); },
     dmgNew:()=>damageModal(), dmgMove:()=>damageMoveModal(a.dataset.no),
     supDamage:()=>{ dmgTab='all'; go('damages') },
     dmgLabel:()=>damageLabel(a.dataset.no), dmgScan:()=>damageScanModal(),
