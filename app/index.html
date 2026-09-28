@@ -8354,6 +8354,12 @@ function renderNow(){
   }
   document.querySelectorAll('[data-custfilter]').forEach(b=>b.onclick=()=>{custFilter=b.dataset.custfilter;render()});
   document.querySelectorAll('[data-dmgtab]').forEach(b=>b.onclick=()=>{dmgTab=b.dataset.dmgtab;render()});
+  document.querySelectorAll('[data-docstate]').forEach(b=>b.onclick=()=>{docState=b.dataset.docstate;docSel=null;render()});
+  {
+    const dq=document.getElementById('docQ');
+    if(dq) dq.oninput=()=>{ docQ=dq.value; docSel=null; const at=dq.selectionStart; render();
+      const again=document.getElementById('docQ'); if(again){ again.focus(); try{ again.setSelectionRange(at,at) }catch(e){} } };
+  }
   document.querySelectorAll('[data-jobtab]').forEach(b=>b.onclick=()=>{jobTab=b.dataset.jobtab;render()});
   document.querySelectorAll('[data-custsort]').forEach(b=>b.onclick=()=>{custSort=b.dataset.custsort;render()});
   document.querySelectorAll('[data-custtab]').forEach(b=>b.onclick=()=>{custTab=b.dataset.custtab;render()});
@@ -11933,46 +11939,86 @@ function docToBill(no){
   toast(DOCK[doc.kind].label+' '+doc.no+' is on the till — take the payment to turn it into a bill','ok');
 }
 let docQ='', docKind='all';
-function docs(){
+let docSel=null, docState='open';
+function docList(){
   const q=docQ.trim().toLowerCase();
-  const list=S.docs.filter(dd=>(docKind==='all'||dd.kind===docKind)&&
-    (!q||dd.no.toLowerCase().includes(q)||C(dd.customerId).name.toLowerCase().includes(q)||(C(dd.customerId).phone||'').includes(q)))
-    .sort((a,b)=>b.no.localeCompare(a.no));
+  return S.docs.filter(d=>{
+      if(docKind!=='all' && d.kind!==docKind) return false;
+      if(docState!=='all' && d.status!==docState) return false;
+      if(!q) return true;
+      const c=C(d.customerId)||{};
+      return String(d.no).toLowerCase().includes(q)
+          || String(c.name||'').toLowerCase().includes(q)
+          || String(c.phone||'').includes(q)
+          || (d.lines||[]).some(l=>{const p=P(l.pid)||{};return String(p.name||'').toLowerCase().includes(q)||String(p.code||'').toLowerCase().includes(q)})
+          || String(d.total.toFixed(2)).includes(q);
+    })
+    .sort((a,z)=>String(z.date+z.no).localeCompare(String(a.date+a.no)));
+}
+const DOC_STATE={open:['Waiting','warn'],billed:['Billed','ok'],closed:['Closed','']};
+/* The quotations and delivery notes, read the way the bills are read: the list down one side with
+   whatever was searched for, and the one that is picked open beside it. Waiting comes first, because
+   a note that has been billed is finished with and only wanted for looking back at. */
+function docs(){
+  const list=docList();
+  if(!list.some(d=>d.no===docSel)&&list.length) docSel=list[0].no;
+  const doc=list.find(d=>d.no===docSel)||null;
+  const days=(d)=>Math.round((today-new Date(d))/864e5);
+  const worth=list.reduce((a,d)=>a+d.total,0);
   const openQ=S.docs.filter(d=>d.kind==='QUOTE'&&d.status==='open');
   const openD=S.docs.filter(d=>d.kind==='DN'&&d.status==='open');
-  const days=d=>Math.round((today-new Date(d))/864e5);
-  return `<h1>Quotations and delivery notes</h1>
-  <div class="row" style="margin-bottom:12px">
-   ${stat('Quotations out',fmt(openQ.reduce((a,d)=>a+d.total,0)),`${openQ.length} waiting on the customer`,'y')}
-   ${stat('Turned into bills',S.docs.filter(d=>d.status==='billed').length,'quotes and notes closed','g')}
-   ${stat('Goods out, not billed',fmt(openD.reduce((a,d)=>a+d.total,0)),`${openD.length} delivery note${openD.length===1?'':'s'}`,'r')}
-   ${stat('Made this month',S.docs.filter(d=>d.date.slice(0,7)===D(today).slice(0,7)).length,'','b')}
-  </div>
-  <div class="card" style="margin-bottom:12px">
-   <div class="findbar">
-    <div class="chips" style="margin:0">${[['all','Both'],['QUOTE','Quotations'],['DN','Delivery notes']]
-      .map(o=>`<button class="${docKind===o[0]?'on':''}" data-act="docKind" data-k="${o[0]}">${o[1]}</button>`).join('')}</div>
-    <div class="f" style="flex:2;min-width:220px"><label>Search</label>
-     <input id="docQ" value="${docQ}" placeholder="number, customer or phone"></div>
-    <div class="muted" style="margin-left:auto;align-self:center">Both are made at the till — build the basket, then use the buttons under the total.</div>
-   </div></div>
-  <div class="card">
-   <table><tr><th>Number</th><th>Kind</th><th>Date</th><th>Customer</th><th>Items</th><th class="n">Value</th><th>State</th><th></th></tr>
-   ${list.map(dd=>{const c=C(dd.customerId);return `<tr>
-     <td><b>${dd.no}</b><div class="muted">by ${dd.by}</div></td>
-     <td>${dd.kind==='QUOTE'?'<span class="tag blue">quote</span>':'<span class="tag warn">delivery</span>'}</td>
-     <td>${dd.date}<div class="muted">${dd.kind==='QUOTE'&&dd.status==='open'
-        ?(days(dd.date)>dd.valid?'<span class="tag bad">lapsed</span>':`${dd.valid-days(dd.date)} days left`):`${days(dd.date)}d ago`}</div></td>
-     <td>${c.name}<div class="muted">${c.phone||''}</div></td>
-     <td class="muted">${dd.lines.length} line${dd.lines.length===1?'':'s'}<div>${P(dd.lines[0].pid).name.slice(0,20)}${dd.lines.length>1?' +'+(dd.lines.length-1):''}</div></td>
-     <td class="n">${fmt(dd.total)}</td>
-     <td>${dd.status==='billed'?`<span class="tag ok">billed ${dd.invoice||''}</span>`:'<span class="tag warn">open</span>'}</td>
-     <td><div class="rowacts">
-      <button class="btn ghost sm" data-act="docPrint" data-no="${dd.no}">Print</button>
-      ${dd.status==='open'?`<button class="btn tape sm" data-act="docBill" data-no="${dd.no}">Turn into a bill</button>
-       <button class="btn ghost sm" data-act="docDrop" data-no="${dd.no}">Close it</button>`:''}
-     </div></td></tr>`}).join('')||'<tr><td colspan="8" class="muted" style="padding:24px;text-align:center">Nothing here yet. Build a basket at the till and press one of the buttons under the total.</td></tr>'}</table>
+  return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
+    <span>Quotations &amp; delivery notes <span class="muted" style="font-size:13px;font-weight:400">${S.docs.length} on the system</span></span>
+    <span style="display:flex;gap:6px"><button class="btn tape" data-view="pos">New quotation <i class="kbd">Ctrl+Q</i></button></span></h1>
+  <div class="bl-wrap">
+   <div class="card bl-list">
+    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+     <input id="docQ" value="${docQ.replace(/"/g,'&quot;')}" placeholder="Customer, mobile, number, item or amount…" autocomplete="off"></div>
+    <div class="chips">${[['open','Waiting'],['billed','Billed'],['closed','Closed'],['all','All']].map(o=>
+      `<button class="${docState===o[0]?'on':''}" data-docstate="${o[0]}">${o[1]}</button>`).join('')}</div>
+    <div class="chips" style="margin-bottom:6px">${[['all','Both'],['QUOTE','Quotations'],['DN','Delivery notes']].map(o=>
+      `<button class="${docKind===o[0]?'on':''}" data-act="docKind" data-k="${o[0]}">${o[1]}</button>`).join('')}
+     ${(docQ||docKind!=='all'||docState!=='open')?`<button class="clear" data-act="docClear" style="color:var(--chip-rust)">Clear</button>`:''}</div>
+    <div class="bl-count"><span><b>${list.length}</b> ${list.length===1?'note':'notes'} · ${fmt(worth)}</span>
+     <span>${openQ.length?`<b>${openQ.length}</b> quote${openQ.length===1?'':'s'} out`:''}${openD.length?` · <b>${openD.length}</b> to bill`:''}</span></div>
+    <div class="bl-rows">
+     ${list.length?list.slice(0,200).map(d=>{const c=C(d.customerId)||{name:'—'}; const age=days(d.date);
+       const stale=d.kind==='QUOTE'&&d.status==='open'&&d.valid&&age>d.valid;
+       return `<div class="bl-row ${doc&&d.no===doc.no?'sel':''} ${stale?'oncredit':''}" data-act="docSel" data-no="${d.no}" tabindex="-1">
+        <div class="bl-when"><b>${d.date===D(today)?'Today':d.date===ago(1)?'Yesterday':d.date}</b><span>${d.kind==='QUOTE'?'Quotation':'Delivery note'}</span></div>
+        <div class="bl-who"><b class="${c.id===1?'walk':''}">${c.id===1?'Walk-in':c.name}</b>
+         <span class="bl-no2">${d.no}${c.id!==1&&c.phone?' · '+c.phone:''}</span>
+         <span class="muted">${d.lines.length} line${d.lines.length===1?'':'s'} · ${d.by}${stale?' · past its date':''}${d.invoice?' · billed as '+d.invoice:''}</span></div>
+        <div class="bl-amt"><b>${fmt(d.total)}</b><i class="${d.status==='billed'?'ok':''}">${DOC_STATE[d.status]?DOC_STATE[d.status][0]:d.status}</i></div></div>`}).join('')
+      :`<div class="muted" style="padding:20px 8px">Nothing matches that.</div>`}
+    </div>
+   </div>
+   <div class="card bl-detail">${doc?docDetail(doc):'<div class="muted">Nothing picked.</div>'}</div>
   </div>`;
+}
+function docDetail(d){
+  const c=C(d.customerId)||{name:'—'};
+  const qty=d.lines.reduce((a,l)=>a+l.qty,0);
+  const age=Math.round((today-new Date(d.date))/864e5);
+  const stale=d.kind==='QUOTE'&&d.status==='open'&&d.valid&&age>d.valid;
+  return `<div class="bl-head">
+    <div><h2 style="margin:0">${d.no}</h2>
+     <div class="muted" style="margin-top:2px">${d.date} · by ${d.by} · <span class="tag ${DOC_STATE[d.status]?DOC_STATE[d.status][1]:''}">${DOC_STATE[d.status]?DOC_STATE[d.status][0]:d.status}</span>${d.invoice?` · billed as <b>${d.invoice}</b>`:''}${stale?' · <span class="tag bad">past its date</span>':''}</div></div>
+    <div style="text-align:right">${avatarOf(c)}<div style="margin-top:4px"><b>${c.id===1?'Walk-in':c.name}</b>${c.phone?`<div class="muted">${c.phone}</div>`:''}</div></div></div>
+   <div class="bl-btns">
+    ${d.status==='open'?`<button class="btn tape" data-act="docBill" data-no="${d.no}">Turn into a bill</button>`:''}
+    <button class="btn ghost" data-act="docPrint" data-no="${d.no}">Print <i class="kbd">${csPaper()==='r80'?'80mm':'A5'}</i></button>
+    <button class="btn ghost" data-act="docPreview" data-no="${d.no}">Look at it</button>
+    ${d.status==='open'?`<button class="btn ghost" data-act="docDrop" data-no="${d.no}">Close it</button>`:''}
+   </div>
+   <div class="row" style="gap:10px;flex-wrap:wrap;margin:12px 0">
+    ${stat('Items · qty',`${d.lines.length} · ${fq(qty)}`)}
+    ${stat('Total',fmt(d.total),d.billDisc?`after ${fmt(d.billDisc)} off`:'')}
+    ${d.kind==='QUOTE'?stat('Holds for',`${d.valid||0} days`,stale?'past its date':`${Math.max(0,(d.valid||0)-age)} left`,stale?'bad':''):''}
+   </div>
+   <div class="bl-lines"><table class="till-tbl"><tr><th>CODE</th><th>ITEM</th><th class="n">QTY</th><th class="n">PRICE</th><th class="n">AMOUNT</th></tr>
+    ${d.lines.map(l=>{const p=P(l.pid)||{};return `<tr><td>${p.code||''}</td><td>${l.name||p.name||''}</td><td class="n">${fq(l.qty)} ${p.unit||''}</td><td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}</table></div>
+   ${d.note?`<div class="muted" style="margin-top:10px">Note: ${d.note}</div>`:''}`;
 }
 
 /* ================== CHANGING A BILL AFTER IT IS RAISED ==================
@@ -18547,6 +18593,8 @@ document.addEventListener('click',e=>{
     docPrint:()=>docPrint(a.dataset.no),
     docPreview:()=>docPrint(a.dataset.no,{preview:true}),
     docRecall:()=>quoteRecall(),
+    docSel:()=>{ docSel=a.dataset.no; render() },
+    docClear:()=>{ docQ=''; docKind='all'; docState='open'; docSel=null; render() },
     docBill:()=>docToBill(a.dataset.no),
     docKind:()=>{docKind=a.dataset.k;render()},
     docDrop:()=>{const dd=S.docs.find(x=>x.no===a.dataset.no); dd.status='closed'; render(); toast(`${dd.no} closed`)},
