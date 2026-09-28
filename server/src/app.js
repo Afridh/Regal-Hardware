@@ -27,6 +27,7 @@ import supplierRoutes from './routes/supplier.js';
 import fileRoutes from './routes/files.js';
 import printRoutes from './routes/print.js';
 import custRoutes from './routes/customer.js';
+import aiRoutes from './routes/ai.js';
 
 if (!process.env.JWT_SECRET) console.error('JWT_SECRET is not set (copy .env.example to .env, or set it in the host\'s environment)');
 
@@ -66,6 +67,7 @@ app.use('/api/files', fileRoutes);
 app.use('/api/print', printRoutes);
 // the customer's own page: what they owe, bill by bill, and a way to say they have paid
 app.use('/api/my', custRoutes);
+app.use('/api/ai', aiRoutes);
 // day sheets the Shift Board publishes (on Vercel these live in /tmp, so only until the function is recycled)
 app.use('/reports', express.static(reportsDir));
 

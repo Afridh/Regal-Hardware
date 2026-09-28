@@ -8099,7 +8099,7 @@ function bindPhone(){
 const $=(s)=>document.querySelector(s);
 const views=[
  ['updates','What is new'],
- ['grp','Counter'],['dashboard','Dashboard','F2'],['pos','POS billing','F3'],['bills','Bills','F9'],['docs','Quotes & delivery notes'],
+ ['grp','Counter'],['dashboard','Dashboard','F2'],['ai','AI support'],['pos','POS billing','F3'],['bills','Bills','F9'],['docs','Quotes & delivery notes'],
  ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['tenders','Quotations & tenders'],
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['payreqs','Payment requests'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],
  ['grp','Stock'],['products','Products'],['inventory','Inventory & ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
@@ -8164,6 +8164,7 @@ const VIEW_PERM={users:'users',settings:'settings',payroll:'payroll',products:'p
 function allowed(v){
   if(!S.user || !S.user.name) return false;
   if(v === 'updates') return true;          // what changed is everybody's business
+  if(v === 'ai') return ownerOnly();        // what it is shown includes costs and margins
   if(v === 'trail') return ownerOnly();
   const roleName = String(S.user.role || '');
   const rLower = roleName.toLowerCase();
@@ -8226,6 +8227,7 @@ function applyLayout(){
   document.body.classList.toggle('nokeys',!pref('keys'));
 }
 const ICONS={
+  ai:'M12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4M12 9a3 3 0 100 6 3 3 0 000-6z',
   updates:'M12 3l2.1 4.6 5 .5-3.7 3.4 1 4.9-4.4-2.5-4.4 2.5 1-4.9L4.9 8.1l5-.5zM19 17v4M17 19h4',
   dashboard:'M3 12h6V3H3zM11 21h6v-9h-6zM3 21h6v-6H3zM11 8h6V3h-6z',
   pos:'M3 6h18l-2 12H5zM8 6V3h8v3M9 21h.01M15 21h.01',
@@ -8428,7 +8430,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={updates,recall,stocktake:stockTake,serials,damages,jobs,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={ai,updates,recall,stocktake:stockTake,serials,damages,jobs,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
@@ -8442,6 +8444,7 @@ function renderNow(){
   if(S.view==='serials'){ const sq=$('#srQ'); if(sq){ sq.oninput=e=>{srQ=e.target.value;render();const n=$('#srQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body) sq.focus() } } if(S.view==='labels') labelsAfter(); if(S.view==='receipts') receiptsAfter(); if(S.view==='dashboard') dashboardAfter();
 
+  if(S.view==='ai') aiAfter();
   if(S.view==='updates') markUpdatesSeen();
   if(S.view==='bills'||S.view==='recall') billsAfter();
   if(S.view==='payroll' && (window.isDemo || (S && S.isDemo))) demoAttendanceAfter();
@@ -9004,6 +9007,191 @@ function salesmanDashboard(){
       </tr>`).join('')||'<tr><td colspan="6" class="muted">No bills recorded under your name yet.</td></tr>'}
     </table>
   </div>`;
+}
+
+/* ============================ AI SUPPORT ============================
+   Claude, reading the shop's own figures.
+
+   The till never talks to Anthropic and never holds the key. It asks our own server
+   (/api/ai), which reads the books, boils them down to the figures the question needs
+   (server/src/services/aiDigest.js) and asks Claude. The key lives in the server's
+   environment, because anything in this file is downloaded by every browser that opens
+   the shop site.
+
+   Owner and admin only — see allowed(). What goes out includes costs, margins and what
+   every customer owes, which is not for the counter. */
+const AI_TABS=[['ask','Ask'],['today','Today'],['ideas','Ideas'],['write','Writing']];
+const AI_HINT={
+  ask:'Ask anything about the shop, in your own words.',
+  today:'A short review of where the shop stands today.',
+  ideas:'Ideas for growing the shop, each one tied to a figure in your books.',
+  write:'A product description for the website, or a post for Facebook, Instagram or WhatsApp.'
+};
+const AI_EGS={
+  ask:['How much does each customer owe me right now?',
+       'Which suppliers do I owe the most, and when is it due?',
+       'What sold best last week?',
+       'What am I holding that is not selling?',
+       'Is anything being sold below cost?'],
+  write:['Write a short product description for the website for ',
+         'Write a Facebook post about what we have in stock for the rainy season',
+         'Write a WhatsApp message to send to customers about our paint range']
+};
+let aiTab='ask', aiBusy=false, aiErr='', aiStatus=null, aiDraft='', aiChecking=false;
+const aiChat={ask:[],today:[],ideas:[],write:[]};
+
+/* Bold, bullets and paragraphs — everything is escaped first, so nothing Claude writes
+   can put markup on the page. */
+const aiBold=s=>s.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+function aiText(s){
+  return noteEsc(s).split(/\n{2,}/).map(par=>{
+    const lines=par.split('\n').filter(l=>l.trim());
+    if(!lines.length) return '';
+    if(lines.every(l=>/^\s*[·•\-\*]\s+/.test(l)))
+      return '<ul style="margin:6px 0 6px 20px;padding:0">'+lines.map(l=>'<li style="margin:3px 0">'+aiBold(l.replace(/^\s*[·•\-\*]\s+/,''))+'</li>').join('')+'</ul>';
+    return '<p style="margin:8px 0;line-height:1.5">'+lines.map(aiBold).join('<br>')+'</p>';
+  }).join('');
+}
+
+const aiAuth=()=>({Authorization:'Bearer '+(window.regalBridge?regalBridge.token():'')});
+
+async function aiLoadStatus(again){
+  if(aiChecking) return;
+  aiChecking=true; if(again) render();
+  try{
+    const r=await fetch('/api/ai/status',{headers:aiAuth()});
+    const j=await r.json();
+    aiStatus=j.ok?j:{connected:false,mayUse:false};
+  }catch(e){ aiStatus={connected:false,mayUse:false,error:e.message} }
+  finally{ aiChecking=false; if(S.view==='ai') render() }
+}
+
+async function aiAsk(mode,question){
+  if(aiBusy) return;
+  const thread=aiChat[mode];
+  aiBusy=true; aiErr='';
+  if(question) thread.push({role:'user',content:question});
+  aiDraft=''; render();
+  try{
+    // only a back-and-forth carries history; the review and the ideas start fresh each time
+    const hist=(mode==='ask'||mode==='write')
+      ? thread.filter(m=>m.content).slice(question?-7:-6,question?-1:undefined).map(m=>({role:m.role,content:m.content}))
+      : [];
+    const r=await fetch('/api/ai/ask',{method:'POST',
+      headers:{'content-type':'application/json',...aiAuth()},
+      body:JSON.stringify({mode,question:question||'',history:hist})});
+    const j=await r.json();
+    if(!j.ok) throw new Error(j.error||('HTTP '+r.status));
+    thread.push({role:'assistant',content:j.answer,asOf:j.asOf,model:j.model});
+  }catch(e){ aiErr=e.message||'It did not come back' }
+  finally{ aiBusy=false; render(); }
+}
+
+function aiSetup(){
+  return `<div class="card">
+    <h2 style="margin-top:0">Claude is not connected yet</h2>
+    <div class="muted">It takes about five minutes, and it is done once. The key goes on the
+      shop's server, never into this page — anything in here is downloaded by every browser
+      that opens the shop website, and a key taken from there could be used to spend your money.</div>
+
+    <div style="margin-top:14px;line-height:1.7">
+      <b>1.</b> Go to <b>console.anthropic.com</b> and make an account.<br>
+      <b>2.</b> Under <b>Billing</b>, put in some credit — ten dollars is plenty to start — and
+        <b>set a monthly spend limit</b>. That limit is the only hard stop on what this can cost.<br>
+      <b>3.</b> Under <b>API keys</b>, press <b>Create key</b> and copy it. It begins with
+        <code>sk-ant-</code>. It is shown once, so paste it somewhere safe straight away.<br>
+      <b>4.</b> Put it on the server:
+      <div style="margin:8px 0 8px 18px">
+        <b>For the live site (regalhw.lk):</b> Vercel → your project → Settings →
+        Environment Variables → add <code>ANTHROPIC_API_KEY</code> with the key → save →
+        then <b>Redeploy</b>, or it will not be picked up.<br>
+        <b>For this PC:</b> open <code>server/.env</code> and add the line
+        <code>ANTHROPIC_API_KEY=sk-ant-…</code>, then restart the server.
+      </div>
+      <b>5.</b> Come back here and press Check again.
+    </div>
+
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn" data-act="aiCheck" ${aiChecking?'disabled':''}>${aiChecking?'Checking…':'Check again'}</button>
+      ${aiStatus&&aiStatus.error?`<span class="tag bad">${noteEsc(aiStatus.error)}</span>`:''}
+    </div>
+
+    <div class="muted" style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(127,127,127,.25)">
+      <b>What it will cost.</b> Every question sends a summary of your figures, so it is not free.
+      At a few dozen questions a day it is small — but the spend limit in step 2 is what
+      guarantees it. If you want it cheaper, set <code>ANTHROPIC_MODEL</code> to
+      <code>claude-haiku-4-5-20251001</code> as well; it is far cheaper, and good enough for
+      writing posts, though weaker at reasoning over numbers.
+    </div>
+  </div>`;
+}
+
+function aiThread(mode){
+  const t=aiChat[mode];
+  if(!t.length&&!aiBusy) return '';
+  return t.map(m=>m.role==='user'
+    ? `<div class="card" style="margin-top:10px;background:rgba(127,127,127,.07)">
+        <div class="muted" style="font-size:12px;margin-bottom:4px">${noteEsc(S.user.name)} asked</div>
+        <div>${noteEsc(m.content)}</div>
+       </div>`
+    : `<div class="card" style="margin-top:10px">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;margin-bottom:2px">
+          <div class="muted" style="font-size:12px">Claude · from your books as at ${noteEsc(m.asOf||'')}</div>
+          <button class="btn ghost" data-act="aiCopy" data-i="${t.indexOf(m)}" data-m="${mode}" style="padding:2px 10px;font-size:12px">Copy</button>
+        </div>
+        <div>${aiText(m.content)}</div>
+       </div>`).join('')
+   +(aiBusy?`<div class="card" style="margin-top:10px"><div class="muted">Reading your books and thinking… this can take up to half a minute.</div></div>`:'');
+}
+
+function ai(){
+  if(aiStatus===null) return `<h1>AI support</h1><div class="card"><div class="muted">Checking whether Claude is connected…</div></div>`;
+  if(!aiStatus.mayUse) return `<h1>AI support</h1><div class="card"><div class="muted">AI support is open to the owner and admins only.</div></div>`;
+
+  const tabs=`<div class="tabs" style="margin-bottom:10px">${AI_TABS.map(([k,l])=>
+    `<button class="${aiTab===k?'on':''}" data-act="aiTab" data-t="${k}">${l}</button>`).join('')}</div>`;
+
+  if(!aiStatus.connected) return `<h1>AI support</h1>${aiSetup()}`;
+
+  const body=(aiTab==='today'||aiTab==='ideas')
+    ? `<div class="card">
+        <div class="muted">${AI_HINT[aiTab]}</div>
+        <button class="btn" data-act="aiRun" data-m="${aiTab}" style="margin-top:10px" ${aiBusy?'disabled':''}>
+          ${aiBusy?'Working…':(aiChat[aiTab].length?'Look again':(aiTab==='today'?'Review today':'Give me ideas'))}</button>
+       </div>`
+    : `<div class="card">
+        <div class="muted">${AI_HINT[aiTab]}</div>
+        <textarea id="aiBox" rows="3" style="width:100%;margin-top:8px;resize:vertical"
+          placeholder="${aiTab==='ask'?'How much does Sunil owe me?':'Write a Facebook post about…'}">${noteEsc(aiDraft)}</textarea>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
+          <button class="btn" data-act="aiRun" data-m="${aiTab}" ${aiBusy?'disabled':''}>${aiBusy?'Asking…':'Ask'}</button>
+          <span class="muted" style="font-size:12px">Enter to ask · Shift+Enter for a new line</span>
+          ${aiChat[aiTab].length?`<button class="btn ghost" data-act="aiClear" data-m="${aiTab}">Start again</button>`:''}
+        </div>
+        ${(AI_EGS[aiTab]||[]).length?`<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">
+          ${AI_EGS[aiTab].map(q=>`<button class="btn ghost" data-act="aiEg" data-q="${noteEsc(q)}"
+            style="padding:3px 10px;font-size:12px">${noteEsc(q)}</button>`).join('')}</div>`:''}
+       </div>`;
+
+  return `<h1>AI support</h1>
+    ${tabs}
+    ${body}
+    ${aiErr?`<div class="card" style="margin-top:10px"><span class="tag bad">${noteEsc(aiErr)}</span></div>`:''}
+    ${aiThread(aiTab)}
+    <div class="muted" style="margin-top:14px;font-size:12px">
+      Claude sees a summary of your figures — sales, what is owed, stock, cheques and expenses —
+      and nothing else. It cannot change anything in the system. Check any figure before acting on it.
+    </div>`;
+}
+
+function aiAfter(){
+  if(aiStatus===null){ aiLoadStatus(); return }
+  const box=document.getElementById('aiBox');
+  if(box){
+    box.oninput=()=>{ aiDraft=box.value };            // kept without redrawing, so typing survives a refresh
+    box.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); const q=box.value.trim(); if(q) aiAsk(aiTab,q) } };
+    if(document.activeElement===document.body&&!aiBusy){ box.focus(); box.setSelectionRange(box.value.length,box.value.length) }
+  }
 }
 
 /* ================== WHAT CAME IN WITH THE LAST PULL ==================
@@ -18955,6 +19143,17 @@ document.addEventListener('click',e=>{
       wpOpen=null; render();
       toast(`${p.name} saved${webHasOwn(p)?` · ${fmt(+p.webPrice)} on the site`:''}`) },
     siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
+    aiTab:()=>{ aiTab=a.dataset.t; aiErr=''; render(); const mn=document.getElementById('main'); if(mn) mn.scrollTop=0 },
+    aiRun:()=>{ const m=a.dataset.m, box=document.getElementById('aiBox');
+      const q=box?box.value.trim():'';
+      if((m==='ask'||m==='write')&&!q) return toast('Ask something first');
+      aiAsk(m,q) },
+    aiEg:()=>{ aiDraft=a.dataset.q; render(); const b=document.getElementById('aiBox');
+      if(b){ b.focus(); b.setSelectionRange(b.value.length,b.value.length) } },
+    aiClear:()=>{ aiChat[a.dataset.m]=[]; aiErr=''; render() },
+    aiCheck:()=>{ aiLoadStatus(true) },
+    aiCopy:()=>{ const m=aiChat[a.dataset.m][+a.dataset.i]; if(!m) return;
+      try{ navigator.clipboard.writeText(m.content); toast('Copied') }catch(e){ toast('Could not copy') } },
     updDone:()=>{ markUpdatesSeen(); const s=pref('start');
       go(s!=='updates'&&allowed(s)?s:(allowed('dashboard')?'dashboard':'pos')) },
     setGo:()=>{ setTab=a.dataset.t; setJump=a.dataset.n; setSearch=''; render(); },
