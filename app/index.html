@@ -8110,7 +8110,7 @@ function bindPhone(){
 const $=(s)=>document.querySelector(s);
 const views=[
  ['updates','What is new'],
- ['grp','Counter'],['dashboard','Dashboard','F2'],['ai','AI support'],['pos','POS billing','F3'],['bills','Bills','F9'],['docs','Quotes & delivery notes'],
+ ['grp','Counter'],['dashboard','Dashboard','F2'],['ai','AI support'],['pos','POS billing','F3'],['bills','Bills','F9'],['cashup','Cash up'],['docs','Quotes & delivery notes'],
  ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['tenders','Quotations & tenders'],
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['payreqs','Payment requests'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],
  ['grp','Stock'],['products','Products'],['inventory','Inventory & ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
@@ -8124,7 +8124,7 @@ const views=[
 const ownerOnly=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||S.user.role==='Demo Admin'||window.isDemo||(S&&S.isDemo)));
 
 const SECTIONS = {
-  Counter: ['dashboard', 'pos', 'bills', 'docs'],
+  Counter: ['dashboard', 'pos', 'bills', 'cashup', 'docs'],
   Customers: ['customers', 'receipts', 'tenders'],
   Suppliers: ['suppliers', 'orders', 'payreqs', 'purchases', 'purchasing'],
   Stock: ['products', 'inventory', 'stocktake', 'labels'],
@@ -8239,6 +8239,7 @@ function applyLayout(){
   document.body.classList.toggle('nokeys',!pref('keys'));
 }
 const ICONS={
+  cashup:'M3 7h18v10H3zM12 10a2 2 0 100 4 2 2 0 000-4zM6 10h.01M18 14h.01',
   ai:'M12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4M12 9a3 3 0 100 6 3 3 0 000-6z',
   updates:'M12 3l2.1 4.6 5 .5-3.7 3.4 1 4.9-4.4-2.5-4.4 2.5 1-4.9L4.9 8.1l5-.5zM19 17v4M17 19h4',
   dashboard:'M3 12h6V3H3zM11 21h6v-9h-6zM3 21h6v-6H3zM11 8h6V3h-6z',
@@ -8442,7 +8443,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={ai,updates,recall,stocktake:stockTake,serials,damages,jobs,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
@@ -8456,6 +8457,7 @@ function renderNow(){
   if(S.view==='serials'){ const sq=$('#srQ'); if(sq){ sq.oninput=e=>{srQ=e.target.value;render();const n=$('#srQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body) sq.focus() } } if(S.view==='labels') labelsAfter(); if(S.view==='receipts') receiptsAfter(); if(S.view==='dashboard') dashboardAfter();
 
+  if(S.view==='cashup') cashupAfter();
   if(S.view==='ai') aiAfter();
   if(S.view==='updates') markUpdatesSeen();
   if(S.view==='bills'||S.view==='recall') billsAfter();
@@ -9019,6 +9021,206 @@ function salesmanDashboard(){
       </tr>`).join('')||'<tr><td colspan="6" class="muted">No bills recorded under your name yet.</td></tr>'}
     </table>
   </div>`;
+}
+
+/* ============================ COUNTING THE DRAWER ============================
+   The float counted at the start of the day, the drawer counted at the end, and the
+   difference between what is there and what ought to be there.
+
+   What ought to be there is not a guess: it is the opening count plus everything that
+   moved through account 1010, cash in hand, on that date — the same ledger the reports
+   read. So a shortage found here is a real shortage, not a disagreement between two ways
+   of adding up. Nothing here posts to the ledger; counting money does not change it. A
+   difference is a thing to go and find, and it is recorded either way so it can be. */
+const CASH_NOTES=[5000,1000,500,100,50,20];
+const CASH_COINS=[10,5,2,1];
+const CASH_DENOMS=[...CASH_NOTES,...CASH_COINS];
+
+let cashDate=null, cashDraft={open:{},close:{}};
+const cashDay=()=>cashDate||D(today);
+const cashPrev=(d)=>{ const t=new Date(d+'T00:00:00Z'); t.setUTCDate(t.getUTCDate()-1); return t.toISOString().slice(0,10) };
+const cashStore=()=>(typeof extMulti==='function'&&extMulti())?S.locId:0;
+
+function cashList(){ if(!Array.isArray(S.cashups)) S.cashups=[]; return S.cashups }
+const cashFind=(kind,d,loc)=>cashList().find(c=>c.kind===kind&&c.date===(d||cashDay())&&(c.loc||0)===(loc===undefined?cashStore():loc));
+const cashTotal=(counts)=>CASH_DENOMS.reduce((a,d)=>a+d*(+(counts||{})[d]||0),0);
+
+/* Everything that touched cash in hand on a day, split by what it was. The wording comes
+   from the journal entry itself, which is how the cash-flow report tells them apart too. */
+function cashMoves(d){
+  const kinds=[['Cash sales',/^Sale /],['Returns paid out',/^Return /],['Customer payments in',/^Receipt/],
+               ['Paid to suppliers',/^Supplier payment/],['Bought for cash',/^Purchase/],['Expenses',/^Expense/],
+               ['Wages',/^Wages|^Payroll/]];
+  const out=kinds.map(([label])=>({label,v:0})); let other=0, net=0;
+  for(const j of S.journal){
+    if(j.date!==d) continue;
+    const c=j.lines.filter(l=>l.ac==='1010').reduce((a,l)=>a+(+l.dr||0)-(+l.cr||0),0);
+    if(!c) continue;
+    net+=c;
+    const i=kinds.findIndex(([,re])=>re.test(j.desc||''));
+    if(i>=0) out[i].v+=c; else other+=c;
+  }
+  if(other) out.push({label:'Other',v:other});
+  return {rows:out.filter(r=>Math.abs(r.v)>0.005),net:+net.toFixed(2)};
+}
+
+/* What ought to be in the drawer at the close: what was counted in at the start, plus the
+   day's movement. Where nobody counted the float, the books' own opening figure is used
+   instead, and the page says so rather than quietly pretending somebody counted it. */
+function cashExpected(d,loc){
+  const open=cashFind('open',d,loc);
+  const mv=cashMoves(d);
+  const fromBooks=!open;
+  const start=open?open.total:bal('1010',cashPrev(d));
+  return {start,fromBooks,moves:mv,expected:+(start+mv.net).toFixed(2)};
+}
+
+function cashGrid(kind){
+  const draft=cashDraft[kind]||{};
+  const row=(d)=>`<tr>
+    <td style="white-space:nowrap"><b>${d>=20?'Rs '+d.toLocaleString('en-US'):d}</b> ${d>=20?'note':'coin'}</td>
+    <td style="width:120px"><input type="number" min="0" step="1" inputmode="numeric" class="cd-in"
+        data-cash="${kind}" data-d="${d}" value="${draft[d]!==undefined?draft[d]:''}" placeholder="0"></td>
+    <td class="n" id="cv-${kind}-${d}">${draft[d]?money2(d*(+draft[d]||0)):'—'}</td></tr>`;
+  return `<table class="cd-grid"><tr><th>Denomination</th><th>How many</th><th class="n">Comes to</th></tr>
+    ${CASH_NOTES.map(row).join('')}
+    <tr><td colspan="3" style="padding:2px 0"><div style="border-top:1px dashed var(--line,#ddd)"></div></td></tr>
+    ${CASH_COINS.map(row).join('')}
+    <tr><td><b>Counted</b></td><td></td><td class="n"><b id="ct-${kind}">${money2(cashTotal(draft))}</b></td></tr></table>`;
+}
+
+function cashup(){
+  const d=cashDay(), loc=cashStore();
+  const open=cashFind('open',d,loc), close=cashFind('close',d,loc);
+  const ex=cashExpected(d,loc);
+  const shopName=loc?' · '+extLocName(loc):'';
+  const booksOpen=bal('1010',cashPrev(d));
+
+  const diffLine=(counted,expected,what)=>{
+    const diff=+(counted-expected).toFixed(2);
+    const tag=Math.abs(diff)<0.005?'<span class="tag ok">it agrees</span>'
+      :diff>0?`<span class="tag warn">${money2(diff)} over</span>`:`<span class="tag bad">${money2(-diff)} short</span>`;
+    return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:4px 0">
+      <span>${what}</span><span>${tag}</span></div>`;
+  };
+
+  const done=(c,label)=>`<div class="card note" style="margin-top:8px">
+     <b>${label}: ${money2(c.total)}</b>
+     <div class="muted">by ${c.by} at ${c.at}${c.note?' · '+noteEsc(c.note):''}</div>
+     <div style="margin-top:6px">${CASH_DENOMS.filter(x=>+(c.counts[x]||0)>0)
+        .map(x=>`<span class="tag">${x>=20?'Rs '+x.toLocaleString('en-US'):x} × ${c.counts[x]}</span>`).join(' ')||'<span class="muted">nothing counted</span>'}</div>
+     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn ghost" data-act="cashUndo" data-k="${c.kind}">Count it again</button>
+      <button class="btn ghost" data-act="cashPrint" data-k="${c.kind}">Print</button></div>
+    </div>`;
+
+  return `<h1>Cash up<span class="muted" style="font-size:14px">${shopName}</span></h1>
+   <div class="row" style="align-items:flex-start;gap:12px;flex-wrap:wrap">
+    <div class="f" style="max-width:190px"><label>Day</label>
+      <input type="date" id="cashDate" value="${d}" max="${D(today)}"></div>
+    <div class="muted" style="align-self:flex-end;padding-bottom:10px">
+      The books say there was <b>${money2(booksOpen)}</b> in hand when the day started.</div>
+   </div>
+
+   <div class="row" style="align-items:flex-start;gap:12px;flex-wrap:wrap">
+    <div class="card flex1" style="min-width:300px">
+     <h2 style="margin-top:0">Opening float</h2>
+     <div class="muted">Count what is in the drawer before the first bill.</div>
+     ${open?done(open,'Opening float'):`${cashGrid('open')}
+       <input id="cashNoteOpen" placeholder="A note — optional" maxlength="120" style="margin-top:8px">
+       <button class="btn tape" style="margin-top:8px" data-act="cashSave" data-k="open">Save the opening count</button>`}
+     ${open?diffLine(open.total,booksOpen,`Counted ${money2(open.total)} · the books said ${money2(booksOpen)}`):''}
+    </div>
+
+    <div class="card flex1" style="min-width:300px">
+     <h2 style="margin-top:0">Closing count</h2>
+     <div class="muted">Count the drawer at the end of the day.</div>
+     ${close?done(close,'Closing count'):`${cashGrid('close')}
+       <input id="cashNoteClose" placeholder="A note — optional" maxlength="120" style="margin-top:8px">
+       <button class="btn tape" style="margin-top:8px" data-act="cashSave" data-k="close">Save the closing count</button>`}
+    </div>
+   </div>
+
+   <div class="card" style="margin-top:12px">
+    <h2 style="margin-top:0">What ought to be there</h2>
+    ${ex.fromBooks?`<div class="card note" style="margin-bottom:8px">Nobody counted the float this morning, so the
+      books' own figure is being used as the starting point. Count it tomorrow and this gets sharper.</div>`:''}
+    <table>
+     <tr><td>Started with${ex.fromBooks?' <span class="muted">(from the books)</span>':' <span class="muted">(counted)</span>'}</td>
+         <td class="n">${money2(ex.start)}</td></tr>
+     ${ex.moves.rows.map(r=>`<tr><td class="muted" style="padding-left:14px">${r.label}</td>
+        <td class="n ${r.v<0?'rust':''}">${r.v>0?'+':''}${money2(r.v)}</td></tr>`).join('')
+        ||'<tr><td colspan="2" class="muted" style="padding-left:14px">Nothing moved through the drawer on this day.</td></tr>'}
+     <tr><td><b>Ought to be in the drawer</b></td><td class="n"><b>${money2(ex.expected)}</b></td></tr>
+     ${close?`<tr><td><b>Actually counted</b></td><td class="n"><b>${money2(close.total)}</b></td></tr>`:''}
+    </table>
+    ${close?diffLine(close.total,ex.expected,'<b>The difference</b>'):
+      `<div class="muted">Save the closing count to see whether it is short or over.</div>`}
+   </div>
+
+   ${cashList().filter(c=>c.date!==d).length?`<div class="card" style="margin-top:12px">
+     <h2 style="margin-top:0">Earlier days</h2>
+     <table><tr><th>Day</th>${(typeof extMulti==='function'&&extMulti())?'<th>Store</th>':''}<th>What</th><th class="n">Counted</th><th class="n">Ought to be</th><th class="n">Difference</th><th>By</th></tr>
+      ${cashList().filter(c=>c.date!==d).slice().reverse().slice(0,40).map(c=>{
+        const e=c.kind==='close'?cashExpected(c.date,c.loc||0).expected:bal('1010',cashPrev(c.date));
+        const df=+(c.total-e).toFixed(2);
+        return `<tr><td>${c.date}</td>${(typeof extMulti==='function'&&extMulti())?`<td>${c.loc?extLocName(c.loc):'—'}</td>`:''}
+         <td>${c.kind==='open'?'Opening float':'Closing count'}</td>
+         <td class="n">${money2(c.total)}</td><td class="n">${money2(e)}</td>
+         <td class="n">${Math.abs(df)<0.005?'<span class="tag ok">agrees</span>':df>0?`<span class="tag warn">${money2(df)} over</span>`:`<span class="tag bad">${money2(-df)} short</span>`}</td>
+         <td>${c.by}</td></tr>`}).join('')}</table></div>`:''}`;
+}
+
+/* The grid must not redraw while somebody is keying into it, or the box they are in would
+   be torn out from under them. The row and the total are updated where they stand. */
+function cashupAfter(){
+  const dt=document.getElementById('cashDate');
+  if(dt) dt.onchange=()=>{ cashDate=dt.value||D(today); cashDraft={open:{},close:{}}; render() };
+  document.querySelectorAll('.cd-in').forEach(el=>{
+    el.oninput=()=>{
+      const kind=el.dataset.cash, d=+el.dataset.d, n=Math.max(0,Math.floor(+el.value||0));
+      if(el.value==='') delete cashDraft[kind][d]; else cashDraft[kind][d]=n;
+      const cell=document.getElementById('cv-'+kind+'-'+d);
+      if(cell) cell.textContent=n?money2(d*n):'—';
+      const tot=document.getElementById('ct-'+kind);
+      if(tot) tot.textContent=money2(cashTotal(cashDraft[kind]));
+    };
+  });
+}
+
+function cashSave(kind){
+  const counts={}; let any=false;
+  CASH_DENOMS.forEach(d=>{ const n=+(cashDraft[kind]||{})[d]||0; if(n>0){ counts[d]=n; any=true } });
+  if(!any) return toast('Nothing counted yet');
+  const note=((document.getElementById(kind==='open'?'cashNoteOpen':'cashNoteClose')||{}).value||'').trim();
+  const d=cashDay(), loc=cashStore();
+  if(cashFind(kind,d,loc)) return toast('That count is already saved');
+  const rec={id:'CU'+Math.random().toString(36).slice(2,8),date:d,kind,loc,terminal:S.terminal,
+    counts,total:cashTotal(counts),by:S.user.name,at:new Date().toTimeString().slice(0,5),note};
+  if(kind==='close'){ const e=cashExpected(d,loc); rec.expected=e.expected; rec.diff=+(rec.total-e.expected).toFixed(2) }
+  else rec.expected=bal('1010',cashPrev(d)), rec.diff=+(rec.total-rec.expected).toFixed(2);
+  cashList().push(rec);
+  cashDraft[kind]={};
+  try{ logTrail('cashup',`${kind==='open'?'Opening float':'Closing count'} ${money2(rec.total)} on ${d}${Math.abs(rec.diff)>=0.005?` — ${money2(Math.abs(rec.diff))} ${rec.diff>0?'over':'short'}`:''}`,
+    {amount:rec.total,ref:d}) }catch(e){}
+  render();
+  toast(Math.abs(rec.diff)<0.005?'Counted, and it agrees'
+    :`Counted — ${money2(Math.abs(rec.diff))} ${rec.diff>0?'over':'short'}`);
+}
+
+function cashPrintSlip(kind){
+  const c=cashFind(kind,cashDay()); if(!c) return;
+  const ex=kind==='close'?cashExpected(c.date,c.loc||0):null;
+  voucherPrint({title:kind==='open'?'Opening Float':'Cash Up',no:c.date+(c.loc?' · '+extLocName(c.loc):''),date:c.date,
+    payee:c.by,payeeLabel:'COUNTED BY',payeeSub:'till '+c.terminal+' at '+c.at,
+    amount:c.total,totalLabel:'COUNTED',
+    rows:[...(ex?[['Started with',money2(ex.start)],['Moved through the day',money2(ex.moves.net)],
+       ['Ought to be there',money2(ex.expected)],
+       ['Difference',(Math.abs(c.total-ex.expected)<0.005?'agrees':money2(Math.abs(c.total-ex.expected))+(c.total>ex.expected?' over':' short'))]]:[]),
+      ...(c.note?[['Note',c.note]]:[])],
+    linesLabel:'What was in the drawer',
+    lines:CASH_DENOMS.filter(x=>+(c.counts[x]||0)>0).map(x=>[`${x>=20?'Rs '+x.toLocaleString('en-US'):x} × ${c.counts[x]}`,x*c.counts[x]]),
+    thirdSign:'CHECKED BY'});
 }
 
 /* ============================ AI SUPPORT ============================
@@ -19221,6 +19423,13 @@ document.addEventListener('click',e=>{
       wpOpen=null; render();
       toast(`${p.name} saved${webHasOwn(p)?` · ${fmt(+p.webPrice)} on the site`:''}`) },
     siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
+    cashSave:()=>cashSave(a.dataset.k),
+    cashPrint:()=>cashPrintSlip(a.dataset.k),
+    cashUndo:()=>{ const c=cashFind(a.dataset.k,cashDay()); if(!c) return;
+      if(!confirm('Take that count off and count again? What was counted is kept on the trail.')) return;
+      cashDraft[a.dataset.k]={...c.counts};
+      S.cashups=cashList().filter(x=>x!==c);
+      render(); toast('Count it again') },
     shopPick:()=>{ shopFilter=+a.dataset.v; render(); const mn=document.getElementById('main'); if(mn) mn.scrollTop=0 },
     aiTab:()=>{ aiTab=a.dataset.t; aiErr=''; render(); const mn=document.getElementById('main'); if(mn) mn.scrollTop=0 },
     aiRun:()=>{ const m=a.dataset.m, box=document.getElementById('aiBox');
