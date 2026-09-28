@@ -14,6 +14,8 @@ function extInstall() {
   const add = (after, entry) => { const i = views.findIndex(v => v[0] === after); if (i >= 0 && !views.some(v => v[0] === entry[0])) views.splice(i + 1, 0, entry); };
   add('expenses', ['vouchers', 'Gift vouchers']);
   add('stocktake', ['transfers', 'Stock transfers']);
+  add('bills', ['issues', 'Store orders']);
+  ICONS.issues = 'M4 5h10l2 3h4v11H4zM8 12h8M8 16h5';
   // ledger accounts the new features post to
   GL['2060'] = 'Gift vouchers not yet used';
   GL['6110'] = 'Loyalty points redeemed';
@@ -36,6 +38,8 @@ function extEnsure() {
   if (!CFG.loyalty) CFG.loyalty = { ...EXT_LOYALTY };
   if (!Array.isArray(S.vouchers)) S.vouchers = [];
   if (!Array.isArray(S.transfers)) S.transfers = [];
+  if (!Array.isArray(S.issues)) S.issues = [];
+  if (!CFG.stores || typeof CFG.stores !== 'object') CFG.stores = { on: false };
   if (!Array.isArray(S.locations) || !S.locations.length) S.locations = [{ id: 1, name: 'Main shop', till: true }];
   S.customers.forEach(c => { if (c.points === undefined) c.points = 0; });
   S.products.forEach(p => extLocsOf(p));
@@ -89,7 +93,11 @@ const extHere = (p) => +(extLocsOf(p)[S.locId] || 0);
 
    Nothing is moved on paper that did not move in fact: there is no transfer behind this.
    The sale simply takes the goods from where they are. */
-const extMulti = () => Array.isArray(S.locations) && S.locations.length > 1;
+/* Off until the shop says otherwise. One shop should never see a word about stores, order
+   numbers or "issue from" — that is noise for a business with one counter. Switched on under
+   Settings → Stores, once the second store actually exists. */
+const extStoresOn = () => !!(CFG.stores && CFG.stores.on) && Array.isArray(S.locations) && S.locations.length > 1;
+const extMulti = () => extStoresOn();
 
 /** Which shop a line's goods should be issued from. */
 function extLineSource(l) {
@@ -150,6 +158,96 @@ function extLineLocModal(i) {
     l.locPin = +pick.value; m.remove(); render();
     toast(+pick.value === S.locId ? 'Issued from this shop' : 'Issued from ' + extLocName(+pick.value));
   };
+}
+
+/* ====================================== goods another store has to issue ==
+   A customer at store 1 buys five bags of cement that are sitting in store 2. The bill is
+   made at store 1 and the stock comes off store 2 straight away — if it did not, store 2
+   could sell the same five bags to somebody else while the first customer was still at the
+   counter. What is left is the physical handover, and that is what these orders are: a job
+   list at the store holding the goods, saying what to hand over and against which bill.
+
+   It works both ways. Whichever store makes the bill, the store holding the goods gets the
+   order. A store selling its own stock raises nothing — there is nobody to ask. */
+function storeRaiseIssues(inv) {
+  if (!extMulti()) return [];
+  const sel = inv.loc || S.locId, by = {};
+  (inv.lines || []).forEach(l => {
+    if (!l.loc || l.loc === sel || !(l.qty > 0)) return;      // our own stock, or goods coming back
+    (by[l.loc] = by[l.loc] || []).push({ pid: l.pid, qty: l.qty });
+  });
+  const made = [];
+  for (const from of Object.keys(by)) {
+    const no = 'ISS-' + String((S.seq.ISS = (S.seq.ISS || 1))).padStart(5, '0'); S.seq.ISS++;
+    const o = { no, date: inv.date, time: inv.time, from: +from, to: sel, invNo: inv.no,
+      cust: inv.customerId, lines: by[from], mode: 'collect', status: 'waiting', by: inv.by };
+    S.issues.push(o); made.push(o);
+    try { notify('stock', extLocName(+from) + ': ' + by[from].length + ' line(s) to issue for bill ' + inv.no, 'issues') } catch (e) {}
+  }
+  return made;
+}
+/** How many orders a store still has to hand over — the number on the menu. */
+const storeToIssueAt = (id) => extMulti() ? S.issues.filter(o => o.from === id && o.status !== 'issued').length : 0;
+const storeToIssue = () => storeToIssueAt(S.locId);
+
+let issTab = 'todo';
+function storeIssues() {
+  if (!extMulti()) return '<h1>Store orders</h1><div class="card"><div class="muted">There is only one store. Settings → Stores turns this on once there is a second.</div></div>';
+  const mine = S.issues.filter(o => o.from === S.locId && o.to !== S.locId);
+  const theirs = S.issues.filter(o => o.to === S.locId && o.from !== S.locId);
+  const sets = {
+    todo: mine.filter(o => o.status !== 'issued'),
+    ours: theirs.filter(o => o.status !== 'issued'),
+    done: S.issues.filter(o => o.status === 'issued' && (o.from === S.locId || o.to === S.locId))
+  };
+  const tabs = [['todo', 'For us to issue', sets.todo.length], ['ours', 'We are waiting for', sets.ours.length], ['done', 'Handed over', sets.done.length]];
+  const list = sets[issTab] || [];
+  const card = o => {
+    const who = (C(o.cust) || {}).name || 'Cash customer';
+    const toIssue = o.from === S.locId;
+    const edge = o.status === 'query' ? '#b1441e' : o.status === 'issued' ? '#2f6b4f' : '#b4791a';
+    return '<div class="card" style="margin-top:10px;border-left:3px solid ' + edge + '">'
+     + '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">'
+     + '<div><b>' + o.no + '</b> · bill <b>' + o.invNo + '</b> · ' + who
+     + '<div class="muted">' + o.date + (o.time ? ' ' + o.time : '') + ' · billed at ' + extLocName(o.to) + ' by ' + o.by
+     + (toIssue ? ' · <b>for us to hand over</b>' : ' · waiting on ' + extLocName(o.from)) + '</div></div>'
+     + '<span class="tag ' + (o.status === 'issued' ? 'ok' : o.status === 'query' ? 'bad' : 'warn') + '">'
+     + (o.status === 'issued' ? 'handed over' : o.status === 'query' ? 'a problem' : (o.mode === 'send' ? 'to send over' : 'to collect')) + '</span></div>'
+     + '<table style="margin-top:8px"><tr><th>Item</th><th class="n">Quantity</th></tr>'
+     + o.lines.map(l => { const p = P(l.pid) || { name: '(item removed)', unit: '' };
+         return '<tr><td>' + p.name + '</td><td class="n"><b>' + fq(l.qty) + '</b> ' + (p.unit || '') + '</td></tr>' }).join('')
+     + '</table>'
+     + (o.note ? '<div class="muted" style="margin-top:6px">' + o.note + '</div>' : '')
+     + (o.status === 'issued' ? '<div class="muted" style="margin-top:6px">Handed over by ' + o.issuedBy + ' on ' + o.issuedAt + '</div>' : '')
+     + (toIssue && o.status !== 'issued'
+        ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
+          + '<button class="btn tape" data-act="issDone" data-no="' + o.no + '">Handed over</button>'
+          + '<button class="btn ghost" data-act="issMode" data-no="' + o.no + '">' + (o.mode === 'send' ? 'They will collect it' : 'We will send it over') + '</button>'
+          + '<button class="btn ghost" data-act="issQuery" data-no="' + o.no + '">There is a problem</button>'
+          + '<button class="btn ghost" data-act="issPrint" data-no="' + o.no + '">Print</button></div>'
+        : '')
+     + '</div>';
+  };
+  return '<h1>Store orders <span class="muted" style="font-size:14px">· ' + extLocName(S.locId) + '</span></h1>'
+   + '<div class="muted">Goods one store has sold that another store is holding. The bill is already made and the '
+   + 'stock is already off it — what is left is handing the goods over.</div>'
+   + '<div class="cu-tabs" style="margin-top:10px">'
+   + tabs.map(t => '<button class="' + (issTab === t[0] ? 'on' : '') + '" data-act="issTab" data-t="' + t[0] + '">' + t[1] + (t[2] ? ' <i>' + t[2] + '</i>' : '') + '</button>').join('')
+   + '</div>'
+   + (list.length ? list.slice().reverse().map(card).join('') : '<div class="card" style="margin-top:10px"><div class="muted">Nothing here.</div></div>');
+}
+const storeIssueFind = (no) => S.issues.find(o => o.no === no);
+function storeIssuePrint(no) {
+  const o = storeIssueFind(no); if (!o) return;
+  const nm = pid => (P(pid) || { name: '(item removed)', unit: '', cost: 0 });
+  voucherPrint({ title: 'Goods to Issue', no: o.no, date: o.date, payee: extLocName(o.to), payeeLabel: 'FOR',
+    payeeSub: 'against bill ' + o.invNo,
+    amount: o.lines.reduce((a, l) => a + l.qty * (+nm(l.pid).cost || 0), 0), totalLabel: 'VALUE AT COST',
+    rows: [['Holding store', extLocName(o.from)], ['Billed at', extLocName(o.to)], ['Bill', o.invNo],
+           ['Customer', (C(o.cust) || {}).name || 'Cash customer'], ['How', o.mode === 'send' ? 'Send it over' : 'Customer collects']],
+    linesLabel: 'Goods to hand over',
+    lines: o.lines.map(l => [nm(l.pid).name + ' — ' + fq(l.qty) + ' ' + (nm(l.pid).unit || ''), l.qty * (+nm(l.pid).cost || 0)]),
+    thirdSign: 'RECEIVED BY' });
 }
 
 function transfers() {
@@ -391,7 +489,7 @@ function gvVoid(code) {
 }
 
 /* ================================================================ settings: loyalty & locations */
-function extSettingsTabs() { return [['loyalty', 'Loyalty & vouchers'], ['locations', 'Locations']]; }
+function extSettingsTabs() { return [['loyalty', 'Loyalty & vouchers'], ['locations', 'Stores']]; }
 function extSettingsBody(tab) {
   if (tab === 'loyalty') { const L = extLoy();
     return `<div class="muted" style="margin-bottom:10px">Points are earned on every bill to a named customer and spent at the till with the <b>L</b> key. Vouchers are sold under Money → Gift vouchers and spent with <b>V</b>.</div>
@@ -402,15 +500,49 @@ function extSettingsBody(tab) {
       <div class="f"><label>Smallest redemption (points)</label><input data-loy="minRedeem" type="number" value="${L.minRedeem}"></div></div>
      <div class="card note" style="margin-top:10px">Points spent post to <b>6110 Loyalty points redeemed</b>; vouchers sit in <b>2060 Gift vouchers not yet used</b> until they are spent.
       Customers with points: ${S.customers.filter(c => (c.points || 0) > 0).length} · outstanding ${fq(S.customers.reduce((a, c) => a + (+c.points || 0), 0))} points (${fmt(S.customers.reduce((a, c) => a + extPointsValue(c), 0))}).</div>`; }
-  if (tab === 'locations') return `<div class="muted" style="margin-bottom:10px">Stock is counted per location. This till (<b>${S.terminal}</b>) sells from <b>${extLoc().name}</b>.</div>
-     <div class="f" style="max-width:320px"><label>This till sells from</label><select id="extLocPick">${S.locations.map(l => `<option value="${l.id}" ${l.id === S.locId ? 'selected' : ''}>${l.name}</option>`).join('')}</select></div>
-     <button class="btn ghost" data-act="locManage">Add or rename locations</button>
-     <div class="card note" style="margin-top:10px">Moving goods between locations is done under Stock → Stock transfers. The total on the ledger never changes on a transfer.</div>`;
+  if (tab === 'locations') {
+    const on = !!(CFG.stores && CFG.stores.on), many = S.locations.length > 1;
+    const money = v => (typeof fmt === 'function' ? fmt(v) : v);
+    return `<div class="muted" style="margin-bottom:10px">One shop, or several. Leave this off until you really have
+      a second store — with it off the whole system behaves as one counter and never mentions stores at all.</div>
+
+     <label class="chk" style="max-width:540px"><input type="checkbox" id="extStoresOn" ${on ? 'checked' : ''}>
+      <span><b>We have more than one store</b><div class="muted">Stock is counted per store, a bill says which store
+      the goods are in, and a store that sells another store's goods raises an order for them to hand over.</div></span></label>
+
+     ${on && !many ? `<div class="card note" style="margin-top:10px"><b>Now add the second store below.</b>
+       Until there are two, nothing changes.</div>` : ''}
+
+     <h2 style="margin-top:14px">The stores</h2>
+     <div class="card" style="padding:0"><table style="margin:0"><tr><th>Store</th><th class="n">Stock there, at cost</th><th></th></tr>
+      ${S.locations.map(l => `<tr><td><b>${l.name}</b>${l.id === S.locId ? ' <span class="tag ok">this till</span>' : ''}${l.id === S.locations[0].id ? ' <span class="tag blue">main</span>' : ''}</td>
+        <td class="n">${money(S.products.reduce((a, p) => a + (+extLocsOf(p)[l.id] || 0) * (+p.cost || 0), 0))}</td>
+        <td class="n">${storeToIssueAt(l.id) ? `<span class="tag warn">${storeToIssueAt(l.id)} to issue</span>` : ''}</td></tr>`).join('')}
+     </table></div>
+     <button class="btn ghost" style="margin-top:8px" data-act="locManage">Add or rename stores</button>
+
+     <h2 style="margin-top:14px">This till</h2>
+     <div class="f" style="max-width:360px"><label>Till <b>${S.terminal}</b> sells from</label>
+      <select id="extLocPick">${S.locations.map(l => `<option value="${l.id}" ${l.id === S.locId ? 'selected' : ''}>${l.name}</option>`).join('')}</select>
+      <div class="muted">Set this once on each machine. It is remembered against the till itself, so clearing the
+      browser cannot quietly turn this store back into the main one.</div></div>
+
+     <div class="card note" style="margin-top:12px">Moving goods between stores on purpose — a lorry load, not a sale —
+      is Stock → <b>Stock transfers</b>. Goods sold at one store and held at another are Counter → <b>Store orders</b>.
+      The total on the ledger never changes for either.</div>`;
+  }
   return '';
 }
 function extBindSettings() {
   document.querySelectorAll('[data-loy]').forEach(el => el.onchange = () => { const L = extLoy(); const k = el.dataset.loy; L[k] = el.type === 'checkbox' ? el.checked : +el.value || 0; render(); toast('Saved'); });
   const lp = document.getElementById('extLocPick'); if (lp) lp.onchange = e => { extUseLocation(+e.target.value); render(); };
+  const so = document.getElementById('extStoresOn');
+  if (so) so.onchange = () => {
+    if (!CFG.stores || typeof CFG.stores !== 'object') CFG.stores = { on: false };
+    CFG.stores.on = so.checked; render();
+    toast(so.checked ? (S.locations.length > 1 ? 'Stores are on' : 'Stores are on — now add the second one')
+                     : 'Back to one shop');
+  };
 }
 
 /* ================================================================ clicks for the new screens */
@@ -419,6 +551,20 @@ document.addEventListener('click', e => {
   const act = a.dataset.act;
   const fn = {
     lnLoc: () => extLineLocModal(+a.dataset.i),
+    issTab: () => { issTab = a.dataset.t; render() },
+    issDone: () => { const o = storeIssueFind(a.dataset.no); if (!o) return;
+      o.status = 'issued'; o.issuedBy = S.user.name;
+      o.issuedAt = D(today) + ' ' + new Date().toTimeString().slice(0, 5);
+      render(); toast(o.no + ' handed over') },
+    issMode: () => { const o = storeIssueFind(a.dataset.no); if (!o) return;
+      o.mode = o.mode === 'send' ? 'collect' : 'send'; render();
+      toast(o.mode === 'send' ? 'We will send it over' : 'The customer will collect it') },
+    issQuery: () => { const o = storeIssueFind(a.dataset.no); if (!o) return;
+      const why = prompt('What is the problem? ' + extLocName(o.to) + ' will see this.', o.note || '');
+      if (why === null) return;
+      o.note = why.trim(); o.status = o.note ? 'query' : 'waiting'; render();
+      toast(o.note ? extLocName(o.to) + ' has been told' : 'Back to waiting') },
+    issPrint: () => storeIssuePrint(a.dataset.no),
     trfNew: () => trfModal(), trfPrint: () => trfPrint(a.dataset.no), locManage: () => locModal(),
     gvNew: () => gvModal(), gvPrint: () => gvPrint(a.dataset.code), gvVoid: () => gvVoid(a.dataset.code),
     custPoints: () => extPointsModal(+a.dataset.id),

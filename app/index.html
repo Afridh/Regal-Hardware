@@ -3527,7 +3527,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   // the same item twice on a bill is checked as one quantity against the floor
   if(!CFG.stock.allowNegative){
     // goods coming back add to the floor, so a line's return quantity offsets what is sold
-    const multi=Array.isArray(S.locations)&&S.locations.length>1&&typeof extLineSource==='function';
+    const multi=typeof extMulti==='function'&&extMulti()&&typeof extLineSource==='function';
     /* With more than one shop, a line is issued from whichever shop actually holds the goods —
        this one if it can cover the line, otherwise the one that can. The bill is still made
        here; only the goods come from elsewhere, and the bill says so. */
@@ -3581,6 +3581,8 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
     try { bcSend('sale_completed'); }catch(_){}
   }
   let cogs=0; for(const l of inv.lines){ move(l.pid,-l.qty,'SALE',inv.no,l.cost,date,l.loc); cogs+=l.qty*l.cost }
+  // goods this store sold but another store is holding: an order for them to hand over
+  if(typeof storeRaiseIssues==='function') try{ storeRaiseIssues(inv) }catch(e){}
   const jl=[{ac:'4100',cr:total}];
   for(const p of pays){ if(p.method==='CASH')jl.push({ac:'1010',dr:p.amount}); else if(p.method==='CARD'||p.method==='BANK')jl.push({ac:B(p.bank).ac,dr:p.amount}); else if(p.method==='CHEQUE'){jl.push({ac:'1030',dr:p.amount}); S.cheques.push({dir:'RECEIVED',no:p.ref,bank:p.bankName||'Customer bank',date:p.date||date,recvDate:date,payee:'Regal Hardware',amount:p.amount,status:'RECEIVED',party:C(customerId)?.name,customerId,ref:inv.no})}
     else if(p.method==='POINTS')jl.push({ac:'6110',dr:p.amount});          // points spent: the shop bears the cost
@@ -8173,6 +8175,7 @@ const VIEW_PERM={users:'users',settings:'settings',payroll:'payroll',products:'p
 function allowed(v){
   if(!S.user || !S.user.name) return false;
   if(v === 'updates') return true;          // what changed is everybody's business
+  if(v === 'issues'||v === 'transfers') return typeof extMulti==='function'&&extMulti();   // nothing to see with one shop
   if(v === 'ai') return ownerOnly();        // what it is shown includes costs and margins
   if(v === 'trail') return ownerOnly();
   const roleName = String(S.user.role || '');
@@ -8299,7 +8302,7 @@ function renderNav(){
       items.map(v=>v[0]==='grp'
         ? `<div class="grp"><span>${v[1]}</span><i>${v[1]}</i></div>`
         : `<button class="${S.view===v[0]?'on':''}" data-view="${v[0]}" title="${v[1]}">
-            <i class="ic">${icon(v[0])}</i><span>${v[1]}</span>${v[2]?`<em class="k">${v[2]}</em>`:''}${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}${v[0]==='updates'&&updatesUnseen()?`<i class="nbadge">${updatesUnseen()}</i>`:''}<i class="tip">${v[1]}${v[2]?' · '+v[2]:''}</i></button>`).join('')
+            <i class="ic">${icon(v[0])}</i><span>${v[1]}</span>${v[2]?`<em class="k">${v[2]}</em>`:''}${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}${v[0]==='issues'&&typeof storeToIssue==='function'&&storeToIssue()?`<i class="nbadge">${storeToIssue()}</i>`:''}${v[0]==='updates'&&updatesUnseen()?`<i class="nbadge">${updatesUnseen()}</i>`:''}<i class="tip">${v[1]}${v[2]?' · '+v[2]:''}</i></button>`).join('')
       +`</div>
        <div class="navfooter">
          <div class="navfoot-actions">
@@ -8314,7 +8317,7 @@ function renderNav(){
     : items.map(v=>v[0]==='grp'
         ? `<div class="grp"><span>${v[1]}</span></div>`
         : `<button class="${S.view===v[0]?'on':''}" data-view="${v[0]}" title="${v[1]}${v[2]?' · '+v[2]:''}">
-            ${icon(v[0])}<span>${v[1]}</span>${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}${v[0]==='updates'&&updatesUnseen()?`<i class="nbadge">${updatesUnseen()}</i>`:''}</button>`).join('');
+            ${icon(v[0])}<span>${v[1]}</span>${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}${v[0]==='issues'&&typeof storeToIssue==='function'&&storeToIssue()?`<i class="nbadge">${storeToIssue()}</i>`:''}${v[0]==='updates'&&updatesUnseen()?`<i class="nbadge">${updatesUnseen()}</i>`:''}</button>`).join('');
   $('#hdr').innerHTML=`${S.user.name}, ${S.user.role.toLowerCase()} &nbsp;|&nbsp; till ${S.terminal}, drawer open since ${S.drawer.opened}<br>${today.toDateString()}`;
   drawBell();
   const list=$('#nav .navlist');
@@ -8439,7 +8442,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={ai,updates,recall,stocktake:stockTake,serials,damages,jobs,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={ai,updates,recall,stocktake:stockTake,serials,damages,jobs,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
