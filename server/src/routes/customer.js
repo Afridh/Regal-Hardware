@@ -229,6 +229,36 @@ r.get('/me', custAuth, asyncHandler(async (req, res) => {
     today: localDate() });
 }));
 
+/* ---------------------------------------------------------------- the e-bill link
+   Every bill carries a link the shop can text: regalhw.lk/b/<id>, where the id is random and long
+   enough that it cannot be guessed or counted through. Opening it needs no sign-in — whoever has the
+   link was given it — so it shows the bill and nothing else about the account. */
+r.get('/b/:id', asyncHandler(async (req, res) => {
+  const id = String(req.params.id || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (id.length < 6) throw new HttpError(404, 'That link is not a bill');
+  const data = await books();
+  const S = data?.S || {}, CFG = data?.CFG || {};
+  const inv = (S.sales || []).find(x => String(x.link || '').toLowerCase().endsWith('/' + id));
+  if (!inv) throw new HttpError(404, 'That bill is not here — the link may be old, or mistyped');
+  const prod = (pid) => (S.products || []).find(x => x.id === pid) || {};
+  const cust = (S.customers || []).find(c => c.id === inv.customerId);
+  res.json({ ok: true, bill: {
+    no: inv.no, date: inv.date, time: inv.time || '', type: inv.type,
+    sub: inv.sub, billDisc: inv.billDisc || 0, total: inv.total, paid: inv.paid, balance: inv.balance,
+    by: inv.by || '',
+    customer: cust && cust.id !== 1 ? { name: cust.name, code: cust.code } : null,
+    lines: (inv.lines || []).map(l => {
+      const p = prod(l.pid);
+      return { name: l.name || p.name || 'Item', code: p.code || '', unit: p.unit || '',
+        qty: l.qty, price: l.price, disc: l.disc || 0,
+        amount: +(l.qty * l.price - (l.disc || 0)).toFixed(2), returned: l.qty < 0 };
+    }),
+    pays: (inv.pays || []).map(x => ({ method: x.method, amount: x.amount })),
+    shop: { name: CFG.shop?.name || 'Regal Hardware', phone: CFG.shop?.phone || '',
+      land: CFG.shop?.land || '', addr: CFG.shop?.addr || '', web: CFG.shop?.web || '' },
+  } });
+}));
+
 /** One bill of theirs, line by line. Only ever their own — the account on the token decides. */
 r.get('/bill/:no', custAuth, asyncHandler(async (req, res) => {
   const data = await books();

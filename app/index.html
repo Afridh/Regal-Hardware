@@ -3534,6 +3534,12 @@ function recost(pid){
   if(qty>0) p.cost=+cost.toFixed(4);
 }
 /* ---- business transactions ---- */
+/* The address a bill is reached at. The tail is random and long enough that nobody can guess one or
+   count through them, which is what stands in for a sign-in: whoever holds the link was given it. */
+const billLinkFor=()=>{
+  const a=new Uint8Array(8); (crypto&&crypto.getRandomValues?crypto:{getRandomValues:x=>x.forEach((_,i)=>x[i]=Math.floor(Math.random()*256))}).getRandomValues(a);
+  return (CFG.shop.web||'regalhw.lk')+'/b/'+Array.from(a).map(n=>n.toString(36)).join('').slice(0,12);
+};
 function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.name,salesman=undefined,override=false,no=null}){
   if(window.privacyOn) throw new Error('Till is busy — try again in a moment');
   if(!lines.length) throw new Error('A bill needs at least one line');
@@ -3581,7 +3587,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   let usedCredit=0;
   if(credit>0.005&&customerId!==1){ const held=custCredit(customerId); usedCredit=+Math.min(held,credit).toFixed(2); if(usedCredit>0.005) credit=+(credit-usedCredit).toFixed(2) }
   const assignedSalesman = salesman !== undefined ? salesman : ((S.pos && S.pos.salesman) || null);
-  const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>({...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true}).toUpperCase(),link:'regalhw.lk/b/'+Math.random().toString(36).slice(2,10)};
+  const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>({...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true}).toUpperCase(),link:billLinkFor()};
   S.sales.push(inv);
   if(typeof BroadcastChannel !== 'undefined'){
     try { bcSend('sale_completed'); }catch(_){}
@@ -18746,6 +18752,8 @@ document.addEventListener('click',e=>{
       if(needsApproval('custRemove')) return requestApproval('custRemove',`Remove ${c.name} from the customer list`,`${c.phone||'no mobile'} · ${S.sales.filter(s=>s.customerId===c.id).length} bills on record`,{cid:c.id});
       c.active=false; custSel=0; render(); toast(`${c.name} removed`) },
     billSms:()=>{const inv=S.sales.find(x=>x.no===a.dataset.no), c=C(inv.customerId);
+      // bills entered before the link existed have none, so one is made the first time it is sent
+      if(!inv.link){ inv.link=billLinkFor(); persist(true) }
       const send=(to)=>{ sms(to,tpl('billLink',{invoice:inv.no,total:fmt(inv.total),balance:fmt(inv.balance),
           balancePart:inv.balance?', '+fmt(inv.balance)+' still to pay':'',link:inv.link}));
         render(); toast('Bill link texted to '+to) };

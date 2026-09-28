@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Your bill</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 84'%3E%3Cpath d='M50 4 96 80H72L50 40 28 80H4z' fill='%23F0A81E'/%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#101E22;--steel:#5A6E72;--faint:#8C9CA0;--page:#EEF1F0;--white:#fff;
+  --line:#D8DEDD;--line2:#EAEEED;--amber:#F0A81E;--green:#1E8A5A;--rust:#C0442C}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:15px/1.5 Inter,system-ui,sans-serif}
+.wrap{max-width:560px;margin:0 auto;padding:0 16px 40px}
+header{background:var(--ink);color:#fff;padding:18px 0 22px;margin-bottom:-14px}
+header .wrap{display:flex;align-items:center;gap:12px}
+.mark{width:40px;height:40px;flex:0 0 40px;border-radius:10px;background:linear-gradient(145deg,#F7BB3C,#E0960F);
+  color:#101E22;display:grid;place-items:center;font:700 15px Archivo,sans-serif}
+header b{display:block;font:700 17px Archivo,sans-serif;letter-spacing:.01em}
+header span{display:block;font-size:12.5px;color:#A9BBBE;margin-top:1px}
+.card{background:var(--white);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:14px}
+.big{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.big .no{font:700 20px Archivo,sans-serif}
+.big .when{font-size:12.5px;color:var(--steel)}
+.tag{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:2px 9px;border:1px solid}
+.tag.cash{background:#DCF1E7;color:#14663F;border-color:#9FD9BF}
+.tag.credit{background:#FFF4DA;color:#7A5200;border-color:#F2D08A}
+table{width:100%;border-collapse:collapse;margin-top:12px;font-size:14px}
+th{text-align:left;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--steel);
+  border-bottom:1px solid var(--line);padding:7px 4px;font-weight:600}
+td{padding:9px 4px;border-bottom:1px solid var(--line2);vertical-align:top}
+.n{text-align:right;white-space:nowrap}
+.sub{font-size:11.5px;color:var(--faint);margin-top:1px}
+tr.ret td{color:#9F1239}
+.rtag{background:#FFE4E6;color:#9F1239;border-radius:999px;font-size:10px;padding:1px 6px;margin-left:4px}
+.tot{display:flex;justify-content:space-between;padding:6px 4px;font-size:14px}
+.tot b{font-family:Archivo,sans-serif}
+.tot.big2{border-top:1.5px solid var(--line);margin-top:6px;padding-top:10px;font-size:19px}
+.tot.due b{color:var(--rust)}
+.tot.ok b{color:var(--green)}
+.msg{padding:26px 16px;text-align:center;color:var(--steel)}
+.msg b{display:block;font:700 17px Archivo,sans-serif;color:var(--ink);margin-bottom:6px}
+.shopfoot{margin-top:16px;text-align:center;font-size:12.5px;color:var(--steel);line-height:1.7}
+.shopfoot a{color:var(--ink)}
+.btns{display:flex;gap:8px;margin-top:14px}
+.btn{flex:1;text-align:center;border:1px solid var(--line);background:var(--white);border-radius:10px;
+  padding:11px 12px;font:600 14px Inter,sans-serif;color:var(--ink);text-decoration:none;cursor:pointer}
+.btn.pay{background:var(--amber);border-color:#D08F09}
+@media print{header{background:#fff;color:#000}.btns,.shopfoot a{display:none}.card{border:0}}
+</style>
+</head>
+<body>
+<header><div class="wrap"><span class="mark" id="mk">RH</span>
+  <span><b id="shopName">Regal Hardware</b><span id="shopSub">your bill</span></span></div></header>
+<div class="wrap"><div id="out"><div class="card msg">Reading the bill…</div></div></div>
+<script>
+const $=(s)=>document.querySelector(s);
+const money=(n)=>'Rs '+(+n||0).toLocaleString('en-LK',{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+(async () => {
+  const id = location.pathname.split('/').filter(Boolean).pop() || '';
+  try {
+    const r = await fetch('/api/my/b/' + encodeURIComponent(id));
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.bill) throw new Error(j.error || 'That bill could not be found');
+    const b = j.bill;
+    $('#shopName').textContent = b.shop.name;
+    $('#shopSub').textContent = b.customer ? b.customer.name : 'your bill';
+    $('#mk').textContent = (b.shop.name||'RH').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    document.title = b.shop.name + ' · bill ' + b.no;
+    $('#out').innerHTML = `
+      <div class="card">
+        <div class="big">
+          <div><div class="no">${esc(b.no)}</div>
+            <div class="when">${esc(b.date)}${b.time ? ' · ' + esc(b.time) : ''}</div></div>
+          <span class="tag ${b.type === 'CREDIT' ? 'credit' : 'cash'}">${b.type === 'CREDIT' ? 'on account' : 'paid, cash'}</span>
+        </div>
+        <table><thead><tr><th>Item</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th></tr></thead><tbody>
+        ${b.lines.map(l => `<tr class="${l.returned ? 'ret' : ''}">
+            <td>${esc(l.name)}${l.returned ? '<span class="rtag">returned</span>' : ''}${l.code ? `<div class="sub">${esc(l.code)}</div>` : ''}</td>
+            <td class="n">${l.qty}${l.unit ? ' ' + esc(l.unit) : ''}</td>
+            <td class="n">${money(l.price)}</td><td class="n">${money(l.amount)}</td></tr>`).join('')}
+        </tbody></table>
+        <div class="tot"><span>Subtotal</span><b>${money(b.sub)}</b></div>
+        ${b.billDisc > 0 ? `<div class="tot"><span>Discount</span><b>− ${money(b.billDisc)}</b></div>` : ''}
+        <div class="tot big2"><span>Total</span><b>${money(b.total)}</b></div>
+        <div class="tot"><span>Paid</span><b>${money(b.paid)}</b></div>
+        ${b.balance > 0.005
+          ? `<div class="tot due"><span>Still owing</span><b>${money(b.balance)}</b></div>`
+          : `<div class="tot ok"><span>Settled</span><b>✓</b></div>`}
+        <div class="btns"><button class="btn" onclick="window.print()">Print or save</button>
+          ${b.shop.phone ? `<a class="btn pay" href="tel:${esc(String(b.shop.phone).replace(/[^0-9+]/g,''))}">Ring the shop</a>` : ''}</div>
+      </div>
+      <div class="shopfoot"><b>${esc(b.shop.name)}</b><br>${esc(b.shop.addr)}<br>
+        ${esc(b.shop.phone)}${b.shop.land ? ' · ' + esc(b.shop.land) : ''}</div>`;
+  } catch (e) {
+    $('#out').innerHTML = `<div class="card msg"><b>We cannot show that bill</b>${esc(e.message)}.<br>
+      Please ring the shop and they will help.</div>`;
+  }
+})();
+</script>
+</body>
+</html>
