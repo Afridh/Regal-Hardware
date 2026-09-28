@@ -34,7 +34,15 @@ export function ensureCustTables() {
       data        jsonb NOT NULL,
       created_at  timestamptz NOT NULL DEFAULT now(),
       imported_at timestamptz);
-    CREATE INDEX IF NOT EXISTS cust_inbox_pending ON cust_inbox (imported_at) WHERE imported_at IS NULL`))
+    CREATE INDEX IF NOT EXISTS cust_inbox_pending ON cust_inbox (imported_at) WHERE imported_at IS NULL;
+    -- the bill as the till drew it, kept against the link it was texted with, so the customer opens
+    -- the same paper the shop printed rather than a second drawing of it that could drift
+    CREATE TABLE IF NOT EXISTS bill_views (
+      id         varchar(40) PRIMARY KEY,
+      no         varchar(40),
+      format     varchar(8) NOT NULL DEFAULT 'a5',
+      html       text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now())`))
     .catch(e => { ready = null; throw e; });
   return ready;
 }
@@ -229,6 +237,20 @@ r.get('/me', custAuth, asyncHandler(async (req, res) => {
     today: localDate() });
 }));
 
+/** The till stores the bill as it printed it, against the link id it was texted with. */
+r.post('/admin/billview', regalAuth, asyncHandler(async (req, res) => {
+  const id = String(req.body?.id || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const html = String(req.body?.html || '');
+  const format = req.body?.format === 'r80' ? 'r80' : 'a5';
+  if (id.length < 6) throw new HttpError(400, 'Which bill link is this for?');
+  if (html.length < 40 || html.length > 400000) throw new HttpError(400, 'That does not look like a bill');
+  await ensureCustTables();
+  await query(`INSERT INTO bill_views (id, no, format, html) VALUES ($1,$2,$3,$4)
+     ON CONFLICT (id) DO UPDATE SET no = EXCLUDED.no, format = EXCLUDED.format, html = EXCLUDED.html, created_at = now()`,
+    [id, String(req.body?.no || '').slice(0, 40), format, html]);
+  res.json({ ok: true });
+}));
+
 /* ---------------------------------------------------------------- the e-bill link
    Every bill carries a link the shop can text: regalhw.lk/b/<id>, where the id is random and long
    enough that it cannot be guessed or counted through. Opening it needs no sign-in — whoever has the
@@ -240,6 +262,8 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
   const S = data?.S || {}, CFG = data?.CFG || {};
   const inv = (S.sales || []).find(x => String(x.link || '').toLowerCase().endsWith('/' + id));
   if (!inv) throw new HttpError(404, 'That bill is not here — the link may be old, or mistyped');
+  // the paper the till drew, if it sent it over: that is what the customer should see
+  const { rows: [view] } = await query(`SELECT format, html FROM bill_views WHERE id = $1`, [id]).catch(() => ({ rows: [] }));
   const prod = (pid) => (S.products || []).find(x => x.id === pid) || {};
   const cust = (S.customers || []).find(c => c.id === inv.customerId);
   res.json({ ok: true, bill: {
@@ -254,6 +278,8 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
         amount: +(l.qty * l.price - (l.disc || 0)).toFixed(2), returned: l.qty < 0 };
     }),
     pays: (inv.pays || []).map(x => ({ method: x.method, amount: x.amount })),
+    paper: view?.format || (inv.paper === 'r80' ? 'r80' : 'a5'),
+    html: view?.html || null,
     shop: { name: CFG.shop?.name || 'Regal Hardware', phone: CFG.shop?.phone || '',
       land: CFG.shop?.land || '', addr: CFG.shop?.addr || '', web: CFG.shop?.web || '' },
   } });

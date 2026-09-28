@@ -6,6 +6,7 @@
 <meta name="robots" content="noindex">
 <title>Your bill</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 84'%3E%3Cpath d='M50 4 96 80H72L50 40 28 80H4z' fill='%23F0A81E'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/bill-print.css">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{--ink:#101E22;--steel:#5A6E72;--faint:#8C9CA0;--page:#EEF1F0;--white:#fff;
@@ -48,6 +49,23 @@ tr.ret td{color:#9F1239}
   padding:11px 12px;font:600 14px Inter,sans-serif;color:var(--ink);text-decoration:none;cursor:pointer}
 .btn.pay{background:var(--amber);border-color:#D08F09}
 @media print{header{background:#fff;color:#000}.btns,.shopfoot a{display:none}.card{border:0}}
+/* the real bill, exactly as the till printed it */
+.paper{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:14px;overflow-x:auto}
+.paper .print{border:0;margin:0 auto;padding:0}
+/* the A5 is a fluid layout: it is given the width it was drawn for and then scaled to the screen */
+.paper{overflow:hidden}
+.fit.a5{width:760px}
+.fit.r80{width:302px}
+.paper .print.a5{width:100%;aspect-ratio:auto;min-height:0}
+.paper .print.r80{width:302px}
+.whichpaper{font-size:11.5px;color:var(--faint);text-align:center;margin-top:8px}
+@media print{
+  body{background:#fff}
+  header,.btns,.shopfoot,.whichpaper{display:none!important}
+  .wrap{max-width:none;padding:0}
+  .paper{border:0;border-radius:0;padding:0;margin:0}
+}
+
 </style>
 </head>
 <body>
@@ -55,6 +73,19 @@ tr.ret td{color:#9F1239}
   <span><b id="shopName">Regal Hardware</b><span id="shopSub">your bill</span></span></div></header>
 <div class="wrap"><div id="out"><div class="card msg">Reading the bill…</div></div></div>
 <script>
+
+/* A printed bill has a fixed width — 210mm for the A5, 302px for the receipt. Rather than reflow it,
+   which would no longer be the bill the shop printed, it is drawn at its own size and scaled to the
+   screen it is opened on. */
+function fitPaper(){
+  const box = document.querySelector('.paper'), sheet = document.querySelector('.paper .fit');
+  if (!box || !sheet) return;
+  // zoom rather than transform: it shrinks the layout box too, so the page around it sizes itself and
+  // nothing is left hanging off the bottom
+  sheet.style.zoom = 1;
+  const avail = box.clientWidth, real = sheet.scrollWidth || sheet.offsetWidth;
+  if (real > avail) sheet.style.zoom = String(Math.max(0.3, avail / real));
+}
 const $=(s)=>document.querySelector(s);
 const money=(n)=>'Rs '+(+n||0).toLocaleString('en-LK',{minimumFractionDigits:2,maximumFractionDigits:2});
 const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -70,6 +101,17 @@ const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;
     $('#shopSub').textContent = b.customer ? b.customer.name : 'your bill';
     $('#mk').textContent = (b.shop.name||'RH').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
     document.title = b.shop.name + ' · bill ' + b.no;
+    // the till sent the paper it printed: show that, and nothing of our own around it
+    if (b.html) {
+      $('#out').innerHTML = `
+        <div class="paper"><div class="fit printArea ${b.paper === 'r80' ? 'r80' : 'a5'}">${b.html}</div></div>
+        <div class="whichpaper">${b.paper === 'r80' ? 'Till receipt' : 'Printed bill (A5)'} · ${esc(b.no)}</div>
+        <div class="btns"><button class="btn" onclick="window.print()">Print or save as PDF</button>
+          ${b.shop.phone ? `<a class="btn pay" href="tel:${esc(String(b.shop.phone).replace(/[^0-9+]/g,''))}">Ring the shop</a>` : ''}</div>`;
+      fitPaper();
+      addEventListener('resize', fitPaper);
+      return;
+    }
     $('#out').innerHTML = `
       <div class="card">
         <div class="big">
