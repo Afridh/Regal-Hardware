@@ -39,9 +39,25 @@ function extEnsure() {
   if (!Array.isArray(S.locations) || !S.locations.length) S.locations = [{ id: 1, name: 'Main shop', till: true }];
   S.customers.forEach(c => { if (c.points === undefined) c.points = 0; });
   S.products.forEach(p => extLocsOf(p));
-  const wanted = +localStorage.getItem(EXT_LOCAL_LOC_KEY) || 0;
-  S.locId = S.locations.some(l => l.id === wanted) ? wanted : S.locations[0].id;
+  if (!S.termLoc || typeof S.termLoc !== 'object') S.termLoc = {};
+  S.locId = S.locations.some(l => l.id === extWantedLoc()) ? extWantedLoc() : S.locations[0].id;
 }
+/* Which shop this till sells from. The browser's own note is asked first, because somebody
+   set it deliberately on this machine. If it is gone — a cleared browser, a different browser,
+   a reinstall — the books still know which shop this terminal belongs to, so the second shop
+   cannot quietly turn back into the main shop and start selling the main shop's stock. */
+function extWantedLoc() {
+  const here = +localStorage.getItem(EXT_LOCAL_LOC_KEY) || 0;
+  if (here) return here;
+  return +((S.termLoc || {})[S.terminal]) || 0;
+}
+/** Called once the terminal's name is known, which happens after the books load. */
+function extRelocate() {
+  const want = extWantedLoc();
+  if (want && want !== S.locId && S.locations.some(l => l.id === want)) { S.locId = want; return true }
+  return false;
+}
+
 function extSeedDemo() {
   if (S.locations.length === 1) S.locations.push({ id: 2, name: 'Store room', till: false });
   // a little of the demo stock sits in the store room
@@ -64,6 +80,77 @@ function extMove(p, qty, loc) {
   l[id] = +((+l[id] || 0) + qty).toFixed(3);
 }
 const extHere = (p) => +(extLocsOf(p)[S.locId] || 0);
+
+/* ============================================ selling across the shops ====
+   A customer at the second shop wants a hundred bags of cement, and the cement is at the
+   main shop. The bill is made where the customer is, but the goods come off the shop that
+   actually holds them, and the bill says which — so the right yard issues the right goods
+   and neither shop's stock figure tells a lie.
+
+   Nothing is moved on paper that did not move in fact: there is no transfer behind this.
+   The sale simply takes the goods from where they are. */
+const extMulti = () => Array.isArray(S.locations) && S.locations.length > 1;
+
+/** Which shop a line's goods should be issued from. */
+function extLineSource(l) {
+  if (!extMulti()) return undefined;
+  const p = P(l.pid); if (!p) return S.locId;
+  if (l.locPin && S.locations.some(x => x.id === l.locPin)) return l.locPin;   // chosen by hand
+  const qty = +l.qty || 0;
+  if (qty <= 0) return S.locId;                          // goods coming back come back here
+  const locs = extLocsOf(p);
+  if ((+locs[S.locId] || 0) >= qty - 1e-9) return S.locId;
+  // this shop cannot cover it: the shop that can, with the most to spare
+  const other = S.locations.filter(x => x.id !== S.locId)
+    .map(x => ({ id: x.id, have: +locs[x.id] || 0 }))
+    .filter(x => x.have >= qty - 1e-9)
+    .sort((a, b) => b.have - a.have)[0];
+  return other ? other.id : S.locId;   // nowhere holds enough on its own — leave it, and let the check say so
+}
+
+/** The name to show on a line and print on the bill, when the goods come from elsewhere. */
+function extFromName(l, sellingLoc) {
+  if (!extMulti()) return '';
+  const src = l.loc || extLineSource(l);
+  const sel = sellingLoc || S.locId;
+  return (src && src !== sel) ? extLocName(src) : '';
+}
+
+/** "120 bag at Main shop · 40 at Store 2" — for when nowhere has enough on its own. */
+function extWhere(p) {
+  const locs = extLocsOf(p);
+  return S.locations.map(x => ({ n: x.name, q: +locs[x.id] || 0 })).filter(x => x.q > 0)
+    .sort((a, b) => b.q - a.q).map(x => `${fq(x.q)} at ${x.n}`).join(' · ') || 'none anywhere';
+}
+
+/** Pick by hand which shop a line comes out of. */
+function extLineLocModal(i) {
+  const l = S.pos.lines[i]; if (!l) return;
+  const p = P(l.pid); if (!p) return;
+  const locs = extLocsOf(p), auto = extLineSource(l);
+  const m = modal(`<h2>${p.name}</h2>
+   <div class="muted">Which shop these ${fq(l.qty)} ${p.unit} come out of. The bill is still made here,
+     at ${extLocName(S.locId)} — this only says where the goods are issued from.</div>
+   <div style="margin-top:12px">${S.locations.map(x => {
+      const have = +locs[x.id] || 0, ok = have >= (+l.qty || 0) - 1e-9;
+      return `<label class="chk" style="display:flex;gap:8px;align-items:flex-start;margin:6px 0">
+        <input type="radio" name="lnloc" value="${x.id}" ${(l.locPin || auto) === x.id ? 'checked' : ''}>
+        <span><b>${x.name}</b>${x.id === S.locId ? ' <span class="tag ok">this shop</span>' : ''}
+          ${l.locPin === undefined && auto === x.id ? ' <span class="tag blue">chosen for you</span>' : ''}
+          <div class="muted">${fq(have)} ${p.unit} there${ok ? '' : ' — not enough for this line'}</div></span>
+       </label>`; }).join('')}</div>
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:14px">
+     <button class="btn ghost" id="lnlAuto">Let the system choose</button>
+     <span><button class="btn ghost" data-act="closeModal">Cancel</button>
+     <button class="btn tape" id="lnlOk">Use this shop</button></span></div>`);
+  m.querySelector('#lnlAuto').onclick = () => { delete l.locPin; m.remove(); render(); toast('Back to whichever shop can cover it') };
+  m.querySelector('#lnlOk').onclick = () => {
+    const pick = m.querySelector('input[name=lnloc]:checked');
+    if (!pick) return toast('Pick a shop');
+    l.locPin = +pick.value; m.remove(); render();
+    toast(+pick.value === S.locId ? 'Issued from this shop' : 'Issued from ' + extLocName(+pick.value));
+  };
+}
 
 function transfers() {
   const cur = extLoc();
@@ -189,7 +276,13 @@ function locModal() {
     S.locations.push({ id: Math.max(...S.locations.map(l => l.id)) + 1, name: n }); m.querySelector('#locNew').value = ''; draw(); render(); toast(n + ' added'); };
   draw();
 }
-function extUseLocation(id) { S.locId = id; localStorage.setItem(EXT_LOCAL_LOC_KEY, String(id)); toast('This till now sells from ' + extLocName(id)); }
+function extUseLocation(id) {
+  S.locId = id;
+  localStorage.setItem(EXT_LOCAL_LOC_KEY, String(id));
+  if (!S.termLoc || typeof S.termLoc !== 'object') S.termLoc = {};
+  S.termLoc[S.terminal] = id;                     // so a cleared browser does not lose it
+  toast('This till now sells from ' + extLocName(id));
+}
 
 /* ================================================================ loyalty points */
 const extLoy = () => CFG.loyalty || (CFG.loyalty = { ...EXT_LOYALTY });
@@ -325,6 +418,7 @@ document.addEventListener('click', e => {
   const a = e.target.closest('[data-act]'); if (!a) return;
   const act = a.dataset.act;
   const fn = {
+    lnLoc: () => extLineLocModal(+a.dataset.i),
     trfNew: () => trfModal(), trfPrint: () => trfPrint(a.dataset.no), locManage: () => locModal(),
     gvNew: () => gvModal(), gvPrint: () => gvPrint(a.dataset.code), gvVoid: () => gvVoid(a.dataset.code),
     custPoints: () => extPointsModal(+a.dataset.id),

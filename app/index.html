@@ -3527,11 +3527,20 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   // the same item twice on a bill is checked as one quantity against the floor
   if(!CFG.stock.allowNegative){
     // goods coming back add to the floor, so a line's return quantity offsets what is sold
-    const want={}; lines.forEach(l=>{ want[l.pid]=(want[l.pid]||0)+l.qty });
-    // with more than one location, the till sells from its own (regal-ext.js)
-    const multi=Array.isArray(S.locations)&&S.locations.length>1&&typeof extHere==='function';
-    for(const pid in want){ const p=P(+pid); const have=multi?extHere(p):p.stock; if(want[pid]>have+1e-9)
-      throw new Error(`Not enough ${p.name} — ${fq(have)} ${p.unit} ${multi?'at '+extLoc().name:'on the floor'}${multi&&p.stock>have?' ('+fq(p.stock-have)+' elsewhere — move it over)':''}, ${fq(want[pid])} on the bill`) }
+    const multi=Array.isArray(S.locations)&&S.locations.length>1&&typeof extLineSource==='function';
+    /* With more than one shop, a line is issued from whichever shop actually holds the goods —
+       this one if it can cover the line, otherwise the one that can. The bill is still made
+       here; only the goods come from elsewhere, and the bill says so. */
+    if(multi) lines.forEach(l=>{ l.loc=extLineSource(l) });
+    // the same item twice from the same shop is one quantity against that shop's floor
+    const want={}; lines.forEach(l=>{ const k=multi?l.pid+'@'+l.loc:String(l.pid); (want[k]=want[k]||{pid:l.pid,loc:l.loc,q:0}).q+=l.qty });
+    for(const k in want){ const w=want[k], p=P(w.pid);
+      const have=multi?+(extLocsOf(p)[w.loc]||0):p.stock;
+      if(w.q>have+1e-9){
+        if(!multi) throw new Error(`Not enough ${p.name} — ${fq(have)} ${p.unit} on the floor, ${fq(w.q)} on the bill`);
+        throw new Error(`Not enough ${p.name} in any one shop for ${fq(w.q)} ${p.unit} — ${extWhere(p)}. `
+          +`Put it on twice, taking what each shop has, or move some over first.`);
+      } }
   }
   // points and vouchers are checked before anything is posted
   for(const p of pays){
@@ -3566,12 +3575,12 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   let usedCredit=0;
   if(credit>0.005&&customerId!==1){ const held=custCredit(customerId); usedCredit=+Math.min(held,credit).toFixed(2); if(usedCredit>0.005) credit=+(credit-usedCredit).toFixed(2) }
   const assignedSalesman = salesman !== undefined ? salesman : ((S.pos && S.pos.salesman) || null);
-  const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>({...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true}).toUpperCase(),link:billLinkFor()};
+  const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>({...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,loc:(S.locId||undefined),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true}).toUpperCase(),link:billLinkFor()};
   S.sales.push(inv);
   if(typeof BroadcastChannel !== 'undefined'){
     try { bcSend('sale_completed'); }catch(_){}
   }
-  let cogs=0; for(const l of inv.lines){ move(l.pid,-l.qty,'SALE',inv.no,l.cost); cogs+=l.qty*l.cost }
+  let cogs=0; for(const l of inv.lines){ move(l.pid,-l.qty,'SALE',inv.no,l.cost,date,l.loc); cogs+=l.qty*l.cost }
   const jl=[{ac:'4100',cr:total}];
   for(const p of pays){ if(p.method==='CASH')jl.push({ac:'1010',dr:p.amount}); else if(p.method==='CARD'||p.method==='BANK')jl.push({ac:B(p.bank).ac,dr:p.amount}); else if(p.method==='CHEQUE'){jl.push({ac:'1030',dr:p.amount}); S.cheques.push({dir:'RECEIVED',no:p.ref,bank:p.bankName||'Customer bank',date:p.date||date,recvDate:date,payee:'Regal Hardware',amount:p.amount,status:'RECEIVED',party:C(customerId)?.name,customerId,ref:inv.no})}
     else if(p.method==='POINTS')jl.push({ac:'6110',dr:p.amount});          // points spent: the shop bears the cost
@@ -8284,7 +8293,7 @@ function renderNav(){
         <button class="navpin ${pref('collapsed')!==false?'':'on'}" data-act="navMin" type="button"
           title="${pref('collapsed')!==false?'Pin the menu open':'Unpin — let it slide away when you move off'}"><svg viewBox="0 0 24 24"
           fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8V4h6v6.8l2 2.2v2H7v-2z"/></svg></button>
-        <span class="bname"><b>${(CFG.shop&&CFG.shop.name||'REGAL HARDWARE').replace(/ hardware$/i,'')} <span>${/hardware/i.test(CFG.shop&&CFG.shop.name||'')?'HARDWARE':''}</span></b><small>till ${S.terminal} · ${S.user.role}</small></span>
+        <span class="bname"><b>${(CFG.shop&&CFG.shop.name||'REGAL HARDWARE').replace(/ hardware$/i,'')} <span>${/hardware/i.test(CFG.shop&&CFG.shop.name||'')?'HARDWARE':''}</span></b><small>till ${S.terminal}${(typeof extMulti==='function'&&extMulti())?' · '+extLocName(S.locId):''} · ${S.user.role}</small></span>
        </div>
        <div class="navlist">` +
       items.map(v=>v[0]==='grp'
@@ -9352,11 +9361,31 @@ function updates(){
   </div>`).join('')}`;
 }
 
+/* ================== TELLING THE SHOPS APART ==================
+   Once there is more than one shop, "what did we take today" has two answers, and the
+   owner wants both: each shop on its own, and the lot together. Every bill made from now
+   on carries the shop that made it. Bills made before there was a second shop carry none,
+   and those count as the first shop, because that is where they were made. */
+let shopFilter=0;                       // 0 = every shop
+const shopOf=s=>s.loc||(S.locations&&S.locations.length?S.locations[0].id:0);
+const shopSales=(list)=>{ const all=list||S.sales;
+  return (shopFilter&&typeof extMulti==='function'&&extMulti())?all.filter(s=>shopOf(s)===shopFilter):all };
+function shopBar(){
+  if(typeof extMulti!=='function'||!extMulti()) return '';
+  const pill=(id,label,note)=>`<button class="${shopFilter===id?'on':''}" data-act="shopPick" data-v="${id}"
+    title="${note}">${label}</button>`;
+  return `<div class="cu-tabs" style="margin-bottom:10px">
+    ${pill(0,'All shops','Everything added together')}
+    ${S.locations.map(l=>pill(l.id,l.name,l.id===S.locId?'This till sells from here':'The other shop')).join('')}
+   </div>`;
+}
+
 function dashboard(){
+  const _ds=shopSales();      // whichever shop is being looked at
   try{ tenderReminders() }catch(e){}
   if(S.user && /sales/i.test(String(S.user.role || ''))) return salesmanDashboard();
   const t=D(today), sum=(a,k)=>a.reduce((x,y)=>x+y[k],0);
-  const ts=S.sales.filter(s=>s.date===t);
+  const ts=_ds.filter(s=>s.date===t);
   const cashS=ts.filter(s=>s.type==='CASH'), credS=ts.filter(s=>s.type==='CREDIT');
   const ar=S.customers.reduce((a,c)=>a+Math.max(0,partyBal('C',c.id)),0);
   const ap=S.suppliers.reduce((a,s)=>a+Math.max(0,partyBal('S',s.id)),0);
@@ -9367,17 +9396,17 @@ function dashboard(){
   const claims=S.notices.filter(n=>n.status==='open');
   const noteC=allNotesOpen('C'), noteS=allNotesOpen('S');
   const dates=[...Array(14)].map((_,i)=>ago(13-i));
-  const daily=dates.map(d=>S.sales.filter(s=>s.date===d).reduce((a,s)=>a+s.total,0));
-  const dailyCash=dates.map(d=>S.sales.filter(s=>s.date===d&&s.type==='CASH').reduce((a,s)=>a+s.total,0));
-  const dailyCred=dates.map(d=>S.sales.filter(s=>s.date===d&&s.type==='CREDIT').reduce((a,s)=>a+s.total,0));
+  const daily=dates.map(d=>_ds.filter(s=>s.date===d).reduce((a,s)=>a+s.total,0));
+  const dailyCash=dates.map(d=>_ds.filter(s=>s.date===d&&s.type==='CASH').reduce((a,s)=>a+s.total,0));
+  const dailyCred=dates.map(d=>_ds.filter(s=>s.date===d&&s.type==='CREDIT').reduce((a,s)=>a+s.total,0));
   const avg=daily.slice(0,13).reduce((a,v)=>a+v,0)/13;
   const vsAvg=avg?((daily.at(-1)-avg)/avg*100):0;
   const cash=bal('1010'), banks=S.banks.map(b=>({name:b.name,v:bal(b.ac)}));
   const chqHand=bal('1030'), totalMoney=cash+banks.reduce((a,b)=>a+b.v,0)+chqHand;
   const days=d=>Math.round((today-new Date(d))/864e5);
-  const openBills=S.sales.filter(s=>s.balance>0);
+  const openBills=_ds.filter(s=>s.balance>0);
   const age=openBills.reduce((a,s)=>{const d=days(s.date); if(d<=30)a.now+=s.balance; else if(d<=60)a.mid+=s.balance; else a.old+=s.balance; return a},{now:0,mid:0,old:0});
-  const weekSales=S.sales.filter(s=>s.date>=ago(6));
+  const weekSales=_ds.filter(s=>s.date>=ago(6));
   const prod={}; weekSales.forEach(s=>s.lines.forEach(l=>{prod[l.pid]=(prod[l.pid]||0)+l.qty*l.price-l.disc}));
   const top=Object.entries(prod).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const topMax=top.length?top[0][1]:1;
@@ -9396,7 +9425,7 @@ function dashboard(){
   const held=totalMoney, netPos=held+ar-ap-chqOut-wagesDue;
   const posMax=Math.max(ar,ap,chqOut,expMonth,wagesDue,1);
   // this month's flows
-  const mSales=S.sales.filter(s=>s.date.slice(0,7)===mk).reduce((a,s)=>a+s.total,0);
+  const mSales=_ds.filter(s=>s.date.slice(0,7)===mk).reduce((a,s)=>a+s.total,0);
   const mCollected=S.payments.filter(p=>p.dir==='IN'&&p.date.slice(0,7)===mk).reduce((a,p)=>a+p.amount,0);
   const mPurch=S.purchases.filter(p=>p.date.slice(0,7)===mk).reduce((a,p)=>a+p.total,0);
   const mPaidSup=S.payments.filter(p=>!p.dir&&p.date.slice(0,7)===mk).reduce((a,p)=>a+p.total,0);
@@ -9520,7 +9549,7 @@ function dashboard(){
     ${Object.entries(byCashier).map(([u,v])=>`<div class="prow"><span>${u}</span><b>${fmt(v)}</b></div>`).join('')}</div>`,
    bills:()=>`<div class="card"><h2>Latest bills</h2>
     <table><tr><th>Invoice</th><th>Customer</th><th class="n">Total</th><th class="n">Owing</th></tr>
-    ${S.sales.slice(-6).reverse().map(s=>`<tr><td><a href="#" data-act="invoice" data-no="${s.no}">${s.no}</a></td>
+    ${_ds.slice(-6).reverse().map(s=>`<tr><td><a href="#" data-act="invoice" data-no="${s.no}">${s.no}</a></td>
       <td>${C(s.customerId).name}</td><td class="n">${fmt(s.total)}</td><td class="n">${s.balance?fmt(s.balance):'—'}</td></tr>`).join('')}</table></div>`,
    low:()=>`<div class="card"><h2>Running low</h2>
     ${low.length?`<table>${low.slice(0,6).map(p=>`<tr><td>${p.name}</td><td class="n">${fq(p.stock)} ${p.unit}</td><td class="n muted">reorder at ${p.min}</td></tr>`).join('')}</table>`
@@ -9529,7 +9558,7 @@ function dashboard(){
   const dp=dashPrefs();
   const wide=new Set(['pulse','figures','day','alerts','position']);
   const live=dp.order.filter(k=>!dp.hidden.includes(k)&&panels[k]);
-  let html=`<div class="dash-h"><h1>Dashboard</h1><button class="btn ghost sm" data-act="dashSet">Arrange</button></div>`;
+  let html=`<div class="dash-h"><h1>Dashboard${shopFilter?' · '+extLocName(shopFilter):''}</h1><button class="btn ghost sm" data-act="dashSet">Arrange</button></div>${shopBar()}`;
   let i=0;
   DASH_GROUPS.forEach(([gk,gLabel])=>{
     const keys=live.filter(k=>DASH_GROUP_OF[k]===gk);
@@ -10480,6 +10509,9 @@ const gpSeen=()=>ownerOnly();
    name on the line can be changed for that bill — N on the line, or the Name box when the line is opened.
    The product itself is never renamed; the wording is kept with the bill and prints on it. */
 const lineName=(l)=>String(l && l.name ? l.name : ((P(l.pid)||{name:'(item removed)'}).name));
+/* When a line's goods sit at the other shop, everybody has to see it: the person billing,
+   the customer on the printed bill, and the shop that has to hand the goods over. */
+const lineFrom=(l,inv)=>(typeof extFromName==='function')?extFromName(l,inv&&inv.loc):'';
 /* A line whose written-down cost is far above what it sold for is nearly always a bad cost carried in
    from the old system — a roll price against a metre sold — not a real loss. They are counted apart so
    one of them cannot quietly swallow the month's GP. */
@@ -10583,6 +10615,8 @@ function posClassic(){
             title="${chk?'Checked — click or press C to take it off':'Not checked — click or press C'}"
             aria-label="checked">${chk?'✓':''}</button>${p.num||p.code}</td>
          <td class="d"><b>${lineName(l).toUpperCase()}</b>${l.qty<0?' <span class="rettag">RETURN</span>':''}
+          ${lineFrom(l)?`<span class="tag warn" data-act="lnLoc" data-i="${i}" style="cursor:pointer"
+             title="These goods are at ${lineFrom(l)} — click to choose a different shop">issue from ${lineFrom(l)}</span>`:''}
           ${(l.serials&&l.serials.length)?`<em>serial ${l.serials.join(', ')}</em>`:''}
           ${l.fromLast?`<span class="tag blue">their last price · ${l.fromLast}</span>`:''}
           ${l.qty>p.stock+1e-9&&CFG.stock.track!==false?'<span class="tag bad">short on the floor</span>':''}
@@ -13619,7 +13653,7 @@ function billDetail(inv){
     ${prev?`<div><span>Other bills owing</span><b>${money2(prev)}</b></div>`:''}
    </div>
    <div class="bl-lines"><table class="till-tbl"><tr><th>CODE</th><th>ITEM</th><th class="n">QTY</th><th class="n">MRP</th><th class="n">PRICE</th><th class="n">DISC</th><th class="n">AMOUNT</th></tr>
-    ${inv.lines.map(l=>{const p=P(l.pid)||NOPROD;return `<tr><td class="c">${p.num||p.code}</td><td class="d">${lineName(l)}${l.serials&&l.serials.length?`<div class="muted">S/N ${l.serials.join(', ')}</div>`:''}</td>
+    ${inv.lines.map(l=>{const p=P(l.pid)||NOPROD;return `<tr><td class="c">${p.num||p.code}</td><td class="d">${lineName(l)}${lineFrom(l,inv)?` <b>[issue from ${lineFrom(l,inv)}]</b>`:''}${l.serials&&l.serials.length?`<div class="muted">S/N ${l.serials.join(', ')}</div>`:''}</td>
       <td class="n">${fq(l.qty)}</td><td class="n">${money2(l.mrp||p.mrp)}</td><td class="n">${money2(l.price)}</td><td class="n">${l.disc?money2(l.disc):'—'}</td><td class="n"><b>${money2(l.qty*l.price-(l.disc||0))}</b></td></tr>`}).join('')}</table></div>
    <div class="bl-foot">
     ${(inv.pays||[]).length?`<div class="bl-pays"><b>How it was paid</b>${inv.pays.map(p=>`<div><span>${p.method}${p.ref?' · '+p.ref:''}${p.bank?' · '+p.bank:''}</span><b>${money2(p.amount)}</b></div>`).join('')}</div>`:''}
@@ -14865,11 +14899,11 @@ function billHtml(inv,f='a5'){
    ${walk?'':`<div class="sb-kv"><span>Customer :</span><b>${c.name.toUpperCase()}</b><span>${c.phone||''}</span></div>`}
    <div class="sb-rule"></div>
    ${B.showSaving!==false?`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>MRP</th><th>D.Price</th><th>Amount</th></tr>
-   ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}</td></tr>
+   ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td></tr>
      <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l">${l.qty.toFixed(3)}</td><td>${money2(p.mrp)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`}).join('')}
    </table>`
    :`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>Qty</th><th>Price</th><th>Amount</th></tr>
-   ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}</td></tr>
+   ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td></tr>
      <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`}).join('')}
    </table>`}
    <div class="sb-rule"></div>
@@ -14891,7 +14925,7 @@ function billHtml(inv,f='a5'){
   </div>`;
   // ---------- A5 landscape ----------
   const showCode=B.showCode!==false, showUom=B.showUom!==false, showMrp=B.showMrp!==false;
-  const rows=inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="${anyChecked&&l.checked!==true?'notck':''}"><td>${i+1})</td>${showCode?`<td>${p.num||p.code}</td>`:''}<td class="d">${lineName(l).toUpperCase()}</td>
+  const rows=inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="${anyChecked&&l.checked!==true?'notck':''}"><td>${i+1})</td>${showCode?`<td>${p.num||p.code}</td>`:''}<td class="d">${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td>
     <td class="n">${l.qty.toFixed(2)}</td>${showUom?`<td class="u">${(p.unit||'').toUpperCase()}</td>`:''}${showMrp?`<td class="n">${money2(p.mrp)}</td>`:''}<td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td>${anyChecked?`<td class="ck">${l.checked===true?'✓':'✗'}</td>`:''}</tr>`}).join('');
   const nm=(SH.name||'REGAL HARDWARE');
   return `<div class="print a5 sba5" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5})">
@@ -16907,6 +16941,7 @@ const REPORTS=[
   ['Expenses and cash',[['exp','Expenses by Category'],['cash','Cash and Bank Movement'],['daycash','Cash in Hand — day by day']]],
   ['Products and stock',[['stockval','Inventory Valuation Summary'],['stockmove','Stock Movement Detail'],
     ['reorder','Below Reorder Level'],['prodprofit','Profit by Product']]],
+  ['The shops',[['byshop','Sales by Shop'],['shopitem','What each shop sells']]],
   ['Payroll',[['pay','Payroll Summary'],['att','Attendance Summary']]],
   ['For my accountant',[['tb','Trial Balance'],['gl','General Ledger'],['journal','Journal'],
     ['txlist','Transaction List by Date'],['audit','Audit Log — what was changed']]]];
@@ -17006,6 +17041,46 @@ function reportData(){
       ['','','Total',money(rows.reduce((a,r)=>a+num(r[3]),0)),money(rows.reduce((a,r)=>a+num(r[4]),0)),
        money(rows.reduce((a,r)=>a+num(r[5]),0)),''],
       'Every supplier bill still open, with a mark against anything past their terms.');
+  }
+  /* Each shop on its own. Profit here is the bill total less what the goods cost, so it is
+     after every discount — which is why it can differ from a report that counts discounts
+     as a separate column. */
+  case 'byshop':{
+    const locs=(S.locations&&S.locations.length)?S.locations:[{id:0,name:CFG.shop.name||'The shop'}];
+    const cogsOf=x=>x.lines.reduce((a,l)=>a+l.qty*l.cost,0);
+    let tn=0,tv=0,tp=0,tc=0;
+    const rows=locs.map(loc=>{
+      const list=S.sales.filter(x=>inRange(x.date)&&shopOf(x)===loc.id);
+      const v=list.reduce((a,x)=>a+x.total,0);
+      const p=list.reduce((a,x)=>a+x.total-cogsOf(x),0);
+      const cr=list.reduce((a,x)=>a+x.balance,0);
+      tn+=list.length; tv+=v; tp+=p; tc+=cr;
+      return [loc.name+(loc.id===S.locId?' (this till)':''),list.length,money(v),
+              money(list.length?v/list.length:0),money(cr),money(p),v?((p/v)*100).toFixed(1)+'%':'—'];
+    }).filter(r=>r[1]||locs.length<=2);
+    return t(['Shop','Bills','Sales','Average bill','Sold on credit','Gross profit','Margin'],rows,
+      ['All shops',tn,money(tv),money(tn?tv/tn:0),money(tc),money(tp),tv?((tp/tv)*100).toFixed(1)+'%':'—'],
+      locs.length<2?'There is only one shop on the books. Add another under Settings → Locations.'
+        :'A bill counts to the shop that made it. Bills made before the second shop existed count to '+locs[0].name+'.');
+  }
+  /* What sells where — the same item side by side, so you can see what the second shop
+     actually moves as against what it merely holds. */
+  case 'shopitem':{
+    const locs=(S.locations&&S.locations.length)?S.locations:[{id:0,name:CFG.shop.name||'The shop'}];
+    const by=new Map();
+    S.sales.filter(x=>inRange(x.date)).forEach(x=>{ const sh=shopOf(x);
+      x.lines.forEach(l=>{ const r=by.get(l.pid)||{qty:{},val:{},tot:0};
+        r.qty[sh]=(r.qty[sh]||0)+l.qty;
+        r.val[sh]=(r.val[sh]||0)+l.qty*l.price-l.disc;
+        r.tot+=l.qty*l.price-l.disc; by.set(l.pid,r) }) });
+    const rows=[...by.entries()].sort((a,b)=>b[1].tot-a[1].tot).slice(0,200).map(([pid,r])=>{
+      const p=P(pid)||{name:'(item removed)',unit:''};
+      return [p.name,...locs.map(l=>r.val[l.id]?money(r.val[l.id]):'—'),money(r.tot)];
+    });
+    const foot=['All items',...locs.map(l=>money([...by.values()].reduce((a,r)=>a+(r.val[l.id]||0),0))),
+                money([...by.values()].reduce((a,r)=>a+r.tot,0))];
+    return t(['Item',...locs.map(l=>l.name),'Total'],rows,foot,
+      rows.length>=200?'The two hundred best sellers.':'');
   }
   case 'salesuser':{
     const by={};
@@ -19143,6 +19218,7 @@ document.addEventListener('click',e=>{
       wpOpen=null; render();
       toast(`${p.name} saved${webHasOwn(p)?` · ${fmt(+p.webPrice)} on the site`:''}`) },
     siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
+    shopPick:()=>{ shopFilter=+a.dataset.v; render(); const mn=document.getElementById('main'); if(mn) mn.scrollTop=0 },
     aiTab:()=>{ aiTab=a.dataset.t; aiErr=''; render(); const mn=document.getElementById('main'); if(mn) mn.scrollTop=0 },
     aiRun:()=>{ const m=a.dataset.m, box=document.getElementById('aiBox');
       const q=box?box.value.trim():'';
@@ -19771,6 +19847,8 @@ if(window.__sandboxDemo){
   shopLock();
 } else if(window.regalBridge){
   if(regalBridge.terminal()) S.terminal=regalBridge.terminal();
+  // the terminal's name arrives after the books, and the shop it belongs to hangs off it
+  if(typeof extRelocate==='function') extRelocate();
   if(regalBridge.online()){
     boot().then((ok)=>{
       let name = rememberedUser;
