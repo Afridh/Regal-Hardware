@@ -8098,6 +8098,7 @@ function bindPhone(){
 /* ============================ UI ============================ */
 const $=(s)=>document.querySelector(s);
 const views=[
+ ['updates','What is new'],
  ['grp','Counter'],['dashboard','Dashboard','F2'],['pos','POS billing','F3'],['bills','Bills','F9'],['docs','Quotes & delivery notes'],
  ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['tenders','Quotations & tenders'],
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['payreqs','Payment requests'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],
@@ -8162,6 +8163,7 @@ function roleDefFor(roleName){
 const VIEW_PERM={users:'users',settings:'settings',payroll:'payroll',products:'products',webproducts:'products'};
 function allowed(v){
   if(!S.user || !S.user.name) return false;
+  if(v === 'updates') return true;          // what changed is everybody's business
   if(v === 'trail') return ownerOnly();
   const roleName = String(S.user.role || '');
   const rLower = roleName.toLowerCase();
@@ -8206,7 +8208,7 @@ function allowed(v){
    Each person gets their own arrangement: menu down the side or across the
    top, wide or narrow, and the page they land on. It travels with the login,
    so the cashier's screen is the cashier's whatever machine they sit at. */
-const PREF_DEFAULTS={nav:'side',collapsed:true,start:'dashboard',keys:true,till:'classic'};
+const PREF_DEFAULTS={nav:'side',collapsed:true,start:'updates',keys:true,till:'classic'};
 function prefs(){ if(!S.user.prefs) S.user.prefs={...PREF_DEFAULTS}; return S.user.prefs }
 function pref(k){ const p=prefs(); if(k==='collapsed'&&p[k]===undefined) return true; return p[k]===undefined?PREF_DEFAULTS[k]:p[k] }
 function setPref(k,v){
@@ -8224,6 +8226,7 @@ function applyLayout(){
   document.body.classList.toggle('nokeys',!pref('keys'));
 }
 const ICONS={
+  updates:'M12 3l2.1 4.6 5 .5-3.7 3.4 1 4.9-4.4-2.5-4.4 2.5 1-4.9L4.9 8.1l5-.5zM19 17v4M17 19h4',
   dashboard:'M3 12h6V3H3zM11 21h6v-9h-6zM3 21h6v-6H3zM11 8h6V3h-6z',
   pos:'M3 6h18l-2 12H5zM8 6V3h8v3M9 21h.01M15 21h.01',
   bills:'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6',
@@ -8285,7 +8288,7 @@ function renderNav(){
       items.map(v=>v[0]==='grp'
         ? `<div class="grp"><span>${v[1]}</span><i>${v[1]}</i></div>`
         : `<button class="${S.view===v[0]?'on':''}" data-view="${v[0]}" title="${v[1]}">
-            <i class="ic">${icon(v[0])}</i><span>${v[1]}</span>${v[2]?`<em class="k">${v[2]}</em>`:''}${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}<i class="tip">${v[1]}${v[2]?' · '+v[2]:''}</i></button>`).join('')
+            <i class="ic">${icon(v[0])}</i><span>${v[1]}</span>${v[2]?`<em class="k">${v[2]}</em>`:''}${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}${v[0]==='updates'&&updatesUnseen()?`<i class="nbadge">${updatesUnseen()}</i>`:''}<i class="tip">${v[1]}${v[2]?' · '+v[2]:''}</i></button>`).join('')
       +`</div>
        <div class="navfooter">
          <div class="navfoot-actions">
@@ -8300,7 +8303,7 @@ function renderNav(){
     : items.map(v=>v[0]==='grp'
         ? `<div class="grp"><span>${v[1]}</span></div>`
         : `<button class="${S.view===v[0]?'on':''}" data-view="${v[0]}" title="${v[1]}${v[2]?' · '+v[2]:''}">
-            ${icon(v[0])}<span>${v[1]}</span>${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}</button>`).join('');
+            ${icon(v[0])}<span>${v[1]}</span>${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}${v[0]==='updates'&&updatesUnseen()?`<i class="nbadge">${updatesUnseen()}</i>`:''}</button>`).join('');
   $('#hdr').innerHTML=`${S.user.name}, ${S.user.role.toLowerCase()} &nbsp;|&nbsp; till ${S.terminal}, drawer open since ${S.drawer.opened}<br>${today.toDateString()}`;
   drawBell();
   const list=$('#nav .navlist');
@@ -8425,7 +8428,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={recall,stocktake:stockTake,serials,damages,jobs,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={updates,recall,stocktake:stockTake,serials,damages,jobs,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
@@ -8439,6 +8442,7 @@ function renderNow(){
   if(S.view==='serials'){ const sq=$('#srQ'); if(sq){ sq.oninput=e=>{srQ=e.target.value;render();const n=$('#srQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body) sq.focus() } } if(S.view==='labels') labelsAfter(); if(S.view==='receipts') receiptsAfter(); if(S.view==='dashboard') dashboardAfter();
 
+  if(S.view==='updates') markUpdatesSeen();
   if(S.view==='bills'||S.view==='recall') billsAfter();
   if(S.view==='payroll' && (window.isDemo || (S && S.isDemo))) demoAttendanceAfter();
   if(S.view==='trail') trailAfter();
@@ -9000,6 +9004,164 @@ function salesmanDashboard(){
       </tr>`).join('')||'<tr><td colspan="6" class="muted">No bills recorded under your name yet.</td></tr>'}
     </table>
   </div>`;
+}
+
+/* ================== WHAT CAME IN WITH THE LAST PULL ==================
+   A temporary page, here while the system is being worked on. It says when the
+   updates were brought onto this copy and what was in them — read out of the git
+   history, so nobody types this list and it cannot drift from the truth.
+
+   Refresh it after a pull:   node tools/update-log.mjs
+
+   To take it out again: delete this block, the 'updates' line in `views`, its
+   icon, its line in `allowed`, the badge in the menu, the `updDone` act, and
+   tools/update-log.mjs. Put PREF_DEFAULTS.start back to 'dashboard'. */
+/* <<UPDATE-LOG>> generated by tools/update-log.mjs — do not edit by hand */
+const UPDATE_LOG={at:'28 Sept 2026, 20:56',head:'9c39ed6',count:80,items:[
+ {h:'9c39ed6',d:'2026-09-28 17:30',w:'Afridh',s:'A purchase can be booked by its invoice total, with the invoice photographed'},
+ {h:'9c4b3ce',d:'2026-09-28 17:07',w:'Afridh',s:'Closing a quotation is asked about and goes on the trail'},
+ {h:'1913c5d',d:'2026-09-28 16:39',w:'Afridh',s:'Quotations and delivery notes read like the bills'},
+ {h:'51249ab',d:'2026-09-28 16:26',w:'Afridh',s:'A quotation prints like a bill, and turning one into a bill is shown'},
+ {h:'be4626e',d:'2026-09-28 15:50',w:'Afridh',s:'A bill being keyed survives a refresh and a sign-out'},
+ {h:'bb550cd',d:'2026-09-28 15:34',w:'Afridh',s:'The box ticks itself as the bill is walked down'},
+ {h:'7e822ab',d:'2026-09-28 15:10',w:'Afridh',s:'A box on every bill line, ticked by hand or with C'},
+ {h:'52062f8',d:'2026-09-28 14:52',w:'Afridh',s:'The checking tick goes on the bill, and a line can be unticked'},
+ {h:'bbf7aa5',d:'2026-09-28 14:29',w:'Afridh',s:'A till that stopped saving starts again by itself'},
+ {h:'751a0de',d:'2026-09-28 14:19',w:'Afridh',s:'The bill link opens the bill the shop printed, not a drawing of it'},
+ {h:'e7a8aa0',d:'2026-09-28 12:06',w:'Afridh',s:'The bill link a customer is texted opens a bill'},
+ {h:'c7421fb',d:'2026-09-28 10:13',w:'Afridh',s:'Four keys at the till: wholesale, retail, large bill, normal bill'},
+ {h:'d8129d9',d:'2026-09-28 09:10',w:'Afridh',s:'Damaged goods go back to the supplier, and repairs get a job note'},
+ {h:'0506ee9',d:'2026-09-27 20:28',w:'unknown',s:'A bill made on one till reaches every till, and two tills saving at once keep both'},
+ {h:'e1f84a7',d:'2026-09-27 19:53',w:'unknown',s:'/demo is the whole till on sample data, sealed off from the shop'},
+ {h:'17a2087',d:'2026-09-27 19:29',w:'unknown',s:'recover-books puts the real books back and keeps what was set up since'},
+ {h:'0147dc7',d:'2026-09-27 19:07',w:'Afridh',s:'A small pin by the shop name, sign out as its icon, and air beside the menu'},
+ {h:'f85a230',d:'2026-09-27 19:05',w:'unknown',s:'The shop closes on Sri Lankan public holidays and Poya days, not Sundays'},
+ {h:'6259dae',d:'2026-09-27 18:56',w:'Afridh',s:'The pin works: it sits still instead of running from the pointer'},
+ {h:'153be85',d:'2026-09-27 18:52',w:'Afridh',s:'Revert "The dashboard gets a dark board of its own"'},
+ {h:'3bb6768',d:'2026-09-27 18:53',w:'unknown',s:'Every till shows the shop\'s users as the Super Admin left them'},
+ {h:'4196902',d:'2026-09-27 18:44',w:'Afridh',s:'The dashboard gets a dark board of its own'},
+ {h:'93af3c5',d:'2026-09-27 18:41',w:'unknown',s:'A new person starts the day at 0h, and only the Super Admin takes an absence back'},
+ {h:'3ff92b9',d:'2026-09-27 18:41',w:'Afridh',s:'A pin on the sidebar keeps the menu open'},
+ {h:'ab3f2b0',d:'2026-09-27 18:35',w:'Afridh',s:'The dashboard opens with what is waiting and what the shop is worth'},
+ {h:'a3b4f75',d:'2026-09-27 18:27',w:'unknown',s:'The Attendance screen has no Sync button'},
+ {h:'c68cd7f',d:'2026-09-27 18:27',w:'unknown',s:'Only a real user\'s own password opens a shop that has books'},
+ {h:'c3e0ecf',d:'2026-09-27 18:17',w:'unknown',s:'Staff can be added without a sign-in, and real people with old sample names stay'},
+ {h:'bafe66e',d:'2026-09-27 17:27',w:'unknown',s:'/shift is the till\'s Attendance board, for the shop\'s own users'},
+ {h:'e2cdb11',d:'2026-09-27 17:27',w:'Afridh',s:'A till that cannot read the books never writes over them'},
+ {h:'6d8a43f',d:'2026-09-27 17:05',w:'unknown',s:'The shop site loads again: a phone-number edit had left every old line beside its new one'},
+ {h:'de78e09',d:'2026-09-27 16:59',w:'Afridh',s:'A customer can open a bill on their own page'},
+ {h:'812344e',d:'2026-09-27 14:15',w:'unknown',s:'The SePOS import can run without the database: --base and --out'},
+ {h:'b08f6f3',d:'2026-09-27 13:36',w:'unknown',s:'The live server starts again: mysql2 is installed where Vercel looks'},
+ {h:'e10e96f',d:'2026-09-27 13:27',w:'unknown',s:'A punch made on one till reaches every till'},
+ {h:'7275201',d:'2026-09-27 13:06',w:'unknown',s:'Leaving the demo reloads the till, so nothing of the demo stays behind'},
+ {h:'4ae42c1',d:'2026-09-27 12:54',w:'unknown',s:'Implement live running attendance timer, break allowances with persistent extra break badge, pause/resume on checkout and break, and 7:30 PM OT calculation with card badge'},
+ {h:'5680f92',d:'2026-09-27 12:27',w:'unknown',s:'Restore classic attendance card UI with See details and break options matching reference photo'},
+ {h:'e1adb20',d:'2026-09-27 12:10',w:'Afridh',s:'A minus quantity on a bill is a return'},
+ {h:'ec8d17f',d:'2026-09-27 12:09',w:'unknown',s:'Enable all Admin panel sections in Demo mode with 100% client-side API cancellation'},
+ {h:'9a8d9c4',d:'2026-09-27 12:02',w:'unknown',s:'Add standalone Demo Attendance view with live running clock, shift cards, and nav buttons'},
+ {h:'116184d',d:'2026-09-27 11:52',w:'unknown',s:'Isolate demo user from Admin users panel and Attendance shift cards across all portals'},
+ {h:'97b6cb5',d:'2026-09-26 17:15',w:'unknown',s:'Add isolated Demo POS trial site with demo/demo123 credentials and sandbox isolation'},
+ {h:'5531379',d:'2026-09-25 22:03',w:'unknown',s:'Restoring the books from a till\'s own copy strips what belongs to that till'},
+ {h:'f34ff39',d:'2026-09-25 20:19',w:'unknown',s:'The whole server runs on MySQL, ready for register.lk'},
+ {h:'649dcb6',d:'2026-09-25 19:34',w:'unknown',s:'/shift punches work on MySQL'},
+ {h:'8d7767a',d:'2026-09-25 14:54',w:'Afridh',s:'The database layer speaks MySQL as well as PostgreSQL'},
+ {h:'e278954',d:'2026-09-25 12:06',w:'unknown',s:'Merge branch \'fix/lightweight-rev-poll\': admin-only /shift clock in step with the POS'},
+ {h:'203e8fa',d:'2026-09-25 12:06',w:'unknown',s:'Rebuild /shift as an admin-only shift clock that stays in step with the POS'},
+ {h:'4c50d7b',d:'2026-09-25 11:50',w:'unknown',s:'Read only the revision on /rev polls and skip polling in hidden POS tabs'},
+ {h:'3f124c3',d:'2026-09-25 10:18',w:'Afridh',s:'A sign-in code is never handed back over the web'},
+ {h:'0a58255',d:'2026-09-25 08:50',w:'Afridh',s:'The text that hands over a page carries the sign-in, and the till lets people in again'},
+ {h:'14672c9',d:'2026-09-25 02:42',w:'unknown',s:'Remove credentials requirement from /shift page and make shift endpoints public'},
+ {h:'f532dc5',d:'2026-09-25 02:30',w:'unknown',s:'Live CRUD sync across portals and /shift, cross-device user login fix, and mobile menu click-outside behavior'},
+ {h:'e60c61d',d:'2026-09-25 01:42',w:'unknown',s:'Remove metrics and break details from attendance cards and finalize /shift page'},
+ {h:'7318fad',d:'2026-09-25 01:32',w:'unknown',s:'Add standalone /shift check-in page, count hours across re-checkins, and remove scrolldown from attendance cards'},
+ {h:'b0b0cd9',d:'2026-09-25 00:53',w:'unknown',s:'Show only Present, Absent, and Holiday on attendance ledger sheet'},
+ {h:'f361ce2',d:'2026-09-24 23:44',w:'unknown',s:'Enhance attendance late formatting, break allowances & badges, and robust user CRUD operations'},
+ {h:'14d698b',d:'2026-09-24 22:08',w:'Afridh',s:'The shop stops making sign-ins by hand; a firm asks for the ones it needs'},
+ {h:'d6a6d2d',d:'2026-09-24 21:42',w:'unknown',s:'Fix attendance: disable auto-absent, prevent check-in card resetting, fix shop.html preview'},
+ {h:'9a224e4',d:'2026-09-24 21:37',w:'Afridh',s:'A supplier can ask to be paid, and the asking leaves a trail'},
+ {h:'aa56e3f',d:'2026-09-24 21:01',w:'unknown',s:'Fix syntax error and undefined settings crash on customer site (shop.html)'},
+ {h:'88cbc67',d:'2026-09-24 20:27',w:'unknown',s:'Fix customer site API endpoint for local file:// access'},
+ {h:'4b07ab0',d:'2026-09-24 19:40',w:'unknown',s:'Keep the Claude Code session folder out of the repository'},
+ {h:'42c6756',d:'2026-09-24 19:01',w:'unknown',s:'Fix user edit updates, remove bill number/id inputs, and auto-assign SalesID for salesmen'},
+ {h:'856818e',d:'2026-09-24 17:53',w:'unknown',s:'Prevent removed users from regenerating on page refresh across both client and server sanitizeUsers'},
+ {h:'3c5b0a7',d:'2026-09-24 17:34',w:'unknown',s:'Unify users and staff roster, permanently revoke deleted users, and connect real-time attendance sync across all admin, KP, and salesman portals'},
+ {h:'6209094',d:'2026-09-24 17:03',w:'unknown',s:'Add live working time badge, auto-absent past closing, midnight reset, and duration in hours and minutes'},
+ {h:'b33cd93',d:'2026-09-24 16:38',w:'unknown',s:'Revamp Attendance UI with Regal Hardware theme, collapsible details, and seamless in-place punch actions'},
+ {h:'1e7d9c9',d:'2026-09-24 16:15',w:'Afridh',s:'Every customer and every supplier has a sign-in of their own'},
+ {h:'6bab12b',d:'2026-09-24 16:12',w:'unknown',s:'Implement Shift Board attendance UI with 8:00 AM check-in, 7:30 PM closing OT, meals, leave shop approvals, and salesperson portals'},
+ {h:'629752a',d:'2026-09-24 15:33',w:'unknown',s:'Fix till section notification bell button and customer site phone number'},
+ {h:'d2e8197',d:'2026-09-24 14:58',w:'Afridh',s:'A page already switched on can be handed its sign-in in one press, and a failed reading no longer sits on Reading'},
+ {h:'8a36d5f',d:'2026-09-24 14:27',w:'Afridh',s:'Switching a page on hands over the keys: a sign-in is made and texted, for suppliers as well as customers'},
+ {h:'0414e53',d:'2026-09-24 13:50',w:'unknown',s:'Update phone number and WhatsApp contact to 077 222 2259 across customer site'},
+ {h:'b7bc951',d:'2026-09-24 11:51',w:'Afridh',s:'The sign-in goes to the person it belongs to: the link, the user name and the password in one message'},
+ {h:'05839fb',d:'2026-09-24 11:44',w:'Afridh',s:'Fix: a customer card whose sign-ins could not be read redrew itself for ever'},
+ {h:'565bdb6',d:'2026-09-24 11:36',w:'Afridh',s:'A firm signs in by name: the manager, the accountant and the storekeeper each get their own'},
+ {h:'a10ac1e',d:'2026-09-24 11:11',w:'Afridh',s:'The page the shop texts customers is a real page now'},
+ {h:'2ce5355',d:'2026-09-24 10:11',w:'Afridh',s:'The customer card leads with how old the money is, not with what they have bought'}
+]};
+/* <</UPDATE-LOG>> */
+
+/* Read, or not read, per person and against the stamp on the log — so each new
+   pull brings everybody back here once, and after that they land where they
+   chose again. It travels with the login, like the rest of their screen. */
+function updatesSeen(){ return !UPDATE_LOG.at || pref('sawUpdates')===UPDATE_LOG.at }
+function markUpdatesSeen(){ if(UPDATE_LOG.at && pref('sawUpdates')!==UPDATE_LOG.at) setPref('sawUpdates',UPDATE_LOG.at) }
+function updatesUnseen(){ return (UPDATE_LOG.items||[]).length && !updatesSeen() ? UPDATE_LOG.count : 0 }
+
+/* Where a person lands when we have to put them somewhere: what they picked in
+   Settings, and failing that whatever is open to them. */
+function landingView(){
+  const s=pref('start');
+  if(allowed(s)) return s;
+  return allowed('dashboard') ? 'dashboard' : (allowed('pos') ? 'pos' : 'products');
+}
+
+function updates(){
+  const L=UPDATE_LOG, list=L.items||[];
+  if(!list.length) return `<h1>What's new</h1>
+    <div class="card"><div class="muted">Nothing has been recorded yet. After a pull, run
+    <b>node tools/update-log.mjs</b> and this page fills itself in.</div></div>`;
+  const dayName=k=>{ const t=new Date(k+'T00:00:00');
+    return isNaN(t)?k:t.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'}) };
+  const days=[];
+  for(const it of list){
+    const k=String(it.d||'').slice(0,10);
+    let g=days[days.length-1];
+    if(!g||g.k!==k){ g={k,rows:[]}; days.push(g) }
+    g.rows.push(it);
+  }
+  // whose work it was — a commit sometimes carries no name, and that is not worth saying
+  const who=[...new Set(list.map(i=>i.w).filter(w=>w&&!/^unknown$/i.test(w)))];
+  const byline=who.length?' from '+(who.length>3?who.slice(0,3).map(noteEsc).join(', ')+' and others':who.map(noteEsc).join(', ')):'';
+  const seen=updatesSeen();
+  return `<h1>What's new</h1>
+  <div class="card">
+    <div style="display:flex;flex-wrap:wrap;gap:16px 20px;align-items:flex-start;justify-content:space-between">
+      <div>
+        <div class="muted">Brought onto this system</div>
+        <div style="font-size:26px;font-weight:700;line-height:1.2;margin-top:2px">${noteEsc(L.at||'—')}</div>
+        <div class="muted" style="margin-top:6px">${L.count} change${L.count===1?'':'s'}${byline} · up to <b>${noteEsc(L.head||'')}</b></div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        ${seen?'<span class="muted">You have read this one.</span>':''}
+        <button class="btn" data-act="updDone">Go to my usual screen</button>
+      </div>
+    </div>
+    <div class="muted" style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(127,127,127,.25)">
+      This page is temporary, and it is the screen everyone lands on for now. After each pull it
+      comes up once, then you go back to your own screen. Change where you land under
+      <b>Settings → My screen → Where you land after signing in</b>.
+    </div>
+  </div>
+  ${days.map(g=>`<div class="card" style="margin-top:12px">
+    <h2 style="margin:0 0 6px">${noteEsc(dayName(g.k))}
+      <span class="muted" style="font-weight:400">· ${g.rows.length} change${g.rows.length===1?'':'s'}</span></h2>
+    ${g.rows.map(r=>`<div style="display:flex;gap:12px;align-items:baseline;padding:8px 0;border-top:1px solid rgba(127,127,127,.18)">
+      <span class="muted" style="min-width:42px;font-variant-numeric:tabular-nums">${noteEsc(String(r.d||'').slice(11))}</span>
+      <span style="flex:1;min-width:0">${noteEsc(r.s||'')}</span>
+      <span class="muted" style="white-space:nowrap">${noteEsc(r.w||'')} · ${noteEsc(r.h||'')}</span>
+    </div>`).join('')}
+  </div>`).join('')}`;
 }
 
 function dashboard(){
@@ -18493,9 +18655,7 @@ function shopLock(){
       if(!(S.pos&&S.pos.lines&&S.pos.lines.length)) restorePosDraft();
 
       applyLayout();
-      const startV = pref('start');
-      const targetV = allowed(startV) ? startV : (allowed('dashboard') ? 'dashboard' : (allowed('pos') ? 'pos' : 'products'));
-      go(targetV);
+      go(landingView());
       toast(`Signed in as ${u.name} (${u.role})`);
       try { clockInAsk(u.name); } catch(e) {}
     } catch(err) {
@@ -18795,6 +18955,8 @@ document.addEventListener('click',e=>{
       wpOpen=null; render();
       toast(`${p.name} saved${webHasOwn(p)?` · ${fmt(+p.webPrice)} on the site`:''}`) },
     siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
+    updDone:()=>{ markUpdatesSeen(); const s=pref('start');
+      go(s!=='updates'&&allowed(s)?s:(allowed('dashboard')?'dashboard':'pos')) },
     setGo:()=>{ setTab=a.dataset.t; setJump=a.dataset.n; setSearch=''; render(); },
     setClearQ:()=>{ setSearch=''; render(); const n=$('#setQ'); if(n) n.focus() },
     siteShow:()=>{siteShow=a.dataset.v;render()},
@@ -19312,11 +19474,9 @@ const backAtTheTill=(name)=>{
   // whatever this person was keying when they left the till comes back with them
   if(!(S.pos&&S.pos.lines&&S.pos.lines.length)) restorePosDraft();
   applyLayout();
-  if(!allowed(S.view)){
-    const startV = pref('start');
-    const targetV = allowed(startV) ? startV : (allowed('dashboard') ? 'dashboard' : (allowed('pos') ? 'pos' : 'products'));
-    S.view = targetV;
-  }
+  // the view you left off on comes back with you — unless there is an update log you have not read
+  if(!allowed(S.view)) S.view = landingView();
+  else if(updatesUnseen()) S.view = 'updates';
   render();
   drawPhone();
   try{ tenderReminders() }catch(e){}
@@ -19465,10 +19625,7 @@ if(window.__sandboxDemo){
   boot().then(fresh=>{
     if(fresh){
       applyLayout();
-      if(!allowed(S.view)){
-        const startV = pref('start');
-        S.view = allowed(startV) ? startV : (allowed('dashboard') ? 'dashboard' : 'products');
-      }
+      if(!allowed(S.view)) S.view = landingView();
       render();
       drawPhone();
       toast('Books picked up from the shared store');
