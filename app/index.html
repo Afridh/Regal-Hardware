@@ -10079,7 +10079,7 @@ function posClassic(){
   const now=new Date(), sel=P(CS.pid), drag=CFG.pos.dragLines!==false;
   const owed=c.id===1?0:partyBal('C',c.id);
   const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['P on the bill','Price'],['N on the bill','Rename'],['F1','Back to item'],['F4','Customer'],
-              ['F5 / Ctrl+R','Held bills'],['F7 / Ctrl+H','Hold bill'],['F8','Bill disc.'],['F10','Pay'],['F6','On account'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['S in price','Past prices'],['W / R','Wholesale · retail'],['Clear','Reset bill']];
+              ['F5 / Ctrl+R','Held bills'],['F7 / Ctrl+H','Hold bill'],['F8','Bill disc.'],['F10','Pay'],['F6','On account'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['S in price','Past prices'],['Ctrl+Shift+W / R','Wholesale · retail'],['Ctrl+Shift+L / N','Large · normal bill'],['Clear','Reset bill']];
 
   const sync=(document.getElementById('savedAt')||{}).textContent||'';
   return `<div class="till">
@@ -10100,7 +10100,7 @@ function posClassic(){
      <div class="till-clock"><span id="posClockTime">${now.toLocaleTimeString('en-GB',{hour12:true})}</span><em id="posClockDay">${now.getDate()}</em></div></div>
     <div class="till-no ${S.pos.editing?'editing':''}">
      <b>${S.pos.editing||nextNo}</b>
-     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Switch between retail and wholesale prices for this bill — Ctrl+Shift+W, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><button class="till-paper" data-act="csPaper" title="Which bill prints after payment — small 80mm receipt or the large A5 bill"><i class="${csPaper()==='r80'?'on':''}">SMALL BILL</i><i class="${csPaper()==='a5'?'on':''}">LARGE BILL</i></button>`}</div>
+     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Which prices this bill uses — Ctrl+Shift+R for retail, Ctrl+Shift+W for wholesale, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><button class="till-paper" data-act="csPaper" title="Which bill prints after payment — Ctrl+Shift+N for the normal 80mm receipt, Ctrl+Shift+L for the large A5 bill"><i class="${csPaper()==='r80'?'on':''}">SMALL BILL</i><i class="${csPaper()==='a5'?'on':''}">LARGE BILL</i></button>`}</div>
    </div>
 
 
@@ -18778,7 +18778,15 @@ document.addEventListener('click',e=>{
   })[act]?.() });
 document.addEventListener('keydown',e=>{
   if(CFG.privacy&&CFG.privacy.on&&S.user&&privacyKeyMatch(e)){ e.preventDefault(); e.stopPropagation(); privacyToggle(); return }   // the privacy screen, before anything else
-  if(S.view==='pos'&&e.ctrlKey&&e.shiftKey&&e.key.toLowerCase()==='w'&&!S.pos.editing){ e.preventDefault(); posSetLevel(posLevel()==='wholesale'?'retail':'wholesale'); return }   // retail ⇄ wholesale for the bill
+  /* Which prices the bill uses, and which bill prints. Each key sets one thing rather than flipping
+     it, so nobody has to look at the screen first to know what a press will do. */
+  if(S.view==='pos'&&e.ctrlKey&&e.shiftKey&&!S.pos.editing){
+    const k=e.key.toLowerCase();
+    if(k==='w'){ e.preventDefault(); posSetLevel('wholesale'); toast('Wholesale prices on this bill'); return }
+    if(k==='r'){ e.preventDefault(); posSetLevel('retail');    toast('Retail prices on this bill');    return }
+    if(k==='l'){ e.preventDefault(); csSetPaper('a5');  render(); toast('Large bill — A5 will print'); return }
+    if(k==='n'){ e.preventDefault(); csSetPaper('r80'); render(); toast('Normal bill — 80mm receipt will print'); return }
+  }   // retail ⇄ wholesale for the bill
   if(e.key==='Escape'){
     const hadModal=!!document.querySelector('.modal'); closeModals();
     // on the shop's own screen, Esc with nothing open clears the bill, as CLEAR does
