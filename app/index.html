@@ -10389,8 +10389,18 @@ function fastUpdatePosSel(idx){
   if(linesEl){
     const rows = linesEl.querySelectorAll('.till-tbl tbody tr[data-act="csSel"]');
     rows.forEach((r, i)=>{
-      if(i === idx){ r.classList.add('on','ln-checked'); r.scrollIntoView({ block: 'nearest' }); }
+      if(i === idx){ r.classList.add('on'); r.scrollIntoView({ block: 'nearest' }); }
       else { r.classList.remove('on'); }
+      // the box is drawn when the screen is, and walking the bill does not redraw it — so it is
+      // filled in here as each line is stepped onto, and left as it is where somebody unticked it
+      const line = S.pos.lines[i], box = r.querySelector('.ln-box');
+      if (line && box) {
+        const on = line.checked === true;
+        box.classList.toggle('on', on);
+        box.textContent = on ? '✓' : '';
+        box.title = on ? 'Checked — click or press C to take it off' : 'Not checked — click or press C';
+        r.classList.toggle('ln-checked', on);
+      }
     });
   }
   const posTbl = document.getElementById('posTable');
