@@ -10484,6 +10484,7 @@ const TRAIL_KINDS={
   lineOff:['Line taken off a bill','warn'],
   billEdit:['Saved bill opened to be changed','warn'],
   billRemade:['Bill re-made','bad'],
+  docClosed:['Quotation or delivery note closed','warn'],
   priceDown:['Price dropped below the list','info'],
   custDel:['Customer removed','bad'],
   prodDel:['Item removed','bad'],
@@ -11996,6 +11997,33 @@ function docs(){
    <div class="card bl-detail">${doc?docDetail(doc):'<div class="muted">Nothing picked.</div>'}</div>
   </div>`;
 }
+/* Closing a quotation is a sale walking out of the shop, so it is asked about and written down: what
+   it was worth, whose it was, and why it came to nothing. The reason can be left empty — an answer
+   nobody has is not worth holding up the counter for — but the closing itself is always on the trail. */
+const DOC_CLOSE_WHY=['Customer bought elsewhere','Too expensive','Job did not go ahead','Out of stock',
+  'Quoted in error','No longer needed','Other'];
+function docCloseAsk(d){
+  const c=C(d.customerId)||{name:'Walk-in'};
+  const k=d.kind==='QUOTE'?'quotation':'delivery note';
+  const m=modal(`<h2>Close ${d.no}</h2>
+   <div class="muted" style="margin-bottom:10px">${fmt(d.total)} for ${c.id===1?'a walk-in customer':c.name}.
+    It comes off the waiting list and goes on the trail, where it can be looked back at.</div>
+   <div class="f"><label>Why is it closed</label>
+    <select id="dcWhy">${DOC_CLOSE_WHY.map(w=>`<option>${w}</option>`).join('')}</select></div>
+   <div class="f"><label>Anything to add</label><input id="dcNote" placeholder="left blank is fine"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Leave it open</button>
+    <button class="btn tape" id="dcOk">Close the ${k}</button></div>`);
+  m.querySelector('#dcOk').onclick=()=>{
+    const why=m.querySelector('#dcWhy').value, note=m.querySelector('#dcNote').value.trim();
+    d.status='closed'; d.closedOn=D(today); d.closedBy=S.user.name;
+    d.closedWhy=why; d.closedNote=note;
+    logTrail('docClosed',`${d.kind==='QUOTE'?'Quotation':'Delivery note'} ${d.no} closed`,
+      {why, note, amount:d.total, who:c.id===1?'Walk-in':c.name, ref:d.no});
+    m.remove(); persist(true); render();
+    toast(`${d.no} closed — it is on the trail`,'ok');
+  };
+}
 function docDetail(d){
   const c=C(d.customerId)||{name:'—'};
   const qty=d.lines.reduce((a,l)=>a+l.qty,0);
@@ -13240,7 +13268,8 @@ function trail(){
   const count=(k)=>(S.trail||[]).filter(t=>t.kind===k).length;
   const money0=(v)=>v?fmt(Math.abs(v)):'—';
   const tabs=[['all','Everything'],['holdDiscard','Held bills thrown away'],['billCleared','Bills cleared'],
-              ['lineOff','Lines taken off'],['billEdit','Bills opened again'],['billRemade','Bills re-made']];
+              ['lineOff','Lines taken off'],['billEdit','Bills opened again'],['billRemade','Bills re-made'],
+              ['docClosed','Quotations closed']];
   return `<h1>The trail <span class="muted" style="font-size:13px;font-weight:400">what was taken away or changed, and who did it</span></h1>
    <div class="row" style="margin-bottom:12px">
     ${stat('Held bills thrown away',count('holdDiscard'),'can be put back','r')}
@@ -18597,7 +18626,7 @@ document.addEventListener('click',e=>{
     docClear:()=>{ docQ=''; docKind='all'; docState='open'; docSel=null; render() },
     docBill:()=>docToBill(a.dataset.no),
     docKind:()=>{docKind=a.dataset.k;render()},
-    docDrop:()=>{const dd=S.docs.find(x=>x.no===a.dataset.no); dd.status='closed'; render(); toast(`${dd.no} closed`)},
+    docDrop:()=>{ const dd=S.docs.find(x=>x.no===a.dataset.no); if(!dd) return; docCloseAsk(dd) },
     webView:()=>{webView=a.dataset.v;render()},
     webCat:()=>{webCat=a.dataset.c;render()},
     webAdd:()=>{const id=+a.dataset.id, ex=S.web.cart.find(l=>l.pid===id);
