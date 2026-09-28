@@ -6691,6 +6691,8 @@ const dirtyUsers=new Set();
 const markUserDirty=(...names)=>names.forEach(n=>{ if(n) dirtyUsers.add(String(n).toLowerCase().trim()) });
 function persist(force){
   if(window.privacyOn||window.leavingDemo) return;
+  savePosDraft();          // the bill on the screen belongs to this till, and is kept here
+
   // the books are on the server but would not come down, so this till is holding sample data:
   // saving it would wipe the real shop
   if(window.booksUnreadable&&!window.isDemo){
@@ -9517,7 +9519,7 @@ function qComplete(pays,override,change){
     if(retired) inv=finishRemake(retired,inv);
     if(S.pos.fromDoc){ const dd=S.docs.find(x=>x.no===S.pos.fromDoc); if(dd){ dd.status='billed'; dd.invoice=inv.no } }
     if(S.pos.fromWeb){ const wo=S.web.orders.find(x=>x.no===S.pos.fromWeb); if(wo){ wo.invoice=inv.no; wo.status='invoiced' } }
-    S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+    clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
     QT.tender=''; QT.mode='cash';
     render(); persist(true); billSaved(inv); if(change>0.005) toast(`Change ${fmt(change)}`); askSize(inv);
   }catch(e){ toast(e.message) }
@@ -9766,7 +9768,7 @@ function openPay(resume){
       if(note.trim()) inv.note=note.trim();
       if(S.pos.fromDoc){ const dd=S.docs.find(x=>x.no===S.pos.fromDoc); if(dd){ dd.status='billed'; dd.invoice=inv.no } }
       if(S.pos.fromWeb){ const wo=S.web.orders.find(x=>x.no===S.pos.fromWeb); if(wo){ wo.invoice=inv.no; wo.status='invoiced'; wo.events&&wo.events.push({at:Date.now(),who:S.user.name,what:'Billed as '+inv.no}) } }
-      S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+      clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
       stop(); m.remove(); render(); persist(true);
       billSaved(inv);
       if(change>0.005) toast(`Change ${fmt(change)}`);
@@ -10324,7 +10326,7 @@ function csClearAsk(){
   const doIt=()=>{
     if(S.pos.lines.length) logTrail('billCleared',`${S.pos.lines.length} line${S.pos.lines.length===1?'':'s'} thrown away before billing`,
       {amount:billTotal(),who:C(S.pos.customer||1).name,bill:{ref:'cleared',lines:S.pos.lines.map(l=>({...l})),customer:S.pos.customer,billDisc:S.pos.billDisc||0,date:new Date().toISOString(),user:S.user.name}});
-    S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+    clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
     CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null,paper:null,chk:null}; closeModals(); render(); const q=$('#csQ'); if(q) q.focus() };
   const n=S.pos.lines.length;
   if(!n&&!CS.pid&&!S.pos.customer&&!S.pos.salesman) return doIt();
@@ -11138,7 +11140,7 @@ function askBill(m,pays,change,c,total,override){
           if(C(wo.cid).phone) sms(C(wo.cid).phone,`${S.web.settings.name}: order ${wo.no} billed as ${inv.no} for ${fmt(inv.total)}. ${wo.deliver?'On the way to you.':'Ready at the counter.'}`) } }
       if(S.pos.fromDoc){ const dd=S.docs.find(x=>x.no===S.pos.fromDoc);
         if(dd){ dd.status='billed'; dd.invoice=inv.no } }
-      S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:how};
+      clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:how};
       m.remove();
       persist(true);
       if(how==='sms'){ render(); toast(`${inv.no} done · e-Bill texted to ${c.phone}`); smsSentModal(inv,c) }
@@ -11708,7 +11710,7 @@ function saveDoc(kind,ref){
     salesman:S.pos.salesman||null,
     vehicle:'',note:String(ref||'').trim()};
   S.docs.push(doc);
-  S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+  clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
   render(); docPrint(doc.no);
   toast(`${DOCK[kind].label} ${doc.no} saved for ${c.name}`);
 }
@@ -17424,7 +17426,7 @@ window.refreshMe=function(){
   const u=(S.users||[]).find(x=>String(x.name||'').toLowerCase().trim()===me);
   if(!u||u.active===false||u.canLogin===false||(S.deletedUsers||[]).includes(me)){
     if(me==='admin') return;                                 // the recovery login is not on the list
-    S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:CFG.bill.defaultFormat};
+    clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:CFG.bill.defaultFormat};
     closeModals(); S.signedOut=true;
     try{ localStorage.removeItem('regal_user'); localStorage.setItem('regal_signed_out','1') }catch(e){}
     if(window.regalBridge) regalBridge.logout();
@@ -17437,8 +17439,11 @@ window.refreshMe=function(){
 };
 function signOut(){
   if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){ leaveDemo(); return }
-  if(S.pos.lines.length&&!confirm('There is a bill on the screen that has not been paid. Sign out anyway and lose it?'))return;
+  // the bill on the screen is kept on this till and comes back when they sign in again, so signing
+  // out to let somebody else serve no longer costs anybody their work
+  const held=S.pos.lines.length;
   S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:CFG.bill.defaultFormat};
+  if(held) setTimeout(()=>toast('Your bill of '+held+' line'+(held===1?'':'s')+' is kept — sign in again and it comes back','ok'),300);
   closeModals(); closePhone(); S.signedOut=true;
   try {
     localStorage.removeItem('regal_user');
@@ -18140,6 +18145,8 @@ function shopLock(){
       document.querySelectorAll('.lock, #lockScreen').forEach(x => x.remove());
       document.body.classList.remove('locked');
       closeModals();
+      // signing back in at the lock screen brings back whatever this person was keying
+      if(!(S.pos&&S.pos.lines&&S.pos.lines.length)) restorePosDraft();
 
       applyLayout();
       const startV = pref('start');
@@ -18184,7 +18191,7 @@ document.addEventListener('click',e=>{
   const a=e.target.closest('[data-act]'); if(!a)return; e.preventDefault(); const act=a.dataset.act;
   // while the privacy screen is up only looking is allowed — nothing that writes, so the real books cannot be touched
   if(window.privacyOn&&!/^(closeModal|invoice|showInv|doPrint|billSel|billKind|billDay|billAllDates|billMore|billClear|bellGo|cust|siteTab|siteShow|wpView|ordTab|tdSel|tdFilter|bellOpen|bellClear|navMin|prefNav|prefMini|repRun|repPick|rep|acc|tab|zoom|prodHist|supShow|pickCust|pickSalesman|showHeld|csToggleSum|dashSync|punch|punchIn|punchOut|mealStart|mealEnd|leaveShop|approveLeave|rejectLeave|confirmAbsent|attFilter|payTab|paySel|payDay)$/.test(act)){ toast('Till is busy — try again in a moment'); return }
-  ({ del:()=>{S.pos.lines.splice(+a.dataset.i,1);render()}, pay:openPay, pickCust:pickCustomer, pickSalesman:()=>pickSalesman(), clear:()=>{S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()}, hold:()=>holdCurrentBill(true), showHeld:()=>showHeldBillsModal(),
+  ({ del:()=>{S.pos.lines.splice(+a.dataset.i,1);render()}, pay:openPay, pickCust:pickCustomer, pickSalesman:()=>pickSalesman(), clear:()=>{clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};render()}, hold:()=>holdCurrentBill(true), showHeld:()=>showHeldBillsModal(),
     csToggleSum:()=>{ const el=document.getElementById('csTillSum'); if(el) el.classList.toggle('expanded'); const b=document.querySelector('.cs-sum-btn'); if(b&&el) b.textContent=el.classList.contains('expanded')?'Details ▴':'Details ▾' },
     invoice:()=>showInvoice(S.sales.find(s=>s.no===a.dataset.no)), showInv:()=>{closeModals();showInvoice(S.sales.find(s=>s.no===a.dataset.no),a.dataset.f)}, closeModal:closeModals,
     doPrint:()=>{ try{ window.print() }catch(e){ toast("The preview is open — use the browser's own print, or pop the window out first") } },
@@ -18501,7 +18508,7 @@ document.addEventListener('click',e=>{
       b.forEach(o=>{const l=S.pos.lines.find(x=>x.pid===o.pid); if(l){l.price=o.price;l.disc=o.disc;l.discPct=o.discPct;delete l.fromLast}});
       S.pos.undoReprice=null; render(); toast('Back to today\'s prices') },
     editDrop:()=>{ const no=S.pos.editing;
-      S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+      clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
       render(); toast(`${no} left as it was`) },
     drawer:()=>document.body.classList.toggle('drawer'),
     csExit:()=>{ if(window.matchMedia&&window.matchMedia('(max-width:900px)').matches) return document.body.classList.toggle('drawer');
@@ -18535,7 +18542,7 @@ document.addEventListener('click',e=>{
       S.web.orders=[]; S.web.cart=[]; S.shift.days={}; S.shift.imported=null;
       S.customers.push({id:1,code:'WALKIN',name:'Walk-in customer',phone:'',level:'retail',limit:0,address:'',portal:false});
       S.users=[me]; S.seq=Object.fromEntries(Object.keys(S.seq).map(k=>[k,1]));
-      S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:CFG.bill.defaultFormat};
+      clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:CFG.bill.defaultFormat};
       persist(); render(); toast('Empty shop. Add your products under Stock → Products and your opening stock will start the ledger.') },
     demoReset:()=>{ if(!confirm('Throw away everything in this browser and start the demo again?')) return;
       store.clear().then(()=>{ toast('Cleared — reloading'); setTimeout(()=>location.reload(),400) }) },
@@ -18886,6 +18893,46 @@ const rememberedUser = (() => {
   } catch(e){ return ''; }
 })();
 
+/* ================== THE BILL BEING KEYED, KEPT ON THE TILL ==================
+   A bill on the screen is not a bill yet: it lives in memory and belongs to this till, so it never
+   travels to the server with the books. That meant a refresh, a stumble on the power, or signing out
+   to let somebody else serve lost everything keyed so far, with a customer standing there.
+   It is written to this machine as it is keyed — never to the server, never to another till — and
+   picked up again when the same person is back at the till. */
+const POS_DRAFT='regal_pos_draft';
+const posDraftKey=()=>POS_DRAFT+':'+String((S.user&&S.user.name)||'').toLowerCase().trim();
+function savePosDraft(){
+  try{
+    if(!S.user||!S.user.name) return;
+    const p=S.pos||{};
+    // an empty screen is not the same as a finished bill: on a reload the bill is empty for a
+    // moment before it is put back, and clearing here would throw away what we are about to
+    // restore. The draft is only ever removed by clearPosDraft, where a bill is really done with.
+    if(!p.lines||!p.lines.length) return;
+    localStorage.setItem(posDraftKey(), JSON.stringify({
+      at:Date.now(), lines:p.lines, customer:p.customer||null, salesman:p.salesman||null,
+      billDisc:p.billDisc||0, editing:p.editing||null, fromWeb:p.fromWeb||null, fromDoc:p.fromDoc||null }));
+  }catch(e){ /* a full or blocked store must never stop a sale */ }
+}
+function clearPosDraft(){ try{ localStorage.removeItem(posDraftKey()) }catch(e){} }
+/** Put back what was on the screen, if it is recent and the items are still on file. */
+function restorePosDraft(){
+  try{
+    if(!S.user||!S.user.name) return false;
+    const raw=localStorage.getItem(posDraftKey()); if(!raw) return false;
+    const d=JSON.parse(raw); if(!d||!Array.isArray(d.lines)||!d.lines.length) return false;
+    if(Date.now()-(d.at||0) > 36*60*60*1000){ clearPosDraft(); return false }
+    const lines=d.lines.filter(l=>P(l.pid));
+    if(!lines.length){ clearPosDraft(); return false }
+    S.pos={...S.pos, lines, customer:d.customer||null, salesman:d.salesman||null,
+      billDisc:+d.billDisc||0, sel:-1, entry:null,
+      ...(d.editing?{editing:d.editing}:{}), ...(d.fromWeb?{fromWeb:d.fromWeb}:{}), ...(d.fromDoc?{fromDoc:d.fromDoc}:{})};
+    const n=lines.length, gone=d.lines.length-n;
+    setTimeout(()=>toast('The bill you were keying is back — '+n+' line'+(n===1?'':'s')+(gone?', '+gone+' no longer on file':''),'ok'),700);
+    return true;
+  }catch(e){ return false }
+}
+
 const backAtTheTill=(name)=>{
   if(!name){ S.signedOut=true; shopLock(); return; }
   const lower = String(name).toLowerCase().trim();
@@ -18911,6 +18958,8 @@ const backAtTheTill=(name)=>{
   } catch(e){}
   document.querySelectorAll('.lock, #lockScreen').forEach(x => x.remove());
   document.body.classList.remove('locked');
+  // whatever this person was keying when they left the till comes back with them
+  if(!(S.pos&&S.pos.lines&&S.pos.lines.length)) restorePosDraft();
   applyLayout();
   if(!allowed(S.view)){
     const startV = pref('start');
