@@ -532,6 +532,38 @@ body.privacy nav .navuser{position:relative}
 .hits button{text-align:left;border:1px solid var(--line);background:var(--white);border-radius:6px;
   padding:6px 8px;font:inherit;cursor:pointer}
 .hits button:hover{background:var(--panel)}
+/* ---- the quotations list, and a quotation turning into a bill ---- */
+.qr-list{max-height:52vh;overflow:auto}
+.qr-row{display:grid;grid-template-columns:1fr 1fr auto auto;gap:10px;align-items:center;
+  padding:9px 4px;border-bottom:1px solid var(--line2)}
+.qr-row:last-child{border-bottom:0}
+.qr-no b{font-family:Archivo,sans-serif}
+.qr-no span,.qr-who span{display:block;font-size:11.5px;color:var(--steel)}
+.qr-amt{font-family:Archivo,sans-serif;font-weight:700;white-space:nowrap}
+.qr-act{display:flex;gap:6px;white-space:nowrap}
+@media(max-width:700px){.qr-row{grid-template-columns:1fr auto}.qr-act{grid-column:1/-1}}
+
+.doc2bill{position:fixed;inset:0;z-index:90;display:grid;place-items:center;pointer-events:none;
+  background:rgba(16,30,34,.34);animation:d2bfade .18s ease-out}
+.doc2bill.gone{animation:d2bout .45s ease-in forwards}
+.d2b-card{width:290px;height:170px;position:relative;transform-style:preserve-3d;
+  animation:d2bflip 1.05s cubic-bezier(.5,0,.3,1) forwards}
+.d2b-face{position:absolute;inset:0;backface-visibility:hidden;border-radius:14px;padding:20px;
+  display:flex;flex-direction:column;justify-content:center;gap:4px;box-shadow:0 18px 44px rgba(0,0,0,.35)}
+.d2b-face span{font-size:11px;letter-spacing:.14em}
+.d2b-face b{font-family:Archivo,sans-serif;font-size:26px;line-height:1.1}
+.d2b-face em{font-style:normal;font-size:12.5px;opacity:.75}
+.d2b-front{background:#fff;color:#101E22;border:1px solid #D8DEDD}
+.d2b-back{background:linear-gradient(145deg,#F7BB3C,#E0960F);color:#101E22;transform:rotateY(180deg)}
+@keyframes d2bflip{0%{transform:perspective(900px) rotateY(0) scale(.94)}
+  55%{transform:perspective(900px) rotateY(180deg) scale(1.04)}
+  100%{transform:perspective(900px) rotateY(180deg) scale(1)}}
+@keyframes d2bfade{from{opacity:0}to{opacity:1}}
+@keyframes d2bout{to{opacity:0;transform:scale(1.05)}}
+@media (prefers-reduced-motion: reduce){
+  .d2b-card{animation:none;transform:rotateY(180deg)}
+  .doc2bill,.doc2bill.gone{animation:none}
+}
 /* ---- the top of the dashboard: what is waiting, then the figures ---- */
 .pulse{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:14px}
 .pulsecard{position:relative;overflow:hidden;text-align:left;border:1px solid var(--line);border-radius:12px;
@@ -9454,6 +9486,7 @@ function posQuick(){
      <div class="qsub">
       <button class="btn ghost" data-act="proofA5" ${L.length?'':'disabled'}>Check bill</button>
       <button class="btn ghost" data-act="doc" data-k="QUOTE" ${L.length?'':'disabled'}>Quotation <i>Ctrl+Q</i></button>
+      <button class="btn ghost" data-act="docRecall">Quotations <i>Ctrl+Shift+Q</i></button>
       <button class="btn ghost" data-act="pay" ${L.length?'':'disabled'}>Cheque / card / split</button>
       <button class="btn ghost" data-act="qDisc" ${L.length?'':'disabled'}>Bill discount</button>
       <button class="btn ghost" data-act="hold">Hold <i>Ctrl+H</i></button>
@@ -11714,7 +11747,83 @@ function saveDoc(kind,ref){
   render(); docPrint(doc.no);
   toast(`${DOCK[kind].label} ${doc.no} saved for ${c.name}`);
 }
-function docPrint(no){
+/* The quotation as it goes on paper. Small bill selected, it comes off the 80mm roll in the same
+   hand as a till receipt; large bill, it is the A5 sheet. The choice is the one already made at the
+   top of the till, so nobody has to think about it twice. */
+function docPaperHtml(doc,f){
+  const c=C(doc.customerId), k=DOCK[doc.kind], SH=CFG.shop, B=CFG.bill;
+  const qty=doc.lines.reduce((a,l)=>a+l.qty,0);
+  const gross=doc.lines.reduce((a,l)=>a+l.qty*l.price,0);
+  const disc=doc.lines.reduce((a,l)=>a+(l.disc||0),0)+(doc.billDisc||0);
+  const sc=Math.max(0.6,Math.min(2,(+B.r80Scale||100)/100));
+  if(f!=='r80') return null;                       // the A5 sheet is the one drawn below, unchanged
+  return `<div class="print r80 sb80" data-scale="${sc}" style="zoom:${sc};width:calc(302px / ${sc})">
+   <div class="sb-top"><span>${k.label.toUpperCase()}</span><span>${doc.date}</span></div>
+   ${B.t80Logo!==false?`<div class="sb-logo">${SH.logo?`<img src="${SH.logo}" style="height:50px;object-fit:contain;filter:grayscale(1) brightness(0)">`:mark(50)}</div>`:''}
+   <div class="sb-name">${SH.name||'REGAL HARDWARE'}</div>
+   ${B.showSinhala&&SH.sinhala?`<div class="sb-sin">${SH.sinhala}</div>`:''}
+   <div class="sb-addr">${(SH.addr||'').toUpperCase()}</div>
+   <div class="sb-phone">${SH.phone||''}</div>
+   <div class="sb-rule"></div>
+   <div class="sb-kv"><span>${k.label} No :</span><b>${doc.no}</b><span>${doc.date}</span></div>
+   <div class="sb-kv"><span>Prepared by :</span><b>${(doc.by||'').toUpperCase()}</b><span></span></div>
+   ${c.id===1?'':`<div class="sb-kv"><span>Customer :</span><b>${c.name.toUpperCase()}</b><span>${c.phone||''}</span></div>`}
+   <div class="sb-rule"></div>
+   <table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>Qty</th><th>Price</th><th>Amount</th></tr>
+   ${doc.lines.map((l,i)=>{const p=P(l.pid)||{};return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${(l.name||p.name||'').toUpperCase()}</td></tr>
+     <tr class="qt"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}
+   </table>
+   <div class="sb-rule"></div>
+   <div class="sb-tot"><span>Gross Total Rs.</span><b>${money2(gross)}</b></div>
+   ${disc>0?`<div class="sb-tot"><span>- Discount :</span><b>${money2(disc)}</b></div>`:''}
+   <div class="sb-dbl"></div>
+   <div class="sb-net"><span>${k.label} Total Rs. :</span><b>${money2(doc.total)}</b></div>
+   <div class="sb-dbl"></div>
+   <div class="sb-cnt">No of Item / Qty - &nbsp; ${doc.lines.length.toFixed(2)} &nbsp;/&nbsp; ${qty.toFixed(2)}</div>
+   ${B.t80Sign!==false?`<div class="sb-sign"><span>Prepared By</span><span>Customer</span></div>`:''}
+   <div class="sb-foot">${doc.kind==='QUOTE'
+     ? `This is a quotation, not a bill. Prices hold for ${doc.valid} days and depend on stock at the time of order.`
+     : 'This is a delivery note, not a bill. The invoice follows. Please check the goods before signing.'}</div>
+   ${SH.web?`<div class="sb-web">${SH.web}</div>`:''}
+  </div>`;
+}
+/** Send it to the printer the way a bill goes: the helper if it is there, otherwise this browser. */
+function docToPaper(doc,f){
+  let html=docPaperHtml(doc,f);
+  if(!html){
+    // the A5 sheet is drawn by the preview, so that same drawing is taken and printed rather than a
+    // second one written here that could drift away from it
+    docPrint(doc.no,{preview:true,format:'a5'});
+    const sheet=document.querySelector('.modal .print.a5');
+    if(!sheet) return;
+    html=sheet.outerHTML; closeModals();
+  }
+  const old=document.getElementById('printArea'); if(old) old.remove();
+  const el=document.createElement('div'); el.id='printArea'; el.className='printArea '+(f==='r80'?'r80':'a5');
+  el.innerHTML=`<style id="printPage"></style>${html}`;
+  document.body.appendChild(el); document.body.classList.add('direct-print');
+  const pr=el.querySelector('.print'), sc=+pr.dataset.scale||1;
+  if(f==='r80'){
+    pr.style.width=`calc(72mm / ${sc})`;
+    const px=(pr.offsetHeight||600)*sc, mm=Math.min(1000,Math.ceil(px*25.4/96*1.06)+8);
+    el.querySelector('#printPage').textContent=`@page{size:80mm ${mm}mm;margin:2mm 4mm}`;
+  } else {
+    el.querySelector('#printPage').textContent='@page{size:A5 landscape;margin:4mm 6mm}';
+  }
+  let done=false;
+  const finish=()=>{ if(done) return; done=true; document.body.classList.remove('direct-print'); el.remove();
+    ['pointerdown','keydown'].forEach(ev=>window.removeEventListener(ev,finish,true)) };
+  window.addEventListener('afterprint',()=>setTimeout(()=>{
+    ['pointerdown','keydown'].forEach(ev=>window.addEventListener(ev,finish,true)); setTimeout(finish,6e5) },300),{once:true});
+  setTimeout(()=>{ try{ window.print() }catch(e){ finish(); docPrint(doc.no,{preview:true}) } },60);
+}
+
+/* A quotation is printed the way a bill is: straight to the paper the till is set to, with no
+   preview in the way. Preview is a button of its own for the times somebody wants to look first. */
+function docPrint(no,opts){
+  const preview=!!(opts&&opts.preview);
+  const f=(opts&&opts.format)||csPaper();
+  if(!preview){ const d0=S.docs.find(d=>d.no===no); if(d0) return docToPaper(d0,f) }
   const doc=S.docs.find(d=>d.no===no), c=C(doc.customerId), k=DOCK[doc.kind];
   const qty=doc.lines.reduce((a,l)=>a+l.qty,0);
   const gross=doc.lines.reduce((a,l)=>a+l.qty*l.price,0);
@@ -11770,13 +11879,58 @@ function docPrint(no){
      <em>PRINTED ${D(today).split('-').reverse().join(' ')} · PAGE 1 OF 1</em></div>
    </div>`);
 }
+/* The quotations, picked the way held bills are picked — a list you can search, with the newest
+   first, and the two things anybody wants from one: look at it, or turn it into a bill. */
+function quoteRecall(){
+  const draw=(q)=>{
+    const term=String(q||'').trim().toLowerCase();
+    const list=S.docs.filter(d=>d.kind==='QUOTE'&&d.status==='open')
+      .filter(d=>{ if(!term) return true; const c=C(d.customerId)||{};
+        return d.no.toLowerCase().includes(term)||String(c.name||'').toLowerCase().includes(term)||String(c.phone||'').includes(term) })
+      .sort((a,b)=>String(b.no).localeCompare(String(a.no)));
+    const days=(d)=>Math.round((today-new Date(d))/864e5);
+    return list.length?list.map(d=>{const c=C(d.customerId)||{}; const age=days(d.date); const dead=d.valid&&age>d.valid;
+      return `<div class="qr-row">
+        <div class="qr-no"><b>${d.no}</b><span>${d.date} · ${d.lines.length} line${d.lines.length===1?'':'s'}${dead?' · past its date':age?` · ${age}d old`:''}</span></div>
+        <div class="qr-who">${c.id===1?'walk-in':c.name}${c.phone?`<span>${c.phone}</span>`:''}</div>
+        <div class="qr-amt">${fmt(d.total)}</div>
+        <div class="qr-act">
+          <button class="btn ghost sm" data-act="docPreview" data-no="${d.no}">Look</button>
+          <button class="btn ghost sm" data-act="docPrint" data-no="${d.no}">Print</button>
+          <button class="btn tape sm" data-act="docBill" data-no="${d.no}">Turn into a bill</button>
+        </div></div>`}).join('')
+      :'<div class="muted" style="padding:20px 8px">No quotations waiting.</div>';
+  };
+  const m=modal(`<h2>Quotations</h2>
+   <div class="muted" style="margin-bottom:8px">The ones still open. Turning one into a bill puts it on the till — nothing is charged until the payment is taken.</div>
+   <div class="search" style="margin-bottom:8px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="qrQ" placeholder="number, customer, mobile…" autocomplete="off"></div>
+   <div id="qrList" class="qr-list">${draw('')}</div>
+   <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn ghost" data-act="closeModal">Close</button></div>`);
+  const box=m.querySelector('#qrQ');
+  box.oninput=()=>{ m.querySelector('#qrList').innerHTML=draw(box.value) };
+  box.focus();
+}
+
 function docToBill(no){
   const doc=S.docs.find(d=>d.no===no);
+  // the quotation is shown turning into the bill: the card flips, the number changes, and the till is
+  // underneath when it clears. A second, and it says plainly what has just happened.
+  const fly=document.createElement('div');
+  fly.className='doc2bill';
+  fly.innerHTML='<div class="d2b-card">'
+    +'<div class="d2b-face d2b-front"><span>'+DOCK[doc.kind].label.toUpperCase()+'</span><b>'+doc.no+'</b>'
+    +'<em>'+doc.lines.length+' line'+(doc.lines.length===1?'':'s')+' · '+fmt(doc.total)+'</em></div>'
+    +'<div class="d2b-face d2b-back"><span>NOW ON THE TILL</span><b>'+peekBillNo()+'</b>'
+    +'<em>take the payment to finish it</em></div></div>';
+  document.body.appendChild(fly);
   S.pos={lines:doc.lines.map(l=>({pid:l.pid,qty:l.qty,price:l.price,disc:l.disc})),
     customer:doc.customerId===1?null:doc.customerId,billDisc:doc.billDisc,sel:-1,entry:null,
     lastBill:S.pos.lastBill,fromDoc:doc.no};
-  closeModals(); go('pos');
-  toast(`${DOCK[doc.kind].label} ${doc.no} loaded — take the payment to turn it into a bill`);
+  closeModals(); go('pos'); persist(true);
+  setTimeout(function(){ fly.classList.add('gone') },1250);
+  setTimeout(function(){ fly.remove() },1750);
+  toast(DOCK[doc.kind].label+' '+doc.no+' is on the till — take the payment to turn it into a bill','ok');
 }
 let docQ='', docKind='all';
 function docs(){
@@ -18390,7 +18544,10 @@ document.addEventListener('click',e=>{
       depositSlip(picked,S.banks[0].id,D(today))},
     credit:()=>creditSale(),
     doc:()=>{ if(a.dataset.k==='QUOTE'){ if(!S.pos.lines.length) return toast('Nothing on the screen to quote for'); return holdAsk('quote') } saveDoc(a.dataset.k) },
-    docPrint:()=>docPrint(a.dataset.no), docBill:()=>docToBill(a.dataset.no),
+    docPrint:()=>docPrint(a.dataset.no),
+    docPreview:()=>docPrint(a.dataset.no,{preview:true}),
+    docRecall:()=>quoteRecall(),
+    docBill:()=>docToBill(a.dataset.no),
     docKind:()=>{docKind=a.dataset.k;render()},
     docDrop:()=>{const dd=S.docs.find(x=>x.no===a.dataset.no); dd.status='closed'; render(); toast(`${dd.no} closed`)},
     webView:()=>{webView=a.dataset.v;render()},
