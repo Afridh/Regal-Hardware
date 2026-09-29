@@ -48,6 +48,7 @@ const setup = await pg.evaluate(() => {
   const ahead = new Date(Date.now() + 15 * 864e5).toISOString().slice(0, 10);
   S.cheques.push({ dir: 'RECEIVED', no: '447202', bank: 'Peoples Bank', date: d, recvDate: d, chqDate: ahead,
     payee: 'Regal Hardware', amount: 75000, status: 'RECEIVED', party: 'Green Field', customerId: 3, ref: '11000903' });
+  dayTab = 'close';
   go('cashup');
   const tn = deTenders(d, cashStore());
   return { d, tn, chq: { held: deCheques(d).held.length, bankable: deCheques(d).bankable.length, post: deCheques(d).postdated.length } };

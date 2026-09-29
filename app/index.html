@@ -967,6 +967,26 @@ tr.off td{opacity:.55}
 
 /* the item box while searching at the till */
 .sug{border:1px solid var(--ink);box-shadow:0 12px 28px rgba(22,32,29,.22);overflow-x:hidden}
+.daytabs{margin:2px 0 14px}
+.daytabs button{padding:9px 16px;text-align:left;line-height:1.25}
+.daytabs button b{display:block;font-size:13.5px}
+.daytabs button small{display:block;font-size:11px;color:var(--steel);font-weight:500}
+.daytabs button.on small{color:var(--ink);opacity:.62}
+.daypane{animation:cuFadeUp .22s ease-out}
+.daygrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px}
+.daytile{padding:14px 16px;margin:0;position:relative;overflow:hidden;animation:dayTileIn .34s cubic-bezier(.2,.7,.3,1) both}
+.daytile:nth-child(2){animation-delay:.05s} .daytile:nth-child(3){animation-delay:.1s} .daytile:nth-child(4){animation-delay:.15s}
+.daytile .l{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--steel);font-weight:700}
+.daytile .v{font-family:Archivo,sans-serif;font-weight:800;font-size:25px;margin:5px 0 2px;
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.daytile .muted{font-size:11.5px}
+.daytile:before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--line)}
+.daytile.b:before{background:var(--chip-blue)} .daytile.g:before{background:var(--chip-green)}
+.daytile.y:before{background:var(--chip-yellow)} .daytile.r:before{background:var(--chip-rust)}
+@keyframes dayTileIn{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}
+.circle-row td{transition:background .16s}
+.circle-row:hover td{background:var(--tint-yellow)}
+@media (prefers-reduced-motion:reduce){.daypane,.daytile{animation:none}.circle-row td{transition:none}}
 .de-strip{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}
 .de-step{display:flex;gap:9px;align-items:center;padding:9px 12px;border:1px solid var(--line);
   border-radius:10px;background:var(--panel);flex:1;min-width:190px}
@@ -3401,7 +3421,7 @@ const peekBillNo=()=>billNoFrom(billSeqNow()+1);      // what the next bill will
 const next=(k)=>{
   if(k==='INV'){ const seq=billSeqNow()+1; S.seqBy[billKey()]=seq; return billNoFrom(seq) }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',JOB:'JOB-',JE:'JE-'}[k];if(!(S.seq[k]>0))S.seq[k]=1;return p+String(S.seq[k]++).padStart(5,'0')};
 
-const GL = {'2050':'Customer advances','1010':'Cash in hand','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1023':'Bank account 4','1024':'Bank account 5','1025':'Bank account 6','1026':'Bank account 7','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other'};
+const GL = {'2050':'Customer advances','1010':'Cash in hand','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1023':'Bank account 4','1024':'Bank account 5','1025':'Bank account 6','1026':'Bank account 7','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2150':'Cash borrowed and lent (the circle)','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other'};
 function post(date,desc,ref,lines){ // lines: [{ac,dr,cr,party}]
   const dr=lines.reduce((a,l)=>a+(l.dr||0),0), cr=lines.reduce((a,l)=>a+(l.cr||0),0);
   if(Math.abs(dr-cr)>0.005) throw new Error('Unbalanced journal '+desc+' '+dr+'/'+cr);
@@ -8368,7 +8388,7 @@ function bindPhone(){
 const $=(s)=>document.querySelector(s);
 const views=[
  ['updates','What is new'],
- ['grp','Counter'],['dashboard','Dashboard','F2'],['ai','AI support'],['pos','POS billing','F3'],['bills','Bills','F9'],['cashup','Day end'],['docs','Quotes & delivery notes'],
+ ['grp','Counter'],['dashboard','Dashboard','F2'],['ai','AI support'],['pos','POS billing','F3'],['bills','Bills','F9'],['cashup','Day book'],['docs','Quotes & delivery notes'],
  ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['tenders','Quotations & tenders'],
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['payreqs','Payment requests'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['inventory','Inventory & ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
@@ -9389,34 +9409,41 @@ function cashup(){
       <button class="btn ghost" data-act="cashPrint" data-k="${c.kind}">Print</button></div>
     </div>`;
 
-  return `<h1>Day end<span class="muted" style="font-size:14px">${shopName}</span></h1>
-   ${deStrip(d,loc)}
+  /* One page for the day's money: opening it, what passes with the circle, and shutting it.
+     Three screens would mean three places to remember, and it is all one day's cash. */
+  const TABS=[['start','Shop start','what there is, and the cheques to pass'],
+              ['circle','Cash lent and borrowed','money passed with people outside the trade'],
+              ['close','Shop close','count it, agree it, write the day up']];
+  const head=`<h1>Day book<span class="muted" style="font-size:14px">${shopName}</span></h1>
    <div class="row" style="align-items:flex-start;gap:12px;flex-wrap:wrap">
     <div class="f" style="max-width:190px"><label>Day</label>
       <input type="date" id="cashDate" value="${d}" max="${D(today)}"></div>
     <div class="muted" style="align-self:flex-end;padding-bottom:10px">
       The books say there was <b>${money2(booksOpen)}</b> in hand when the day started.</div>
    </div>
+   <div class="cu-tabs daytabs">${TABS.map(t=>`<button class="${dayTab===t[0]?'on':''}" data-act="dayTab" data-t="${t[0]}">
+     <b>${t[1]}</b><small>${t[2]}</small></button>`).join('')}</div>`;
+
+  if(dayTab==='start') return head+`<div class="daypane" key="start">${dayStart(d,loc)}</div>`;
+  if(dayTab==='circle') return head+`<div class="daypane" key="circle">${dayCircle()}</div>`;
+
+  return head+`<div class="daypane" key="close">
+   ${deStrip(d,loc)}
 
    <div class="row" style="align-items:flex-start;gap:12px;flex-wrap:wrap">
-    <div class="card flex1" style="min-width:300px">
-     <h2 style="margin-top:0">Opening float</h2>
-     <div class="muted">Count what is in the drawer before the first bill.</div>
-     ${open?done(open,'Opening float'):`${cashGrid('open')}
-       <input id="cashNoteOpen" placeholder="A note — optional" maxlength="120" style="margin-top:8px">
-       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-        <button class="btn tape" data-act="cashSave" data-k="open">Save the opening count</button>
-        ${cashList().some(c=>c.kind==='open'&&(c.loc||0)===loc)?'<button class="btn ghost" data-act="cashLast">Same as last time</button>':''}
-       </div>`}
-     ${open?diffLine(open.total,booksOpen,`Counted ${money2(open.total)} · the books said ${money2(booksOpen)}`):''}
-    </div>
-
     <div class="card flex1" style="min-width:300px">
      <h2 style="margin-top:0">Closing count</h2>
      <div class="muted">Count the drawer at the end of the day.</div>
      ${close?done(close,'Closing count'):`${cashGrid('close')}
        <input id="cashNoteClose" placeholder="A note — optional" maxlength="120" style="margin-top:8px">
        <button class="btn tape" style="margin-top:8px" data-act="cashSave" data-k="close">Save the closing count</button>`}
+    </div>
+    <div class="card flex1" style="min-width:300px">
+     <h2 style="margin-top:0">The float this morning</h2>
+     ${open?done(open,'Opening float'):`<div class="muted">Nobody counted the drawer this morning.
+       The books' own figure is being used as the starting point.</div>
+       <button class="btn ghost" style="margin-top:10px" data-act="dayTab" data-t="start">Count it now</button>`}
+     ${open?diffLine(open.total,booksOpen,`Counted ${money2(open.total)} · the books said ${money2(booksOpen)}`):''}
     </div>
    </div>
 
@@ -9456,7 +9483,7 @@ function cashup(){
          <td>${c.kind==='open'?'Opening float':'Closing count'}</td>
          <td class="n">${money2(c.total)}</td><td class="n">${money2(e)}</td>
          <td class="n">${Math.abs(df)<0.005?'<span class="tag ok">agrees</span>':df>0?`<span class="tag warn">${money2(df)} over</span>`:`<span class="tag bad">${money2(-df)} short</span>`}</td>
-         <td>${c.by}</td></tr>`}).join('')}</table></div>`:''}`;
+         <td>${c.by}</td></tr>`}).join('')}</table></div>`:''}</div>`;
 }
 
 /* The grid must not redraw while somebody is keying into it, or the box they are in would
@@ -9518,6 +9545,7 @@ function cashupAfter(){
   // ready to count the moment the page opens, without reaching for the mouse
   if(first&&document.activeElement===document.body) first.focus();
   deAfter();
+  dayCountUp();
 }
 
 function cashSave(kind){
@@ -9553,6 +9581,117 @@ function cashPrintSlip(kind){
     linesLabel:'What was in the drawer',
     lines:CASH_DENOMS.filter(x=>+(c.counts[x]||0)>0).map(x=>[`${x>=20?'Rs '+x.toLocaleString('en-US'):x} × ${c.counts[x]}`,x*c.counts[x]]),
     thirdSign:'CHECKED BY'});
+}
+
+/* ====================== THE CIRCLE ======================
+   Money passed back and forth with people who are neither customers nor suppliers: a friend
+   lent a hand when there was not enough in the drawer to make up the bank deposit, or the
+   shop put something out to somebody it knows who was short. It is real money leaving and
+   coming back, so it belongs in the books like anything else — not in a notebook under the
+   counter, which is where this kind of thing normally lives and how it is normally forgotten.
+
+   One control account holds it. It sits on the liability side when the shop owes the circle
+   and swings to the other side when the circle owes the shop, which is the honest picture of
+   an account that runs both ways. Per person it is worked out from the journal, the same way
+   a customer's advance is, so there is never a figure kept in two places to disagree. */
+
+const CIRCLE_AC = '2150';
+function circleList(){ if(!Array.isArray(S.circle)) S.circle=[]; return S.circle }
+const CP = (id) => circleList().find(p => p.id === id);
+
+/* Positive: the shop owes them. Negative: they owe the shop. */
+function circleBal(pid){
+  let d=0,c=0;
+  for(const j of S.journal) for(const l of j.lines)
+    if(l.ac===CIRCLE_AC&&l.party&&l.party.type==='X'&&l.party.id===pid){ d+=l.dr; c+=l.cr }
+  return +(c-d).toFixed(2);
+}
+const circleOwedToThem = () => circleList().reduce((a,p)=>a+Math.max(0,circleBal(p.id)),0);
+const circleOwedToUs   = () => circleList().reduce((a,p)=>a+Math.max(0,-circleBal(p.id)),0);
+
+function circleAdd(name,phone,note){
+  name=String(name||'').trim();
+  if(!name) throw new Error('Whose money is it?');
+  const has=circleList().find(p=>p.name.toLowerCase()===name.toLowerCase());
+  if(has) return has;
+  /* A number is never given out twice, not even after somebody is taken off the list. The
+     journal is asked as well as the list, because an old entry keeps pointing at its number
+     and a new person who inherited it would inherit the money that passed with them too. */
+  let top=circleList().reduce((a,x)=>Math.max(a,+x.id||0),0);
+  for(const j of S.journal) for(const l of j.lines)
+    if(l.party&&l.party.type==='X') top=Math.max(top,+l.party.id||0);
+  const p={id:top+1,name,
+    phone:String(phone||'').trim(),note:String(note||'').trim(),by:S.user.name,at:D(today)};
+  circleList().push(p);
+  return p;
+}
+
+/* dir 'out': money leaves the shop — lent to them, or paying back what they lent us.
+   dir 'in' : money comes in — borrowed from them, or they are settling what they owed.
+   Both post the same way whichever of the two it is, because the movement is the same;
+   only the wording changes, and the wording follows the balance. */
+function circleMove({pid,dir,amount,method='CASH',bank,why,date=D(today)}){
+  const p=CP(pid); if(!p) throw new Error('Who is it?');
+  amount=+(+amount).toFixed(2);
+  if(!(amount>0)) throw new Error('How much?');
+  const acc = method==='BANK' ? (B(bank)||S.banks[0]||{}).ac : '1010';
+  if(!acc) throw new Error('No account to move it through');
+  if(method!=='BANK'){
+    const inHand=bal('1010',date);
+    if(dir==='out'&&amount>inHand+0.005&&!(CFG.stock||{}).allowNegative)
+      throw new Error(`Only ${money2(inHand)} in the drawer`);
+  }
+  const before=circleBal(pid);
+  const after=+(dir==='out'?before-amount:before+amount).toFixed(2);
+  const word = dir==='out'
+    ? (before>0.005 ? 'paid back to' : 'given to')
+    : (before<-0.005 ? 'taken back from' : 'taken from');
+  /* A payment that goes past what was owed is two things at once, and the ledger should say so
+     rather than filing all of it as settling a debt that was smaller than the money handed over. */
+  const over = (before>0.005&&after<-0.005) ? `, with ${money2(-after)} given on top`
+    : (before<-0.005&&after>0.005) ? `, with ${money2(after)} taken on top` : '';
+  const desc=`Cash ${word} ${p.name}${over}`;
+  const je=post(date,desc,'CIRCLE',dir==='out'
+    ? [{ac:CIRCLE_AC,dr:amount,party:{type:'X',id:pid}},{ac:acc,cr:amount}]
+    : [{ac:acc,dr:amount},{ac:CIRCLE_AC,cr:amount,party:{type:'X',id:pid}}]);
+  je.why=String(why||'').trim();
+  je.by=S.user.name;
+  je.method=method;
+  try{ logTrail('circle',`${desc} — ${money2(amount)}${method==='BANK'?' through '+(B(bank)||{}).name:' in cash'}${je.why?' · '+je.why:''}`,
+    {amount,ref:p.name}) }catch(e){}
+  return je;
+}
+
+/* Everything that has passed between the shop and one person, newest first. */
+function circleMoves(pid){
+  const out=[];
+  for(const j of S.journal){
+    const line=j.lines.find(l=>l.ac===CIRCLE_AC&&l.party&&l.party.type==='X'&&(pid===undefined||l.party.id===pid));
+    if(!line) continue;
+    const other=j.lines.find(l=>l.ac!==CIRCLE_AC);
+    out.push({ no:j.no, date:j.date, pid:line.party.id, desc:j.desc, why:j.why||'', by:j.by||'',
+      amount:+(line.dr||line.cr).toFixed(2), dir:line.dr?'out':'in',
+      through:(other&&other.ac!=='1010')?(GL[other.ac]||other.ac):'cash' });
+  }
+  return out.reverse();
+}
+
+/* ---- cash between the drawer and the bank ----
+   The reason the shop borrows in the first place is usually a deposit that has to be made
+   and not enough in the till to make it, so the move itself belongs on the same page. */
+function cashToBank(bankId,amount,date=D(today),why=''){
+  const b=B(+bankId)||S.banks[0]; if(!b) throw new Error('Which bank?');
+  amount=+(+amount).toFixed(2); if(!(amount>0)) throw new Error('How much?');
+  const inHand=bal('1010',date);
+  if(amount>inHand+0.005) throw new Error(`Only ${money2(inHand)} in the drawer`);
+  post(date,`Cash put into ${b.name}`,'CASHBANK',[{ac:b.ac,dr:amount},{ac:'1010',cr:amount}]);
+  try{ logTrail('circle',`${money2(amount)} put into ${b.name}${why?' · '+why:''}`,{amount,ref:b.name}) }catch(e){}
+}
+function bankToCash(bankId,amount,date=D(today),why=''){
+  const b=B(+bankId)||S.banks[0]; if(!b) throw new Error('Which bank?');
+  amount=+(+amount).toFixed(2); if(!(amount>0)) throw new Error('How much?');
+  post(date,`Cash drawn from ${b.name}`,'CASHBANK',[{ac:'1010',dr:amount},{ac:b.ac,cr:amount}]);
+  try{ logTrail('circle',`${money2(amount)} drawn from ${b.name}${why?' · '+why:''}`,{amount,ref:b.name}) }catch(e){}
 }
 
 /* ============================== DAY END ==============================
@@ -9817,6 +9956,310 @@ function dePrintSheet(d,loc){
     lines:(()=>{ const c=cashFind('close',rec.date,rec.loc);
       return c?CASH_DENOMS.filter(x=>+(c.counts[x]||0)>0).map(x=>[`${x>=20?'Rs '+x.toLocaleString('en-US'):x} × ${c.counts[x]}`,x*c.counts[x]]):[] })(),
     thirdSign:'CHECKED BY' });
+}
+
+/* ---------------------- OPENING THE SHOP ----------------------
+   The first thing anybody wants in the morning is the same four questions: how much is in
+   the drawer, how much is in each bank, which cheques have to go in today, and which of the
+   ones already in have the bank answered on. They are all here, as figures big enough to
+   read across the counter, and each one can be acted on where it stands. */
+
+let dayTab = 'start';
+
+/* A figure worth reading from a distance. It counts itself up the first time it is painted,
+   which is the difference between a page that tells you something and a page that just sits
+   there. Anyone who would rather it did not is honoured by the reduced-motion rule below. */
+const dayTile = (label, value, sub, kind, act) => `<div class="card daytile ${kind||''}" ${act?`data-act="${act}"`:''}>
+   <div class="l">${label}</div>
+   <div class="v" data-count="${value}">${money2(value)}</div>
+   ${sub?`<div class="muted">${sub}</div>`:''}</div>`;
+
+function dayStart(d,loc){
+  const cash=bal('1010',d);
+  const banks=deBanks();
+  const chq=deCheques(d);
+  const toClear=(S.cheques||[]).filter(c=>c.dir==='RECEIVED'&&c.status==='DEPOSITED');
+  const ourOut=(S.cheques||[]).filter(c=>c.dir==='ISSUED'&&['ISSUED','PRINTED'].includes(c.status));
+  const open=cashFind('open',d,loc);
+  const bankTotal=banks.reduce((a,b)=>a+bal(b.ac,d),0);
+  const owedOut=circleOwedToThem(), owedIn=circleOwedToUs();
+
+  const face=(c)=>`${c.no||'—'}${c.bank?` <span class="muted">${c.bank}</span>`:''}`;
+
+  return `<div class="daygrid">
+    ${dayTile('In the drawer',cash,open?`counted ${money2(open.total)} this morning`:'nobody has counted it yet','')}
+    ${dayTile('In the banks',bankTotal,`${banks.length} account${banks.length===1?'':'s'}`,'b')}
+    ${dayTile('Cheques in the drawer',chq.heldTotal,`${chq.held.length} of them${chq.postdated.length?`, ${chq.postdated.length} dated ahead`:''}`,'y')}
+    ${dayTile('Banked, waiting on the bank',chq.sum(toClear),`${toClear.length} cheque${toClear.length===1?'':'s'}`,'g')}
+   </div>
+
+   <div class="row" style="align-items:flex-start;gap:12px;flex-wrap:wrap;margin-top:12px">
+    <div class="card flex1" style="min-width:320px">
+     <h2 style="margin-top:0">Every account, this morning</h2>
+     <table>
+      <tr><td><b>In the drawer</b></td><td class="n"><b>${money2(cash)}</b></td><td></td></tr>
+      ${banks.map(b=>`<tr><td>${b.name}<div class="muted">${b.no||''}</div></td>
+        <td class="n">${money2(bal(b.ac,d))}</td>
+        <td style="white-space:nowrap">
+         <button class="btn ghost sm" data-act="cbIn" data-b="${b.id}">Put cash in</button>
+         <button class="btn ghost sm" data-act="cbOut" data-b="${b.id}">Draw cash</button></td></tr>`).join('')}
+      <tr><td>Cheques in the drawer <span class="muted">not banked yet</span></td>
+        <td class="n">${money2(chq.heldTotal)}</td><td></td></tr>
+      ${ourOut.length?`<tr><td>Our cheques not yet cleared <span class="muted">this must stay in the bank</span></td>
+        <td class="n rust">−${money2(chq.sum(ourOut))}</td><td></td></tr>`:''}
+      ${owedIn?`<tr><td>The circle owes the shop</td><td class="n">${money2(owedIn)}</td>
+        <td><button class="btn ghost sm" data-act="dayTab" data-t="circle">See</button></td></tr>`:''}
+      ${owedOut?`<tr><td>The shop owes the circle</td><td class="n rust">−${money2(owedOut)}</td>
+        <td><button class="btn ghost sm" data-act="dayTab" data-t="circle">See</button></td></tr>`:''}
+     </table>
+     <div class="muted" style="margin-top:8px">The drawer and the banks are what the books say. Counting
+      the drawer under <b>Shop close</b> is what proves it.</div>
+    </div>
+
+    <div class="card flex1" style="min-width:320px">
+     <h2 style="margin-top:0">The opening float</h2>
+     <div class="muted">Count what is in the drawer before the first bill.</div>
+     ${open?`<div class="card note" style="margin-top:8px">
+        <b>Counted ${money2(open.total)}</b>
+        <div class="muted">by ${open.by} at ${open.at}${open.note?' · '+noteEsc(open.note):''}</div>
+        <div style="margin-top:6px">${CASH_DENOMS.filter(x=>+(open.counts[x]||0)>0)
+          .map(x=>`<span class="tag">${x>=20?'Rs '+x.toLocaleString('en-US'):x} × ${open.counts[x]}</span>`).join(' ')}</div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+         <button class="btn ghost" data-act="cashUndo" data-k="open">Count it again</button>
+         <button class="btn ghost" data-act="cashPrint" data-k="open">Print</button></div>
+       </div>
+       ${(()=>{ const books=bal('1010',cashPrev(d)); const diff=+(open.total-books).toFixed(2);
+         return `<div style="margin-top:8px">Counted ${money2(open.total)}, the books said ${money2(books)} — ${deTag(diff)}</div>` })()}`
+      :`${cashGrid('open')}
+       <input id="cashNoteOpen" placeholder="A note — optional" maxlength="120" style="margin-top:8px">
+       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn tape" data-act="cashSave" data-k="open">Save the opening count</button>
+        ${cashList().some(c=>c.kind==='open'&&(c.loc||0)===loc)?'<button class="btn ghost" data-act="cashLast">Same as last time</button>':''}
+       </div>`}
+    </div>
+   </div>
+
+   <div class="card" style="margin-top:12px">
+    <h2 style="margin-top:0">Cheques to put in today
+      <span class="muted" style="font-size:13px">${chq.bankable.length} can go in${chq.postdated.length?` · ${chq.postdated.length} dated ahead`:''}</span></h2>
+    ${chq.held.length?`<table><tr><th>Cheque</th><th>From</th><th>Dated</th><th class="n">Amount</th><th></th></tr>
+      ${chq.held.map(c=>`<tr><td>${face(c)}</td><td>${c.party||'—'}</td>
+        <td>${deFace(c)}${dePost(c)?' <span class="tag warn">dated ahead</span>':''}</td>
+        <td class="n">${money2(c.amount)}</td>
+        <td>${dePost(c)?`<span class="muted">holds until ${deFace(c)}</span>`
+          :`<div style="display:flex;gap:6px;align-items:center">
+             <select data-de="chqbank" data-no="${c.no}" style="width:auto;padding:4px 6px;margin:0">
+              ${banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select>
+             <button class="btn ghost sm" data-act="deBank" data-no="${c.no}">Bank it</button></div>`}</td></tr>`).join('')}
+     </table>
+     ${chq.bankable.length>1?`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
+       <b>${chq.bankable.length} of them, ${money2(chq.sum(chq.bankable))}, can go in now</b>
+       <select data-de="bankall" style="width:auto;padding:5px 7px;margin:0">
+        ${banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select>
+       <button class="btn tape" data-act="deBankAll">Bank them all</button></div>`:''}`
+     :'<div class="muted">Nothing in the drawer to bank.</div>'}
+   </div>
+
+   <div class="card" style="margin-top:12px">
+    <h2 style="margin-top:0">Check these against the bank
+      <span class="muted" style="font-size:13px">${toClear.length} banked and not answered on</span></h2>
+    <div class="muted">Open the bank account, find each one, and say here what happened. Until that is
+     done the books are carrying the money in two places.</div>
+    ${toClear.length?`<table style="margin-top:8px"><tr><th>Cheque</th><th>From</th><th>Banked</th><th class="n">Amount</th><th></th></tr>
+      ${toClear.slice().sort((a,b)=>String(a.changed).localeCompare(String(b.changed))).map(c=>`<tr>
+        <td>${face(c)}</td><td>${c.party||'—'}</td>
+        <td>${c.changed||'—'}${deAgo(c.changed)>=DE_CLEAR_DAYS?` <span class="tag warn">${deAgo(c.changed)} days</span>`:''}</td>
+        <td class="n">${money2(c.amount)}</td>
+        <td style="white-space:nowrap">
+         <button class="btn tape sm" data-act="chqSet" data-no="${c.no}" data-dir="RECEIVED" data-st="CLEARED">It came in</button>
+         <button class="btn ghost sm" data-act="chqBounce" data-no="${c.no}" data-dir="RECEIVED">It bounced</button></td></tr>`).join('')}
+     </table>`:'<div class="muted" style="margin-top:8px">Nothing waiting on the bank.</div>'}
+   </div>
+
+   ${ourOut.length?`<div class="card" style="margin-top:12px">
+    <h2 style="margin-top:0">Our own cheques that may be presented
+      <span class="muted" style="font-size:13px">${money2(chq.sum(ourOut))} must stay in the bank</span></h2>
+    <table><tr><th>Cheque</th><th>To</th><th>Dated</th><th class="n">Amount</th><th></th></tr>
+     ${ourOut.map(c=>`<tr><td>${c.no}<div class="muted">${c.bank||''}</div></td><td>${c.party||'—'}</td>
+       <td>${deFace(c)}</td><td class="n">${money2(c.amount)}</td>
+       <td><button class="btn ghost sm" data-act="chqSet" data-no="${c.no}" data-dir="ISSUED" data-st="CLEARED">It went out</button></td></tr>`).join('')}
+    </table></div>`:''}`;
+}
+
+/* ---------------------- THE CIRCLE, ON SCREEN ---------------------- */
+function dayCircle(){
+  const people=circleList().map(p=>({...p,bal:circleBal(p.id)}))
+    .sort((a,b)=>Math.abs(b.bal)-Math.abs(a.bal)||a.name.localeCompare(b.name));
+  const owedOut=circleOwedToThem(), owedIn=circleOwedToUs();
+  const moves=circleMoves().slice(0,40);
+
+  const who=(p)=>p.bal>0.005?`<span class="tag bad">we owe ${money2(p.bal)}</span>`
+    :p.bal<-0.005?`<span class="tag ok">they owe ${money2(-p.bal)}</span>`
+    :'<span class="tag">square</span>';
+
+  return `<div class="daygrid">
+    ${dayTile('The shop owes',owedOut,'to be given back','r')}
+    ${dayTile('Owed to the shop',owedIn,'to be collected','g')}
+    ${dayTile('In the drawer',bal('1010',D(today)),'what there is to lend or to deposit','')}
+   </div>
+
+   <div class="card note" style="margin-top:12px"><b>Money passed with people who are neither
+    customers nor suppliers</b>
+    <div class="muted">A friend who made up a bank deposit when the drawer was short, or somebody the
+     shop helped out for a week. It goes through the books like everything else, so it is not sitting
+     in somebody's head. It never touches a customer's or a supplier's account.</div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+     <button class="btn tape" data-act="circleIn">We took cash in</button>
+     <button class="btn tape" data-act="circleOut">We gave cash out</button>
+     <button class="btn ghost" data-act="circleWho">Add somebody</button></div>
+   </div>
+
+   ${people.length?`<div class="card" style="margin-top:12px">
+    <h2 style="margin-top:0">Who is in the circle</h2>
+    <table><tr><th>Name</th><th>Mobile</th><th class="n">Where it stands</th><th></th></tr>
+     ${people.map(p=>`<tr class="circle-row"><td><b>${noteEsc(p.name)}</b>${p.note?`<div class="muted">${noteEsc(p.note)}</div>`:''}</td>
+      <td>${p.phone||'—'}</td>
+      <td class="n">${who(p)}</td>
+      <td style="white-space:nowrap">
+       ${Math.abs(p.bal)>0.005?`<button class="btn tape sm" data-act="circleSettle" data-id="${p.id}">Settle it</button>`:''}
+       <button class="btn ghost sm" data-act="circleOut" data-id="${p.id}">Give</button>
+       <button class="btn ghost sm" data-act="circleIn" data-id="${p.id}">Take</button></td></tr>`).join('')}
+    </table></div>`
+   :`<div class="card" style="margin-top:12px"><div class="muted">Nobody in the circle yet. Add somebody
+     the first time money passes.</div></div>`}
+
+   ${moves.length?`<div class="card" style="margin-top:12px">
+    <h2 style="margin-top:0">What has passed</h2>
+    <table><tr><th>Day</th><th>Who</th><th>What happened</th><th class="n">Amount</th><th>Through</th><th>By</th></tr>
+     ${moves.map(m=>{const p=CP(m.pid)||{name:'—'};return `<tr>
+      <td>${m.date}</td><td>${noteEsc(p.name)}</td>
+      <td>${noteEsc(m.desc)}${m.why?`<div class="muted">${noteEsc(m.why)}</div>`:''}</td>
+      <td class="n ${m.dir==='out'?'rust':''}">${m.dir==='out'?'−':'+'}${money2(m.amount)}</td>
+      <td>${m.through}</td><td>${m.by||'—'}</td></tr>`}).join('')}
+    </table></div>`:''}`;
+}
+
+/* ---- the windows that take the figures ---- */
+function circleWhoModal(then){
+  const m=modal(`<h2>Somebody new in the circle</h2>
+   <div class="f"><label>Name</label><input id="cwName" placeholder="e.g. Ranjith uncle" maxlength="60"></div>
+   <div class="f"><label>Mobile — optional</label><input id="cwPhone" maxlength="20"></div>
+   <div class="f"><label>A note — optional</label><input id="cwNote" placeholder="e.g. next door, shoe shop" maxlength="90"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Never mind</button>
+    <button class="btn tape" id="cwGo">Add</button></div>`);
+  const go=()=>{
+    try{
+      const p=circleAdd($('#cwName').value,$('#cwPhone').value,$('#cwNote').value);
+      closeModals(); render(); toast(`${p.name} is in the circle`);
+      if(then) then(p);
+    }catch(e){ toast(e.message) }
+  };
+  m.querySelector('#cwGo').onclick=go;
+  m.querySelector('#cwName').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); go() } };
+}
+
+function circleMoveModal(dir,pid){
+  const people=circleList();
+  if(!people.length) return circleWhoModal(p=>circleMoveModal(dir,p.id));
+  const out=dir==='out';
+  const title=out?'Cash going out to the circle':'Cash coming in from the circle';
+  const m=modal(`<h2>${title}</h2>
+   <div class="f"><label>Who</label><select id="cmWho">
+     ${people.map(p=>{const b=circleBal(p.id);return `<option value="${p.id}" ${pid&&p.id===+pid?'selected':''}>${noteEsc(p.name)}${Math.abs(b)>0.005?` — ${b>0?'we owe '+money2(b):'they owe '+money2(-b)}`:''}</option>`}).join('')}
+    </select></div>
+   <div class="grid2">
+    <div class="f"><label>How much</label><input id="cmAmt" type="number" step="any" min="0" placeholder="0.00" autocomplete="off"></div>
+    <div class="f"><label>Out of</label><select id="cmHow">
+      <option value="CASH">The drawer</option>
+      ${deBanks().map(b=>`<option value="B${b.id}">${b.name}</option>`).join('')}</select></div>
+   </div>
+   <div class="f"><label>Day</label><input id="cmDate" type="date" value="${D(today)}" max="${D(today)}"></div>
+   <div class="f"><label>What for — optional</label>
+     <input id="cmWhy" maxlength="120" placeholder="${out?'e.g. helping him until Friday':'e.g. to make up the bank deposit'}"></div>
+   <div id="cmSays" class="muted" style="margin-top:6px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Never mind</button>
+    <button class="btn tape" id="cmGo">${out?'Give it':'Take it'}</button></div>`);
+
+  const says=()=>{
+    const p=CP(+m.querySelector('#cmWho').value); if(!p) return;
+    const b=circleBal(p.id), amt=+m.querySelector('#cmAmt').value||0;
+    const after=+(out?b-amt:b+amt).toFixed(2);
+    m.querySelector('#cmSays').innerHTML=!amt?'':
+      after>0.005?`After this the shop owes ${noteEsc(p.name)} <b>${money2(after)}</b>.`
+      :after<-0.005?`After this ${noteEsc(p.name)} owes the shop <b>${money2(-after)}</b>.`
+      :`After this you are square with ${noteEsc(p.name)}.`;
+  };
+  m.querySelector('#cmWho').onchange=says;
+  m.querySelector('#cmAmt').oninput=says;
+  const go=()=>{
+    try{
+      const how=m.querySelector('#cmHow').value;
+      circleMove({ pid:+m.querySelector('#cmWho').value, dir,
+        amount:m.querySelector('#cmAmt').value,
+        method:how==='CASH'?'CASH':'BANK', bank:how==='CASH'?null:+how.slice(1),
+        why:m.querySelector('#cmWhy').value, date:m.querySelector('#cmDate').value||D(today) });
+      closeModals(); render();
+      toast(out?'Given, and it is on the books':'Taken, and it is on the books','ok');
+    }catch(e){ toast(e.message) }
+  };
+  m.querySelector('#cmGo').onclick=go;
+  m.querySelector('#cmAmt').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); go() } };
+  setTimeout(()=>{ const f=m.querySelector('#cmAmt'); if(f) f.focus() },30);
+}
+
+/* Settling is the same move with the figure already filled in, because that is what settling is. */
+function circleSettleModal(pid){
+  const p=CP(+pid); if(!p) return;
+  const b=circleBal(p.id);
+  if(Math.abs(b)<0.005) return toast(`You are square with ${p.name}`);
+  const out=b>0;                                   // we owe them: money goes out
+  circleMoveModal(out?'out':'in',p.id);
+  setTimeout(()=>{ const f=document.getElementById('cmAmt');
+    if(f){ f.value=Math.abs(b).toFixed(2); f.dispatchEvent(new Event('input')); f.select() } },60);
+}
+
+function cashBankModal(dir,bankId){
+  const b=B(+bankId)||deBanks()[0]; if(!b) return toast('No bank account set up');
+  const inB=dir==='in';
+  const m=modal(`<h2>${inB?'Put cash into '+b.name:'Draw cash from '+b.name}</h2>
+   <div class="muted" style="margin-bottom:8px">${inB
+     ?`There is ${money2(bal('1010',D(today)))} in the drawer.`
+     :`${b.name} holds ${money2(bal(b.ac,D(today)))}.`}</div>
+   <div class="f"><label>How much</label><input id="cbAmt" type="number" step="any" min="0" placeholder="0.00" autocomplete="off"></div>
+   <div class="f"><label>Day</label><input id="cbDate" type="date" value="${D(today)}" max="${D(today)}"></div>
+   <div class="f"><label>A note — optional</label><input id="cbWhy" maxlength="120"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Never mind</button>
+    <button class="btn tape" id="cbGo">${inB?'Put it in':'Draw it'}</button></div>`);
+  const go=()=>{
+    try{
+      const amt=m.querySelector('#cbAmt').value, dt=m.querySelector('#cbDate').value||D(today), why=m.querySelector('#cbWhy').value;
+      if(inB) cashToBank(b.id,amt,dt,why); else bankToCash(b.id,amt,dt,why);
+      closeModals(); render(); toast(inB?`Put into ${b.name}`:`Drawn from ${b.name}`,'ok');
+    }catch(e){ toast(e.message) }
+  };
+  m.querySelector('#cbGo').onclick=go;
+  m.querySelector('#cbAmt').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); go() } };
+  setTimeout(()=>{ const f=m.querySelector('#cbAmt'); if(f) f.focus() },30);
+}
+
+/* The figures on the tiles count themselves up once, when they first appear. It is a small
+   thing and it is the difference between a page that tells you something and a wall of text. */
+function dayCountUp(){
+  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelectorAll('.daytile .v[data-count]').forEach((el,i)=>{
+    const to=+el.dataset.count; if(!isFinite(to)||Math.abs(to)<0.005) return;
+    if(el.dataset.ran) return; el.dataset.ran='1';
+    const ms=520, t0=performance.now()+i*70;
+    const step=(now)=>{
+      const k=Math.min(1,Math.max(0,(now-t0)/ms));
+      el.textContent=money2(to*(1-Math.pow(1-k,3)));      // slows as it lands, like a till drawer
+      if(k<1) requestAnimationFrame(step); else el.textContent=money2(to);
+    };
+    requestAnimationFrame(step);
+  });
 }
 
 /* ---- the sections the day-end page is made of ---- */
@@ -12011,6 +12454,7 @@ const TRAIL_KINDS={
   supStock:['Supplier let in to see their stock','info'],
   cashup:['Drawer counted','info'],
   dayend:['Day closed','info'],
+  circle:['Cash lent, borrowed or moved to the bank','info'],
   priceDown:['Price dropped below the list','info'],
   custDel:['Customer removed','bad'],
   prodDel:['Item removed','bad'],
@@ -20258,6 +20702,13 @@ document.addEventListener('click',e=>{
       cashDraft.open={...prev.counts}; render(); toast(`Filled in from ${prev.date} — change anything that is different`) },
     cashPrint:()=>cashPrintSlip(a.dataset.k),
     deGo:()=>go(a.dataset.v),
+    dayTab:()=>{ dayTab=a.dataset.t; render(); const mn=document.getElementById('main'); if(mn) mn.scrollTop=0 },
+    circleIn:()=>circleMoveModal('in',a.dataset.id),
+    circleOut:()=>circleMoveModal('out',a.dataset.id),
+    circleWho:()=>circleWhoModal(),
+    circleSettle:()=>circleSettleModal(a.dataset.id),
+    cbIn:()=>cashBankModal('in',a.dataset.b),
+    cbOut:()=>cashBankModal('out',a.dataset.b),
     deBank:()=>deBankCheque(a.dataset.no, deDraft.bank||((S.banks[0]||{}).id)),
     deBankAll:()=>deBankAll(deDraft.bank||((S.banks[0]||{}).id)),
     deClose:()=>deCloseDay(),
