@@ -119,6 +119,15 @@ export async function injectSupplierInbox(data) {
         text: `${name} is asking to be paid — ${(d.lines || []).length} bill${(d.lines || []).length === 1 ? '' : 's'}`,
         view: 'payreqs', at: localTime(), read: false, forApprovers: true });
       added++;
+    } else if (row.kind === 'stockread') {
+      // somebody read the shelves: it goes on the till's own list, so the shop can see who and when
+      const d = row.data;
+      S.supStockLog = S.supStockLog || [];
+      if (S.supStockLog.some(x => x.inboxId === row.id)) continue;
+      S.supStockLog.unshift({ inboxId: row.id, sid: row.sid, at: new Date(row.created_at).getTime(),
+        date: d.date || localDate(), time: d.time || localTime(), lines: +d.lines || 0, rep: d.rep || '' });
+      if (S.supStockLog.length > 800) S.supStockLog.length = 800;
+      added++;
     } else if (row.kind === 'reply') {
       const d = row.data, po = S.orders.find(o => o.no === d.no && o.dir === 'OUT');
       if (!po) { continue; }                                        // an order that was thrown away: nothing to attach to
@@ -356,7 +365,38 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
 
   res.json({ ok: true, supplier: { name: sup.name, contact: sup.contact || '', phone: sup.phone || '', terms: sup.days || 0, owed: Math.round((cr - dr) * 100) / 100, showAccount: !!sup.showAccount },
     bills, payReqs,
+    // when the shop's door onto their stock closes; the page shows the tab only while it is open
+    stockUntil: +sup.stockUntil || 0,
     shop: { name: CFG.shop?.name || 'Regal Hardware', phone: CFG.shop?.phone || '', addr: CFG.shop?.addr || '' }, rep: req.sup.rep || '', pos, sent });
+}));
+
+/* What the shop is holding of their own lines. The shop opens this for a day at a time and it shuts
+   by itself; the date is checked here and not only on the till, so an old page left open on a phone
+   stops working when the day is up. Only their own lines are ever sent — another supplier's stock is
+   not theirs to see — and no cost, no margin and no takings go with it, only what is on the shelf.
+   Every read is written to the supplier's inbox so the shop can see afterwards who looked and when. */
+r.get('/stock', supAuth, asyncHandler(async (req, res) => {
+  const data = await books();
+  const S = data?.S || {};
+  const sup = (S.suppliers || []).find(s => s.id === req.sup.sid);
+  if (!sup) throw new HttpError(404, 'Supplier no longer on file');
+  const until = +sup.stockUntil || 0;
+  if (!until || Date.now() >= until)
+    throw new HttpError(403, 'The shop has not opened this for you, or the day is up — ask them to open it again');
+  const mine = (S.products || []).filter(p => p.supplierId === sup.id && p.active !== false);
+  const lines = mine.map(p => ({
+    code: p.code || '', name: p.name || '', unit: p.unit || '',
+    stock: Math.round((+p.stock || 0) * 1000) / 1000,
+    min: +p.min || 0,
+    low: (+p.stock || 0) <= (+p.min || 0),
+  })).sort((a, b) => (a.low === b.low ? String(a.name).localeCompare(String(b.name)) : a.low ? -1 : 1));
+  await ensureSupplierTables();
+  await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'stockread', $2)`,
+    [sup.id, JSON.stringify({ lines: lines.length, rep: String(req.sup.rep || '').trim().slice(0, 60),
+      date: localDate(), time: localTime() })]);
+  res.json({ ok: true, until, lines,
+    low: lines.filter(l => l.low).length,
+    shop: { name: data?.CFG?.shop?.name || 'Regal Hardware' } });
 }));
 
 /** An order the rep took by hand: photos of the sheet, a note.  Waits for the owner in the till. */

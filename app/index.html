@@ -967,6 +967,9 @@ tr.off td{opacity:.55}
 
 /* the item box while searching at the till */
 .sug{border:1px solid var(--ink);box-shadow:0 12px 28px rgba(22,32,29,.22);overflow-x:hidden}
+.pickrow{display:grid;grid-template-columns:1fr 100px auto auto auto;gap:9px;align-items:center;margin-top:9px;
+  padding:10px;border:1px solid var(--ink);border-radius:10px;background:var(--tint-yellow)}
+.pickrow input{margin:0;text-align:right}
 .sugrow{display:flex;gap:12px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line2);cursor:pointer;min-width:0}
 .sugrow:last-child{border-bottom:0}
 .sugrow.on{background:var(--tint-yellow)}
@@ -1808,6 +1811,16 @@ tr.rowlink button{cursor:pointer}
 .pstrip b{font-family:Archivo,sans-serif;font-size:15px}
 .pbig{font-family:Archivo,sans-serif;font-weight:800;font-size:31px;line-height:1;margin:3px 0 6px}
 .prow{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px}
+/* the rep keys an order off the stock list the way a bill is keyed: item, quantity, add */
+.ptbl{width:100%;border-collapse:collapse;font-size:13px}
+.ptbl th{text-align:left;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--steel);
+  border-bottom:1px solid var(--line);padding:5px 3px}
+.ptbl td{padding:7px 3px;border-bottom:1px solid var(--line2);vertical-align:top}
+.ptbl .n{text-align:right;white-space:nowrap}
+.ptbl .muted{font-size:11px}
+.pstock-pick{display:grid;grid-template-columns:1fr 84px auto;gap:8px;align-items:center;margin-top:8px;
+  padding:9px;border:1px solid var(--line);border-radius:9px;background:var(--panel)}
+.pstock-pick input{margin:0;text-align:right}
 .prow:last-child{border-bottom:0}
 .pageing{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);margin-top:9px}
 .pageing div{background:#fff;padding:6px 7px}
@@ -5924,10 +5937,118 @@ const payReqNew = () => payReqs().filter(r => r.status === 'sent').length;
 /* who may move one along: the owner, an admin, or whoever pays the suppliers */
 const canPayReq = () => can('paySupplier') || ownerOnly();
 const prSum = (r) => (r.lines || []).reduce((a, l) => a + (+l.claim || 0), 0);
+/* Who has been reading the shelves, and when. Open doors are at the top, because that is the thing
+   somebody might want to shut. */
+function supstock(){
+  const open=S.suppliers.filter(s=>supStockOn(s));
+  const log=(S.supStockLog||[]);
+  const byDay={}; log.forEach(r=>{ (byDay[r.date]=byDay[r.date]||[]).push(r) });
+  const days=Object.keys(byDay).sort().reverse().slice(0,30);
+  const reads7=log.filter(r=>r.at>Date.now()-7*864e5).length;
+  const who7=new Set(log.filter(r=>r.at>Date.now()-7*864e5).map(r=>r.sid)).size;
+  return `<h1>Who is reading the stock</h1>
+  <div class="row" style="gap:12px;flex-wrap:wrap;margin-bottom:12px">
+   ${stat('Doors open now',open.length,open.length?'they can see their own lines':'nobody can see the shelves',open.length?'y':'g')}
+   ${stat('Looks this week',reads7,`${who7} supplier${who7===1?'':'s'}`)}
+   ${stat('Kept',log.length,'the last 800 looks')}
+  </div>
+  ${open.length?`<div class="card" style="margin-bottom:12px"><h2 style="margin:0 0 8px">Open at the moment</h2>
+   <table class="tbl"><tr><th>Supplier</th><th>Opened by</th><th>Runs out</th><th class="n">Their lines</th><th></th></tr>
+   ${open.map(s=>`<tr><td><b>${s.name}</b>${s.phone?`<div class="muted">${s.phone}</div>`:''}</td>
+     <td>${s.stockOpenedBy||'—'}<div class="muted">${s.stockOpenedAt?String(s.stockOpenedAt).slice(0,10):''}</div></td>
+     <td><span class="tag warn">${supStockLeft(s)}</span></td>
+     <td class="n">${S.products.filter(p=>p.supplierId===s.id).length}</td>
+     <td class="n"><button class="btn ghost sm" data-act="supStock" data-id="${s.id}">Shut it</button></td></tr>`).join('')}
+   </table></div>`:''}
+  <div class="card">
+   <h2 style="margin:0 0 8px">Every look</h2>
+   ${days.length?days.map(d=>`<div class="ss-day"><b>${d===D(today)?'Today':d===ago(1)?'Yesterday':d}</b>
+     <span class="muted">${byDay[d].length} look${byDay[d].length===1?'':'s'}</span></div>
+     <table class="tbl" style="margin-bottom:10px"><tr><th>When</th><th>Supplier</th><th class="n">Lines read</th></tr>
+     ${byDay[d].map(r=>{const s=SU(r.sid)||{name:'a supplier since removed'};
+       return `<tr><td>${r.time}</td><td>${s.name}</td><td class="n">${r.lines}</td></tr>`}).join('')}</table>`).join('')
+    :'<div class="muted">Nobody has looked yet.</div>'}
+  </div>`;
+}
+
+/* ================== LETTING A SUPPLIER SEE THEIR OWN STOCK ==================
+   A rep asks what is left of their lines before writing the next order. Showing them is useful; leaving
+   it open is not — what sits on the shelves, and how fast it moves, is the shop's business and nobody
+   else's. So the door is opened for one day at a time and shuts by itself, and every look is written
+   down: who, when, and how many lines they read.
+   It is only ever their own lines. Another supplier's stock is not theirs to see. */
+const SUP_STOCK_HOURS = 24;
+const supStockOn = (s) => !!(s && s.stockUntil && Date.now() < s.stockUntil);
+const supStockLeft = (s) => !supStockOn(s) ? '' :
+  (h => h >= 1 ? h + (h === 1 ? ' hour' : ' hours') + ' left'
+               : Math.max(1, Math.round((s.stockUntil - Date.now()) / 6e4)) + ' minutes left')
+  (Math.floor((s.stockUntil - Date.now()) / 36e5));
+/** Opens the door for a day and tells them it is open. */
+function supStockOpen(s){
+  s.stockUntil = Date.now() + SUP_STOCK_HOURS * 36e5;
+  s.stockOpenedBy = S.user.name;
+  s.stockOpenedAt = new Date().toISOString();
+  logTrail('supStock', `${s.name} let in to see their stock for ${SUP_STOCK_HOURS} hours`,
+    { who: s.name, ref: s.code || '' });
+  const to = String(s.phone || '').trim();
+  if (to) {
+    sms(to, `${CFG.shop.name}: you can see what we hold of your items for the next ${SUP_STOCK_HOURS} hours at ${supLink()} — sign in and open Stock.`);
+    toast(`${s.name.split(/[–(]/)[0].trim()} can see their stock for ${SUP_STOCK_HOURS} hours — texted to ${to}`, 'ok');
+  } else {
+    toast(`${s.name.split(/[–(]/)[0].trim()} can see their stock for ${SUP_STOCK_HOURS} hours — no mobile on file to tell them`, 'warn');
+  }
+  return s;
+}
+function supStockShut(s){
+  s.stockUntil = 0;
+  logTrail('supStock', `${s.name} shut out of their stock`, { who: s.name, ref: s.code || '' });
+  toast(`${s.name.split(/[–(]/)[0].trim()} can no longer see the stock`);
+}
+/** The button on the supplier's card: an admin does it, anybody else asks. */
+function supStockAsk(s){
+  if (supStockOn(s)) return supStockShut(s);
+  if (needsApproval('supStock'))
+    return requestApproval('supStock', `Let ${s.name} see their stock for ${SUP_STOCK_HOURS} hours`,
+      `${s.name} · ${s.phone || 'no mobile'} · ${S.products.filter(p => p.supplierId === s.id).length} of our lines are theirs`,
+      { sid: s.id });
+  supStockOpen(s);
+}
+/* Every look is kept, so the shop can see afterwards who read what and when. The list is what the
+   summary page shows; nothing is thrown away by the till. */
+function supStockRead(sid, lines){
+  S.supStockLog = S.supStockLog || [];
+  S.supStockLog.unshift({ at: Date.now(), date: D(today),
+    time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+    sid, lines: +lines || 0 });
+  if (S.supStockLog.length > 800) S.supStockLog.length = 800;
+}
+
+/* What the shop decides about a request is told to the supplier, not left for them to come and find.
+   A rep who has asked to be paid wants to hear the same day; leaving it on a page they must remember
+   to open is how a supplier ends up ringing the counter to ask. */
+const supLink = () => String((CFG.shop&&CFG.shop.web)||'regalhw.lk').toLowerCase()+'/supplier';
+const PR_SAID = {
+  accepted: (r)=>`${CFG.shop.name}: your request for ${fmt(r.total)} is agreed. We will tell you when the money is ready.`,
+  queried:  (r)=>`${CFG.shop.name}: we have a question about your request for ${fmt(r.total)}. Please open ${supLink()} or ring us.`,
+  rejected: (r)=>`${CFG.shop.name}: your request for ${fmt(r.total)} was not agreed. The reason is on ${supLink()}.`,
+  ready:    (r)=>`${CFG.shop.name}: the money for your request, ${fmt(r.total)}, is ready. Please call in for it.`,
+  issued:   (r)=>`${CFG.shop.name}: ${fmt(r.total)} has been paid out against your request. Thank you.`,
+};
+function prTell(r, action){
+  try{
+    const s = SU(r.sid); if(!s) return;
+    const say = PR_SAID[action]; if(!say) return;
+    const to = String(s.phone||'').trim();
+    if(!to) return;                       // no mobile on the account: their own page still shows it
+    sms(to, say(r));
+    toast(`${s.name.split(/[–(]/)[0].trim()} told by text`, 'ok');
+  }catch(e){ /* the status stands whether or not the text got out */ }
+}
 function prStep(r, action, note){
   r.events = r.events || [];
   r.events.push({ actor:'shop', name:S.user.name, action, note:note||'', at:Date.now() });
   r.unreadShop = false;
+  prTell(r, action);
 }
 
 let prSel = null;
@@ -7078,13 +7199,29 @@ const maskP=p=>p?p.slice(0,3)+' '+p.slice(3,-3).replace(/./g,'•')+' '+p.slice(
 let poDraft=null, ordTab='in';
 window.poState=()=>poDraft; // exposed for tests
 function newPO(sid){
-  poDraft={sid:sid||S.suppliers[0].id,lines:[],note:'',want:D(today),q:''};
+  poDraft={sid:sid||S.suppliers[0].id,lines:[],note:'',want:D(today),q:'',pid:null,qty:''};
   ordTab='out'; render();
 }
+/* An order is built the way a bill is: find the item, say how many, it drops onto the list.
+   Picking used to mean "one of these" and a trip to the quantity box in the table, which is
+   not how anybody at the counter works. */
 function poAddKnown(pid){
-  const p=P(pid);
-  poDraft.lines.push({pid,desc:p.name,unit:p.unit,qty:1,est:p.cost,known:true});
-  poDraft.q=''; render();
+  poDraft.pid=pid; poDraft.qty=''; render();
+  const f=$('#poQty'); if(f){ f.focus(); f.select() }
+}
+function poDrop(){ poDraft.pid=null; poDraft.qty=''; render();
+  const q=$('#poQ'); if(q) q.focus();
+}
+function poPut(){
+  const d=poDraft, p=P(d.pid); if(!p) return;
+  const qty=+d.qty;
+  if(!(qty>0)) { toast('How many?'); const f=$('#poQty'); if(f) f.focus(); return }
+  const at=d.lines.findIndex(l=>l.known&&l.pid===p.id);
+  if(at>=0) d.lines[at].qty=+(d.lines[at].qty+qty).toFixed(3);   // same item twice adds up
+  else d.lines.push({pid:p.id,desc:p.name,unit:p.unit,qty,est:p.cost,known:true});
+  d.pid=null; d.qty=''; d.q=''; render();
+  const q=$('#poQ'); if(q) q.focus();
+  toast(`${fq(qty)} ${p.unit} ${p.name.split(/[-(]/)[0].trim()}`, 'ok');
 }
 function poAddFree(){
   poDraft.lines.push({pid:null,desc:'',unit:'pcs',qty:1,est:0,known:false});
@@ -7170,6 +7307,7 @@ function ordersOut(){
   if(poDraft){
     const d=poDraft, s=SU(d.sid);
     const hits=d.q.trim()?S.products.filter(p=>p.name.toLowerCase().includes(d.q.toLowerCase())||p.code.toLowerCase().includes(d.q.toLowerCase())).slice(0,6):[];
+    const picked=d.pid?P(d.pid):null;
     const est=d.lines.reduce((a,l)=>a+l.qty*(+l.est||0),0);
     return `<div class="card" style="margin-bottom:12px">
       <div class="grid3">
@@ -7180,8 +7318,14 @@ function ordersOut(){
       </div>
       <label>Add an item we carry</label>
       <div style="position:relative"><input id="poQ" value="${d.q}" placeholder="Search the product list…" autocomplete="off">
-       ${hits.length?`<div class="sug">${hits.map(p=>`<div data-act="poAdd" data-id="${p.id}"><span>${p.name} <span class="muted">${p.code}</span></span>
+       ${hits.length&&!picked?`<div class="sug">${hits.map(p=>`<div data-act="poAdd" data-id="${p.id}"><span>${p.name} <span class="muted">${p.code}</span></span>
         <span class="muted">${fq(p.stock)} ${p.unit} left${can('cost')?' · last cost '+fmt(p.cost):''}</span></div>`).join('')}</div>`:''}</div>
+      ${picked?`<div class="pickrow">
+        <div><b>${picked.name}</b><div class="muted">${picked.code} · ${fq(picked.stock)} ${picked.unit} in the shop${can('cost')?' · last cost '+fmt(picked.cost):''}</div></div>
+        <input id="poQty" type="number" step="any" min="0" value="${d.qty}" placeholder="How many?" autocomplete="off">
+        <span class="muted">${picked.unit}</span>
+        <button class="btn tape" data-act="poPut">Add</button>
+        <button class="btn ghost" data-act="poDrop">✕</button></div>`:''}
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
        <button class="btn ghost" data-act="poFree">Add something we do not carry</button>
        <span class="muted" style="align-self:center">Anything new gets a code and prices when the goods arrive.</span></div>
@@ -7813,11 +7957,70 @@ function portalOrders(s){
     ${o.status==='accepted'&&!o.dispatch?`<button class="btn tape sm" data-pdispatch="${o.id}">Mark dispatched</button>`:''}
    </div></div>`).join('')||'<div class="card muted">Nothing here.</div>'}`;
 }
+/* What the shop is holding of their own lines, on the rep's phone. It is only here while the shop has
+   opened the door, and it shows what is on the shelf and nothing else — no cost, no margin, no idea
+   what it sells for or how fast. Looking is written down. */
+function portalStock(s){
+  const O=S.portal.ord=S.portal.ord||{lines:[],q:'',pid:null,qty:''};
+  const all=S.products.filter(p=>p.supplierId===s.id&&p.active!==false)
+    .map(p=>({...p,low:(+p.stock||0)<=(+p.min||0)}))
+    .sort((a,b)=>a.low===b.low?String(a.name).localeCompare(String(b.name)):(a.low?-1:1));
+  const q=String(O.q||'').trim().toLowerCase();
+  const hits=!q?[]:all.filter(p=>String(p.name||'').toLowerCase().includes(q)
+    ||String(p.code||'').toLowerCase().includes(q)||String(p.num||'')===q).slice(0,8);
+  const picked=O.pid?all.find(p=>p.id===O.pid):null;
+  const low=all.filter(p=>p.low);
+  return `<div class="card">
+    <b>Your items at the shop</b>
+    <div class="muted" style="margin:4px 0 10px">${all.length} lines${low.length?` · <b>${low.length}</b> running low`:''} · open to you for ${supStockLeft(s)}</div>
+    <div style="position:relative">
+     <input id="postq" value="${String(O.q||'').replace(/"/g,'&quot;')}" placeholder="Type an item name or code…" autocomplete="off">
+     ${hits.length&&!picked?`<div class="sug">${hits.map(p=>`<div data-postpick="${p.id}"><span>${p.name} <span class="muted">${p.code||''}</span></span>
+       <span class="muted">${fq(p.stock)} ${p.unit||''} on the shelf${p.low?' · low':''}</span></div>`).join('')}</div>`:''}
+    </div>
+    ${picked?`<div class="pstock-pick">
+      <div><b>${picked.name}</b><div class="muted">${fq(picked.stock)} ${picked.unit||''} on the shelf${picked.low?' · running low':''}</div></div>
+      <input id="postqty" type="number" step="any" inputmode="decimal" value="${O.qty}" placeholder="How many">
+      <button class="btn tape" id="postadd">Add</button></div>`:''}
+    ${O.lines.length?`<table class="ptbl" style="margin-top:10px">
+      <tr><th>On your order</th><th class="n">Qty</th><th></th></tr>
+      ${O.lines.map((l,i)=>`<tr><td>${l.name}${l.code?`<div class="muted">${l.code}</div>`:''}</td>
+        <td class="n"><input data-postq="${i}" type="number" step="any" value="${l.qty}" style="width:74px;text-align:right"></td>
+        <td class="n"><button class="btn ghost sm" data-postdel="${i}">✕</button></td></tr>`).join('')}
+     </table>
+     <button class="btn tape" style="width:100%;margin-top:10px" id="postsend">Send these ${O.lines.length} to the shop</button>`
+     :'<div class="muted" style="margin-top:10px">Nothing on the order yet. Find an item above, put the quantity, and add it.</div>'}
+    ${low.length?`<div class="muted" style="margin-top:12px"><b>Running low:</b> ${low.slice(0,8).map(p=>p.name).join(', ')}${low.length>8?` and ${low.length-8} more`:''}</div>`:''}
+    <div class="muted" style="margin-top:8px">Only what is on the shelf is shown. The shop can see that you looked.</div>
+   </div>`;
+}
+/* Putting a line on the order: the item, then how many, then Add — the way a bill is keyed, so a rep
+   who has watched the counter already knows how it goes. */
+function portalStockAdd(){
+  const O=S.portal.ord; if(!O||!O.pid) return;
+  const p=P(O.pid); if(!p) return;
+  const qty=+O.qty; if(!(qty>0)) return toast('How many?');
+  const at=O.lines.findIndex(l=>l.pid===p.id);
+  if(at>=0) O.lines[at].qty=+(O.lines[at].qty+qty).toFixed(3);
+  else O.lines.push({pid:p.id,name:p.name,code:p.code||'',unit:p.unit||'',qty});
+  O.pid=null; O.qty=''; O.q='';
+  drawPhone();
+  const f=document.getElementById('postq'); if(f) f.focus();
+}
+function portalStockSend(s){
+  const O=S.portal.ord; if(!O||!O.lines.length) return;
+  S.portal.draft=O.lines.map(l=>`${l.name}${l.code?' ('+l.code+')':''} — ${fq(l.qty)} ${l.unit||''}`.trim()).join('\n');
+  S.portal.tab='new';
+  S.portal.flash=`${O.lines.length} item${O.lines.length===1?'':'s'} on the order sheet — add anything else, then send.`;
+  O.lines=[]; O.pid=null; O.qty=''; O.q='';
+  drawPhone();
+  const t=document.getElementById('ptext'); if(t){ t.value=S.portal.draft; t.focus() }
+}
 function portalNew(s){
   return `<div class="card">
    ${S.portal.replaces?`<div class="tag warn" style="display:block;padding:8px 10px;margin-bottom:10px">Corrected version of the ${S.portal.replaces.date} order. <button class="btn ghost sm" id="pcancelrev">Cancel</button></div>`:''}
    <label>Your name</label><input id="prep" value="${S.portal.rep||''}" placeholder="e.g. Nimal" style="margin-bottom:10px">
-   <label>Order</label><textarea id="ptext" rows="5" placeholder="One line per item, e.g.&#10;Tokyo cement 50kg — 100 bags" style="margin-bottom:10px">${S.portal.replaces?S.portal.replaces.text:''}</textarea>
+   <label>Order</label><textarea id="ptext" rows="5" placeholder="One line per item, e.g.&#10;Tokyo cement 50kg — 100 bags" style="margin-bottom:10px">${S.portal.replaces?S.portal.replaces.text:(S.portal.draft||'')}</textarea>
    <div class="grid2" style="margin-bottom:10px">
     <div><label>Can deliver by</label><input id="pwant" type="date" value="${D(today)}"></div>
     <div><label>Your reference</label><input id="pref" placeholder="optional"></div></div>
@@ -7837,10 +8040,11 @@ function portalHome(){
     <div style="font-size:11px;opacity:.75">${s.name}</div></div><button class="btn ghost sm" id="pout">Sign out</button></div>
    ${s.showAccounts?`<div class="pstrip">Owed to you <b>${fmt(owed)}</b></div>`:''}
    <div class="pbody">${S.portal.flash?`<div class="tag ok" style="display:block;padding:8px 10px;margin-bottom:10px">${S.portal.flash}</div>`:''}
-    ${tab==='new'?portalNew(s):tab==='orders'?portalOrders(s):tab==='account'?portalAccount(s):portalShop(s)}</div>
+    ${tab==='new'?portalNew(s):tab==='orders'?portalOrders(s):tab==='stock'?portalStock(s):tab==='account'?portalAccount(s):portalShop(s)}</div>
    <div class="pnav">
     <button class="${tab==='new'?'on':''}" data-pt="new">✉<div>New order</div></button>
     <button class="${tab==='orders'?'on':''}" data-pt="orders">📦<div>My orders${ordersFor(s.id).filter(o=>o.unreadSup).length?' •':''}</div></button>
+    ${supStockOn(s)?`<button class="${tab==='stock'?'on':''}" data-pt="stock">▤<div>Stock</div></button>`:''}
     <button class="${tab==='account'?'on':''}" data-pt="account">₨<div>Account</div></button>
     <button class="${tab==='shop'?'on':''}" data-pt="shop">ℹ<div>Shop</div></button></div>`;
 }
@@ -8065,8 +8269,29 @@ function bindPhone(){
     q('pgopin').onclick=go; q('ppinin').onkeydown=e=>e.key==='Enter'&&go() }
   if(q('pout')) q('pout').onclick=()=>{S.portal.session=null;S.portal.stage='phone';S.portal.flash='';drawPhone()};
   w.querySelectorAll('[data-pt]').forEach(b=>b.onclick=()=>{S.portal.tab=b.dataset.pt;S.portal.flash='';
-    if(b.dataset.pt==='orders')ordersFor(S.portal.session).forEach(o=>o.unreadSup=false); drawPhone()});
+    if(b.dataset.pt==='orders')ordersFor(S.portal.session).forEach(o=>o.unreadSup=false);
+    // opening Stock counts as a look, and goes on the shop's own list of who read the shelves
+    if(b.dataset.pt==='stock'){ const s2=SU(S.portal.session);
+      if(s2&&supStockOn(s2)) supStockRead(s2.id,S.products.filter(p=>p.supplierId===s2.id&&p.active!==false).length) }
+    drawPhone()});
   if(q('prep')) q('prep').oninput=e=>S.portal.rep=e.target.value;
+  // the stock tab is keyed like a bill: find the item, put the quantity, add it
+  if(q('postq')) q('postq').oninput=e=>{ const O=S.portal.ord; O.q=e.target.value; O.pid=null;
+    const at=e.target.selectionStart; drawPhone(); const again=document.getElementById('postq');
+    if(again){ again.focus(); try{ again.setSelectionRange(at,at) }catch(_){} } };
+  w.querySelectorAll('[data-postpick]').forEach(el=>el.onclick=()=>{ const O=S.portal.ord;
+    O.pid=+el.dataset.postpick; O.qty=''; drawPhone();
+    const f=document.getElementById('postqty'); if(f) f.focus() });
+  if(q('postqty')){ const f=q('postqty');
+    f.oninput=e=>{ S.portal.ord.qty=e.target.value };
+    f.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); portalStockAdd() } }; }
+  if(q('postadd')) q('postadd').onclick=portalStockAdd;
+  w.querySelectorAll('[data-postq]').forEach(el=>el.onchange=()=>{
+    const O=S.portal.ord, i=+el.dataset.postq, v=+el.value;
+    if(v>0) O.lines[i].qty=v; else O.lines.splice(i,1); drawPhone() });
+  w.querySelectorAll('[data-postdel]').forEach(el=>el.onclick=()=>{
+    S.portal.ord.lines.splice(+el.dataset.postdel,1); drawPhone() });
+  if(q('postsend')) q('postsend').onclick=()=>portalStockSend(SU(S.portal.session));
   if(q('psnap')) q('psnap').onclick=()=>{const t=q('ptext').value; S.portal.draft=t;
     S.portal.photos.push(sheetImage(t.split('\n').filter(Boolean))); drawPhone(); if($('#ptext'))$('#ptext').value=t};
   w.querySelectorAll('[data-prm]').forEach(b=>b.onclick=()=>{S.portal.photos.splice(+b.dataset.prm,1);drawPhone()});
@@ -8112,7 +8337,7 @@ const views=[
  ['updates','What is new'],
  ['grp','Counter'],['dashboard','Dashboard','F2'],['ai','AI support'],['pos','POS billing','F3'],['bills','Bills','F9'],['cashup','Cash up'],['docs','Quotes & delivery notes'],
  ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['tenders','Quotations & tenders'],
- ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['payreqs','Payment requests'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],
+ ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['payreqs','Payment requests'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['inventory','Inventory & ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
  ['damages','Damage returns'],['jobs','Repair job notes'],
  ['grp','Online'],['weborders','Online orders'],['webproducts','Online products'],['site','The shop site'],['social','Social'],
@@ -8443,7 +8668,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
@@ -8540,7 +8765,15 @@ function renderNow(){
   }
   if(S.view==='orders'&&poDraft){
     const b=(sel,f)=>document.querySelectorAll(sel).forEach(el=>el.oninput=el.onchange=()=>f(el));
-    const q=$('#poQ'); if(q){ q.oninput=e=>{poDraft.q=e.target.value;render();const n=$('#poQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)} }
+    const q=$('#poQ'); if(q){ q.oninput=e=>{poDraft.q=e.target.value;poDraft.pid=null;render();const n=$('#poQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
+      q.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault();
+        const t=poDraft.q.trim().toLowerCase(); if(!t) return;
+        const hit=S.products.find(x=>x.code.toLowerCase()===t)||S.products.find(x=>x.name.toLowerCase().includes(t)||x.code.toLowerCase().includes(t));
+        if(hit) poAddKnown(hit.id); else toast('Nothing by that name'); } } }
+    const qty=$('#poQty'); if(qty){ qty.oninput=e=>{poDraft.qty=e.target.value};
+      qty.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); poPut() }
+        if(e.key==='Escape'){ e.preventDefault(); poDrop() } };
+      if(document.activeElement===document.body) qty.focus() }
     const sup=$('#poSup'); if(sup) sup.onchange=e=>{poDraft.sid=+e.target.value;render()};
     const want=$('#poWant'); if(want) want.onchange=e=>{poDraft.want=e.target.value};
     const note=$('#poNote'); if(note) note.oninput=e=>{poDraft.note=e.target.value};
@@ -11241,6 +11474,7 @@ const TRAIL_KINDS={
   billEdit:['Saved bill opened to be changed','warn'],
   billRemade:['Bill re-made','bad'],
   docClosed:['Quotation or delivery note closed','warn'],
+  supStock:['Supplier let in to see their stock','info'],
   priceDown:['Price dropped below the list','info'],
   custDel:['Customer removed','bad'],
   prodDel:['Item removed','bad'],
@@ -13952,7 +14186,8 @@ const APPROVAL_KINDS=[
   ['custRemove','Customer removed'],
   ['billAdjust','Amount taken off a customer bill (return, discount, write-off)'],
   ['purAdjust','Amount taken off a supplier bill'],
-  ['prodPrice','Product prices or cost changed']];
+  ['prodPrice','Product prices or cost changed'],
+  ['supStock','Supplier let in to see their stock in the shop']];
 const APKIND=Object.fromEntries(APPROVAL_KINDS);
 const canApprove=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||can('approve')));
 const needsApproval=(kind)=>{ const cfg=CFG.approvals||{}; return cfg[kind]!==false&&!canApprove() };
@@ -13973,6 +14208,7 @@ function applyApproval(a){
   switch(a.kind){
     case 'custPortal':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); custPortalSet(c,!!d.on); break }
     case 'supPortal':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supPortalSet(s,d.field,!!d.value); break }
+    case 'supStock':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supStockOpen(s); break }
     case 'custEdit':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists');
       if(d.fields&&d.fields.phone){ const dup=S.customers.find(x=>x.phone===d.fields.phone&&x.id!==c.id&&x.active!==false);
         if(dup) throw new Error(`${dup.name} already has that number`) }
@@ -16047,6 +16283,8 @@ function supplierPanel(s){
      <button class="btn ghost" data-act="supStmt" data-id="${s.id}">Statement <i class="kbd">F8</i></button>
      <button class="btn ghost" data-act="prn" data-id="${s.id}">Goods back</button>
      <button class="btn ghost" data-act="supDamage" data-id="${s.id}">Damage returns${damageOpen(s.id).length?' · '+damageOpen(s.id).length:''}</button>
+     <button class="btn ghost ${supStockOn(s)?'on':''}" data-act="supStock" data-id="${s.id}"
+       title="${supStockOn(s)?'They can see their stock — '+supStockLeft(s):'Lets them see what is left of their own lines, for a day'}">${supStockOn(s)?'Stock open · '+supStockLeft(s):'Show them their stock'}</button>
      <button class="btn ghost" data-act="phoneToggle">${S.phoneOpen&&S.phoneMode==='supplier'?'Hide':'Show'} the rep's phone</button>
      <button class="btn ghost" data-act="supTerms" data-id="${s.id}">Credit periods</button>
      <button class="btn ghost" data-act="noteAdd" data-ptype="S" data-id="${s.id}">Add a note</button>
@@ -19612,6 +19850,7 @@ document.addEventListener('click',e=>{
     prefKeys:()=>{setPref('keys',!pref('keys')); render()},
     ordTab:()=>{ordTab=a.dataset.t; if(ordTab!=='out')poDraft=null; render()},
     poNew:()=>newPO(), poFree:()=>{poAddFree()}, poAdd:()=>poAddKnown(+a.dataset.id),
+    poPut:()=>poPut(), poDrop:()=>poDrop(),
     poDel:()=>{poDraft.lines.splice(+a.dataset.i,1);render()},
     poCancel:()=>{poDraft=null;render()}, poSend:()=>sendPO(),
     poPrint:()=>poPrint(a.dataset.no), poReceive:()=>poReceive(a.dataset.no),
@@ -19746,6 +19985,8 @@ document.addEventListener('click',e=>{
       l.checked=!(l.checked===true); render(); },
     dmgNew:()=>damageModal(), dmgMove:()=>damageMoveModal(a.dataset.no),
     supDamage:()=>{ dmgTab='all'; go('damages') },
+    supStock:()=>{ const s=SU(+a.dataset.id); if(s){ supStockAsk(s); persist(true); render() } },
+    supStockLog:()=>go('supstock'),
     quickPur:()=>quickPurModal(+a.dataset.id||undefined),
     purFiles:()=>{ const pu=S.purchases.find(x=>x.no===a.dataset.no); if(pu) purFilesModal(pu) },
     dmgLabel:()=>damageLabel(a.dataset.no), dmgScan:()=>damageScanModal(),
