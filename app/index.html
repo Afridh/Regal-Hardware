@@ -967,6 +967,19 @@ tr.off td{opacity:.55}
 
 /* the item box while searching at the till */
 .sug{border:1px solid var(--ink);box-shadow:0 12px 28px rgba(22,32,29,.22);overflow-x:hidden}
+.de-strip{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}
+.de-step{display:flex;gap:9px;align-items:center;padding:9px 12px;border:1px solid var(--line);
+  border-radius:10px;background:var(--panel);flex:1;min-width:190px}
+.de-step.done{background:var(--tint-green);border-color:var(--chip-green)}
+.de-step b{display:block;font-size:13px}
+.de-step .muted{font-size:11.5px}
+.de-dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--line);flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff}
+.de-dot.on{background:var(--chip-green);border-color:var(--chip-green)}
+.de-open{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;
+  padding:8px 0;border-bottom:1px solid var(--line2)}
+.de-open:last-child{border-bottom:0}
+.de-open>b{font-family:Archivo,sans-serif;font-size:17px;min-width:26px;text-align:right}
 .pickrow{display:grid;grid-template-columns:1fr 100px auto auto auto;gap:9px;align-items:center;margin-top:9px;
   padding:10px;border:1px solid var(--ink);border-radius:10px;background:var(--tint-yellow)}
 .pickrow input{margin:0;text-align:right}
@@ -3900,6 +3913,9 @@ const CFG={
    footer:'Only returns will be accepted within {days} days with the original invoice. Goods once sold are checked and accepted by the customer.',
    blankLines:9,summaryTime:'19:30'},
  cost:{word:'BLACKNIGHT',repeat:'X',onLabel:true,atTill:true,inProducts:true},
+ /* What closing a day insists on. Counting is worth insisting on; the list of things left
+    open is not, because some of it is honestly tomorrow's job. */
+ dayend:{needCash:true,needCheques:true,needCard:true,tolerance:20,printSlip:true},
  done:{askSize:true,cashDefault:'r80',creditDefault:'r80',rememberPick:true,notice:true,noticeMs:3200,
    askCustomer:true,askSalesman:true,                  // the two questions once the money is taken
    printAnim:true,animMs:1000,creditStamp:true,creditWord:'CREDIT BILL',cashWord:'PAID',sound:false},
@@ -4149,7 +4165,7 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
 function settingsTabs(){
-  return [['screen','My screen'],['done','Finishing a bill'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  return [['screen','My screen'],['done','Finishing a bill'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],['dayend','Day end'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
 }
 function settings(){
   const tabs=settingsTabs();
@@ -4402,6 +4418,23 @@ function settings(){
      <div class="muted" style="margin-bottom:6px">These changes need the owner's approval:</div>
      ${APPROVAL_KINDS.map(([k,l])=>`<label class="chk" style="display:flex;padding:7px 0;border-bottom:1px solid var(--line2)"><input type="checkbox" data-apk="${k}" ${cfg[k]!==false?'checked':''}> ${l}</label>`).join('')}
      <div class="muted" style="margin-top:8px">${apPending().length?`<b>${apPending().length}</b> request${apPending().length===1?'':'s'} waiting now.`:'Nothing waiting.'} <a href="#" data-view="approvals">Open Approvals</a></div>` }
+  if(setTab==='dayend'){ const dc=CFG.dayend||{};
+    body=`<div class="card note" style="margin-bottom:10px"><b>Shutting up shop</b>
+      <div class="muted">Day end walks the close: the drawer, the cheques, the card machine, what the day
+       came to, and what is still open. What is ticked here has to be done before a day will close.
+       The list of things left open is never a gate — some of it is honestly tomorrow's job — but it is
+       always shown.</div></div>
+     ${fld('dayend.needCash','','The drawer has to be counted before the day closes','check')}
+     ${fld('dayend.needCheques','','The cheques in the drawer have to be seen to — banked, or ticked as staying','check')}
+     ${fld('dayend.needCard','','What the card machine settled has to be keyed in and agreed','check')}
+     ${fld('dayend.printSlip','','Print the day-end sheet as soon as the day is closed','check')}
+     <div class="grid2" style="margin-top:10px">${fld('dayend.tolerance','What the drawer may be out by, without a reason','Under this it closes quietly. Over it, whoever closes has to write down what happened, and the owner is told the moment it is saved.','number')}</div>
+     <div class="card note" style="margin-top:10px"><b>A short drawer is never refused</b>
+      <div class="muted">It is half past seven and there may be nobody to ask. The day closes, but it closes
+       with a reason written against ${S.user?S.user.name:'whoever counted'} on the trail, and the owner hears
+       about it straight away. That is a better answer than a cashier stuck at the counter.</div></div>
+     <div class="muted" style="margin-top:8px">${deList().length?`<b>${deList().length}</b> day${deList().length===1?'':'s'} closed so far.`:'No day has been closed yet.'}
+      <a href="#" data-view="cashup">Open Day end</a></div>` }
   if(setTab==='shift'){ const sc=shiftCfg(), sb=S.shift.imported;
     body=`<div class="card note" style="margin-bottom:10px"><b>One set of punches</b>
       <div class="muted">The Shift Board the staff use, the fingerprint machine and Attendance &amp; pay here all read and write the same records. Leave the address empty to use this shop's own server; fill it in if the board runs on your web hosting (the <i>shift-api.php</i> address).</div></div>
@@ -4421,7 +4454,7 @@ function settings(){
     shop:['Name, address and phones as printed','M3 9l2-5h14l2 5M4 9h16v11H4zM9 20v-6h6v6'],bill:['Numbering, formats and the return window',ICONS.bills],layout:['Logo, lines and text size on the bill',ICONS.docs],
     cost:['The code that hides cost on labels',ICONS.labels],msg:['The SMS gateway and who gets texts',ICONS.messages],tpl:['Wording of every text that goes out','M4 6h16M4 12h10M4 18h7'],
     shift:['The Shift Board, the fingerprint machine and pay','M12 7v5l3 2M12 3a9 9 0 110 18 9 9 0 010-18z'],
-    approvals:['What needs the owner’s nod',ICONS.approvals],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
+    approvals:['What needs the owner’s nod',ICONS.approvals],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
   if(!_setIndexing){
     const searching=setSearch.trim().length>=2;
     body=settingsSearchBox()+(searching?'':body);
@@ -8335,7 +8368,7 @@ function bindPhone(){
 const $=(s)=>document.querySelector(s);
 const views=[
  ['updates','What is new'],
- ['grp','Counter'],['dashboard','Dashboard','F2'],['ai','AI support'],['pos','POS billing','F3'],['bills','Bills','F9'],['cashup','Cash up'],['docs','Quotes & delivery notes'],
+ ['grp','Counter'],['dashboard','Dashboard','F2'],['ai','AI support'],['pos','POS billing','F3'],['bills','Bills','F9'],['cashup','Day end'],['docs','Quotes & delivery notes'],
  ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['tenders','Quotations & tenders'],
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['payreqs','Payment requests'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['inventory','Inventory & ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
@@ -9356,7 +9389,8 @@ function cashup(){
       <button class="btn ghost" data-act="cashPrint" data-k="${c.kind}">Print</button></div>
     </div>`;
 
-  return `<h1>Cash up<span class="muted" style="font-size:14px">${shopName}</span></h1>
+  return `<h1>Day end<span class="muted" style="font-size:14px">${shopName}</span></h1>
+   ${deStrip(d,loc)}
    <div class="row" style="align-items:flex-start;gap:12px;flex-wrap:wrap">
     <div class="f" style="max-width:190px"><label>Day</label>
       <input type="date" id="cashDate" value="${d}" max="${D(today)}"></div>
@@ -9403,8 +9437,17 @@ function cashup(){
       `<div class="muted">Save the closing count to see whether it is short or over.</div>`}
    </div>
 
+   ${deChequeSection(d,loc)}
+   ${deCardSection(d,loc)}
+   <div class="row" style="align-items:flex-start;gap:12px;flex-wrap:wrap;margin-top:12px">
+    ${deTotalsSection(d,loc)}
+    ${deTodoSection(d)}
+   </div>
+   ${deCloseSection(d,loc)}
+   ${deEarlier(d,loc)}
+
    ${cashList().filter(c=>c.date!==d).length?`<div class="card" style="margin-top:12px">
-     <h2 style="margin-top:0">Earlier days</h2>
+     <h2 style="margin-top:0">Every count that was made</h2>
      <table><tr><th>Day</th>${(typeof extMulti==='function'&&extMulti())?'<th>Store</th>':''}<th>What</th><th class="n">Counted</th><th class="n">Ought to be</th><th class="n">Difference</th><th>By</th></tr>
       ${cashList().filter(c=>c.date!==d).slice().reverse().slice(0,40).map(c=>{
         const e=c.kind==='close'?cashExpected(c.date,c.loc||0).expected:bal('1010',cashPrev(c.date));
@@ -9474,6 +9517,7 @@ function cashupAfter(){
   });
   // ready to count the moment the page opens, without reaching for the mouse
   if(first&&document.activeElement===document.body) first.focus();
+  deAfter();
 }
 
 function cashSave(kind){
@@ -9509,6 +9553,496 @@ function cashPrintSlip(kind){
     linesLabel:'What was in the drawer',
     lines:CASH_DENOMS.filter(x=>+(c.counts[x]||0)>0).map(x=>[`${x>=20?'Rs '+x.toLocaleString('en-US'):x} × ${c.counts[x]}`,x*c.counts[x]]),
     thirdSign:'CHECKED BY'});
+}
+
+/* ============================== DAY END ==============================
+   Counting the drawer is one part of shutting up shop, and on its own it is the easy part.
+   The cheques taken over the counter have to be looked at and put in for banking, the card
+   machine's settlement has to agree with what the books think it took, and the things left
+   half-finished — a bill nobody ticked off, a quotation about to lapse, a supplier invoice
+   booked by its total with the goods still uncounted — want saying out loud while the person
+   who knows about them is still standing at the counter.
+
+   So this page walks the close: cash, cheques, card and bank, what the day came to, what is
+   still open, and then one button that writes the day up, tells the owner and prints the
+   sheet. Nothing here posts a figure of its own except banking a cheque, which is a real
+   movement and goes through the same journal as everywhere else. */
+
+const DE_CLEAR_DAYS = 3;                 // a banked cheque older than this ought to have cleared
+let deDraft = { slip:{}, chqOk:{}, note:'', bank:null, why:'' };
+function deList(){ if(!Array.isArray(S.dayends)) S.dayends=[]; return S.dayends }
+const deFind=(d,loc)=>deList().find(x=>x.date===(d||cashDay())&&(x.loc||0)===(loc===undefined?cashStore():loc));
+const deAgo=(d)=>Math.round((new Date(D(today)+'T00:00:00Z')-new Date(String(d||'').slice(0,10)+'T00:00:00Z'))/864e5);
+const deFace=(c)=>String(c.chqDate||c.date||'').slice(0,10);      // the date written on the cheque itself
+const dePost=(c)=>deAgo(deFace(c))<0;                             // post-dated: it cannot go in yet
+const deBanks=()=>S.banks||[];
+
+/* What the day took, split by how it was paid. Both screens count: a sale rung up at the
+   till and a payment taken against an old bill are the same money in the same drawer. */
+function deTenders(d,loc){
+  /* A sale rung up before the second store existed carries no store on it. It was rung up here,
+     so it counts here — otherwise switching stores on would quietly empty a day's takings. */
+  const home=(S.locations||[])[0]?S.locations[0].id:0;
+  const mine=(x)=>loc?((x.loc||home)===loc):true;
+  const sales=(S.sales||[]).filter(s=>s.date===d&&mine(s));
+  const recs=(S.payments||[]).filter(p=>p.dir==='IN'&&p.date===d);
+  const t={CASH:0,CARD:0,BANK:0,CHEQUE:0};
+  const banks={};                                   // bank id -> what came in on the card machine and by transfer
+  const add=(m,amt,bankId)=>{
+    if(!amt) return;
+    t[m]=(t[m]||0)+amt;
+    if(m==='CARD'||m==='BANK'){ const k=+bankId||0; banks[k]=banks[k]||{CARD:0,BANK:0}; banks[k][m]+=amt }
+  };
+  for(const s of sales) for(const p of (s.pays||[])) add(p.method,+p.amount||0,p.bank);
+  for(const p of recs) add(p.method,+p.amount||0,p.bank);
+  const gross=sales.reduce((a,s)=>a+(+s.total||0),0);
+  const credit=sales.reduce((a,s)=>a+(+s.balance||0),0);
+  const ret=sales.filter(s=>(+s.total||0)<0);
+  const exp=(S.expenses||[]).filter(e=>e.date===d).reduce((a,e)=>a+(+e.amount||0),0);
+  return { bills:sales.length, sales:+gross.toFixed(2), credit:+credit.toFixed(2),
+    returns:ret.length, returned:+ret.reduce((a,s)=>a+Math.abs(+s.total||0),0).toFixed(2),
+    expenses:+exp.toFixed(2),
+    t:Object.fromEntries(Object.entries(t).map(([k,v])=>[k,+v.toFixed(2)])), banks };
+}
+
+/* Every cheque the close has to do something about, in the four piles a person actually
+   makes on the counter: came in today, still sitting here from before, written out today,
+   and banked long enough ago that the bank should have said something by now. */
+function deCheques(d){
+  const all=S.cheques||[];
+  const sum=(a)=>+a.reduce((x,c)=>x+(+c.amount||0),0).toFixed(2);
+  const inToday=all.filter(c=>c.dir==='RECEIVED'&&String(c.recvDate||c.date||'').slice(0,10)===d);
+  const held=all.filter(c=>c.dir==='RECEIVED'&&c.status==='RECEIVED');
+  const older=held.filter(c=>String(c.recvDate||c.date||'').slice(0,10)!==d);
+  const outToday=all.filter(c=>c.dir==='ISSUED'&&String(c.date||'').slice(0,10)===d);
+  const late=all.filter(c=>c.dir==='RECEIVED'&&c.status==='DEPOSITED'&&deAgo(c.changed)>=DE_CLEAR_DAYS);
+  return { inToday, held, older, outToday, late, sum,
+    bankable:held.filter(c=>!dePost(c)), postdated:held.filter(c=>dePost(c)),
+    total:sum(inToday), heldTotal:sum(held), outTotal:sum(outToday) };
+}
+
+/* Banking a cheque is a real movement, so it goes through chequeStatus and the journal.
+   A post-dated cheque is refused with the day it can go in, rather than silently skipped. */
+function deBankCheque(no, bankId){
+  const ch=(S.cheques||[]).find(c=>c.dir==='RECEIVED'&&c.status==='RECEIVED'&&String(c.no)===String(no));
+  if(!ch) return toast('That cheque is not in the drawer any more');
+  if(dePost(ch)) return toast(`${ch.no} is dated ${deFace(ch)} — it cannot go in before then`);
+  const b=B(+bankId)||deBanks()[0];
+  if(!b) return toast('No bank account is set up to bank it into');
+  ch.depositTo=b.id;
+  try{ chequeStatus(ch,'DEPOSITED') }catch(e){ return toast(e.message) }
+  try{ logTrail('dayend',`Cheque ${ch.no} for ${money2(ch.amount)} banked into ${b.name}`,{amount:ch.amount,ref:ch.no}) }catch(e){}
+  render(); toast(`${ch.no} banked into ${b.name}`);
+}
+function deBankAll(bankId){
+  const list=deCheques(cashDay()).bankable;
+  if(!list.length) return toast('Nothing in the drawer to bank');
+  const b=B(+bankId)||deBanks()[0];
+  if(!b) return toast('No bank account is set up to bank them into');
+  let n=0, v=0;
+  for(const ch of [...list]){ ch.depositTo=b.id;
+    try{ chequeStatus(ch,'DEPOSITED'); n++; v+=+ch.amount||0 }catch(e){} }
+  if(!n) return toast('None of them could go in');
+  try{ logTrail('dayend',`${n} cheque${n===1?'':'s'} for ${money2(v)} banked into ${b.name}`,{amount:v}) }catch(e){}
+  render(); toast(`${n} cheque${n===1?'':'s'}, ${money2(v)}, banked into ${b.name}`);
+}
+
+/* What is still open at the close. Each line is a real thing somebody has to decide about,
+   with the screen it lives on, so the answer is one click away and not a hunt. */
+function deTodo(d){
+  const out=[]; const add=(n,what,view,why)=>{ if(n>0) out.push({n,what,view,why:why||''}) };
+  const sales=(S.sales||[]).filter(s=>s.date===d);
+
+  const un=sales.filter(s=>(s.lines||[]).some(l=>l.checked!==true));
+  add(un.length,`bill${un.length===1?'':'s'} with lines nobody ticked off`,'bills',
+      un.slice(0,8).map(s=>s.no).join(', ')+(un.length>8?' …':''));
+
+  if(S.pos&&(S.pos.lines||[]).length)
+    out.push({n:S.pos.lines.length,what:'lines left sitting on the till, not billed',view:'pos',
+      why:'Bill them or put them aside before anybody signs out'});
+
+  const held=(S.heldBills||[]);
+  add(held.length,`bill${held.length===1?'':'s'} put aside and never come back to`,'pos',
+      held.slice(0,6).map(h=>h.ref||h.no||'—').join(', '));
+
+  const q=(S.docs||[]).filter(x=>x.kind==='QUOTE'&&x.status==='open'&&((+x.valid||0)-deAgo(x.date))<=1);
+  add(q.length,`quotation${q.length===1?'':'s'} out of date by tomorrow`,'docs',
+      q.slice(0,6).map(x=>x.no).join(', '));
+
+  const dn=(S.docs||[]).filter(x=>x.kind==='DN'&&x.status==='open');
+  add(dn.length,`delivery note${dn.length===1?'':'s'} not turned into a bill`,'docs',
+      dn.slice(0,6).map(x=>x.no).join(', '));
+
+  const ap=(typeof apPending==='function'?apPending():[]);
+  add(ap.length,`thing${ap.length===1?'':'s'} waiting for the owner to say yes`,'approvals',
+      ap.slice(0,4).map(x=>x.title).join(' · '));
+
+  const chq=deCheques(d);
+  add(chq.bankable.length,`cheque${chq.bankable.length===1?'':'s'} still in the drawer, ${money2(chq.sum(chq.bankable))}`,'chequesIn',
+      chq.older.length?`the oldest has been here ${deAgo(String(chq.older[chq.older.length-1].recvDate||chq.older[chq.older.length-1].date))} day(s)`:'all taken today');
+  add(chq.late.length,`banked cheque${chq.late.length===1?'':'s'} the bank has not answered on`,'chequesIn',
+      chq.late.slice(0,5).map(c=>c.no).join(', '));
+
+  const amt=(S.purchases||[]).filter(p=>p.amountOnly&&!(p.lines||[]).length);
+  add(amt.length,`supplier invoice${amt.length===1?'':'s'} booked by total, goods still to count in`,'purchases',
+      amt.slice(0,5).map(p=>p.supInv||p.no).join(', '));
+
+  const dmg=(S.damages||[]).filter(x=>x.status==='held');
+  add(dmg.length,`damaged item note${dmg.length===1?'':'s'} not sent back to the supplier`,'damages',
+      dmg.slice(0,5).map(x=>x.no).join(', '));
+
+  // a repair note has no promised day on it, so what matters is one sitting: mended and not
+  // collected, or taken in and still not looked at
+  const back=(S.jobs||[]).filter(j=>j.status==='back');
+  add(back.length,`mended repair${back.length===1?'':'s'} nobody has come for`,'jobs',
+      back.slice(0,5).map(j=>`${j.tag||j.no} · ${jobName(j)}`).join(', '));
+  const slow=(S.jobs||[]).filter(j=>['in','sent'].includes(j.status)&&deAgo(j.date)>=3);
+  add(slow.length,`repair${slow.length===1?'':'s'} in for three days or more`,'jobs',
+      slow.slice(0,5).map(j=>`${j.tag||j.no} · ${deAgo(j.date)} days`).join(', '));
+
+  const ord=(S.orders||[]).filter(o=>o.dir==='OUT'&&['sent','accepted','dispatched'].includes(o.status));
+  add(ord.length,`order${ord.length===1?'':'s'} out to suppliers with nothing received yet`,'orders',
+      ord.slice(0,5).map(o=>o.no).join(', '));
+
+  return out;
+}
+
+/* Which steps the shop has asked for, and whether each is behind us. The close is not
+   barred by the unfinished list — that is for the eye, not a gate — but the counting is. */
+function deSteps(d,loc){
+  const cfg=CFG.dayend||{};
+  const close=cashFind('close',d,loc);
+  const chq=deCheques(d);
+  const tn=deTenders(d,loc);
+  const cardBanks=Object.entries(tn.banks).filter(([,v])=>Math.abs(v.CARD||0)+Math.abs(v.BANK||0)>0.005);
+  const rec=deFind(d,loc);
+  const slipOf=(id)=>{ const raw=rec?((rec.slips||{})[id]):deDraft.slip[id];
+    if(raw===''||raw===null||raw===undefined) return null;
+    const n=+raw; return isNaN(n)?null:n; };   // garbage in the box is not an answer
+  const steps=[
+    { k:'cash', label:'Count the drawer', need:cfg.needCash!==false,
+      done:!!close, sub:close?`counted ${money2(close.total)}`:'not counted yet' },
+    { k:'chq', label:'See to the cheques', need:cfg.needCheques!==false,
+      done:chq.bankable.length===0||(rec?true:!!deDraft.chqOk.seen),
+      sub:chq.bankable.length?`${chq.bankable.length} still in the drawer`:'none waiting' },
+    { k:'card', label:'Agree the card machine', need:cfg.needCard!==false&&cardBanks.length>0,
+      done:cardBanks.every(([id])=>slipOf(id)!==null),
+      sub:cardBanks.length?`${cardBanks.length} account${cardBanks.length===1?'':'s'} took money`:'nothing on the card machine' },
+  ].filter(s=>s.need);
+  const blocking=steps.filter(s=>!s.done);
+  return { steps, blocking, close, chq, tn, cardBanks, slipOf, rec };
+}
+
+/* The close itself. A drawer that is out by more than the shop tolerates is not refused —
+   it is half past seven and there may be nobody to ask — but it will not go through without
+   a reason written down, and the owner hears about it the moment it is saved. */
+function deCloseDay(){
+  const d=cashDay(), loc=cashStore(), cfg=CFG.dayend||{};
+  if(deFind(d,loc)) return toast('This day is already closed');
+  const st=deSteps(d,loc);
+  if(st.blocking.length) return toast(`${st.blocking[0].label} first`);
+  const close=st.close;
+  const diff=close?+close.diff||0:0;
+  const tol=+(cfg.tolerance??0);
+  const why=String((document.getElementById('deWhy')||{}).value||'').trim();
+  if(Math.abs(diff)>tol+0.005&&!why){
+    deDraft.why='';
+    toast(`The drawer is ${money2(Math.abs(diff))} ${diff>0?'over':'short'} — say why before closing`);
+    const f=document.getElementById('deWhy'); if(f) f.focus();
+    return;
+  }
+  const slips={}; for(const [id] of st.cardBanks){ const v=st.slipOf(id); if(v!==null) slips[id]=v }
+  const note=String((document.getElementById('deNote')||{}).value||'').trim();
+  const rec={ id:'DE'+Math.random().toString(36).slice(2,8), date:d, loc, terminal:S.terminal,
+    by:S.user.name, at:new Date().toTimeString().slice(0,5),
+    cash:{ counted:close?close.total:0, expected:close?close.expected:0, diff },
+    tenders:st.tn.t, sales:st.tn.sales, bills:st.tn.bills, credit:st.tn.credit,
+    returns:st.tn.returns, returned:st.tn.returned, expenses:st.tn.expenses,
+    cheques:{ inToday:st.chq.inToday.length, inValue:st.chq.total,
+              left:st.chq.bankable.length, leftValue:st.chq.sum(st.chq.bankable),
+              written:st.chq.outToday.length, writtenValue:st.chq.outTotal },
+    slips, open:deTodo(d).length, note, why };
+  deList().push(rec);
+  try{ logTrail('dayend',`Day closed for ${d} — sales ${money2(rec.sales)}, drawer ${money2(rec.cash.counted)}${Math.abs(diff)>=0.005?` (${money2(Math.abs(diff))} ${diff>0?'over':'short'})`:''}${why?' · '+why:''}`,
+    {amount:rec.sales,ref:d}) }catch(e){}
+  if(Math.abs(diff)>tol+0.005)
+    try{ notify('cash',`${S.user.name} closed ${d} with the drawer ${money2(Math.abs(diff))} ${diff>0?'over':'short'} — ${why}`,'cashup',{forApprovers:true}) }catch(e){}
+  deTellOwner(rec);
+  deDraft={ slip:{}, chqOk:{}, note:'', bank:null, why:'' };
+  render();
+  toast(`${d} closed — sales ${money2(rec.sales)}`);
+  if((CFG.dayend||{}).printSlip!==false) dePrintSheet(d,loc);
+}
+
+/* The owner summary has had a template and a setting for a long time and nothing ever sent
+   it. The close is the moment it is true, so this is where it goes out. */
+function deTellOwner(rec){
+  const m=CFG.msg||{}, to=String(CFG.shop.owner||'').trim();
+  if(m.autoSummary===false||!to) return;
+  try{
+    const body=tpl('dailySummary',{ sales:money2(rec.sales), cash:money2(rec.tenders.CASH||0),
+      credit:money2(rec.credit), expenses:money2(rec.expenses),
+      outstanding:money2((S.customers||[]).reduce((a,c)=>a+Math.max(0,partyBal('C',c.id)),0)) });
+    sms(to,body);
+  }catch(e){ /* the day is closed whether or not the text got out */ }
+}
+
+function dePrintSheet(d,loc){
+  const rec=deFind(d,loc); if(!rec) return;
+  const money=(n)=>money2(n);
+  const rows=[
+    ['Bills',String(rec.bills)],
+    ['Sales',money(rec.sales)],
+    ...(rec.returns?[['Returns',`${rec.returns} · ${money(rec.returned)}`]]:[]),
+    ['Cash',money(rec.tenders.CASH||0)],
+    ...(rec.tenders.CARD?[['Card',money(rec.tenders.CARD)]]:[]),
+    ...(rec.tenders.BANK?[['Bank transfer',money(rec.tenders.BANK)]]:[]),
+    ...(rec.tenders.CHEQUE?[['Cheque',money(rec.tenders.CHEQUE)]]:[]),
+    ...(rec.credit?[['Given on credit',money(rec.credit)]]:[]),
+    ...(rec.expenses?[['Paid out',money(rec.expenses)]]:[]),
+    ['Drawer ought to hold',money(rec.cash.expected)],
+    ['Drawer counted',money(rec.cash.counted)],
+    ['Difference',Math.abs(rec.cash.diff)<0.005?'it agrees':money(Math.abs(rec.cash.diff))+(rec.cash.diff>0?' over':' short')],
+    ...(rec.why?[['Reason given',rec.why]]:[]),
+    ['Cheques taken',`${rec.cheques.inToday} · ${money(rec.cheques.inValue)}`],
+    ['Cheques still in the drawer',`${rec.cheques.left} · ${money(rec.cheques.leftValue)}`],
+    ...(rec.cheques.written?[['Cheques written out',`${rec.cheques.written} · ${money(rec.cheques.writtenValue)}`]]:[]),
+    ...(rec.open?[['Left open',String(rec.open)+' thing(s)']]:[]),
+    ...(rec.note?[['Note',rec.note]]:[]),
+  ];
+  voucherPrint({ title:'Day End', no:rec.date+(rec.loc?' · '+extLocName(rec.loc):''), date:rec.date,
+    payee:rec.by, payeeLabel:'CLOSED BY', payeeSub:'till '+rec.terminal+' at '+rec.at,
+    amount:rec.cash.counted, totalLabel:'IN THE DRAWER', rows,
+    linesLabel:'What was in the drawer',
+    lines:(()=>{ const c=cashFind('close',rec.date,rec.loc);
+      return c?CASH_DENOMS.filter(x=>+(c.counts[x]||0)>0).map(x=>[`${x>=20?'Rs '+x.toLocaleString('en-US'):x} × ${c.counts[x]}`,x*c.counts[x]]):[] })(),
+    thirdSign:'CHECKED BY' });
+}
+
+/* ---- the sections the day-end page is made of ---- */
+
+const deTag=(diff)=>Math.abs(diff)<0.005?'<span class="tag ok">it agrees</span>'
+  :diff>0?`<span class="tag warn">${money2(diff)} over</span>`:`<span class="tag bad">${money2(-diff)} short</span>`;
+
+/* A strip along the top saying where the close has got to, so nobody has to scroll to
+   find out what is still wanting. */
+function deStrip(d,loc){
+  const st=deSteps(d,loc), rec=st.rec;
+  const dot=(s)=>`<span class="de-dot ${s.done?'on':''}">${s.done?'✓':''}</span>`;
+  return `<div class="de-strip">
+    ${st.steps.map(s=>`<div class="de-step ${s.done?'done':''}">${dot(s)}
+      <div><b>${s.label}</b><div class="muted">${s.sub}</div></div></div>`).join('')}
+    <div class="de-step ${rec?'done':''}">
+      <span class="de-dot ${rec?'on':''}">${rec?'✓':''}</span>
+      <div><b>Close the day</b><div class="muted">${rec?`closed by ${rec.by} at ${rec.at}`:st.blocking.length?`${st.blocking.length} thing${st.blocking.length===1?'':'s'} first`:'ready'}</div></div></div>
+   </div>`;
+}
+
+/* The cheques. Four piles, and each one can be acted on from here — banking included,
+   because walking over to the cheques screen at half past seven is how cheques end up
+   sitting in a drawer for a week. */
+function deChequeSection(d,loc){
+  const c=deCheques(d), rec=deFind(d,loc);
+  const banks=deBanks();
+  const pick=(id)=>`<select data-de="chqbank" data-no="${id}" style="width:auto;padding:4px 6px;margin:0">
+     ${banks.map(b=>`<option value="${b.id}" ${(+deDraft.bank||banks[0]&&banks[0].id)===b.id?'selected':''}>${b.name}</option>`).join('')}</select>`;
+  const row=(x,acts)=>`<tr><td>${x.no||'—'}<div class="muted">${x.bank||''}</div></td>
+     <td>${x.party||'—'}</td>
+     <td>${deFace(x)}${dePost(x)?' <span class="tag warn">dated ahead</span>':''}</td>
+     <td class="n">${money2(x.amount)}</td>
+     <td>${acts||''}</td></tr>`;
+
+  const inPile=c.inToday.length?`<h3>Taken over the counter today</h3>
+    <table><tr><th>Cheque</th><th>From</th><th>Dated</th><th class="n">Amount</th><th></th></tr>
+     ${c.inToday.map(x=>row(x, x.status!=='RECEIVED'
+        ? `<span class="tag ${x.status==='BOUNCED'?'bad':'ok'}">${x.status.toLowerCase()}</span>`
+        : dePost(x) ? `<span class="muted">holds until ${deFace(x)}</span>`
+        : `<div style="display:flex;gap:6px;align-items:center">${pick(x.no)}
+            <button class="btn ghost sm" data-act="deBank" data-no="${x.no}">Bank it</button></div>`)).join('')}
+    </table>`:`<div class="muted">No cheques came in today.</div>`;
+
+  const oldPile=c.older.length?`<h3 style="margin-top:14px">Still in the drawer from before</h3>
+    <div class="muted" style="margin-bottom:6px">${c.older.length} cheque${c.older.length===1?'':'s'},
+      ${money2(c.sum(c.older))} — the oldest has been here ${deAgo(String(c.older[c.older.length-1].recvDate||c.older[c.older.length-1].date))} day(s).</div>
+    <table><tr><th>Cheque</th><th>From</th><th>Dated</th><th class="n">Amount</th><th></th></tr>
+     ${c.older.map(x=>row(x, dePost(x)?`<span class="muted">holds until ${deFace(x)}</span>`
+        :`<div style="display:flex;gap:6px;align-items:center">${pick(x.no)}
+           <button class="btn ghost sm" data-act="deBank" data-no="${x.no}">Bank it</button></div>`)).join('')}
+    </table>`:'';
+
+  const outPile=c.outToday.length?`<h3 style="margin-top:14px">Written out today</h3>
+    <table><tr><th>Cheque</th><th>To</th><th>Dated</th><th class="n">Amount</th><th></th></tr>
+     ${c.outToday.map(x=>row(x,`<span class="tag ${x.status==='CLEARED'?'ok':x.status==='CANCELLED'||x.status==='BOUNCED'?'bad':'warn'}">${x.status.toLowerCase()}</span>`)).join('')}
+    </table>`:'';
+
+  const latePile=c.late.length?`<div class="card note" style="margin-top:12px"><b>The bank has gone quiet on
+     ${c.late.length} cheque${c.late.length===1?'':'s'}</b>
+    <div class="muted">${c.late.map(x=>`${x.no} · ${money2(x.amount)} · banked ${deAgo(x.changed)} day(s) ago`).join(' · ')}.
+      Mark them cleared or bounced on the cheques screen so the books are not carrying money twice.</div>
+    <button class="btn ghost" style="margin-top:8px" data-act="deGo" data-v="chequesIn">Open cheques in</button></div>`:'';
+
+  const bankAll=(!rec&&c.bankable.length>1)?`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px">
+     <b>${c.bankable.length} cheque${c.bankable.length===1?'':'s'}, ${money2(c.sum(c.bankable))}, can go in now</b>
+     <select data-de="bankall" style="width:auto;padding:5px 7px;margin:0">
+       ${banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select>
+     <button class="btn tape" data-act="deBankAll">Bank them all</button></div>`:'';
+
+  const seen=(!rec&&c.bankable.length&&!deDraft.chqOk.seen)?`<label class="chk" style="margin-top:12px">
+     <input type="checkbox" data-de="chqseen"> I have seen these cheques and they are staying in the drawer tonight</label>`:'';
+
+  return `<div class="card" style="margin-top:12px">
+    <h2 style="margin-top:0">Cheques
+      <span class="muted" style="font-size:13px">${c.inToday.length} in today · ${c.bankable.length} waiting to be banked</span></h2>
+    ${inPile}${oldPile}${outPile}${latePile}${bankAll}${seen}
+    ${c.postdated.length?`<div class="muted" style="margin-top:10px">${c.postdated.length} of them are dated
+      ahead and cannot go in yet — the earliest on ${c.postdated.map(deFace).sort()[0]}.</div>`:''}
+   </div>`;
+}
+
+/* The card machine and the bank. The books know what was rung up as card; only the
+   settlement slip knows what the bank actually took, and the two parting company is
+   how a day's card money goes missing quietly. */
+function deCardSection(d,loc){
+  const st=deSteps(d,loc), rec=st.rec;
+  if(!st.cardBanks.length) return '';
+  const val=(id)=>rec?((rec.slips||{})[id]??'') : (deDraft.slip[id]??'');
+  return `<div class="card" style="margin-top:12px">
+    <h2 style="margin-top:0">Card and bank</h2>
+    <div class="muted">Key in what the settlement slip or the bank's message says, and the books
+      will say whether it agrees.</div>
+    <table style="margin-top:8px"><tr><th>Account</th><th class="n">Card</th><th class="n">Transfers</th>
+      <th class="n">The books say</th><th class="n">The slip says</th><th>&nbsp;</th></tr>
+     ${st.cardBanks.map(([id,v])=>{
+       const books=+((v.CARD||0)+(v.BANK||0)).toFixed(2);
+       const slip=val(id); const has=slip!==''&&slip!==null&&!isNaN(+slip);
+       const b=B(+id);
+       return `<tr><td>${b?b.name:'No account named'}<div class="muted">${b?b.no||'':''}</div></td>
+        <td class="n">${v.CARD?money2(v.CARD):'—'}</td>
+        <td class="n">${v.BANK?money2(v.BANK):'—'}</td>
+        <td class="n">${money2(books)}</td>
+        <td class="n">${rec?money2(+slip||0):`<input data-de="slip" data-b="${id}" type="number" step="any"
+           value="${slip}" placeholder="0.00" style="width:110px;text-align:right;margin:0">`}</td>
+        <td>${has?deTag(+(+slip-books).toFixed(2)):'<span class="muted">not keyed yet</span>'}</td></tr>`}).join('')}
+    </table></div>`;
+}
+
+/* What the day came to, by the way it was paid. This is the figure the owner asks for on
+   the phone, so it is one table and not a hunt through the reports. */
+function deTotalsSection(d,loc){
+  const tn=deTenders(d,loc);
+  const line=(label,v,cls)=>`<tr><td>${label}</td><td class="n ${cls||''}">${money2(v)}</td></tr>`;
+  const ways=[['Cash','CASH'],['Card','CARD'],['Bank transfer','BANK'],['Cheque','CHEQUE']]
+    .filter(([,k])=>Math.abs(tn.t[k]||0)>0.005);
+  return `<div class="card flex1" style="min-width:300px">
+    <h2 style="margin-top:0">What the day came to</h2>
+    <table>
+     <tr><td>Bills</td><td class="n">${tn.bills}</td></tr>
+     ${line('Sold',tn.sales)}
+     ${tn.returns?`<tr><td class="muted">of which returned</td><td class="n rust">${tn.returns} · ${money2(tn.returned)}</td></tr>`:''}
+     <tr><td colspan="2" style="padding-top:8px"><b>Paid how</b></td></tr>
+     ${ways.map(([l,k])=>`<tr><td class="muted" style="padding-left:14px">${l}</td><td class="n">${money2(tn.t[k])}</td></tr>`).join('')
+       ||'<tr><td colspan="2" class="muted" style="padding-left:14px">Nothing was taken in.</td></tr>'}
+     ${tn.credit?line('Given on credit',tn.credit):''}
+     ${tn.expenses?line('Paid out in expenses',tn.expenses,'rust'):''}
+    </table></div>`;
+}
+
+/* The things left open. Not a gate on closing — it is half past seven and some of these
+   are tomorrow's job — but nobody should find out about them on Monday. */
+function deTodoSection(d){
+  const list=deTodo(d);
+  if(!list.length) return `<div class="card flex1 note" style="min-width:300px">
+    <b>Nothing left open</b><div class="muted">Every bill is ticked, no cheques are waiting and
+      nothing is sitting half-done. A clean day.</div></div>`;
+  return `<div class="card flex1" style="min-width:300px">
+    <h2 style="margin-top:0">Still open <span class="muted" style="font-size:13px">${list.length} thing${list.length===1?'':'s'}</span></h2>
+    <div class="muted" style="margin-bottom:8px">None of these stop the day being closed. They are
+      here so they are not found out about on Monday.</div>
+    ${list.map(x=>`<div class="de-open">
+      <b>${x.n}</b>
+      <div><div>${x.what}</div>${x.why?`<div class="muted">${x.why}</div>`:''}</div>
+      <button class="btn ghost sm" data-act="deGo" data-v="${x.view}">Go there</button></div>`).join('')}
+   </div>`;
+}
+
+/* The button itself, and what it wants before it will go. */
+function deCloseSection(d,loc){
+  const st=deSteps(d,loc), rec=st.rec, cfg=CFG.dayend||{};
+  if(rec) return `<div class="card note" style="margin-top:12px">
+    <b>${rec.date} is closed</b>
+    <div class="muted">by ${rec.by} at ${rec.at} · till ${rec.terminal} · sales ${money2(rec.sales)} ·
+      drawer ${money2(rec.cash.counted)} ${Math.abs(rec.cash.diff)<0.005?'and it agreed'
+        :`· ${money2(Math.abs(rec.cash.diff))} ${rec.cash.diff>0?'over':'short'}`}${rec.why?' — '+noteEsc(rec.why):''}</div>
+    ${rec.note?`<div class="muted">${noteEsc(rec.note)}</div>`:''}
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+     <button class="btn ghost" data-act="dePrint">Print the day-end sheet</button>
+     ${canApprove()?'<button class="btn ghost" data-act="deReopen">Open the day again</button>':''}</div></div>`;
+
+  const diff=st.close?+st.close.diff||0:0;
+  const tol=+(cfg.tolerance??0);
+  const outBy=Math.abs(diff)>tol+0.005;
+  return `<div class="card" style="margin-top:12px">
+    <h2 style="margin-top:0">Close the day</h2>
+    ${st.blocking.length?`<div class="card note" style="margin-bottom:10px">
+       <b>${st.blocking.map(s=>s.label).join(' · ')}</b>
+       <div class="muted">The day closes once ${st.blocking.length===1?'that is':'those are'} done. What the shop
+         insists on is set under Settings → Day end.</div></div>`:''}
+    ${outBy?`<div class="card note" style="margin-bottom:10px;border-left:4px solid var(--chip-rust)">
+       <b>The drawer is ${money2(Math.abs(diff))} ${diff>0?'over':'short'}</b>
+       <div class="muted">More than the ${money2(tol)} this shop lets pass. Say what happened — it goes on
+         the trail with your name, and the owner is told as soon as the day is closed.</div>
+       <input id="deWhy" placeholder="e.g. gave change from the wrong note at about 4 o'clock" maxlength="160"
+         value="${String(deDraft.why||'').replace(/"/g,'&quot;')}" style="margin-top:8px"></div>`:''}
+    <input id="deNote" placeholder="Anything worth remembering about today — optional" maxlength="160"
+      value="${String(deDraft.note||'').replace(/"/g,'&quot;')}">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
+     <div class="muted">${(CFG.msg||{}).autoSummary===false||!CFG.shop.owner
+        ? 'The owner summary is switched off.'
+        : `The owner gets the day's figures on ${maskP(String(CFG.shop.owner))} when this is saved.`}</div>
+     <button class="btn tape" data-act="deClose" ${st.blocking.length?'disabled':''}>Close ${d}</button></div>
+   </div>`;
+}
+
+/* Days already closed, so a week can be looked over without opening each one. */
+function deEarlier(d,loc){
+  const rows=deList().filter(x=>x.date!==d).slice().reverse().slice(0,30);
+  if(!rows.length) return '';
+  const multi=(typeof extMulti==='function'&&extMulti());
+  return `<div class="card" style="margin-top:12px">
+    <h2 style="margin-top:0">Days already closed</h2>
+    <table><tr><th>Day</th>${multi?'<th>Store</th>':''}<th class="n">Bills</th><th class="n">Sold</th>
+      <th class="n">Cash</th><th class="n">Drawer</th><th class="n">Difference</th><th>Closed by</th><th></th></tr>
+     ${rows.map(r=>`<tr><td>${r.date}</td>${multi?`<td>${r.loc?extLocName(r.loc):'—'}</td>`:''}
+       <td class="n">${r.bills}</td><td class="n">${money2(r.sales)}</td>
+       <td class="n">${money2(r.tenders.CASH||0)}</td><td class="n">${money2(r.cash.counted)}</td>
+       <td class="n">${deTag(r.cash.diff)}</td><td>${r.by}<div class="muted">${r.at}</div></td>
+       <td><button class="btn ghost sm" data-act="dePrint" data-d="${r.date}" data-l="${r.loc||0}">Print</button></td></tr>`).join('')}
+    </table></div>`;
+}
+
+/* Keying on the day-end page. The cash grid looks after itself in cashupAfter; this is the
+   rest of it, and like the grid it writes into the draft rather than redrawing under the
+   fingers of whoever is typing. */
+function deAfter(){
+  document.querySelectorAll('[data-de="slip"]').forEach(el=>{
+    el.oninput=()=>{ deDraft.slip[el.dataset.b]=el.value;
+      const st=deSteps(cashDay(),cashStore());
+      const pair=st.cardBanks.find(([id])=>String(id)===String(el.dataset.b));
+      const cell=el.closest('tr')&&el.closest('tr').lastElementChild;
+      if(cell&&pair){ const books=+((pair[1].CARD||0)+(pair[1].BANK||0)).toFixed(2);
+        cell.innerHTML=el.value===''||isNaN(+el.value)?'<span class="muted">not keyed yet</span>'
+          :deTag(+(+el.value-books).toFixed(2)) } };
+    el.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); const b=document.querySelector('[data-act="deClose"]'); if(b) b.focus() } };
+  });
+  document.querySelectorAll('[data-de="chqbank"]').forEach(el=>el.onchange=()=>{ deDraft.bank=+el.value });
+  const all=document.querySelector('[data-de="bankall"]');
+  if(all) all.onchange=()=>{ deDraft.bank=+all.value };
+  const seen=document.querySelector('[data-de="chqseen"]');
+  if(seen) seen.onchange=()=>{ deDraft.chqOk.seen=seen.checked; render() };
+  const why=document.getElementById('deWhy');
+  if(why) why.oninput=()=>{ deDraft.why=why.value };
+  const note=document.getElementById('deNote');
+  if(note) note.oninput=()=>{ deDraft.note=note.value };
 }
 
 /* ============================ AI SUPPORT ============================
@@ -11475,6 +12009,8 @@ const TRAIL_KINDS={
   billRemade:['Bill re-made','bad'],
   docClosed:['Quotation or delivery note closed','warn'],
   supStock:['Supplier let in to see their stock','info'],
+  cashup:['Drawer counted','info'],
+  dayend:['Day closed','info'],
   priceDown:['Price dropped below the list','info'],
   custDel:['Customer removed','bad'],
   prodDel:['Item removed','bad'],
@@ -19721,6 +20257,16 @@ document.addEventListener('click',e=>{
       if(!prev) return toast('There is no earlier float to copy');
       cashDraft.open={...prev.counts}; render(); toast(`Filled in from ${prev.date} — change anything that is different`) },
     cashPrint:()=>cashPrintSlip(a.dataset.k),
+    deGo:()=>go(a.dataset.v),
+    deBank:()=>deBankCheque(a.dataset.no, deDraft.bank||((S.banks[0]||{}).id)),
+    deBankAll:()=>deBankAll(deDraft.bank||((S.banks[0]||{}).id)),
+    deClose:()=>deCloseDay(),
+    dePrint:()=>dePrintSheet(a.dataset.d||cashDay(), a.dataset.l!==undefined?+a.dataset.l:cashStore()),
+    deReopen:()=>{ const r=deFind(cashDay(),cashStore()); if(!r) return;
+      if(!confirm('Open this day again? The close is taken off, and it stays on the trail that it was.')) return;
+      S.dayends=deList().filter(x=>x!==r);
+      try{ logTrail('dayend',`Day ${r.date} opened again after being closed by ${r.by}`,{ref:r.date}) }catch(e){}
+      render(); toast('The day is open again') },
     cashUndo:()=>{ const c=cashFind(a.dataset.k,cashDay()); if(!c) return;
       if(!confirm('Take that count off and count again? What was counted is kept on the trail.')) return;
       cashDraft[a.dataset.k]={...c.counts};
