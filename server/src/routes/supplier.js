@@ -103,10 +103,11 @@ export async function injectSupplierInbox(data) {
       const id = 'sp' + row.id;
       if (S.orders.some(o => o.id === id)) continue;
       const d = row.data;
-      S.orders.push({ id, inboxId: row.id, dir: 'IN', sid: row.sid, rep: d.rep || 'Rep', text: d.text || '(photo only)', date: d.date || localDate(), status: 'pending', note: '',
+      S.orders.push({ id, inboxId: row.id, dir: 'IN', sid: row.sid, rep: d.rep || 'Rep', text: d.text || '(photo only)', date: d.date || localDate(), status: 'pending', note: '', disc: d.disc || null,
         files: row.photos.map(photoUrl), unreadShop: true, unreadSup: false, src: 'portal', needsOwner: true,
         events: [{ id: 'e' + row.id, actor: 'supplier', name: d.rep || name, action: 'uploaded', note: d.text || '', at: new Date(row.created_at).getTime() }] });
-      S.notif.unshift({ id: 'n' + row.id.toString(36) + 's', kind: 'order', text: `${name} sent an order (${row.photos.length} photo${row.photos.length === 1 ? '' : 's'}) — needs the owner's approval`, view: 'orders', at: localTime(), read: false, forApprovers: true });
+      const offer = d.disc ? `, offering ${d.disc.kind === 'pct' ? d.disc.value + '%' : d.disc.value} off` : '';
+      S.notif.unshift({ id: 'n' + row.id.toString(36) + 's', kind: 'order', text: `${name} sent an order (${row.photos.length} photo${row.photos.length === 1 ? '' : 's'})${offer} — needs the owner's approval`, view: 'orders', at: localTime(), read: false, forApprovers: true });
       added++;
     } else if (row.kind === 'payreq') {
       const id = 'pr' + row.id;
@@ -339,9 +340,9 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
       lines: (o.lines || []).map(l => ({ desc: l.desc, unit: l.unit, qty: l.qty, known: !!l.known })),
       events: (o.events || []).map(e => ({ who: e.actor === 'shop' ? (CFG.shop?.name || 'The shop') : e.name, action: e.action, note: e.note, at: e.at })).concat(mine.map(m => ({ who: req.sup.rep || 'You', action: m.action, note: m.note, at: m.at, pending: true }))) };
   }).sort((a, b) => b.no.localeCompare(a.no));
-  const sent = (S.orders || []).filter(o => o.dir !== 'OUT' && o.sid === sup.id).map(o => ({ id: o.id, date: o.date, rep: o.rep, text: o.text, status: o.status, note: o.note, photos: (o.files || []).length, grn: o.grn || null,
+  const sent = (S.orders || []).filter(o => o.dir !== 'OUT' && o.sid === sup.id).map(o => ({ id: o.id, date: o.date, rep: o.rep, text: o.text, status: o.status, note: o.note, photos: (o.files || []).length, grn: o.grn || null, disc: o.disc || null,
       events: (o.events || []).map(e => ({ who: e.actor === 'shop' ? (CFG.shop?.name || 'The shop') : e.name, action: e.action, note: e.note, at: e.at })) }))
-    .concat(pending.filter(p => p.kind === 'order').map(p => ({ id: 'pending' + p.id, date: p.data.date, rep: p.data.rep, text: p.data.text, status: 'pending', note: '', photos: p.photos, events: [{ who: p.data.rep || 'You', action: 'uploaded', note: p.data.text, at: new Date(p.created_at).getTime() }], waiting: true })))
+    .concat(pending.filter(p => p.kind === 'order').map(p => ({ id: 'pending' + p.id, date: p.data.date, rep: p.data.rep, text: p.data.text, status: 'pending', note: '', photos: p.photos, disc: p.data.disc || null, events: [{ who: p.data.rep || 'You', action: 'uploaded', note: p.data.text, at: new Date(p.created_at).getTime() }], waiting: true })))
     .sort((a, b) => (b.events[0]?.at || 0) - (a.events[0]?.at || 0));
   // what the shop owes them, from the journal, like the till does
   let dr = 0, cr = 0;
@@ -363,8 +364,17 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
     events: [{ who: p.data.rep || 'You', action: 'asked', note: p.data.note || '', at: new Date(p.created_at).getTime() }] }));
   const payReqs = waiting.concat(mine).sort((a, b) => (b.events[0]?.at || 0) - (a.events[0]?.at || 0));
 
+  /* What of theirs came in broken. The value was taken off what the shop owes them the moment it
+     was raised, so it is already inside the "owed" figure above — a rep who cannot see why the
+     figure moved rings the counter, and this is the answer without the phone call. */
+  const damages = (S.damages || []).filter(d => d.sid === sup.id && d.status !== 'credited' && d.status !== 'replaced')
+    .map(d => ({ no: d.no, date: d.date, item: ((S.products || []).find(p => p.id === d.pid) || {}).name || 'an item',
+                 qty: +d.qty || 0, value: +d.value || 0, reason: d.reason || '', status: d.status }))
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const damageValue = Math.round(damages.reduce((a, d) => a + d.value, 0) * 100) / 100;
+
   res.json({ ok: true, supplier: { name: sup.name, contact: sup.contact || '', phone: sup.phone || '', terms: sup.days || 0, owed: Math.round((cr - dr) * 100) / 100, showAccount: !!sup.showAccount },
-    bills, payReqs,
+    bills, payReqs, damages, damageValue,
     // when the shop's door onto their stock closes; the page shows the tab only while it is open
     stockUntil: +sup.stockUntil || 0,
     shop: { name: CFG.shop?.name || 'Regal Hardware', phone: CFG.shop?.phone || '', addr: CFG.shop?.addr || '' }, rep: req.sup.rep || '', pos, sent });
@@ -404,6 +414,14 @@ r.post('/order', supAuth, asyncHandler(async (req, res) => {
   const text = String(req.body?.text || '').trim().slice(0, 2000);
   const rep = String(req.body?.rep || req.sup.rep || '').trim().slice(0, 60);
   const photos = Array.isArray(req.body?.photos) ? req.body.photos.slice(0, 6) : [];
+  /* A rep will often write "and I can do 5% on the cement" on the sheet. Taken as a figure it
+     reaches the owner as a figure, and can be held against the invoice when the goods come. */
+  const dRaw = req.body?.disc || null;
+  const disc = dRaw && +dRaw.value > 0
+    ? { kind: dRaw.kind === 'pct' ? 'pct' : 'amt', value: Math.round(+dRaw.value * 100) / 100,
+        note: String(dRaw.note || '').trim().slice(0, 120) }
+    : null;
+  if (disc && disc.kind === 'pct' && disc.value > 100) throw new HttpError(400, 'A discount cannot be more than a hundred per cent');
   if (!text && !photos.length) throw new HttpError(400, 'Attach a photo of the order or type it');
   const bufs = [];
   for (const p of photos) {
@@ -414,7 +432,7 @@ r.post('/order', supAuth, asyncHandler(async (req, res) => {
     bufs.push([m[1], b]);
   }
   await ensureSupplierTables();
-  const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'order', $2) RETURNING id`, [req.sup.sid, JSON.stringify({ text, rep, date: localDate(), time: localTime() })]);
+  const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'order', $2) RETURNING id`, [req.sup.sid, JSON.stringify({ text, rep, disc, date: localDate(), time: localTime() })]);
   for (const [mime, b] of bufs) await query(`INSERT INTO sup_media (inbox_id, mime, data) VALUES ($1, $2, $3)`, [id, mime, b]);
   res.json({ ok: true, id, photos: bufs.length });
 }));

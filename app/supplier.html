@@ -30,6 +30,8 @@ main{max-width:760px;margin:0 auto;padding:14px 12px 90px}
 .sug div:last-child{border-bottom:0}
 .sug div:active,.sug div:hover{background:var(--tint-yellow)}
 .sug .muted{font-size:12px}
+.discrow{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center}
+.discrow select,.discrow input{margin:0}
 .pickrow{display:grid;grid-template-columns:1fr 92px auto;gap:8px;align-items:center;margin-top:8px;
   padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
 .pickrow input{margin:0;text-align:right}
@@ -95,7 +97,7 @@ const fq=n=>(+n||0).toLocaleString('en-LK',{maximumFractionDigits:3});
 const money=n=>'Rs '+(+n||0).toLocaleString('en-LK',{minimumFractionDigits:2,maximumFractionDigits:2});
 const when=t=>t?new Date(t).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
 const ls={get:(k,d)=>{try{const v=localStorage.getItem('rs_'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},set:(k,v)=>{try{localStorage.setItem('rs_'+k,JSON.stringify(v))}catch(e){}}};
-const st={token:ls.get('token',''),phone:ls.get('phone',''),rep:ls.get('rep',''),me:null,tab:'orders',photos:[],text:'',busy:false,done:null};
+const st={token:ls.get('token',''),phone:ls.get('phone',''),rep:ls.get('rep',''),me:null,tab:'orders',photos:[],text:'',disc:{kind:'pct',value:'',note:''},busy:false,done:null};
 let toastT; function toast(m){ let t=$('.toast'); if(!t){t=document.createElement('div');t.className='toast';document.body.appendChild(t)} t.textContent=m; clearTimeout(toastT); toastT=setTimeout(()=>t.remove(),3000) }
 async function api(path,opts={}){ const h={'Content-Type':'application/json'}; if(st.token) h.Authorization='Bearer '+st.token;
   const r=await fetch(API+path,{...opts,headers:h,body:opts.body?JSON.stringify(opts.body):undefined}); let j={}; try{ j=await r.json() }catch(e){}
@@ -193,6 +195,15 @@ function send(){ if(st.done) return `<div class="card" style="text-align:center;
    <input type="file" id="file" accept="image/*" capture="environment" multiple style="display:none">
    <div class="f"><label>Your name</label><input id="rep" value="${esc(st.rep)}" placeholder="Rep's name"></div>
    <div class="f"><label>Note, or the order typed out</label><textarea id="text" placeholder="e.g. 20 bags Tokyo cement, 10 lengths 25mm PVC — delivery Thursday">${esc(st.text)}</textarea></div>
+   <div class="f"><label>A special price on this order — leave it empty if there is none</label>
+    <div class="discrow">
+     <select id="discKind">
+      <option value="pct" ${st.disc.kind==='pct'?'selected':''}>Per cent off</option>
+      <option value="amt" ${st.disc.kind==='amt'?'selected':''}>An amount off</option></select>
+     <input id="discVal" type="number" step="any" min="0" value="${esc(st.disc.value)}" placeholder="0" inputmode="decimal">
+    </div>
+    <input id="discNote" value="${esc(st.disc.note)}" placeholder="what it is for — e.g. 5% on the cement only" maxlength="120">
+    <div class="muted">The owner sees this with the order, and it is held against the invoice when the goods come.</div></div>
    <button class="btn tape big" id="sendOrder" ${st.busy?'disabled':''}>${st.busy?'Sending…':'Send to the shop'}</button></div>`;
 }
 function sent(){ const me=st.me; if(!me.sent.length) return '<div class="card muted">Nothing sent yet. Use <b>Send an order</b>.</div>';
@@ -305,7 +316,26 @@ function stockSendOrder(){
 function account(){ const me=st.me, s=me.supplier; return teamCard() + `<div class="card"><h2>${esc(s.name)}</h2>
    <div class="kv"><span class="muted">Contact on file</span><b>${esc(s.contact||'—')}</b></div><div class="kv"><span class="muted">Mobile</span><b>${esc(s.phone||'—')}</b></div><div class="kv"><span class="muted">Terms</span><b>${s.terms?s.terms+' days':'—'}</b></div>
    ${s.showAccount?`<div class="kv"><span class="muted">The shop owes you</span><b>${money(s.owed)}</b></div>`:'<div class="muted" style="margin-top:8px">Ask the shop to switch on your account page to see what is owed here.</div>'}</div>
+   ${damageCard()}
    <div class="card"><h2>${esc(me.shop.name)}</h2><div class="muted">${esc(me.shop.addr||'')}</div>${me.shop.phone?`<div style="margin-top:8px"><a class="btn" href="tel:${esc(me.shop.phone)}">📞 ${esc(me.shop.phone)}</a></div>`:''}</div>`;
+}
+/* Goods of theirs that came in broken. The value came off what the shop owes them the moment it
+   was raised, so a rep who cannot see why the figure moved would otherwise have to ring and ask. */
+const DMG_SAID={held:['Waiting to go back','warn'],sent:['Sent back to you','blue'],
+  refused:['You turned it down','bad'],credited:['Credited','ok'],replaced:['Replaced','ok']};
+function damageCard(){
+  const list=st.me.damages||[];
+  if(!list.length) return '';
+  const tag=(s)=>{ const d=DMG_SAID[s]||['',''];  return `<span class="tag ${d[1]}">${d[0]||esc(s)}</span>` };
+  return `<div class="card"><h2>Damaged goods</h2>
+   <div class="muted" style="margin-bottom:10px">${list.length} item${list.length===1?'':'s'} of yours came in
+    broken or faulty, worth ${money(st.me.damageValue||0)}. That has already been taken off what the shop
+    owes you above. Ring the counter if you want to see them.</div>
+   <table class="paytbl">
+    <tr><th>What</th><th class="n">How many</th><th class="n">Worth</th><th></th></tr>
+    ${list.map(d=>`<tr><td><b>${esc(d.item)}</b><div class="muted">${esc(d.date)}${d.reason?' · '+esc(d.reason):''}</div></td>
+     <td class="n">${d.qty}</td><td class="n">${money(d.value)}</td><td>${tag(d.status)}</td></tr>`).join('')}
+   </table></div>`;
 }
 function bind(){
   const m=$('#main');
@@ -339,6 +369,9 @@ function bind(){
   const f=$('#file'); if(f) f.onchange=()=>{ [...f.files].slice(0,6-st.photos.length).forEach(file=>shrink(file).then(d=>{ st.photos.push(d); render() }).catch(()=>toast('Could not read that picture'))) };
   $$('[data-rm]',m).forEach(b=>b.onclick=()=>{ st.photos.splice(+b.dataset.rm,1); render() });
   const t=$('#text'); if(t) t.oninput=()=>{ st.text=t.value };
+  const dk=$('#discKind'); if(dk) dk.onchange=()=>{ st.disc.kind=dk.value };
+  const dv=$('#discVal'); if(dv) dv.oninput=()=>{ st.disc.value=dv.value };
+  const dn=$('#discNote'); if(dn) dn.oninput=()=>{ st.disc.note=dn.value };
   const rp=$('#rep'); if(rp) rp.onchange=()=>{ st.rep=rp.value.trim(); ls.set('rep',st.rep) };
   const so=$('#sendOrder'); if(so) so.onclick=sendOrder;
   const an=$('#another'); if(an) an.onclick=()=>{ st.done=null; render() };
@@ -347,8 +380,9 @@ function bind(){
 function shrink(file){ return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{ const sc=Math.min(1,1600/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc); const g=c.getContext('2d'); g.drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src); res(c.toDataURL('image/jpeg',0.82)) }; img.onerror=rej; img.src=URL.createObjectURL(file) }) }
 async function sendOrder(){ if(st.busy) return; st.rep=($('#rep')||{}).value||st.rep; st.text=($('#text')||{}).value||''; ls.set('rep',st.rep);
   if(!st.text.trim()&&!st.photos.length) return toast('Add a photo of the order or type it');
+  const d=st.disc, disc=(+d.value>0)?{kind:d.kind,value:+d.value,note:d.note}:null;
   st.busy=true; render();
-  try{ const j=await api('/order',{method:'POST',body:{text:st.text,rep:st.rep,photos:st.photos}}); st.done=j; st.photos=[]; st.text=''; st.busy=false; render() }
+  try{ const j=await api('/order',{method:'POST',body:{text:st.text,rep:st.rep,photos:st.photos,disc}}); st.done=j; st.photos=[]; st.text=''; st.disc={kind:'pct',value:'',note:''}; st.busy=false; render() }
   catch(e){ st.busy=false; render(); toast(e.message) }
 }
 function respond(no,action){

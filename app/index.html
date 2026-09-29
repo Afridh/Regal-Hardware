@@ -3377,7 +3377,7 @@ const S = {
  phoneOpen:false, phoneMode:'supplier',
  web:{settings:{},orders:[],cart:[],session:null,delivery:true}, prns:[], stocktakes:[], counts:[], serials:[], jobs:[], notif:[], notifOpen:false, notices:[], payruns:[], advances:[], shift:{settings:{},days:{},imported:null},
  cportal:{session:null,pick:2,tab:'owed',stage:'phone',code:'',inbox:'',err:'',flash:''},
- portal:{session:null,pick:'1',tab:'new',filter:'all',stage:'phone',code:'',tries:0,left:0,timer:null,inbox:'',err:'',flash:'',rep:'Nimal',photos:[],replaces:null}, drawer:{opened:'08:02',float:5000},
+ portal:{session:null,pick:'1',tab:'new',filter:'all',stage:'phone',code:'',tries:0,left:0,timer:null,inbox:'',err:'',flash:'',rep:'Nimal',photos:[],replaces:null,disc:{kind:'pct',value:'',note:''}}, drawer:{opened:'08:02',float:5000},
  pos:{lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:'r80'}, heldBills:[], trail:[], roles:[],
  partyNotes:[],                                    // notes against a customer or a supplier, and the money still to sort out
  social:{posts:[]},                                // what goes out on the Page, on Instagram and on WhatsApp
@@ -3421,7 +3421,7 @@ const peekBillNo=()=>billNoFrom(billSeqNow()+1);      // what the next bill will
 const next=(k)=>{
   if(k==='INV'){ const seq=billSeqNow()+1; S.seqBy[billKey()]=seq; return billNoFrom(seq) }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',JOB:'JOB-',JE:'JE-'}[k];if(!(S.seq[k]>0))S.seq[k]=1;return p+String(S.seq[k]++).padStart(5,'0')};
 
-const GL = {'2050':'Customer advances','1010':'Cash in hand','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1023':'Bank account 4','1024':'Bank account 5','1025':'Bank account 6','1026':'Bank account 7','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2150':'Cash borrowed and lent (the circle)','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other'};
+const GL = {'2050':'Customer advances','1010':'Cash in hand','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1023':'Bank account 4','1024':'Bank account 5','1025':'Bank account 6','1026':'Bank account 7','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2120':'Goods received, invoice to come','2150':'Cash borrowed and lent (the circle)','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other'};
 function post(date,desc,ref,lines){ // lines: [{ac,dr,cr,party}]
   const dr=lines.reduce((a,l)=>a+(l.dr||0),0), cr=lines.reduce((a,l)=>a+(l.cr||0),0);
   if(Math.abs(dr-cr)>0.005) throw new Error('Unbalanced journal '+desc+' '+dr+'/'+cr);
@@ -3649,13 +3649,14 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
     sms(c.phone, tpl(credit>0?'creditSale':'cashSale',v)) }
   return inv;
 }
-function receivePurchase({supplierId,supInv,lines,other=0,date=D(today),pay}){
-  const sub=lines.reduce((a,l)=>a+l.qty*l.cost,0), total=+(sub+other).toFixed(2);
+function receivePurchase({supplierId,supInv,lines,other=0,date=D(today),pay,files=[],dn=null,disc=0}){
+  const sub=lines.reduce((a,l)=>a+l.qty*l.cost,0), total=+(sub+other-(+disc||0)).toFixed(2);
   lines.forEach(l=>{ if(!(l.qty>0)) throw new Error('Quantity must be above zero'); if(!(l.cost>=0)) throw new Error('Cost cannot be negative') });
-  const pur={no:next('PUR'),date,supplierId,supInv,lines,other,total,paid:0,by:S.user.name};
+  if(+disc>sub+other+0.005) throw new Error('The discount is more than the goods come to');
+  const pur={no:next('PUR'),date,supplierId,supInv,lines,other,disc:+disc||0,total,paid:0,by:S.user.name,files:files||[],dn:dn||null};
   S.purchases.push(pur);
   // transport and other charges are part of what the goods cost: spread across the lines by value
-  const share=sub>0?other/sub:0;
+  const share=sub>0?(other-(+disc||0))/sub:0;
   for(const l of lines){ const p=P(l.pid); const landed=+(l.cost*(1+share)).toFixed(4); l.landed=landed;
     const nv=p.stock*p.cost+l.qty*landed; p.cost=+(nv/(p.stock+l.qty)).toFixed(4); move(l.pid,l.qty,'PURCHASE',pur.no,landed,date);
     if(p.serialised&&l.serials) addSerials(l.pid,l.serials,pur.no,landed) }
@@ -3663,6 +3664,276 @@ function receivePurchase({supplierId,supInv,lines,other=0,date=D(today),pay}){
   if(pay&&pay.amount>0) paySupplier({supplierId,date,lines:[pay]});
   return pur;
 }
+/* ============ GOODS THAT CAME ON A DELIVERY NOTE ============
+   A lorry arrives with the goods and a slip, and the invoice follows in a few days. The goods
+   have to go on the floor and be sellable today; what the shop owes cannot go on the supplier's
+   account yet, because there is no invoice to pay and asking to be paid for one would be wrong.
+
+   So the value sits in an account of its own — goods received, invoice to come — until the
+   invoice turns up. Then the note is matched: the real costs are keyed in, the value moves
+   across onto the supplier's account, and any difference between what was expected and what was
+   charged corrects the cost of the goods rather than being quietly swallowed.
+
+   Nothing here is an estimate the shop cannot see. The purchases list says plainly which notes
+   are still waiting for their invoice, and how long they have been waiting. */
+
+const GRNI_AC = '2120';
+const dnOpen = () => (S.purchases||[]).filter(p => p.onNote && !p.invoiced);
+const dnValue = (p) => +(p.lines||[]).reduce((a,l)=>a+l.qty*(+l.cost||0),0).toFixed(2);
+
+function receiveOnNote({supplierId,dnNo,lines,date=D(today),note='',files=[]}){
+  const s=SU(supplierId); if(!s) throw new Error('Which supplier is it from?');
+  if(!String(dnNo||'').trim()) throw new Error('Their delivery note number, so the invoice can be matched to it');
+  if(!lines.length) throw new Error('What came on the lorry?');
+  lines.forEach(l=>{ if(!(l.qty>0)) throw new Error('Quantity must be above zero');
+    if(!(l.cost>=0)) throw new Error('Cost cannot be negative') });
+  const total=+lines.reduce((a,l)=>a+l.qty*l.cost,0).toFixed(2);
+  const pur={no:next('PUR'),date,supplierId,supInv:'',dnNo:String(dnNo).trim(),lines,other:0,disc:0,
+    total,paid:0,by:S.user.name,files:files||[],
+    onNote:true,                         // the goods are here, the invoice is not
+    invoiced:false,note:String(note||'').trim()};
+  S.purchases.push(pur);
+  for(const l of lines){ const p=P(l.pid); l.landed=l.cost;
+    const nv=p.stock*p.cost+l.qty*l.cost; p.cost=+(nv/(p.stock+l.qty)).toFixed(4);
+    move(l.pid,l.qty,'PURCHASE',pur.no,l.cost,date,l.loc);
+    if(p.serialised&&l.serials) addSerials(l.pid,l.serials,pur.no,l.cost) }
+  post(date,`Goods in on ${s.name}'s note ${pur.dnNo}`,pur.no,
+    [{ac:'1200',dr:total},{ac:GRNI_AC,cr:total}]);
+  notify('stock',`${s.name} delivered on note ${pur.dnNo} — ${fmt(total)} of goods, invoice still to come`,'purchases');
+  try{ logTrail('purNote',`Goods in on ${s.name}'s note ${pur.dnNo} — ${fmt(total)}, invoice to come`,
+    {amount:total,ref:pur.no}) }catch(e){}
+  return pur;
+}
+
+/* The invoice turns up. The costs on it are what the goods actually cost, so they replace what
+   was written on the note, the movements are corrected and every item's average is worked out
+   again from its own history. The value moves off the waiting account onto what is owed. */
+function matchNoteInvoice({no,supInv,costs={},other=0,disc=0,date=D(today),files=[]}){
+  const pur=(S.purchases||[]).find(x=>x.no===no);
+  if(!pur||!pur.onNote) throw new Error('That is not a delivery note');
+  if(pur.invoiced) throw new Error('That note has already had its invoice');
+  if(!String(supInv||'').trim()) throw new Error('Their invoice number');
+  const was=dnValue(pur);
+  for(const l of pur.lines){
+    const c=costs[l.pid];
+    if(c!==undefined&&c!==''&&!isNaN(+c)){
+      if(+c<0) throw new Error('Cost cannot be negative');
+      l.cost=+(+c).toFixed(4);
+    }
+  }
+  const sub=+pur.lines.reduce((a,l)=>a+l.qty*l.cost,0).toFixed(2);
+  other=+(+other||0).toFixed(2); disc=+(+disc||0).toFixed(2);
+  if(disc>sub+other+0.005) throw new Error('The discount is more than the goods come to');
+  const total=+(sub+other-disc).toFixed(2);
+  // transport less any discount rides on the goods, the same way a straight purchase does
+  const share=sub>0?(other-disc)/sub:0;
+  for(const l of pur.lines){
+    l.landed=+(l.cost*(1+share)).toFixed(4);
+    for(const m of S.movements) if(m.ref===pur.no&&m.pid===l.pid&&m.type==='PURCHASE') m.cost=l.landed;
+    recost(l.pid);                      // the average is rebuilt from the item's own history
+  }
+  pur.supInv=String(supInv).trim(); pur.other=other; pur.disc=disc; pur.total=total;
+  pur.invoiced=true; pur.invDate=date; pur.invBy=S.user.name;
+  pur.files=[...(pur.files||[]),...(files||[])];
+  const s=SU(pur.supplierId);
+  // what was waiting moves onto their account; any difference is what the goods really cost
+  const lines=[{ac:GRNI_AC,dr:was},{ac:'2100',cr:total,party:{type:'S',id:pur.supplierId}}];
+  const gap=+(total-was).toFixed(2);
+  if(Math.abs(gap)>=0.005) lines.push(gap>0?{ac:'1200',dr:gap}:{ac:'1200',cr:-gap});
+  post(date,`Invoice ${pur.supInv} against note ${pur.dnNo}`,pur.no,lines);
+  try{ logTrail('purNote',`Invoice ${pur.supInv} matched to ${s.name}'s note ${pur.dnNo} — ${fmt(total)}${Math.abs(gap)>=0.005?` (${fmt(Math.abs(gap))} ${gap>0?'more':'less'} than the note said)`:''}`,
+    {amount:total,ref:pur.no}) }catch(e){}
+  return pur;
+}
+
+/* ---- putting the goods in ---- */
+function newDNModal(sid){
+  if((CFG.buying||{}).dnFirst===false) return toast('The shop takes goods in on the invoice only');
+  const lines=[];
+  const draft={q:'',pid:null,qty:'',cost:''};
+  const files=[];
+  const m=modal(`<h2>Goods in on a delivery note</h2>
+   <div class="muted" style="margin-bottom:10px">For a lorry that comes with the goods and a slip, and the
+    invoice a few days later. The goods go on the floor today. Nothing goes on the supplier's account
+    until their invoice comes and this note is matched to it.</div>
+   <div class="grid3">
+    <div class="f"><label>Supplier</label><select id="dnSup">
+      ${S.suppliers.map(x=>`<option value="${x.id}" ${x.id===sid?'selected':''}>${x.name}</option>`).join('')}</select></div>
+    <div class="f"><label>Their note number</label><input id="dnNo" placeholder="what is written on the slip" autocomplete="off"></div>
+    <div class="f"><label>Day the goods came</label><input id="dnDate" type="date" value="${D(today)}" max="${D(today)}"></div>
+   </div>
+   <label>Add what came</label>
+   <div style="position:relative"><input id="dnQ" placeholder="Search the product list…" autocomplete="off">
+    <div id="dnSug"></div></div>
+   <div id="dnPick"></div>
+   <table id="dnTbl" style="margin-top:10px"></table>
+   <div class="qp-drop" id="dnDrop" style="margin-top:10px"><b>Photograph the note</b>
+     <span>Take a picture, drop it here, or click to pick one</span>
+     <input type="file" id="dnFile" accept="image/*,application/pdf" capture="environment" multiple hidden></div>
+   <div id="dnFiles" style="margin-top:6px"></div>
+   <div class="f" style="margin-top:8px"><label>A note — optional</label><input id="dnNote" maxlength="120" placeholder="e.g. two bags short, driver said they follow"></div>
+   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px;flex-wrap:wrap">
+    <b id="dnTot">Nothing on the note yet</b>
+    <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Never mind</button>
+     <button class="btn tape" id="dnOk">Take the goods in</button></div></div>`);
+
+  const $=(id)=>m.querySelector('#'+id);
+  const drawTbl=()=>{
+    $('dnTbl').innerHTML=lines.length
+      ? `<tr><th>#</th><th>Item</th><th class="n">Quantity</th><th class="n">What we expect it cost</th><th class="n">Line</th><th></th></tr>`+
+        lines.map((l,i)=>`<tr><td>${i+1}</td><td><b>${P(l.pid).name}</b><div class="muted">${P(l.pid).code||''}</div></td>
+         <td class="n"><input data-dq="${i}" type="number" step="any" value="${l.qty}" style="width:86px;text-align:right"></td>
+         <td class="n"><input data-dc="${i}" type="number" step="any" value="${l.cost}" style="width:100px;text-align:right"></td>
+         <td class="n">${fmt(l.qty*l.cost)}</td>
+         <td><button class="btn ghost sm" data-dd="${i}">✕</button></td></tr>`).join('')
+      : '<tr><td class="muted" style="padding:18px;text-align:center">Nothing on the note yet.</td></tr>';
+    const t=lines.reduce((a,l)=>a+l.qty*l.cost,0);
+    $('dnTot').textContent=lines.length?`${lines.length} line${lines.length===1?'':'s'} · about ${fmt(t)}`:'Nothing on the note yet';
+    m.querySelectorAll('[data-dq]').forEach(el=>el.onchange=()=>{ const v=+el.value; if(v>0) lines[+el.dataset.dq].qty=v; else lines.splice(+el.dataset.dq,1); drawTbl() });
+    m.querySelectorAll('[data-dc]').forEach(el=>el.onchange=()=>{ lines[+el.dataset.dc].cost=Math.max(0,+el.value||0); drawTbl() });
+    m.querySelectorAll('[data-dd]').forEach(b=>b.onclick=()=>{ lines.splice(+b.dataset.dd,1); drawTbl() });
+  };
+  const drawPick=()=>{
+    const p=draft.pid?P(draft.pid):null;
+    $('dnPick').innerHTML=p?`<div class="pickrow">
+      <div><b>${p.name}</b><div class="muted">${p.code||''} · ${fq(p.stock)} ${p.unit} here now</div></div>
+      <input id="dnQty" type="number" step="any" min="0" value="${draft.qty}" placeholder="How many?" autocomplete="off">
+      <input id="dnCost" type="number" step="any" min="0" value="${draft.cost}" placeholder="Cost" autocomplete="off">
+      <button class="btn tape" id="dnAdd">Add</button>
+      <button class="btn ghost" id="dnDrop2">✕</button></div>`:'';
+    if(!p) return;
+    const add=()=>{
+      const qty=+$('dnQty').value, cost=+$('dnCost').value;
+      if(!(qty>0)) return toast('How many?');
+      if(!(cost>=0)) return toast('What did it cost?');
+      const at=lines.findIndex(l=>l.pid===p.id);
+      if(at>=0){ lines[at].qty=+(lines[at].qty+qty).toFixed(3); lines[at].cost=cost }
+      else lines.push({pid:p.id,qty,cost});
+      draft.pid=null; draft.qty=''; draft.cost=''; draft.q='';
+      $('dnQ').value=''; drawSug(); drawPick(); drawTbl(); $('dnQ').focus();
+    };
+    $('dnAdd').onclick=add;
+    $('dnQty').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); $('dnCost').focus(); $('dnCost').select() } };
+    $('dnCost').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); add() } };
+    $('dnDrop2').onclick=()=>{ draft.pid=null; drawPick(); $('dnQ').focus() };
+    setTimeout(()=>{ const f=$('dnQty'); if(f){ f.focus(); f.select() } },20);
+  };
+  const drawSug=()=>{
+    const q=draft.q.trim().toLowerCase();
+    const hits=q?S.products.filter(p=>p.name.toLowerCase().includes(q)||String(p.code||'').toLowerCase().includes(q)).slice(0,6):[];
+    $('dnSug').innerHTML=(hits.length&&!draft.pid)?`<div class="sug">${hits.map(p=>`<div data-dp="${p.id}">
+      <span>${p.name} <span class="muted">${p.code||''}</span></span>
+      <span class="muted">${fq(p.stock)} ${p.unit} · last cost ${fmt(p.cost)}</span></div>`).join('')}</div>`:'';
+    m.querySelectorAll('[data-dp]').forEach(el=>el.onclick=()=>{
+      const p=P(+el.dataset.dp);
+      draft.pid=p.id; draft.qty=''; draft.cost=p.cost||'';
+      drawSug(); drawPick();
+    });
+  };
+  $('dnQ').oninput=()=>{ draft.q=$('dnQ').value; draft.pid=null; drawSug(); drawPick() };
+  $('dnQ').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault();
+    const q=draft.q.trim().toLowerCase(); if(!q) return;
+    const hit=S.products.find(x=>String(x.code||'').toLowerCase()===q)||S.products.find(x=>x.name.toLowerCase().includes(q));
+    if(hit){ draft.pid=hit.id; draft.qty=''; draft.cost=hit.cost||''; drawSug(); drawPick() } else toast('Nothing by that name') } };
+
+  const drawFiles=()=>{ $('dnFiles').innerHTML=files.map((f,i)=>
+    `<span class="qp-chip">${/^image\//.test(f.mime)?'▣':'☷'} ${f.name}<button type="button" data-rm="${i}">✕</button></span>`).join('');
+    $('dnFiles').querySelectorAll('[data-rm]').forEach(x=>x.onclick=()=>{ files.splice(+x.dataset.rm,1); drawFiles() }) };
+  const take=(list)=>[...list].forEach(f=>purUpload(f,(got)=>{ files.push(got); drawFiles(); toast('Note attached','ok') }));
+  $('dnDrop').onclick=()=>$('dnFile').click();
+  $('dnFile').onchange=(e)=>take(e.target.files);
+  $('dnDrop').ondragover=(e)=>{ e.preventDefault(); $('dnDrop').classList.add('over') };
+  $('dnDrop').ondragleave=()=>$('dnDrop').classList.remove('over');
+  $('dnDrop').ondrop=(e)=>{ e.preventDefault(); $('dnDrop').classList.remove('over'); take(e.dataTransfer.files) };
+
+  $('dnOk').onclick=()=>{
+    try{
+      const pur=receiveOnNote({supplierId:+$('dnSup').value,dnNo:$('dnNo').value,
+        lines:lines.filter(l=>l.qty>0),date:$('dnDate').value||D(today),note:$('dnNote').value,files});
+      m.remove(); persist(true); render();
+      toast(`${pur.no} — goods in on note ${pur.dnNo}, invoice still to come`,'ok');
+    }catch(e){ toast(e.message) }
+  };
+  drawTbl();
+  setTimeout(()=>{ const f=$('dnNo'); if(f) f.focus() },30);
+}
+
+/* ---- the invoice turns up ---- */
+function matchNoteModal(no){
+  const pur=(S.purchases||[]).find(x=>x.no===no);
+  if(!pur||!pur.onNote||pur.invoiced) return toast('That note is not waiting for an invoice');
+  const s=SU(pur.supplierId);
+  const files=[];
+  const m=modal(`<h2>The invoice for note ${pur.dnNo}</h2>
+   <div class="muted" style="margin-bottom:10px">${s.name} · goods came ${pur.date} ·
+     the note was worth about ${fmt(dnValue(pur))}. Put the real costs in from the invoice — what you
+     were charged is what the goods cost, and any difference corrects them.</div>
+   <div class="grid3">
+    <div class="f"><label>Their invoice number</label><input id="mnInv" autocomplete="off"></div>
+    <div class="f"><label>Day on the invoice</label><input id="mnDate" type="date" value="${D(today)}"></div>
+    <div class="f"><label>Other charges (transport)</label><input id="mnOther" type="number" step="any" value="0"></div>
+   </div>
+   <table style="margin-top:8px"><tr><th>Item</th><th class="n">Quantity</th><th class="n">On the note</th><th class="n">On the invoice</th><th class="n">Line</th></tr>
+    ${pur.lines.map(l=>`<tr><td>${P(l.pid).name}<div class="muted">${P(l.pid).code||''}</div></td>
+     <td class="n">${fq(l.qty)} ${P(l.pid).unit||''}</td>
+     <td class="n muted">${fmt(l.cost)}</td>
+     <td class="n"><input data-mc="${l.pid}" type="number" step="any" value="${l.cost}" style="width:110px;text-align:right"></td>
+     <td class="n" data-ml="${l.pid}">${fmt(l.qty*l.cost)}</td></tr>`).join('')}</table>
+   <div class="grid2" style="margin-top:10px">
+    <div class="f"><label>Discount they gave</label><input id="mnDisc" type="number" step="any" value="0"></div>
+    <div class="f"><label>&nbsp;</label><div class="card note" style="margin:0;padding:8px 10px"><b id="mnTot">—</b>
+      <div class="muted" id="mnGap"></div></div></div>
+   </div>
+   <div class="qp-drop" id="mnDrop" style="margin-top:8px"><b>Photograph the invoice</b>
+     <span>Take a picture, drop it here, or click to pick one</span>
+     <input type="file" id="mnFile" accept="image/*,application/pdf" capture="environment" multiple hidden></div>
+   <div id="mnFiles" style="margin-top:6px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Never mind</button>
+    <button class="btn tape" id="mnOk">Match it and put it on their account</button></div>`);
+
+  const $=(id)=>m.querySelector('#'+id);
+  const was=dnValue(pur);
+  const sums=()=>{
+    let sub=0;
+    m.querySelectorAll('[data-mc]').forEach(el=>{
+      const l=pur.lines.find(x=>x.pid===+el.dataset.mc);
+      const c=+el.value||0, line=+(l.qty*c).toFixed(2); sub+=line;
+      const cell=m.querySelector(`[data-ml="${el.dataset.mc}"]`); if(cell) cell.textContent=fmt(line);
+    });
+    const other=+$('mnOther').value||0, disc=+$('mnDisc').value||0;
+    const total=+(sub+other-disc).toFixed(2);
+    $('mnTot').textContent='The invoice comes to '+fmt(total);
+    const gap=+(total-was).toFixed(2);
+    $('mnGap').textContent=Math.abs(gap)<0.005?'the same as the note said'
+      :`${fmt(Math.abs(gap))} ${gap>0?'more':'less'} than the note said — the goods will be re-costed`;
+  };
+  m.querySelectorAll('[data-mc]').forEach(el=>el.oninput=sums);
+  $('mnOther').oninput=sums; $('mnDisc').oninput=sums; sums();
+
+  const drawFiles=()=>{ $('mnFiles').innerHTML=files.map((f,i)=>
+    `<span class="qp-chip">${/^image\//.test(f.mime)?'▣':'☷'} ${f.name}<button type="button" data-rm="${i}">✕</button></span>`).join('');
+    $('mnFiles').querySelectorAll('[data-rm]').forEach(x=>x.onclick=()=>{ files.splice(+x.dataset.rm,1); drawFiles() }) };
+  const take=(list)=>[...list].forEach(f=>purUpload(f,(got)=>{ files.push(got); drawFiles(); toast('Invoice attached','ok') }));
+  $('mnDrop').onclick=()=>$('mnFile').click();
+  $('mnFile').onchange=(e)=>take(e.target.files);
+  $('mnDrop').ondragover=(e)=>{ e.preventDefault(); $('mnDrop').classList.add('over') };
+  $('mnDrop').ondragleave=()=>$('mnDrop').classList.remove('over');
+  $('mnDrop').ondrop=(e)=>{ e.preventDefault(); $('mnDrop').classList.remove('over'); take(e.dataTransfer.files) };
+
+  $('mnOk').onclick=()=>{
+    try{
+      const costs={};
+      m.querySelectorAll('[data-mc]').forEach(el=>{ costs[+el.dataset.mc]=el.value });
+      const out=matchNoteInvoice({no:pur.no,supInv:$('mnInv').value,costs,
+        other:$('mnOther').value,disc:$('mnDisc').value,date:$('mnDate').value||D(today),files});
+      m.remove(); persist(true); render();
+      toast(`${out.supInv} matched — ${fmt(out.total)} now owed to ${s.name}`,'ok');
+    }catch(e){ toast(e.message) }
+  };
+  setTimeout(()=>{ const f=$('mnInv'); if(f) f.focus() },30);
+}
+
 /* ================== A PURCHASE PUT IN BY ITS TOTAL ==================
    A lorry arrives with an invoice and there is a queue at the counter. Keying forty lines can wait;
    what cannot wait is that the shop now owes the supplier that money. This books the invoice by its
@@ -3714,6 +3985,7 @@ function purFilesModal(pur){
    <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn ghost" data-act="closeModal">Close</button></div>`);
 }
 function quickPurModal(sid){
+  if(!amountOnlyOk()) return toast('The shop has this switched off — enter the goods as they came');
   let files=[];
   const sups=S.suppliers.filter(s=>s.active!==false);
   const m=modal(`<h2>Book an invoice by its total</h2>
@@ -3936,6 +4208,10 @@ const CFG={
  /* What closing a day insists on. Counting is worth insisting on; the list of things left
     open is not, because some of it is honestly tomorrow's job. */
  dayend:{needCash:true,needCheques:true,needCard:true,tolerance:20,printSlip:true},
+ /* How goods are allowed in. Booking an invoice by its total is quick and it is also how a
+    shop ends up owing money for goods nobody ever counted, so whether it is on at all is the
+    owner's decision and not the person at the counter's. */
+ buying:{amountOnly:true,amountOnlyWho:'any',dnFirst:true},
  done:{askSize:true,cashDefault:'r80',creditDefault:'r80',rememberPick:true,notice:true,noticeMs:3200,
    askCustomer:true,askSalesman:true,                  // the two questions once the money is taken
    printAnim:true,animMs:1000,creditStamp:true,creditWord:'CREDIT BILL',cashWord:'PAID',sound:false},
@@ -4185,7 +4461,7 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
 function settingsTabs(){
-  return [['screen','My screen'],['done','Finishing a bill'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],['dayend','Day end'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  return [['screen','My screen'],['done','Finishing a bill'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['dayend','Day end'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
 }
 function settings(){
   const tabs=settingsTabs();
@@ -4438,6 +4714,26 @@ function settings(){
      <div class="muted" style="margin-bottom:6px">These changes need the owner's approval:</div>
      ${APPROVAL_KINDS.map(([k,l])=>`<label class="chk" style="display:flex;padding:7px 0;border-bottom:1px solid var(--line2)"><input type="checkbox" data-apk="${k}" ${cfg[k]!==false?'checked':''}> ${l}</label>`).join('')}
      <div class="muted" style="margin-top:8px">${apPending().length?`<b>${apPending().length}</b> request${apPending().length===1?'':'s'} waiting now.`:'Nothing waiting.'} <a href="#" data-view="approvals">Open Approvals</a></div>` }
+  if(setTab==='buying'){ const bc=CFG.buying||{};
+    body=`<div class="card note" style="margin-bottom:10px"><b>How goods are allowed in</b>
+      <div class="muted">There are three ways a lorry can be taken in. Entering it item by item is always
+       open. The other two are quick, and quick is how a shop ends up owing money for goods nobody ever
+       counted, so whether they are offered at all is settled here and not at the counter.</div></div>
+     ${fld('buying.amountOnly','','Allow a purchase to be booked by its invoice total alone — no items, no stock','check')}
+     <div class="f" style="max-width:340px"><label>Who may do that</label>
+      <select data-set="buying.amountOnlyWho">
+       ${[['any','Anybody who can enter a purchase'],['super','Only the owner, an admin or a manager']]
+         .map(o=>`<option value="${o[0]}" ${(bc.amountOnlyWho||'any')===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>
+      <div class="muted">The goods still have to be entered afterwards; the list marks which ones are waiting.</div></div>
+     ${fld('buying.dnFirst','','Allow goods in on the supplier\u2019s delivery note, with the invoice matched to it later','check')}
+     <div class="card note" style="margin-top:10px"><b>What a delivery note does to the books</b>
+      <div class="muted">The goods go on the floor and are sellable the same day, but nothing goes on the
+       supplier's account, because there is no invoice to pay. The value waits in <b>Goods received,
+       invoice to come</b> until the invoice turns up and the note is matched to it — and if the invoice
+       charges more or less than the note said, the goods are re-costed rather than the difference being
+       swallowed.</div></div>
+     <div class="muted" style="margin-top:8px">${dnOpen().length?`<b>${dnOpen().length}</b> note${dnOpen().length===1?'':'s'} waiting for an invoice now.`:'No notes are waiting for an invoice.'}
+      <a href="#" data-view="purchases">Open Purchases</a></div>` }
   if(setTab==='dayend'){ const dc=CFG.dayend||{};
     body=`<div class="card note" style="margin-bottom:10px"><b>Shutting up shop</b>
       <div class="muted">Day end walks the close: the drawer, the cheques, the card machine, what the day
@@ -4474,7 +4770,7 @@ function settings(){
     shop:['Name, address and phones as printed','M3 9l2-5h14l2 5M4 9h16v11H4zM9 20v-6h6v6'],bill:['Numbering, formats and the return window',ICONS.bills],layout:['Logo, lines and text size on the bill',ICONS.docs],
     cost:['The code that hides cost on labels',ICONS.labels],msg:['The SMS gateway and who gets texts',ICONS.messages],tpl:['Wording of every text that goes out','M4 6h16M4 12h10M4 18h7'],
     shift:['The Shift Board, the fingerprint machine and pay','M12 7v5l3 2M12 3a9 9 0 110 18 9 9 0 010-18z'],
-    approvals:['What needs the owner’s nod',ICONS.approvals],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
+    approvals:['What needs the owner’s nod',ICONS.approvals],buying:['How goods are allowed in',ICONS.purchases],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
   if(!_setIndexing){
     const searching=setSearch.trim().length>=2;
     body=settingsSearchBox()+(searching?'':body);
@@ -7239,6 +7535,9 @@ async function boot(){
 
 /* ==================== SUPPLIER ORDERS + SUPPLIER PORTAL ==================== */
 const ordersFor=id=>S.orders.filter(o=>o.sid===id).sort((a,b)=>b.events[0].at-a.events[0].at);
+/* A rep's offer, put in words. A figure on its own beside a lorry-load of items means nothing. */
+const discSays=(d)=>!d?'':(d.kind==='pct'?`${(+d.value).toFixed(2).replace(/\.00$/,'')}% off`:`${fmt(d.value)} off`);
+const discOn=(d,goods)=>!d?0:+(d.kind==='pct'?goods*(+d.value||0)/100:(+d.value||0)).toFixed(2);
 const OLABEL={pending:'Waiting for the shop',accepted:'Accepted',rejected:'Rejected',adjusted:'Changes requested',revised:'Replaced by a newer order',received:'Goods received'};
 const OACT={uploaded:'Order sent',revised:'Corrected order sent',accepted:'Accepted',rejected:'Rejected',adjusted:'Changes requested',received:'Goods received',comment:''};
 const otag=s=>`<span class="tag ${({accepted:'ok',received:'ok',rejected:'bad',adjusted:'warn',pending:'warn',revised:''})[s]||''}">${OLABEL[s]||s}</span>`;
@@ -7309,11 +7608,28 @@ function poPrint(no){
     lines:o.lines.map(l=>[`${l.desc}${l.known?'':' — new item'} · ${fq(l.qty)} ${l.unit}`,l.qty*(+l.est||0)]),
     thirdSign:'SUPPLIER'});
 }
+/* Every decision the shop takes on an order reaches the rep the same day. The wording says
+   what happens next, because "accepted" on its own leaves them wondering whether to load. */
+const PO_SAID={
+  accepted:(o)=>`your order ${o.no} is accepted. Send the goods as agreed.`,
+  rejected:(o)=>`your order ${o.no} was not accepted. Please ring the shop before sending anything.`,
+  adjusted:(o)=>`we have asked for a change to order ${o.no}. Please open the page before you load.`,
+  dispatched:(o)=>`order ${o.no} is marked as dispatched. Thank you.`,
+  received:(o)=>`the goods on order ${o.no} have been received. Thank you.`,
+  cancelled:(o)=>`order ${o.no} has been cancelled.`,
+};
+function poTell(o,s,status,note){
+  try{
+    const say=PO_SAID[status]; if(!say) return;
+    const to=String((s||{}).phone||'').trim(); if(!to) return;   // no mobile: the page still shows it
+    sms(to,`${CFG.shop.name}: ${say(o)}${note?' — '+note:''}`);
+  }catch(e){ /* the decision stands whether or not the text got out */ }
+}
 function poAct(no,status,note){
   const o=S.orders.find(x=>x.no===no), s=SU(o.sid);
   o.status=status; o.unreadSup=true;
   o.events.push({id:'e'+Math.random().toString(36).slice(2,6),actor:'shop',name:S.user.name,action:status,note:note||'',at:Date.now()});
-  if(status==='cancelled'&&s.phone) sms(s.phone,`Regal Hardware: order ${o.no} has been cancelled${note?' — '+note:''}.`);
+  poTell(o,s,status,note);
   render(); drawPhone(); toast(`${o.no} ${status}`);
 }
 function poReceive(no){
@@ -7810,6 +8126,8 @@ function orders(){
       <div><b>${s.name}</b><div class="muted">From ${o.rep} · ${o.date}${fromPortal?' · sent from the supplier page':o.src==='shop'?' · entered at the shop':''}</div></div>
       <div style="text-align:right">${otag(o.status)}${o.status==='pending'?`<div class="muted" style="font-size:11px;margin-top:4px">${mayApprove?'needs your approval':'waiting for the owner'}</div>`:''}</div></div>
     ${o.text&&o.text!=='(photo only)'?`<pre style="white-space:pre-wrap;background:#f6f7f9;padding:10px;border-radius:4px;font:inherit;margin:8px 0">${o.text}</pre>`:''}
+    ${o.disc?`<div class="card note" style="margin:8px 0"><b>They are offering ${discSays(o.disc)}</b>${o.disc.note?`<div class="muted">${noteEsc(o.disc.note)}</div>`:''}
+      <div class="muted">It is carried across when the goods arrive — check it against their invoice.</div></div>`:''}
     ${(o.files||[]).length?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">${o.files.map((f,i)=>`<a href="${f}" target="_blank" rel="noopener"><img src="${f}" style="width:110px;height:110px;object-fit:cover;border:1px solid var(--line);border-radius:6px;cursor:zoom-in" title="Open the photo full size"></a>`).join('')}</div>`:''}
     <div style="border-left:2px solid var(--line);padding-left:10px;margin:8px 0">${o.events.map(e=>`<div style="padding:4px 0"><b>${e.actor==='shop'?e.name:e.name||'Rep'}</b> <span class="muted">· ${owhen(e.at)}</span><div>${OACT[e.action]?`<span class="muted">${OACT[e.action]}${e.note?': ':''}</span>`:''}${e.note||''}</div></div>`).join('')}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -7836,7 +8154,7 @@ function orders(){
   ${pend.length?pend.map(card).join(''):'<div class="card muted">Nothing waiting. Orders reps send from the supplier page land here.</div>'}
   <h2 style="margin-top:14px">History</h2>
   ${rest.map(o=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <div><b>${SU(o.sid).name}</b><div class="muted">${o.date}${o.note?' · '+o.note:''}${o.grn?' · became '+o.grn:''}</div></div>
+    <div><b>${SU(o.sid).name}</b><div class="muted">${o.date}${o.note?' · '+o.note:''}${o.disc?' · '+discSays(o.disc)+' offered':''}${o.grn?' · became '+o.grn:''}</div></div>
     <div style="display:flex;gap:8px;align-items:center">${o.status==='accepted'?`<button class="btn tape sm" data-act="ordPurchase" data-no="${o.id}">Create purchase</button>`:''}${otag(o.status)}</div></div>`).join('')||'<div class="muted">Nothing yet.</div>'}`;
 }
 function ordBox(id,kind){
@@ -7928,6 +8246,20 @@ function supAgeing(sid){
   return open.reduce((a,p)=>{const d=days(p.date), owed=p.total-p.paid;
     if(d<=30)a.now+=owed; else if(d<=60)a.mid+=owed; else a.old+=owed; a.count++; return a},{now:0,mid:0,old:0,count:0});
 }
+/* What of theirs came in broken, on their own page. The value came off what the shop owes them
+   the moment it was raised, so the figure above will not add up without this. */
+function portalDamage(s){
+  const list=(S.damages||[]).filter(d=>d.sid===s.id&&!['credited','replaced'].includes(d.status));
+  if(!list.length) return '';
+  const worth=list.reduce((a,d)=>a+(+d.value||0),0);
+  return `<div class="card"><b>Damaged goods</b>
+   <div class="muted" style="margin:4px 0 8px">${list.length} item${list.length===1?'':'s'} of yours came in broken,
+    worth ${fmt(worth)}. That is already off what the shop owes you.</div>
+   ${list.slice(0,8).map(d=>`<div class="prow"><span>${P(d.pid)?P(d.pid).name:'an item'}
+     <span class="muted">${d.date}${d.reason?' · '+d.reason:''}</span></span>
+     <b>${fq(d.qty)} · ${fmt(d.value)}</b></div>`).join('')}
+   ${list.length>8?`<div class="muted" style="margin-top:6px">and ${list.length-8} more</div>`:''}</div>`;
+}
 function portalAccount(s){
   if(!s.showAccounts) return '<div class="card muted">The shop has not switched on account details for your login. You can still send orders and see their answers.</div>';
   const pur=S.purchases.filter(p=>p.supplierId===s.id).sort((a,b)=>b.date.localeCompare(a.date));
@@ -7937,7 +8269,7 @@ function portalAccount(s){
   const owed=partyBal('S',s.id), age=supAgeing(s.id);
   const months={}; pur.forEach(p=>{const k=p.date.slice(0,7); months[k]=(months[k]||0)+p.total});
   const days=d=>Math.round((today-new Date(d))/864e5);
-  return `<div class="card"><div class="muted">Regal Hardware owes you</div>
+  return portalDamage(s) + `<div class="card"><div class="muted">Regal Hardware owes you</div>
    <div class="pbig">${fmt(owed)}</div>
    <div class="muted">${age.count} unpaid bill${age.count===1?'':'s'} · your terms with the shop: ${s.days} days</div>
    <div class="pageing">
@@ -8081,6 +8413,12 @@ function portalNew(s){
    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px">
     ${S.portal.photos.map((p,i)=>`<div style="position:relative"><img src="${p}" class="pthumb"><button data-prm="${i}" class="pxbtn">×</button></div>`).join('')}
     ${S.portal.photos.length<4?`<button class="btn ghost sm" id="psnap" style="width:72px;height:72px;flex-direction:column">📷<span style="font-size:10px">Camera</span></button>`:''}</div>
+   <label>A special price on this order</label>
+   <div style="display:grid;grid-template-columns:auto 1fr;gap:6px;margin-bottom:6px">
+    <select id="pdk"><option value="pct" ${S.portal.disc.kind==='pct'?'selected':''}>% off</option>
+     <option value="amt" ${S.portal.disc.kind==='amt'?'selected':''}>Amount off</option></select>
+    <input id="pdv" type="number" step="any" min="0" value="${S.portal.disc.value}" placeholder="leave empty if none"></div>
+   <input id="pdn" value="${String(S.portal.disc.note||'').replace(/"/g,'&quot;')}" placeholder="what it is for — optional" maxlength="120" style="margin-bottom:10px">
    <button class="btn tape" style="width:100%" id="psend">Send to the shop</button>
    <div class="muted" style="margin-top:6px">The shop reviews every order. Their answer appears under “My orders”.</div></div>
   <div class="card"><b>Last three orders</b>
@@ -8353,12 +8691,15 @@ function bindPhone(){
     const text=q('ptext').value.trim(), rep=(q('prep').value||'').trim();
     if(!text&&!S.portal.photos.length){S.portal.flash='';toast('Type the order or attach a photo');return}
     S.portal.rep=rep;
+    const dv=+((q('pdv')||{}).value||0);
+    const disc=dv>0?{kind:((q('pdk')||{}).value)==='amt'?'amt':'pct',value:dv,note:((q('pdn')||{}).value||'').trim()}:null;
     const o={id:Math.random().toString(36).slice(2,8),sid:S.portal.session,rep:rep||'Rep',text:text||'(photo only)',date:D(today),
-      status:'pending',note:'',files:[...S.portal.photos],unreadShop:true,unreadSup:false,src:'portal',
+      status:'pending',note:'',disc,files:[...S.portal.photos],unreadShop:true,unreadSup:false,src:'portal',
       events:[{id:'e'+Math.random().toString(36).slice(2,6),actor:'supplier',name:rep||'Rep',action:S.portal.replaces?'revised':'uploaded',note:S.portal.replaces?'Corrected version of an earlier order':'',at:Date.now()}]};
     if(S.portal.replaces){const old=S.orders.find(x=>x.id===S.portal.replaces.id); old.status='revised'; old.unreadShop=true}
     S.orders.push(o); S.portal.replaces=null; S.portal.photos=[]; S.portal.tab='orders';
-    notify('order',`${SU(o.sid).name.split(/[–(]/)[0].trim()} sent an order`,'orders');
+    S.portal.disc={kind:'pct',value:'',note:''};
+    notify('order',`${SU(o.sid).name.split(/[–(]/)[0].trim()} sent an order${disc?', offering '+discSays(disc):''}`,'orders');
     S.portal.flash='Order sent. Watch here for the shop\'s answer.';
     drawPhone(); render(); toast('New supplier order from '+SU(o.sid).name.split(' ')[0]);
     setTimeout(()=>{S.portal.flash='';drawPhone()},6000);
@@ -12458,6 +12799,7 @@ const TRAIL_KINDS={
   cashup:['Drawer counted','info'],
   dayend:['Day closed','info'],
   circle:['Cash lent, borrowed or moved to the bank','info'],
+  purNote:['Goods in on a supplier note','info'],
   priceDown:['Price dropped below the list','info'],
   custDel:['Customer removed','bad'],
   prodDel:['Item removed','bad'],
@@ -17511,19 +17853,57 @@ function supPayModal(id){
 }
 
 /* ---- purchases ---- */
+/* Booking by total may be switched off altogether, or left to the owner and the manager. */
+function amountOnlyOk(){
+  const b=CFG.buying||{};
+  if(b.amountOnly===false) return false;
+  if(b.amountOnlyWho==='super') return !!(S.user&&['Super Admin','Owner','Admin'].includes(S.user.role));
+  return true;
+}
 function purchases(){ return `<h1>Purchases</h1><div style="margin-bottom:10px"><button class="btn tape" data-act="newPur" data-id="1">Enter a purchase (GRN)</button>
-  <button class="btn ghost" data-act="quickPur" style="margin-left:6px">Just the invoice total</button></div><div class="card"><table><tr><th>GRN</th><th>Date</th><th>Supplier</th><th>Supplier invoice</th><th>Items</th><th class="n">Total</th><th class="n">Paid</th><th></th></tr>${S.purchases.slice().reverse().map(p=>`<tr><td>${p.no}</td><td>${p.date}</td><td>${SU(p.supplierId).name}</td><td>${p.supInv}</td><td>${p.amountOnly
-      ? `<span class="tag warn">by invoice total</span>${(p.files||[]).length?` <button class="btn ghost sm" data-act="purFiles" data-no="${p.no}">Invoice ×${p.files.length}</button>`:''}${p.note?`<div class="muted">${p.note}</div>`:''}`
-      : p.lines.map(l=>P(l.pid).name+' × '+fq(l.qty)).join('<br>')}</td><td class="n">${fmt(p.total)}</td><td class="n">${fmt(p.paid)}</td>
-    <td>${can('adjustInvoice')?`<button class="btn ghost sm" data-act="purEdit" data-no="${p.no}">Change</button>`:''}</td></tr>`).join('')}</table></div>` }
+  ${amountOnlyOk()?'<button class="btn ghost" data-act="quickPur" style="margin-left:6px">Just the invoice total</button>':''}  ${(CFG.buying||{}).dnFirst!==false?'<button class="btn ghost" data-act="newDN" style="margin-left:6px">Goods on a delivery note</button>':''}</div><div class="card"><table><tr><th>GRN</th><th>Date</th><th>Supplier</th><th>Supplier invoice</th><th>Items</th><th class="n">Total</th><th class="n">Paid</th><th></th></tr>${S.purchases.slice().reverse().map(p=>{
+    /* What came, and on what paper. A note that has not been invoiced yet says so, and says how
+       long it has been saying it, because that is money the shop owes with nothing to pay against. */
+    const what = p.amountOnly
+      ? `<span class="tag warn">by invoice total</span>${p.note?`<div class="muted">${p.note}</div>`:''}`
+      : p.lines.map(l=>P(l.pid).name+' × '+fq(l.qty)).join('<br>');
+    const paper = (p.files||[]).length
+      ? ` <button class="btn ghost sm" data-act="purFiles" data-no="${p.no}">Paper ×${p.files.length}</button>` : '';
+    const waiting = p.onNote && !p.invoiced
+      ? `<div class="muted" style="margin-top:4px"><span class="tag warn">on their note ${p.dnNo}</span> invoice still to come${deAgo(p.date)>0?`, ${deAgo(p.date)} day${deAgo(p.date)===1?'':'s'} now`:''}</div>`
+      : (p.onNote ? `<div class="muted" style="margin-top:4px">came in on note ${p.dnNo}</div>` : '');
+    return `<tr><td>${p.no}</td><td>${p.date}</td><td>${SU(p.supplierId).name}</td>
+     <td>${p.supInv||(p.onNote?'<span class="muted">not invoiced yet</span>':'')}</td>
+     <td>${what}${waiting}${paper}</td>
+     <td class="n">${fmt(p.total)}${p.disc?`<div class="muted">less ${fmt(p.disc)}</div>`:''}</td><td class="n">${fmt(p.paid)}</td>
+     <td>${p.onNote&&!p.invoiced?`<button class="btn tape sm" data-act="purMatch" data-no="${p.no}">The invoice has come</button> `:''}
+      ${can('adjustInvoice')?`<button class="btn ghost sm" data-act="purEdit" data-no="${p.no}">Change</button>`:''}</td></tr>`
+   }).join('')}</table></div>` }
 function newPurModal(sid,ord){
   const lines=(ord&&ord.lines&&ord.lines.length)?ord.lines.map(l=>({...l})):[{pid:1,qty:50,cost:P(1).cost}];
-  const m=modal(`<h2>Purchase entry</h2>${ord?`<div class="card note" style="margin-bottom:10px"><b>From ${SU(ord.sid).name}'s order of ${ord.date}</b><pre style="white-space:pre-wrap;font:inherit;margin:6px 0 0">${ord.text}</pre><div class="muted">Add the lines below as they actually arrived — the order stays linked.</div></div>`:''}<div class="grid3"><div class="f"><label>Supplier</label><select id="gs">${S.suppliers.map(s=>`<option value="${s.id}" ${s.id===sid?'selected':''}>${s.name}</option>`).join('')}</select></div><div class="f"><label>Supplier invoice no</label><input id="gi" value="INV-${Math.floor(Math.random()*9000+1000)}"></div><div class="f"><label>Other charges (transport)</label><input id="go" type="number" value="0"></div></div><table id="gl"></table><button class="btn ghost sm" id="gadd" style="margin-top:6px">+ Add item</button><div class="grid3" style="margin-top:10px"><div class="f"><label>Pay now</label><select id="gpm"><option value="">Credit (pay later)</option><option>CASH</option><option>BANK</option><option>CHEQUE</option></select></div><div class="f"><label>Amount now</label><input id="gpa" type="number" value="0"></div><div class="f"><label>Bank</label><select id="gpb">${S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select></div></div><div style="display:flex;justify-content:space-between;align-items:center"><b id="gt"></b><button class="btn tape" id="gok">Receive stock & post</button></div>`);
+  const offer=(ord&&ord.disc)||null;      // what the rep said they would take off when they sent the order
+  const m=modal(`<h2>Purchase entry</h2>${ord?`<div class="card note" style="margin-bottom:10px"><b>From ${SU(ord.sid).name}'s order of ${ord.date}</b><pre style="white-space:pre-wrap;font:inherit;margin:6px 0 0">${ord.text}</pre><div class="muted">Add the lines below as they actually arrived — the order stays linked.</div></div>`:''}<div class="grid3"><div class="f"><label>Supplier</label><select id="gs">${S.suppliers.map(s=>`<option value="${s.id}" ${s.id===sid?'selected':''}>${s.name}</option>`).join('')}</select></div><div class="f"><label>Supplier invoice no</label><input id="gi" value="INV-${Math.floor(Math.random()*9000+1000)}"></div><div class="f"><label>Other charges (transport)</label><input id="go" type="number" value="0"></div></div>${offer?`<div class="card note" style="margin-bottom:8px"><b>${SU(ord.sid).name} offered ${discSays(offer)} on this order</b>${offer.note?` — ${noteEsc(offer.note)}`:''}<div class="muted">Filled in below. Change it to whatever the invoice actually shows.</div></div>`:''}<div class="f" style="max-width:260px"><label>Discount on the invoice</label><input id="gd" type="number" step="any" value="0"></div><table id="gl"></table><button class="btn ghost sm" id="gadd" style="margin-top:6px">+ Add item</button><div class="qp-drop" id="gDrop" style="margin-top:10px"><b>Photograph the invoice</b><span>Take a picture, drop it here, or click to pick one — image or PDF</span><input type="file" id="gFile" accept="image/*,application/pdf" capture="environment" multiple hidden></div><div id="gFiles" style="margin-top:6px"></div><div class="grid3" style="margin-top:10px"><div class="f"><label>Pay now</label><select id="gpm"><option value="">Credit (pay later)</option><option>CASH</option><option>BANK</option><option>CHEQUE</option></select></div><div class="f"><label>Amount now</label><input id="gpa" type="number" value="0"></div><div class="f"><label>Bank</label><select id="gpb">${S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select></div></div><div style="display:flex;justify-content:space-between;align-items:center"><b id="gt"></b><button class="btn tape" id="gok">Receive stock & post</button></div>`);
   const draw=()=>{m.querySelector('#gl').innerHTML=`<tr><th>Product</th><th class="n">Qty</th><th class="n">Unit cost</th><th class="n">Amount</th><th></th></tr>`+lines.map((l,i)=>`<tr><td><select data-k="pid" data-i="${i}">${S.products.map(p=>`<option value="${p.id}" ${p.id===l.pid?'selected':''}>${p.name}</option>`).join('')}</select></td><td><input type="number" data-k="qty" data-i="${i}" value="${l.qty}" style="text-align:right"></td><td><input type="number" data-k="cost" data-i="${i}" value="${l.cost}" style="text-align:right"></td><td class="n">${fmt(l.qty*l.cost)}</td><td><button class="btn ghost sm" data-rm="${i}">✕</button></td></tr>`).join('');
-    m.querySelector('#gt').textContent='Total '+fmt(lines.reduce((a,l)=>a+l.qty*l.cost,0)+(+m.querySelector('#go').value||0));
+    m.querySelector('#gt').textContent='Total '+fmt(lines.reduce((a,l)=>a+l.qty*l.cost,0)+(+m.querySelector('#go').value||0)-(+m.querySelector('#gd').value||0));
     m.querySelectorAll('[data-k]').forEach(el=>el.onchange=()=>{const l=lines[+el.dataset.i];l[el.dataset.k]=+el.value;if(el.dataset.k==='pid')l.cost=P(l.pid).cost;draw()});m.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.rm,1);draw()})};
-  draw(); m.querySelector('#go').oninput=draw; m.querySelector('#gadd').onclick=()=>{lines.push({pid:2,qty:10,cost:P(2).cost});draw()};
-  m.querySelector('#gok').onclick=()=>{const pm=m.querySelector('#gpm').value,pa=+m.querySelector('#gpa').value||0;const pur=receivePurchase({supplierId:+m.querySelector('#gs').value,supInv:m.querySelector('#gi').value,lines:lines.filter(l=>l.qty>0),other:+m.querySelector('#go').value||0,pay:pm&&pa>0?{method:pm,bank:+m.querySelector('#gpb').value,amount:pa}:null});m.remove();
+  draw(); m.querySelector('#go').oninput=draw; m.querySelector('#gd').oninput=draw;
+  m.querySelector('#gadd').onclick=()=>{lines.push({pid:2,qty:10,cost:P(2).cost});draw()};
+  if(offer){ const goods=lines.reduce((a,l)=>a+l.qty*l.cost,0);
+    m.querySelector('#gd').value=discOn(offer,goods); draw() }
+  /* The picture is held on the server with the other files, not in the books, so the books
+     stay small and the invoice can still be read off the screen a year later. */
+  const files=[];
+  const drawFiles=()=>{ m.querySelector('#gFiles').innerHTML=files.map((f,i)=>
+    `<span class="qp-chip">${/^image\//.test(f.mime)?'▣':'☷'} ${f.name}<button type="button" data-rm="${i}">✕</button></span>`).join('');
+    m.querySelector('#gFiles').querySelectorAll('[data-rm]').forEach(x=>x.onclick=()=>{ files.splice(+x.dataset.rm,1); drawFiles() }) };
+  const take=(list)=>[...list].forEach(f=>purUpload(f,(got)=>{ files.push(got); drawFiles(); toast('Invoice attached','ok') }));
+  const drop=m.querySelector('#gDrop');
+  drop.onclick=()=>m.querySelector('#gFile').click();
+  m.querySelector('#gFile').onchange=(e)=>take(e.target.files);
+  drop.ondragover=(e)=>{ e.preventDefault(); drop.classList.add('over') };
+  drop.ondragleave=()=>drop.classList.remove('over');
+  drop.ondrop=(e)=>{ e.preventDefault(); drop.classList.remove('over'); take(e.dataTransfer.files) };
+  m.querySelector('#gok').onclick=()=>{const pm=m.querySelector('#gpm').value,pa=+m.querySelector('#gpa').value||0;const pur=receivePurchase({supplierId:+m.querySelector('#gs').value,supInv:m.querySelector('#gi').value,lines:lines.filter(l=>l.qty>0),other:+m.querySelector('#go').value||0,disc:+m.querySelector('#gd').value||0,files,pay:pm&&pa>0?{method:pm,bank:+m.querySelector('#gpb').value,amount:pa}:null});m.remove();
    if(ord){const oo=ord.po?S.orders.find(x=>x.no===ord.po):ord;
      if(oo){oo.status='received';oo.grn=pur.no;oo.unreadSup=true;
        oo.events&&oo.events.push({id:'r'+Math.random().toString(36).slice(2,6),actor:'shop',name:S.user.name,action:'received',note:'Goods received as '+pur.no,at:Date.now()});}
@@ -20988,6 +21368,8 @@ document.addEventListener('click',e=>{
     supStock:()=>{ const s=SU(+a.dataset.id); if(s){ supStockAsk(s); persist(true); render() } },
     supStockLog:()=>go('supstock'),
     quickPur:()=>quickPurModal(+a.dataset.id||undefined),
+    newDN:()=>newDNModal(+a.dataset.id||undefined),
+    purMatch:()=>matchNoteModal(a.dataset.no),
     purFiles:()=>{ const pu=S.purchases.find(x=>x.no===a.dataset.no); if(pu) purFilesModal(pu) },
     dmgLabel:()=>damageLabel(a.dataset.no), dmgScan:()=>damageScanModal(),
     jobNew:()=>jobModal(), jobMove:()=>jobMoveModal(a.dataset.no),
