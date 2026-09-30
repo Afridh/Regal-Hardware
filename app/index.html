@@ -8732,7 +8732,7 @@ const views=[
  ['grp','Counter'],['dashboard','Dashboard','F2'],['ai','AI support'],['pos','POS billing','F3'],['bills','Bills','F9'],['cashup','Day book'],['docs','Quotes & delivery notes'],
  ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['tenders','Quotations & tenders'],
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['payreqs','Payment requests'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],['supstock','Who is reading the stock'],
- ['grp','Stock'],['products','Products'],['inventory','Inventory & ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
+ ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
  ['damages','Damage returns'],['jobs','Repair job notes'],
  ['grp','Online'],['weborders','Online orders'],['webproducts','Online products'],['site','The shop site'],['social','Social'],
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],
@@ -8746,7 +8746,7 @@ const SECTIONS = {
   Counter: ['dashboard', 'pos', 'bills', 'cashup', 'docs'],
   Customers: ['customers', 'receipts', 'tenders'],
   Suppliers: ['suppliers', 'orders', 'payreqs', 'purchases', 'purchasing'],
-  Stock: ['products', 'inventory', 'stocktake', 'labels'],
+  Stock: ['products', 'stock', 'ledger', 'inventory', 'stocktake', 'labels'],
   Online: ['weborders', 'webproducts', 'site', 'social'],
   Money: ['chequesIn', 'chequesOut', 'expenses', 'accounting'],
   People: ['approvals', 'payroll', 'users'],
@@ -8809,7 +8809,7 @@ function allowed(v){
   if(rLower === 'admin') return true;
   
   if(rLower === 'salesman'){
-    return ['dashboard', 'products', 'payroll'].includes(v);
+    return ['dashboard', 'products', 'payroll'].includes(v);   // not the ledger, and not what stock cost
   }
   
   if(rLower === 'kp'){
@@ -8824,6 +8824,8 @@ function allowed(v){
   const rDef = roleDefFor(roleName);
   if(rDef){
     if(rDef.allowedViews && rDef.allowedViews.includes(v)) return true;
+    // Products, Stock and the ledger are three doors onto the one page Inventory always was
+    if(['stock','ledger','products'].includes(v) && rDef.allowedViews && rDef.allowedViews.includes('inventory')) return true;
     if(v === 'users' && !['super admin', 'superadmin', 'admin'].includes(rLower)) return false;
     if(Array.isArray(rDef.sections)){
       for(const sec of rDef.sections){
@@ -8870,6 +8872,8 @@ const ICONS={
   suppliers:'M3 8h11v9H3zM14 11h4l3 3v3h-7zM6.5 20a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17.5 20a1.5 1.5 0 100-3 1.5 1.5 0 000 3z',
   orders:'M8 4h9l3 4v12H8zM8 4H4v16h4M12 11h5M12 15h5',
   inventory:'M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10',
+  stock:'M4 20h16M6 20V9M11 20V4M16 20v-7M21 20v-4',
+  ledger:'M5 4h11l3 3v13H5zM9 9h6M9 13h6M9 17h4',
   labels:'M3 6h4v12H3zM9 6h1v12H9zM12 6h2v12h-2zM16 6h1v12h-1zM19 6h2v12h-2z',
   purchases:'M3 4h3l2.5 11h9L20 7H7M9 20a1 1 0 100-2 1 1 0 000 2zM17 20a1 1 0 100-2 1 1 0 000 2z',
   chequesIn:'M3 6h18v12H3zM7 14h5M16 10l2 2 3-4',
@@ -9062,7 +9066,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory().replace('<h1>Inventory</h1>','<h1>Products</h1>')},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
@@ -17946,8 +17950,21 @@ function inventory(){
     body=`<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search name, code or category…" style="max-width:380px"><span class="muted" style="margin-left:auto">${list.length} products</span></div>
     <table><tr><th>Code</th><th>Product</th><th>Category</th><th class="n">In stock</th><th class="n">Min</th>${!isSalesman?'<th class="n">Cost (avg)</th>':''}<th class="n">Retail</th><th class="n">Wholesale</th>${!isSalesman?'<th class="n">Value</th>':''}</tr>${shown.map(p=>`<tr><td>${p.code}<div class="muted">${p.barcode}</div></td><td>${p.name}</td><td>${p.cat}</td><td class="n">${p.stock<=p.min?'<span class="tag bad">':''}${fq(p.stock)} ${p.unit}${p.stock<=p.min?'</span>':''}</td><td class="n">${p.min}</td>${!isSalesman?`<td class="n">${p.cost.toFixed(2)}</td>`:''}<td class="n">${p.retail.toFixed(2)}</td><td class="n">${p.wholesale.toFixed(2)}</td>${!isSalesman?`<td class="n">${fmt(p.stock*p.cost)}</td>`:''}</tr>`).join('')}${!isSalesman?`<tr><td colspan=8><b>Total stock value${q?' of these':''}</b></td><td class="n"><b>${fmt(list.reduce((a,p)=>a+p.stock*p.cost,0))}</b></td></tr>`:''}</table>${moreRows(shown.length,list.length,'invMore')}` }
   if(invTab==='ledger') body=`<div class="muted" style="margin-bottom:6px">Every movement has a source document. Nothing changes stock silently.</div><table><tr><th>Date</th><th>Product</th><th>Type</th><th class="n">Qty</th><th class="n">After</th><th class="n">Unit cost</th><th>Reference</th></tr>${S.movements.slice().reverse().slice(0,invLimit).map(m=>`<tr><td>${m.date}</td><td>${P(m.pid).name}</td><td><span class="tag ${m.type==='PURCHASE_VOID'?'warn':m.qty>0?'ok':'bad'}">${m.type==='PURCHASE_VOID'?'ENTRY VOIDED':m.type}</span></td><td class="n">${m.qty>0?'+':''}${fq(m.qty)}</td><td class="n">${fq(m.after)}</td><td class="n">${m.cost.toFixed(2)}</td><td>${m.ref}</td></tr>`).join('')}</table>${moreRows(Math.min(invLimit,S.movements.length),S.movements.length,'invMore')}`;
-  if(invTab==='damage') body=`<button class="btn tape" data-act="newDmg" style="margin-bottom:10px">Record damaged goods</button><table><tr><th>No</th><th>Date</th><th>Product</th><th class="n">Qty</th><th class="n">Value</th><th>Reason</th><th>User</th></tr>${S.damages.map(d=>`<tr><td>${d.no}</td><td>${d.date}</td><td>${P(d.pid).name}</td><td class="n">${d.qty}</td><td class="n">${fmt(d.value)}</td><td>${d.reason}</td><td>${d.by}</td></tr>`).join('')}</table>`;
-  return `<h1>Inventory</h1><div class="tabs">${tabs.map(t=>`<button class="${invTab===t[0]?'on':''}" data-tab="${t[0]}">${t[1]}</button>`).join('')}</div><div class="card">${body}</div>` }
+  if(invTab==='damage') body=`<div class="card note" style="margin-bottom:10px"><b>This writes the goods off as a loss</b>
+    <div class="muted">If the item came from a supplier and could be claimed back, use <b>Damage returns</b> instead —
+     it books the value against them from the day it is raised, and prints a label for the piece.
+     <button class="btn ghost sm" data-act="deGo" data-v="damages" style="margin-left:6px">Open Damage returns</button></div></div>
+   <button class="btn tape" data-act="newDmg" style="margin-bottom:10px">Write goods off as a loss</button><table><tr><th>No</th><th>Date</th><th>Product</th><th class="n">Qty</th><th class="n">Value</th><th>Reason</th><th>User</th></tr>${S.damages.map(d=>`<tr><td>${d.no}</td><td>${d.date}</td><td>${P(d.pid).name}</td><td class="n">${d.qty}</td><td class="n">${fmt(d.value)}</td><td>${d.reason}</td><td>${d.by}</td></tr>`).join('')}</table>`;
+  /* Three doors in the menu open three of these tabs, so no two of them look the same when you
+     arrive. The heading says which one you are on, and the tabs move between them. */
+  const TITLE={products:['Products','every item, its codes and its prices'],
+    stock:['Stock','what is on the shelves and what it is worth'],
+    ledger:['Stock ledger','every movement, and the document behind it'],
+    damage:['Damaged goods','everything written off or sent back']};
+  const [h1,sub]=TITLE[invTab]||TITLE.products;
+  return `<h1>${h1}<span class="muted" style="font-size:14px;font-weight:400"> · ${sub}</span></h1>
+   <div class="tabs">${tabs.map(t=>`<button class="${invTab===t[0]?'on':''}" data-tab="${t[0]}">${t[1]}</button>`).join('')}</div>
+   <div class="card">${body}</div>` }
 function barcodeSvg(code){ let s='<svg width="180" height="40" viewBox="0 0 180 40">'; let x=4; for(const ch of code+'X'){ const n=(ch.charCodeAt(0)*7)%5+1; s+=`<rect x="${x}" y="0" width="${n}" height="40" fill="#000"/>`; x+=n+((ch.charCodeAt(0)*3)%3+1); if(x>172)break } return s+'</svg>' }
 function dmgModal(){ const m=modal(`<h2>Damaged goods</h2><div class="grid3"><div class="f"><label>Product</label><select id="dp">${S.products.map(x=>`<option value="${x.id}">${x.name}</option>`).join('')}</select></div><div class="f"><label>Quantity</label><input id="dq" type="number" value="1"></div><div class="f"><label>Reason</label><select id="dr"><option>Broken in transport</option><option>Leaking / dented</option><option>Expired</option><option>Water damage</option><option>Other</option></select></div></div><div style="text-align:right"><button class="btn tape" id="dok">Remove from stock</button></div>`);
   m.querySelector('#dok').onclick=()=>{const d=addDamage({pid:+m.querySelector('#dp').value,qty:+m.querySelector('#dq').value,reason:m.querySelector('#dr').value});m.remove();render();toast(`${d.no} recorded · ${fmt(d.value)} written off`)} }
@@ -20815,7 +20832,9 @@ window.addEventListener('resize',()=>{ if(S.notifOpen) drawBell(); });
 document.addEventListener('click',e=>{
   if(S.notifOpen && !e.target.closest('.bellwrap') && !e.target.closest('#bellPanel')){ S.notifOpen=false; drawBell() }
   const nb=e.target.closest('[data-view]'); if(nb){go(nb.dataset.view);return}
-  const tb=e.target.closest('[data-tab]'); if(tb){invTab=tb.dataset.tab;invLimit=200;render();return} const ab=e.target.closest('[data-acc]'); if(ab){accTab=ab.dataset.acc;render();return}
+  const tb=e.target.closest('[data-tab]'); if(tb){invTab=tb.dataset.tab;invLimit=200;
+    if(['products','stock','ledger'].includes(S.view)&&['products','stock','ledger'].includes(invTab)&&allowed(invTab)) S.view=invTab;
+    render();return} const ab=e.target.closest('[data-acc]'); if(ab){accTab=ab.dataset.acc;render();return}
   const a=e.target.closest('[data-act]'); if(!a)return; e.preventDefault(); const act=a.dataset.act;
   // while the privacy screen is up only looking is allowed — nothing that writes, so the real books cannot be touched
   if(window.privacyOn&&!/^(closeModal|invoice|showInv|doPrint|billSel|billKind|billDay|billAllDates|billMore|billClear|bellGo|cust|siteTab|siteShow|wpView|ordTab|tdSel|tdFilter|bellOpen|bellClear|navMin|prefNav|prefMini|repRun|repPick|rep|acc|tab|zoom|prodHist|supShow|pickCust|pickSalesman|showHeld|csToggleSum|dashSync|punch|punchIn|punchOut|mealStart|mealEnd|leaveShop|approveLeave|rejectLeave|confirmAbsent|attFilter|payTab|paySel|payDay)$/.test(act)){ toast('Till is busy — try again in a moment'); return }
