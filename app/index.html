@@ -2104,6 +2104,77 @@ tr.rowlink button{cursor:pointer}
 .btn:disabled{transform:none}
 .modal .box{animation:cuPop .18s ease-out}
 @media (prefers-reduced-motion:reduce){.cu-panel,.cu-tab-body,.cu-row,.kpi,.tl .ev,.modal .box,.toast,.cu-row.sel .av{animation:none}.btn:hover,.cu-row:hover,.kpi:hover{transform:none}}
+/* ============================== MOTION ==============================
+   One set of rules for how the whole system moves, so a page, a row and a figure all behave
+   the same way instead of each screen inventing its own.
+
+   Everything here is quick. A cashier takes two hundred bills a day and must never once wait
+   for the system to finish being pretty: nothing lasts longer than a quarter of a second, and
+   nothing an animation does is required before the next keystroke is accepted. Movement is
+   there to say where a thing came from — a page arriving, a row joining a list, money
+   changing — and nowhere else.
+
+   Anybody whose machine is set to want less movement gets none of it; that rule sits at the
+   bottom of this block and covers everything above it. */
+
+:root{
+  --mo-fast:110ms;            /* a press, a hover */
+  --mo:170ms;                 /* a row, a card, a page */
+  --mo-roll:380ms;            /* a figure counting to its new value */
+  --mo-ease:cubic-bezier(.22,.68,.3,1);        /* moves off smartly, settles rather than stops */
+  --mo-step:18ms;             /* between one row and the next */
+}
+
+/* a page arriving */
+@keyframes moPage{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+#main.mo-page{animation:moPage var(--mo) var(--mo-ease)}
+
+/* a row or a card joining a list. --i is set as they are found, and capped, so a long table
+   does not take four seconds to finish arriving */
+@keyframes moRise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.mo-in{animation:moRise var(--mo) var(--mo-ease) both;animation-delay:calc(var(--i,0) * var(--mo-step))}
+
+/* something that has just changed, said once and quietly */
+@keyframes moFlash{0%{background:var(--tint-yellow)}100%{background:transparent}}
+.mo-flash{animation:moFlash 620ms ease-out}
+@keyframes moBump{0%{transform:none}35%{transform:scale(1.045)}100%{transform:none}}
+.mo-bump{animation:moBump 260ms var(--mo-ease)}
+
+/* the shape of something that has not arrived yet */
+@keyframes moShimmer{from{background-position:-220px 0}to{background-position:220px 0}}
+.mo-skel{border-radius:7px;min-height:14px;
+  background:linear-gradient(90deg,var(--line2) 0%,var(--panel) 42%,var(--line2) 84%);
+  background-size:220px 100%;animation:moShimmer 1.05s linear infinite}
+.cu-loading{animation:moPage var(--mo) var(--mo-ease)}
+
+/* pressing something should feel like pressing something */
+.btn{transition:transform var(--mo-fast) var(--mo-ease),box-shadow var(--mo-fast) var(--mo-ease),
+  background var(--mo-fast) var(--mo-ease),filter var(--mo-fast) var(--mo-ease)}
+.btn:active:not(:disabled){transform:translateY(1px) scale(.985)}
+.btn:disabled{transition:none}
+
+/* the menu answers the pointer, and the page you are on is marked without a jump */
+nav .navlist button,.subnav button{transition:background var(--mo-fast) var(--mo-ease),
+  color var(--mo-fast) var(--mo-ease),transform var(--mo-fast) var(--mo-ease)}
+nav .navlist button:hover:not(.on),.subnav button:hover:not(.on){transform:translateX(2px)}
+.tabs button,.cu-tabs button{transition:color var(--mo-fast) var(--mo-ease),
+  border-color var(--mo) var(--mo-ease),background var(--mo-fast) var(--mo-ease)}
+
+/* a row under the pointer, and the one the keyboard is on */
+tr.rowlink,.cu-row,.bl-row{transition:background var(--mo-fast) var(--mo-ease)}
+
+/* a figure on its way to a new value sits on its own line so the row does not jump about */
+.mo-roll{font-variant-numeric:tabular-nums}
+
+/* a bar or a ring drawing itself */
+.bar>i{transition:width var(--mo-slow,240ms) var(--mo-ease)}
+
+@media (prefers-reduced-motion:reduce){
+  #main.mo-page,.mo-in,.mo-flash,.mo-bump,.mo-skel,.cu-loading{animation:none}
+  .btn,.btn:active:not(:disabled),nav .navlist button,.subnav button,
+  nav .navlist button:hover:not(.on),.subnav button:hover:not(.on),
+  .tabs button,.cu-tabs button,tr.rowlink,.cu-row,.bl-row,.bar>i{transition:none;transform:none}
+}
 .ageing div{background:var(--white);padding:9px 12px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .ageing b{font-family:Archivo,sans-serif;font-size:16px}
 .ageing .late{background:var(--tint-rust)}
@@ -9058,8 +9129,116 @@ function billSaved(inv){
 }
 function modal(html){ const m=document.createElement('div');m.className='modal';m.innerHTML=`<div class="box">${html}</div>`;m.addEventListener('click',e=>{if(e.target===m)m.remove()});document.body.appendChild(m);const f=m.querySelector('input,select,button');f&&f.focus();return m }
 function closeModals(){document.querySelectorAll('.modal').forEach(m=>m.remove())}
+/* ============================== MOTION ==============================
+   What moves, and when. The rules it works to are in the stylesheet; this decides which
+   elements get them on any one draw.
+
+   The screen is rebuilt from scratch on every render, and the till renders on every keystroke
+   while somebody searches for an item. So almost nothing is animated on an ordinary redraw:
+   pages and rows move only when the view has actually changed, which is the one moment a
+   person's eye needs telling where it is. The exceptions are the two things that mean
+   something whenever they happen — a figure changing, and a line joining the bill.
+
+   Nothing here is allowed to fail loudly. Motion is the first thing to go wrong on an old
+   machine and the last thing worth stopping the shop for, so every part of it is wrapped. */
+
+const moLess = () => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch(e){ return false } };
+const MO_ROLLS = new Map();          // what each figure said last time, so only real changes move
+let moLastLines = -1;                // how many lines were on the bill at the last draw
+
+/* A figure on its way to a new value. The text around the number is kept exactly as it was —
+   "Rs ", a minus, a per cent sign — and only the digits are counted up, so nothing but the
+   number moves. */
+function moRollEl(el, key){
+  const text = el.textContent;
+  const m = /-?[\d,]*\.?\d+/.exec(text);
+  if(!m) return;
+  const to = +m[0].replace(/,/g,'');
+  if(!isFinite(to)) return;
+  const had = MO_ROLLS.get(key);
+  MO_ROLLS.set(key, to);
+  if(had === undefined || had === to || moLess()) return;     // first sight, or nothing changed
+  const dec = (m[0].split('.')[1]||'').length;
+  const grouped = m[0].includes(',');
+  const head = text.slice(0, m.index), tail = text.slice(m.index + m[0].length);
+  const say = (n) => {
+    let s = Math.abs(n).toFixed(dec);
+    if(grouped){ const [a,b] = s.split('.'); s = a.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (b?'.'+b:'') }
+    return (n<0?'-':'') + s;
+  };
+  const t0 = performance.now();
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / 380);
+    const e = 1 - Math.pow(1 - k, 3);                          // slows as it lands
+    el.textContent = head + say(had + (to - had) * e) + tail;
+    if(k < 1) requestAnimationFrame(step); else el.textContent = text;
+  };
+  el.classList.add('mo-roll');
+  requestAnimationFrame(step);
+}
+
+/* The figures worth watching: the stat tiles, the day-book tiles, the money on a customer or
+   supplier card, and the total at the till. Each is remembered by where it sits and what it is
+   called, so the right figure is compared with the right one from last time. */
+function moRolls(){
+  const seen = new Map();
+  document.querySelectorAll('.stat .v, .daytile .v, .kpi b, .sum-net b, .pw-net').forEach(el=>{
+    const label = (el.closest('.stat,.daytile,.kpi,.sum-net,.pw-f')||{}).textContent || '';
+    const base = S.view + '|' + label.replace(/-?[\d,]*\.?\d+/g,'#').slice(0,60);
+    const n = (seen.get(base)||0) + 1; seen.set(base, n);
+    try{ moRollEl(el, base + '#' + n) }catch(e){}
+  });
+}
+
+/* Rows and cards arriving, one just after another. Only when the page itself has changed —
+   doing it on every redraw would make the till flicker under somebody's hands. */
+function moArrive(){
+  const mn = document.getElementById('main'); if(!mn) return;
+  mn.classList.remove('mo-page'); void mn.offsetWidth; mn.classList.add('mo-page');
+  // taken off again once it has run, so the page is not left wearing a class it has finished with
+  mn.addEventListener('animationend', function off(e){ if(e.target===mn){ mn.classList.remove('mo-page'); mn.removeEventListener('animationend', off) } });
+  if(moLess()) return;
+  const rows = mn.querySelectorAll('.card, table tr, .cu-row, .bl-row, .de-open, .prow');
+  let i = 0;
+  for(const el of rows){
+    if(el.closest('thead')) continue;
+    el.style.setProperty('--i', Math.min(i, 14));              // capped: a long table still lands quickly
+    el.classList.add('mo-in');
+    if(++i > 60) break;                                        // past the fold nobody is watching
+  }
+}
+
+/* A line joining the bill says so where it lands, which is the one place at the till where a
+   cashier's eye has to follow something. */
+function moBillLine(){
+  if(S.view !== 'pos' || moLess()) return;
+  const n = (S.pos && S.pos.lines) ? S.pos.lines.length : 0;
+  const grew = moLastLines >= 0 && n > moLastLines;
+  moLastLines = n;
+  if(!grew) return;
+  const rows = document.querySelectorAll('.till-tbl tbody tr, .cs-tbl tbody tr');
+  const row = rows[rows.length-1];
+  if(row){ row.classList.remove('mo-flash'); void row.offsetWidth; row.classList.add('mo-flash') }
+  const tot = document.querySelector('.sum-net b');
+  if(tot){ tot.classList.remove('mo-bump'); void tot.offsetWidth; tot.classList.add('mo-bump') }
+}
+
+/* Called once after every draw. `moved` says whether this is a different page from the last. */
+function motionAfter(moved){
+  try{ if(moved) moArrive() }catch(e){}
+  try{ moRolls() }catch(e){}
+  try{ moBillLine() }catch(e){}
+}
+
 let _rendering=false, _lastRenderView=null;
-function render(){ if(_rendering) return; _rendering=true; try{ renderNow() } finally { _rendering=false } if(typeof persist==='function'&&S.user&&!S.signedOut) persist() }
+function render(){
+  if(_rendering) return;
+  const wasView=_lastRenderView;                    // renderNow moves it on, so it is taken first
+  _rendering=true;
+  try{ renderNow() } finally { _rendering=false }
+  try{ motionAfter(wasView!==S.view) }catch(e){}
+  if(typeof persist==='function'&&S.user&&!S.signedOut) persist();
+}
 function renderNow(){
   applyLayout();
   renderNav();
