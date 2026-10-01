@@ -1905,7 +1905,7 @@ tr.rowlink button{cursor:pointer}
 .ptbl td{padding:7px 3px;border-bottom:1px solid var(--line2);vertical-align:top}
 .ptbl .n{text-align:right;white-space:nowrap}
 .ptbl .muted{font-size:11px}
-.pstock-pick{display:grid;grid-template-columns:1fr 84px auto;gap:8px;align-items:center;margin-top:8px;
+.pstock-pick{display:grid;grid-template-columns:1fr 76px 76px auto;gap:6px;align-items:center;margin-top:8px;
   padding:9px;border:1px solid var(--line);border-radius:9px;background:var(--panel)}
 .pstock-pick input{margin:0;text-align:right}
 .prow:last-child{border-bottom:0}
@@ -8472,7 +8472,8 @@ function portalOrders(s){
    what it sells for or how fast. Looking is written down. */
 function portalStock(s){
   const O=S.portal.ord=S.portal.ord||{lines:[],q:'',pid:null,qty:''};
-  const all=S.products.filter(p=>p.supplierId===s.id&&p.active!==false)
+  const theirs=supplierItems(s.id);
+  const all=S.products.filter(p=>theirs.has(p.id)&&p.active!==false)
     .map(p=>({...p,low:(+p.stock||0)<=(+p.min||0)}))
     .sort((a,b)=>a.low===b.low?String(a.name).localeCompare(String(b.name)):(a.low?-1:1));
   const q=String(O.q||'').trim().toLowerCase();
@@ -8491,11 +8492,13 @@ function portalStock(s){
     ${picked?`<div class="pstock-pick">
       <div><b>${picked.name}</b><div class="muted">${fq(picked.stock)} ${picked.unit||''} on the shelf${picked.low?' · running low':''}</div></div>
       <input id="postqty" type="number" step="any" inputmode="decimal" value="${O.qty}" placeholder="How many">
+      <input id="postprice" type="number" step="any" inputmode="decimal" value="${O.price===undefined?'':O.price}" placeholder="Your price">
       <button class="btn tape" id="postadd">Add</button></div>`:''}
     ${O.lines.length?`<table class="ptbl" style="margin-top:10px">
-      <tr><th>On your order</th><th class="n">Qty</th><th></th></tr>
+      <tr><th>On your order</th><th class="n">Qty</th><th class="n">Your price</th><th></th></tr>
       ${O.lines.map((l,i)=>`<tr><td>${l.name}${l.code?`<div class="muted">${l.code}</div>`:''}</td>
-        <td class="n"><input data-postq="${i}" type="number" step="any" value="${l.qty}" style="width:74px;text-align:right"></td>
+        <td class="n"><input data-postq="${i}" type="number" step="any" value="${l.qty}" style="width:68px;text-align:right"></td>
+        <td class="n"><input data-postp="${i}" type="number" step="any" value="${l.price||''}" placeholder="price" style="width:80px;text-align:right"></td>
         <td class="n"><button class="btn ghost sm" data-postdel="${i}">✕</button></td></tr>`).join('')}
      </table>
      <button class="btn tape" style="width:100%;margin-top:10px" id="postsend">Send these ${O.lines.length} to the shop</button>`
@@ -8510,16 +8513,17 @@ function portalStockAdd(){
   const O=S.portal.ord; if(!O||!O.pid) return;
   const p=P(O.pid); if(!p) return;
   const qty=+O.qty; if(!(qty>0)) return toast('How many?');
+  const price=+O.price||0;                       // what they say they will charge; nothing is assumed if left empty
   const at=O.lines.findIndex(l=>l.pid===p.id);
-  if(at>=0) O.lines[at].qty=+(O.lines[at].qty+qty).toFixed(3);
-  else O.lines.push({pid:p.id,name:p.name,code:p.code||'',unit:p.unit||'',qty});
-  O.pid=null; O.qty=''; O.q='';
+  if(at>=0){ O.lines[at].qty=+(O.lines[at].qty+qty).toFixed(3); if(price>0) O.lines[at].price=price }
+  else O.lines.push({pid:p.id,name:p.name,code:p.code||'',unit:p.unit||'',qty,price:price||''});
+  O.pid=null; O.qty=''; O.price=''; O.q='';
   drawPhone();
   const f=document.getElementById('postq'); if(f) f.focus();
 }
 function portalStockSend(s){
   const O=S.portal.ord; if(!O||!O.lines.length) return;
-  S.portal.draft=O.lines.map(l=>`${l.name}${l.code?' ('+l.code+')':''} — ${fq(l.qty)} ${l.unit||''}`.trim()).join('\n');
+  S.portal.draft=O.lines.map(l=>`${l.name}${l.code?' ('+l.code+')':''} — ${fq(l.qty)} ${l.unit||''}${+l.price>0?` at ${fmt(l.price)}`:''}`.trim()).join('\n');
   S.portal.tab='new';
   S.portal.flash=`${O.lines.length} item${O.lines.length===1?'':'s'} on the order sheet — add anything else, then send.`;
   O.lines=[]; O.pid=null; O.qty=''; O.q='';
@@ -8798,13 +8802,20 @@ function bindPhone(){
   w.querySelectorAll('[data-postpick]').forEach(el=>el.onclick=()=>{ const O=S.portal.ord;
     O.pid=+el.dataset.postpick; O.qty=''; drawPhone();
     const f=document.getElementById('postqty'); if(f) f.focus() });
+  // item, then how many, then what they are charging, then it goes on — all on the keyboard
   if(q('postqty')){ const f=q('postqty');
     f.oninput=e=>{ S.portal.ord.qty=e.target.value };
+    f.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault();
+      const pf=q('postprice'); if(pf){ pf.focus(); pf.select() } else portalStockAdd() } }; }
+  if(q('postprice')){ const f=q('postprice');
+    f.oninput=e=>{ S.portal.ord.price=e.target.value };
     f.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); portalStockAdd() } }; }
   if(q('postadd')) q('postadd').onclick=portalStockAdd;
   w.querySelectorAll('[data-postq]').forEach(el=>el.onchange=()=>{
     const O=S.portal.ord, i=+el.dataset.postq, v=+el.value;
     if(v>0) O.lines[i].qty=v; else O.lines.splice(i,1); drawPhone() });
+  w.querySelectorAll('[data-postp]').forEach(el=>el.onchange=()=>{
+    S.portal.ord.lines[+el.dataset.postp].price=+el.value||''; });
   w.querySelectorAll('[data-postdel]').forEach(el=>el.onclick=()=>{
     S.portal.ord.lines.splice(+el.dataset.postdel,1); drawPhone() });
   if(q('postsend')) q('postsend').onclick=()=>portalStockSend(SU(S.portal.session));
@@ -11879,6 +11890,16 @@ function posAfter(){
       if(Math.abs(l.price-priceFor(p,l.qty))<0.005){ const nq=+inp.value||0; if(nq>0) l.price=priceFor(p,nq) } }
     const l=S.pos.lines[+ev.target.dataset.i]; l[ev.target.dataset.edit]=+ev.target.value||0;
     if(l.qty<=0)S.pos.lines.splice(+ev.target.dataset.i,1); render()}));
+}
+/* Every item this supplier supplies: the ones put against them by hand, and the ones they have
+   actually delivered. Worked out once over the purchases rather than per item, because a shop
+   with thirty thousand lines and ten years of history would otherwise walk the lot each time. */
+function supplierItems(sid){
+  const mine=new Set();
+  for(const p of (S.products||[])) if(p.supplierId===sid) mine.add(p.id);
+  for(const pu of (S.purchases||[])) if(pu.supplierId===sid)
+    for(const l of (pu.lines||[])) if(l.pid) mine.add(l.pid);
+  return mine;
 }
 function lastSupplier(pid){
   for(let i=S.purchases.length-1;i>=0;i--){ const pu=S.purchases[i];

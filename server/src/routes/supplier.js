@@ -393,7 +393,14 @@ r.get('/stock', supAuth, asyncHandler(async (req, res) => {
   const until = +sup.stockUntil || 0;
   if (!until || Date.now() >= until)
     throw new HttpError(403, 'The shop has not opened this for you, or the day is up — ask them to open it again');
-  const mine = (S.products || []).filter(p => p.supplierId === sup.id && p.active !== false);
+  /* Theirs by the tag the shop set, or by having delivered it. Nothing else is ever sent:
+     another supplier's stock is none of their business, and the figures would tell them what
+     the shop buys elsewhere. */
+  const theirs = new Set();
+  for (const p of (S.products || [])) if (p.supplierId === sup.id) theirs.add(p.id);
+  for (const pu of (S.purchases || [])) if (pu.supplierId === sup.id)
+    for (const l of (pu.lines || [])) if (l.pid) theirs.add(l.pid);
+  const mine = (S.products || []).filter(p => theirs.has(p.id) && p.active !== false);
   const lines = mine.map(p => ({
     code: p.code || '', name: p.name || '', unit: p.unit || '',
     stock: Math.round((+p.stock || 0) * 1000) / 1000,

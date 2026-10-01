@@ -145,6 +145,44 @@ const dmg = await pg.evaluate(() => {
 ok(dmg.owed < dmg.owed0, 'raising a damage takes its value off what the shop owes them', `${dmg.owed0} → ${dmg.owed}`);
 ok(dmg.shows && dmg.names, 'and the rep sees it on their own page, with what it was');
 
+/* ---------- a supplier sees the goods they supply, and only those ---------- */
+const theirs = await pg.evaluate(() => {
+  const sid = S.suppliers[0].id, other = S.suppliers[1].id;
+  // nothing in these books carries a supplier tag; the delivery history is what knows
+  const tagged = (S.products || []).filter(p => p.supplierId).length;
+  const mine = supplierItems(sid), notMine = supplierItems(other);
+  const delivered = new Set();
+  for (const pu of S.purchases) if (pu.supplierId === sid) for (const l of (pu.lines || [])) delivered.add(l.pid);
+  const overlap = [...mine].filter(id => notMine.has(id) && !delivered.has(id));
+  // and a tag still wins where the shop has set one
+  const spare = S.products.find(p => !mine.has(p.id));
+  if (spare) spare.supplierId = sid;
+  const after = supplierItems(sid);
+  return { tagged, mine: mine.size, delivered: delivered.size, overlap: overlap.length,
+    tagCounts: spare ? after.has(spare.id) : null, otherUnaffected: !supplierItems(other).has(spare && spare.id) };
+});
+ok(theirs.tagged === 0 && theirs.mine > 0 && theirs.mine === theirs.delivered,
+   'with no product tagged, what they have delivered is what they are shown', JSON.stringify(theirs));
+ok(theirs.overlap === 0, 'and nothing another supplier delivered is in it');
+ok(theirs.tagCounts === true && theirs.otherUnaffected,
+   'a tag the shop sets counts too, and only for them');
+
+/* ---------- the price a rep is asking goes on the order ---------- */
+const asking = await pg.evaluate(() => {
+  const s = S.suppliers[0];
+  S.portal = { ...S.portal, session: s.id, ord: { lines: [], q: '', pid: null, qty: '', price: '' } };
+  const pid = [...supplierItems(s.id)][0];
+  S.portal.ord.pid = pid; S.portal.ord.qty = 20; S.portal.ord.price = 2175;
+  portalStockAdd();
+  const line = S.portal.ord.lines[0];
+  S.portal.ord.lines = [line];
+  portalStockSend(s);
+  return { price: line.price, qty: line.qty, sheet: S.portal.draft, cleared: S.portal.ord.price };
+});
+ok(asking.price === 2175 && asking.qty === 20, 'the price a rep is asking is kept with the quantity', JSON.stringify({price:asking.price,qty:asking.qty}));
+ok(/at /.test(asking.sheet) && /2,175/.test(asking.sheet), 'and it reaches the order sheet the shop reads', asking.sheet);
+ok(asking.cleared === '', 'the box is empty again for the next line');
+
 ok(errs.length === 0, 'no script errors through any of it', errs.join(' | '));
 
 await b.close();

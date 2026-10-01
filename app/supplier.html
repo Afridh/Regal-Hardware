@@ -32,7 +32,7 @@ main{max-width:760px;margin:0 auto;padding:14px 12px 90px}
 .sug .muted{font-size:12px}
 .discrow{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center}
 .discrow select,.discrow input{margin:0}
-.pickrow{display:grid;grid-template-columns:1fr 92px auto;gap:8px;align-items:center;margin-top:8px;
+.pickrow{display:grid;grid-template-columns:1fr 84px 84px auto;gap:7px;align-items:center;margin-top:8px;
   padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
 .pickrow input{margin:0;text-align:right}
 .paytbl th{text-align:left;font-size:11px;color:var(--steel);text-transform:uppercase;letter-spacing:.06em;padding:4px 6px;border-bottom:1px solid var(--line)}
@@ -282,11 +282,13 @@ function stock(){
     ${picked?`<div class="pickrow">
       <div><b>${esc(picked.name)}</b><div class="muted">${picked.stock} ${esc(picked.unit)} on the shelf${picked.low?' · running low':''}</div></div>
       <input id="stockQty" type="number" step="any" inputmode="decimal" value="${esc(O.qty)}" placeholder="How many">
+      <input id="stockPrice" type="number" step="any" inputmode="decimal" value="${esc(O.price===undefined?'':O.price)}" placeholder="Your price">
       <button class="btn tape" id="stockAdd">Add</button></div>`:''}
     ${O.lines.length?`<table class="paytbl" style="margin-top:10px">
-      <tr><th>On your order</th><th class="n">Qty</th><th></th></tr>
+      <tr><th>On your order</th><th class="n">Qty</th><th class="n">Your price</th><th></th></tr>
       ${O.lines.map((l,i)=>`<tr><td><b>${esc(l.name)}</b>${l.code?`<div class="muted">${esc(l.code)}</div>`:''}</td>
-        <td class="n"><input data-oq="${i}" type="number" step="any" value="${l.qty}" style="width:78px;text-align:right"></td>
+        <td class="n"><input data-oq="${i}" type="number" step="any" value="${l.qty}" style="width:70px;text-align:right"></td>
+        <td class="n"><input data-op="${i}" type="number" step="any" value="${l.price||''}" placeholder="price" style="width:84px;text-align:right"></td>
         <td class="n"><button class="btn" data-od="${i}">✕</button></td></tr>`).join('')}
      </table>
      <button class="btn tape big" id="stockSend" style="margin-top:10px">Send these ${O.lines.length} to the shop</button>`
@@ -308,8 +310,8 @@ function stockAddLine(){
 }
 function stockSendOrder(){
   const O=st.ord; if(!O||!O.lines.length) return;
-  st.text=O.lines.map(l=>`${l.name}${l.code?' ('+l.code+')':''} — ${l.qty} ${l.unit||''}`.trim()).join('\n');
-  O.lines=[]; O.code=null; O.qty=''; O.q='';
+  st.text=O.lines.map(l=>`${l.name}${l.code?' ('+l.code+')':''} — ${l.qty} ${l.unit||''}${+l.price>0?` at ${money(l.price)}`:''}`.trim()).join('\n');
+  O.lines=[]; O.code=null; O.qty=''; O.price=''; O.q='';
   st.tab='send'; st.done=null; render();
   const t=$('#text'); if(t){ t.value=st.text; t.focus() }
 }
@@ -356,8 +358,13 @@ function bind(){
     const again=$('#stockQ'); if(again){ again.focus(); try{ again.setSelectionRange(at,at) }catch(e){} } };
   $('[data-pick]',m).forEach(el=>el.onclick=()=>{ st.ord.code=el.dataset.pick; st.ord.qty=''; render();
     const f=$('#stockQty'); if(f) f.focus() });
+  // item, then how many, then what you are charging, then it goes on — all on the keyboard
   const sqty=$('#stockQty'); if(sqty){ sqty.oninput=()=>{ st.ord.qty=sqty.value };
-    sqty.onkeydown=(e)=>{ if(e.key==='Enter'){ e.preventDefault(); stockAddLine() } } }
+    sqty.onkeydown=(e)=>{ if(e.key==='Enter'){ e.preventDefault();
+      const pf=$('#stockPrice'); if(pf){ pf.focus(); pf.select() } else stockAddLine() } } }
+  const sprc=$('#stockPrice'); if(sprc){ sprc.oninput=()=>{ st.ord.price=sprc.value };
+    sprc.onkeydown=(e)=>{ if(e.key==='Enter'){ e.preventDefault(); stockAddLine() } } }
+  $('[data-op]',m).forEach(el=>el.onchange=()=>{ st.ord.lines[+el.dataset.op].price=+el.value||'' });
   const sadd=$('#stockAdd'); if(sadd) sadd.onclick=stockAddLine;
   $('[data-oq]',m).forEach(el=>el.onchange=()=>{ const i=+el.dataset.oq, v=+el.value;
     if(v>0) st.ord.lines[i].qty=v; else st.ord.lines.splice(i,1); render() });
