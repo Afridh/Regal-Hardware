@@ -183,6 +183,30 @@ ok(asking.price === 2175 && asking.qty === 20, 'the price a rep is asking is kep
 ok(/at /.test(asking.sheet) && /2,175/.test(asking.sheet), 'and it reaches the order sheet the shop reads', asking.sheet);
 ok(asking.cleared === '', 'the box is empty again for the next line');
 
+/* ---------- writing an order TO a supplier searches that supplier's goods ---------- */
+const poSearch = await pg.evaluate(() => {
+  const sid = S.suppliers[0].id;
+  go('orders'); newPO(sid);
+  const theirs = supplierItems(sid);
+  const q = 'c';
+  poDraft.q = q; poDraft.wide = false; render();
+  const rows = () => [...document.querySelectorAll('#main .sug [data-act="poAdd"]')].map(el => +el.dataset.id);
+  const narrow = rows();
+  const everyMatch = S.products.filter(p => p.name.toLowerCase().includes(q) || String(p.code||'').toLowerCase().includes(q)).length;
+  poDraft.wide = true; render();
+  const wide = rows();
+  const marked = document.querySelectorAll('#main .sug .tag').length;
+  poDraft = null; render();
+  return { narrow: narrow.length, allTheirs: narrow.every(id => theirs.has(id)),
+    everyMatch, wide: wide.length, marked, theirs: theirs.size };
+});
+ok(poSearch.narrow > 0 && poSearch.allTheirs,
+   'the order search offers only that supplier’s goods', JSON.stringify(poSearch));
+ok(poSearch.everyMatch > poSearch.narrow,
+   'where the whole shop would have offered more', String(poSearch.everyMatch) + ' vs ' + poSearch.narrow);
+ok(poSearch.wide > poSearch.narrow && poSearch.marked > 0,
+   'and widening it reaches the rest, marked as not usually from them', JSON.stringify({wide:poSearch.wide,marked:poSearch.marked}));
+
 ok(errs.length === 0, 'no script errors through any of it', errs.join(' | '));
 
 await b.close();

@@ -7676,7 +7676,7 @@ const maskP=p=>p?p.slice(0,3)+' '+p.slice(3,-3).replace(/./g,'•')+' '+p.slice(
 let poDraft=null, ordTab='in';
 window.poState=()=>poDraft; // exposed for tests
 function newPO(sid){
-  poDraft={sid:sid||S.suppliers[0].id,lines:[],note:'',want:D(today),q:'',pid:null,qty:''};
+  poDraft={sid:sid||S.suppliers[0].id,lines:[],note:'',want:D(today),q:'',pid:null,qty:'',wide:false};
   ordTab='out'; render();
 }
 /* An order is built the way a bill is: find the item, say how many, it drops onto the list.
@@ -7800,7 +7800,11 @@ function ordersOut(){
   const list=S.orders.filter(o=>o.dir==='OUT').sort((a,b)=>b.no.localeCompare(a.no));
   if(poDraft){
     const d=poDraft, s=SU(d.sid);
-    const hits=d.q.trim()?S.products.filter(p=>p.name.toLowerCase().includes(d.q.toLowerCase())||p.code.toLowerCase().includes(d.q.toLowerCase())).slice(0,6):[];
+    const theirs=supplierItems(d.sid);
+    const match=(p)=>p.name.toLowerCase().includes(d.q.toLowerCase())||String(p.code||'').toLowerCase().includes(d.q.toLowerCase());
+    const mine=d.q.trim()?S.products.filter(p=>theirs.has(p.id)&&match(p)):[];
+    const rest=d.q.trim()?S.products.filter(p=>!theirs.has(p.id)&&match(p)):[];
+    const hits=(d.wide?mine.concat(rest):mine).slice(0,6);
     const picked=d.pid?P(d.pid):null;
     const est=d.lines.reduce((a,l)=>a+l.qty*(+l.est||0),0);
     return `<div class="card" style="margin-bottom:12px">
@@ -7810,10 +7814,13 @@ function ordersOut(){
        <div class="f"><label>Wanted by</label><input id="poWant" type="date" value="${d.want}"></div>
        <div class="f"><label>Note for the rep</label><input id="poNote" value="${d.note}" placeholder="e.g. send with the Thursday lorry"></div>
       </div>
-      <label>Add an item we carry</label>
+      <label>Add an item ${SU(d.sid).name.split(/[–(]/)[0].trim()} supplies</label>
       <div style="position:relative"><input id="poQ" value="${d.q}" placeholder="Search the product list…" autocomplete="off">
-       ${hits.length&&!picked?`<div class="sug">${hits.map(p=>`<div data-act="poAdd" data-id="${p.id}"><span>${p.name} <span class="muted">${p.code}</span></span>
+       ${hits.length&&!picked?`<div class="sug">${hits.map(p=>`<div data-act="poAdd" data-id="${p.id}"><span>${p.name} <span class="muted">${p.code}</span>${theirs.has(p.id)?'':' <span class="tag warn">not usually from them</span>'}</span>
         <span class="muted">${fq(p.stock)} ${p.unit} left${can('cost')?' · last cost '+fmt(p.cost):''}</span></div>`).join('')}</div>`:''}</div>
+      ${d.q.trim()&&!picked?`<div class="muted" style="margin-top:4px">
+       ${mine.length?`${mine.length} of theirs`:`Nothing of theirs matches "${noteEsc(d.q)}"`}${rest.length?` · ${rest.length} more in the shop`:''}
+       ${rest.length?`<button class="btn ghost sm" data-act="poWide" style="margin-left:6px">${d.wide?'Only theirs':'Look through every item'}</button>`:''}</div>`:''}
       ${picked?`<div class="pickrow">
         <div><b>${picked.name}</b><div class="muted">${picked.code} · ${fq(picked.stock)} ${picked.unit} in the shop${can('cost')?' · last cost '+fmt(picked.cost):''}</div></div>
         <input id="poQty" type="number" step="any" min="0" value="${d.qty}" placeholder="How many?" autocomplete="off">
@@ -9416,7 +9423,7 @@ function renderNow(){
       qty.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); poPut() }
         if(e.key==='Escape'){ e.preventDefault(); poDrop() } };
       if(document.activeElement===document.body) qty.focus() }
-    const sup=$('#poSup'); if(sup) sup.onchange=e=>{poDraft.sid=+e.target.value;render()};
+    const sup=$('#poSup'); if(sup) sup.onchange=e=>{poDraft.sid=+e.target.value;poDraft.wide=false;render()};
     const want=$('#poWant'); if(want) want.onchange=e=>{poDraft.want=e.target.value};
     const note=$('#poNote'); if(note) note.oninput=e=>{poDraft.note=e.target.value};
     b('[data-pol]',el=>{poDraft.lines[+el.dataset.pol].desc=el.value});
@@ -21817,6 +21824,7 @@ document.addEventListener('click',e=>{
     ordTab:()=>{ordTab=a.dataset.t; if(ordTab!=='out')poDraft=null; render()},
     poNew:()=>newPO(), poFree:()=>{poAddFree()}, poAdd:()=>poAddKnown(+a.dataset.id),
     poPut:()=>poPut(), poDrop:()=>poDrop(),
+    poWide:()=>{ poDraft.wide=!poDraft.wide; render(); const q=$('#poQ'); if(q){ q.focus(); q.setSelectionRange(q.value.length,q.value.length) } },
     poDel:()=>{poDraft.lines.splice(+a.dataset.i,1);render()},
     poCancel:()=>{poDraft=null;render()}, poSend:()=>sendPO(),
     poPrint:()=>poPrint(a.dataset.no), poReceive:()=>poReceive(a.dataset.no),
