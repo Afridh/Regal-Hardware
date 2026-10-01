@@ -89,18 +89,79 @@ ok(page.shut>0,'Sundays and holidays are marked shut',String(page.shut));
 
 // the payment window says what the chosen day carries
 const win=await pg.evaluate(()=>{
-  const s=S.suppliers.find(x=>partyBal('S',x.id)>0)||S.suppliers[0];
+  // the ceiling is dropped for this check so whatever is owed is more than one cheque's worth,
+  // rather than the check depending on how much the demo books happen to owe by now
+  const s=S.suppliers.sort((a,b)=>partyBal('S',b.id)-partyBal('S',a.id))[0];
+  const owed=partyBal('S',s.id);
+  CFG.plan.chequeMax=Math.max(1000,Math.floor(owed/3/1000)*1000);
   supPayModal(s.id);
   const box=document.querySelector('.modal .box');
+  box.querySelector('#spGo').click();      // the day buttons live on the second stage
   const html=box.innerHTML;
-  const out={ dates:box.querySelectorAll('[data-k="date"]').length,
-    tags:box.querySelectorAll('[data-k="date"] ~ div .tag, [data-k="date"]').length,
-    nextFree:box.querySelectorAll('[data-free]').length,
+  const out={ dates:box.querySelectorAll('[data-day]').length,
+    tags:box.querySelectorAll('.sp-day').length,
+    nextFree:box.querySelectorAll('[data-day]').length,
     saysSomething:/cheque|Sunday|nothing on that day/.test(html) };
   closeModals();
   return out;
 });
 ok(win.nextFree>0&&win.saysSomething,'the payment window says what each day already carries, with a way past it',JSON.stringify(win));
+
+// ---- paying a supplier, the way the shop does it: the bills, then how it is paid ----
+const flow=await pg.evaluate(()=>{
+  S.cheques=(S.cheques||[]).filter(c=>c.dir!=='ISSUED'); CFG.plan={...PLAN_DEF};
+  // the ceiling is dropped for this one so whatever is owed is more than a single cheque's worth,
+  // rather than the check depending on how much the demo books happen to owe by the time it runs
+  const s=S.suppliers.slice().sort((a,b)=>partyBal('S',b.id)-partyBal('S',a.id))[0];
+  const owed=partyBal('S',s.id);
+  CFG.plan.chequeMax=Math.max(1000,Math.floor(owed/3/1000)*1000);
+  supPayModal(s.id);
+  const box=document.querySelector('.modal .box');
+  const one={ step:(box.querySelector('.sp-steps .on')||{}).textContent||'',
+    bills:box.querySelectorAll('[data-sbill]').length,
+    check:box.querySelectorAll('[data-sadj]').length,
+    noLines:box.querySelectorAll('[data-k="method"]').length };
+  box.querySelector('#spGo').click();
+  const two={ step:(box.querySelector('.sp-steps .on')||{}).textContent||'',
+    lines:box.querySelectorAll('[data-k="method"]').length,
+    dayBtns:box.querySelectorAll('[data-day]').length,
+    back:!!box.querySelector('#spBack2') };
+  box.querySelector('#spSplit').click();
+  const cut={ lines:box.querySelectorAll('[data-k="method"]').length,
+    amounts:[...box.querySelectorAll('[data-k="amount"]')].map(i=>+i.value),
+    tot:(box.querySelector('#spTot')||{}).textContent||'' };
+  box.querySelector('#spBack2').click();
+  const backTo=(box.querySelector('.sp-steps .on')||{}).textContent||'';
+  const cap=CFG.plan.chequeMax;
+  closeModals(); CFG.plan={...PLAN_DEF};
+  return { one, two, cut, backTo, owed, cap };
+});
+ok(/The bills/.test(flow.one.step)&&flow.one.bills>0&&flow.one.check>0&&flow.one.noLines===0,
+   'it opens on the bills, with a way to check each one and no cheques in sight',JSON.stringify(flow.one));
+ok(/How it is paid/.test(flow.two.step)&&flow.two.lines===1&&flow.two.dayBtns===1&&flow.two.back,
+   'going on gives one line for the whole of it, its day on a button',JSON.stringify(flow.two));
+ok(flow.cut.lines>1&&/of /.test(flow.cut.tot),'cutting it up gives a line each, and says how much of the total is covered',JSON.stringify(flow.cut));
+ok(/The bills/.test(flow.backTo),'and you can go back to the bills',flow.backTo);
+
+// ---- the calendar: the recommendation, the full days, the shut ones ----
+const cal=await pg.evaluate(()=>{
+  const d=D(today), at=(n,amt)=>{ const t=new Date(d+'T00:00:00'); t.setDate(t.getDate()+n);
+    S.cheques.push({dir:'ISSUED',no:'C'+n,bankId:1,bank:'HNB',date:D(t),payee:'Z',amount:amt,status:'ISSUED',party:'Z'}) };
+  at(0,600000); at(1,600000);
+  let got=null; diaryPickModal(d,100000,(ds)=>{got=ds});
+  const box=document.querySelector('.modal .box');
+  const best=[...box.querySelectorAll('td.best')].map(t=>t.querySelector('b').textContent);
+  const out={ best, btn:box.querySelector('#dpBest').textContent.trim(),
+    full:[...box.querySelectorAll('td.full')].map(t=>t.querySelector('b').textContent),
+    shutClickable:[...box.querySelectorAll('td.shut')].filter(t=>t.hasAttribute('data-dp')).length,
+    expect:diaryNextFree(d,null,100000) };
+  const pick=box.querySelector('td[data-dp]'); if(pick) pick.click();
+  out.picked=got; closeModals(); return out;
+});
+ok(cal.best.length===1&&cal.btn.includes(cal.expect),'the calendar marks one recommended day and offers it',JSON.stringify({best:cal.best,btn:cal.btn}));
+ok(cal.full.length===2,'the days already at the ceiling are marked',JSON.stringify(cal.full));
+ok(cal.shutClickable===0,'a Sunday or a holiday cannot be picked',String(cal.shutClickable));
+ok(!!cal.picked,'clicking a day hands it back',String(cal.picked));
 
 ok(errs.length===0,'no script errors',errs.join(' | '));
 await b.close();

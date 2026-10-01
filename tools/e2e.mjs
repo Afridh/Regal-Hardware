@@ -180,7 +180,8 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   const last = [...d.querySelectorAll('.cu-tbl.stmt tr')].pop();
   ok('S: statement running balance ends at what we owe', !!last && last.textContent.replace(/[^\d.]/g, '').endsWith(w.partyBal('S', 1).toFixed(2).replace(/[^\d.]/g, '')));
   ok('S: ledger billed − paid = balance', Math.abs(w.supLedger(1).reduce((a, r) => a + r.billed - r.paid, 0) - w.partyBal('S', 1)) < 0.01);
-  keyDoc('F7'); await sleep(30); ok('S: F7 opens Pay supplier', !!d.querySelector('.modal #pl') && /Pay /.test(d.querySelector('.modal h2').textContent)); w.closeModals();
+  // the window opens on the bills now, and the cheque lines come on the stage after it
+  keyDoc('F7'); await sleep(30); ok('S: F7 opens Pay supplier', !!d.querySelector('.modal #spBody') && !!d.querySelector('.modal .sp-steps') && /Pay /.test(d.querySelector('.modal h2').textContent)); w.closeModals();
   keyDoc('F8'); await sleep(30); ok('S: F8 prints the statement with a running balance', /SUPPLIER STATEMENT/.test(d.querySelector('.modal').innerHTML) && /Balance brought forward|Particulars/.test(d.querySelector('.modal').innerHTML)); w.closeModals();
   keyDoc('n', { ctrlKey: true }); await sleep(30);
   ok('S: Ctrl+N opens the new supplier form', !!d.getElementById('smName'));

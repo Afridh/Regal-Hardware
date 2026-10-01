@@ -987,6 +987,41 @@ tr.off td{opacity:.55}
 .circle-row td{transition:background .16s}
 .circle-row:hover td{background:var(--tint-yellow)}
 @media (prefers-reduced-motion:reduce){.daypane,.daytile{animation:none}.circle-row td{transition:none}}
+/* the two stages of paying a supplier */
+.sp-steps{display:flex;gap:8px;margin:10px 0 4px;flex-wrap:wrap}
+.sp-steps span{font-size:11.5px;font-weight:700;letter-spacing:.03em;color:var(--steel);
+  padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--panel)}
+.sp-steps span.on{color:var(--ink);border-color:var(--ink);background:var(--tint-yellow)}
+.sp-steps span.done{color:var(--ink);cursor:pointer}
+.sp-steps span.done:hover{border-color:var(--ink)}
+.sp-day{font-variant-numeric:tabular-nums}
+
+/* the day picked off a calendar, not typed into a box */
+.dp-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.dp-head b{font-family:Archivo,sans-serif;font-size:15px}
+.dpcal{width:100%;border-collapse:collapse;table-layout:fixed}
+.dpcal th{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--steel);
+  padding:3px 4px;text-align:left}
+.dpcal td{border:1px solid var(--line);height:56px;vertical-align:top;padding:3px 5px;width:14.28%}
+.dpcal td.dp{cursor:pointer;transition:outline-color .1s}
+.dpcal td.dp:hover{outline:2px solid var(--ink);outline-offset:-2px}
+.dpcal td.dp b{font-family:Archivo,sans-serif;font-size:13px;display:block}
+.dpcal td.dp i{display:block;font-style:normal;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.dpcal td.dp i.sh{font-weight:500;color:var(--steel);font-style:italic}
+.dpcal td.dp u{display:block;text-decoration:none;font-size:9.5px;color:var(--steel)}
+.dpcal td.dp.some{background:var(--tint-green)}
+.dpcal td.dp.heavy{background:var(--tint-yellow)}
+.dpcal td.dp.full{background:var(--tint-rust)}
+.dpcal td.dp.shut{background:repeating-linear-gradient(135deg,var(--line2) 0 6px,transparent 6px 12px);cursor:not-allowed}
+.dpcal td.dp.past{opacity:.5}
+.dpcal td.dp.on{outline:2px solid var(--chip-yellow);outline-offset:-2px}
+.dpcal td.dp.best{box-shadow:inset 0 0 0 2px var(--chip-green)}
+.dpcal td.dp-x{border:0;background:none}
+.dp-k{display:inline-block;width:11px;height:11px;border:1px solid var(--line);border-radius:3px;
+  vertical-align:-1px;margin:0 2px 0 8px}
+.dp-k.some{background:var(--tint-green)} .dp-k.heavy{background:var(--tint-yellow)}
+.dp-k.full{background:var(--tint-rust)}
+.dp-k.shut{background:repeating-linear-gradient(135deg,var(--line2) 0 4px,transparent 4px 8px)}
 .diary{width:100%;border-collapse:collapse;table-layout:fixed;min-width:860px}
 .diary th{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--steel);
   padding:4px 6px;text-align:left;border-bottom:1.5px solid var(--line)}
@@ -18140,102 +18175,230 @@ function supModal(id,preset){
 }
 
 /* paying a supplier — cash, transfer, or split over any number of cheques */
+/* ---- picking the day off the book ----
+   A date box tells you nothing about the day it is offering. This is the diary page as a
+   calendar: every day carries what is already dated on it, shaded by how heavy it is, with
+   Sundays and holidays hatched out and the first day that can take this cheque marked. You
+   pick a day by looking at it, which is what the desk diary was always for. */
+let dpMonth = null;
+function diaryPickModal(current, amount, onPick){
+  const map = diaryMap(), cap = diaryCap(), amt = +amount || 0;
+  dpMonth = (current || D(today)).slice(0, 7);
+  const best = diaryNextFree(D(today), map, amt);
+  const m = modal(`<h2>Which day?</h2>
+   <div class="muted" id="dpSub"></div>
+   <div id="dpCal" style="margin-top:10px"></div>
+   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap">
+    <div class="muted" id="dpKey"></div>
+    <div style="display:flex;gap:8px">
+     <button class="btn ghost" data-act="closeModal">Never mind</button>
+     <button class="btn tape" id="dpBest">Use ${best}</button></div></div>`);
+
+  const draw = () => {
+    const [y, mo] = dpMonth.split('-').map(Number);
+    const first = `${dpMonth}-01`;
+    const lead = (new Date(first + 'T00:00:00').getDay() + 6) % 7;      // Monday first, as in the book
+    const days = new Date(y, mo, 0).getDate();
+    const cells = [];
+    for(let i = 0; i < lead; i++) cells.push(null);
+    for(let d = 1; d <= days; d++) cells.push(`${dpMonth}-${String(d).padStart(2,'0')}`);
+    while(cells.length % 7) cells.push(null);
+
+    const monthTotal = cells.filter(Boolean).reduce((a, ds) => a + diaryTotal(ds, map), 0);
+    m.querySelector('#dpSub').innerHTML = `Putting ${fmt(amt)} somewhere. ${MONTHS[mo-1]} ${y} already carries
+      <b>${fmt(monthTotal)}</b> of cheques. A day shaded red is at the ${fmt(cap)} you allow one day.`;
+
+    const cell = (ds) => {
+      if(!ds) return '<td class="dp-x"></td>';
+      const t = diaryTotal(ds, map), list = diaryDay(ds, map), w = diaryWeight(ds, map);
+      const hol = holidayOf(ds), past = ds < D(today), shut = w === 'shut';
+      const title = hol || (diaryIsSunday(ds) ? 'Sunday' : (list.map(x => x.who + ' ' + fmt(x.amount)).join(' · ') || 'nothing on that day'));
+      return `<td class="dp ${w} ${ds === current ? 'on' : ''} ${ds === best ? 'best' : ''} ${past ? 'past' : ''}"
+         ${shut ? '' : `data-dp="${ds}"`} title="${noteEsc(title)}">
+        <b>${+ds.slice(8,10)}</b>
+        ${t ? `<i>${fmt(t)}</i><u>${list.length} cheque${list.length===1?'':'s'}</u>`
+            : shut ? `<i class="sh">${hol ? noteEsc(hol) : 'Sunday'}</i>` : ''}
+       </td>`;
+    };
+
+    let rows = '';
+    for(let i = 0; i < cells.length; i += 7) rows += `<tr>${cells.slice(i, i+7).map(cell).join('')}</tr>`;
+
+    m.querySelector('#dpCal').innerHTML = `
+     <div class="dp-head">
+      <button class="btn ghost sm" id="dpPrev">◀</button>
+      <b>${MONTHS[mo-1]} ${y}</b>
+      <button class="btn ghost sm" id="dpNext">▶</button></div>
+     <table class="dpcal"><tr>${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<th>${d}</th>`).join('')}</tr>${rows}</table>`;
+
+    m.querySelector('#dpKey').innerHTML = `<span class="dp-k free"></span> free
+      <span class="dp-k some"></span> some on it
+      <span class="dp-k heavy"></span> getting heavy
+      <span class="dp-k full"></span> at the ceiling
+      <span class="dp-k shut"></span> shut`;
+
+    m.querySelector('#dpPrev').onclick = () => { const d = new Date(y, mo-2, 1); dpMonth = D(d).slice(0,7); draw() };
+    m.querySelector('#dpNext').onclick = () => { const d = new Date(y, mo, 1); dpMonth = D(d).slice(0,7); draw() };
+    m.querySelectorAll('[data-dp]').forEach(td => td.onclick = () => { onPick(td.dataset.dp); m.remove() });
+  };
+  m.querySelector('#dpBest').onclick = () => { onPick(best); m.remove() };
+  draw();
+}
+
+/* ====================== PAYING A SUPPLIER ======================
+   The order the shop does it in, and so the order the window does it in:
+
+     1. Which of their bills this payment is for.
+     2. Whether those bills are right — anything short delivered, a price agreed afterwards,
+        a discount they owe. Nothing should be paid against a figure nobody has looked at.
+     3. Then, and only then, how it is paid: the method, the cheques it is cut into — each
+        one its own amount, they need not be equal — and the day each is dated, picked off
+        the diary so a day already loaded is seen before it is chosen.
+
+   The two stages are kept apart on purpose. Checking a bill while deciding cheque dates is
+   how a short delivery ends up paid for in full. */
 function supPayModal(id){
   const s=SU(id), owe=partyBal('S',id);
-  const open=S.purchases.filter(p=>p.supplierId===id&&p.paid<p.total).sort((a,b)=>a.date.localeCompare(b.date));
-  const m=modal(`<h2>Pay ${s.name}</h2>
-   <div class="muted">Outstanding ${fmt(owe)} across ${open.length} bill${open.length===1?'':'s'} · usually ${s.days} days${supTermList(s).length?', '+supTermList(s).map(t=>t.cat+' '+t.days+'d').join(', '):''}</div>
-   <div id="supBills"></div>
-   <label style="margin-top:10px">How are you paying?</label>
-   <table id="pl"></table>
-   <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
-    <button class="btn ghost sm" id="addl">Add another line</button>
-    <button class="btn ghost sm" id="splitl">Cut it into cheques under ${fmt(+planCfg().chequeMax||100000)}</button></div>
-   <div id="plWarn"></div>
-   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px;flex-wrap:wrap">
-    <b id="ptot"></b>
-    <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button>
-     <button class="btn tape" id="pok">Save and print the voucher</button></div></div>`);
-  /* The whole of what is owed, on one cheque line, on the first day that can take it. Press
-     "cut it into cheques" and it becomes the row of them; tick particular bills first and it
-     becomes only those. Either way the figure on screen when the window opens is a true one. */
-  const bank0=(S.banks[0]||{}).id||1;
-  const lines=[{method:'CHEQUE',bank:bank0,date:diaryNextFree(D(today),null,Math.min(owe,+planCfg().chequeMax||100000)),
-                amount:+Math.max(0,owe).toFixed(2)}];
   const sel=new Set();
+  const bank0=(S.banks[0]||{}).id||1;
+  let lines=[];
   const openBills=()=>S.purchases.filter(p=>p.supplierId===id&&p.total-p.paid>0.005).sort((a,b)=>a.date.localeCompare(b.date));
+  const picked=()=>{ const b=openBills(); return sel.size?b.filter(p=>sel.has(p.no)):b };
+  const total=()=>+picked().reduce((a,p)=>a+(p.total-p.paid),0).toFixed(2);
+
+  const m=modal('<div id="spBody"></div>');
+  const $=(x)=>m.querySelector(x);
+
+  /* ---------- one: the bills, and whether they are right ---------- */
   const drawBills=()=>{
-    const bills=openBills();
-    m.querySelector('#supBills').innerHTML=bills.length?`
-      <label style="margin-top:10px">Which of their bills is this paying? Leave the ticks empty to settle the oldest first.</label>
-      <table><tr><th></th><th>Their invoice</th><th>GRN</th><th>Date</th><th class="n">Billed</th><th class="n">Owing</th><th></th></tr>
-      ${bills.map(p=>`<tr><td><input type="checkbox" data-sbill="${p.no}" ${sel.has(p.no)?'checked':''} style="width:auto"></td>
-        <td>${p.supInv}${(p.adjustments||[]).length?`<div class="muted">${p.adjustments.map(a=>ADJ_REASONS.find(r=>r[0]===a.why)[1].toLowerCase()+' '+fmt(a.amount)).join(', ')}</div>`:''}</td>
-        <td>${p.no}</td><td>${p.date}</td><td class="n muted">${fmt(p.total)}</td><td class="n"><b>${fmt(p.total-p.paid)}</b></td>
-        <td>${can('adjustInvoice')?`<button class="btn ghost sm" data-sadj="${p.no}">Change it</button>`:''}</td></tr>`).join('')}</table>`
-      :'<div class="muted" style="margin-top:10px">Nothing outstanding with them.</div>';
+    const bills=openBills(), t=total();
+    $('#spBody').innerHTML=`<h2>Pay ${s.name}</h2>
+     <div class="muted">Outstanding ${fmt(owe)} across ${bills.length} bill${bills.length===1?'':'s'} ·
+       usually ${s.days} days${supTermList(s).length?', '+supTermList(s).map(x=>x.cat+' '+x.days+'d').join(', '):''}</div>
+     <div class="sp-steps"><span class="on">1 · The bills, and whether they are right</span><span>2 · How it is paid</span></div>
+     ${bills.length?`
+      <div class="muted" style="margin:8px 0">Tick what this payment is for — leave them all empty to settle the
+       oldest first. Look at each one before you go on: anything short delivered, a price agreed afterwards or a
+       discount they owe comes off here, not out of the cheque.</div>
+      <table><tr><th></th><th>Their invoice</th><th>GRN</th><th>Date</th><th class="n">Billed</th><th class="n">Already off</th><th class="n">Owing</th><th></th></tr>
+      ${bills.map(p=>{
+        const off=(p.adjustments||[]).reduce((a,x)=>a+(+x.amount||0),0);
+        const late=deAgo(p.date)-(+s.days||0);
+        return `<tr class="${sel.has(p.no)?'on':''}">
+        <td><input type="checkbox" data-sbill="${p.no}" ${sel.has(p.no)?'checked':''} style="width:auto"></td>
+        <td><b>${p.supInv||'—'}</b>${p.onNote&&!p.invoiced?'<div class="muted">on their note, no invoice yet</div>':''}</td>
+        <td>${p.no}</td>
+        <td>${p.date}${late>0?`<div class="muted">${late} day${late===1?'':'s'} past their terms</div>`:''}</td>
+        <td class="n muted">${fmt(p.total)}</td>
+        <td class="n">${off?`<span class="tag ok">${fmt(off)}</span><div class="muted">${(p.adjustments||[]).map(a=>((ADJ_REASONS.find(r=>r[0]===a.why)||[0,a.why])[1]).toLowerCase()).join(', ')}</div>`:'<span class="muted">—</span>'}</td>
+        <td class="n"><b>${fmt(p.total-p.paid)}</b></td>
+        <td>${can('adjustInvoice')?`<button class="btn ghost sm" data-sadj="${p.no}">Check it</button>`:''}</td></tr>`}).join('')}</table>`
+      :'<div class="muted" style="margin:10px 0">Nothing outstanding with them.</div>'}
+     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px;flex-wrap:wrap">
+      <b>${sel.size?`${sel.size} bill${sel.size===1?'':'s'} ticked · `:'Settling the oldest first · '}paying ${fmt(t)}</b>
+      <div style="display:flex;gap:8px">
+       <button class="btn ghost" data-act="closeModal">Cancel</button>
+       <button class="btn tape" id="spGo" ${t>0.005?'':'disabled'}>These are right — on to the payment</button></div></div>`;
+
     m.querySelectorAll('[data-sbill]').forEach(cb=>cb.onchange=()=>{
-      cb.checked?sel.add(cb.dataset.sbill):sel.delete(cb.dataset.sbill);
-      const tot=[...sel].reduce((a,no)=>{const p=S.purchases.find(x=>x.no===no);return a+(p?p.total-p.paid:0)},0);
-      if(tot>0&&lines.length){ lines[0].amount=+tot.toFixed(2); lines.slice(1).forEach(l=>l.amount=0) }
-      drawBills(); draw() });
-    m.querySelectorAll('[data-sadj]').forEach(b=>b.onclick=()=>adjustPurchaseModal(b.dataset.sadj,()=>{sel.delete(b.dataset.sadj);drawBills();draw()}));
+      cb.checked?sel.add(cb.dataset.sbill):sel.delete(cb.dataset.sbill); drawBills() });
+    m.querySelectorAll('[data-sadj]').forEach(b=>b.onclick=()=>adjustPurchaseModal(b.dataset.sadj,()=>{
+      sel.delete(b.dataset.sadj); drawBills() }));     // a bill settled by the change drops out of its own accord
+    const go=$('#spGo'); if(go) go.onclick=()=>{
+      const t=total();
+      lines=[{method:'CHEQUE',bank:bank0,amount:t,
+              date:diaryNextFree(D(today),null,Math.min(t,+planCfg().chequeMax||100000))}];
+      drawPay();
+    };
   };
-  const draw=()=>{
-    m.querySelector('#pl').innerHTML=`<tr><th>Method</th><th>Account</th><th>Cheque dated</th><th class="n">Amount</th><th></th></tr>`+
-      lines.map((l,i)=>`<tr>
-       <td><select data-k="method" data-i="${i}">${['CHEQUE','BANK','CASH'].map(x=>`<option ${l.method===x?'selected':''}>${x}</option>`).join('')}</select></td>
-       <td><select data-k="bank" data-i="${i}" ${l.method==='CASH'?'disabled':''}>${S.banks.map(b=>`<option value="${b.id}" ${b.id===l.bank?'selected':''}>${b.name}</option>`).join('')}</select></td>
-       <td><input type="date" data-k="date" data-i="${i}" value="${l.date}" ${l.method!=='CHEQUE'?'disabled':''}>
-        ${l.method==='CHEQUE'?`<div class="muted" style="font-size:11px;margin-top:3px;display:flex;gap:5px;align-items:center;flex-wrap:wrap">
-          ${diarySays(l.date,l.amount)}
-          <button type="button" class="btn ghost sm" data-free="${i}" style="padding:1px 7px">Next free day</button></div>`:''}</td>
-       <td><input type="number" data-k="amount" data-i="${i}" value="${l.amount}" style="text-align:right"></td>
-       <td><button class="btn ghost sm" data-rm="${i}">✕</button></td></tr>`).join('');
-    const tot=lines.reduce((a,l)=>a+l.amount,0);
-    m.querySelector('#ptot').innerHTML=`Paying ${fmt(tot)}${tot>owe+0.005?' <span class="tag warn">more than is owed</span>':tot<owe?` · ${fmt(owe-tot)} left owing`:''}`;
+
+  /* ---------- two: how it is paid ---------- */
+  const drawPay=()=>{
+    const t=total(), cap=+planCfg().chequeMax||100000;
+    $('#spBody').innerHTML=`<h2>Pay ${s.name} ${fmt(t)}</h2>
+     <div class="muted">${sel.size?`${sel.size} bill${sel.size===1?'':'s'}`:'the oldest bills first'} ·
+       ${picked().map(p=>p.supInv||p.no).slice(0,6).join(', ')}${picked().length>6?' …':''}</div>
+     <div class="sp-steps"><span class="done" id="spBack">1 · The bills, and whether they are right</span><span class="on">2 · How it is paid</span></div>
+     <div style="display:flex;gap:8px;margin:10px 0;flex-wrap:wrap">
+      <button class="btn ghost sm" id="spSplit">Cut it into cheques under ${fmt(cap)}</button>
+      <button class="btn ghost sm" id="spAdd">Add another line</button>
+      <span class="muted" style="align-self:center">Each cheque keeps its own amount — they need not be equal.</span></div>
+     <table id="spLines"></table>
+     <div id="spWarn"></div>
+     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px;flex-wrap:wrap">
+      <b id="spTot"></b>
+      <div style="display:flex;gap:8px">
+       <button class="btn ghost" id="spBack2">Back to the bills</button>
+       <button class="btn tape" id="spOk">Save and print the voucher</button></div></div>`;
+    drawLines();
+    $('#spBack').onclick=$('#spBack2').onclick=()=>drawBills();
+    $('#spSplit').onclick=()=>{
+      if(!(t>0)) return toast('Nothing to cut up');
+      const from=(lines.find(l=>l.method==='CHEQUE')||{}).date||D(today);
+      const plain=planCheques(t,from), split=planChequesOnDays(t,from);
+      lines=split.map(x=>({method:'CHEQUE',bank:bank0,date:x.date,amount:x.amount}));
+      drawLines();
+      const moved=split.filter((x,i)=>plain[i]&&x.date!==plain[i].date).length;
+      toast(`${split.length} cheque${split.length===1?'':'s'}${moved?` · ${moved} moved off a full or shut day`:''}`,'ok');
+    };
+    $('#spAdd').onclick=()=>{
+      const cut=lines.reduce((a,l)=>a+(+l.amount||0),0);
+      lines.push({method:'CHEQUE',bank:bank0,date:diaryNextFree(D(today),null,0),amount:+Math.max(0,t-cut).toFixed(2)});
+      drawLines();
+    };
+    $('#spOk').onclick=()=>{
+      const ls=lines.filter(l=>+l.amount>0); if(!ls.length) return toast('Nothing to pay');
+      const sum=+ls.reduce((a,l)=>a+(+l.amount||0),0).toFixed(2);
+      if(sum>t+0.005) return toast(`That is ${fmt(sum-t)} more than the bills come to`);
+      const pv=paySupplier({supplierId:id,lines:ls,against:[...sel]});
+      const chq=ls.filter(l=>l.method==='CHEQUE').length;
+      m.remove(); render(); supplierVoucher(pv);
+      toast(`${pv.no} saved · ${chq} cheque${chq===1?'':'s'} ready to print`);
+    };
+  };
+
+  const drawLines=()=>{
+    const t=total();
+    $('#spLines').innerHTML=`<tr><th>Method</th><th>Account</th><th>Dated</th><th class="n">Amount</th><th></th></tr>`+
+     lines.map((l,i)=>`<tr>
+      <td><select data-k="method" data-i="${i}">${['CHEQUE','BANK','CASH'].map(x=>`<option ${l.method===x?'selected':''}>${x}</option>`).join('')}</select></td>
+      <td><select data-k="bank" data-i="${i}" ${l.method==='CASH'?'disabled':''}>${S.banks.map(b=>`<option value="${b.id}" ${b.id===l.bank?'selected':''}>${b.name}</option>`).join('')}</select></td>
+      <td>${l.method==='CHEQUE'?`<button type="button" class="btn ghost sm sp-day" data-day="${i}">${l.date} ▾</button>
+        <div style="margin-top:3px">${diarySays(l.date,l.amount)}</div>`:'<span class="muted">—</span>'}</td>
+      <td class="n"><input type="number" step="any" data-k="amount" data-i="${i}" value="${l.amount}" style="width:120px;text-align:right"></td>
+      <td><button class="btn ghost sm" data-rm="${i}">✕</button></td></tr>`).join('');
+    const cut=+lines.reduce((a,l)=>a+(+l.amount||0),0).toFixed(2), left=+(t-cut).toFixed(2);
+    $('#spTot').innerHTML=`${lines.length} line${lines.length===1?'':'s'} · ${fmt(cut)} of ${fmt(t)}`+
+      (Math.abs(left)<0.005?' <span class="tag ok">all of it</span>'
+       :left>0?` <span class="tag warn">${fmt(left)} not on a cheque yet</span>`
+              :` <span class="tag bad">${fmt(-left)} more than the bills</span>`);
+    m.querySelectorAll('[data-k]').forEach(el=>el.onchange=()=>{
+      const l=lines[+el.dataset.i];
+      l[el.dataset.k]=(el.dataset.k==='amount'||el.dataset.k==='bank')?+el.value:el.value;
+      drawLines() });
+    m.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ lines.splice(+b.dataset.rm,1); drawLines() });
+    m.querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>{ const l=lines[+b.dataset.day];
+      diaryPickModal(l.date,l.amount,(ds)=>{ l.date=ds; drawLines() }) });
     drawWarn();
-    m.querySelectorAll('[data-k]').forEach(el=>el.onchange=()=>{const l=lines[+el.dataset.i];
-      l[el.dataset.k]=(el.dataset.k==='amount'||el.dataset.k==='bank')?+el.value:el.value; draw()});
-    m.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.rm,1);draw()});
-    // the finger running down the page, looking for a day that can take it
-    m.querySelectorAll('[data-free]').forEach(b=>b.onclick=()=>{ const l=lines[+b.dataset.free];
-      const ds=diaryNextFree(addDays(l.date||D(today),1),null,l.amount);
-      if(ds===l.date) return toast('Every day from here is full or shut');
-      l.date=ds; draw(); toast('Moved to '+ds) });
   };
-  // what these lines would do to the plan, and whether any cheque is over the ceiling
+
+  /* what these cheques would do to the plan, and whether any is over a ceiling */
   const drawWarn=()=>{
-    const box=m.querySelector('#plWarn'); if(!box) return;
+    const box=$('#spWarn'); if(!box) return;
     const cfg=planCfg(), cap=+cfg.chequeMax||100000, f=+cfg.float||0;
-    const big=lines.filter(l=>l.method==='CHEQUE'&&l.amount>cap+0.005);
-    const L=cashLadder(lines.filter(l=>l.amount>0).map(l=>({date:(l.method==='CHEQUE'&&l.date)||D(today),amount:l.amount,what:'This payment'})));
+    const big=lines.filter(l=>l.method==='CHEQUE'&&+l.amount>cap+0.005);
+    const heavy=lines.filter(l=>l.method==='CHEQUE'&&diaryWeight(l.date)==='full');
+    const L=cashLadder(lines.filter(l=>+l.amount>0).map(l=>({date:(l.method==='CHEQUE'&&l.date)||D(today),amount:+l.amount,what:'This payment'})));
     const pinch=ladderPinch(L);
-    box.innerHTML=(big.length||pinch)?`<div class="card note" style="margin-top:10px;border-left:3px solid var(--chip-rust)">
+    box.innerHTML=(big.length||pinch||heavy.length)?`<div class="card note" style="margin-top:10px;border-left:3px solid var(--chip-rust)">
       ${big.length?`<div><b>${big.length} cheque${big.length===1?' is':'s are'} over your ${fmt(cap)} ceiling.</b></div>`:''}
+      ${heavy.length?`<div><b>${heavy.length} ${heavy.length===1?'is on a day':'are on days'} already at the ceiling</b> — ${heavy.map(l=>l.date).join(', ')}.</div>`:''}
       ${pinch?`<div><b>${pinch.date}</b> would end on ${fmt(pinch.bal)}, under the ${fmt(f)} you keep back.</div>`:''}
-      <div class="muted" style="margin-top:4px">Cut it into cheques under the ceiling, or push the dates out.</div></div>`
+      <div class="muted" style="margin-top:4px">Cut it smaller, or move a day — the date buttons open the diary.</div></div>`
      :`<div class="muted" style="margin-top:10px">No day in the next ${+cfg.weeks||8} weeks drops under the ${fmt(f)} you keep back.</div>`;
   };
-  drawBills(); draw();
-  m.querySelector('#addl').onclick=()=>{lines.push({method:'CHEQUE',bank:1,date:D(today),amount:0});draw()};
-  m.querySelector('#splitl').onclick=()=>{
-    const tot=lines.reduce((a,l)=>a+l.amount,0)||owe;
-    if(!(tot>0)) return toast('Nothing to cut up');
-    const bank=(lines.find(l=>l.method==='CHEQUE')||{}).bank||(S.banks[0]||{}).id||1;
-    const from=(lines.find(l=>l.method==='CHEQUE')||{}).date||D(today);
-    const split=planChequesOnDays(tot,from);          // and off the days that are already loaded
-    lines.length=0; split.forEach(x=>lines.push({method:'CHEQUE',bank,date:x.date,amount:x.amount}));
-    draw();
-    const moved=split.filter((x,i)=>x.date!==planCheques(tot,from)[i].date).length;
-    toast(`${split.length} cheque${split.length===1?'':'s'} under ${fmt(+planCfg().chequeMax||100000)}${moved?` · ${moved} moved off a full or shut day`:''}`);
-  };
-  m.querySelector('#pok').onclick=()=>{
-    const ls=lines.filter(l=>l.amount>0); if(!ls.length)return toast('Nothing to pay');
-    const pv=paySupplier({supplierId:id,lines:ls,against:[...sel]});
-    m.remove(); render(); supplierVoucher(pv);
-    toast(`${pv.no} saved · ${ls.filter(l=>l.method==='CHEQUE').length} cheque(s) ready to print`);
-  };
+
+  drawBills();
 }
 
 /* ---- purchases ---- */
