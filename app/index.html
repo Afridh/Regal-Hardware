@@ -987,6 +987,25 @@ tr.off td{opacity:.55}
 .circle-row td{transition:background .16s}
 .circle-row:hover td{background:var(--tint-yellow)}
 @media (prefers-reduced-motion:reduce){.daypane,.daytile{animation:none}.circle-row td{transition:none}}
+.diary{width:100%;border-collapse:collapse;table-layout:fixed;min-width:860px}
+.diary th{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--steel);
+  padding:4px 6px;text-align:left;border-bottom:1.5px solid var(--line)}
+.diary td.dy{border:1px solid var(--line);vertical-align:top;padding:5px 6px;height:84px;width:14.28%}
+.diary td.dy.now{outline:2px solid var(--chip-yellow);outline-offset:-2px}
+.diary td.dy.shut{background:repeating-linear-gradient(135deg,var(--line2) 0 6px,transparent 6px 12px)}
+.diary td.dy.some{background:var(--tint-green)}
+.diary td.dy.heavy{background:var(--tint-yellow)}
+.diary td.dy.full{background:var(--tint-rust)}
+.dy-h{display:flex;align-items:baseline;gap:5px;margin-bottom:3px}
+.dy-h b{font-family:Archivo,sans-serif;font-size:14px}
+.dy-h .muted{font-size:10px}
+.dy-h i{margin-left:auto;font-style:normal;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+.dy-shut{font-size:10.5px;color:var(--steel);font-style:italic}
+.dy-c{display:flex;gap:4px;align-items:baseline;font-size:10.5px;line-height:1.35;
+  border-top:1px dotted var(--line);padding-top:2px;margin-top:2px}
+.dy-c span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dy-c em{font-style:normal;color:var(--steel)}
+.dy-c b{font-variant-numeric:tabular-nums}
 .de-strip{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}
 .de-step{display:flex;gap:9px;align-items:center;padding:9px 12px;border:1px solid var(--line);
   border-radius:10px;background:var(--panel);flex:1;min-width:190px}
@@ -17333,7 +17352,7 @@ function words(n){ n=Math.floor(n); if(n===0)return 'zero'; const a=['','one','t
    look like, warns where they run short, and offers a set of cheques under the
    ceiling that clears the pinch. The decision stays with the owner. */
 
-const PLAN_DEF={chequeMax:100000,weeks:8,lookback:6,float:100000,gap:7,
+const PLAN_DEF={chequeMax:100000,dayMax:0,splitStyle:'full',weeks:8,lookback:6,float:100000,gap:7,
   season:{1:1,2:1,3:1,4:1,5:1,6:1,7:1,8:1,9:1,10:1,11:1,12:1}};
 function planCfg(){
   CFG.plan={...PLAN_DEF,...(CFG.plan||{})};
@@ -17459,7 +17478,15 @@ function planCheques(amount,from,opts){
   const amt=+(+amount||0).toFixed(2);
   if(amt<=0) return [];
   const n=Math.max(1,Math.ceil(amt/max-1e-9));
-  const each=Math.min(max,Math.ceil(amt/n/100)*100);      // round up to the hundred so the last cheque is never the big one
+  /* Two ways to cut it up, and shops do not agree about which is right.
+       full  — fill each cheque to the ceiling and let the last one carry what is left, so
+               800,000 is eight round cheques of 100,000. This is how this shop has always
+               written them, and a round figure is easier to check against the diary.
+       even  — spread it evenly, so no single cheque is noticeably the big one. */
+  const style=(o.style||planCfg().splitStyle||'full');
+  const each=style==='even'
+    ? Math.min(max,Math.ceil(amt/n/100)*100)
+    : max;
   const out=[]; let left=amt;
   for(let i=0;i<n;i++){
     const v=(i===n-1)?+left.toFixed(2):+Math.min(each,left).toFixed(2);
@@ -17468,6 +17495,158 @@ function planCheques(amount,from,opts){
     left=+(left-v).toFixed(2);
   }
   return out;
+}
+
+/* ====================== THE CHEQUE DIARY ======================
+   The shop has kept this in a desk diary for years: every cheque written down on the day it is
+   dated, with the supplier, its number and its amount, so that when the next payment is being
+   split up you can see at a glance which days are already loaded and put the new ones somewhere
+   else. The splitting itself the system already did; what it could not do is the part the book
+   was really for — showing you the day before you choose it.
+
+   So this is the book, drawn from the cheques themselves. Nothing is kept twice: every entry
+   here is a cheque that exists, and the day it falls on is the date written on its face. */
+
+const DIARY_WEEKS = 10;
+let diaryFrom = null;                                     // the Monday the diary opens on
+const diaryStart = () => diaryFrom || mondayOf(D(today));
+function mondayOf(ds){
+  const t = new Date(ds + 'T00:00:00');
+  t.setDate(t.getDate() - ((t.getDay() + 6) % 7));        // Monday is the first column, as in the book
+  return D(t);
+}
+const diaryDow = (ds) => new Date(ds + 'T00:00:00').getDay();
+const diaryIsSunday = (ds) => diaryDow(ds) === 0;
+
+/* Every cheque the shop has written that is still waiting to be presented, filed by the day it
+   is dated. A cheque that has already cleared or bounced is not money about to leave. */
+function diaryMap(){
+  const by = {};
+  for(const c of (S.cheques||[])){
+    if(c.dir !== 'ISSUED') continue;
+    if(!['ISSUED','PRINTED'].includes(c.status)) continue;
+    const ds = String(c.date || '').slice(0, 10);
+    if(!ds) continue;
+    (by[ds] = by[ds] || []).push({ no: c.no, who: c.party || '—', amount: +c.amount || 0,
+      bank: c.bank || '', bankId: c.bankId });
+  }
+  return by;
+}
+const diaryDay = (ds, map) => (map || diaryMap())[ds] || [];
+const diaryTotal = (ds, map) => diaryDay(ds, map).reduce((a, x) => a + x.amount, 0);
+
+/* How heavy a day is. The ceiling a single day should carry is a setting; by default it is five
+   cheques' worth at the shop's own cheque ceiling, which is what a week of this normally comes to. */
+const diaryCap = () => { const c = planCfg(); return Math.max(1, +c.dayMax || (+c.chequeMax || 100000) * 5) };
+function diaryWeight(ds, map){
+  const t = diaryTotal(ds, map), cap = diaryCap();
+  if(diaryIsSunday(ds)) return 'shut';
+  if(holidayOf(ds)) return 'shut';
+  if(t >= cap) return 'full';
+  if(t >= cap * 0.6) return 'heavy';
+  if(t > 0) return 'some';
+  return 'free';
+}
+
+/* The next day that can take another cheque: not a Sunday, not a holiday, and not already at
+   the ceiling. This is the judgement that used to be made by running a finger down the page. */
+function diaryNextFree(from, map, want){
+  const m = map || diaryMap(), cap = diaryCap(), add = +want || 0;
+  let ds = from;
+  for(let i = 0; i < 400; i++){
+    if(!diaryIsSunday(ds) && !holidayOf(ds) && diaryTotal(ds, m) + add <= cap + 0.005) return ds;
+    ds = addDays(ds, 1);
+  }
+  return from;                                            // everything is full: say so elsewhere, do not loop
+}
+
+/* Cut an amount into cheques under the ceiling and put each one on a day that can take it.
+   The gap between them is the shop's own, but a day that is shut or already full is stepped
+   over rather than piled onto. */
+function planChequesOnDays(amount, from, opts){
+  const parts = planCheques(amount, from, opts);
+  const m = diaryMap(), cap = diaryCap();
+  const added = {};                                       // what this plan itself has put on each day
+  const gap = Math.max(1, +((opts && opts.gap !== undefined) ? opts.gap : planCfg().gap) || 7);
+  let want = from;
+  return parts.map((p, i) => {
+    if(i) want = addDays(want, gap);
+    let ds = want;
+    for(let k = 0; k < 400; k++){
+      const already = diaryTotal(ds, m) + (added[ds] || 0);
+      if(!diaryIsSunday(ds) && !holidayOf(ds) && already + p.amount <= cap + 0.005) break;
+      ds = addDays(ds, 1);
+    }
+    added[ds] = (added[ds] || 0) + p.amount;
+    want = ds;
+    return { date: ds, amount: p.amount };
+  });
+}
+
+/* ---- the book, on screen ---- */
+function diaryTab(){
+  const map = diaryMap();
+  const start = diaryStart();
+  const cap = diaryCap();
+  const days = [];
+  for(let i = 0; i < DIARY_WEEKS * 7; i++) days.push(addDays(start, i));
+  const totalAhead = days.reduce((a, ds) => a + diaryTotal(ds, map), 0);
+  const busiest = days.slice().sort((a, b) => diaryTotal(b, map) - diaryTotal(a, map))[0];
+  const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+  const cell = (ds) => {
+    const list = diaryDay(ds, map), t = diaryTotal(ds, map), w = diaryWeight(ds, map);
+    const hol = holidayOf(ds);
+    const isToday = ds === D(today);
+    return `<td class="dy ${w} ${isToday ? 'now' : ''}">
+      <div class="dy-h"><b>${+ds.slice(8, 10)}</b>
+        <span class="muted">${ds.slice(5, 7) === D(today).slice(5, 7) ? '' : MONTHS[+ds.slice(5, 7) - 1].slice(0, 3)}</span>
+        ${t ? `<i>${fmt(t)}</i>` : ''}</div>
+      ${hol ? `<div class="dy-shut">${noteEsc(hol)}</div>` : diaryIsSunday(ds) ? '<div class="dy-shut">Sunday</div>' : ''}
+      ${list.map(x => `<div class="dy-c" title="${noteEsc(x.who)} · ${noteEsc(x.bank)}">
+        <span>${noteEsc(String(x.who).split(/[–(]/)[0].trim())}</span>
+        <em>${noteEsc(x.no)}</em><b>${fmt(x.amount)}</b></div>`).join('')}
+     </td>`;
+  };
+
+  let weeks = '';
+  for(let w = 0; w < DIARY_WEEKS; w++){
+    weeks += `<tr>${days.slice(w * 7, w * 7 + 7).map(cell).join('')}</tr>`;
+  }
+
+  return `<div class="row" style="margin-bottom:12px">
+    ${stat('Cheques written and not yet presented', fmt(totalAhead),
+      `${Object.values(map).flat().length} cheque${Object.values(map).flat().length === 1 ? '' : 's'} in the next ${DIARY_WEEKS} weeks`, 'b')}
+    ${stat('The heaviest day', busiest && diaryTotal(busiest, map) ? fmt(diaryTotal(busiest, map)) : '—',
+      busiest && diaryTotal(busiest, map) ? busiest : 'nothing dated yet', diaryTotal(busiest || '', map) >= cap ? 'r' : 'y')}
+    ${stat('What one day should carry', fmt(cap), 'set under Season & rules', '')}
+   </div>
+   <div class="card note" style="margin-bottom:10px"><b>The book, as it has always been kept</b>
+    <div class="muted">Every cheque written and not yet presented, on the day it is dated. A day already
+     carrying ${fmt(cap)} is marked full, and Sundays and holidays are marked shut — when a payment is
+     cut into cheques, those days are stepped over instead of being piled onto.</div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+     <button class="btn ghost sm" data-act="diaryStep" data-d="-28">◀ four weeks back</button>
+     <button class="btn ghost sm" data-act="diaryStep" data-d="0">This week</button>
+     <button class="btn ghost sm" data-act="diaryStep" data-d="28">Four weeks on ▶</button>
+     <span class="muted" style="align-self:center">from ${start}</span></div>
+   </div>
+   <div class="card" style="overflow:auto">
+    <table class="diary"><tr>${DOW.map(d => `<th>${d}</th>`).join('')}</tr>${weeks}</table>
+   </div>`;
+}
+
+/* ---- what a day already carries, said beside the date box while a payment is being made ---- */
+function diarySays(ds, extra){
+  if(!ds) return '';
+  const map = diaryMap(), t = diaryTotal(ds, map), n = diaryDay(ds, map).length, cap = diaryCap();
+  const hol = holidayOf(ds);
+  if(hol) return `<span class="tag bad">${noteEsc(hol)}</span>`;
+  if(diaryIsSunday(ds)) return '<span class="tag bad">Sunday</span>';
+  const after = t + (+extra || 0);
+  if(!n) return '<span class="tag ok">nothing on that day</span>';
+  const tag = after >= cap ? 'bad' : after >= cap * 0.6 ? 'warn' : '';
+  return `<span class="tag ${tag}">${n} cheque${n === 1 ? '' : 's'} · ${fmt(t)}</span>`;
 }
 
 /* ---- the page ---- */
@@ -17480,9 +17659,10 @@ function purchasing(){
   const soon=d=>parts.filter(x=>x.due<=ago(-d)).reduce((a,x)=>a+x.owing,0)
               +chqOut.filter(c=>c.date<=ago(-d)).reduce((a,c)=>a+(+c.amount||0),0);
   const tabs=[['plan','The plan'],['due','What falls due',parts.length+chqOut.length],
-              ['terms','Credit periods'],['season','Season & rules']];
+              ['diary','Cheque diary'],['terms','Credit periods'],['season','Season & rules']];
 
   const body=({plan:()=>planTab(L,weeks,cfg),due:()=>dueTab(parts,chqOut,L),
+               diary:()=>diaryTab(),
                terms:()=>termsTab(),season:()=>seasonTab(cfg,L)})[purchTab]();
 
   return `<h1>Purchasing &amp; cash plan</h1>
@@ -17593,6 +17773,15 @@ function seasonTab(cfg,L){
     <div class="grid2">
      <div class="f"><label>Most a single cheque should be</label><input type="number" step="1000" min="1000" data-plan="chequeMax" value="${+cfg.chequeMax||100000}">
       <div class="muted">Anything bigger is cut into several. Yours is ${fmt(+cfg.chequeMax||100000)}. The lowest ceiling allowed is Rs 1,000.</div></div>
+     <div class="f"><label>How a payment is cut up</label>
+      <select data-plan="splitStyle">
+       ${[['full','Round cheques, the last one carries the rest'],['even','Spread evenly, no single big one']]
+         .map(o=>`<option value="${o[0]}" ${(cfg.splitStyle||'full')===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>
+      <div class="muted">${(cfg.splitStyle||'full')==='full'
+        ? `800,000 becomes eight of ${fmt(+cfg.chequeMax||100000)}; 228,800 becomes two of ${fmt(+cfg.chequeMax||100000)} and one of ${fmt(228800-2*(+cfg.chequeMax||100000))}.`
+        : '228,800 becomes three of about 76,300 — no one cheque stands out.'}</div></div>
+     <div class="f"><label>Most one day should carry</label><input type="number" step="10000" min="0" data-plan="dayMax" value="${+cfg.dayMax||0}">
+      <div class="muted">Across every supplier. A day already at this is marked full in the cheque diary, and the splitter steps over it. Zero means five cheques' worth — ${fmt(diaryCap())} as it stands.</div></div>
      <div class="f"><label>Keep back at all times</label><input type="number" step="1000" data-plan="float" value="${+cfg.float||0}">
       <div class="muted">The plan calls a day short when it would end below this.</div></div>
      <div class="f"><label>How far ahead to look, in weeks</label><input type="number" step="1" min="1" max="26" data-plan="weeks" value="${+cfg.weeks||8}"></div>
@@ -17967,8 +18156,12 @@ function supPayModal(id){
     <b id="ptot"></b>
     <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button>
      <button class="btn tape" id="pok">Save and print the voucher</button></div></div>`);
-  const lines=[{method:'CHEQUE',bank:1,date:D(today),amount:Math.min(owe,50000)},
-               {method:'CHEQUE',bank:1,date:ago(-15),amount:Math.min(Math.max(owe-50000,0),50000)}];
+  /* The whole of what is owed, on one cheque line, on the first day that can take it. Press
+     "cut it into cheques" and it becomes the row of them; tick particular bills first and it
+     becomes only those. Either way the figure on screen when the window opens is a true one. */
+  const bank0=(S.banks[0]||{}).id||1;
+  const lines=[{method:'CHEQUE',bank:bank0,date:diaryNextFree(D(today),null,Math.min(owe,+planCfg().chequeMax||100000)),
+                amount:+Math.max(0,owe).toFixed(2)}];
   const sel=new Set();
   const openBills=()=>S.purchases.filter(p=>p.supplierId===id&&p.total-p.paid>0.005).sort((a,b)=>a.date.localeCompare(b.date));
   const drawBills=()=>{
@@ -17993,7 +18186,10 @@ function supPayModal(id){
       lines.map((l,i)=>`<tr>
        <td><select data-k="method" data-i="${i}">${['CHEQUE','BANK','CASH'].map(x=>`<option ${l.method===x?'selected':''}>${x}</option>`).join('')}</select></td>
        <td><select data-k="bank" data-i="${i}" ${l.method==='CASH'?'disabled':''}>${S.banks.map(b=>`<option value="${b.id}" ${b.id===l.bank?'selected':''}>${b.name}</option>`).join('')}</select></td>
-       <td><input type="date" data-k="date" data-i="${i}" value="${l.date}" ${l.method!=='CHEQUE'?'disabled':''}></td>
+       <td><input type="date" data-k="date" data-i="${i}" value="${l.date}" ${l.method!=='CHEQUE'?'disabled':''}>
+        ${l.method==='CHEQUE'?`<div class="muted" style="font-size:11px;margin-top:3px;display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+          ${diarySays(l.date,l.amount)}
+          <button type="button" class="btn ghost sm" data-free="${i}" style="padding:1px 7px">Next free day</button></div>`:''}</td>
        <td><input type="number" data-k="amount" data-i="${i}" value="${l.amount}" style="text-align:right"></td>
        <td><button class="btn ghost sm" data-rm="${i}">✕</button></td></tr>`).join('');
     const tot=lines.reduce((a,l)=>a+l.amount,0);
@@ -18002,6 +18198,11 @@ function supPayModal(id){
     m.querySelectorAll('[data-k]').forEach(el=>el.onchange=()=>{const l=lines[+el.dataset.i];
       l[el.dataset.k]=(el.dataset.k==='amount'||el.dataset.k==='bank')?+el.value:el.value; draw()});
     m.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.rm,1);draw()});
+    // the finger running down the page, looking for a day that can take it
+    m.querySelectorAll('[data-free]').forEach(b=>b.onclick=()=>{ const l=lines[+b.dataset.free];
+      const ds=diaryNextFree(addDays(l.date||D(today),1),null,l.amount);
+      if(ds===l.date) return toast('Every day from here is full or shut');
+      l.date=ds; draw(); toast('Moved to '+ds) });
   };
   // what these lines would do to the plan, and whether any cheque is over the ceiling
   const drawWarn=()=>{
@@ -18023,9 +18224,11 @@ function supPayModal(id){
     if(!(tot>0)) return toast('Nothing to cut up');
     const bank=(lines.find(l=>l.method==='CHEQUE')||{}).bank||(S.banks[0]||{}).id||1;
     const from=(lines.find(l=>l.method==='CHEQUE')||{}).date||D(today);
-    const split=planCheques(tot,from);
+    const split=planChequesOnDays(tot,from);          // and off the days that are already loaded
     lines.length=0; split.forEach(x=>lines.push({method:'CHEQUE',bank,date:x.date,amount:x.amount}));
-    draw(); toast(`${split.length} cheque${split.length===1?'':'s'} under ${fmt(+planCfg().chequeMax||100000)}`);
+    draw();
+    const moved=split.filter((x,i)=>x.date!==planCheques(tot,from)[i].date).length;
+    toast(`${split.length} cheque${split.length===1?'':'s'} under ${fmt(+planCfg().chequeMax||100000)}${moved?` · ${moved} moved off a full or shut day`:''}`);
   };
   m.querySelector('#pok').onclick=()=>{
     const ls=lines.filter(l=>l.amount>0); if(!ls.length)return toast('Nothing to pay');
@@ -21096,6 +21299,7 @@ document.addEventListener('click',e=>{
                       :' · <span class="tag warn">no Instagram account joined to the Page</span>');
       }catch(e){ const o2=$('#socCheckOut'); if(o2) o2.innerHTML='<span class="tag bad">'+e.message+'</span>' } },
     purchTab:()=>{ purchTab=a.dataset.t; render(); const mn=document.getElementById('main'); if(mn) mn.scrollTop=0 },
+    diaryStep:()=>{ const d=+a.dataset.d; diaryFrom=d?addDays(diaryStart(),d):null; render() },
     planChq:()=>chequePlanModal(+a.dataset.sid,+a.dataset.amt,a.dataset.date,a.dataset.pur||''),
     supRemove:()=>{ const s=SU(+a.dataset.id); if(partyBal('S',s.id)>0.005) return toast('Settle the account first');
       if(!confirm(`Remove ${s.name} from the supplier list? Their bills stay on the books.`)) return; s.active=false; supSel=0; render(); toast(`${s.name} removed`) },
