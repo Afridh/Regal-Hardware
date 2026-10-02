@@ -3454,6 +3454,48 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 }
 
 
+/* ===================== THE TILL ON A PHONE =====================
+   One column, one job at a time, and the two things that matter — what the bill comes to
+   and the button that takes the money — pinned to the bottom where a thumb is. Nothing
+   here is a squeezed desktop layout: the other tills put three columns side by side, which
+   on a phone lands them on top of one another. */
+.ph{display:flex;flex-direction:column;gap:8px;padding-bottom:124px}
+.ph-top{display:flex;gap:6px;align-items:stretch}
+.ph-top button{flex:1;min-height:46px;border:1px solid var(--line,#d8dedd);border-radius:10px;
+  background:var(--white,#fff);font:600 13px/1.25 inherit;color:inherit;padding:6px 8px;text-align:left}
+.ph-top button small{display:block;font-weight:400;opacity:.6;font-size:11px}
+.ph-top button.on{border-color:#b4791a;background:#fdf6e7}
+.ph-find input{width:100%;min-height:54px;font-size:17px;padding:10px 12px;border-radius:12px}
+.ph-hits{display:flex;flex-direction:column;gap:6px;margin-top:6px;max-height:46vh;overflow:auto;-webkit-overflow-scrolling:touch}
+.ph-hit{display:flex;gap:10px;align-items:center;justify-content:space-between;width:100%;
+  min-height:58px;padding:8px 12px;border:1px solid var(--line,#d8dedd);border-radius:12px;
+  background:var(--white,#fff);text-align:left;font:inherit;color:inherit}
+.ph-hit b{display:block;font-size:15px;line-height:1.25}
+.ph-hit small{opacity:.6;font-size:12px}
+.ph-hit .pr{font-weight:700;white-space:nowrap;font-size:15px}
+.ph-hit:active{background:#fdf6e7}
+.ph-lines{display:flex;flex-direction:column;gap:6px}
+.ph-line{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 12px;
+  border:1px solid var(--line,#d8dedd);border-radius:12px;background:var(--white,#fff)}
+.ph-line .nm{font-weight:600;font-size:15px;line-height:1.3}
+.ph-line .am{font-weight:700;font-size:16px;white-space:nowrap;text-align:right}
+.ph-line .sub{grid-column:1/2;opacity:.65;font-size:12.5px}
+.ph-line .qty{grid-column:2/3;display:flex;align-items:center;gap:4px;justify-self:end}
+.ph-line .qty button{width:38px;height:38px;border-radius:9px;border:1px solid var(--line,#d8dedd);
+  background:var(--panel,#f7f9f8);font-size:19px;line-height:1;font-weight:700;color:inherit}
+.ph-line .qty b{min-width:34px;text-align:center;font-size:16px}
+.ph-line.neg{border-color:#b1441e}
+.ph-empty{padding:26px 14px;text-align:center;opacity:.6;border:1px dashed var(--line,#d8dedd);border-radius:12px}
+.ph-bar{position:fixed;left:0;right:0;bottom:0;z-index:40;padding:8px 12px calc(8px + env(safe-area-inset-bottom));
+  background:var(--white,#fff);border-top:1px solid var(--line,#d8dedd);box-shadow:0 -6px 18px rgba(0,0,0,.08)}
+.ph-bar .sum{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.ph-bar .sum b{font-size:24px;font-variant-numeric:tabular-nums}
+.ph-bar .go{width:100%;min-height:54px;border:0;border-radius:12px;background:#1f7a4d;color:#fff;
+  font:700 17px/1 inherit;letter-spacing:.02em}
+.ph-bar .go[disabled]{background:#9db3a8}
+.ph-bar .row2{display:flex;gap:6px;margin-top:6px}
+.ph-bar .row2 button{flex:1;min-height:42px;border-radius:10px;border:1px solid var(--line,#d8dedd);
+  background:var(--panel,#f7f9f8);font:600 13px/1 inherit;color:inherit}
 </style>
 <link rel="stylesheet" href="bill-print.css">
 </head>
@@ -9362,13 +9404,14 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={everything,billdesign,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={everything,billdesign,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
   }
-  document.body.classList.toggle('csfull',pref('till')==='classic'&&S.view==='pos');
-  if(S.view==='pos'){ if(pref('till')==='quick') bindQuick(); else if(pref('till')==='classic') bindClassic(); else posAfter() }
+  document.body.classList.toggle('csfull',tillNow()==='classic'&&S.view==='pos');
+  if(S.view==='pos'){ const w=tillNow();
+    if(w==='phone') posPhoneAfter(); else if(w==='quick') bindQuick(); else if(w==='classic') bindClassic(); else posAfter() }
   if(S.view==='recall') recallAfter();
   if(S.view==='stocktake') stockTakeAfter();
   if(S.view==='purchasing') purchasingAfter();
@@ -12369,6 +12412,91 @@ function creditSale(){
    cash or credit is decided *before* the bill, so completing it is one press.
    Everything underneath — stock, ledger, numbering, printing — is the same. */
 let QT={cat:'',q:'',mode:'cash',tender:''};
+/* The phone till. It shares everything that matters with the other tills — the same bill
+   on S.pos, the same addLine, the same completeSale behind openPay — so a bill started on
+   a phone is the same bill, with the same stock checks and the same approvals. What is
+   different is only the shape of the screen. */
+let PH={q:''};
+const PHONE_MQ='(max-width:760px)';
+const onPhone=()=>{ try{ return !!(window.matchMedia&&window.matchMedia(PHONE_MQ).matches) }catch(e){ return false } };
+/* Which till is actually drawn. On a narrow screen the phone one wins whatever is saved,
+   because the saved choice was made on a desk and the person is now holding a phone. */
+const tillNow=()=>onPhone()?'phone':pref('till');
+
+function posPhone(){
+  const L=S.pos.lines, c=C(S.pos.customer||1), walk=!S.pos.customer||S.pos.customer===1;
+  const q=PH.q.trim().toLowerCase();
+  const hits=q?S.products.filter(p=>p.active!==false&&(
+      p.name.toLowerCase().includes(q)||String(p.code||'').toLowerCase().includes(q)||
+      (p.short||'').toLowerCase()===q||String(p.num||'')===q||String(p.barcode||'')===q))
+    .sort((a,b)=>a.name.localeCompare(b.name)).slice(0,25):[];
+  const total=billTotal(), n=L.reduce((a,l)=>a+Math.abs(l.qty),0);
+  const held=(S.heldBills||[]).length;
+
+  const line=(l,i)=>{ const p=P(l.pid)||{name:'(item removed)',unit:''};
+    const net=l.qty*l.price-(l.disc||0);
+    return `<div class="ph-line ${l.qty<0?'neg':''}">
+      <div class="nm" data-act="phEdit" data-i="${i}">${noteEsc(lineName(l))}${l.qty<0?' <span class="tag bad">return</span>':''}
+        ${typeof lineFrom==='function'&&lineFrom(l)?`<span class="tag warn">from ${lineFrom(l)}</span>`:''}</div>
+      <div class="am" data-act="phEdit" data-i="${i}">${money2(net)}</div>
+      <div class="sub" data-act="phEdit" data-i="${i}">${fq(l.qty)} ${noteEsc(p.unit||'')} × ${money2(l.price)}${l.disc?' · less '+money2(l.disc):''}</div>
+      <div class="qty">
+        <button type="button" data-act="phLess" data-i="${i}" aria-label="one fewer">&minus;</button>
+        <b>${fq(l.qty)}</b>
+        <button type="button" data-act="phMore" data-i="${i}" aria-label="one more">+</button>
+        <button type="button" data-act="phDrop" data-i="${i}" aria-label="take it off">×</button>
+      </div></div>`;
+  };
+
+  return `<div class="ph">
+   <div class="ph-top">
+     <button type="button" data-act="phCust" class="${walk?'':'on'}">${walk?'Walk-in customer':noteEsc(c.name)}
+       <small>${walk?'tap to name them':'tap to change'}</small></button>
+     <button type="button" data-act="phHeld" style="max-width:116px">Held${held?' · '+held:''}
+       <small>${held?'pick one up':'nothing held'}</small></button>
+   </div>
+
+   <div class="ph-find">
+     <input id="phQ" value="${noteEsc(PH.q)}" placeholder="Scan, or type a name or code"
+       inputmode="search" autocomplete="off" autocapitalize="off" spellcheck="false">
+     ${q?`<div class="ph-hits">${hits.length?hits.map(p=>`<button type="button" class="ph-hit" data-act="phAdd" data-id="${p.id}">
+         <span><b>${noteEsc(p.name)}</b><small>${p.num||p.code||''}${p.stock!==undefined?' · '+fq(p.stock)+' '+noteEsc(p.unit||''):''}</small></span>
+         <span class="pr">${money2(price(p))}</span></button>`).join('')
+       :'<div class="ph-empty">Nothing matches that.</div>'}</div>`:''}
+   </div>
+
+   <div class="ph-lines">
+     ${L.length?L.map(line).join(''):'<div class="ph-empty">Scan or search for the first item.</div>'}
+   </div>
+
+   <div class="ph-bar">
+     <div class="sum"><span>${n?fq(n)+' item'+(n===1?'':'s'):'nothing on the bill'}</span><b>${money2(total)}</b></div>
+     <button type="button" class="go" data-act="phPay" ${L.length?'':'disabled'}>Take payment</button>
+     <div class="row2">
+       <button type="button" data-act="phHold" ${L.length?'':'disabled'}>Hold</button>
+       <button type="button" data-act="phQuote" ${L.length?'':'disabled'}>Quotation</button>
+       <button type="button" data-act="phClear" ${L.length?'':'disabled'}>Clear</button>
+     </div>
+   </div>
+  </div>`;
+}
+
+function posPhoneAfter(){
+  const box=document.getElementById('phQ');
+  if(!box) return;
+  box.oninput=()=>{ PH.q=box.value; render();
+    const again=document.getElementById('phQ');
+    if(again){ again.focus(); try{ again.setSelectionRange(again.value.length,again.value.length) }catch(e){} } };
+  box.onkeydown=e=>{
+    if(e.key!=='Enter') return;
+    e.preventDefault();
+    const first=document.querySelector('.ph-hit[data-act="phAdd"]');
+    if(first) first.click();            // a barcode scanner types and presses Enter
+  };
+  // the search keeps the keyboard up on a phone, so it is only focused when asked for
+  if(PH.q&&document.activeElement===document.body) box.focus();
+}
+
 function posQuick(){
   const L=S.pos.lines, c=C(S.pos.customer||1);
   const cats=[...new Set(S.products.map(p=>p.cat))];
@@ -22231,6 +22359,23 @@ document.addEventListener('click',e=>{
       wpOpen=null; render();
       toast(`${p.name} saved${webHasOwn(p)?` · ${fmt(+p.webPrice)} on the site`:''}`) },
     siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
+    phAdd:()=>{ addLine(+a.dataset.id); PH.q=''; render();
+      const b=document.getElementById('phQ'); if(b) b.focus() },
+    phMore:()=>{ const l=S.pos.lines[+a.dataset.i]; if(!l) return; l.qty=+(l.qty+1).toFixed(3); render() },
+    phLess:()=>{ const l=S.pos.lines[+a.dataset.i]; if(!l) return;
+      l.qty=+(l.qty-1).toFixed(3);
+      if(Math.abs(l.qty)<1e-9) S.pos.lines.splice(+a.dataset.i,1);
+      render() },
+    phDrop:()=>{ S.pos.lines.splice(+a.dataset.i,1); render() },
+    phEdit:()=>{ if(typeof csEditLine==='function') csEditLine(+a.dataset.i) },
+    phCust:()=>pickCustomer(),
+    phHeld:()=>showHeldBillsModal(),
+    phHold:()=>holdCurrentBill(true),
+    phQuote:()=>{ if(S.pos.lines.length) saveDoc('QUOTE'); else toast('Nothing on the bill') },
+    phClear:()=>{ if(!S.pos.lines.length) return;
+      if(!confirm('Clear the bill?')) return;
+      S.pos={...S.pos,lines:[],billDisc:0,sel:-1}; PH.q=''; render() },
+    phPay:()=>{ if(S.pos.lines.length) openPay() },
     cashSave:()=>cashSave(a.dataset.k),
     cashLast:()=>{ const prev=cashList().filter(c=>c.kind==='open'&&(c.loc||0)===cashStore()).slice(-1)[0];
       if(!prev) return toast('There is no earlier float to copy');
@@ -22713,6 +22858,14 @@ $('#logoutBtn').onclick=signOut;
   });
 })();
 window.boot=boot; window.GL=GL;
+/* A phone turned on its side, or a window dragged wider, changes which till should be on
+   the screen — so the page is drawn again when it crosses the line, and only then. */
+try{
+  const mq=window.matchMedia(PHONE_MQ);
+  const swap=()=>{ if(S.view==='pos'&&S.user&&S.user.name) render() };
+  if(mq.addEventListener) mq.addEventListener('change',swap); else if(mq.addListener) mq.addListener(swap);
+}catch(e){}
+
 if(typeof extInstall==='function') extInstall();   // loyalty, vouchers, locations (regal-ext.js)
 
 const explicitlySignedOut = (() => {
