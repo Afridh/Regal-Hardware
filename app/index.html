@@ -967,6 +967,24 @@ tr.off td{opacity:.55}
 
 /* the item box while searching at the till */
 .sug{border:1px solid var(--ink);box-shadow:0 12px 28px rgba(22,32,29,.22);overflow-x:hidden}
+/* Columns rather than a grid: the blocks are all different heights, and a grid would leave
+   a hole under every short one. */
+.ev-grid{columns:340px;column-gap:12px}
+.ev-card{margin:0 0 12px;padding:13px 15px;break-inside:avoid}
+.ev-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.ev-h h2{margin:0;font-size:14.5px}
+.ev-note{font-size:11.5px;margin-bottom:6px}
+.ev-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  padding:5px 0;border-bottom:1px solid var(--line2);font-size:13px}
+.ev-row:last-child{border-bottom:0}
+.ev-row span{display:block}
+.ev-row em{display:block;font-style:normal;font-size:11px;color:var(--steel);margin-top:1px}
+.ev-row b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.ev-row.sub{opacity:.72;padding-left:10px}
+.ev-row.warn b{color:var(--chip-rust)}
+.ev-row.bad b{color:var(--chip-rust);font-weight:800}
+.ev-row.ok b{color:var(--chip-green)}
+.ev-wait{margin-bottom:12px;border-left:3px solid var(--chip-yellow)}
 .daytabs{margin:2px 0 14px}
 .daytabs button{padding:9px 16px;text-align:left;line-height:1.25}
 .daytabs button b{display:block;font-size:13.5px}
@@ -8872,7 +8890,7 @@ function bindPhone(){
 const $=(s)=>document.querySelector(s);
 const views=[
  ['updates','What is new'],
- ['grp','Counter'],['dashboard','Dashboard','F2'],['ai','AI support'],['pos','POS billing','F3'],['bills','Bills','F9'],['cashup','Day book'],['docs','Quotes & delivery notes'],
+ ['grp','Counter'],['everything','Everything'],['dashboard','Dashboard','F2'],['ai','AI support'],['pos','POS billing','F3'],['bills','Bills','F9'],['cashup','Day book'],['docs','Quotes & delivery notes'],
  ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['tenders','Quotations & tenders'],
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['payreqs','Payment requests'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
@@ -8886,7 +8904,7 @@ const views=[
 const ownerOnly=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||S.user.role==='Demo Admin'||window.isDemo||(S&&S.isDemo)));
 
 const SECTIONS = {
-  Counter: ['dashboard', 'pos', 'bills', 'cashup', 'docs'],
+  Counter: ['everything', 'dashboard', 'pos', 'bills', 'cashup', 'docs'],
   Customers: ['customers', 'receipts', 'tenders'],
   Suppliers: ['suppliers', 'orders', 'payreqs', 'purchases', 'purchasing'],
   Stock: ['products', 'stock', 'ledger', 'inventory', 'stocktake', 'labels'],
@@ -8939,6 +8957,7 @@ function allowed(v){
   if(v === 'updates') return true;          // what changed is everybody's business
   if(v === 'issues'||v === 'transfers') return typeof extMulti==='function'&&extMulti();   // nothing to see with one shop
   if(v === 'ai') return ownerOnly();        // what it is shown includes costs and margins
+  if(v === 'everything') return ownerOnly();  // the same: every figure in the shop on one page
   if(v === 'trail') return ownerOnly();
   const roleName = String(S.user.role || '');
   const rLower = roleName.toLowerCase();
@@ -9004,6 +9023,7 @@ function applyLayout(){
 }
 const ICONS={
   cashup:'M3 7h18v10H3zM12 10a2 2 0 100 4 2 2 0 000-4zM6 10h.01M18 14h.01',
+  everything:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   ai:'M12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4M12 9a3 3 0 100 6 3 3 0 000-6z',
   updates:'M12 3l2.1 4.6 5 .5-3.7 3.4 1 4.9-4.4-2.5-4.4 2.5 1-4.9L4.9 8.1l5-.5zM19 17v4M17 19h4',
   dashboard:'M3 12h6V3H3zM11 21h6v-9h-6zM3 21h6v-6H3zM11 8h6V3h-6z',
@@ -9317,7 +9337,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={everything,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic}[pref('till')]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
@@ -11679,6 +11699,192 @@ function dashSettings(){
   };
   m.querySelector('#dsReset').onclick=()=>{ dp.order=[...DASH_DEFAULT]; dp.hidden=[]; setDash(dp); draw(); if(S.view==='dashboard') render() };
   draw();
+}
+
+/* ====================== THE WHOLE SHOP, ON ONE PAGE ======================
+   The dashboard is a board the owner arranges: the panels they want, in the order they want
+   them. This is the other thing — everything, in a fixed order, with nothing hidden and
+   nothing to set up. It is what you open when somebody asks a question you were not expecting,
+   or on a Monday morning to find out what happened while you were away.
+
+   It reads and never writes. Every block says what it found and gives the screen it came from,
+   so the answer is one click away. Nothing here keeps a figure of its own — every one is worked
+   out from the books at the moment the page is drawn, which is why it can never go stale or
+   disagree with the screen it points at. */
+
+const evAgo = (d) => Math.round((new Date(D(today) + 'T00:00:00Z') - new Date(String(d || '').slice(0,10) + 'T00:00:00Z')) / 864e5);
+
+/* a block: a heading, what it found, and where to go */
+const evCard = (title, view, body, note) => `<div class="card ev-card">
+  <div class="ev-h"><h2>${title}</h2>${view ? `<button class="btn ghost sm" data-act="deGo" data-v="${view}">Open</button>` : ''}</div>
+  ${note ? `<div class="muted ev-note">${note}</div>` : ''}
+  ${body}</div>`;
+
+/* a line inside a block: what it is, how many or how much, and anything worth saying */
+const evRow = (what, value, sub, kind) => `<div class="ev-row ${kind || ''}">
+  <div><span>${what}</span>${sub ? `<em>${sub}</em>` : ''}</div><b>${value}</b></div>`;
+
+const evNone = (what) => `<div class="muted" style="padding:6px 0">${what}</div>`;
+
+function everything(){
+  const d = D(today);
+  const cust = (S.customers || []).filter(c => c.id !== 1);
+  const sup = S.suppliers || [];
+
+  /* ---------- what the shop is worth and owes, right now ---------- */
+  const cash = bal('1010', d);
+  const banks = (S.banks || []).map(b => ({ ...b, bal: bal(b.ac, d) }));
+  const bankTotal = banks.reduce((a, b) => a + b.bal, 0);
+  const owedToUs = cust.reduce((a, c) => a + Math.max(0, partyBal('C', c.id)), 0);
+  const owedByUs = sup.reduce((a, s) => a + Math.max(0, partyBal('S', s.id)), 0);
+  const stockVal = (S.products || []).reduce((a, p) => a + (+p.stock || 0) * (+p.cost || 0), 0);
+
+  /* ---------- the day ---------- */
+  const tn = deTenders(d, cashStore());
+  const closed = deFind(d, cashStore());
+
+  /* ---------- who is late paying us ---------- */
+  const late = cust.map(c => ({ c, bal: partyBal('C', c.id), age: custAge(c.id) }))
+    .filter(x => x.bal > 0.005 && x.age.old > 0.005)
+    .sort((a, b) => b.age.old - a.age.old);
+  const lateTotal = late.reduce((a, x) => a + x.age.old, 0);
+  const over = cust.map(c => ({ c, bal: partyBal('C', c.id) }))
+    .filter(x => +x.c.limit > 0 && x.bal > +x.c.limit).sort((a, b) => (b.bal - b.c.limit) - (a.bal - a.c.limit));
+
+  /* ---------- what is waiting on somebody ---------- */
+  const ap = typeof apPending === 'function' ? apPending() : [];
+  const reqs = payReqs().filter(r => ['sent', 'accepted', 'ready'].includes(r.status));
+  const ordIn = (S.orders || []).filter(o => o.dir !== 'OUT' && o.status === 'pending');
+  const ordOut = (S.orders || []).filter(o => o.dir === 'OUT' && ['sent', 'accepted', 'dispatched'].includes(o.status));
+  const web = (S.web && S.web.orders || []).filter(o => o.status === 'placed');
+  const quotes = (S.docs || []).filter(x => x.kind === 'QUOTE' && x.status === 'open');
+  const dns = (S.docs || []).filter(x => x.kind === 'DN' && x.status === 'open');
+  const notes = dnOpen();
+  const jobs = (S.jobs || []).filter(j => ['in', 'sent', 'back'].includes(j.status));
+  const dmg = (S.damages || []).filter(x => x.status === 'held');
+
+  /* ---------- cheques ---------- */
+  const chq = deCheques(d);
+  const banked = (S.cheques || []).filter(c => c.dir === 'RECEIVED' && c.status === 'DEPOSITED');
+  const ourOut = (S.cheques || []).filter(c => c.dir === 'ISSUED' && ['ISSUED', 'PRINTED'].includes(c.status));
+
+  /* ---------- the shelves ---------- */
+  const prods = (S.products || []).filter(p => p.active !== false);
+  const low = prods.filter(p => (+p.stock || 0) <= (+p.min || 0));
+  const out = prods.filter(p => (+p.stock || 0) <= 0);
+
+  /* ---------- the people ---------- */
+  const staff = (S.employees || []).filter(e => e.active !== false);
+  const here = staff.filter(e => ['working', 'break'].includes(empState(d, e.id)));
+  const away = staff.filter(e => !['working', 'break'].includes(empState(d, e.id)));
+
+  /* ---------- the circle ---------- */
+  const circleOut = circleOwedToThem(), circleIn = circleOwedToUs();
+
+  const waiting = ap.length + reqs.length + ordIn.length + web.length;
+
+  return `<h1>Everything<span class="muted" style="font-size:14px;font-weight:400"> · the whole shop as it stands, ${d}</span></h1>
+
+   <div class="daygrid" style="margin-bottom:14px">
+    ${dayTile('In the drawer', cash, 'counted under Day book', '')}
+    ${dayTile('In the banks', bankTotal, `${banks.length} account${banks.length === 1 ? '' : 's'}`, 'b')}
+    ${dayTile('Customers owe us', owedToUs, lateTotal > 0.005 ? `${fmt(lateTotal)} of it over 60 days` : 'none of it badly late', lateTotal > 0.005 ? 'r' : 'g')}
+    ${dayTile('We owe suppliers', owedByUs, reqs.length ? `${reqs.length} asking to be paid` : 'nobody asking', 'y')}
+    ${dayTile('Stock at cost', stockVal, `${prods.length} items${low.length ? ` · ${low.length} running low` : ''}`, 'g')}
+   </div>
+
+   ${waiting ? `<div class="card note ev-wait"><b>${waiting} thing${waiting === 1 ? '' : 's'} waiting on somebody</b>
+     <div class="muted">${[
+       ap.length && `${ap.length} for the owner to approve`,
+       reqs.length && `${reqs.length} supplier${reqs.length === 1 ? '' : 's'} asking to be paid`,
+       ordIn.length && `${ordIn.length} order${ordIn.length === 1 ? '' : 's'} from reps`,
+       web.length && `${web.length} website order${web.length === 1 ? '' : 's'}`,
+     ].filter(Boolean).join(' · ')}</div></div>` : ''}
+
+   <div class="ev-grid">
+
+    ${evCard('Today at the counter', 'bills', `
+      ${evRow('Bills', String(tn.bills))}
+      ${evRow('Sold', fmt(tn.sales))}
+      ${tn.returns ? evRow('Returned', `${tn.returns} · ${fmt(tn.returned)}`, '', 'bad') : ''}
+      ${[['Cash','CASH'],['Card','CARD'],['Bank transfer','BANK'],['Cheque','CHEQUE']]
+        .filter(([, k]) => Math.abs(tn.t[k] || 0) > 0.005)
+        .map(([l, k]) => evRow(l, fmt(tn.t[k]), '', 'sub')).join('')}
+      ${tn.credit ? evRow('Given on credit', fmt(tn.credit), '', 'warn') : ''}
+      ${tn.expenses ? evRow('Paid out', fmt(tn.expenses), '', 'bad') : ''}
+      ${evRow('The day', closed ? 'closed' : 'still open',
+        closed ? `by ${closed.by} at ${closed.at}` : 'count the drawer under Day book', closed ? 'ok' : 'warn')}`)}
+
+    ${evCard(`Customers late paying${late.length ? ` · ${late.length}` : ''}`, 'customers', late.length ? `
+      ${late.slice(0, 8).map(x => evRow(noteEsc(x.c.name), fmt(x.age.old),
+        `${x.age.oldest ? x.age.oldest + ' days on the oldest bill' : ''}${x.c.phone ? ' · ' + x.c.phone : ''}`, 'bad')).join('')}
+      ${late.length > 8 ? `<div class="muted" style="padding-top:6px">and ${late.length - 8} more</div>` : ''}`
+      : evNone('Nobody is over 60 days.'),
+      `Over 60 days, worst first. ${fmt(owedToUs)} is owed in all.`)}
+
+    ${evCard(`Over their credit limit${over.length ? ` · ${over.length}` : ''}`, 'customers', over.length ? `
+      ${over.slice(0, 6).map(x => evRow(noteEsc(x.c.name), fmt(x.bal),
+        `limit ${fmt(x.c.limit)} · over by ${fmt(x.bal - x.c.limit)}`, 'bad')).join('')}`
+      : evNone('Everybody is inside their limit.'))}
+
+    ${evCard(`Suppliers asking to be paid${reqs.length ? ` · ${reqs.length}` : ''}`, 'payreqs', reqs.length ? `
+      ${reqs.slice(0, 8).map(r => { const s = SU(r.sid) || { name: '—' };
+        return evRow(noteEsc(s.name), fmt(r.total),
+          `${r.date} · ${(r.lines || []).length} bill${(r.lines || []).length === 1 ? '' : 's'} · ${r.status}`,
+          r.status === 'sent' ? 'warn' : '') }).join('')}`
+      : evNone('Nobody has asked.'),
+      `${fmt(owedByUs)} owed to suppliers in all.`)}
+
+    ${evCard('Supplier orders', 'orders', `
+      ${evRow('From reps, waiting for you', String(ordIn.length), ordIn.length ? 'needs the owner' : '', ordIn.length ? 'warn' : '')}
+      ${evRow('Ours, nothing received yet', String(ordOut.length))}
+      ${evRow('On their delivery note, no invoice', String(notes.length),
+        notes.length ? `${fmt(notes.reduce((a, p) => a + dnValue(p), 0))} waiting to be matched` : '', notes.length ? 'warn' : '')}
+      ${evRow('Damaged, not sent back', String(dmg.length),
+        dmg.length ? fmt(dmg.reduce((a, x) => a + (+x.value || 0), 0)) : '')}`)}
+
+    ${evCard(`Online${web.length ? ` · ${web.length} new` : ''}`, 'weborders', `
+      ${evRow('Orders waiting', String(web.length), web.length ? 'not yet accepted' : 'none', web.length ? 'warn' : '')}
+      ${evRow('Orders today', String((S.web && S.web.orders || []).filter(o => String(o.date || '').slice(0,10) === d).length))}
+      ${evRow('Items on the site', String(prods.filter(p => typeof webListed === 'function' ? webListed(p) : false).length))}
+      ${(() => { const o = (S.web && S.web.orders || []).slice(-4).reverse();
+        return o.length ? o.map(x => evRow(noteEsc(x.no || x.id || 'order'),
+          fmt(x.total || 0), `${x.date || ''} · ${x.status || ''}`, 'sub')).join('') : '' })()}`)}
+
+    ${evCard('Money', 'cashup', `
+      ${evRow('In the drawer', fmt(cash))}
+      ${banks.map(b => evRow(noteEsc(b.name), fmt(b.bal), b.no || '', 'sub')).join('')}
+      ${evRow('Cheques in the drawer', fmt(chq.heldTotal), `${chq.held.length} of them`, chq.held.length ? 'warn' : '')}
+      ${evRow('Banked, waiting on the bank', fmt(chq.sum(banked)), `${banked.length} cheque${banked.length === 1 ? '' : 's'}`)}
+      ${evRow('Our cheques not presented', fmt(chq.sum(ourOut)), `${ourOut.length} · must stay in the bank`, ourOut.length ? 'warn' : '')}
+      ${circleIn ? evRow('The circle owes us', fmt(circleIn)) : ''}
+      ${circleOut ? evRow('We owe the circle', fmt(circleOut), '', 'bad') : ''}`)}
+
+    ${evCard(`Running low${low.length ? ` · ${low.length}` : ''}`, 'stock', low.length ? `
+      ${low.slice(0, 8).map(p => evRow(noteEsc(p.name), `${fq(p.stock)} ${p.unit || ''}`,
+        `reorder at ${fq(p.min)}${lastSupplier(p.id) ? ' · ' + noteEsc(lastSupplier(p.id).name.split(/[–(]/)[0].trim()) : ''}`,
+        (+p.stock || 0) <= 0 ? 'bad' : 'warn')).join('')}
+      ${low.length > 8 ? `<div class="muted" style="padding-top:6px">and ${low.length - 8} more</div>` : ''}`
+      : evNone('Nothing is below its reorder level.'),
+      out.length ? `${out.length} of them are out of stock altogether.` : '')}
+
+    ${evCard(`Who is in today · ${here.length} of ${staff.length}`, 'payroll', staff.length ? `
+      ${here.slice(0, 10).map(e => evRow(noteEsc(e.name), empState(d, e.id) === 'break' ? 'on a break' : 'working',
+        e.position || '', 'ok')).join('')}
+      ${away.length ? away.slice(0, 6).map(e => evRow(noteEsc(e.name), 'not in', e.position || '', 'sub')).join('') : ''}
+      ${staff.length > 16 ? `<div class="muted" style="padding-top:6px">and ${staff.length - 16} more</div>` : ''}`
+      : evNone('Nobody is on the roll.'))}
+
+    ${evCard('Still open', '', `
+      ${evRow('Waiting for the owner', String(ap.length), ap.length ? ap.slice(0,2).map(a => a.title).join(' · ').slice(0, 70) : '', ap.length ? 'warn' : '')}
+      ${evRow('Quotations open', String(quotes.length),
+        (() => { const soon = quotes.filter(q => ((+q.valid || 0) - evAgo(q.date)) <= 1).length; return soon ? `${soon} out of date by tomorrow` : '' })())}
+      ${evRow('Delivery notes not billed', String(dns.length))}
+      ${evRow('Repair jobs', String(jobs.length),
+        (() => { const back = jobs.filter(j => j.status === 'back').length; return back ? `${back} mended, nobody has come` : '' })())}
+      ${evRow('Bills nobody ticked off', String((S.sales || []).filter(s => s.date === d && (s.lines || []).some(l => l.checked !== true)).length), 'today')}`)}
+
+   </div>`;
 }
 
 function dashboardAfter(){

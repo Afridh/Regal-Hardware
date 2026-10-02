@@ -62,7 +62,7 @@ ok(!stepped.onHol,'and a holiday',stepped.hol);
 const says=await pg.evaluate(()=>{
   const d1=addDays(D(today),7);
   return { full:diarySays(d1,0), sun:diarySays((()=>{let x=D(today);for(let i=0;i<8;i++){if(diaryIsSunday(x))return x;x=addDays(x,1)}})(),0),
-    empty:diarySays(addDays(D(today),200),0), weight:diaryWeight(d1) };
+    empty:diarySays((()=>{ let x=addDays(D(today),200); for(let i=0;i<40;i++){ if(diaryWeight(x)==='free') return x; x=addDays(x,1) } return x })(),0), weight:diaryWeight(d1) };
 });
 ok(/1 cheque/.test(says.full)&&says.weight==='full','a loaded day says how much is on it',JSON.stringify({full:says.full,weight:says.weight}));
 ok(/Sunday/.test(says.sun)&&/nothing on that day/.test(says.empty),'a Sunday and an empty day say so',JSON.stringify(says));
