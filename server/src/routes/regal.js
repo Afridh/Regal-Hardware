@@ -528,9 +528,17 @@ export async function sendViaProvider(cfg, to, message) {
     : { to: contact, from: cfg.sender, text: message, key: cfg.apiKey };
   const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: new URLSearchParams(fields).toString(), signal: AbortSignal.timeout((+cfg.timeout || 30) * 1000) });
   const text = await resp.text();
-  if (!resp.ok) throw new HttpError(502, `Provider ${resp.status}: ${text.slice(0, 200)}`);
   let j = null; try { j = JSON.parse(text); } catch {}
-  if (j && (j.status === 'error' || j.success === false || /fail|error|invalid/i.test(String(j.status || j.message || '')))) throw new HttpError(502, 'Provider: ' + (j.message || j.error || text.slice(0, 200)));
+  /* Say what the gateway said, in its own words. It used to come back as
+     "Provider 400: {"success":false,"message":"Invalid sender ID"}", which is the answer
+     buried in its own punctuation — and that one answer is nearly always the same thing:
+     the sender name in Settings is not one this account is allowed to send under. */
+  const said = (j && (j.message || j.error)) ? String(j.message || j.error) : text.slice(0, 200);
+  const hint = /sender/i.test(said)
+    ? ' — the sender name in Settings → Messaging is not one this account may send under. The one in the provider\'s own example is usually a demo, not yours.'
+    : '';
+  if (!resp.ok) throw new HttpError(502, `The gateway refused it: ${said}${hint}`);
+  if (j && (j.status === 'error' || j.success === false || /fail|error|invalid/i.test(String(j.status || j.message || '')))) throw new HttpError(502, `The gateway refused it: ${said}${hint}`);
   return text;
 }
 
