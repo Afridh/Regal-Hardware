@@ -9731,15 +9731,21 @@ const DASH_PANELS=[
   ['figures','The shop at a glance','the day’s cash and credit, profit, what is owed both ways, cheques','top'],
   ['day','Today at the counter','the day board with the big number','top'],
   ['alerts','Things that need you','orders, notices, cheques, low stock, notes to settle','top'],
+['standing','Where the day stands','the float, the drawer, whether the day is shut','top'],
+['waitingOn','Jobs waiting on somebody','payment requests, goods to hand over, bills on hold, repairs','top'],
+['whoIn','Who is in today','in, late, away','top'],
   ['sales','Sales, last 14 days','bars, cash against credit','sell'],
   ['week','This week','gross profit, margin, best sellers','sell'],
   ['cashier','Takings by cashier','today','sell'],
   ['custOwed','What customers owe us','by age — up to 30, 31 to 60, over 60 days','cust'],
   ['bills','Latest bills','the last six','cust'],
+['papers','Quotations and delivery notes','what is still open, and what is waiting for an invoice','cust'],
   ['supOwed','What we owe suppliers','by supplier, with our cheques still to clear','sup'],
   ['low','Running low','below reorder level — what to order next','sup'],
   ['position','Where the shop stands','receivable, payable, expenses, wages','cash'],
   ['money','Where the money is','cash, banks, cheques in the drawer','cash'],
+['chqDay','Cheques','what came in today, what is waiting to be banked, what we wrote that falls due','cash'],
+['circle','Cash lent and borrowed','money passed with people outside the trade','cash'],
   ['flow','Money in against money out','this month, as a diagram','cash'],
   ['expenses','Where the expenses go','this month, by category','cash']];
 const DASH_DEFAULT=DASH_PANELS.map(p=>p[0]);
@@ -11583,6 +11589,119 @@ function dashboard(){
        </button>`).join('')}</div>`;
    },
    /* The six figures the counter is asked for most, in one line. */
+   /* Where the day stands: has the float been counted, has the drawer been counted, is the
+      day shut. Three questions somebody asks every evening, so they belong on the board
+      rather than two pages away. */
+   standing:()=>{
+     if(typeof cashFind!=='function') return '';
+     const loc=(typeof cashStore==='function')?cashStore():0;
+     const open=cashFind('open',t,loc), close=cashFind('close',t,loc);
+     const shut=(typeof deFind==='function')?deFind(t,loc):null;
+     const step=(done,label,note)=>`<div style="display:flex;gap:8px;align-items:baseline;padding:3px 0">
+       <span class="tag ${done?'ok':'warn'}" style="min-width:62px;text-align:center">${done?'done':'to do'}</span>
+       <span><b>${label}</b>${note?` <span class="muted">${note}</span>`:''}</span></div>`;
+     return `<div class="card"><h2>Where the day stands</h2>
+      ${step(!!open,'The float counted',open?fmt(open.total):'nobody has counted the drawer this morning')}
+      ${step(!!close,'The drawer counted',close?fmt(close.total)+(Math.abs(close.diff||0)<0.005?' · it agreed':
+         ` · ${fmt(Math.abs(close.diff))} ${close.diff>0?'over':'short'}`):'at the end of the day')}
+      ${step(!!shut,'The day shut',shut?'by '+shut.by+' at '+shut.at:'when everything else is done')}
+      <button class="btn ghost sm" data-view="cashup" style="margin-top:8px">Open the day</button></div>`;
+   },
+
+   /* Everything standing still until a person does something about it. One panel, because
+      "what is waiting on me" is one question however many corners of the shop it touches. */
+   waitingOn:()=>{
+     const reqs=(typeof payReqs==='function')?payReqs().filter(r=>['sent','accepted','ready'].includes(r.status)):[];
+     const iss=(typeof storeToIssue==='function')?storeToIssue():0;
+     const hold=(S.heldBills||[]).length;
+     const jobs=(S.jobs||[]).filter(j=>['in','sent','back'].includes(j.status));
+     const notes=(typeof dnOpen==='function')?dnOpen():[];
+     const rows=[
+       reqs.length?['payreqs',reqs.length,reqs.length===1?'supplier asking to be paid':'suppliers asking to be paid',
+         fmt(reqs.reduce((a,r)=>a+(prSum?prSum(r):0),0))]:null,
+       iss?['issues',iss,iss===1?'lot of goods to hand over':'lots of goods to hand over','for the other store']:null,
+       hold?['pos',hold,hold===1?'bill on hold':'bills on hold','waiting at the counter']:null,
+       notes.length?['purchases',notes.length,notes.length===1?'delivery with no invoice yet':'deliveries with no invoice yet','']:null,
+       jobs.length?['jobs',jobs.length,jobs.length===1?'repair job open':'repair jobs open','']:null
+     ].filter(Boolean);
+     if(!rows.length) return '';
+     return `<div class="card"><h2>Waiting on somebody</h2>
+      ${rows.map(([view,n,what,note])=>`<button class="btn ghost" data-view="${view}"
+        style="display:flex;width:100%;gap:10px;align-items:baseline;justify-content:flex-start;margin-top:6px;text-align:left">
+        <b style="font-size:17px;min-width:28px">${n}</b><span>${what}${note?` <span class="muted">· ${note}</span>`:''}</span></button>`).join('')}</div>`;
+   },
+
+   /* Who is behind the counter today. The sheet knows; the board should not make anybody
+      go and look. */
+   whoIn:()=>{
+     const day=((S.shift||{}).days||{})[t]||{};
+     const staff=(S.employees||[]).filter(e=>e.active!==false);
+     if(!staff.length) return '';
+     const mark=e=>{ const r=day[e.id]||{};
+       if(r.status==='absent') return ['away','bad'];
+       if(r.status==='leave') return ['on leave','blue'];
+       if(r.status==='holiday') return ['holiday',''];
+       if(r.in) return [r.out?'in, and gone home':'in since '+r.in,'ok'];
+       return ['not in yet','warn'] };
+     const rows=staff.map(e=>({e,m:mark(e)}));
+     const inNow=rows.filter(r=>r.m[1]==='ok').length;
+     return `<div class="card"><h2>Who is in today <span class="muted" style="font-weight:400">· ${inNow} of ${staff.length}</span></h2>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+       ${rows.map(({e,m})=>`<span class="tag ${m[1]}">${e.name} · ${m[0]}</span>`).join('')}</div>
+      <button class="btn ghost sm" data-view="payroll" style="margin-top:8px">The sheet</button></div>`;
+   },
+
+   /* Paper that is out there with a customer's name on it and has not become a bill yet. */
+   papers:()=>{
+     const q=(S.docs||[]).filter(x=>x.kind==='QUOTE'&&x.status==='open');
+     const dn=(S.docs||[]).filter(x=>x.kind==='DN'&&x.status==='open');
+     if(!q.length&&!dn.length) return '';
+     const val=l=>l.reduce((a,x)=>a+(+x.total||0),0);
+     return `<div class="card"><h2>Out with customers</h2>
+      <table>
+       ${q.length?`<tr><td>Quotations still open</td><td class="n"><b>${q.length}</b></td><td class="n">${fmt(val(q))}</td></tr>`:''}
+       ${dn.length?`<tr><td>Delivery notes not billed</td><td class="n"><b>${dn.length}</b></td><td class="n">${fmt(val(dn))}</td></tr>`:''}
+      </table>
+      <button class="btn ghost sm" data-view="docs">Open them</button></div>`;
+   },
+
+   /* Cheques, which are the shop's whole cash-flow question: what came in today, what is
+      sitting in the drawer unbanked, and what we have written that is about to land. */
+   chqDay:()=>{
+     const got=(S.cheques||[]).filter(c=>c.dir==='RECEIVED'&&(c.recvDate||c.date)===t);
+     const soon=pend.filter(c=>c.date<=ago(-7)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+     if(!got.length&&!inHand.length&&!soon.length) return '';
+     const v=l=>l.reduce((a,c)=>a+(+c.amount||0),0);
+     return `<div class="card"><h2>Cheques</h2>
+      <table>
+       <tr><td>Came in today</td><td class="n"><b>${got.length}</b></td><td class="n">${fmt(v(got))}</td></tr>
+       <tr><td>In the drawer, not banked</td><td class="n"><b>${inHand.length}</b></td><td class="n">${fmt(v(inHand))}</td></tr>
+       <tr><td>Ours, falling due inside a week</td><td class="n"><b>${soon.length}</b></td><td class="n ${soon.length?'rust':''}">${fmt(v(soon))}</td></tr>
+      </table>
+      ${soon.length?`<div class="muted" style="font-size:12px">Nearest: ${soon.slice(0,3).map(c=>`${c.date} ${noteEsc(c.payee||c.party||'')} ${fmt(c.amount)}`).join(' · ')}</div>`:''}
+      <div style="display:flex;gap:8px;margin-top:8px"><button class="btn ghost sm" data-view="chequesIn">Cheques in</button>
+       <button class="btn ghost sm" data-view="chequesOut">Cheques out</button></div></div>`;
+   },
+
+   /* Money lent to people and borrowed from them — the trade's own running account, which
+      is real money and belongs on the board with the rest of it. */
+   circle:()=>{
+     if(typeof circleList!=='function') return '';
+     const people=circleList().map(p=>({...p,bal:circleBal(p.id)}))
+       .filter(p=>Math.abs(p.bal)>0.005).sort((a,b)=>Math.abs(b.bal)-Math.abs(a.bal));
+     if(!people.length) return '';
+     return `<div class="card"><h2>Cash lent and borrowed</h2>
+      <div class="muted">Money passed with people outside the trade.</div>
+      <table style="margin-top:6px">
+       <tr><td>The shop owes</td><td class="n rust"><b>${fmt(circleOwedToThem())}</b></td></tr>
+       <tr><td>Owed to the shop</td><td class="n"><b>${fmt(circleOwedToUs())}</b></td></tr>
+      </table>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+       ${people.slice(0,8).map(p=>`<span class="tag ${p.bal>0?'bad':'ok'}">${noteEsc(p.name)} · ${p.bal>0?'we owe':'they owe'} ${fmt(Math.abs(p.bal))}</span>`).join('')}
+       ${people.length>8?`<span class="muted">and ${people.length-8} more</span>`:''}</div>
+      <button class="btn ghost sm" data-view="cashup" style="margin-top:8px">The circle</button></div>`;
+   },
+
    figures:()=>{
      const gpToday=ts.reduce((a,s)=>a+s.lines.reduce((x,l)=>x+l.qty*(l.price-l.cost)-(l.disc||0),0),0);
      const gpPct=sum(ts,'total')?gpToday/sum(ts,'total')*100:0;
