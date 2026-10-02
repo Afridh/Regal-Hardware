@@ -9141,7 +9141,12 @@ function cashup(){
         <button class="btn tape" data-act="cashSave" data-k="open">Save the opening count</button>
         ${cashList().some(c=>c.kind==='open'&&(c.loc||0)===loc)?'<button class="btn ghost" data-act="cashLast">Same as last time</button>':''}
        </div>`}
-     ${open?diffLine(open.total,booksOpen,`Counted ${money2(open.total)} · the books said ${money2(booksOpen)}`):''}
+     ${open?(()=>{ const gap=+(open.total-booksOpen).toFixed(2);
+       return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:4px 0">
+         <span>Counted ${money2(open.total)} · the books say ${money2(booksOpen)} is in hand</span>
+         <span>${Math.abs(gap)<0.005?'<span class="tag ok">the same</span>'
+           :`<span class="tag">${money2(Math.abs(gap))} ${gap<0?'of it not in this drawer':'more than the books'}</span>`}</span></div>
+        ${Math.abs(gap)>=0.005?'<div class="muted" style="font-size:12px">Cash kept out of the till — in the safe, or already at the bank — sits in this gap. It is worth looking at when the gap <b>changes</b>, not because there is a gap.</div>':''}`})():''}
     </div>
 
     <div class="card flex1" style="min-width:300px">
@@ -9179,7 +9184,9 @@ function cashup(){
         return `<tr><td>${c.date}</td>${(typeof extMulti==='function'&&extMulti())?`<td>${c.loc?extLocName(c.loc):'—'}</td>`:''}
          <td>${c.kind==='open'?'Opening float':'Closing count'}</td>
          <td class="n">${money2(c.total)}</td><td class="n">${money2(e)}</td>
-         <td class="n">${Math.abs(df)<0.005?'<span class="tag ok">agrees</span>':df>0?`<span class="tag warn">${money2(df)} over</span>`:`<span class="tag bad">${money2(-df)} short</span>`}</td>
+         <td class="n">${Math.abs(df)<0.005?'<span class="tag ok">agrees</span>'
+           :c.kind==='open'?`<span class="tag">${money2(Math.abs(df))} apart</span>`
+           :df>0?`<span class="tag warn">${money2(df)} over</span>`:`<span class="tag bad">${money2(-df)} short</span>`}</td>
          <td>${c.by}</td></tr>`}).join('')}</table></div>`:''}`;
 }
 
@@ -9256,11 +9263,15 @@ function cashSave(kind){
   else rec.expected=bal('1010',cashPrev(d)), rec.diff=+(rec.total-rec.expected).toFixed(2);
   cashList().push(rec);
   cashDraft[kind]={};
-  try{ logTrail('cashup',`${kind==='open'?'Opening float':'Closing count'} ${money2(rec.total)} on ${d}${Math.abs(rec.diff)>=0.005?` — ${money2(Math.abs(rec.diff))} ${rec.diff>0?'over':'short'}`:''}`,
+  const gap=Math.abs(rec.diff)>=0.005;
+  try{ logTrail('cashup',kind==='open'
+    ? `Opening float ${money2(rec.total)} on ${d}${gap?` — ${money2(Math.abs(rec.diff))} apart from the books`:''}`
+    : `Closing count ${money2(rec.total)} on ${d}${gap?` — ${money2(Math.abs(rec.diff))} ${rec.diff>0?'over':'short'}`:''}`,
     {amount:rec.total,ref:d}) }catch(e){}
   render();
-  toast(Math.abs(rec.diff)<0.005?'Counted, and it agrees'
-    :`Counted — ${money2(Math.abs(rec.diff))} ${rec.diff>0?'over':'short'}`);
+  toast(kind==='open' ? `Opening float saved — ${money2(rec.total)}`
+    : !gap ? 'Counted, and it agrees'
+    : `Counted — ${money2(Math.abs(rec.diff))} ${rec.diff>0?'over':'short'}`);
 }
 
 function cashPrintSlip(kind){
