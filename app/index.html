@@ -3766,6 +3766,16 @@ function wa(to,body,key,vars){
 /* the real send — the provider's endpoint and key live in Settings → Messaging.
    On the live system the same call is made by the backend worker, which also
    keeps the key off the browser. */
+/* The same rule the server keeps in server/src/lib/phone.js. Without the server in front
+   of it this till talks to the provider itself, so the limit has to be kept here too —
+   otherwise a till that happened to be offline would text the whole customer book while
+   the shop believed it could not. */
+const intlHere=(to)=>{ let d=String(to||'').replace(/[^0-9]/g,''); if(d.charAt(0)==='0') d='94'+d.slice(1); if(d.length===9) d='94'+d; return d };
+function heldHere(cfg,to){
+  const list=String((cfg&&cfg.testOnly)||'').split(/[,;s]+/).map(intlHere).filter(Boolean);
+  return list.length?list.indexOf(intlHere(to))<0:false;
+}
+
 async function smsSend(m){
   const cfg=CFG.msg;
   // on the server build the Node backend makes the provider call, so the key never leaves it
@@ -3777,6 +3787,11 @@ async function smsSend(m){
     return;
   }
   if(!cfg.apiUrl||!cfg.apiKey){ m.status='Not sent — no API set'; return }
+  if(heldHere(cfg,m.to)){
+    m.status='Held — while testing, messages only go to '+cfg.testOnly;
+    if(typeof render==='function'&&S.view==='messages') render();
+    return;
+  }
   try{
     const body=cfg.provider==='smslenz.lk'
       ? {user_id:cfg.userId||'',api_key:cfg.apiKey,sender_id:cfg.sender,contact:String(m.to).replace(/^0/,'94'),message:m.body}

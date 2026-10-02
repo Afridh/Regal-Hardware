@@ -2,6 +2,17 @@
 // (the web equivalent of SePOSbgWorkerSMS.exe).  Gateway: smslenz.lk-style HTTP API,
 // configurable per company in sms_settings.
 import { query } from '../db.js';
+import { whyHeld } from '../lib/phone.js';
+
+/* This outbox has settings of its own, in sms_settings. The shop's test limit does not:
+   it is set once in Settings → Messaging and must hold whichever way a message was
+   raised, or it is not a limit at all. */
+async function shopMsgCfg() {
+  try {
+    const { rows: [row] } = await query(`SELECT data FROM books WHERE key = 'regal'`);
+    return row?.data?.CFG?.msg || null;
+  } catch { return null }
+}
 
 export function renderTemplate(tpl, vars) {
   return String(tpl || '').replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''));
@@ -26,6 +37,8 @@ export async function queueSms(companyId, mobile, templateKey, vars, { force = f
 export async function sendNow(settings, mobile, message) {
   const url = settings.api_url;
   if (!url) throw new Error('SMS API URL not configured');
+  const held = whyHeld(await shopMsgCfg(), mobile);
+  if (held) throw new Error(held);
   const body = { user_id: settings.sender_id, api_key: settings.api_key, sender_id: settings.sender_id, contact: mobile, message };
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const text = await res.text();
@@ -41,7 +54,14 @@ export function startSmsWorker(intervalMs = 15000) {
     try {
       const { rows } = await query(`SELECT o.*, s.api_url, s.api_key, s.sender_id FROM sms_outbox o JOIN sms_settings s ON s.company_id = o.company_id
                                     WHERE o.status = 'PENDING' AND o.attempts < 3 ORDER BY o.id LIMIT 20`);
+      const cfg = rows.length ? await shopMsgCfg() : null;
       for (const m of rows) {
+        const held = whyHeld(cfg, m.mobile);
+        if (held) {                      // parked, not thrown away: it goes when the limit is lifted
+          await query(`UPDATE sms_outbox SET status = 'HELD', last_error = $2 WHERE id = $1`, [m.id, held])
+            .catch(() => {});
+          continue;
+        }
         try {
           await sendNow(m, m.mobile, m.message);
           await query(`UPDATE sms_outbox SET status = 'SENT', sent_at = now(), attempts = attempts + 1 WHERE id = $1`, [m.id]);

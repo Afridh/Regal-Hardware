@@ -501,12 +501,11 @@ r.post('/books/:key/restore/:rev', regalAuth, asyncHandler(async (req, res) => {
 
 // ---------------------------------------------------------------- SMS relay (keeps the provider call off the browser)
 /** Sri Lankan mobile as the gateways want it: 94XXXXXXXXX. */
-export function intlPhone(to) {
-  let d = String(to || '').replace(/\D/g, '');
-  if (d.startsWith('0')) d = '94' + d.slice(1);
-  if (d.length === 9) d = '94' + d;
-  return d;
-}
+/* Both of these live in lib/phone.js now, so the outbox worker and this file cannot drift
+   apart on the one question that matters: may this message go out at all. Re-exported
+   because half the routes already import them from here. */
+export { intlPhone, heldByTestMode } from '../lib/phone.js';
+import { intlPhone, heldByTestMode } from '../lib/phone.js';   // and used right here, in sendViaProvider
 /* Whether a sign-in code may be shown on the screen instead of texted.
    Only on a shop's own machine that has no way to text at all — never on the live site. Anyone can
    type anyone's mobile into the sign-in box, so handing the code straight back there would let a
@@ -516,10 +515,6 @@ export function mayRevealCode() {
 }
 
 /** Only these numbers get texts while the shop is trying the system out (Settings → Messaging → test mode). */
-export function heldByTestMode(cfg, to) {
-  const list = String(cfg?.testOnly || '').split(/[,\s;]+/).map(intlPhone).filter(Boolean);
-  return list.length ? !list.includes(intlPhone(to)) : false;
-}
 export async function sendViaProvider(cfg, to, message) {
   if (!cfg || !cfg.apiUrl || !cfg.apiKey) throw new HttpError(400, 'SMS provider is not set up (Settings → Messaging)');
   if (heldByTestMode(cfg, to)) throw new HttpError(400, `Held — test mode: texts only go to ${cfg.testOnly}`);
