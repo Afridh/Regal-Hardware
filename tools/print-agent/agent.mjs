@@ -35,7 +35,8 @@ async function render(format, html) {
   const b = await getBrowser();
   const page = await b.newPage();
   try {
-    await page.setViewport({ width: f.widthPx, height: 800, deviceScaleFactor: f.scale || 2 });
+    const over = Math.max(1, Math.min(4, +f.oversample || 2));     // drawn this many times too big, then shrunk
+    await page.setViewport({ width: f.widthPx, height: 800, deviceScaleFactor: (f.scale || 1) * over });
     await page.setContent(html, { waitUntil: 'load' });
     await page.emulateMediaType('print');
     await page.evaluate((f, format) => {
@@ -46,14 +47,42 @@ async function render(format, html) {
         // no border, hardly any side padding, and pure black on white so the printer does not dither the text
         const sc = +p.dataset.scale || 1;                    // text size chosen in Settings
         p.style.width = (302 / sc) + 'px'; p.style.border = '0'; p.style.padding = '2px 4px'; p.style.boxSizing = 'border-box';
-        p.style.zoom = String((f.dots || 576) / 302 * sc); p.style.filter = 'contrast(400%)';
+        p.style.zoom = String((f.dots || 576) / 302 * sc);
+        p.style.webkitFontSmoothing = 'none';                  // no grey fringe around the letters
         document.body.style.width = (f.dots || 576) + 'px';
       }
     }, f, format);
     await new Promise(r => setTimeout(r, 150));
     const file = path.join(tmp, `bill-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.png`);
     const target = await page.$('#printArea .print') || await page.$('body');
-    await target.screenshot({ path: file, omitBackground: false });
+    const shot = await target.screenshot({ encoding: 'base64', omitBackground: false });
+
+    /* Shrink it back to the paper's own width and force every pixel to black or white. The
+       threshold is deliberately generous: a letter's soft edge becomes ink rather than being
+       dropped, so the text reads solid instead of thin and broken. */
+    const cut = Math.max(1, Math.min(254, +f.threshold || 186));
+    const wide = format === 'r80' ? (f.dots || 576) : 0;      // A5 goes to a real printer at its own size
+    const png = await page.evaluate(async (b64, wide, cut) => {
+      const img = new Image();
+      await new Promise(r => { img.onload = r; img.src = 'data:image/png;base64,' + b64 });
+      const w = wide || img.width, h = Math.round(img.height * (w / img.width));
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const g = c.getContext('2d', { willReadFrequently: true });
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+      g.fillStyle = '#fff'; g.fillRect(0, 0, w, h);
+      g.drawImage(img, 0, 0, w, h);
+      const d = g.getImageData(0, 0, w, h);
+      const px = d.data;
+      for (let i = 0; i < px.length; i += 4) {
+        // how bright the pixel is, as an eye would read it
+        const lum = px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114;
+        const v = lum < cut ? 0 : 255;
+        px[i] = px[i + 1] = px[i + 2] = v; px[i + 3] = 255;
+      }
+      g.putImageData(d, 0, 0);
+      return c.toDataURL('image/png').split(',')[1];
+    }, shot, wide, cut);
+    fs.writeFileSync(file, Buffer.from(png, 'base64'));
     return file;
   } finally { await page.close(); }
 }

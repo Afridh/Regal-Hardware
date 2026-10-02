@@ -180,7 +180,8 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   const last = [...d.querySelectorAll('.cu-tbl.stmt tr')].pop();
   ok('S: statement running balance ends at what we owe', !!last && last.textContent.replace(/[^\d.]/g, '').endsWith(w.partyBal('S', 1).toFixed(2).replace(/[^\d.]/g, '')));
   ok('S: ledger billed − paid = balance', Math.abs(w.supLedger(1).reduce((a, r) => a + r.billed - r.paid, 0) - w.partyBal('S', 1)) < 0.01);
-  keyDoc('F7'); await sleep(30); ok('S: F7 opens Pay supplier', !!d.querySelector('.modal #pl') && /Pay /.test(d.querySelector('.modal h2').textContent)); w.closeModals();
+  // the window opens on the bills now, and the cheque lines come on the stage after it
+  keyDoc('F7'); await sleep(30); ok('S: F7 opens Pay supplier', !!d.querySelector('.modal #spBody') && !!d.querySelector('.modal .sp-steps') && /Pay /.test(d.querySelector('.modal h2').textContent)); w.closeModals();
   keyDoc('F8'); await sleep(30); ok('S: F8 prints the statement with a running balance', /SUPPLIER STATEMENT/.test(d.querySelector('.modal').innerHTML) && /Balance brought forward|Particulars/.test(d.querySelector('.modal').innerHTML)); w.closeModals();
   keyDoc('n', { ctrlKey: true }); await sleep(30);
   ok('S: Ctrl+N opens the new supplier form', !!d.getElementById('smName'));
@@ -333,7 +334,10 @@ ok('A: voucher voided, liability cleared', gv.status === 'void' && Math.abs(w.ba
 ok('A: two locations seeded', S.locations.length === 2, S.locations.map(l => l.name).join(', '));
 const nails = P(23); const here = extHere(nails); const total = nails.stock;
 w.go('transfers'); await sleep(30);
-ok('A: transfers view shows both locations', /Store room/.test(d.getElementById('main').innerHTML));
+// the second shop was renamed when the demo became a two-store shop; ask for the names it has
+{ const html = d.getElementById('main').innerHTML;
+  ok('A: transfers view shows both locations', S.locations.every(l => html.includes(l.name)),
+     S.locations.map(l => l.name).join(', ')); }
 d.querySelector('[data-act="trfNew"]').click(); await sleep(30);
 d.getElementById('trfFrom').value = '1'; d.getElementById('trfTo').value = '2';
 const q = d.getElementById('trfQ'); q.value = nails.code; q.dispatchEvent(new w.Event('input')); await sleep(30);
@@ -345,7 +349,10 @@ ok('A: stock split moved, total unchanged', extHere(nails) === here - 10 && nail
 w.closeModals();
 // sell more than is at this location -> refused, even though the shop holds it elsewhere
 let short = null; try { w.completeSale({ lines: [{ pid: 23, qty: extHere(nails) + 1, price: nails.retail, disc: 0 }], customerId: 1, pays: [{ method: 'CASH', amount: (extHere(nails) + 1) * nails.retail }] }); } catch (e) { short = e.message; }
-ok('A: sale refused when the till\'s location is short', /elsewhere/.test(short || ''), short);
+// the refusal was reworded to name the shops and say what to do about it; what matters is that it
+// refused and told the cashier where the goods actually are, not that it used one particular word
+ok('A: sale refused when the till\'s location is short',
+   !!short && /Not enough/i.test(short) && S.locations.some(l => short.includes(l.name)), short);
 // switch this till to the store room and sell from there
 w.extUseLocation(2); const atStore = extHere(nails);
 const inv3 = w.completeSale({ lines: [{ pid: 23, qty: 3, price: nails.retail, disc: 0 }], customerId: 1, pays: [{ method: 'CASH', amount: nails.retail * 3 }] });
