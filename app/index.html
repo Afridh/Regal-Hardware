@@ -5022,10 +5022,20 @@ function settings(){
      ${fld('privacy.on','','Privacy screen switched on','check')}
      <div class="grid3">
       <div class="f"><label>Key</label><select data-set="privacy.key">${[['ctrl+shift+x','Ctrl + Shift + X'],['ctrl+shift+h','Ctrl + Shift + H'],['f12','F12'],['ctrl+`','Ctrl + ` (backtick)'],['scrolllock','Scroll Lock']].map(o=>`<option value="${o[0]}" ${(p.key||'ctrl+shift+x')===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select><div class="muted">Press it again to come back.</div></div>
+      <div class="f"><label>What to show</label><select data-set="privacy.mode">
+        ${[['pct','A share of the bills'],['amount','About a given amount']]
+          .map(o=>`<option value="${o[0]}" ${(p.mode||'pct')===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>
       ${fld('privacy.pct','Share of bills shown (%)','35 shows about a third of the bills, and so about a third of the takings','number')}
+      ${fld('privacy.amount','Or show about this much','Bills are kept until the takings come to roughly this. Used when "About a given amount" is chosen above.','number')}
       ${fld('privacy.minutes','Comes back by itself after (minutes)','0 = only when the key is pressed','number')}
      </div>
      <div class="grid2">${fld('privacy.hideCredit','','Hide credit — no bills on account, no outstanding balances, customers look clear','check')}${fld('privacy.dot','','A tiny grey dot bottom-left of the menu while it is up, so you know','check')}</div>
+     <div class="card note" style="margin-top:10px"><b>Without touching the keyboard</b>
+      <div class="muted">Press <b>Dashboard</b> in the menu five times, inside two seconds, and the screen
+       changes. Press it five times again and the real figures come back. Nothing is shown while the
+       presses are counted and the dashboard opens as it always does, so there is nothing to see from
+       the other side of the counter — which is the point on a phone or a tablet, where there is no
+       key to press.</div></div>
      <div style="display:flex;gap:8px;align-items:center;margin-top:10px"><button class="btn tape" data-act="privacyTry" ${p.on?'':'disabled'}>Try it now</button><span class="muted">Same as pressing the key. Today's figures on the dashboard change at once; press the key to come back.</span></div>`;
   }
   if(setTab==='approvals'){ const cfg=CFG.approvals||{};
@@ -7614,7 +7624,17 @@ function privacyToggle(){
   if(PRIV){ Object.assign(S,PRIV); PRIV=null; window.privacyOn=false; clearTimeout(privT); document.body.classList.remove('privacy'); render(); drawBell(); return }
   clearTimeout(saveTimer); saveForce=false;
   PRIV={sales:S.sales,payments:S.payments,journal:S.journal,notif:S.notif,tenders:S.tenders,web:S.web,messages:S.messages};
-  const pct=Math.max(1,Math.min(100,+cfg.pct||35)), keep=no=>privHash(no)<pct, dropped=new Set();
+  /* Two ways to say how much of the shop to show. A share is what it has always been. An amount
+     is how a shopkeeper actually thinks — "make it look like about fifty thousand" — and the bills
+     are kept in the same arbitrary-looking order until they come to roughly that. */
+  const want = +cfg.amount || 0;
+  let pct = Math.max(1, Math.min(100, +cfg.pct || 35));
+  if (cfg.mode === 'amount' && want > 0) {
+    const all = PRIV.sales.filter(s => !(cfg.hideCredit && s.balance > 0));
+    const sum = all.reduce((a, s) => a + (+s.total || 0), 0);
+    pct = sum > 0 ? Math.max(1, Math.min(100, Math.round(want / sum * 100))) : 100;
+  }
+  const keep=no=>privHash(no)<pct, dropped=new Set();
   S.sales=PRIV.sales.filter(s=>{ if(cfg.hideCredit&&s.balance>0){ dropped.add(s.no); return false } const k=keep(s.no); if(!k) dropped.add(s.no); return k });
   S.payments=PRIV.payments.filter(p=>{ const against=p.against||p.no||p.voucher||''; if(cfg.hideCredit&&p.dir==='IN'&&p.customerId&&p.customerId!==1){ dropped.add(p.no); dropped.add(p.voucher); return false } const k=keep(p.no||p.voucher||against); if(!k){ dropped.add(p.no); dropped.add(p.voucher) } return k });
   const base=r=>String(r||'').replace(/-(R|U)$/,'');
@@ -9522,7 +9542,22 @@ function renderNav(){
     if(on&&(on.offsetTop<list.scrollTop||on.offsetTop+on.offsetHeight>list.scrollTop+list.clientHeight)) on.scrollIntoView({block:'nearest'}) }
 }
 
+/* Five taps on Dashboard, inside two seconds, turn the quiet screen on or off. Nothing is shown
+   while they are being counted and the page goes to the dashboard as it always would, so from
+   across the counter it is a man pressing a button that seems not to have worked. */
+let quietTaps = 0, quietLast = 0;
+function quietTap(){
+  const cfg = CFG.privacy || {};
+  if (cfg.on === false) return;                     // the shop has not asked for any of this
+  const now = Date.now();
+  quietTaps = (now - quietLast > 2000) ? 1 : quietTaps + 1;
+  quietLast = now;
+  if (quietTaps < 5) return;
+  quietTaps = 0;
+  try { privacyToggle() } catch (e) {}
+}
 function go(v){ if(!allowed(v)){toast('That is not open to '+S.user.name);return} document.body.classList.remove('drawer');
+  if(v==='dashboard') quietTap();
   S.view=v;
   const supplierTab=['suppliers','orders'].includes(v), customerTab=(v==='customers');
   if(supplierTab) S.phoneMode='supplier';
