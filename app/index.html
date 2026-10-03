@@ -3786,13 +3786,17 @@ async function smsSend(m){
   if(window.regalBridge&&regalBridge.online()){
     try{ const r=await regalBridge.sms(m.to,m.body); m.status=r.status||(r.ok?'Sent':'Failed') }
     catch(e){ m.status='Failed — '+(e.message||'network') }
+    /* Say what actually happened. The button that asked for this said it had gone before
+       the server had been asked, so a message held back or refused still read as sent. */
+    if(!/^Sent/i.test(m.status)) toast(m.status,/^Held|^Queued/i.test(m.status)?'':'bad');
     if(typeof persist==='function') persist();
     if(typeof render==='function'&&S.view==='messages') render();
     return;
   }
-  if(!cfg.apiUrl||!cfg.apiKey){ m.status='Not sent — no API set'; return }
+  if(!cfg.apiUrl||!cfg.apiKey){ m.status='Not sent — no API set'; toast(m.status,'bad'); return }
   if(heldHere(cfg,m.to)){
     m.status='Held — while testing, messages only go to '+cfg.testOnly;
+    toast(m.status);
     if(typeof render==='function'&&S.view==='messages') render();
     return;
   }
@@ -3803,6 +3807,7 @@ async function smsSend(m){
     const r=await fetch(cfg.apiUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     m.status=r.ok?'Sent':'Failed ('+r.status+')';
   }catch(e){ m.status='Failed — '+(e.message||'network') }
+  if(!/^Sent/i.test(m.status)) toast(m.status,'bad');
   if(typeof render==='function'&&S.view==='messages') render();
 }
 
@@ -23167,7 +23172,7 @@ document.addEventListener('click',e=>{
       sendBillView(inv);                       // the customer opens the paper the shop printed
       const send=(to)=>{ sms(to,tpl('billLink',{invoice:inv.no,total:fmt(inv.total),balance:fmt(inv.balance),
           balancePart:inv.balance?', '+fmt(inv.balance)+' still to pay':'',link:inv.link}));
-        render(); toast('Bill link texted to '+to) };
+        render(); toast('Sending the bill link to '+to+'…') };
       const known=inv.phone||c.phone; if(known) return send(known);
       askNumber(inv,'text',send); },
     custPortal:()=>{const c=C(+a.dataset.id);
