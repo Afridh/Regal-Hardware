@@ -145,9 +145,13 @@ ok(/The bills/.test(flow.backTo),'and you can go back to the bills',flow.backTo)
 
 // ---- the calendar: the recommendation, the full days, the shut ones ----
 const cal=await pg.evaluate(()=>{
-  const d=D(today), at=(n,amt)=>{ const t=new Date(d+'T00:00:00'); t.setDate(t.getDate()+n);
-    S.cheques.push({dir:'ISSUED',no:'C'+n,bankId:1,bank:'HNB',date:D(t),payee:'Z',amount:amt,status:'ISSUED',party:'Z'}) };
-  at(0,600000); at(1,600000);
+  const d=D(today);
+  // two days the shop is actually open on: a Sunday or a holiday is marked shut, and shut beats
+  // full, so loading one of those would prove nothing about the ceiling
+  const open=[]; for(let x=d,i=0; open.length<2 && i<30; i++, x=addDays(x,1))
+    if(!diaryIsSunday(x) && !holidayOf(x)) open.push(x);
+  open.forEach((ds,i)=>S.cheques.push({dir:'ISSUED',no:'C'+i,bankId:1,bank:'HNB',date:ds,
+    payee:'Z',amount:600000,status:'ISSUED',party:'Z'}));
   let got=null; diaryPickModal(d,100000,(ds)=>{got=ds});
   const box=document.querySelector('.modal .box');
   const best=[...box.querySelectorAll('td.best')].map(t=>t.querySelector('b').textContent);

@@ -3342,13 +3342,32 @@ const P = id => st.cat && st.cat.products.find(p => String(p.id) === String(id))
 const cartN = () => st.cart.reduce((a, l) => a + l.qty, 0);
 const selLines = () => st.cart.filter(l => l.sel !== false && P(l.pid));
 function totals(lines = selLines()) {
-  const w = st.cat ? st.cat.settings : { delivery: 0, freeOver: 0 };
+  const w = st.cat ? st.cat.settings : { delivery: 0, freeOver: 0, zones: [] };
   const goods = lines.reduce((a, l) => {
     const p = P(l.pid);
     return a + (p ? l.qty * priceFor(p, l.qty) : 0);
   }, 0);
-  const del = (st.deliver && goods < w.freeOver && goods > 0) ? w.delivery : 0;
-  return { goods, del, total: goods + del, n: lines.length };
+  const zone = (w.zones || []).find(z => z.id === st.zone) || null;
+  const del = !st.deliver || !goods ? 0
+    : zone ? ((zone.freeOver && goods >= zone.freeOver) ? 0 : zone.charge)
+           : ((w.freeOver && goods >= w.freeOver) ? 0 : w.delivery);
+  const off = +st.off || 0;                      // only ever what the server last said it was worth
+  return { goods, del, off, zone, total: Math.max(0, goods - off) + del, n: lines.length };
+}
+
+/* What the server says this basket comes to. Asked whenever the basket, the area or the code
+   changes; the figure it gives is the one the order will be taken at. */
+let quoteAt = 0;
+async function askQuote(){
+  const lines = selLines().map(l => ({ pid: l.pid, qty: l.qty }));
+  const mine = ++quoteAt;
+  try {
+    const j = await api('/quote', { method: 'POST', body: { lines, deliver: !!st.deliver, zone: st.zone || '', code: st.code || '' } });
+    if (mine !== quoteAt) return;                // a later basket has already been asked about
+    st.off = j.off || 0; st.codeWhy = j.why || ''; st.codeOk = !!j.code;
+    st.under = !!j.under; st.minOrder = j.minOrder || 0;
+    render();
+  } catch (e) { /* offline: the page falls back to its own sum, and the server still decides */ }
 }
 function priceFor(p, qty) {
   let pr = p.price;
@@ -4782,6 +4801,7 @@ function floatingCartBar(lines) {
 }
 
 function checkout() {
+  const w = (st.cat && st.cat.settings) || { zones: [], pays: {} };   // what the shop allows, as the server states it
   const lines = selLines();
   if (!lines.length) return `<div class="empty"><h3>Cart is empty</h3><a class="btn btn-primary" href="#/search">Return to Store</a></div>`;
   const t = totals(lines);
@@ -4816,6 +4836,29 @@ function checkout() {
           <div class="form-group" style="margin-bottom:16px">
             <label class="lbl">Jobsite / Delivery Address *</label>
             <input class="form-control" id="addr" value="${esc(addr)}" placeholder="Road name, building/site number, town in Polonnaruwa / North Central">
+          </div>
+
+          <!-- Where it is going, and what it costs to get there -->
+          ${(w.zones && w.zones.length) ? `<div class="form-group" style="margin-bottom:16px">
+            <label class="lbl">Which area is it going to?</label>
+            <select class="form-control" onchange="st.zone=this.value;ls.set('zone',st.zone);askQuote();render()">
+              <option value="">Choose the area…</option>
+              ${w.zones.map(z => `<option value="${esc(z.id)}" ${st.zone === z.id ? 'selected' : ''}>${esc(z.name)} — ${z.charge ? money(z.charge) : 'free'}${z.freeOver ? `, free over ${money(z.freeOver)}` : ''}${z.days ? ` · ${esc(z.days)}` : ''}</option>`).join('')}
+            </select>
+            ${st.zone ? '' : '<small style="color:#6B7280;font-size:11.5px">Until an area is chosen the usual charge is used.</small>'}
+          </div>` : ''}
+
+          <!-- A discount code, if they have one -->
+          <div class="form-group" style="margin-bottom:16px">
+            <label class="lbl">Discount code (if you have one)</label>
+            <div style="display:flex;gap:8px">
+              <input class="form-control" id="promoCode" value="${esc(st.code || '')}" placeholder="e.g. BUILDER10"
+                style="text-transform:uppercase" oninput="st.code=this.value.toUpperCase()">
+              <button class="btn" type="button" style="white-space:nowrap"
+                onclick="ls.set('code',st.code||'');askQuote()">Use it</button>
+            </div>
+            ${st.codeOk && st.off ? `<small style="color:#15803D;font-size:12px">${esc(st.code)} takes off ${money(st.off)}</small>`
+              : st.codeWhy ? `<small style="color:#B91C1C;font-size:12px">${esc(st.codeWhy)}</small>` : ''}
           </div>
 
           <!-- Gate / Unloading instructions -->
@@ -5344,14 +5387,22 @@ async function place() {
       }
     }
 
-    // Attempt backend API call if running
+    /* The shop's server has the last word: it checks the stock, the smallest order and the code.
+       If it says no, the customer is told why and the basket is left alone — telling somebody
+       their order is placed when it is not is how they wait all day for goods that never come. */
     try {
-      await api('/order', {
+      const said = await api('/order', {
         method: 'POST',
-        body: { lines: lines.map(({ pid, qty }) => ({ pid, qty })), deliver: true, address: addr, note, pay: st.pay || 'cod' }
+        body: { lines: lines.map(({ pid, qty }) => ({ pid, qty })), deliver: !!st.deliver,
+                zone: st.zone || '', code: st.code || '', address: addr, note, pay: st.pay || 'cod' }
       });
+      if (said && said.no) { order.no = said.no; order.total = said.total; order.del = said.del; order.off = said.off || 0 }
     } catch (e) {
-      // Offline / standalone fallback gracefully handled
+      const why = (e && e.message) || 'The shop could not take that order just now';
+      notify('bad', why);
+      await loadCatalog(true);                   // what is left may have changed under us
+      render();
+      return;                                    // the basket is kept, so nothing has to be keyed again
     }
 
     st.placed = order;

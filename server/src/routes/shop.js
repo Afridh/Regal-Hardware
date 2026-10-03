@@ -72,9 +72,12 @@ async function books() {
 function catalogOf(data, pending = [], media = {}) {
   const S = data?.S || {}, CFG = data?.CFG || {};
   const w = { open: true, name: 'Regal Hardware Online', domain: 'regalhw.lk', staffPath: '/pos', hours: '', delivery: 0, freeOver: 0, minOrder: 0, payNote: '', level: 'retail', showOutOfStock: false,
+    zones: [], promos: [], pays: { cod: true, counter: true, bank: false, card: false }, holdStock: true, lowAt: 5,
     tagline: '', about: '', email: '', whatsapp: '', facebook: '', instagram: '', youtube: '', color: '', featured: '', ...(S.web?.settings || {}) };
   const held = {};
   for (const o of (S.web?.orders || [])) if (o.status === 'accepted') for (const l of (o.lines || [])) held[l.pid] = (held[l.pid] || 0) + (+l.qty || 0);
+  // and the ones that came in off the website and are still waiting for a till to take them
+  for (const row of pending) for (const l of (row.data?.lines || [])) held[l.pid] = (held[l.pid] || 0) + (+l.qty || 0);
   const tracked = !(CFG.stock && CFG.stock.track === false);       // a shop that does not count stock sells everything it lists
   // what sold in the last 90 days, so the site can show its best sellers
   const since = new Date(Date.now() - 90 * 864e5).toLocaleDateString('en-CA', { timeZone: TZ });
@@ -101,6 +104,14 @@ function catalogOf(data, pending = [], media = {}) {
   return {
     shop: { name: CFG.shop?.name || 'Regal Hardware', addr: CFG.shop?.addr || '', phone: CFG.shop?.phone || '', land: CFG.shop?.land || '', tags: CFG.shop?.tags || '', hours: CFG.shop?.hours || '', logo: pic('logo') || CFG.shop?.logo || '' },
     settings: { open: !!w.open, name: w.name, domain: w.domain, staffPath: w.staffPath || '/pos', hours: w.hours, delivery: +w.delivery || 0, freeOver: +w.freeOver || 0, minOrder: +w.minOrder || 0, payNote: w.payNote, showOutOfStock: !!w.showOutOfStock || !tracked, tracked,
+      /* Only what a customer may see: a zone's name and what it costs, never the shop's notes.
+         Codes are never listed — a code has to be typed to be worth anything. */
+      zones: (Array.isArray(w.zones) ? w.zones : []).filter(z => z && z.name)
+        .map(z => ({ id: String(z.id || z.name), name: String(z.name).slice(0, 60), charge: +z.charge || 0,
+                     freeOver: +z.freeOver || 0, days: String(z.days || '').slice(0, 40) })),
+      pays: { cod: w.pays?.cod !== false, counter: w.pays?.counter !== false,
+              bank: !!w.pays?.bank, card: !!w.pays?.card },
+      lowAt: Math.max(0, +w.lowAt || 0), holdStock: w.holdStock !== false,
       tagline: w.tagline, about: w.about, email: w.email, whatsapp: w.whatsapp, facebook: w.facebook, instagram: w.instagram, youtube: w.youtube, color: w.color,
       theme: (S.web?.theme && typeof S.web.theme === 'object') ? S.web.theme : {} },
     categories,
@@ -133,6 +144,20 @@ function shopAuth(req, _res, next) {
   }
 }
 const optionalAuth = (req, _res, next) => { const h = req.headers.authorization || ''; if (!h.startsWith('Bearer ')) return next(); shopAuth(req, _res, next); };
+
+/** What is already promised to orders nobody has picked yet. A website order sits in this
+   table until a till takes it in, and until then the goods are spoken for — so the last bag
+   cannot be sold to a second customer while the first order is still on the counter. */
+export async function heldStock() {
+  await ensureShopTables();
+  const { rows } = await query(`SELECT data FROM shop_orders WHERE imported_at IS NULL`);
+  const held = new Map();
+  for (const r of rows) for (const l of (r.data?.lines || [])) {
+    const pid = +l.pid, qty = +l.qty;
+    if (pid && qty > 0) held.set(pid, (held.get(pid) || 0) + qty);
+  }
+  return held;
+}
 
 export async function pendingOrders() {
   await ensureShopTables();
@@ -185,7 +210,7 @@ r.get('/catalog', asyncHandler(async (_req, res) => {
   const data = await books();
   if (!data) return res.json({ shop: { name: 'Regal Hardware' }, settings: { open: false, name: 'Regal Hardware Online', hours: 'The shop has not opened its books yet.' }, categories: [], products: [], slides: [], banners: [] });
   res.set('Cache-Control', 'no-store');
-  res.json(catalogOf(data, [], await mediaIndex()));
+  res.json(catalogOf(data, await pendingOrders(), await mediaIndex()));
 }));
 
 // ---------------------------------------------------------------- pictures
@@ -286,6 +311,58 @@ r.get('/me', shopAuth, asyncHandler(async (req, res) => {
   res.json({ ok: true, name: c?.name || name, phone, known: !!c, owing: round2(owing), bills, points: c?.points || 0, address: c?.address || '', spent, orders });
 }));
 
+/** What a discount code is worth on this basket, or why it is worth nothing. Checked here and
+    nowhere else: a code typed into a page the customer controls proves nothing. */
+/** How many orders have carried a code. Counted from the orders themselves, so it can never
+   drift from the truth and is not lost when a till writes the books over the top. */
+export async function promoUsed(code) {
+  await ensureShopTables();
+  const { rows: [r] } = await query(
+    `SELECT count(*)::int AS n FROM shop_orders WHERE upper(data->>'code') = upper($1)`, [String(code || '')]);
+  return r ? r.n : 0;
+}
+
+function promoOn(data, code, goods, used = 0) {
+  const list = Array.isArray(data?.S?.web?.settings?.promos) ? data.S.web.settings.promos : [];
+  const c = String(code || '').trim().toUpperCase();
+  if (!c) return { off: 0 };
+  const p = list.find(x => String(x.code || '').trim().toUpperCase() === c);
+  if (!p) return { off: 0, why: 'There is no such code' };
+  if (p.off) return { off: 0, why: 'That code has been switched off' };
+  const today = localDate();
+  if (p.from && today < p.from) return { off: 0, why: 'That code is not in use yet' };
+  if (p.until && today > p.until) return { off: 0, why: 'That code has run out of time' };
+  if (+p.limit > 0 && used >= +p.limit) return { off: 0, why: 'That code has been used up' };
+  if (goods < (+p.minOrder || 0)) return { off: 0, why: `That code needs an order of ${money(+p.minOrder)}` };
+  const off = p.kind === 'pct'
+    ? round2(goods * Math.min(100, Math.max(0, +p.value || 0)) / 100)
+    : round2(Math.min(goods, Math.max(0, +p.value || 0)));
+  return { off, code: String(p.code).toUpperCase(), kind: p.kind, value: +p.value || 0 };
+}
+
+/** What a basket comes to: the goods, the delivery for the zone chosen, and any code. */
+r.post('/quote', optionalAuth, asyncHandler(async (req, res) => {
+  const data = await books();
+  if (!data) throw new HttpError(503, 'The shop has not opened its books yet');
+  const cat = catalogOf(data);
+  const byId = new Map(cat.products.map(p => [p.id, p]));
+  let goods = 0;
+  for (const l of (req.body?.lines || [])) {
+    const p = byId.get(+l.pid), qty = +l.qty;
+    if (p && qty > 0) goods += qty * p.price;
+  }
+  goods = round2(goods);
+  const deliver = !!req.body?.deliver;
+  const zone = cat.settings.zones.find(z => z.id === String(req.body?.zone || '')) || null;
+  const del = !deliver ? 0
+    : zone ? ((zone.freeOver && goods >= zone.freeOver) ? 0 : zone.charge)
+           : ((cat.settings.freeOver && goods >= cat.settings.freeOver) ? 0 : cat.settings.delivery);
+  const promo = promoOn(data, req.body?.code, goods, await promoUsed(req.body?.code));
+  res.json({ ok: true, goods, del, off: promo.off || 0, why: promo.why || '',
+    code: promo.code || '', total: round2(Math.max(0, goods - (promo.off || 0)) + del),
+    minOrder: cat.settings.minOrder, under: goods < cat.settings.minOrder });
+}));
+
 r.post('/order', shopAuth, asyncHandler(async (req, res) => {
   const { phone, name } = req.shopUser;
   const data = await books();
@@ -303,25 +380,53 @@ r.post('/order', shopAuth, asyncHandler(async (req, res) => {
   const goods = round2(lines.reduce((a, l) => a + l.qty * l.price, 0));
   if (goods < cat.settings.minOrder) throw new HttpError(400, `Smallest online order is ${money(cat.settings.minOrder)}`);
   const deliver = !!req.body?.deliver;
-  const del = (deliver && goods < cat.settings.freeOver) ? cat.settings.delivery : 0;
-  const short = lines.filter(l => byId.get(l.pid).stock !== null && byId.get(l.pid).stock < l.qty).map(l => l.name);
+  const zone = cat.settings.zones.find(z => z.id === String(req.body?.zone || '')) || null;
+  const del = !deliver ? 0
+    : zone ? ((zone.freeOver && goods >= zone.freeOver) ? 0 : zone.charge)
+           : ((cat.settings.freeOver && goods >= cat.settings.freeOver) ? 0 : cat.settings.delivery);
+
+  /* An order for goods the shop has not got is not an order, it is a disappointed customer and a
+     telephone call. What is already promised to other orders counts as gone, so the last bag
+     cannot be sold twice while the first order is still being picked. */
+  const held = await heldStock();
+  const short = lines.filter(l => {
+    const p = byId.get(l.pid);
+    if (p.stock === null) return false;                      // not a tracked line
+    return p.stock - (held.get(l.pid) || 0) < l.qty;
+  }).map(l => ({ name: l.name, want: l.qty, have: Math.max(0, round2(byId.get(l.pid).stock - (held.get(l.pid) || 0))) }));
+  if (short.length && cat.settings.holdStock)
+    throw new HttpError(409, short.length === 1
+      ? `We have only ${short[0].have} of ${short[0].name} left — please change the quantity`
+      : `Some of these are short: ${short.map(s => `${s.name} (${s.have} left)`).join(', ')}`);
   const address = String(req.body?.address || '').trim().slice(0, 300);
   const note = String(req.body?.note || '').trim().slice(0, 300);
-  const pay = { cod: 'cash on delivery', counter: 'pays at the counter', bank: 'bank transfer' }[req.body?.pay] || '';
+  const pay = { cod: 'cash on delivery', counter: 'pays at the counter', bank: 'bank transfer', card: 'card online' }[req.body?.pay] || '';
+  const promo = promoOn(data, req.body?.code, goods, await promoUsed(req.body?.code));
   await ensureShopTables();
   const { rows: [{ id }] } = await query(`INSERT INTO shop_orders (no, phone, name, data) VALUES ('pending', $1, $2, '{}') RETURNING id`, [phone, name]);
   const no = 'ONL-' + String(id).padStart(5, '0');
   const order = {
     date: localDate(), time: localTime(),
     lines: lines.map(l => ({ pid: l.pid, qty: l.qty, price: l.price })),
-    del, total: round2(goods + del), deliver, address, pay: req.body?.pay || '',
-    note: [address, pay, note, short.length ? 'may be short: ' + short.join(', ') : ''].filter(Boolean).join(' · '),
+    del, goods, off: promo.off || 0, code: promo.code || '',
+    zone: zone ? zone.name : '', total: round2(Math.max(0, goods - (promo.off || 0)) + del),
+    deliver, address, pay: req.body?.pay || '',
+    note: [address, zone ? 'to ' + zone.name : '', pay, promo.code ? 'code ' + promo.code : '', note].filter(Boolean).join(' · '),
     events: [{ by: name, at: localTime(), what: 'Order placed on the website' }],
   };
   await query(`UPDATE shop_orders SET no = $2, data = $3 WHERE id = $1`, [id, no, JSON.stringify(order)]);
+  /* A code that has been spent is counted here, where the order is made, and not on the page
+     that offered it. The count goes up with the order or not at all. */
+  if (promo.code) {
+    const list = data.S?.web?.settings?.promos;
+    const row = Array.isArray(list) ? list.find(x => String(x.code || '').toUpperCase() === promo.code) : null;
+    if (row) { row.used = (+row.used || 0) + 1; row.last = localDate();
+      await query(`INSERT INTO shop_inbox (kind, data) VALUES ('promo', $1)`,
+        [JSON.stringify({ code: promo.code, no, off: promo.off, at: localDate() })]).catch(() => {}); }
+  }
   const cfg = data.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) sendViaProvider(cfg, phone, `${cat.settings.name}: we have your order ${no} for ${money(order.total)}. We will confirm shortly.`).catch(e => console.error('shop order sms failed', e.message));
-  res.json({ ok: true, no, total: order.total, short });
+  res.json({ ok: true, no, total: order.total, goods, del: order.del, off: order.off, code: order.code, short });
 }));
 
 /** The little helper on the site: prices, stock, hours, and — signed in — where an order is or what is owed. */

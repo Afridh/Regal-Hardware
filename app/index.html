@@ -8039,6 +8039,237 @@ function webStock(pid){                    // what is really available to sell o
   return Math.max(0,p.stock-held);
 }
 /* ---------- the storefront, as the customer sees it ---------- */
+/* ====================== RUNNING THE WEBSITE ======================
+   The site had a page for how it looks and a page for what is on it. What it never had was the
+   commerce behind it: what delivery costs where, what stops a customer ordering what the shop
+   has not got, what a discount code is worth, and how the money is taken. Those four are here,
+   a tab each, and every one of them is read by the server before an order is taken — a rule that
+   only lives in the page the customer is holding is not a rule. */
+
+let shopTab = 'delivery';
+const webCfg = () => { const w = S.web.settings;
+  if (!Array.isArray(w.zones)) w.zones = [];
+  if (!Array.isArray(w.promos)) w.promos = [];
+  if (!w.pays) w.pays = { cod: true, counter: true, bank: false, card: false };
+  if (w.holdStock === undefined) w.holdStock = true;
+  if (w.lowAt === undefined) w.lowAt = 5;
+  return w;
+};
+
+/* ---- what is already promised but not yet picked ---- */
+function webHeld(){
+  const held = {};
+  for (const o of (S.web.orders || [])) if (['placed', 'accepted'].includes(o.status))
+    for (const l of (o.lines || [])) held[l.pid] = (held[l.pid] || 0) + (+l.qty || 0);
+  return held;
+}
+const webListedP = () => (S.products || []).filter(p => p.active !== false && !p.hidden &&
+  (S.web.settings.listMode === 'selected' ? p.web === true : p.web !== false));
+
+/* Everything on these four tabs is read by the server before an order is taken, so a change here
+   is live the moment it is saved. The boxes write as they are typed and only save on leaving the
+   box, so a figure half keyed is never what the site is charging. */
+function shopmanageAfter(){
+  const save=()=>{ persist(true); toast('Saved') };
+  document.querySelectorAll('[data-web]').forEach(el=>{
+    const k=el.dataset.web;
+    if(el.type==='checkbox'){ el.onchange=()=>{ webCfg()[k]=el.checked; save(); render() }; return }
+    el.onchange=()=>{ const w=webCfg();
+      w[k]= el.type==='number' ? Math.max(0,+el.value||0) : el.value;
+      save(); if(k==='lowAt') render() };
+  });
+  document.querySelectorAll('[data-zone]').forEach(el=>{
+    const [i,k]=el.dataset.zone.split('.');
+    el.onchange=()=>{ const z=webCfg().zones[+i]; if(!z) return;
+      z[k]= el.type==='number' ? Math.max(0,+el.value||0) : el.value.trim();
+      if(!z.id) z.id='z'+Date.now().toString(36);
+      save() };
+  });
+  document.querySelectorAll('[data-promo]').forEach(el=>{
+    const [i,k]=el.dataset.promo.split('.');
+    el.onchange=()=>{ const w=webCfg(), pr=w.promos[+i]; if(!pr) return;
+      if(k==='on'){ pr.off=!el.checked; save(); return render() }
+      if(k==='code'){ const code=el.value.trim().toUpperCase();
+        if(code&&w.promos.some((x,j)=>j!==+i&&String(x.code||'').toUpperCase()===code))
+          return toast('There is already a code called '+code);
+        pr.code=code; save(); return render() }
+      pr[k]= el.type==='number' ? Math.max(0,+el.value||0) : el.value;
+      if(k==='kind'&&pr.kind==='pct') pr.value=Math.min(100,+pr.value||0);
+      save(); render() };
+  });
+  const tr=document.querySelector('[data-track]');
+  if(tr) tr.onchange=()=>{ CFG.stock=CFG.stock||{}; CFG.stock.track=tr.checked; save(); render() };
+  document.querySelectorAll('[data-pay]').forEach(el=>el.onchange=()=>{
+    const w=webCfg(); w.pays[el.dataset.pay]=el.checked;
+    if(!Object.values(w.pays).some(Boolean)){ w.pays.cod=true; toast('A customer has to be able to pay somehow') }
+    save(); render();
+  });
+}
+function shopmanage(){
+  const w = webCfg();
+  const tabs = [['delivery', 'Delivery & areas'], ['stock', 'Stock online'],
+                ['promos', 'Discount codes'], ['pay', 'How they pay']];
+  const body = ({ delivery: webDeliveryTab, stock: webStockTab, promos: webPromoTab, pay: webPayTab })[shopTab]();
+  return `<h1>Running the shop online<span class="muted" style="font-size:14px;font-weight:400"> · ${w.domain || 'regalhw.lk'}</span></h1>
+   <div class="cu-tabs">${tabs.map(t => `<button class="${shopTab === t[0] ? 'on' : ''}" data-act="shopTab" data-t="${t[0]}">${t[1]}</button>`).join('')}</div>
+   <div class="cu-tab-body">${body}</div>`;
+}
+
+/* ---------------- 1 · what delivery costs, and where ---------------- */
+function webDeliveryTab(){
+  const w = webCfg();
+  return `<div class="card note" style="margin-bottom:12px"><b>What the customer is told before they confirm</b>
+    <div class="muted">An area each, with what it costs to get there and how long it takes. The charge
+     is worked out on the shop's own server when the order is made, so what is shown and what is
+     charged can never come apart. With no areas set, the one charge below is used everywhere.</div></div>
+
+   <div class="card" style="margin-bottom:12px">
+    <h2 style="margin-top:0">The everyday rule</h2>
+    <div class="grid3">
+     <div class="f"><label>Delivery charge</label><input type="number" data-web="delivery" value="${+w.delivery || 0}"></div>
+     <div class="f"><label>Free over</label><input type="number" data-web="freeOver" value="${+w.freeOver || 0}">
+      <div class="muted">Zero means it is never free.</div></div>
+     <div class="f"><label>Smallest order taken</label><input type="number" data-web="minOrder" value="${+w.minOrder || 0}"></div>
+    </div>
+   </div>
+
+   <div class="card">
+    <div class="ev-h"><h2>Areas${w.zones.length ? ` · ${w.zones.length}` : ''}</h2>
+     <button class="btn tape sm" data-act="zoneAdd">Add an area</button></div>
+    ${w.zones.length ? `<table><tr><th>Area</th><th class="n">Charge</th><th class="n">Free over</th><th>How long</th><th></th></tr>
+     ${w.zones.map((z, i) => `<tr>
+      <td><input data-zone="${i}.name" value="${noteEsc(z.name || '')}" placeholder="e.g. Kaduruwela town"></td>
+      <td class="n"><input type="number" data-zone="${i}.charge" value="${+z.charge || 0}" style="width:100px;text-align:right"></td>
+      <td class="n"><input type="number" data-zone="${i}.freeOver" value="${+z.freeOver || 0}" style="width:110px;text-align:right"></td>
+      <td><input data-zone="${i}.days" value="${noteEsc(z.days || '')}" placeholder="e.g. same day"></td>
+      <td><button class="btn ghost sm" data-act="zoneDel" data-i="${i}">✕</button></td></tr>`).join('')}</table>`
+     : '<div class="muted">No areas yet — the everyday charge above is used for everywhere.</div>'}
+   </div>`;
+}
+
+/* ---------------- 2 · nothing is sold that is not there ---------------- */
+function webStockTab(){
+  const w = webCfg(), held = webHeld();
+  const list = webListedP();
+  const out = list.filter(p => (+p.stock || 0) - (held[p.id] || 0) <= 0);
+  const low = list.filter(p => { const left = (+p.stock || 0) - (held[p.id] || 0);
+    return left > 0 && left <= Math.max(+w.lowAt || 0, +p.min || 0) });
+  const spoken = Object.entries(held).filter(([, q]) => q > 0);
+  return `<div class="row" style="margin-bottom:12px">
+    ${stat('On the site', String(list.length), 'items a customer can see', 'b')}
+    ${stat('Out of stock', String(out.length), out.length ? 'nobody can order these' : 'none', out.length ? 'r' : 'g')}
+    ${stat('Running low', String(low.length), `at or under ${+w.lowAt || 0} left`, low.length ? 'y' : 'g')}
+    ${stat('Spoken for', String(spoken.length), 'held by orders not yet picked', '')}
+   </div>
+
+   <div class="card" style="margin-bottom:12px">
+    <h2 style="margin-top:0">The rules</h2>
+    <label class="chk"><input type="checkbox" data-track ${CFG.stock && CFG.stock.track !== false ? 'checked' : ''}>
+     Count stock for the website at all</label>
+    <div class="muted" style="margin:2px 0 10px 24px">Switched off, the site shows no quantity and sells
+     whatever is listed — nothing below can bite. ${CFG.stock && CFG.stock.track === false
+       ? '<b class="rust">It is off at the moment.</b>' : ''}</div>
+    <label class="chk"><input type="checkbox" data-web="holdStock" ${w.holdStock !== false ? 'checked' : ''}>
+     Refuse an order for more than the shop has</label>
+    <div class="muted" style="margin:2px 0 10px 24px">What is already on an order and not yet picked counts as
+     gone, so the last bag cannot be sold to two customers. Switched off, the order is taken anyway and
+     somebody has to telephone.</div>
+    <label class="chk"><input type="checkbox" data-web="showOutOfStock" ${w.showOutOfStock ? 'checked' : ''}>
+     Keep showing an item when it is out, marked as out</label>
+    <div class="muted" style="margin:2px 0 10px 24px">Switched off, it disappears from the site until it is back.</div>
+    <div class="f" style="max-width:220px"><label>Call it &ldquo;running low&rdquo; at</label>
+     <input type="number" data-web="lowAt" value="${+w.lowAt || 0}">
+     <div class="muted">The customer is told &ldquo;only N left&rdquo; at or under this.</div></div>
+   </div>
+
+   ${out.length ? `<div class="card" style="margin-bottom:12px">
+    <div class="ev-h"><h2>Out of stock · ${out.length}</h2>
+     <button class="btn ghost sm" data-act="deGo" data-v="stock">Open stock</button></div>
+    ${out.slice(0, 12).map(p => `<div class="ev-row"><div><span>${noteEsc(p.name)}</span>
+      <em>${p.code || ''}${held[p.id] ? ` · ${fq(held[p.id])} already on orders` : ''}</em></div>
+      <b class="rust">${fq(p.stock)} ${p.unit || ''}</b></div>`).join('')}
+    ${out.length > 12 ? `<div class="muted" style="padding-top:6px">and ${out.length - 12} more</div>` : ''}</div>` : ''}
+
+   ${low.length ? `<div class="card">
+    <div class="ev-h"><h2>Running low · ${low.length}</h2></div>
+    ${low.slice(0, 12).map(p => { const left = (+p.stock || 0) - (held[p.id] || 0);
+      return `<div class="ev-row"><div><span>${noteEsc(p.name)}</span><em>${p.code || ''}</em></div>
+      <b>${fq(left)} ${p.unit || ''} left</b></div>` }).join('')}</div>` : ''}`;
+}
+
+/* ---------------- 3 · discount codes ---------------- */
+function webPromoTab(){
+  const w = webCfg();
+  const used = (code) => (S.web.orders || []).filter(o => String(o.code || '').toUpperCase() === String(code || '').toUpperCase()).length;
+  const cost = (code) => (S.web.orders || []).filter(o => String(o.code || '').toUpperCase() === String(code || '').toUpperCase())
+    .reduce((a, o) => a + (+o.off || 0), 0);
+  return `<div class="card note" style="margin-bottom:12px"><b>A code is only worth what the server says</b>
+    <div class="muted">It is checked against the books when the order is made, never in the page the
+     customer is holding. How often a code has been used is counted from the orders that carried it,
+     so it cannot drift and cannot be lost.</div></div>
+
+   <div class="card">
+    <div class="ev-h"><h2>Codes${w.promos.length ? ` · ${w.promos.length}` : ''}</h2>
+     <button class="btn tape sm" data-act="promoAdd">Make a code</button></div>
+    ${w.promos.length ? `<table>
+     <tr><th>Code</th><th>Takes off</th><th class="n">Smallest order</th><th class="n">Times it may be used</th>
+      <th>From</th><th>Until</th><th class="n">Used</th><th class="n">Cost so far</th><th></th></tr>
+     ${w.promos.map((p, i) => `<tr class="${p.off === false ? 'dim' : ''}">
+      <td><input data-promo="${i}.code" value="${noteEsc(p.code || '')}" placeholder="BUILDER10" style="text-transform:uppercase;width:120px"></td>
+      <td><div style="display:flex;gap:4px;align-items:center">
+        <input type="number" data-promo="${i}.value" value="${+p.value || 0}" style="width:80px;text-align:right">
+        <select data-promo="${i}.kind" style="width:auto;margin:0">
+         <option value="pct" ${p.kind === 'pct' ? 'selected' : ''}>%</option>
+         <option value="amt" ${p.kind !== 'pct' ? 'selected' : ''}>Rs</option></select></div></td>
+      <td class="n"><input type="number" data-promo="${i}.minOrder" value="${+p.minOrder || 0}" style="width:110px;text-align:right"></td>
+      <td class="n"><input type="number" data-promo="${i}.limit" value="${+p.limit || 0}" style="width:90px;text-align:right">
+       <div class="muted">0 = no limit</div></td>
+      <td><input type="date" data-promo="${i}.from" value="${p.from || ''}" style="width:150px"></td>
+      <td><input type="date" data-promo="${i}.until" value="${p.until || ''}" style="width:150px"></td>
+      <td class="n"><b>${used(p.code)}</b></td>
+      <td class="n">${cost(p.code) ? fmt(cost(p.code)) : '—'}</td>
+      <td style="white-space:nowrap">
+       <label class="chk" style="margin:0"><input type="checkbox" data-promo="${i}.on" ${p.off === false ? '' : 'checked'}></label>
+       <button class="btn ghost sm" data-act="promoDel" data-i="${i}">✕</button></td></tr>`).join('')}</table>`
+     : '<div class="muted">No codes yet.</div>'}
+   </div>`;
+}
+
+/* ---------------- 4 · how the money is taken ---------------- */
+function webPayTab(){
+  const w = webCfg(), p = w.pays;
+  return `<div class="card" style="margin-bottom:12px">
+    <h2 style="margin-top:0">What a customer may choose</h2>
+    <label class="chk"><input type="checkbox" data-pay="cod" ${p.cod !== false ? 'checked' : ''}> Cash when it is delivered</label>
+    <label class="chk"><input type="checkbox" data-pay="counter" ${p.counter !== false ? 'checked' : ''}> Pay at the counter when they collect</label>
+    <label class="chk"><input type="checkbox" data-pay="bank" ${p.bank ? 'checked' : ''}> Bank transfer, with the slip sent in</label>
+    <label class="chk ${p.card ? '' : 'dim'}"><input type="checkbox" data-pay="card" ${p.card ? 'checked' : ''} ${webCardReady() ? '' : 'disabled'}>
+     Card, paid online${webCardReady() ? '' : ' — needs a gateway first'}</label>
+    <div class="f" style="margin-top:10px"><label>A line about paying, shown at the checkout</label>
+     <input data-web="payNote" value="${noteEsc(w.payNote || '')}" placeholder="e.g. Cash or cheque on delivery. Card at the counter."></div>
+   </div>
+
+   <div class="card">
+    <h2 style="margin-top:0">Taking card money online</h2>
+    ${webCardReady() ? `<div class="card note"><b>A gateway is connected.</b>
+       <div class="muted">Card is offered at the checkout when it is ticked above.</div></div>`
+     : `<div class="card note" style="border-left:3px solid var(--chip-yellow)">
+       <b>No gateway yet, so card is off and the money is taken on delivery</b>
+       <div class="muted">That is how the shop runs today and nothing here is waiting on it. When you
+        open a merchant account — PayHere and DirectPay are the usual ones here — put its keys on the
+        server and the tick above comes alive. The keys never go in this page: anything in here is
+        downloaded by every browser that opens the site.</div></div>
+      <div class="muted" style="margin-top:10px">On the server, in <code>server/.env</code> on this PC or
+       under cPanel → Setup Node.js App → Environment variables on the live site:</div>
+      <div class="qp-drop" style="margin-top:6px;text-align:left;cursor:default">
+       <code>PAY_GATEWAY=payhere</code><br><code>PAY_MERCHANT_ID=…</code><br><code>PAY_SECRET=…</code></div>
+      <div class="muted" style="margin-top:8px">Tell me when you have them and I will wire the gateway up
+       and test it against their sandbox before a rupee goes near it.</div>`}
+   </div>`;
+}
+/* The server is what knows whether a gateway is connected; the till only shows what it says. */
+const webCardReady = () => !!(S.web && S.web.cardReady);
+
 let siteTab='overview', siteQ='', siteCat='all', siteShow='all';
 const webListed=p=>S.web.settings.listMode==='selected'?p.web===true:p.web!==false;
 /* which pictures the site has — fetched once, so a list of 300 products is not 300 requests for photos that are not there */
@@ -9020,7 +9251,7 @@ const views=[
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['payreqs','Payment requests'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
  ['damages','Damage returns'],['jobs','Repair job notes'],
- ['grp','Online'],['weborders','Online orders'],['webproducts','Online products'],['site','The shop site'],['social','Social'],
+ ['grp','Online'],['weborders','Online orders'],['webproducts','Online products'],['shopmanage','Delivery, stock & codes'],['site','The shop site'],['social','Social'],
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],
  ['grp','People'],['approvals','Approvals'],['payroll','Attendance & pay'],['users','Users & permissions'],
  ['grp','Out'],['trail','The trail'],['messages','Messages'],['reports','Reports'],
@@ -9033,7 +9264,7 @@ const SECTIONS = {
   Customers: ['customers', 'receipts', 'tenders'],
   Suppliers: ['suppliers', 'orders', 'payreqs', 'purchases', 'purchasing'],
   Stock: ['products', 'stock', 'ledger', 'inventory', 'stocktake', 'labels'],
-  Online: ['weborders', 'webproducts', 'site', 'social'],
+  Online: ['weborders', 'webproducts', 'shopmanage', 'site', 'social'],
   Money: ['chequesIn', 'chequesOut', 'expenses', 'accounting'],
   People: ['approvals', 'payroll', 'users'],
   Out: ['trail', 'messages', 'reports'],
@@ -9150,6 +9381,7 @@ const ICONS={
   cashup:'M3 7h18v10H3zM12 10a2 2 0 100 4 2 2 0 000-4zM6 10h.01M18 14h.01',
   everything:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   billdesign:'M7 3h10v18l-5-3-5 3zM10 8h4M10 12h4',
+  shopmanage:'M3 6h18l-2 12H5zM9 10v6M15 10v6M8 6a4 4 0 018 0',
   ai:'M12 4v2M12 18v2M4 12h2M18 12h2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4M12 9a3 3 0 100 6 3 3 0 000-6z',
   updates:'M12 3l2.1 4.6 5 .5-3.7 3.4 1 4.9-4.4-2.5-4.4 2.5 1-4.9L4.9 8.1l5-.5zM19 17v4M17 19h4',
   dashboard:'M3 12h6V3H3zM11 21h6v-9h-6zM3 21h6v-6H3zM11 8h6V3h-6z',
@@ -9463,7 +9695,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={everything,billdesign,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={everything,billdesign,shopmanage,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
@@ -9479,6 +9711,7 @@ function renderNow(){
     if(document.activeElement===document.body) sq.focus() } } if(S.view==='labels') labelsAfter(); if(S.view==='receipts') receiptsAfter(); if(S.view==='dashboard') dashboardAfter();
 
   if(S.view==='billdesign') billdesignAfter();
+  if(S.view==='shopmanage') shopmanageAfter();
   if(S.view==='cashup') cashupAfter();
   if(S.view==='ai') aiAfter();
   if(S.view==='updates') markUpdatesSeen();
@@ -22441,6 +22674,17 @@ document.addEventListener('click',e=>{
       cashDraft.open={...prev.counts}; render(); toast(`Filled in from ${prev.date} — change anything that is different`) },
     cashPrint:()=>cashPrintSlip(a.dataset.k),
     deGo:()=>go(a.dataset.v),
+    shopTab:()=>{ shopTab=a.dataset.t; render(); const mn=document.getElementById('main'); if(mn) mn.scrollTop=0 },
+    zoneAdd:()=>{ const w=webCfg(); w.zones.push({id:'z'+Date.now().toString(36),name:'',charge:+w.delivery||0,freeOver:0,days:''});
+      persist(true); render() },
+    zoneDel:()=>{ const w=webCfg(); const z=w.zones[+a.dataset.i];
+      if(z&&z.name&&!confirm(`Take "${z.name}" off? Orders already placed keep the charge they were given.`)) return;
+      w.zones.splice(+a.dataset.i,1); persist(true); render() },
+    promoAdd:()=>{ const w=webCfg(); w.promos.push({code:'',kind:'pct',value:10,minOrder:0,limit:0,from:'',until:'',off:false});
+      persist(true); render(); toast('Give it a code and switch it on') },
+    promoDel:()=>{ const w=webCfg(); const p=w.promos[+a.dataset.i];
+      if(p&&p.code&&!confirm(`Take ${p.code} off? Orders that used it keep their discount.`)) return;
+      w.promos.splice(+a.dataset.i,1); persist(true); render() },
     bdScale:()=>{ const v=Math.max(60,Math.min(200,(+CFG.bill.r80Scale||100)+(+a.dataset.v||0)));
       CFG.bill.r80Scale=v; persist(true); render() },
     bdReset:()=>{ if(!confirm('Put the receipt back the way it came? Your wording is kept.')) return;
