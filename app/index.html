@@ -9438,6 +9438,7 @@ const views=[
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
  ['damages','Damage returns'],['jobs','Repair job notes'],
  ['cameras','Cameras'],
+ ['printq','Printing'],
  ['grp','Online'],['weborders','Online orders'],['webproducts','Online products'],['shopmanage','Delivery, stock & codes'],['site','The shop site'],['social','Social'],
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],
  ['grp','People'],['approvals','Approvals'],['payroll','Attendance & pay'],['users','Users & permissions'],
@@ -9454,7 +9455,7 @@ const SECTIONS = {
   Online: ['weborders', 'webproducts', 'shopmanage', 'site', 'social'],
   Money: ['chequesIn', 'chequesOut', 'expenses', 'accounting'],
   People: ['approvals', 'payroll', 'users'],
-  Out: ['trail', 'messages', 'reports'],
+  Out: ['trail', 'messages', 'reports', 'printq'],
   System: ['settings']
 };
 
@@ -9565,6 +9566,7 @@ function applyLayout(){
   document.body.classList.toggle('nokeys',!pref('keys'));
 }
 const ICONS={
+  printq:'M6 9V3h12v6M6 18H4v-6h16v6h-2M8 14h8v7H8z',
   cameras:'M3 7h4l2-2h6l2 2h4v12H3zM12 16a3.5 3.5 0 100-7 3.5 3.5 0 000 7z',
   cashup:'M3 7h18v10H3zM12 10a2 2 0 100 4 2 2 0 000-4zM6 10h.01M18 14h.01',
   everything:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
@@ -9898,7 +9900,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={cameras,everything,billdesign,shopmanage,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={printq,cameras,everything,billdesign,shopmanage,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
@@ -9915,6 +9917,7 @@ function renderNow(){
 
   if(S.view==='billdesign') billdesignAfter();
   if(S.view==='shopmanage') shopmanageAfter();
+  if(S.view==='printq') printqAfter();
   if(S.view==='cameras') camerasAfter();
   /* the camera rows are not CFG settings, so they are kept as they are typed */
   document.querySelectorAll('[data-cam-f]').forEach(el=>{
@@ -10501,6 +10504,103 @@ function salesmanDashboard(){
       </tr>`).join('')||'<tr><td colspan="6" class="muted">No bills recorded under your name yet.</td></tr>'}
     </table>
   </div>`;
+}
+
+/* ============================ THE PRINT QUEUE ============================
+   Every bill sent to the shop's printer, and what became of it. A bill that did not come
+   out is the one thing a counter cannot shrug off — the customer is standing there — so
+   this says plainly which ones failed and why, and sends them again with one press.
+
+   What is sent again is the paper that was kept with the job, not a bill rebuilt out of the
+   books as they stand now. A bill corrected after it was printed must reprint as it WAS. */
+let pqJobs=null, pqBusy='', pqErr='', pqShow='all';
+const PQ_SHOW=[['all','Everything'],['waiting','Waiting'],['failed','Did not print'],['printed','Printed']];
+
+async function pqLoad(quiet){
+  if(!window.regalBridge||!regalBridge.token()){ pqJobs={offline:true}; if(!quiet) render(); return }
+  try{
+    const r=await fetch('/api/print/queue',{headers:{Authorization:'Bearer '+regalBridge.token()}});
+    const j=await r.json();
+    if(!j.ok) throw new Error(j.error||('HTTP '+r.status));
+    let st=null;
+    try{ const s=await fetch('/api/print/status',{headers:{Authorization:'Bearer '+regalBridge.token()}});
+      st=await s.json() }catch(e){}
+    pqJobs={jobs:j.jobs||[],waiting:j.waiting||0,helper:st&&st.helper,seen:st&&st.seenSecondsAgo,printers:(st&&st.printers)||[]};
+    pqErr='';
+  }catch(e){ pqErr=e.message; pqJobs={jobs:[]} }
+  if(S.view==='printq') render();
+}
+
+async function pqDo(id,what){
+  pqBusy=id+what; render();
+  try{
+    const r=await fetch('/api/print/'+id+'/'+what,{method:'POST',
+      headers:{Authorization:'Bearer '+regalBridge.token()}});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.ok) throw new Error(j.error||('HTTP '+r.status));
+    toast(what==='again'?`${j.no||'It'} is on its way to the printer again`:'Taken off the list','ok');
+  }catch(e){ toast(e.message,'bad') }
+  finally{ pqBusy=''; await pqLoad(true); render() }
+}
+
+function printq(){
+  const q=pqJobs;
+  if(q===null) return `<h1>Printing</h1><div class="card"><div class="muted">Reading the queue…</div></div>`;
+  if(q.offline) return `<h1>Printing</h1><div class="card"><div class="muted">This till is not signed in to the
+    shop's server, so there is no shared queue to read. A bill printed here goes straight to this machine's own printer.</div></div>`;
+
+  const jobs=(q.jobs||[]).filter(j=>pqShow==='all'||j.status===pqShow);
+  const when=(s)=>{ if(!s) return ''; const d=new Date(s); const mins=Math.round((Date.now()-d)/60000);
+    return mins<1?'just now':mins<60?mins+' min ago':d.toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) };
+  const tagOf=(s)=>s==='printed'?'<span class="tag ok">printed</span>'
+    :s==='failed'?'<span class="tag bad">did not print</span>'
+    :s==='taken'?'<span class="tag warn">printing now</span>'
+    :'<span class="tag warn">waiting</span>';
+
+  const helper=q.helper
+    ? `<span class="tag ok">the counter helper is running</span>${q.printers&&q.printers.length?` <span class="muted">· ${q.printers.map(noteEsc).join(', ')}</span>`:''}`
+    : `<span class="tag bad">the counter helper is not running</span> <span class="muted">· nothing will come out until it is started${q.seen?`, last seen ${Math.round(q.seen/60)} min ago`:''}</span>`;
+
+  return `<h1>Printing <span class="muted" style="font-size:14px">· ${q.waiting} waiting</span></h1>
+   <div class="card"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+     ${helper}
+     <button class="btn ghost sm" data-act="pqRefresh" style="margin-left:auto">Look again</button></div>
+    ${pqErr?`<div class="tag bad" style="margin-top:8px">${noteEsc(pqErr)}</div>`:''}
+   </div>
+
+   <div class="cu-tabs" style="margin-top:10px">${PQ_SHOW.map(([k,l])=>{
+     const n=k==='all'?(q.jobs||[]).length:(q.jobs||[]).filter(j=>j.status===k).length;
+     return `<button class="${pqShow===k?'on':''}" data-act="pqShow" data-k="${k}">${l}${n?` <i>${n}</i>`:''}</button>`}).join('')}</div>
+
+   ${jobs.length?`<div class="card" style="margin-top:10px;padding:0"><table style="margin:0">
+     <tr><th>Bill</th><th>Paper</th><th>Made by</th><th>When</th><th>What happened</th><th></th></tr>
+     ${jobs.map(j=>`<tr>
+       <td><b>${noteEsc(j.no||'—')}</b>${j.copies>1?` <span class="muted">×${j.copies}</span>`:''}</td>
+       <td>${j.format==='r80'?'receipt':'A5'}</td>
+       <td>${noteEsc(j.by_user||'—')}${j.from_till?` <span class="muted">· ${noteEsc(j.from_till)}</span>`:''}</td>
+       <td class="muted">${when(j.created_at)}</td>
+       <td>${tagOf(j.status)}${j.error?`<div class="muted" style="font-size:12px">${noteEsc(String(j.error).slice(0,120))}</div>`
+          :j.printer?`<div class="muted" style="font-size:12px">on ${noteEsc(j.printer)}</div>`:''}</td>
+       <td style="white-space:nowrap">
+         <button class="btn ghost sm" data-act="pqAgain" data-id="${j.id}" ${pqBusy===j.id+'again'?'disabled':''}>Print again</button>
+         <button class="btn ghost sm" data-act="pqDrop" data-id="${j.id}" ${pqBusy===j.id+'drop'?'disabled':''}>Remove</button>
+       </td></tr>`).join('')}
+    </table></div>`
+   :`<div class="card" style="margin-top:10px"><div class="muted">${pqShow==='all'?'Nothing has been sent to the shop printer yet.':'Nothing here.'}</div></div>`}
+
+   <div class="card note" style="margin-top:12px">Printing again sends the paper that was kept with the job,
+     not a bill rebuilt from the books as they stand now — so a bill that was corrected afterwards comes out
+     as it was when it was printed.</div>`;
+}
+
+function printqAfter(){
+  if(pqJobs===null){ pqLoad(); return }
+  clearInterval(window._pqTimer);
+  window._pqTimer=setInterval(()=>{
+    if(S.view!=='printq'){ clearInterval(window._pqTimer); return }
+    if(document.hidden) return;
+    pqLoad(true);
+  },5000);
 }
 
 /* ============================ THE CAMERAS ============================
@@ -23001,6 +23101,10 @@ document.addEventListener('click',e=>{
       if(!confirm('Clear the bill?')) return;
       S.pos={...S.pos,lines:[],billDisc:0,sel:-1}; PH.q=''; render() },
     phPay:()=>{ if(S.pos.lines.length) openPay() },
+    pqRefresh:()=>{ pqLoad() },
+    pqShow:()=>{ pqShow=a.dataset.k; render() },
+    pqAgain:()=>pqDo(a.dataset.id,'again'),
+    pqDrop:()=>{ if(confirm('Take this one off the list? The bill itself is not touched.')) pqDo(a.dataset.id,'drop') },
     camAgain:()=>camCheckHelper(true),
     camAdd:()=>{ camList().push({id:'c'+Math.random().toString(36).slice(2,7),name:'',host:'',port:80,channel:101}); render() },
     camDrop:()=>{ const i=camList().findIndex(c=>String(c.id)===a.dataset.id); if(i>=0) camList().splice(i,1); render() },

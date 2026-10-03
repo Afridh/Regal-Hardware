@@ -149,6 +149,27 @@ r.get('/queue', regalAuth, asyncHandler(async (_req, res) => {
   res.json({ ok: true, waiting: w.waiting, jobs: rows.map(j => ({ ...j, id: Number(j.id) })) });
 }));
 
+/* Send one back to the printer. The bill itself was kept with the job, so this is the same
+   paper again and not a bill rebuilt from what the books say now — which matters, because a
+   bill that was corrected afterwards must reprint as it was, not as it has become. */
+r.post('/:id/again', regalAuth, asyncHandler(async (req, res) => {
+  await ensureTable();
+  const { rows: [j] } = await query(`SELECT id, no FROM print_jobs WHERE id = $1`, [+req.params.id]);
+  if (!j) throw new HttpError(404, 'That print job is no longer on the list');
+  await query(`UPDATE print_jobs SET status = 'waiting', taken_at = NULL, done_at = NULL, error = NULL
+               WHERE id = $1`, [+req.params.id]);
+  res.json({ ok: true, no: j.no });
+}));
+
+/* Take one off the list. For a job nobody wants any more — a duplicate, or one queued at a
+   printer that is not coming back. The bill is not touched; only this piece of paper. */
+r.post('/:id/drop', regalAuth, asyncHandler(async (req, res) => {
+  await ensureTable();
+  const { rowCount } = await query(`DELETE FROM print_jobs WHERE id = $1`, [+req.params.id]);
+  if (!rowCount) throw new HttpError(404, 'That print job is no longer on the list');
+  res.json({ ok: true });
+}));
+
 /* is the helper alive? it says so every time it asks for work */
 r.get('/status', regalAuth, asyncHandler(async (_req, res) => {
   await ensureTable();
