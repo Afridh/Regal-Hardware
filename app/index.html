@@ -3544,6 +3544,15 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
   #main .flex1{ min-width:0 }
 }
 
+/* ---- the cameras ---- */
+.camgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-top:12px}
+.camcard{border:1px solid var(--line,#d8dedd);border-radius:10px;overflow:hidden;background:var(--white,#fff)}
+.cam-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:8px 12px;font-size:13px}
+.cam-img{position:relative;aspect-ratio:16/9;background:#11161c}
+.cam-img img{width:100%;height:100%;object-fit:contain;display:block}
+.cam-bad{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:#e7c9bd;background:rgba(17,22,28,.86);font-size:13px;text-align:center;padding:10px}
+@media (max-width:760px){ .camgrid{grid-template-columns:1fr} }
 </style>
 <link rel="stylesheet" href="bill-print.css">
 </head>
@@ -4781,7 +4790,7 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
 function settingsTabs(){
-  return [['screen','My screen'],['done','Finishing a bill'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  return [['screen','My screen'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
 }
 function settings(){
   const tabs=settingsTabs();
@@ -4953,6 +4962,37 @@ function settings(){
          <span><button class="btn ghost sm" data-act="showInv" data-no="${sample?sample.no:''}" data-f="a5">Open</button> <button class="btn ghost sm" data-act="printTest" data-f="a5">Print a test</button></span></div>
         <div class="billprev a5">${prev('a5')}</div></div>
       </div>
+     </div>`;
+  }
+  if(setTab==='cameras'){
+    const list=camList();
+    const row=(c)=>`<tr>
+      <td><input data-cam-f="name" data-id="${c.id}" value="${noteEsc(c.name||'')}" placeholder="Counter"></td>
+      <td><input data-cam-f="host" data-id="${c.id}" value="${noteEsc(c.host||'')}" placeholder="192.168.1.64" inputmode="decimal"></td>
+      <td style="width:88px"><input data-cam-f="port" data-id="${c.id}" type="number" value="${c.port||80}"></td>
+      <td style="width:96px"><input data-cam-f="channel" data-id="${c.id}" type="number" value="${c.channel||101}"></td>
+      <td style="width:60px"><button class="btn ghost" data-act="camDrop" data-id="${c.id}">Remove</button></td></tr>`;
+    body=`<div class="muted">Where each camera is, and what to call it. <b>The password does not go here</b> —
+      it lives in the camera helper's own file on the shop PC, so it never reaches a browser or the shop's books.</div>
+
+     ${list.length?`<table style="margin-top:10px"><tr><th>Name</th><th>Address</th><th>Port</th><th>Channel</th><th></th></tr>
+       ${list.map(row).join('')}</table>`
+      :'<div class="card note" style="margin-top:10px">No cameras yet. Run the finder on the shop PC and it will tell you what is there.</div>'}
+
+     <button class="btn tape" style="margin-top:10px" data-act="camAdd">Add a camera</button>
+
+     <div class="card note" style="margin-top:14px">
+      <b>Finding them</b><br>
+      On the PC in the shop:<br>
+      <code>node tools/camera-agent/find.mjs --user admin --pass yourcamerapassword</code><br>
+      It lists every camera with the name you gave it on the recorder, and the channel number to put here.
+      A recorder's first camera is channel <b>101</b>, the second <b>201</b>, and so on.
+     </div>
+     <div class="card note" style="margin-top:10px">
+      <b>The helper</b><br>
+      Put the password in <code>tools/camera-agent/config.local.json</code>, then start
+      <code>tools\\camera-agent\\start.cmd</code> — and put a shortcut to it in <code>shell:startup</code>
+      so it comes up with Windows, beside the one that prints your bills.
      </div>`;
   }
   if(setTab==='cost'){
@@ -9382,6 +9422,7 @@ const views=[
  ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['payreqs','Payment requests'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
  ['damages','Damage returns'],['jobs','Repair job notes'],
+ ['cameras','Cameras'],
  ['grp','Online'],['weborders','Online orders'],['webproducts','Online products'],['shopmanage','Delivery, stock & codes'],['site','The shop site'],['social','Social'],
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],
  ['grp','People'],['approvals','Approvals'],['payroll','Attendance & pay'],['users','Users & permissions'],
@@ -9394,7 +9435,7 @@ const SECTIONS = {
   Counter: ['everything', 'dashboard', 'pos', 'bills', 'billdesign', 'cashup', 'docs'],
   Customers: ['customers', 'receipts', 'tenders'],
   Suppliers: ['suppliers', 'orders', 'payreqs', 'purchases', 'purchasing'],
-  Stock: ['products', 'stock', 'ledger', 'inventory', 'stocktake', 'labels'],
+  Stock: ['products', 'stock', 'ledger', 'inventory', 'stocktake', 'labels', 'cameras'],
   Online: ['weborders', 'webproducts', 'shopmanage', 'site', 'social'],
   Money: ['chequesIn', 'chequesOut', 'expenses', 'accounting'],
   People: ['approvals', 'payroll', 'users'],
@@ -9509,6 +9550,7 @@ function applyLayout(){
   document.body.classList.toggle('nokeys',!pref('keys'));
 }
 const ICONS={
+  cameras:'M3 7h4l2-2h6l2 2h4v12H3zM12 16a3.5 3.5 0 100-7 3.5 3.5 0 000 7z',
   cashup:'M3 7h18v10H3zM12 10a2 2 0 100 4 2 2 0 000-4zM6 10h.01M18 14h.01',
   everything:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   billdesign:'M7 3h10v18l-5-3-5 3zM10 8h4M10 12h4',
@@ -9841,7 +9883,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={everything,billdesign,shopmanage,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={cameras,everything,billdesign,shopmanage,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:webOrders,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
@@ -9858,6 +9900,14 @@ function renderNow(){
 
   if(S.view==='billdesign') billdesignAfter();
   if(S.view==='shopmanage') shopmanageAfter();
+  if(S.view==='cameras') camerasAfter();
+  /* the camera rows are not CFG settings, so they are kept as they are typed */
+  document.querySelectorAll('[data-cam-f]').forEach(el=>{
+    el.onchange=()=>{ const c=camList().find(x=>String(x.id)===el.dataset.id); if(!c) return;
+      const f=el.dataset.camF;
+      c[f]=(f==='port'||f==='channel')?(+el.value||(f==='port'?80:101)):el.value.trim();
+      if(typeof persist==='function') persist(); toast('Saved') };
+  });
   if(S.view==='cashup') cashupAfter();
   if(S.view==='ai') aiAfter();
   if(S.view==='updates') markUpdatesSeen();
@@ -10436,6 +10486,104 @@ function salesmanDashboard(){
       </tr>`).join('')||'<tr><td colspan="6" class="muted">No bills recorded under your name yet.</td></tr>'}
     </table>
   </div>`;
+}
+
+/* ============================ THE CAMERAS ============================
+   The cameras are on the shop's own network. This page is not — it may be open on a phone
+   on mobile data. So the page never talks to a camera itself: it asks the camera helper
+   running on the PC in the shop (tools/camera-agent), which is on that network, and the
+   helper asks the camera.
+
+   That is also why the password is not here. The shop's books hold only where each camera
+   is and what it is called; the password lives in the helper's own file on that PC, and
+   never reaches a browser.
+
+   A browser will not load an http:// picture into an https:// page — except from this PC
+   itself, which every browser treats as safe. So this works on the shop's machines, which
+   is where the cameras matter. Away from the shop there is nothing to see, and the page
+   says so rather than showing a broken frame. */
+const CAM_HELPER='http://127.0.0.1:4101';
+let camHelper=null, camTick=0, camErr={};
+
+function camList(){ if(!Array.isArray(S.cameras)) S.cameras=[]; return S.cameras }
+const camUrl=(c)=>`${CAM_HELPER}/snap?host=${encodeURIComponent(c.host)}&port=${c.port||80}&ch=${c.channel||101}&t=${camTick}`;
+
+async function camCheckHelper(again){
+  if(again) camHelper=null;
+  try{
+    const r=await fetch(CAM_HELPER+'/health',{signal:AbortSignal.timeout(2500)});
+    camHelper=r.ok?await r.json():{ok:false};
+  }catch(e){ camHelper={ok:false,why:e.name==='TimeoutError'?'no answer':e.message} }
+  if(S.view==='cameras') render();
+}
+
+function cameras(){
+  const list=camList();
+  const h=camHelper;
+  const setup=`<div class="card">
+    <h2 style="margin-top:0">The camera helper is not running on this machine</h2>
+    <div class="muted">The cameras are on the shop's own network, so something on that network has to
+      fetch the pictures. It is the same idea as the helper that prints your bills, and it sits beside it.</div>
+    <div style="margin-top:12px;line-height:1.8">
+      <b>1.</b> On the shop PC, find what cameras are there:<br>
+      <code>node tools/camera-agent/find.mjs --user admin --pass yourcamerapassword</code><br>
+      <b>2.</b> Put the password in <code>tools/camera-agent/config.local.json</code>:<br>
+      <code>{ "user": "admin", "pass": "yourcamerapassword" }</code><br>
+      <b>3.</b> Start it: <code>tools\\camera-agent\\start.cmd</code> — and put a shortcut to that in
+      <code>shell:startup</code> so it comes up with Windows.<br>
+      <b>4.</b> Add the cameras under <b>Settings → Cameras</b>, then come back here.
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+      <button class="btn" data-act="camAgain">Look again</button>
+      ${h&&h.why?`<span class="tag bad">${noteEsc(h.why)}</span>`:''}
+    </div>
+    <div class="card note" style="margin-top:12px">This page only shows pictures on a machine in the shop.
+      On a phone away from the shop there is nothing for it to reach, which is why it says this instead of
+      showing empty frames.</div>
+   </div>`;
+
+  if(h===null) return `<h1>Cameras</h1><div class="card"><div class="muted">Looking for the camera helper…</div></div>`;
+  if(!h.ok) return `<h1>Cameras</h1>${setup}`;
+
+  if(!list.length) return `<h1>Cameras</h1>
+    <div class="card"><h2 style="margin-top:0">The helper is running. No cameras added yet.</h2>
+     <div class="muted">Run the finder on the shop PC and it will list what is there, with the names you
+       gave them. Then add them under <b>Settings → Cameras</b>.</div>
+     <div style="margin-top:10px"><code>node tools/camera-agent/find.mjs --user admin --pass yourcamerapassword</code></div>
+     <button class="btn ghost" style="margin-top:10px" data-view="settings">Settings</button></div>`;
+
+  return `<h1>Cameras <span class="muted" style="font-size:14px">· ${list.length}${h.ready?'':' · no password set in the helper'}</span></h1>
+   <div class="muted">A fresh picture every couple of seconds. Moving video needs more than this — see the note at the bottom.</div>
+   <div class="camgrid">
+    ${list.map(c=>`<div class="camcard">
+      <div class="cam-h"><b>${noteEsc(c.name||'Camera')}</b><span class="muted">${noteEsc(c.host)}${c.channel?' · ch '+c.channel:''}</span></div>
+      <div class="cam-img">
+        <img src="${camUrl(c)}" alt="${noteEsc(c.name||'Camera')}" data-cam="${c.id}" loading="lazy">
+        ${camErr[c.id]?`<div class="cam-bad">${noteEsc(camErr[c.id])}</div>`:''}
+      </div>
+     </div>`).join('')}
+   </div>
+   <div class="card note" style="margin-top:12px">These are stills, a second or two apart. Real moving video
+     would mean converting the camera's stream on the shop PC — a much bigger job, and a great deal more
+     over the line. Say the word if the stills are not enough.</div>`;
+}
+
+function camerasAfter(){
+  if(camHelper===null){ camCheckHelper(); return }
+  if(!camHelper.ok||!camList().length) return;
+  document.querySelectorAll('img[data-cam]').forEach(im=>{
+    im.onerror=()=>{ camErr[im.dataset.cam]='no picture — is the camera on?'; };
+    im.onload=()=>{ if(camErr[im.dataset.cam]){ delete camErr[im.dataset.cam] } };
+  });
+  clearInterval(window._camTimer);
+  window._camTimer=setInterval(()=>{
+    if(S.view!=='cameras'){ clearInterval(window._camTimer); return }
+    if(document.hidden) return;                    // a page nobody is looking at asks for nothing
+    camTick=Date.now();
+    document.querySelectorAll('img[data-cam]').forEach(im=>{
+      const c=camList().find(x=>String(x.id)===im.dataset.cam); if(c) im.src=camUrl(c);
+    });
+  },2000);
 }
 
 /* ============================ COUNTING THE DRAWER ============================
@@ -22827,6 +22975,9 @@ document.addEventListener('click',e=>{
       if(!confirm('Clear the bill?')) return;
       S.pos={...S.pos,lines:[],billDisc:0,sel:-1}; PH.q=''; render() },
     phPay:()=>{ if(S.pos.lines.length) openPay() },
+    camAgain:()=>camCheckHelper(true),
+    camAdd:()=>{ camList().push({id:'c'+Math.random().toString(36).slice(2,7),name:'',host:'',port:80,channel:101}); render() },
+    camDrop:()=>{ const i=camList().findIndex(c=>String(c.id)===a.dataset.id); if(i>=0) camList().splice(i,1); render() },
     cashSave:()=>cashSave(a.dataset.k),
     cashLast:()=>{ const prev=cashList().filter(c=>c.kind==='open'&&(c.loc||0)===cashStore()).slice(-1)[0];
       if(!prev) return toast('There is no earlier float to copy');
