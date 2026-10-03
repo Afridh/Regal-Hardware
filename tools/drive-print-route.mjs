@@ -37,13 +37,13 @@ await new Promise(r => setTimeout(r, 1200));
 const run = (where, canThisMachine, canCounter) => pg.evaluate(async ({ where, canThisMachine, canCounter }) => {
   CFG.bill.printTo = where;
   const tried = [];
-  const keep = { a: window.agentPrint, q: window.queuePrint, b: window.browserPrint };
+  const keep = { a: window.agentPrint, q: window.queuePrint, b: window.printHere };
   window.agentPrint = async () => { tried.push('this machine'); return canThisMachine };
   window.queuePrint = async () => { tried.push('the counter'); return canCounter };
-  window.browserPrint = () => { tried.push('the print box') };
+  window.printHere = () => { tried.push('the print box') };   // it asks first now, and prints on a press
   printBill({ no: 'INV-TEST', total: 100, lines: [], balance: 0, customerId: 1, date: D(today) }, 'r80');
   await new Promise(r => setTimeout(r, 120));
-  Object.assign(window, { agentPrint: keep.a, queuePrint: keep.q, browserPrint: keep.b });
+  Object.assign(window, { agentPrint: keep.a, queuePrint: keep.q, printHere: keep.b });
   return tried;
 }, { where, canThisMachine, canCounter });
 
@@ -82,6 +82,24 @@ ok(await pg.evaluate(() => {
 }), 'Settings → Bills shows the choice, set to the main counter');
 ok(await pg.evaluate(() => /Always the main counter/.test(document.getElementById('main').textContent)),
    'and says in plain words what that means');
+
+/* ---------- and when nothing will take it, the person is told why ---------- */
+await pg.evaluate(() => {
+  CFG.bill.printTo = "main";
+  window.agentPrint = async () => false;
+  // the very words the shop server sends when the counter helper has never started
+  window.queuePrint = async () => ({ ok: false, why: "The shop printer has never asked for work — start the print helper on the PC the printers are on" });
+  printBill({ no: "INV-TEST", total: 100, lines: [], balance: 0, customerId: 1, date: D(today) }, "r80");
+});
+await new Promise(r => setTimeout(r, 700));
+const said = await pg.evaluate(() => { const m = document.querySelector(".modal"); return m ? m.textContent.replace(/\s+/g, " ").trim() : "" });
+ok(/did not take it/i.test(said), "a bill nothing would print puts the reason on the screen");
+ok(/start the print helper/i.test(said), "in the shop server's own words — " + said.slice(0, 90));
+ok(/is made and saved/.test(said), "and says the bill itself is safe, which is the first worry");
+ok(await pg.evaluate(() => !!document.querySelector("#pfHere")), "with printing here offered as a choice, not done behind their back");
+ok(await pg.evaluate(() => !!document.querySelector('.modal [data-view="printq"]')), "and a way through to Printing");
+await pg.screenshot({ path: (process.argv[2] || ".") + "/print-refused.png" });
+await pg.evaluate(() => { const m = document.querySelector(".modal"); if (m) m.remove() });
 
 ok(errs.length === 0, errs.length ? 'the page threw: ' + errs.join(' | ') : 'nothing threw along the way');
 await b.close();

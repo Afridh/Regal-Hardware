@@ -18488,9 +18488,9 @@ async function queuePrint(inv,f){
       body:JSON.stringify({format:f,no:inv.no,html:billDocument(inv,f),till:S.terminal||''})});
     const j=await r.json().catch(()=>({}));
     if(r.ok&&j.ok){ toast(`${inv.no} sent to the shop printer`,'ok'); return true }
-    if(r.status===401) return false;
-    toast('The shop printer would not take it: '+(j.error||r.status),'warn'); return false;
-  }catch(e){ return false }
+    if(r.status===401) return {ok:false,why:'This till is not signed in to the shop server.'};
+    return {ok:false,why:j.error||('The shop server said '+r.status)};
+  }catch(e){ return {ok:false,why:'The shop server could not be reached.'} }
 }
 function printBill(inv,f='a5'){
   /* Three ways a bill can reach paper, tried in the order the shop asked for:
@@ -18505,9 +18505,33 @@ function printBill(inv,f='a5'){
   const atTheCounter=()=>queuePrint(inv,f);
   const first=toMain?atTheCounter:onThisMachine;
   const then=toMain?onThisMachine:atTheCounter;
-  first().then(done=>{ if(done) return;
-    then().then(sent=>{ if(!sent) browserPrint(inv,f) });
+  const done=(v)=>v===true||!!(v&&v.ok===true);
+  const why=(v)=>(v&&v.why)||'';
+  first().then(a=>{ if(done(a)) return;
+    then().then(b=>{ if(done(b)) return;
+      printHere(inv,f,why(b)||why(a));
+    });
   });
+}
+
+/* The last way out. It used to open the browser's print box the moment the counter refused
+   the bill — which covered the toast saying why, so the person got a print box out of
+   nowhere and no reason for it. Now the reason is on the screen, and printing here is a
+   thing they choose. */
+function printHere(inv,f,why){
+  const m=modal(`<h2>The counter printer did not take it</h2>
+   <div class="muted">${noteEsc(why||'The shop printer could not be reached.')}</div>
+   <div class="card note" style="margin-top:10px">
+     <b>${noteEsc(inv.no||'The bill')} is made and saved</b> — nothing has been lost. Print it from this
+     browser now, or start the print helper on the counter PC and send it again from <b>Printing</b>.
+   </div>
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:14px;flex-wrap:wrap">
+     <button class="btn ghost" data-view="printq" data-act="closeModal">Open Printing</button>
+     <span><button class="btn ghost" data-act="closeModal">Not now</button>
+     <button class="btn tape" id="pfHere">Print from this browser</button></span>
+   </div>`);
+  const go=m.querySelector('#pfHere');
+  if(go) go.onclick=()=>{ m.remove(); browserPrint(inv,f) };
 }
 function browserPrint(inv,f='a5'){
   const html=billHtml(inv,f);
