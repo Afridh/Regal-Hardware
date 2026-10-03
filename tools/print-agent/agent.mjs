@@ -23,6 +23,11 @@ const tmp = path.join(os.tmpdir(), 'regal-print'); fs.mkdirSync(tmp, { recursive
 const log = (...a) => console.log(new Date().toLocaleTimeString('en-GB'), ...a);
 
 let browser = null;
+/* One page per format, kept open between bills, with what was in it last time. */
+const held = new Map();
+const styleOf = (html) => { const m = /<style[^>]*>([\s\S]*?)<\/style>/i.exec(html); return m ? m[1] : '' };
+const billOf = (html) => { const m = /<div id="printArea"[^>]*>([\s\S]*)<\/div>\s*<\/body>/i.exec(html); return m ? m[1] : null };
+
 async function getBrowser() {
   if (browser && browser.connected) return browser;
   browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox', '--disable-gpu'] });
@@ -33,11 +38,23 @@ async function getBrowser() {
 async function render(format, html) {
   const f = cfg[format]; if (!f) throw new Error('unknown format ' + format);
   const b = await getBrowser();
-  const page = await b.newPage();
-  try {
-    const over = Math.max(1, Math.min(4, +f.oversample || 2));     // drawn this many times too big, then shrunk
+  const over = Math.max(1, Math.min(4, +f.oversample || 2));       // drawn this many times too big, then shrunk
+  const css = styleOf(html), bill = billOf(html);
+  let keep = held.get(format);
+  if (keep && (keep.page.isClosed() || keep.css !== css || !bill)) { try { await keep.page.close() } catch (e) {} keep = null }
+
+  let page, fresh = false;
+  if (keep) {
+    page = keep.page;
+    // the styles are already in this page: only the bill itself is new
+    await page.evaluate((b) => { document.getElementById('printArea').innerHTML = b }, bill);
+  } else {
+    page = await b.newPage();
+    fresh = true;
     await page.setViewport({ width: f.widthPx, height: 800, deviceScaleFactor: (f.scale || 1) * over });
     await page.setContent(html, { waitUntil: 'load' });
+  }
+  try {
     await page.emulateMediaType('print');
     await page.evaluate((f, format) => {
       document.body.classList.add('direct-print'); document.body.style.margin = '0'; document.body.style.background = '#fff';
@@ -52,7 +69,10 @@ async function render(format, html) {
         document.body.style.width = (f.dots || 576) + 'px';
       }
     }, f, format);
-    await new Promise(r => setTimeout(r, 150));
+    /* It used to sleep 150ms in the hope the fonts had arrived. Ask instead: on a page that has
+       already drawn a bill they are there, and it comes back at once. */
+    await page.evaluate(() => document.fonts && document.fonts.ready).catch(() => {});
+    await new Promise(r => setTimeout(r, fresh ? 60 : 16));
     const file = path.join(tmp, `bill-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.png`);
     const target = await page.$('#printArea .print') || await page.$('body');
     const shot = await target.screenshot({ encoding: 'base64', omitBackground: false });
@@ -83,8 +103,13 @@ async function render(format, html) {
       return c.toDataURL('image/png').split(',')[1];
     }, shot, wide, cut);
     fs.writeFileSync(file, Buffer.from(png, 'base64'));
+    held.set(format, { page, css });        // kept for the next bill, stylesheet and all
     return file;
-  } finally { await page.close(); }
+  } catch (e) {
+    held.delete(format);                    // a page that has gone wrong is not worth keeping
+    try { await page.close() } catch (x) {}
+    throw e;
+  }
 }
 
 /** Hand the image to Windows for the printer this format goes to. */
@@ -93,7 +118,8 @@ function printImage(format, file) {
   const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(here, 'print-image.ps1'), '-Printer', f.printer, '-Image', file];
   if (f.paper) args.push('-Paper', f.paper);
   if (f.landscape) args.push('-Landscape');
-  if (format === 'r80') args.push('-Roll', '-Dpi', String(f.dpi || 203));
+  if (format === 'r80') args.push('-Roll', '-Dpi', String(f.dpi || 203),
+    '-Cut', String(Math.max(1, Math.min(254, +f.threshold || 186))), '-Flat');
   return new Promise((resolve, reject) => {
     const ps = spawn('powershell.exe', args, { windowsHide: true });
     let out = '', err = '';
@@ -119,11 +145,13 @@ async function takeJobs() {
       if (queueSaid !== why) { queueSaid = why; log('queue:', why) } return }
     if (queueSaid) { log('queue: talking to the shop server again'); queueSaid = '' }
     const j = await r.json().catch(() => ({}));
-    const job = j && j.job; if (!job) return;
+    const job = j && j.job; if (!job) return false;
     log('queue job', job.id, job.format, job.no || '', 'from', job.by || '?', job.till ? '· till ' + job.till : '');
     try {
+      const t0 = Date.now(); let tDraw = 0;
       const run = busy.then(async () => {
         const file = await render(job.format, job.html);
+        tDraw = Date.now() - t0;
         let out = '';
         for (let i = 0; i < (job.copies || 1); i++) out = await printImage(job.format, i ? await render(job.format, job.html) : file);
         return out;
@@ -131,11 +159,13 @@ async function takeJobs() {
       busy = run.catch(() => {});
       await run;
       await say(job.id, { ok: true, printer: cfg[job.format].printer });
-      log('queue job', job.id, '→ printed on', cfg[job.format].printer);
+      log('queue job', job.id, '→ printed on', cfg[job.format].printer,
+        `· drew it in ${tDraw}ms, the printer took ${Date.now() - t0 - tDraw}ms`);
     } catch (e) {
       await say(job.id, { ok: false, error: e.message });
       log('queue job', job.id, 'FAILED', e.message);
     }
+    return true;                                           // there may be another behind it
   } catch (e) {
     const why = 'cannot reach ' + SERVER + ' (' + e.message + ')';
     if (queueSaid !== why) { queueSaid = why; log('queue:', why) }
@@ -163,12 +193,16 @@ http.createServer(async (req, res) => {
       let job; try { job = JSON.parse(body); } catch { return send(res, 400, { ok: false, error: 'bad request' }); }
       if (!job.html || !cfg[job.format]) return send(res, 400, { ok: false, error: 'format and html needed' });
       // one at a time, in order — two bills never fight over the printer
+      const t0 = Date.now(); let tDraw = 0;
       const run = busy.then(async () => {
         const file = await render(job.format, job.html);
+        tDraw = Date.now() - t0;
         return printImage(job.format, file);
       });
       busy = run.catch(() => {});
-      try { const out = await run; log(job.format, job.no || '', '→', out); send(res, 200, { ok: true, printer: cfg[job.format].printer }); }
+      try { const out = await run; log(job.format, job.no || '', '→', out,
+        `· drew it in ${tDraw}ms, the printer took ${Date.now() - t0 - tDraw}ms`);
+        send(res, 200, { ok: true, printer: cfg[job.format].printer, ms: Date.now() - t0, drawMs: tDraw }); }
       catch (e) { log('FAILED', job.format, job.no || '', e.message); send(res, 500, { ok: false, error: e.message }); }
     });
     return;
@@ -176,7 +210,13 @@ http.createServer(async (req, res) => {
   send(res, 404, { ok: false, error: 'not found' });
 }).listen(cfg.port, '127.0.0.1', () => {
   log(`Regal print helper on http://localhost:${cfg.port} — 80mm → ${cfg.r80.printer}, A5 → ${cfg.a5.printer} (rendering with ${path.basename(chrome)})`);
-  if (KEY) { log(`Watching ${SERVER} for bills sent from anywhere else, every ${EVERY / 1000}s`); const tick = () => takeJobs().finally(() => setTimeout(tick, EVERY)); tick(); }
+  if (KEY) {
+    log(`Watching ${SERVER} for bills sent from anywhere else`);
+    const tick = () => takeJobs()
+      .then(did => did === true ? 0 : EVERY, () => EVERY)   // just printed one? look again at once
+      .then(wait => setTimeout(tick, wait));
+    tick();
+  }
   else log('No print key set, so only this PC can print through the helper (config.json: "key", and the same in the server\'s PRINT_DEVICE_KEY)');
 });
 process.on('SIGINT', async () => { if (browser) await browser.close(); process.exit(0); });

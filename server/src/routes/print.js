@@ -4,6 +4,9 @@
 //
 //   POST /api/print            { format, no, html, copies? }   the till leaves a job      (till sign-in)
 //   GET  /api/print/next?key=  …                               the helper takes the next  (device key)
+//                             the question is held open for up to 25s and answered the moment a
+//                             job appears, so a bill does not sit waiting for the next ask.
+//                             Add &wait=0 to have it answer at once, empty or not.
 //   POST /api/print/:id/done   { ok, error, printer }          the helper says how it went(device key)
 //   GET  /api/print/queue      …                               what is waiting and what happened (till sign-in)
 //   GET  /api/print/status     …                               whether the helper is listening   (till sign-in)
@@ -78,6 +81,11 @@ r.post('/', regalAuth, asyncHandler(async (req, res) => {
 }));
 
 /* ---------------------------------------------------------------- the helper takes the next one */
+/* How long the helper's question may be left hanging. Comfortably under the minute most proxies
+   allow themselves, so the connection is closed by us and not by something in between. */
+const HOLD_MS = 25000, LOOK_EVERY = 200;
+const nap = (ms) => new Promise(r => setTimeout(r, ms));
+
 r.get('/next', asyncHandler(async (req, res) => {
   if (!deviceOk(req)) throw new HttpError(403, 'Wrong device key');
   await ensureTable();
@@ -87,7 +95,8 @@ r.get('/next', asyncHandler(async (req, res) => {
   // anything a helper took but never finished (it was closed mid-job) comes back
   await query(`UPDATE print_jobs SET status = 'waiting', taken_at = NULL
                WHERE status = 'taken' AND taken_at < now() - ($1 || ' milliseconds')::interval`, [TAKE_BACK_MS]);
-  const { rows: [job] } = dbKind === 'mysql'
+  const takeOne = async () => {
+    const { rows: [job] } = dbKind === 'mysql'
     // MySQL will not update a table it is reading in the same statement: take the row's lock, then mark it
     ? await withTransaction(async client => {
         const { rows: [w] } = await client.query(`SELECT id FROM print_jobs WHERE status = 'waiting' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`);
@@ -99,6 +108,23 @@ r.get('/next', asyncHandler(async (req, res) => {
     `UPDATE print_jobs SET status = 'taken', taken_at = now()
       WHERE id = (SELECT id FROM print_jobs WHERE status = 'waiting' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
       RETURNING id, format, no, copies, html, by_user, from_till`);
+    return job;
+  };
+
+  /* The helper used to ask every couple of seconds, so a bill waited a second on average before
+     anything began. Its question is held open now and answered the moment a job appears. Nothing
+     is opened to the shop from outside — the helper is still the one that calls. */
+  let job = await takeOne();
+  if (!job && req.query.wait !== '0') {
+    const until = Date.now() + HOLD_MS;
+    let gone = false;
+    req.on('close', () => { gone = true });              // the helper hung up: stop looking
+    while (!job && !gone && Date.now() < until) {
+      await nap(LOOK_EVERY);
+      job = await takeOne();
+    }
+    if (gone) return;
+  }
   if (!job) return res.json({ ok: true, job: null });
   res.json({ ok: true, job: { id: Number(job.id), format: job.format, no: job.no, copies: job.copies, html: job.html, by: job.by_user, till: job.from_till } });
 }));

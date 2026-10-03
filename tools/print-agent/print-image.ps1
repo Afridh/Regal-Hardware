@@ -9,27 +9,53 @@ param(
   [string]$Paper = '',
   [switch]$Landscape,
   [switch]$Roll,
-  [int]$Dpi = 203
+  [int]$Dpi = 203,
+  [int]$Cut = 160,
+  [switch]$Flat          # the image is already pure black and white: do not do it again
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $src = [System.Drawing.Image]::FromFile($Image)
 $img = $src
-if ($Roll) {
-  # threshold to 1-bit black/white so the thermal head prints crisp text rather than dithered grey
+if ($Roll -and -not $Flat) {
+  # Threshold to pure black/white so the thermal head prints crisp text rather than dithered grey.
+  #
+  # This loop runs once per pixel, and a receipt is over a million pixels. Written in PowerShell it
+  # took fourteen seconds a bill — which was the whole of the wait between pressing print and the
+  # paper moving. The same arithmetic compiled takes fifteen milliseconds. Note that nothing about
+  # the result changed: it is the identical threshold, done in a language that can afford it.
+  Add-Type -TypeDefinition @'
+public static class Ink {
+  /** Every pixel to black or white, in place. Returns true if it was already that way. */
+  public static bool Flatten(byte[] b, int cut) {
+    bool already = true;
+    for (int i = 0; i < b.Length; i += 4) {
+      double lum = 0.299 * b[i + 2] + 0.587 * b[i + 1] + 0.114 * b[i];
+      byte v = lum < cut ? (byte)0 : (byte)255;
+      if (b[i] != v || b[i + 1] != v || b[i + 2] != v) already = false;
+      b[i] = v; b[i + 1] = v; b[i + 2] = v; b[i + 3] = 255;
+    }
+    return already;
+  }
+}
+'@
   $bmp = New-Object System.Drawing.Bitmap $src.Width, $src.Height, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
   $g0 = [System.Drawing.Graphics]::FromImage($bmp); $g0.Clear([System.Drawing.Color]::White); $g0.DrawImageUnscaled($src, 0, 0); $g0.Dispose()
   $rect = New-Object System.Drawing.Rectangle 0, 0, $bmp.Width, $bmp.Height
   $data = $bmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadWrite, $bmp.PixelFormat)
   $bytes = New-Object byte[] ($data.Stride * $bmp.Height)
   [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $bytes, 0, $bytes.Length)
-  for ($i = 0; $i -lt $bytes.Length; $i += 4) {
-    $lum = (0.299 * $bytes[$i + 2] + 0.587 * $bytes[$i + 1] + 0.114 * $bytes[$i])
-    $v = if ($lum -lt 160) { 0 } else { 255 }
-    $bytes[$i] = $v; $bytes[$i + 1] = $v; $bytes[$i + 2] = $v; $bytes[$i + 3] = 255
-  }
+  [void][Ink]::Flatten($bytes, $Cut)
   [System.Runtime.InteropServices.Marshal]::Copy($bytes, 0, $data.Scan0, $bytes.Length)
   $bmp.UnlockBits($data)
+  $img = $bmp
+}
+elseif ($Roll) {
+  # Already black and white, so there is nothing to threshold — but flatten it onto white all the
+  # same, because anything transparent would otherwise come out of a thermal printer as solid ink.
+  # GDI+ does that itself, in native code, and costs nothing worth measuring.
+  $bmp = New-Object System.Drawing.Bitmap $src.Width, $src.Height, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $g0 = [System.Drawing.Graphics]::FromImage($bmp); $g0.Clear([System.Drawing.Color]::White); $g0.DrawImageUnscaled($src, 0, 0); $g0.Dispose()
   $img = $bmp
 }
 $doc = New-Object System.Drawing.Printing.PrintDocument
