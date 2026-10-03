@@ -4515,7 +4515,10 @@ const CFG={
    line1:'Your trusted one-stop shop in Polonnaruwa for all Hardware, Paints, Electrical, PVC & Motor items.',
    line2:'We specialise in Dulux & Asian Paints colour mixing — offering the best prices.',
    hours:'8.00 am – 7.00 pm',owner:'0777849964'},
- bill:{prefix:'INVM-',style:'plain',digits:4,warrantyNote:'Covers manufacturing faults only. Misuse, water damage and normal wear are not covered. Bring this card with the machine.',returnDays:7,quoteDays:14,showMrp:true,showSaving:true,defaultFormat:'r80',
+ /* printTo — where a bill comes out, wherever it was made:
+      'here'  this machine's own printer if it has one, and the shop's if it has not
+      'main'  always the shop's printer, even when this machine has one of its own */
+ bill:{prefix:'INVM-',style:'plain',digits:4,printTo:'here',warrantyNote:'Covers manufacturing faults only. Misuse, water damage and normal wear are not covered. Bring this card with the machine.',returnDays:7,quoteDays:14,showMrp:true,showSaving:true,defaultFormat:'r80',
    title:'INVOICE',creditTitle:'CREDIT INVOICE',showLogo:true,showSinhala:true,showStrap:true,
    showCode:true,showUom:true,showQr:true,showWords:true,showCashier:true,showOutstanding:true,
    showSign:true,signLeft:'Authorised By',signRight:'Received By',showItemCount:true,showBarcode:true,t80Sign:true,showWeb:true,a5Scale:118,r80Scale:100,
@@ -4811,6 +4814,18 @@ function settings(){
     <div class="card note" style="margin-top:10px">These go straight onto every bill, voucher and statement. Print one after changing to check the fit.</div>`;
   if(setTab==='bill') body=`<div class="card note" style="margin-bottom:10px"><b>The bill number</b>
      <div class="muted">Figures alone: the cashier's own number, then a running number of theirs. ${S.users.filter(u=>u.active!==false).slice(0,4).map(u=>`<b>${u.name}</b> ${userNo(u.name)}${''.padStart(billDigits(),'0').replace(/0$/,'…')}`).join(' · ')}. Each person's number is set against them under Users &amp; permissions.</div></div>
+    <div class="card note" style="margin-bottom:10px"><b>Where a bill comes out</b>
+     <div class="muted">A bill can be made anywhere — a phone in the yard, a second till, the office.
+       This is where the paper comes out of.</div>
+     <div class="f" style="max-width:420px;margin-top:8px"><select data-set="bill.printTo">
+      ${[['here','The printer on the machine it was made on, if it has one'],
+          ['main','Always the main counter, wherever it was made']]
+        .map(o=>`<option value="${o[0]}" ${(CFG.bill.printTo||'here')===o[0]?'selected':''}>${o[1]}</option>`).join('')}
+     </select></div>
+     <div class="muted" style="margin-top:6px">Either way, if the shop's server cannot be reached the bill
+       still tries the printer in front of whoever made it rather than being lost. The print helper has to be
+       running on the counter PC — it is the same one that prints there now.</div>
+    </div>
     <div class="grid3">
      <div class="f"><label>How bills are numbered</label><select data-set="bill.style">
       ${[['plain','Figures only — 11000123'],['coded','Lettered — INVM-T1-AF-00123']].map(o=>`<option value="${o[0]}" ${(CFG.bill.style||'plain')===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>
@@ -18378,9 +18393,20 @@ async function queuePrint(inv,f){
   }catch(e){ return false }
 }
 function printBill(inv,f='a5'){
-  agentPrint(inv,f).then(done=>{ if(done) return;
-    // no helper on this machine: leave it for the PC the printers are on, and only then fall back to this browser
-    queuePrint(inv,f).then(sent=>{ if(!sent) browserPrint(inv,f) });
+  /* Three ways a bill can reach paper, tried in the order the shop asked for:
+       the helper on THIS machine, for a till with its own printer beside it
+       the shop's queue, which the helper at the main counter takes within a second or two
+       this browser's own print box, which is better than nothing and asks a person
+     With "the main counter" chosen, a bill made on a phone in the yard or on a second till
+     comes out at the counter — which is the whole point — but if the shop's server cannot
+     be reached it still tries the printer in front of the person rather than losing it. */
+  const toMain=(CFG.bill&&CFG.bill.printTo)==='main';
+  const onThisMachine=()=>agentPrint(inv,f);
+  const atTheCounter=()=>queuePrint(inv,f);
+  const first=toMain?atTheCounter:onThisMachine;
+  const then=toMain?onThisMachine:atTheCounter;
+  first().then(done=>{ if(done) return;
+    then().then(sent=>{ if(!sent) browserPrint(inv,f) });
   });
 }
 function browserPrint(inv,f='a5'){
