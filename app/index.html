@@ -13967,9 +13967,10 @@ function holdCurrentBill(notify = true, ref){
 }
 
 /* bringing a held bill back is confirmed first — it replaces what is on the till (that gets held) */
-function recallAsk(idx){
+function recallAsk(which){
   S.heldBills = S.heldBills || [];
-  const b = S.heldBills[idx]; if(!b) return toast('No held bill selected');
+  const b = S.heldBills[heldAt(which)];
+  if(!b){ toast('That one has been picked up at another till'); render(); return }
   closeModals();
   const c = C(b.customer || 1), n = (b.lines || []).length;
   const net = Math.max(0, (b.lines || []).reduce((a, l) => a + (l.qty * l.price - (l.disc || 0)), 0) - (b.billDisc || 0));
@@ -13981,7 +13982,7 @@ function recallAsk(idx){
     <button class="btn ghost" id="rcNo">No <i class="kbd">Esc</i></button>
     <button class="btn tape" id="rcYes">Yes, bring it back <i class="kbd">Enter</i></button></div>`);
   m.classList.add('hb-ask-wrap');
-  const yes = () => { m.remove(); recallHeldBill(idx) };
+  const yes = () => { m.remove(); recallHeldBill(b.id) };   // by then the list may have moved
   const no = () => { m.remove(); showHeldBillsModal(idx) };
   m.querySelector('#rcYes').onclick = yes; m.querySelector('#rcNo').onclick = no;
   const key = (e) => { if(!document.body.contains(m)){ window.removeEventListener('keydown', key, true); return } e.stopPropagation(); if(e.key === 'Enter'){ e.preventDefault(); yes() } if(e.key === 'Escape'){ e.preventDefault(); no() } };
@@ -13989,16 +13990,25 @@ function recallAsk(idx){
   m.querySelector('#rcYes').focus();
 }
 
-function recallHeldBill(idx){
+/* Which bill, by what it is. The list belongs to the shop now, so it can grow and shrink
+   under somebody with the window open — another till holding one, or picking up this very
+   one. A position in it is only true for as long as nobody else is working. */
+function heldAt(which){
+  const list = S.heldBills || [];
+  if(typeof which === 'string') return list.findIndex(b => b && b.id === which);
+  return (which >= 0 && which < list.length) ? which : -1;
+}
+function recallHeldBill(which){
   S.heldBills = S.heldBills || [];
-  if(idx < 0 || idx >= S.heldBills.length){
-    toast('No held bill selected');
+  if(heldAt(which) < 0){
+    toast('That one has been picked up at another till');
+    render();
     return false;
   }
   if(S.pos && S.pos.lines && S.pos.lines.length){
     holdCurrentBill(false);
   }
-  const bill = S.heldBills.splice(idx, 1)[0];
+  const bill = S.heldBills.splice(heldAt(which), 1)[0];
   S.pos = {
     lines: bill.lines || [],
     customer: bill.customer || null,
@@ -14114,13 +14124,14 @@ function showHeldBillsModal(initIdx = 0){
           <span class="hb-c-num">#${i + 1}</span>
           <span class="hb-c-time">${formatHeldTime(b.date)}</span>
           <span class="hb-c-custtag ${isNamed ? 'named' : 'walkin'}">${isNamed ? 'Account' : 'Walk-in'}</span>
+          ${b.terminal && b.terminal !== S.terminal ? `<span class="hb-c-custtag">held at ${b.terminal}</span>` : ''}
         </div>
         <div class="hb-c-name">${(b.ref || c.name || 'WALK-IN').toUpperCase()}</div>
         ${b.ref && isNamed && b.ref !== c.name ? `<div class="hb-c-ref">${c.name}</div>` : ''}
         <div class="hb-c-bottom">
           <span class="hb-c-meta">${(b.lines || []).length} item${(b.lines || []).length === 1 ? '' : 's'} · ${fq(qty)} qty</span>
           <span class="hb-c-amt">${fmt(net)}</span>
-          <button type="button" class="hb-c-recall-btn" data-hb-recall="${i}" title="Recall this bill to till">Recall ↵</button>
+          <button type="button" class="hb-c-recall-btn" data-hb-recall="${b.id}" title="Recall this bill to till">Recall ↵</button>
         </div>
       </div>`;
     }).join('');
@@ -14251,8 +14262,7 @@ function showHeldBillsModal(initIdx = 0){
   m.querySelector('#hbList').addEventListener('click', (e) => {
     const recallBtn = e.target.closest('[data-hb-recall]');
     if(recallBtn){
-      const idx = +recallBtn.dataset.hbRecall;
-      recallAsk(idx);
+      recallAsk(recallBtn.dataset.hbRecall);
       return;
     }
     const card = e.target.closest('.hb-card');

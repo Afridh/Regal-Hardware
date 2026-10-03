@@ -11,7 +11,11 @@
   var TERMINAL_KEY = 'regal_terminal';
   var POLL_MS = 2000;
   // per-device state that must never travel between tills
-  var LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'held', 'heldBills', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId'];
+  /* What stays on the machine it was typed on. The bill being keyed right now (pos) does:
+     nobody wants half a bill appearing on the next till. Bills put ON HOLD do not, and used
+     to — so a bill held at the counter could not be picked up on a phone, and was lost
+     outright when the page was reloaded, because nothing ever wrote it down. */
+  var LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId'];
 
   var rev = 0, token = localStorage.getItem(TOKEN_KEY) || '', busy = false, lastPushAt = 0, pollTimer = null, offlineSince = 0, build = '', toldBuild = false;
 
