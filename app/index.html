@@ -1091,6 +1091,11 @@ tr.off td{opacity:.55}
   padding:8px 0;border-bottom:1px solid var(--line2)}
 .de-open:last-child{border-bottom:0}
 .de-open>b{font-family:Archivo,sans-serif;font-size:17px;min-width:26px;text-align:right}
+.polist{margin-top:6px;border:1px solid var(--line);border-radius:var(--r);max-height:300px;overflow:auto;background:var(--white)}
+.polist>div{display:flex;justify-content:space-between;gap:10px;padding:8px 11px;border-bottom:1px solid var(--line2);cursor:pointer;flex-wrap:wrap}
+.polist>div:last-child{border-bottom:0}
+.polist>div:hover{background:var(--tint-yellow)}
+.polist>div.on{background:var(--tint-green)}
 .pickrow{display:grid;grid-template-columns:1fr 100px auto auto auto;gap:9px;align-items:center;margin-top:9px;
   padding:10px;border:1px solid var(--ink);border-radius:10px;background:var(--tint-yellow)}
 .pickrow input{margin:0;text-align:right}
@@ -8023,9 +8028,17 @@ const maskP=p=>p?p.slice(0,3)+' '+p.slice(3,-3).replace(/./g,'•')+' '+p.slice(
 let poDraft=null, ordTab='in';
 window.poState=()=>poDraft; // exposed for tests
 function newPO(sid){
-  poDraft={sid:sid||S.suppliers[0].id,lines:[],note:'',want:D(today),q:'',pid:null,qty:'',wide:false};
+  poDraft={sid:sid||null,supQ:'',lines:[],note:'',want:D(today),q:'',pid:null,qty:'',wide:false};
   ordTab='out'; render();
+  const f=$(sid?'#poQ':'#poSupQ'); if(f) f.focus();
 }
+/* the supplier is typed and picked, the way an item is */
+function poPickSup(sid){
+  poDraft.sid=sid; poDraft.supQ=''; poDraft.wide=false; poDraft.q=''; poDraft.pid=null; render();
+  const f=$('#poQ'); if(f) f.focus();
+}
+const supHits=q=>{ const t=String(q||'').trim().toLowerCase(); if(!t) return [];
+  return S.suppliers.filter(x=>x.active!==false&&[x.name,x.code,x.contact,x.phone].some(v=>String(v||'').toLowerCase().includes(t))).slice(0,8) };
 /* An order is built the way a bill is: find the item, say how many, it drops onto the list.
    Picking used to mean "one of these" and a trip to the quantity box in the table, which is
    not how anybody at the counter works. */
@@ -8053,6 +8066,7 @@ function poAddFree(){
 }
 function sendPO(){
   const d=poDraft;
+  if(!d.sid||!SU(d.sid)) { toast('Who is the order to? Type the supplier and pick them'); const f=$('#poSupQ'); if(f) f.focus(); return }
   const good=d.lines.filter(l=>l.qty>0&&(l.known||l.desc.trim()));
   if(!good.length) return toast('Put something on the order first');
   const s=SU(d.sid);
@@ -8145,29 +8159,45 @@ function poReceive(no){
 }
 function ordersOut(){
   const list=S.orders.filter(o=>o.dir==='OUT'&&!['completed','approved'].includes(o.status)).sort((a,b)=>b.no.localeCompare(a.no));
+  if(poDraft&&!poDraft.sid){
+    const d=poDraft, hits=supHits(d.supQ);
+    return `<div class="card" style="margin-bottom:12px">
+      <div class="f" style="position:relative;max-width:520px"><label>Order to</label>
+       <input id="poSupQ" value="${noteEsc(d.supQ||'')}" placeholder="Type the supplier's name, code, rep or phone…" autocomplete="off">
+       ${hits.length?`<div class="sug">${hits.map(x=>`<div data-act="poPickSup" data-id="${x.id}"><span><b>${x.name}</b> <span class="muted">${x.code||''}</span></span>
+         <span class="muted">${x.contact||''}${x.contact&&x.phone?' · ':''}${x.phone||''}</span></div>`).join('')}</div>`
+        :d.supQ.trim()?'<div class="muted" style="margin-top:4px">No supplier by that name.</div>':''}</div>
+      <div class="muted">Pick the supplier, then their products show below to choose from.</div>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn ghost" data-act="poCancel">Cancel</button></div></div>`;
+  }
   if(poDraft){
     const d=poDraft, s=SU(d.sid);
     const theirs=supplierItems(d.sid);
-    const match=(p)=>p.name.toLowerCase().includes(d.q.toLowerCase())||String(p.code||'').toLowerCase().includes(d.q.toLowerCase());
-    const mine=d.q.trim()?S.products.filter(p=>theirs.has(p.id)&&match(p)):[];
-    const rest=d.q.trim()?S.products.filter(p=>!theirs.has(p.id)&&match(p)):[];
-    const hits=(d.wide?mine.concat(rest):mine).slice(0,6);
+    const t=d.q.trim().toLowerCase();
+    const match=(p)=>!t||p.name.toLowerCase().includes(t)||String(p.code||'').toLowerCase().includes(t);
+    // every product of theirs, narrowed as it is typed; anyone else's only when asked for
+    const mine=S.products.filter(p=>theirs.has(p.id)&&p.active!==false&&match(p)).sort((a,b)=>a.name.localeCompare(b.name));
+    const rest=t?S.products.filter(p=>!theirs.has(p.id)&&match(p)):[];
+    const list=d.wide?mine.concat(rest.slice(0,40)):mine;
     const picked=d.pid?P(d.pid):null;
     const est=d.lines.reduce((a,l)=>a+l.qty*(+l.est||0),0);
+    const onOrder=new Set(d.lines.filter(l=>l.known).map(l=>l.pid));
     return `<div class="card" style="margin-bottom:12px">
       <div class="grid3">
-       <div class="f"><label>Order to</label><select id="poSup">${S.suppliers.map(x=>`<option value="${x.id}" ${x.id===d.sid?'selected':''}>${x.name}</option>`).join('')}</select>
-        <div class="muted">${s.contact} · ${s.phone||'no mobile'} · owe them ${fmt(partyBal('S',s.id))}</div></div>
+       <div class="f"><label>Order to</label>
+        <div style="display:flex;gap:6px;align-items:center"><b style="flex:1">${s.name}</b><button class="btn ghost sm" data-act="poChangeSup">Change</button></div>
+        <div class="muted">${s.contact||'no rep on file'} · ${s.phone||'no mobile'} · owe them ${fmt(partyBal('S',s.id))}</div></div>
        <div class="f"><label>Wanted by</label><input id="poWant" type="date" value="${d.want}"></div>
        <div class="f"><label>Note for the rep</label><input id="poNote" value="${d.note}" placeholder="e.g. send with the Thursday lorry"></div>
       </div>
-      <label>Add an item ${SU(d.sid).name.split(/[–(]/)[0].trim()} supplies</label>
-      <div style="position:relative"><input id="poQ" value="${d.q}" placeholder="Search the product list…" autocomplete="off">
-       ${hits.length&&!picked?`<div class="sug">${hits.map(p=>`<div data-act="poAdd" data-id="${p.id}"><span>${p.name} <span class="muted">${p.code}</span>${theirs.has(p.id)?'':' <span class="tag warn">not usually from them</span>'}</span>
-        <span class="muted">${fq(p.stock)} ${p.unit} left${can('cost')?' · last cost '+fmt(p.cost):''}</span></div>`).join('')}</div>`:''}</div>
-      ${d.q.trim()&&!picked?`<div class="muted" style="margin-top:4px">
-       ${mine.length?`${mine.length} of theirs`:`Nothing of theirs matches "${noteEsc(d.q)}"`}${rest.length?` · ${rest.length} more in the shop`:''}
-       ${rest.length?`<button class="btn ghost sm" data-act="poWide" style="margin-left:6px">${d.wide?'Only theirs':'Look through every item'}</button>`:''}</div>`:''}
+      <label>${s.name.split(/[–(]/)[0].trim()}'s products — ${theirs.size} item${theirs.size===1?'':'s'}</label>
+      <input id="poQ" value="${noteEsc(d.q)}" placeholder="Type to search their products, or a code…" autocomplete="off">
+      ${!picked?`<div class="polist">${list.map(p=>`<div data-act="poAdd" data-id="${p.id}" class="${onOrder.has(p.id)?'on':''}">
+          <span><b>${p.name}</b> <span class="muted">${p.code||''}</span>${theirs.has(p.id)?'':' <span class="tag warn">not usually from them</span>'}${onOrder.has(p.id)?' <span class="tag ok">on the order</span>':''}</span>
+          <span class="muted">${fq(p.stock)} ${p.unit} left${p.min&&p.stock<=p.min?' · <b style="color:var(--chip-rust)">low</b>':''}${can('cost')?' · last cost '+fmt(p.cost):''}</span></div>`).join('')
+        ||`<div class="muted" style="cursor:default">${t?`Nothing of theirs matches "${noteEsc(d.q)}".`:'No products are linked to this supplier yet — search every item below, or add something new.'}</div>`}</div>
+       <div class="muted" style="margin-top:4px">${mine.length} of theirs${t&&rest.length?` · ${rest.length} more in the shop`:''}
+        ${t&&rest.length?`<button class="btn ghost sm" data-act="poWide" style="margin-left:6px">${d.wide?'Only theirs':'Look through every item'}</button>`:''}</div>`:''}
       ${picked?`<div class="pickrow">
         <div><b>${picked.name}</b><div class="muted">${picked.code} · ${fq(picked.stock)} ${picked.unit} in the shop${can('cost')?' · last cost '+fmt(picked.cost):''}</div></div>
         <input id="poQty" type="number" step="any" min="0" value="${d.qty}" placeholder="How many?" autocomplete="off">
@@ -8190,8 +8220,8 @@ function ordersOut(){
         ||'<tr><td colspan="7" class="muted" style="padding:22px;text-align:center">Nothing on the order yet.</td></tr>'}</table>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px;flex-wrap:wrap">
        <b>Estimated ${fmt(est)}${d.lines.some(l=>!l.known)?` · ${d.lines.filter(l=>!l.known).length} new to us`:''}</b>
-       <div style="display:flex;gap:8px"><button class="btn ghost" data-act="poCancel">Throw it away</button>
-        <button class="btn tape" data-act="poSend">Send it to ${s.name.split(' ')[0]}</button></div></div>
+       <div style="display:flex;gap:8px"><button class="btn ghost" data-act="poCancel">Cancel</button>
+        <button class="btn tape" data-act="poSend">Send order</button></div></div>
      </div>`;
   }
   const open=list.filter(o=>['sent','accepted','changes','dispatched'].includes(o.status));
@@ -10088,7 +10118,8 @@ function renderNow(){
       qty.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); poPut() }
         if(e.key==='Escape'){ e.preventDefault(); poDrop() } };
       if(document.activeElement===document.body) qty.focus() }
-    const sup=$('#poSup'); if(sup) sup.onchange=e=>{poDraft.sid=+e.target.value;poDraft.wide=false;render()};
+    const sq=$('#poSupQ'); if(sq){ sq.oninput=e=>{ poDraft.supQ=e.target.value; render(); const n=$('#poSupQ'); n.focus(); n.setSelectionRange(n.value.length,n.value.length) };
+      sq.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); const h=supHits(poDraft.supQ); if(h.length) poPickSup(h[0].id); else toast('No supplier by that name') } } }
     const want=$('#poWant'); if(want) want.onchange=e=>{poDraft.want=e.target.value};
     const note=$('#poNote'); if(note) note.oninput=e=>{poDraft.note=e.target.value};
     b('[data-pol]',el=>{poDraft.lines[+el.dataset.pol].desc=el.value});
@@ -23370,6 +23401,8 @@ document.addEventListener('click',e=>{
     prefKeys:()=>{setPref('keys',!pref('keys')); render()},
     ordTab:()=>{ordTab=a.dataset.t; if(ordTab!=='out')poDraft=null; render()},
     poNew:()=>newPO(), poFree:()=>{poAddFree()}, poAdd:()=>poAddKnown(+a.dataset.id),
+    poPickSup:()=>poPickSup(+a.dataset.id),
+    poChangeSup:()=>{ poDraft.sid=null; poDraft.supQ=''; poDraft.pid=null; render(); const f=$('#poSupQ'); if(f) f.focus() },
     poPut:()=>poPut(), poDrop:()=>poDrop(),
     poWide:()=>{ poDraft.wide=!poDraft.wide; render(); const q=$('#poQ'); if(q){ q.focus(); q.setSelectionRange(q.value.length,q.value.length) } },
     poDel:()=>{poDraft.lines.splice(+a.dataset.i,1);render()},
