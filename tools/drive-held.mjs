@@ -32,6 +32,23 @@ ok(local.includes('user') && local.includes('terminal'), 'and so are who is sign
 ok(/LOCAL_KEYS\.forEach\(function \(k\) \{ delete d\.S\[k\]; \}\)/.test(bridge),
    'what is saved to the shop is everything except those');
 
+/* ---------- 1b. and the OTHER list, for books coming the other way ----------
+   There are two, one per direction: the bridge decides what is SAVED to the shop, and the
+   till decides what is KEPT when books arrive. They have to agree. They did not once — held
+   bills were taken off the bridge's list and left on the till's, so a bill held on a phone
+   reached the server and was then thrown away by every till as it came back, which from the
+   counter looked exactly like no sync at all. Checking only one list is what let that
+   through, so both are checked here. */
+const app = fs.readFileSync('app/index.html', 'utf8');
+const tillList = /const LOCAL_KEYS\s*=([\s\S]*?);\r?\n/.exec(app);
+ok(!!tillList, 'the till keeps a list of its own, for books arriving from the shop');
+const tillSrc = tillList ? tillList[1] : '';
+ok(/window\.regalBridge/.test(tillSrc),
+   'and it takes the bridge’s list as its source, so the two cannot drift apart');
+for (const k of ['heldBills', 'held'])
+  ok(!tillSrc.includes(`'${k}'`), `and "${k}" is not written into its fallback either`);
+ok(tillSrc.includes("'pos'"), 'while the bill being keyed right now still is');
+
 /* ---------- 2. the behaviour, in the demo ---------- */
 if (!exe) { console.log('\n  (no browser to drive; the rest needs one)'); process.exit(fail ? 1 : 0) }
 const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['--no-sandbox'] });
