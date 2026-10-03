@@ -3916,10 +3916,42 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   inv.lines.forEach(l=>{ const pp=P(l.pid);
     if(pp.stock<=pp.min&&pp.stock+l.qty>pp.min) notify('stock',`${pp.name} is down to ${fq(pp.stock)} ${pp.unit}`,'inventory') });
   if(overLimit) notify('warn',`${c.name} was let past their credit limit`,'customers');
-  if(c&&c.phone&&CFG.msg.autoBill){ const v={invoice:inv.no,total:fmt(total),balance:fmt(credit),link:inv.link,
-    customer:c.name,outstanding:fmt(partyBal('C',c.id))};
-    sms(c.phone, tpl(credit>0?'creditSale':'cashSale',v)) }
+  const v={invoice:inv.no,total:fmt(total),balance:fmt(credit),link:inv.link,
+    customer:c?c.name:'Cash customer',outstanding:fmt(partyBal('C',(c||{}).id))};
+  if(c&&c.phone&&CFG.msg.autoBill) sms(c.phone, tpl(credit>0?'creditSale':'cashSale',v));
+
+  /* The owner's own copy. Written for them, not for the customer: a shop owner wants to
+     know what went out of the shop while they were not standing in it — who bought it, who
+     sold it, and what is still owed on it. */
+  ownerTell(inv,c,{total,credit,by,v});
   return inv;
+}
+/* Whether this bill is one the owner asked to hear about, and the text if it is.
+   Returns what it did, so it can be tried without a provider in front of it. */
+function ownerSmsWant(inv,{total,credit}={}){
+  const cfg=CFG.msg||{};
+  const want=cfg.ownerBills===undefined?'all':cfg.ownerBills;
+  const kind=total<0?'return':(credit>0.005?'credit':'cash');
+  if(want==='off') return {send:false,why:'the owner has this switched off',kind};
+  if(Math.abs(total)<(+cfg.ownerMin||0)) return {send:false,why:`under the ${fmt(+cfg.ownerMin||0)} the owner set`,kind};
+  // a return is money going back out, so it goes with whichever side the shop asked for
+  const asked=want==='all'||want===kind||(kind==='return'&&want!=='off');
+  return asked?{send:true,kind}:{send:false,why:`the owner only asked about ${want} bills`,kind};
+}
+function ownerTell(inv,c,{total,credit,by,v}={}){
+  const own=String((CFG.shop&&CFG.shop.owner)||'').replace(/\D/g,'');
+  if(!own) return {send:false,why:'no owner mobile in Settings → Shop details'};
+  const w=ownerSmsWant(inv,{total,credit});
+  if(!w.send) return w;
+  // the customer's own copy already went to this number; one is enough
+  if(c&&c.phone&&String(c.phone).replace(/\D/g,'').slice(-9)===own.slice(-9))
+    return {send:false,why:'the customer is the owner',kind:w.kind};
+  const balancePart=w.kind==='credit'
+    ? `, ${fmt(credit)} on credit — they now owe ${v.outstanding}`
+    : (w.kind==='return'?' — goods back':'');
+  try{ sms(own, tpl('ownerBill',{...v,kind:w.kind.toUpperCase()+' bill',by:by||'—',balancePart})) }
+  catch(e){ return {send:false,why:e.message,kind:w.kind} }
+  return {send:true,kind:w.kind};
 }
 function receivePurchase({supplierId,supInv,lines,other=0,date=D(today),pay,files=[],dn=null,disc=0}){
   const sub=lines.reduce((a,l)=>a+l.qty*l.cost,0), total=+(sub+other-(+disc||0)).toFixed(2);
@@ -4491,7 +4523,11 @@ const CFG={
  print:{agent:'http://localhost:4100'},               // the print helper on the till PC (tools/print-agent); empty = browser print
  pos:{discFromMrp:true,repriceToLast:true,dragLines:true},          // a discount typed as a percentage comes off the maker's price; lines can be dragged into order
 
- msg:{provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',timeout:30,autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,
+ /* ownerBills / ownerMin: which bills the owner is told about on their own phone, and from
+    what size up. A shop doing three hundred counter sales a day does not want three hundred
+    texts, so the floor is there to be raised — it is the figure above which the owner would
+    want to know without being told. */
+ msg:{provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',timeout:30,autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,ownerBills:'all',ownerMin:0,
   waMode:'chat',waPhoneId:'',waToken:'',waWabaId:'',waVerifyToken:'',waAuto:true,waTemplates:{},
    quietFrom:'21:00',quietTo:'07:00'},
  mail:{host:'',port:587,user:'',pass:'',from:'',cc:''},   // outgoing email — quotations to institutions go from here
@@ -4502,6 +4538,8 @@ const CFG={
     text:'{shop}: thank you for your purchase. Bill {invoice} for {total} — {link}'},
   creditSale:{label:'Credit bill',vars:'{shop} {invoice} {total} {balance} {outstanding} {link}',
     text:'{shop}: credit bill {invoice} for {total}. Your total outstanding is now {outstanding}. See it at {link}'},
+  ownerBill:{label:'Your own copy of a bill',vars:'{shop} {kind} {invoice} {total} {customer} {by} {balance} {outstanding}',
+    text:'{shop}: {kind} {invoice} {total} — {customer}, by {by}{balancePart}'},
   billLink:{label:'Resending a bill link',vars:'{shop} {invoice} {total} {balance} {link}',
     text:'{shop}: your bill {invoice} for {total}{balancePart} — {link}'},
   paymentReceived:{label:'Payment received',vars:'{shop} {amount} {receipt} {outstanding} {customer}',
@@ -4948,6 +4986,15 @@ function settings(){
      ${fld('msg.autoReceipt','','Receipt after a payment is recorded','check')}
      ${fld('msg.autoOrder','','Supplier told when you accept, reject or change an order','check')}
      ${fld('msg.autoSummary','','Daily summary to the owner at '+CFG.bill.summaryTime,'check')}</div>
+    <h2 style="margin-top:16px">Your own copy of every bill</h2>
+    <div class="muted">What went out of the shop while you were not standing in it. It goes to the owner's
+      mobile in <b>Shop details</b> — ${CFG.shop.owner||'not set yet'}.</div>
+    <div class="grid2" style="margin-top:8px">
+     <div class="f"><label>Tell me about</label>
+      <select data-set="msg.ownerBills">${[['all','every bill'],['credit','credit bills only'],['cash','cash bills only'],['off','nothing']]
+        .map(o=>`<option value="${o[0]}" ${(CFG.msg.ownerBills||'all')===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>
+     ${fld('msg.ownerMin','Only from this much up','Leave at 0 for all of them. On a busy counter this is what keeps it from being a text a minute.','number')}
+    </div>
     <div class="card note" style="margin-top:10px">Sign-in codes always go out, whatever is set here — without them nobody can open their page.</div>
     <h2 style="margin-top:16px">WhatsApp</h2>
     <div class="muted" style="margin-bottom:8px">Every WhatsApp button in the till (bills, statements, reminders, online orders) uses this. The shop's own WhatsApp number for customers goes under The shop site → Words &amp; contact.</div>
@@ -5052,7 +5099,7 @@ function settings(){
 /* Settings → Messaging → WhatsApp: the whole set-up on one screen, in the order Meta wants it done */
 function waSetup(fld){
   const m=CFG.msg, hook=location.origin+'/api/wa/webhook', std=WA_STD_TEMPLATES;
-  const tplKeys=[['cashSale','Cash bill after a sale'],['creditSale','Credit bill after a sale'],['billLink','Bill sent again'],['paymentReceived','Payment received'],['statement','Customer statement'],['portalInvite','Invite to their page'],['webOrder','Online order update']];
+  const tplKeys=[['cashSale','Cash bill after a sale'],['creditSale','Credit bill after a sale'],['ownerBill','Your own copy of a bill'],['billLink','Bill sent again'],['paymentReceived','Payment received'],['statement','Customer statement'],['portalInvite','Invite to their page'],['webOrder','Online order update']];
   const list=waTplList||[]; const approved=list.filter(t=>t.status==='APPROVED');
   return `<div class="wa-steps">
    <div class="wa-step"><b>1</b><div><b>Make the accounts</b><div class="muted">Business portfolio at <a href="https://business.facebook.com" target="_blank">business.facebook.com</a> → app at <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com</a> (type <i>Business</i>) → add the <b>WhatsApp</b> product. Verify the business under Security Centre (registration document + address).</div></div></div>
