@@ -28,6 +28,7 @@ import fileRoutes from './routes/files.js';
 import printRoutes from './routes/print.js';
 import custRoutes from './routes/customer.js';
 import aiRoutes from './routes/ai.js';
+import alexaRoutes from './routes/alexa.js';
 
 if (!process.env.JWT_SECRET) console.error('JWT_SECRET is not set (copy .env.example to .env, or set it in the host\'s environment)');
 
@@ -65,6 +66,8 @@ app.use('/api/sup', supplierRoutes);
 app.use('/api/files', fileRoutes);
 // the printers are on one PC: a bill made anywhere is left here and that PC's helper takes it
 app.use('/api/print', printRoutes);
+// the Echo in the office: Amazon calls this, and the till reports what the books cannot see
+app.use('/api/alexa', alexaRoutes);
 // the customer's own page: what they owe, bill by bill, and a way to say they have paid
 app.use('/api/my', custRoutes);
 app.use('/api/ai', aiRoutes);

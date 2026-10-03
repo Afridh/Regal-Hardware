@@ -4509,6 +4509,11 @@ const CFG={
    footer:'Only returns will be accepted within {days} days with the original invoice. Goods once sold are checked and accepted by the customer.',
    blankLines:9,summaryTime:'19:30'},
  cost:{word:'BLACKNIGHT',repeat:'X',onLabel:true,atTill:true,inProducts:true},
+ /* The Echo in the office. Everything is off until the shop turns it on, and money is off even
+    then until it is turned on separately — it is the one thing an Echo says out loud that
+    somebody standing there should not hear. */
+ alexa:{on:false,skillId:'',word:'',stock:true,price:true,money:false,news:true,
+   sayOrders:true,sayHolds:true,sayCheques:false},
  /* What closing a day insists on. Counting is worth insisting on; the list of things left
     open is not, because some of it is honestly tomorrow's job. */
  dayend:{needCash:true,needCheques:true,needCard:true,tolerance:20,printSlip:true},
@@ -4771,7 +4776,7 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
 function settingsTabs(){
-  return [['screen','My screen'],['done','Finishing a bill'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['dayend','Day end'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  return [['screen','My screen'],['done','Finishing a bill'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
 }
 function settings(){
   const tabs=settingsTabs();
@@ -5043,6 +5048,43 @@ function settings(){
      <div class="muted" style="margin-bottom:6px">These changes need the owner's approval:</div>
      ${APPROVAL_KINDS.map(([k,l])=>`<label class="chk" style="display:flex;padding:7px 0;border-bottom:1px solid var(--line2)"><input type="checkbox" data-apk="${k}" ${cfg[k]!==false?'checked':''}> ${l}</label>`).join('')}
      <div class="muted" style="margin-top:8px">${apPending().length?`<b>${apPending().length}</b> request${apPending().length===1?'':'s'} waiting now.`:'Nothing waiting.'} <a href="#" data-view="approvals">Open Approvals</a></div>` }
+  if(setTab==='alexa'){ const a=CFG.alexa||{};
+    body=`<div class="card note" style="margin-bottom:10px"><b>An Echo is a loudspeaker</b>
+      <div class="muted">Whatever it answers is heard by everybody in the room, and it cannot tell who
+       asked — Amazon's voice profiles are a convenience, not a lock. Stock and prices are safe enough:
+       a customer can read them off the shelf anyway. Money is different, which is why it is off here
+       until you turn it on, and refused unless the word below is said in the same breath.
+       Every question goes through Amazon before it reaches the shop.</div></div>
+
+     ${fld('alexa.on','','Answer the Echo at all','check')}
+     <div class="grid2" style="margin-top:6px">
+      <div class="f"><label>The skill's id</label><input data-set="alexa.skillId" value="${noteEsc(a.skillId||'')}"
+        placeholder="amzn1.ask.skill.…">
+       <div class="muted">From the Alexa developer console. With this set, nothing but your own skill is answered.</div></div>
+      <div class="f"><label>The word for money questions</label><input data-set="alexa.word" value="${noteEsc(a.word||'')}"
+        placeholder="a word only you would say">
+       <div class="muted">Said in the same sentence: "what did we take today, <i>${noteEsc(a.word||'thunder')}</i>".
+        Without it the figure is refused.</div></div>
+     </div>
+
+     <h2 style="margin-top:14px">What it may answer</h2>
+     ${fld('alexa.stock','','How many of something there are','check')}
+     ${fld('alexa.price','','What something costs','check')}
+     ${fld('alexa.money','','Takings, what is owed, what is in the drawer — only with the word','check')}
+     ${fld('alexa.news','','What is waiting','check')}
+
+     <h2 style="margin-top:14px">What counts as waiting</h2>
+     ${fld('alexa.sayOrders','','Orders that came in off the website','check')}
+     ${fld('alexa.sayHolds','','Bills put on hold at a till','check')}
+     ${fld('alexa.sayCheques','','Our own cheques dated today','check')}
+
+     <div class="card note" style="margin-top:12px"><b>Setting it up, once</b>
+      <div class="muted">At <b>developer.amazon.com</b>, make a custom skill, give it the invocation name
+       <b>regal hardware</b>, and point its endpoint at <code>https://${noteEsc((CFG.shop&&CFG.shop.web)||'regalhw.lk')}/api/alexa</code>.
+       Keep it in <b>development</b> — it works on your own Echo without Amazon reviewing it, nothing is
+       published, and nobody else can add it. Copy the skill id into the box above. The four things it
+       understands are: how many of something, what something costs, the money questions, and what is
+       waiting.</div></div>` }
   if(setTab==='buying'){ const bc=CFG.buying||{};
     body=`<div class="card note" style="margin-bottom:10px"><b>How goods are allowed in</b>
       <div class="muted">There are three ways a lorry can be taken in. Entering it item by item is always
@@ -5099,7 +5141,7 @@ function settings(){
     shop:['Name, address and phones as printed','M3 9l2-5h14l2 5M4 9h16v11H4zM9 20v-6h6v6'],bill:['Numbering, formats and the return window',ICONS.bills],layout:['Logo, lines and text size on the bill',ICONS.docs],
     cost:['The code that hides cost on labels',ICONS.labels],msg:['The SMS gateway and who gets texts',ICONS.messages],tpl:['Wording of every text that goes out','M4 6h16M4 12h10M4 18h7'],
     shift:['The Shift Board, the fingerprint machine and pay','M12 7v5l3 2M12 3a9 9 0 110 18 9 9 0 010-18z'],
-    approvals:['What needs the owner’s nod',ICONS.approvals],buying:['How goods are allowed in',ICONS.purchases],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
+    approvals:['What needs the owner’s nod',ICONS.approvals],buying:['How goods are allowed in',ICONS.purchases],alexa:['What the Echo may say out loud',ICONS.messages],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
   if(!_setIndexing){
     const searching=setSearch.trim().length>=2;
     body=settingsSearchBox()+(searching?'':body);
@@ -7619,6 +7661,19 @@ const privHash=s=>{ let h=2166136261;
   for(const c of String(s||'')){ h^=c.charCodeAt(0); h=Math.imul(h,16777619)>>>0 }
   h^=h>>>13; h=Math.imul(h,0x5bd1e995)>>>0; h^=h>>>15;
   return (h>>>0)%100 };
+/* A bill on hold lives on the till it was keyed on and is stripped before the books are saved,
+   so the server cannot see one. If the Echo is meant to mention them, the till has to say so. */
+function alexaNote(kind, bill){
+  try{
+    const a = CFG.alexa || {};
+    if (!a.on || a.sayHolds === false) return;
+    if (!(window.regalBridge && regalBridge.token())) return;
+    const who = bill && (bill.ref || (bill.lines && bill.lines.length + ' lines')) || 'a bill';
+    fetch('/api/alexa/note', { method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+regalBridge.token() },
+      body: JSON.stringify({ kind, text: String(who).slice(0,120) }) }).catch(()=>{});
+  }catch(e){ /* the bill is held whether or not the Echo ever hears about it */ }
+}
 function privacyToggle(){
   const cfg=CFG.privacy||{}; if(!cfg.on) return;
   if(PRIV){ Object.assign(S,PRIV); PRIV=null; window.privacyOn=false; clearTimeout(privT); document.body.classList.remove('privacy'); render(); drawBell(); return }
@@ -13994,6 +14049,7 @@ function holdCurrentBill(notify = true, ref){
   S.heldBills = S.heldBills || [];
   S.heldBills.unshift(bill);
   S.held = bill;
+  alexaNote('hold', bill);
   S.pos = { lines: [], customer: null, salesman: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill };
   if(typeof CS !== 'undefined') CS = { ...CS, pid: null, q: '', qty: 1, price: 0, disc: 0, focus: '', editLine: null };
   render();

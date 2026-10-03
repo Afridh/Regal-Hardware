@@ -63,6 +63,7 @@ const localTime = () => new Date().toLocaleTimeString('en-GB', { hour: '2-digit'
 const money = n => 'Rs ' + Number(n || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
+export async function shopBooks() { return books() }
 async function books() {
   const { rows: [row] } = await query(`SELECT data FROM books WHERE key = 'regal'`);
   return row?.data || null;
