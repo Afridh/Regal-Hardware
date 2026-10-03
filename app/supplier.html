@@ -92,6 +92,9 @@ input:focus,textarea:focus{outline:none;border-color:var(--yellow);box-shadow:0 
 @media (max-width:620px){.menu .long{display:none}.menu .short{display:inline}.menu button{flex:1 1 0;padding:7px 4px;font-size:11.5px}}
 .menu button i{position:absolute;top:2px;right:6px;background:var(--rust);color:#fff;font-style:normal;font-size:10px;font-weight:700;border-radius:99px;padding:0 6px;line-height:16px}
 h3{font-family:Archivo,sans-serif;font-size:14px;margin:16px 0 8px}
+.seg{display:flex;gap:4px;background:#fff;border:1px solid var(--line);border-radius:99px;padding:4px;margin-bottom:12px}
+.seg button{flex:1;border:0;background:none;border-radius:99px;padding:9px 8px;font-weight:600;cursor:pointer;color:var(--steel);font-size:14px}
+.seg button.on{background:var(--ink);color:#fff}
 .btn.sm{padding:6px 10px;font-size:13px}
 .empty{background:#fff;border:1px dashed var(--line);border-radius:var(--r);padding:30px 18px;text-align:center;display:flex;flex-direction:column;gap:6px;align-items:center;color:var(--steel)}
 .empty div{font-size:38px}.empty b{color:var(--ink);font-family:Archivo,sans-serif;font-size:16px}
@@ -275,12 +278,46 @@ async function completeOrder(no,edited){
 }
 
 /* ---------- Create an Order: pick their items or type, then send ---------- */
+/* Two ways to send an order: pick the items, or photograph the invoice and send that. */
 function createPage(){
+  const mode=st.cmode||'items';
+  return `<div class="seg"><button class="${mode==='items'?'on':''}" data-cmode="items">🧾 Pick items</button><button class="${mode==='photo'?'on':''}" data-cmode="photo">📷 Photo of the invoice</button></div>`
+    +(mode==='photo'?photoPage():itemsPage());
+}
+function waitingList(){
+  const waiting=(st.me.sent||[]).filter(o=>['pending','adjusted','rejected'].includes(o.status)||o.waiting);
+  return waiting.length?`<h2 style="margin:16px 0 8px">With the shop</h2>${waiting.map(o=>sentCard(o,true)).join('')}`:'';
+}
+function photoPage(){
+  const P=st.photo=st.photo||{photos:[],inv:'',note:''};
+  return `<div class="card">
+    <h2>Send a photo of your invoice</h2>
+    <div class="muted" style="margin-bottom:10px">Photograph the invoice or the order sheet — up to 6 photos. The shop sees them and approves the order.</div>
+    <div class="photos">${P.photos.map((ph,i)=>`<div class="ph"><img src="${ph}" alt=""><button data-prm="${i}" title="Take this one off">✕</button></div>`).join('')}
+     ${P.photos.length<6?`<div class="snap" id="psnap"><b>📷</b>${P.photos.length?'Another':'Take a photo'}</div>`:''}</div>
+    <input type="file" id="pfile" accept="image/*" capture="environment" multiple style="display:none">
+    <div class="f"><label>Invoice number (optional)</label><input id="pinv" value="${esc(P.inv)}" placeholder="e.g. INV-4521"></div>
+    <div class="f"><label>Note for the shop (optional)</label><textarea id="pnote" style="min-height:70px" placeholder="e.g. delivery Thursday morning">${esc(P.note)}</textarea></div>
+    <button class="btn tape big" id="psend" ${P.photos.length&&!st.busy?'':'disabled'}>${st.busy?'Sending…':P.photos.length?`Send ${P.photos.length} photo${P.photos.length===1?'':'s'} to the shop`:'Take a photo first'}</button>
+   </div>${waitingList()}`;
+}
+async function sendPhotos(){
+  const P=st.photo; if(!P||!P.photos.length||st.busy) return;
+  st.busy=true; render();
+  try{
+    const text=[P.inv.trim()?'Invoice '+P.inv.trim():'',P.note.trim()].filter(Boolean).join('\n');
+    await api('/order',{method:'POST',body:{photos:P.photos,text,rep:st.rep||''}});
+    st.photo={photos:[],inv:'',note:''};
+    st.flash='✓ Photos sent — the shop will look at them and approve the order. It shows under <b>Sent Orders</b> once they do.';
+    await load();
+  }catch(e){ toast(e.message) }
+  finally{ st.busy=false; render() }
+}
+function itemsPage(){
   const me=st.me, D=st.draft=st.draft||{lines:[],q:'',pick:null,qty:'',price:'',note:''};
   if(!st.items&&!st.itemsBusy){ st.itemsBusy=true; api('/products').then(j=>{st.items=j.items||[]}).catch(()=>{st.items=[]}).finally(()=>{st.itemsBusy=false; render()}) }
   const items=st.items||[], q=String(D.q||'').trim().toLowerCase();
   const hits=q?items.filter(p=>p.name.toLowerCase().includes(q)||String(p.code).toLowerCase().includes(q)).slice(0,8):[];
-  const waiting=(me.sent||[]).filter(o=>['pending','adjusted','rejected'].includes(o.status)||o.waiting);
   const total=D.lines.reduce((a,l)=>a+(+l.qty||0)*(+l.price||0),0);
   return `<div class="card">
     <h2>New order to the shop</h2>
@@ -303,7 +340,7 @@ function createPage(){
     <div class="f" style="margin-top:10px"><label>Note for the shop (optional)</label><textarea id="cnote" style="min-height:70px" placeholder="e.g. delivery Thursday morning">${esc(D.note)}</textarea></div>
     <button class="btn tape big" id="csend" ${D.lines.length&&!st.busy?'':'disabled'}>${st.busy?'Sending…':'Send the order to the shop'}</button>
    </div>
-   ${waiting.length?`<h2 style="margin:16px 0 8px">With the shop</h2>${waiting.map(o=>sentCard(o,true)).join('')}`:''}`;
+   ${waitingList()}`;
 }
 function addDraftLine(){
   const D=st.draft; if(!D||!D.pick) return;
@@ -333,7 +370,8 @@ function sentCard(o,mine){
     :null;
   return `<div class="card o"><div class="h"><div><b>${esc(o.no||'Your order')}</b><div class="muted">${esc(o.date)}${o.rep?' · '+esc(o.rep):''}${o.grn?' · purchased as '+esc(o.grn):''}</div></div>
      ${state?`<span class="tag ${state[0]}">${state[1]}</span>`:o.grn||o.status==='received'?'<span class="tag ok">Purchased</span>':'<span class="tag blue">Approved — waiting for purchase</span>'}</div>
-    ${lines?linesTable(lines,true):o.text?`<div class="txt">${esc(o.text)}</div>`:''}
+    ${lines?linesTable(lines,true):o.text&&o.text!=='(photo only)'?`<div class="txt">${esc(o.text)}</div>`:''}
+    ${o.photos?`<div class="muted">📷 Sent as ${o.photos} photo${o.photos===1?'':'s'} of the invoice</div>`:''}
     ${o.note&&mine?`<div class="muted"><b>Shop:</b> ${esc(o.note)}</div>`:''}</div>`;
 }
 function sentPage(){
@@ -460,6 +498,15 @@ function bind(){
   $$('[data-cdel]',m).forEach(b=>b.onclick=()=>{ st.draft.lines.splice(+b.dataset.cdel,1); render() });
   const cn=$('#cnote'); if(cn) cn.oninput=()=>{ st.draft.note=cn.value };
   const cs=$('#csend'); if(cs) cs.onclick=sendDraft;
+  // create an order: the two ways, and the photos
+  $$('[data-cmode]',m).forEach(b=>b.onclick=()=>{ st.cmode=b.dataset.cmode; st.flash=''; render() });
+  const psnap=$('#psnap'); if(psnap) psnap.onclick=()=>$('#pfile').click();
+  const pfile=$('#pfile'); if(pfile) pfile.onchange=()=>{ const P=st.photo;
+    [...pfile.files].slice(0,6-P.photos.length).forEach(f=>shrink(f).then(d=>{ if(P.photos.length<6){ P.photos.push(d); render() } }).catch(()=>toast('Could not read that picture'))) };
+  $$('[data-prm]',m).forEach(b=>b.onclick=()=>{ st.photo.photos.splice(+b.dataset.prm,1); render() });
+  const pinv=$('#pinv'); if(pinv) pinv.oninput=()=>{ st.photo.inv=pinv.value };
+  const pnote=$('#pnote'); if(pnote) pnote.oninput=()=>{ st.photo.note=pnote.value };
+  const psend=$('#psend'); if(psend) psend.onclick=sendPhotos;
   // payment portal
   $$('[data-paypick]',m).forEach(cb=>cb.onchange=()=>{ st.payPick=st.payPick||{};
     if(cb.checked) st.payPick[cb.dataset.paypick]={claim:'',note:''}; else delete st.payPick[cb.dataset.paypick];

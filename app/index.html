@@ -8376,6 +8376,7 @@ function ordersOut(){
       <button class="btn tape sm" data-act="poReceive" data-no="${o.no}">Goods arrived — enter the purchase</button>
       <button class="btn ghost sm" data-act="poRemind" data-no="${o.no}">Chase them</button>
       <button class="btn ghost sm" data-act="poCancelOne" data-no="${o.no}">Cancel it</button>`:''}
+     ${o.status==='cancelled'?`<button class="btn ghost sm" data-act="ordDelete" data-id="${o.id}" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)">🗑 Delete</button>`:''}
     </div></div>`}).join('')||'<div class="card muted">No orders sent yet.</div>'}`;
 }
 
@@ -9053,8 +9054,9 @@ function orders(){
       ${s.phone?`<button class="btn ghost sm wa" data-act="ordWa" data-no="${o.id}">${WA_ICON} WhatsApp</button>`:''}
       ${o.status==='accepted'&&!o.grn?`<button class="btn tape sm" data-act="ordPurchase" data-no="${o.id}">Goods arrived — enter the purchase</button>`:''}
     </div><div id="ob-${o.id}"></div></div>`};
-  const head=`<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><span>Supplier orders</span>
-    <span style="display:flex;gap:6px"><a class="btn ghost" href="/supplier" target="_blank" title="What a rep sees — sign in with the supplier's mobile">Open the supplier page</a><button class="btn tape" data-act="poNew">Write an order to a supplier</button></span></h1>
+  const head=`<h1>Supplier orders</h1>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 14px"><button class="btn tape" data-act="poNew">✎ Write an order to a supplier</button>
+     <a class="btn ghost" href="/supplier" target="_blank" title="What a rep sees — they sign in with their own user name">Open the supplier page</a></div>
    <div class="tabs">${[['in',`From suppliers${pend.length?` <span class="nbadge">${pend.length}</span>`:''}`],['out','Orders we sent']].map(t=>`<button class="${ordTab===t[0]?'on':''}" data-act="ordTab" data-t="${t[0]}">${t[1]}</button>`).join('')}</div>`;
   if(ordTab==='out') return head+ordersOut();
   return head+`<div class="card note" style="margin-bottom:12px">
@@ -9073,7 +9075,8 @@ function orders(){
     <div style="display:flex;gap:8px;align-items:center"><button class="btn tape sm" data-act="poReceive" data-no="${o.no}">Goods arrived — enter the purchase</button>${otag('approved')}</div></div>`).join('')}
   ${rest.map(o=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
     <div><b>${SU(o.sid).name}</b><div class="muted">${o.date}${o.note?' · '+o.note:''}${o.disc?' · '+discSays(o.disc)+' offered':''}${o.grn?' · became '+o.grn:''}</div></div>
-    <div style="display:flex;gap:8px;align-items:center">${o.status==='accepted'?`<button class="btn tape sm" data-act="ordPurchase" data-no="${o.id}">Create purchase</button>`:''}${otag(o.status)}</div></div>`).join('')||'<div class="muted">Nothing yet.</div>'}`;
+    <div style="display:flex;gap:8px;align-items:center">${o.status==='accepted'?`<button class="btn tape sm" data-act="ordPurchase" data-no="${o.id}">Create purchase</button>`:''}${otag(o.status)}
+     ${o.status==='rejected'?`<button class="btn ghost sm" data-act="ordDelete" data-id="${o.id}" title="Delete this turned-down order" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)">🗑</button>`:''}</div></div>`).join('')||'<div class="muted">Nothing yet.</div>'}`;
 }
 function ordBox(id,kind){
   const h=document.getElementById('ob-'+id);
@@ -23532,6 +23535,12 @@ document.addEventListener('click',e=>{
     poCancel:()=>{poDraft=null;render()}, poSend:()=>sendPO(),
     poPrint:()=>poPrint(a.dataset.no), poReceive:()=>poReceive(a.dataset.no),
     poCancelOne:()=>{const note=prompt('Why is it cancelled?')||''; poAct(a.dataset.no,'cancelled',note)},
+    // only a dead order goes: one we cancelled, or one of theirs we turned down
+    ordDelete:()=>{ const o=S.orders.find(x=>x.id===a.dataset.id);
+      if(!o||!['cancelled','rejected'].includes(o.status)) return toast('Only a cancelled or turned-down order can be deleted');
+      const s=SU(o.sid), what=o.no||('the order of '+o.date);
+      if(!confirm(`Delete ${what} from ${s?s.name:'the supplier'}?\n\nIt is gone from both sides for good.`)) return;
+      S.orders=S.orders.filter(x=>x!==o); persist(true); render(); toast(`${what} deleted`) },
     poRemind:()=>{const o=S.orders.find(x=>x.no===a.dataset.no), sp=SU(o.sid);
       if(!sp.phone)return toast('No mobile number for '+sp.name);
       supSms(sp.phone,`${CFG.shop.name}: any word on order ${o.no}? ${o.lines.length} item(s)${o.want?', wanted by '+o.want:''}. Confirm at ${(S.web.settings.domain||location.host)}/supplier`);
