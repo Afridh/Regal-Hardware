@@ -55,6 +55,7 @@ export const loginLine = (l) => ({ id: Number(l.id), owner: l.owner, username: l
 
 export async function listLogins(table, owner) {
   await ensureLogins(table);
+  if (owner === undefined) return (await query(`SELECT * FROM ${table} ORDER BY id`)).rows;
   const { rows } = await query(`SELECT * FROM ${table} WHERE owner = $1 ORDER BY id`, [owner]);
   return rows;
 }
@@ -76,6 +77,7 @@ export async function setLogin(table, id, owner, patch) {
   const put = (col, v) => { vals.push(v); set.push(`${col} = $${vals.length}`) };
   if (patch.password !== undefined) { put('admin_hash', await hashPass(patch.password)); put('starter', String(patch.password).slice(0, 40)); if (patch.clearOwn) put('own_hash', null); }
   if (patch.ownPassword !== undefined) { put('own_hash', await hashPass(patch.ownPassword)); put('starter', null); }
+  if (patch.username !== undefined) put('username', cleanUser(patch.username));
   if (patch.name !== undefined) put('name', String(patch.name).slice(0, 80));
   if (patch.role !== undefined) put('role', String(patch.role).slice(0, 40));
   if (patch.phone !== undefined) put('phone', digits(patch.phone));
@@ -98,7 +100,7 @@ export async function checkLogin(table, username, password) {
   return l;
 }
 /** Everyone who has no sign-in yet gets one: the whole ledger in a single pass. */
-export async function inviteMany(table, people) {
+export async function inviteMany(table, people, { defaults = false } = {}) {
   await ensureLogins(table);
   const { rows: had } = await query(`SELECT owner FROM ${table}`);
   const has = new Set(had.map(r => r.owner));
@@ -107,15 +109,41 @@ export async function inviteMany(table, people) {
   const made = [];
   for (const p of people) {
     if (has.has(p.id)) continue;
-    const base = (cleanUser(String(p.name || '').split(/\s+/).slice(0, 2).join('.')) || cleanUser(p.code) || 'account').slice(0, 26);
+    const who = defaults ? (String(p.contact || '').trim() || p.name) : p.name;
+    const base = (cleanUser(String(who || '').split(/\s+/).slice(0, 2).join('.')) || cleanUser(p.code) || 'account').slice(0, 26);
     let username = base, n = 1;
     while (taken.has(username)) { n++; username = `${base.slice(0, 22)}${n}` }
     taken.add(username);
-    const password = 'reg' + Math.random().toString(36).slice(2, 8);
+    const password = defaults ? defaultPassFor(username) : 'reg' + Math.random().toString(36).slice(2, 8);
     const row = await addLogin(table, p.id, { username, password, name: p.contact || p.name, role: '', phone: p.phone });
     made.push({ owner: p.id, name: p.name, phone: p.phone || '', username, password, id: Number(row.id) });
   }
   return made;
+}
+
+/** Every sign-in still on the password the shop gave (nobody has chosen their own) goes onto the
+    default: the user name from the person's name, the password that name and 123. One that is already
+    right is left alone, and a name another sign-in holds is not taken from it. */
+export async function resetToDefaults(table, nameFor) {
+  await ensureLogins(table);
+  const { rows } = await query(`SELECT * FROM ${table} WHERE own_hash IS NULL ORDER BY id`);
+  const { rows: all } = await query(`SELECT id, lower(username) AS u FROM ${table}`);
+  const holder = new Map(all.map(r => [r.u, Number(r.id)]));
+  let changed = 0;
+  for (const l of rows) {
+    const name = nameFor(l);
+    if (!name) continue;
+    const base = (cleanUser(String(name).split(/\s+/).slice(0, 2).join('.')) || cleanUser(l.username)).slice(0, 26);
+    let want = base, n = 1;
+    while (holder.has(want) && holder.get(want) !== Number(l.id)) { n++; want = `${base.slice(0, 22)}${n}` }
+    const pass = defaultPassFor(want);
+    const already = want === l.username && l.starter === pass;
+    if (already) continue;
+    holder.delete(String(l.username).toLowerCase()); holder.set(want, Number(l.id));
+    await setLogin(table, Number(l.id), l.owner, { username: want, password: pass });
+    changed++;
+  }
+  return changed;
 }
 
 /** Everyone still on the password the shop gave them — the list to read out, print or text. */
@@ -136,9 +164,18 @@ export async function catchUpLogins(data) {
   try {
     const S = data?.S || {};
     const cust = await inviteMany('cust_logins', (S.customers || []).filter(c => c.id !== 1 && c.active !== false));
-    const sup = await inviteMany('sup_logins', (S.suppliers || []).filter(s => s.active !== false));
+    const sup = await inviteMany('sup_logins', (S.suppliers || []).filter(s => s.active !== false), { defaults: true });
     return { cust: cust.length, sup: sup.length };
   } finally { catching = false }
+}
+
+/* The default sign-in a supplier's people are given: the user name made from the person's own name
+   ("Kamal Perera" -> kamal.perera, kamal.perera2 if that is taken) and the password that user name with
+   123 after it. They change the password once they are in. Suppliers only: customers keep a random one. */
+export const defaultPassFor = (username) => cleanUser(username) + '123';
+export async function defaultLogin(table, name, code) {
+  const username = await suggestUser(table, name, code);
+  return { username, password: defaultPassFor(username) };
 }
 
 /** A user name made from who they are, kept short and free of anything awkward to type. */
@@ -238,8 +275,8 @@ export async function acceptRequest(table, kind, id, by) {
   if (!req) throw new HttpError(404, 'That ask has already been dealt with');
   if (req.kind !== kind) throw new HttpError(400, 'That ask is not for this kind of account');
   const username = await suggestUser(table, req.name, 'user');
-  const password = 'reg' + Math.random().toString(36).slice(2, 8);
-  const login = await addLogin(table, req.owner, { username, password, name: req.name, role: req.role, phone: req.phone });
+  const password = kind === 'S' ? defaultPassFor(username) : 'reg' + Math.random().toString(36).slice(2, 8);
+  const login = await addLogin(table, req.owner, { username, password, name: req.name, role: req.role || (kind === 'S' ? 'branch' : ''), phone: req.phone });
   await query(`UPDATE login_requests SET status='accepted', decided_by=$2, decided_at=now() WHERE id=$1`,
     [id, String(by || '').slice(0, 80)]);
   return { login, username, password, request: { owner: req.owner, name: req.name, phone: req.phone } };

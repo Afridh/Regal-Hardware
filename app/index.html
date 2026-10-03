@@ -3718,6 +3718,12 @@ const indexed=(get)=>{ let arr=null, len=-1, map=new Map(), retried=false;
     let x=map.get(id); if(x===undefined&&!retried){ build(); retried=true; x=map.get(id) }   // a miss rebuilds once, in case an item was swapped in place
     return x } };
 const P=indexed(()=>S.products), C=indexed(()=>S.customers), SU=(id)=>S.suppliers.find(s=>s.id===id), B=(id)=>S.banks.find(b=>b.id===id);
+/* Supplier test mode (Settings → Messaging): while the shop tries out the suppliers' side, every message
+   meant for a supplier goes to the shop's test number instead, saying who it was for. Only the
+   suppliers' messages pass through here — customers and staff are sent as always. */
+const supTest=()=>{ const m=CFG.msg||{}; const to=String(m.supTestTo||'').trim(); return m.supTestOn&&to?to:null };
+function supSms(to,body){ const t=supTest(); return t?sms(t,`[TEST · for ${to||'no number'}] ${body}`):sms(to,body) }
+function supWa(to,body){ const t=supTest(); return t?wa(t,`[TEST · for ${to||'no number'}] ${body}`):wa(to,body) }
 function sms(to,body){
   const m={id:'m'+Math.random().toString(36).slice(2,8),to,body,at:D(today)+' '+new Date().toTimeString().slice(0,5),status:CFG.msg.live?'Sending':'Queued (demo)'};
   S.messages.unshift(m);
@@ -3785,7 +3791,7 @@ function wa(to,body,key,vars){
    the shop believed it could not. */
 const intlHere=(to)=>{ let d=String(to||'').replace(/[^0-9]/g,''); if(d.charAt(0)==='0') d='94'+d.slice(1); if(d.length===9) d='94'+d; return d };
 function heldHere(cfg,to){
-  const list=String((cfg&&cfg.testOnly)||'').split(/[,;s]+/).map(intlHere).filter(Boolean);
+  const list=String((cfg&&cfg.testOnly)||'').split(/[,;\s]+/).map(intlHere).filter(Boolean);
   return list.length?list.indexOf(intlHere(to))<0:false;
 }
 
@@ -4549,7 +4555,7 @@ const CFG={
     what size up. A shop doing three hundred counter sales a day does not want three hundred
     texts, so the floor is there to be raised — it is the figure above which the owner would
     want to know without being told. */
- msg:{provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',timeout:30,autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,ownerBills:'all',ownerMin:0,
+ msg:{provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',supTestOn:true,supTestTo:'0769442270',timeout:30,autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,ownerBills:'all',ownerMin:0,
   waMode:'chat',waPhoneId:'',waToken:'',waWabaId:'',waVerifyToken:'',waAuto:true,waTemplates:{},
    quietFrom:'21:00',quietTo:'07:00'},
  mail:{host:'',port:587,user:'',pass:'',from:'',cc:''},   // outgoing email — quotations to institutions go from here
@@ -5040,6 +5046,7 @@ function settings(){
       <div class="muted">Off, messages queue on the Messages page and go nowhere. On, each one is posted to the provider the moment it is raised. On the live system the backend worker does this, so the key never sits in a browser.</div>
       <div class="grid3" style="margin-top:8px">${fld('msg.live','','Send messages through the provider','check')}${fld('msg.apiUrl','Provider API URL','e.g. https://smslenz.lk/api/send-sms')}${fld('msg.userId','Provider user ID')}</div>
       ${fld('msg.apiKey','API key','kept in settings only')}
+      <div class="grid3">${fld('msg.supTestOn','Supplier test mode','Every message to a supplier goes to the number on the right instead — orders, reminders, returns, cheques, sign-in codes. Customers are not touched.','check')}${fld('msg.supTestTo','Supplier test number','Each message says who it was for: [TEST · for 07…]')}<div class="f"></div></div>
       <div class="grid3">${fld('msg.testOnly','Test mode — send only to these numbers','Comma-separated. While this is filled in, every other number is held (shown as Held on the Messages page). Empty it to go live for everyone.')}${fld('msg.timeout','Provider timeout, seconds','','number')}
        <div class="f"><label>Send a test text</label><div style="display:flex;gap:6px"><input id="smsTestTo" value="${(CFG.msg.testOnly||CFG.shop.owner||'').split(',')[0].trim()}" placeholder="07…"><button class="btn tape" data-act="smsTest">Send</button></div><div class="muted" id="smsTestOut">Goes through the provider now, whatever the switch above says.</div></div></div></div>
     <div class="grid3">${fld('msg.provider','SMS provider')}${fld('msg.sender','Sender name shown on the phone')}
@@ -6772,7 +6779,7 @@ function supStockOpen(s){
     { who: s.name, ref: s.code || '' });
   const to = String(s.phone || '').trim();
   if (to) {
-    sms(to, `${CFG.shop.name}: you can see what we hold of your items for the next ${SUP_STOCK_HOURS} hours at ${supLink()} — sign in and open Stock.`);
+    supSms(to, `${CFG.shop.name}: you can see what we hold of your items for the next ${SUP_STOCK_HOURS} hours at ${supLink()} — sign in and open Stock.`);
     toast(`${s.name.split(/[–(]/)[0].trim()} can see their stock for ${SUP_STOCK_HOURS} hours — texted to ${to}`, 'ok');
   } else {
     toast(`${s.name.split(/[–(]/)[0].trim()} can see their stock for ${SUP_STOCK_HOURS} hours — no mobile on file to tell them`, 'warn');
@@ -6878,13 +6885,16 @@ function prCard(r){
 
     ${r.note?`<div class="card note" style="margin:10px 0">“${String(r.note).replace(/</g,'&lt;')}”</div>`:''}
 
-    <table style="margin-top:10px"><tr><th>Their invoice</th><th>GRN</th><th class="n">Owing</th><th class="n">Asked for</th><th></th></tr>
+    <table style="margin-top:10px"><tr><th>Their invoice</th><th>GRN</th><th class="n">Invoice</th><th class="n">Days</th><th class="n">Owing</th><th class="n">Asked for</th><th></th></tr>
      ${(r.lines||[]).map(l=>{ const gap=(+l.claim||0)-(+l.owing||0);
+       const days=l.date?Math.max(0,Math.floor((today-new Date(l.date+'T00:00:00'))/864e5)):null, terms=sp?(+sp.days||0):0;
        return `<tr><td><b>${l.supInv||'—'}</b><div class="muted">${l.date||''}</div></td>
-        <td>${l.no}</td><td class="n muted">${fmt(l.owing)}</td>
+        <td>${l.no}</td><td class="n">${fmt(l.billed||l.owing)}</td>
+        <td class="n">${days===null?'—':days+'d'}${terms?`<div class="muted">of ${terms}d credit</div>${days>terms?`<span class="tag bad">${days-terms}d over</span>`:''}`:''}</td>
+        <td class="n muted">${fmt(l.owing)}</td>
         <td class="n"><b>${fmt(l.claim)}</b>${Math.abs(gap)>0.005?`<div class="tag ${gap<0?'warn':'bad'}">${gap<0?fmt(-gap)+' less':fmt(gap)+' more'}</div>`:''}</td>
         <td>${l.note?`<span class="muted">${String(l.note).replace(/</g,'&lt;')}</span>`:''}</td></tr>`}).join('')}
-     <tr class="tot"><td colspan="3"><b>Asked for in all</b></td><td class="n"><b>${fmt(prSum(r))}</b></td><td></td></tr></table>
+     <tr class="tot"><td colspan="5"><b>Asked for in all</b></td><td class="n"><b>${fmt(prSum(r))}</b></td><td></td></tr></table>
 
     ${differs.length?`<div class="card note" style="margin-top:10px;border-left:3px solid var(--chip-rust)">
       <b>${differs.length} bill${differs.length===1?' is':'s are'} not the figure on the books.</b>
@@ -8000,9 +8010,9 @@ const ordersFor=id=>S.orders.filter(o=>o.sid===id).sort((a,b)=>b.events[0].at-a.
 /* A rep's offer, put in words. A figure on its own beside a lorry-load of items means nothing. */
 const discSays=(d)=>!d?'':(d.kind==='pct'?`${(+d.value).toFixed(2).replace(/\.00$/,'')}% off`:`${fmt(d.value)} off`);
 const discOn=(d,goods)=>!d?0:+(d.kind==='pct'?goods*(+d.value||0)/100:(+d.value||0)).toFixed(2);
-const OLABEL={pending:'Waiting for the shop',accepted:'Accepted',rejected:'Rejected',adjusted:'Changes requested',revised:'Replaced by a newer order',received:'Goods received'};
-const OACT={uploaded:'Order sent',revised:'Corrected order sent',accepted:'Accepted',rejected:'Rejected',adjusted:'Changes requested',received:'Goods received',comment:''};
-const otag=s=>`<span class="tag ${({accepted:'ok',received:'ok',rejected:'bad',adjusted:'warn',pending:'warn',revised:''})[s]||''}">${OLABEL[s]||s}</span>`;
+const OLABEL={pending:'Waiting for the shop',accepted:'Accepted',rejected:'Rejected',adjusted:'Changes requested',revised:'Replaced by a newer order',received:'Goods received',completed:'Completed — needs approval',approved:'Approved — waiting for the goods'};
+const OACT={uploaded:'Order sent',revised:'Corrected order sent',accepted:'Accepted',rejected:'Rejected',adjusted:'Changes requested',received:'Goods received',completed:'Completed the order',approved:'Approved',comment:''};
+const otag=s=>`<span class="tag ${({accepted:'ok',received:'ok',rejected:'bad',adjusted:'warn',pending:'warn',revised:'',completed:'warn',approved:'ok'})[s]||''}">${OLABEL[s]||s}</span>`;
 const owhen=t=>new Date(t).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
 const maskP=p=>p?p.slice(0,3)+' '+p.slice(3,-3).replace(/./g,'•')+' '+p.slice(-3):'no number on file';
 
@@ -8053,7 +8063,7 @@ function sendPO(){
       note:`${good.length} line${good.length===1?'':'s'}${d.want?' · wanted by '+d.want:''}`,at:Date.now()}]};
   S.orders.push(o); poDraft=null;
   const link=(S.web.settings.domain||location.host)+'/supplier';
-  if(s.phone) sms(s.phone,`${CFG.shop.name}: order ${o.no} — ${good.map(l=>`${l.desc} × ${fq(l.qty)} ${l.unit}`).join(', ').slice(0,300)}${d.want?'. Wanted by '+d.want:''}. Confirm at ${link}`);
+  if(s.phone) supSms(s.phone,`${CFG.shop.name}: order ${o.no} — ${good.map(l=>`${l.desc} × ${fq(l.qty)} ${l.unit}`).join(', ').slice(0,300)}${d.want?'. Wanted by '+d.want:''}. Confirm at ${link}`);
   render(); poPrint(o.no);
   toast(`${o.no} sent to ${s.name.split(' ')[0]}${s.phone?' — texted, with the link to confirm':''}`);
 }
@@ -8134,7 +8144,7 @@ function poReceive(no){
     po:o.no,lines:o.lines.map(l=>({pid:l.pid,qty:l.qty,cost:+l.est||P(l.pid).cost}))});
 }
 function ordersOut(){
-  const list=S.orders.filter(o=>o.dir==='OUT').sort((a,b)=>b.no.localeCompare(a.no));
+  const list=S.orders.filter(o=>o.dir==='OUT'&&!['completed','approved'].includes(o.status)).sort((a,b)=>b.no.localeCompare(a.no));
   if(poDraft){
     const d=poDraft, s=SU(d.sid);
     const theirs=supplierItems(d.sid);
@@ -8196,7 +8206,7 @@ function ordersOut(){
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
      <div><b>${o.no} · ${s.name}</b><div class="muted">Sent ${o.date} by ${o.by}${o.want?` · wanted by ${o.want}`:''}${o.note?` · ${o.note}`:''}${o.invoiceNo?` · their invoice <b>${o.invoiceNo}</b>`:''}</div></div>
      <span class="tag ${o.status==='received'?'ok':o.status==='cancelled'?'bad':o.status==='accepted'?'ok':o.status==='dispatched'?'blue':'warn'}">${
-       {sent:'waiting on them',accepted:'they confirmed it',changes:'they want a change',dispatched:'on its way',received:'goods received',cancelled:'cancelled'}[o.status]||o.status}</span></div>
+       {sent:'waiting on them',accepted:'they confirmed it',changes:'they want a change',dispatched:'on its way',received:'goods received',cancelled:'cancelled',adjusted:'sent back to them to complete again'}[o.status]||o.status}</span></div>
     <table style="margin-top:8px"><tr><th>Item</th><th class="n">Qty</th><th class="n">Expected</th></tr>
      ${o.lines.map(l=>`<tr><td>${l.desc}${l.known?'':' <span class="tag blue">new to us</span>'}</td>
       <td class="n">${fq(l.qty)} ${l.unit}</td><td class="n">${fmt(l.qty*(+l.est||0))}</td></tr>`).join('')}
@@ -8816,16 +8826,65 @@ function webBill(no){
 }
 
 /* ---- shop side: Supplier orders view ---- */
+/* an order the shop sent, completed by the supplier — as sent, or with their changes */
+function poDoneCard(o){
+  const s=SU(o.sid)||{name:'Supplier'}, may=canApprove(), sup=o.supLines||[];
+  const key=l=>l.pid?'p'+l.pid:'d'+String(l.desc||'').toLowerCase().trim();
+  const was=new Map((o.lines||[]).map(l=>[key(l),l]));
+  const now=new Set(sup.map(key));
+  const dropped=(o.lines||[]).filter(l=>!now.has(key(l)));
+  const total=sup.reduce((a,l)=>a+l.qty*(+l.price||0),0);
+  return `<div class="card" style="margin-bottom:12px;border-left:4px solid var(--chip-yellow)">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <div><b>${o.no} · ${s.name}</b><div class="muted">Our order of ${o.date} · completed by ${(o.events||[]).filter(e=>e.actor!=='shop').slice(-1)[0]?.name||'their rep'}${o.invoiceNo?` · their invoice <b>${o.invoiceNo}</b>`:''}</div></div>
+      <div style="text-align:right">${otag('completed')}<div class="muted" style="font-size:11px;margin-top:4px">${may?'needs your approval':'waiting for the owner'}</div></div></div>
+    <table style="margin-top:8px"><tr><th>Item</th><th class="n">We asked</th><th class="n">They will send</th><th class="n">Their price</th></tr>
+     ${sup.map(l=>{ const w=was.get(key(l)); const changed=!w||Math.abs((+w.qty||0)-l.qty)>1e-9;
+       return `<tr><td>${noteEsc(l.desc)}${w?'':' <span class="tag blue">added by them</span>'}</td>
+        <td class="n muted">${w?fq(w.qty)+' '+(w.unit||''):'—'}</td>
+        <td class="n"><b>${fq(l.qty)} ${l.unit||''}</b>${changed&&w?' <span class="tag warn">changed</span>':''}</td>
+        <td class="n">${l.price?fmt(l.price):'—'}</td></tr>`}).join('')}
+     ${dropped.map(l=>`<tr><td><s>${noteEsc(l.desc)}</s> <span class="tag bad">they cannot supply it</span></td><td class="n muted">${fq(l.qty)} ${l.unit||''}</td><td class="n">—</td><td></td></tr>`).join('')}
+     ${total?`<tr><td colspan="3" class="n"><b>At their prices</b></td><td class="n"><b>${fmt(total)}</b></td></tr>`:''}</table>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+     ${may?`<button class="btn tape sm" data-act="poApprove" data-no="${o.no}">✓ Approve</button>
+       <button class="btn ghost sm" data-act="poAskChange" data-no="${o.no}">Ask for a change</button>
+       <button class="btn ghost sm" data-act="poCancelOne" data-no="${o.no}">Cancel the order</button>`
+      :`<span class="tag warn" style="align-self:center">Only the owner can approve a supplier's order</span>`}
+    </div><div id="ob-${o.no}"></div></div>`;
+}
+function poApprove(no){
+  if(!canApprove()) return toast('Only the owner can approve a supplier\'s order');
+  const o=S.orders.find(x=>x.no===no), s=SU(o.sid);
+  const key=l=>l.pid?'p'+l.pid:'d'+String(l.desc||'').toLowerCase().trim();
+  const was=new Map((o.lines||[]).map(l=>[key(l),l]));
+  // what will come, as they completed it: an item we know stays known, anything they added is new to us
+  o.origLines=o.lines;
+  o.lines=(o.supLines||[]).map(l=>{ const w=was.get(key(l)); const pid=l.pid||(w&&w.pid)||null;
+    return {desc:l.desc,unit:l.unit||(w&&w.unit)||'',qty:l.qty,est:+l.price||(w&&+w.est)||0,pid,known:!!(pid&&P(pid))} });
+  o.status='approved'; o.approvedAt=Date.now(); o.unreadShop=false; o.unreadSup=true; o.needsOwner=false;
+  o.events.push({id:Math.random().toString(36).slice(2,8),actor:'shop',name:S.user.name,action:'approved',note:'',at:Date.now()});
+  if(CFG.msg.autoOrder&&s&&s.phone) supSms(s.phone,`${CFG.shop.name}: your order ${o.no} is approved — ${o.lines.length} item${o.lines.length===1?'':'s'}. Send the goods with your invoice.`);
+  notify('order',`Order ${o.no} approved — ${s?s.name.split(/[–(]/)[0].trim():'supplier'}`,'orders');
+  persist(true); render(); toast(`${o.no} approved — it waits under History for the goods`);
+}
 function orders(){
   S.orders.forEach(o=>{ if(!o.dir) o.dir='IN' });
-  const pend=S.orders.filter(o=>o.dir!=='OUT'&&(o.status==='pending'||o.unreadShop));
+  // ours, completed by the supplier, wait here for the owner; once approved they wait for the goods
+  const done=S.orders.filter(o=>o.dir==='OUT'&&o.status==='completed');
+  const waitGoods=S.orders.filter(o=>o.dir==='OUT'&&o.status==='approved').sort((a,b)=>(b.approvedAt||0)-(a.approvedAt||0));
+  const pend=S.orders.filter(o=>o.dir!=='OUT'&&(o.status==='pending'||o.unreadShop)).concat(done);
   const rest=S.orders.filter(o=>o.dir!=='OUT'&&!(o.status==='pending'||o.unreadShop)).sort((a,b)=>b.events[0].at-a.events[0].at);
   const mayApprove=canApprove();
   const card=o=>{const s=SU(o.sid)||{name:'Supplier'}, fromPortal=o.src==='portal';return `<div class="card" style="margin-bottom:12px${o.status==='pending'?';border-left:4px solid var(--chip-yellow)':''}">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
       <div><b>${s.name}</b><div class="muted">From ${o.rep} · ${o.date}${fromPortal?' · sent from the supplier page':o.src==='shop'?' · entered at the shop':''}</div></div>
       <div style="text-align:right">${otag(o.status)}${o.status==='pending'?`<div class="muted" style="font-size:11px;margin-top:4px">${mayApprove?'needs your approval':'waiting for the owner'}</div>`:''}</div></div>
-    ${o.text&&o.text!=='(photo only)'?`<pre style="white-space:pre-wrap;background:#f6f7f9;padding:10px;border-radius:4px;font:inherit;margin:8px 0">${o.text}</pre>`:''}
+    ${(o.lines||[]).length?`<table style="margin:8px 0"><tr><th>Item</th><th class="n">Qty</th><th class="n">Their price</th></tr>
+      ${o.lines.map(l=>`<tr><td>${noteEsc(l.desc)}${l.pid?'':' <span class="tag blue">new to us</span>'}</td><td class="n">${fq(l.qty)} ${l.unit||''}</td><td class="n">${l.price?fmt(l.price):'—'}</td></tr>`).join('')}
+      ${o.lines.some(l=>l.price)?`<tr><td colspan="2" class="n"><b>At their prices</b></td><td class="n"><b>${fmt(o.lines.reduce((a,l)=>a+l.qty*(+l.price||0),0))}</b></td></tr>`:''}</table>
+      ${o.supNote?`<div class="muted" style="margin-bottom:6px">“${noteEsc(o.supNote)}”</div>`:''}`
+     :o.text&&o.text!=='(photo only)'?`<pre style="white-space:pre-wrap;background:#f6f7f9;padding:10px;border-radius:4px;font:inherit;margin:8px 0">${o.text}</pre>`:''}
     ${o.disc?`<div class="card note" style="margin:8px 0"><b>They are offering ${discSays(o.disc)}</b>${o.disc.note?`<div class="muted">${noteEsc(o.disc.note)}</div>`:''}
       <div class="muted">It is carried across when the goods arrive — check it against their invoice.</div></div>`:''}
     ${(o.files||[]).length?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">${o.files.map((f,i)=>`<a href="${f}" target="_blank" rel="noopener"><img src="${f}" style="width:110px;height:110px;object-fit:cover;border:1px solid var(--line);border-radius:6px;cursor:zoom-in" title="Open the photo full size"></a>`).join('')}</div>`:''}
@@ -8844,15 +8903,18 @@ function orders(){
   if(ordTab==='out') return head+ordersOut();
   return head+`<div class="card note" style="margin-bottom:12px">
    <b>How it works</b>
-   <div class="muted">A rep who took an order by hand photographs the sheet on <b>${location.host}/supplier</b> (sign-in with the mobile on the supplier's record) and it lands here. Only the owner, or someone with the approve right, can approve it; the rep is told either way. Once approved, <i>Goods arrived</i> turns it into a purchase — stock, the supplier's balance and the ledger all move together.</div>
+   <div class="muted">Suppliers sign in at <b>${location.host}/supplier</b> with their own user name. Two things land here for the owner (or anyone with the approve right) to approve: an order a supplier creates there, and one of <i>our</i> orders once the supplier has completed it — as we sent it, or with their changes shown line by line. Once approved it shows on their <i>Sent Orders</i> and waits under History; <i>Goods arrived</i> turns it into a purchase — stock, the supplier's balance and the ledger all move together.</div>
   </div>
   ${S.notices.filter(n=>n.kind==='supplier'&&n.status==='open').map(n=>`<div class="card note" style="margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
      <div><b>${SU(n.sid).name} asked a question</b><div class="muted">${n.text} — ${n.date}</div></div>
      <button class="btn ghost" data-act="noticeDrop" data-id="${n.id}">Mark handled</button></div></div>`).join('')}
   <h2>Needs your attention (${pend.length})</h2>
-  ${pend.length?pend.map(card).join(''):'<div class="card muted">Nothing waiting. Orders reps send from the supplier page land here.</div>'}
+  ${pend.length?pend.map(o=>o.dir==='OUT'?poDoneCard(o):card(o)).join(''):'<div class="card muted">Nothing waiting. Orders reps send from the supplier page, and our orders they complete, land here.</div>'}
   <h2 style="margin-top:14px">History</h2>
+  ${waitGoods.map(o=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <div><b>${o.no} · ${SU(o.sid).name}</b><div class="muted">Our order, completed and approved${o.invoiceNo?' · their invoice '+o.invoiceNo:''} · ${o.lines.length} item${o.lines.length===1?'':'s'}</div></div>
+    <div style="display:flex;gap:8px;align-items:center"><button class="btn tape sm" data-act="poReceive" data-no="${o.no}">Goods arrived — enter the purchase</button>${otag('approved')}</div></div>`).join('')}
   ${rest.map(o=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
     <div><b>${SU(o.sid).name}</b><div class="muted">${o.date}${o.note?' · '+o.note:''}${o.disc?' · '+discSays(o.disc)+' offered':''}${o.grn?' · became '+o.grn:''}</div></div>
     <div style="display:flex;gap:8px;align-items:center">${o.status==='accepted'?`<button class="btn tape sm" data-act="ordPurchase" data-no="${o.id}">Create purchase</button>`:''}${otag(o.status)}</div></div>`).join('')||'<div class="muted">Nothing yet.</div>'}`;
@@ -8871,7 +8933,7 @@ function ordAct(id,status,note=''){
   o.events.push({id:Math.random().toString(36).slice(2,8),actor:'shop',name:S.user.name,action:status,note,at:Date.now()});
   const v={supplier:s.name,reason:note||'not specified',date:D(today)};
   const msg={accepted:tpl('orderAccepted',v),rejected:tpl('orderRejected',v),adjusted:tpl('orderAdjusted',v),received:''}[status];
-  if(msg&&CFG.msg.autoOrder) sms(s.phone,msg);
+  if(msg&&CFG.msg.autoOrder) supSms(s.phone,msg);
   notify('order',`Order ${OLABEL[status].toLowerCase()} — ${s.name.split(/[–(]/)[0].trim()}`,'orders');
   render(); drawPhone(); toast(`Order ${OLABEL[status].toLowerCase()}${msg?' · SMS queued to '+s.name.split(' ')[0]:''}`);
 }
@@ -9340,7 +9402,7 @@ function portalCode(){
   S.portal.code=String(Math.floor(100000+Math.random()*900000));
   S.portal.stage='code'; S.portal.tries=0; S.portal.left=30; S.portal.err='';
   S.portal.inbox=`Regal Hardware: your sign-in code is ${S.portal.code}. It expires in 10 minutes. Do not share it.`;
-  sms(s.phone,tpl('otp',{code:'••••••'}));
+  supSms(s.phone,tpl('otp',{code:'••••••'}));
   clearInterval(S.portal.timer);
   S.portal.timer=setInterval(()=>{S.portal.left--; if(S.portal.left<=0){clearInterval(S.portal.timer);S.portal.left=0}
     if(!S.portal.session&&S.portal.stage==='code')drawPhone()},1000);
@@ -16307,7 +16369,7 @@ function prnModal(supplierId){
     const prn={no,date,supplierId:sid,ref:(m.querySelector('#prRef').value||'').trim(),lines:keep.map(l=>({...l})),total,why,by:S.user.name};
     S.prns.push(prn);
     notify('order',`${fmt(total)} of goods went back to ${SU(sid).name.split(/[–(]/)[0].trim()}`,'suppliers');
-    if(SU(sid).phone&&CFG.msg.autoOrder) sms(SU(sid).phone,`${CFG.shop.name}: ${no} — ${fmt(total)} of goods returned${why?' ('+why+')':''}. Please issue a credit note.`);
+    if(SU(sid).phone&&CFG.msg.autoOrder) supSms(SU(sid).phone,`${CFG.shop.name}: ${no} — ${fmt(total)} of goods returned${why?' ('+why+')':''}. Please issue a credit note.`);
     m.remove(); render(); prnPrint(no);
     toast(`${no} — ${fmt(total)} off what we owe them`);
   };
@@ -19925,14 +19987,14 @@ function newPurModal(sid,ord){
   drop.ondragleave=()=>drop.classList.remove('over');
   drop.ondrop=(e)=>{ e.preventDefault(); drop.classList.remove('over'); take(e.dataTransfer.files) };
   m.querySelector('#gok').onclick=()=>{const pm=m.querySelector('#gpm').value,pa=+m.querySelector('#gpa').value||0;const pur=receivePurchase({supplierId:+m.querySelector('#gs').value,supInv:m.querySelector('#gi').value,lines:lines.filter(l=>l.qty>0),other:+m.querySelector('#go').value||0,disc:+m.querySelector('#gd').value||0,files,pay:pm&&pa>0?{method:pm,bank:+m.querySelector('#gpb').value,amount:pa}:null});m.remove();
-   if(ord){const oo=ord.po?S.orders.find(x=>x.no===ord.po):ord;
+   if(ord){const oo=ord.po?S.orders.find(x=>x.no===ord.po):ord.orderId?S.orders.find(x=>x.id===ord.orderId):ord;
      if(oo){oo.status='received';oo.grn=pur.no;oo.unreadSup=true;
        oo.events&&oo.events.push({id:'r'+Math.random().toString(36).slice(2,6),actor:'shop',name:S.user.name,action:'received',note:'Goods received as '+pur.no,at:Date.now()});}
      ord.status='received';ord.grn=pur.no;ord.unreadSup=true;
      if(ord.po){const po=S.orders.find(x=>x.no===ord.po); if(po){po.status='received';po.grn=pur.no;
        po.events.push({id:'e'+Math.random().toString(36).slice(2,6),actor:'shop',name:S.user.name,action:'received',note:'Received as '+pur.no,at:Date.now()})}}
      if(ord.events) ord.events.push({id:'r'+Math.random().toString(36).slice(2,6),actor:'shop',name:S.user.name,action:'received',note:'Goods received as '+pur.no,at:Date.now()});
-     if(CFG.msg.autoOrder&&SU(ord.sid)&&SU(ord.sid).phone) sms(SU(ord.sid).phone,tpl('orderReceived',{grn:pur.no,supplier:SU(ord.sid).name}));
+     if(CFG.msg.autoOrder&&SU(ord.sid)&&SU(ord.sid).phone) supSms(SU(ord.sid).phone,tpl('orderReceived',{grn:pur.no,supplier:SU(ord.sid).name}));
      drawPhone()}
    render();toast(`${pur.no} received · stock, supplier account and ledger updated${ord?' · order closed':''}`)} }
 
@@ -20574,7 +20636,7 @@ function endorseModal(no){
     const pv={no:next('PAY'),date,supplierId:sid,total:ch.amount,voucher:next('VCH'),
       lines:[{method:'CHEQUE',no:ch.no,amount:ch.amount,date:ch.date,endorsed:ch.party}],notes:`Customer cheque from ${ch.party} passed on`};
     S.payments.push(pv);
-    if(CFG.msg.autoOrder&&s.phone) sms(s.phone,`Regal Hardware: cheque ${ch.no} for ${fmt(ch.amount)} dated ${ch.date} has been handed over against your account.`);
+    if(CFG.msg.autoOrder&&s.phone) supSms(s.phone,`Regal Hardware: cheque ${ch.no} for ${fmt(ch.amount)} dated ${ch.date} has been handed over against your account.`);
     m.remove(); render(); supplierVoucher(pv); toast(`${ch.no} passed to ${s.name.split(' ')[0]}`);
   };
 }
@@ -20813,7 +20875,7 @@ function messages(){ loadWaInbox();
   const tagOf=st=>/sent|delivered|read/i.test(st)?'ok':/fail|held|not sent/i.test(st)?'bad':/queued|sending|opened/i.test(st)?'warn':'blue';
   const ago=(t)=>{ const d=(Date.now()-new Date(t).getTime())/60000; return d<1?'just now':d<60?Math.round(d)+' min ago':d<1440?Math.round(d/60)+' h ago':new Date(t).toLocaleDateString('en-GB') };
   return `<h1>Messages</h1>
-  <div class="muted" style="margin-bottom:10px">Texts go through ${CFG.msg.provider||'the SMS gateway'}${CFG.msg.live?'':' — <b>sending is off</b> (Settings → Messaging)'}${CFG.msg.testOnly?` · <b>test mode</b>: only ${CFG.msg.testOnly} gets them${held?` (${held} held)`:''}`:''}${waOn?' · WhatsApp through the Cloud API':' · WhatsApp buttons open WhatsApp on this PC'}.</div>
+  <div class="muted" style="margin-bottom:10px">Texts go through ${CFG.msg.provider||'the SMS gateway'}${CFG.msg.live?'':' — <b>sending is off</b> (Settings → Messaging)'}${CFG.msg.testOnly?` · <b>test mode</b>: only ${CFG.msg.testOnly} gets them${held?` (${held} held)`:''}`:''}${supTest()?` · <b>supplier test mode</b>: suppliers' messages go to ${supTest()}`:''}${waOn?' · WhatsApp through the Cloud API':' · WhatsApp buttons open WhatsApp on this PC'}.</div>
   ${waOn?`<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">${WA_ICON} WhatsApp replies ${waInbox.unread?`<span class="nbadge">${waInbox.unread} new</span>`:''}</h2>
      <span style="display:flex;gap:6px"><button class="btn ghost sm" data-act="waInboxRefresh">Refresh</button>${waInbox.unread?`<button class="btn ghost sm" data-act="waInboxRead">Mark all read</button>`:''}</span></div>
     ${waInbox.rows.length?`<table style="margin-top:8px"><tr><th>When</th><th>From</th><th>Message</th><th></th></tr>${waInbox.rows.slice(0,60).map(r=>{ const c=S.customers.find(x=>(x.phone||'').replace(/\D/g,'').replace(/^0/,'94')===r.from_no); return `<tr class="${r.read_at?'':'new'}"><td>${ago(r.at)}</td><td><b>${c?c.name:(r.name||'')}</b><div class="muted">${r.from_no.replace(/^94/,'0')}</div></td><td>${r.body}</td><td><button class="btn ghost sm wa" data-act="waReply" data-to="${r.from_no}" data-name="${(c?c.name:r.name||'').replace(/"/g,'&quot;')}">${WA_ICON} Reply</button>${c?` <button class="btn ghost sm" data-act="cust" data-id="${c.id}">Account</button>`:''}</td></tr>`}).join('')}</table>`
@@ -23316,10 +23378,10 @@ document.addEventListener('click',e=>{
     poCancelOne:()=>{const note=prompt('Why is it cancelled?')||''; poAct(a.dataset.no,'cancelled',note)},
     poRemind:()=>{const o=S.orders.find(x=>x.no===a.dataset.no), sp=SU(o.sid);
       if(!sp.phone)return toast('No mobile number for '+sp.name);
-      sms(sp.phone,`${CFG.shop.name}: any word on order ${o.no}? ${o.lines.length} item(s)${o.want?', wanted by '+o.want:''}. Confirm at ${(S.web.settings.domain||location.host)}/supplier`);
+      supSms(sp.phone,`${CFG.shop.name}: any word on order ${o.no}? ${o.lines.length} item(s)${o.want?', wanted by '+o.want:''}. Confirm at ${(S.web.settings.domain||location.host)}/supplier`);
       render(); toast('Chased '+sp.name.split(' ')[0])},
-    poWa:()=>{const o=S.orders.find(x=>x.no===a.dataset.no), sp=SU(o.sid); if(!sp.phone)return toast('No mobile number for '+sp.name); wa(sp.phone,poText(o)); render()},
-    ordWa:()=>{const o=S.orders.find(x=>x.id===a.dataset.no), sp=SU(o.sid); if(!sp||!sp.phone)return toast('No mobile number on file'); wa(sp.phone,`${CFG.shop.name}: about the order ${o.rep||'your rep'} sent on ${o.date} — `); render()},
+    poWa:()=>{const o=S.orders.find(x=>x.no===a.dataset.no), sp=SU(o.sid); if(!sp.phone)return toast('No mobile number for '+sp.name); supWa(sp.phone,poText(o)); render()},
+    ordWa:()=>{const o=S.orders.find(x=>x.id===a.dataset.no), sp=SU(o.sid); if(!sp||!sp.phone)return toast('No mobile number on file'); supWa(sp.phone,`${CFG.shop.name}: about the order ${o.rep||'your rep'} sent on ${o.date} — `); render()},
     repPick:()=>{repKey=a.dataset.k;render()},
     repRange:()=>{const q=a.dataset.r, y=today.getFullYear(), m2=today.getMonth();
       if(q==='month'){repFrom=D(new Date(y,m2,1));repTo=D(today)}
@@ -23499,7 +23561,18 @@ document.addEventListener('click',e=>{
     custOpen:()=>{const c=C(+a.dataset.id); S.cportal.pick=c.id; S.cportal.session=c.id; c.lastLogin=D(today);
       S.phoneMode='customer'; S.phoneOpen=true; document.body.classList.add('withPhone'); drawPhone(); render()},
     ord:()=>ordAct(a.dataset.no,a.dataset.st), ordAdjust:()=>ordBox(a.dataset.no,'adjusted'), ordReply:()=>ordBox(a.dataset.no,'comment'),
-    ordPurchase:()=>{const o=S.orders.find(x=>x.id===a.dataset.no); newPurModal(o.sid,o)},
+    ordPurchase:()=>{const o=S.orders.find(x=>x.id===a.dataset.no);
+      const known=(o.lines||[]).filter(l=>l.pid&&P(l.pid));
+      newPurModal(o.sid,known.length?{...o,orderId:o.id,lines:known.map(l=>({pid:l.pid,qty:l.qty,cost:+l.price||P(l.pid).cost}))}:o)},
+    poApprove:()=>poApprove(a.dataset.no),
+    poAskChange:()=>{const o=S.orders.find(x=>x.no===a.dataset.no), h=document.getElementById('ob-'+o.no);
+      h.innerHTML='<div style="display:flex;gap:6px;margin-top:8px"><input id="obx" placeholder="What needs to change?"><button class="btn sm" id="obgo">Send</button></div>';
+      const i=h.querySelector('#obx'); i.focus();
+      const go=()=>{ const t=i.value.trim(); if(!t) return; o.status='adjusted'; o.supLines=null; o.unreadSup=true; o.needsOwner=false;
+        o.events.push({id:Math.random().toString(36).slice(2,8),actor:'shop',name:S.user.name,action:'adjusted',note:t,at:Date.now()});
+        const s=SU(o.sid); if(CFG.msg.autoOrder&&s&&s.phone) supSms(s.phone,`${CFG.shop.name}: about order ${o.no} — ${t}. Please complete it again.`);
+        persist(true); render(); toast('Sent back to them to complete again') };
+      h.querySelector('#obgo').onclick=go; i.onkeydown=e=>e.key==='Enter'&&go()},
     zoom:()=>{const o=S.orders.find(x=>x.id===a.dataset.no); const src=o.files[+a.dataset.i];
       const m=modal(`<img src="${src}" style="width:100%;border-radius:6px"><div style="text-align:right;margin-top:8px"><button class="btn ghost" data-act="closeModal">Close</button></div>`)},
     supShow:()=>{const s=SU(+a.dataset.id);

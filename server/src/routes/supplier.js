@@ -12,7 +12,7 @@ import crypto from 'node:crypto';
 import { query, dbKind } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { sendViaProvider, regalAuth, mayRevealCode } from './regal.js';
-import { listLogins, findLogin, addLogin, setLogin, removeLogin, checkLogin, loginLine, cleanUser, passOk, suggestUser, inviteMany, startersFor,
+import { listLogins, findLogin, addLogin, setLogin, removeLogin, checkLogin, loginLine, cleanUser, passOk, suggestUser, inviteMany, startersFor, defaultLogin, resetToDefaults,
          askForLogin, myRequests, waitingRequests, waitingCount, acceptRequest, rejectRequest } from '../services/portalLogins.js';
 
 const r = Router();
@@ -103,11 +103,12 @@ export async function injectSupplierInbox(data) {
       const id = 'sp' + row.id;
       if (S.orders.some(o => o.id === id)) continue;
       const d = row.data;
-      S.orders.push({ id, inboxId: row.id, dir: 'IN', sid: row.sid, rep: d.rep || 'Rep', text: d.text || '(photo only)', date: d.date || localDate(), status: 'pending', note: '', disc: d.disc || null,
+      S.orders.push({ id, inboxId: row.id, dir: 'IN', sid: row.sid, rep: d.rep || 'Rep', text: d.text || '(photo only)', lines: Array.isArray(d.lines) ? d.lines : [], supNote: d.note || '', date: d.date || localDate(), status: 'pending', note: '', disc: d.disc || null,
         files: row.photos.map(photoUrl), unreadShop: true, unreadSup: false, src: 'portal', needsOwner: true,
         events: [{ id: 'e' + row.id, actor: 'supplier', name: d.rep || name, action: 'uploaded', note: d.text || '', at: new Date(row.created_at).getTime() }] });
       const offer = d.disc ? `, offering ${d.disc.kind === 'pct' ? d.disc.value + '%' : d.disc.value} off` : '';
-      S.notif.unshift({ id: 'n' + row.id.toString(36) + 's', kind: 'order', text: `${name} sent an order (${row.photos.length} photo${row.photos.length === 1 ? '' : 's'})${offer} — needs the owner's approval`, view: 'orders', at: localTime(), read: false, forApprovers: true });
+      const what = (d.lines || []).length ? `${d.lines.length} item${d.lines.length === 1 ? '' : 's'}` : `${row.photos.length} photo${row.photos.length === 1 ? '' : 's'}`;
+      S.notif.unshift({ id: 'n' + row.id.toString(36) + 's', kind: 'order', text: `${name} sent an order (${what})${offer} — needs the owner's approval`, view: 'orders', at: localTime(), read: false, forApprovers: true });
       added++;
     } else if (row.kind === 'payreq') {
       const id = 'pr' + row.id;
@@ -138,8 +139,11 @@ export async function injectSupplierInbox(data) {
       if (d.action === 'accepted' && po.status === 'sent') po.status = 'accepted';
       if (d.action === 'changes') po.status = 'changes';
       if (d.action === 'dispatched') { po.status = 'dispatched'; po.invoiceNo = d.invoice || po.invoiceNo; }
+      // completed: the order moves from "Orders we sent" to "From suppliers" and waits for the owner
+      if (d.action === 'completed') { po.status = 'completed'; po.supLines = d.lines || []; po.invoiceNo = d.invoice || po.invoiceNo;
+        po.completedAt = new Date(row.created_at).getTime(); po.needsOwner = true; }
       po.unreadShop = true;
-      S.notif.unshift({ id: 'n' + row.id.toString(36) + 'r', kind: 'order', text: `${name}: order ${po.no} ${{ accepted: 'confirmed', changes: 'needs a change', dispatched: 'is on its way' }[d.action] || d.action}`, view: 'orders', at: localTime(), read: false });
+      S.notif.unshift({ id: 'n' + row.id.toString(36) + 'r', kind: 'order', text: `${name}: order ${po.no} ${{ accepted: 'confirmed', changes: 'needs a change', dispatched: 'is on its way', completed: 'completed — needs your approval' }[d.action] || d.action}`, view: 'orders', at: localTime(), read: false, forApprovers: d.action === 'completed' });
       added++;
     }
   }
@@ -158,6 +162,20 @@ export async function markSupplierImported(data) {
   return rowCount;
 }
 
+/* Supplier test mode (Settings → Messaging, the till's supSms()): while it is on, every text meant for a
+   supplier goes to the shop's test number instead, saying who it was for. The till's default is on with
+   that number, so books saved before the setting existed count as on. Every text from this file to a
+   supplier goes through here. */
+function supTestTo(cfg) {
+  const on = cfg?.supTestOn ?? true;
+  const to = String(cfg?.supTestTo ?? '0769442270').trim();
+  return on && to ? to : null;
+}
+function supSend(cfg, phone, text) {
+  const t = supTestTo(cfg);
+  return t ? sendViaProvider(cfg, t, `[TEST · for ${phone}] ${text}`) : sendViaProvider(cfg, phone, text);
+}
+
 // ---------------------------------------------------------------- the portal API
 r.post('/otp', asyncHandler(async (req, res) => {
   const phone = digits(req.body?.phone);
@@ -168,7 +186,7 @@ r.post('/otp', asyncHandler(async (req, res) => {
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
-    try { await sendViaProvider(cfg, phone, `${data?.CFG?.shop?.name || 'Regal Hardware'}: your supplier sign-in code is ${code}. It works for 5 minutes.`); return res.json({ ok: true, sent: true, name: sup.name }); }
+    try { await supSend(cfg, phone, `${data?.CFG?.shop?.name || 'Regal Hardware'}: your supplier sign-in code is ${code}. It works for 5 minutes.`); return res.json({ ok: true, sent: true, name: sup.name }); }
     catch (e) { console.error('sup otp sms failed', e.message); }
   }
   res.json({ ok: true, sent: false, name: sup.name, ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });
@@ -210,7 +228,7 @@ r.post('/forgot', asyncHandler(async (req, res) => {
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
-    try { await sendViaProvider(cfg, phone, `${data?.CFG?.shop?.name || 'Regal Hardware'}: your code to set a new password is ${code}. It works for 5 minutes.`);
+    try { await supSend(cfg, phone, `${data?.CFG?.shop?.name || 'Regal Hardware'}: your code to set a new password is ${code}. It works for 5 minutes.`);
       return res.json({ ok: true, sent: true, phone: phone.replace(/^(\d{3})\d{4}(\d{3})$/, '$1••••$2') }); }
     catch (e) { console.error('sup forgot sms failed', e.message); }
   }
@@ -242,6 +260,22 @@ r.post('/password', supAuth, asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/* The person signed in changes their own user name. Another sign-in's name is not taken. */
+r.post('/username', supAuth, asyncHandler(async (req, res) => {
+  if (!req.sup.lid) throw new HttpError(400, 'This page was opened with a code, not a sign-in');
+  const want = cleanUser(req.body?.username);
+  if (want.length < 3) throw new HttpError(400, 'A user name needs at least three letters or figures');
+  const rows = await listLogins(LOGINS, req.sup.sid);
+  const l = rows.find(x => Number(x.id) === req.sup.lid);
+  if (!l) throw new HttpError(404, 'That sign-in is no longer there');
+  if (!(await passOk(String(req.body?.current || ''), l.own_hash)) && !(await passOk(String(req.body?.current || ''), l.admin_hash)))
+    throw new HttpError(401, 'The password you have now is not right');
+  const other = await findLogin(LOGINS, want);
+  if (other && Number(other.id) !== Number(l.id)) throw new HttpError(409, `“${want}” is already in use — try another`);
+  await setLogin(LOGINS, Number(l.id), l.owner, { username: want });
+  res.json({ ok: true, username: want });
+}));
+
 /* the shop's side: who may sign in for this supplier */
 /* Someone else at the supplier needs to get in. It waits for the shop. */
 r.post('/team', supAuth, asyncHandler(async (req, res) => {
@@ -265,7 +299,7 @@ r.post('/admin/team/:id/accept', regalAuth, asyncHandler(async (req, res) => {
     const data = await books();
     const shop = data?.CFG?.shop?.name || 'Regal Hardware';
     try {
-      sent = await sendViaProvider(data?.CFG?.msg, made.request.phone,
+      sent = await supSend(data?.CFG?.msg, made.request.phone,
         `${shop}: your sign-in for regalhw.lk/supplier — user ${made.username}, password ${made.password}`);
     } catch (e) { sent = { ok: false, status: e.message } }
   }
@@ -303,11 +337,20 @@ r.delete('/admin/logins/:sid/:id', regalAuth, asyncHandler(async (req, res) => {
 r.post('/admin/invite-all', regalAuth, asyncHandler(async (req, res) => {
   const data = await books();
   const people = (data?.S?.suppliers || []).filter(s => s.active !== false);
-  const made = await inviteMany(LOGINS, people);
+  const made = await inviteMany(LOGINS, people, { defaults: true });
   const byId = new Map(people.map(s => [s.id, s]));
+  // the supplier's own sign-in (their first, or the one marked rep) is named for their rep, or the firm;
+  // any other — a branch user — for the person it belongs to
+  const first = new Map();
+  for (const l of await listLogins(LOGINS)) if (!first.has(l.owner) || Number(l.id) < first.get(l.owner)) first.set(l.owner, Number(l.id));
+  const reset = await resetToDefaults(LOGINS, l => {
+    const sup = byId.get(l.owner); if (!sup) return null;
+    const main = l.role === 'rep' || first.get(l.owner) === Number(l.id) || !l.name;
+    return main ? (String(sup.contact || '').trim() || l.name || sup.name) : l.name;
+  });
   const logins = (await startersFor(LOGINS)).filter(l => byId.has(l.owner))
     .map(l => ({ ...l, who: byId.get(l.owner).name, phone: l.phone || byId.get(l.owner).phone || '' }));
-  res.json({ ok: true, made: made.length, of: people.length, logins });
+  res.json({ ok: true, made: made.length, reset, of: people.length, logins });
 }));
 
 /** The shop switching the page on: make a sign-in if there is none, and hand back what to text. */
@@ -318,8 +361,7 @@ r.post('/admin/invite/:sid', regalAuth, asyncHandler(async (req, res) => {
   if (!sup) throw new HttpError(404, 'No such supplier');
   const have = await listLogins(LOGINS, sid);
   if (have.length) return res.json({ ok: true, made: false, logins: have.map(loginLine) });
-  const username = await suggestUser(LOGINS, sup.contact || sup.name, sup.code);
-  const password = 'reg' + Math.random().toString(36).slice(2, 8);
+  const { username, password } = await defaultLogin(LOGINS, sup.contact || sup.name, sup.code);
   const row = await addLogin(LOGINS, sid, { username, password, name: sup.contact || '', role: 'rep', phone: sup.phone });
   res.json({ ok: true, made: true, username, password, login: loginLine(row) });
 }));
@@ -334,24 +376,28 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
   const { rows: pending } = await query(`SELECT i.id, i.kind, i.data, i.created_at, count(m.id)::int AS photos FROM sup_inbox i LEFT JOIN sup_media m ON m.inbox_id = i.id WHERE i.sid = $1 AND i.imported_at IS NULL GROUP BY i.id ORDER BY i.id DESC`, [sup.id]);
   const pendingReplies = pending.filter(p => p.kind === 'reply');
   const pos = (S.orders || []).filter(o => o.dir === 'OUT' && o.sid === sup.id).map(o => {
-    const mine = pendingReplies.filter(p => p.data.no === o.no).map(p => ({ action: p.data.action, note: p.data.note, invoice: p.data.invoice, at: new Date(p.created_at).getTime(), pending: true }));
+    const mine = pendingReplies.filter(p => p.data.no === o.no).map(p => ({ action: p.data.action, note: p.data.note, invoice: p.data.invoice, lines: p.data.lines || null, at: new Date(p.created_at).getTime(), pending: true }));
     const last = mine[0];
     return { no: o.no, date: o.date, want: o.want, note: o.note, by: o.by, status: last ? (last.action === 'accepted' ? 'accepted' : last.action) : o.status, invoiceNo: o.invoiceNo || (last && last.invoice) || '',
-      lines: (o.lines || []).map(l => ({ desc: l.desc, unit: l.unit, qty: l.qty, known: !!l.known })),
+      lines: (o.lines || []).map(l => ({ desc: l.desc, unit: l.unit, qty: l.qty, known: !!l.known, pid: l.pid || null })),
+      supLines: (last && last.lines) || o.supLines || null, grn: o.grn || null, approvedAt: o.approvedAt || null,
       events: (o.events || []).map(e => ({ who: e.actor === 'shop' ? (CFG.shop?.name || 'The shop') : e.name, action: e.action, note: e.note, at: e.at })).concat(mine.map(m => ({ who: req.sup.rep || 'You', action: m.action, note: m.note, at: m.at, pending: true }))) };
   }).sort((a, b) => b.no.localeCompare(a.no));
-  const sent = (S.orders || []).filter(o => o.dir !== 'OUT' && o.sid === sup.id).map(o => ({ id: o.id, date: o.date, rep: o.rep, text: o.text, status: o.status, note: o.note, photos: (o.files || []).length, grn: o.grn || null, disc: o.disc || null,
+  const sent = (S.orders || []).filter(o => o.dir !== 'OUT' && o.sid === sup.id).map(o => ({ id: o.id, date: o.date, rep: o.rep, text: o.text, lines: o.lines || [], supNote: o.supNote || '', status: o.status, note: o.note, photos: (o.files || []).length, grn: o.grn || null, disc: o.disc || null,
       events: (o.events || []).map(e => ({ who: e.actor === 'shop' ? (CFG.shop?.name || 'The shop') : e.name, action: e.action, note: e.note, at: e.at })) }))
-    .concat(pending.filter(p => p.kind === 'order').map(p => ({ id: 'pending' + p.id, date: p.data.date, rep: p.data.rep, text: p.data.text, status: 'pending', note: '', photos: p.photos, disc: p.data.disc || null, events: [{ who: p.data.rep || 'You', action: 'uploaded', note: p.data.text, at: new Date(p.created_at).getTime() }], waiting: true })))
+    .concat(pending.filter(p => p.kind === 'order').map(p => ({ id: 'pending' + p.id, date: p.data.date, rep: p.data.rep, text: p.data.text, lines: p.data.lines || [], supNote: p.data.note || '', status: 'pending', note: '', photos: p.photos, disc: p.data.disc || null, events: [{ who: p.data.rep || 'You', action: 'uploaded', note: p.data.text, at: new Date(p.created_at).getTime() }], waiting: true })))
     .sort((a, b) => (b.events[0]?.at || 0) - (a.events[0]?.at || 0));
   // what the shop owes them, from the journal, like the till does
   let dr = 0, cr = 0;
   for (const j of (S.journal || [])) for (const l of (j.lines || [])) if (l.ac === '2100' && l.party && l.party.type === 'S' && l.party.id === sup.id) { dr += l.dr; cr += l.cr; }
   // the bills that make up that figure, so a request can name the ones it is for
-  const bills = !sup.showAccount ? [] : (S.purchases || [])
+  const terms = +sup.days || 0;
+  const ageOf = d => Math.max(0, Math.floor((Date.parse(localDate()) - Date.parse(d)) / 864e5));
+  const bills = (S.purchases || [])
     .filter(p => p.supplierId === sup.id && (p.total - (+p.paid || 0)) > 0.005)
     .map(p => ({ no: p.no, supInv: p.supInv || '', date: p.date, total: +p.total || 0,
-                 paid: +p.paid || 0, owing: Math.round((p.total - (+p.paid || 0)) * 100) / 100 }))
+                 paid: +p.paid || 0, owing: Math.round((p.total - (+p.paid || 0)) * 100) / 100,
+                 days: ageOf(p.date), terms, due: terms ? terms - ageOf(p.date) : null }))
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   // their own payment requests: the ones the shop has, and the one still on its way
   const mine = (S.payReqs || []).filter(x => x.sid === sup.id).map(x => ({
@@ -373,7 +419,9 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const damageValue = Math.round(damages.reduce((a, d) => a + d.value, 0) * 100) / 100;
 
-  res.json({ ok: true, supplier: { name: sup.name, contact: sup.contact || '', phone: sup.phone || '', terms: sup.days || 0, owed: Math.round((cr - dr) * 100) / 100, showAccount: !!sup.showAccount },
+  const me = req.sup.lid ? (await listLogins(LOGINS, sup.id)).find(x => Number(x.id) === req.sup.lid) : null;
+  res.json({ ok: true, supplier: { name: sup.name, contact: sup.contact || '', phone: sup.phone || '', terms: sup.days || 0, owed: Math.round((cr - dr) * 100) / 100, showAccount: true },
+    login: me ? { username: me.username, name: me.name || '', role: me.role || '', own: !!me.own_hash } : null,
     bills, payReqs, damages, damageValue,
     // when the shop's door onto their stock closes; the page shows the tab only while it is open
     stockUntil: +sup.stockUntil || 0,
@@ -416,9 +464,41 @@ r.get('/stock', supAuth, asyncHandler(async (req, res) => {
     shop: { name: data?.CFG?.shop?.name || 'Regal Hardware' } });
 }));
 
+/** The items that are theirs (tagged to them, or that they have delivered): what an order is keyed from.
+    Names, codes and units only — what the shop holds and pays is not theirs to see. */
+r.get('/products', supAuth, asyncHandler(async (req, res) => {
+  const data = await books();
+  const S = data?.S || {};
+  const theirs = new Set();
+  for (const p of (S.products || [])) if (p.supplierId === req.sup.sid) theirs.add(p.id);
+  for (const pu of (S.purchases || [])) if (pu.supplierId === req.sup.sid)
+    for (const l of (pu.lines || [])) if (l.pid) theirs.add(l.pid);
+  const items = (S.products || []).filter(p => theirs.has(p.id) && p.active !== false)
+    .map(p => ({ pid: p.id, code: p.code || '', name: p.name || '', unit: p.unit || '' }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  res.json({ ok: true, items });
+}));
+/* An order line from the supplier's side: one of their items, or something typed in. */
+function orderLines(raw, items) {
+  const lines = [];
+  for (const l of (Array.isArray(raw) ? raw.slice(0, 120) : [])) {
+    const desc = String(l?.desc || '').trim().slice(0, 140);
+    const qty = Math.round((+l?.qty || 0) * 1000) / 1000;
+    if (!desc || !(qty > 0)) continue;
+    const known = l?.pid ? items.find(p => p.id === +l.pid) : null;
+    const price = +l?.price > 0 ? Math.round(+l.price * 100) / 100 : 0;
+    lines.push({ desc: known ? known.name : desc, pid: known ? known.id : null, code: known ? (known.code || '') : '',
+      unit: String(l?.unit || (known && known.unit) || '').trim().slice(0, 16), qty, price });
+  }
+  return lines;
+}
+
 /** An order the rep took by hand: photos of the sheet, a note.  Waits for the owner in the till. */
 r.post('/order', supAuth, asyncHandler(async (req, res) => {
-  const text = String(req.body?.text || '').trim().slice(0, 2000);
+  const lines = orderLines(req.body?.lines, (await books())?.S?.products || []);
+  const typed = String(req.body?.text || '').trim().slice(0, 2000);
+  // the lines are written out too, for anywhere that reads the order as text
+  const text = [lines.map(l => `${l.desc} — ${l.qty} ${l.unit}${l.price ? ' at ' + l.price : ''}`.trim()).join('\n'), typed].filter(Boolean).join('\n\n');
   const rep = String(req.body?.rep || req.sup.rep || '').trim().slice(0, 60);
   const photos = Array.isArray(req.body?.photos) ? req.body.photos.slice(0, 6) : [];
   /* A rep will often write "and I can do 5% on the cement" on the sheet. Taken as a figure it
@@ -429,7 +509,7 @@ r.post('/order', supAuth, asyncHandler(async (req, res) => {
         note: String(dRaw.note || '').trim().slice(0, 120) }
     : null;
   if (disc && disc.kind === 'pct' && disc.value > 100) throw new HttpError(400, 'A discount cannot be more than a hundred per cent');
-  if (!text && !photos.length) throw new HttpError(400, 'Attach a photo of the order or type it');
+  if (!text && !photos.length) throw new HttpError(400, 'Put at least one item on the order');
   const bufs = [];
   for (const p of photos) {
     const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(p || ''));
@@ -439,7 +519,7 @@ r.post('/order', supAuth, asyncHandler(async (req, res) => {
     bufs.push([m[1], b]);
   }
   await ensureSupplierTables();
-  const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'order', $2) RETURNING id`, [req.sup.sid, JSON.stringify({ text, rep, disc, date: localDate(), time: localTime() })]);
+  const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'order', $2) RETURNING id`, [req.sup.sid, JSON.stringify({ text, note: typed, lines, rep, disc, date: localDate(), time: localTime() })]);
   for (const [mime, b] of bufs) await query(`INSERT INTO sup_media (inbox_id, mime, data) VALUES ($1, $2, $3)`, [id, mime, b]);
   res.json({ ok: true, id, photos: bufs.length });
 }));
@@ -455,7 +535,6 @@ r.post('/payreq', supAuth, asyncHandler(async (req, res) => {
   const S = data?.S || {};
   const sup = (S.suppliers || []).find(s => s.id === req.sup.sid);
   if (!sup) throw new HttpError(404, 'Supplier no longer on file');
-  if (!sup.showAccount) throw new HttpError(403, 'The shop has not opened your account page yet — ask them to switch it on');
   const wanted = Array.isArray(req.body?.lines) ? req.body.lines.slice(0, 80) : [];
   if (!wanted.length) throw new HttpError(400, 'Tick at least one bill');
   const open = (S.purchases || []).filter(p => p.supplierId === sup.id && (p.total - (+p.paid || 0)) > 0.005);
@@ -483,15 +562,22 @@ r.post('/payreq', supAuth, asyncHandler(async (req, res) => {
 /** The supplier's answer to an order the shop sent: accepted / changes / dispatched (+ invoice no). */
 r.post('/po/:no/respond', supAuth, asyncHandler(async (req, res) => {
   const action = String(req.body?.action || '');
-  if (!['accepted', 'changes', 'dispatched'].includes(action)) throw new HttpError(400, 'action must be accepted, changes or dispatched');
+  if (!['accepted', 'changes', 'dispatched', 'completed'].includes(action)) throw new HttpError(400, 'action must be accepted, changes, dispatched or completed');
   const data = await books();
   const po = (data?.S?.orders || []).find(o => o.dir === 'OUT' && o.no === req.params.no && o.sid === req.sup.sid);
   if (!po) throw new HttpError(404, 'No such order for you');
-  if (['received', 'cancelled'].includes(po.status)) throw new HttpError(400, 'That order is closed');
+  if (['received', 'cancelled', 'approved'].includes(po.status)) throw new HttpError(400, 'That order is closed');
+  if (po.status === 'completed' && action === 'completed') throw new HttpError(400, 'You have completed this one — it is with the shop');
   const note = String(req.body?.note || '').trim().slice(0, 500), invoice = String(req.body?.invoice || '').trim().slice(0, 60), eta = String(req.body?.eta || '').trim().slice(0, 40);
   if (action === 'changes' && !note) throw new HttpError(400, 'Say what needs to change');
+  // completing: the lines as they will be supplied — as sent, or changed (a quantity, a price, a line dropped)
+  let lines = null;
+  if (action === 'completed') {
+    lines = orderLines(req.body?.lines, data?.S?.products || []);
+    if (!lines.length) throw new HttpError(400, 'Nothing is left on the order — ask the shop to cancel it instead');
+  }
   await ensureSupplierTables();
-  const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'reply', $2) RETURNING id`, [req.sup.sid, JSON.stringify({ no: po.no, action, note, invoice, eta, rep: req.sup.rep || '' })]);
+  const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'reply', $2) RETURNING id`, [req.sup.sid, JSON.stringify({ no: po.no, action, note, invoice, eta, lines, rep: req.sup.rep || '' })]);
   res.json({ ok: true, id });
 }));
 

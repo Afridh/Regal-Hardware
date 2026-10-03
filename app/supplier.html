@@ -81,15 +81,47 @@ input:focus,textarea:focus{outline:none;border-color:var(--yellow);box-shadow:0 
 .hero{background:linear-gradient(135deg,var(--ink),#16323A);color:#fff;border-radius:var(--r);padding:18px;margin-bottom:12px}
 .hero b{font-family:Archivo,sans-serif;font-size:22px;display:block}.hero .muted{color:#B9C8C6}
 .kv{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:14px}
+/* the menu: five places, always in reach — a bar under the header, scrolling sideways on a phone */
+.menu{position:sticky;top:59px;z-index:15;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 2px 6px rgba(16,30,34,.05)}
+.menu-in{max-width:760px;margin:0 auto;display:flex;gap:4px;padding:6px 8px;overflow-x:auto;scrollbar-width:none}
+.menu-in::-webkit-scrollbar{display:none}
+.menu button{flex:1 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;border:0;background:none;border-radius:10px;padding:7px 10px;cursor:pointer;color:var(--steel);font-size:12px;font-weight:600;position:relative;white-space:nowrap}
+.menu button .ic{font-size:18px;line-height:1}
+.menu button.on{background:var(--ink);color:#fff}
+.menu .short{display:none}
+@media (max-width:620px){.menu .long{display:none}.menu .short{display:inline}.menu button{flex:1 1 0;padding:7px 4px;font-size:11.5px}}
+.menu button i{position:absolute;top:2px;right:6px;background:var(--rust);color:#fff;font-style:normal;font-size:10px;font-weight:700;border-radius:99px;padding:0 6px;line-height:16px}
+h3{font-family:Archivo,sans-serif;font-size:14px;margin:16px 0 8px}
+.btn.sm{padding:6px 10px;font-size:13px}
+.empty{background:#fff;border:1px dashed var(--line);border-radius:var(--r);padding:30px 18px;text-align:center;display:flex;flex-direction:column;gap:6px;align-items:center;color:var(--steel)}
+.empty div{font-size:38px}.empty b{color:var(--ink);font-family:Archivo,sans-serif;font-size:16px}
+.flash{background:var(--tint-green);border:1px solid var(--green);color:#12613D;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-weight:600}
+.notice{background:var(--tint-yellow);border:1px solid #F5D488;border-radius:8px;padding:8px 10px;margin:8px 0;font-size:14px}
+.notice.ok{background:var(--tint-green);border-color:var(--green)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.stats div{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:10px}
+.stats span{display:block;font-size:11px;color:var(--steel);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+.stats b{font-family:Archivo,sans-serif;font-size:17px}.stats .bad b{color:var(--rust)}
+@media (max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+.tblwrap{overflow-x:auto}
+.qtyin{width:84px;border:1px solid var(--line);border-radius:8px;padding:7px 8px;text-align:right;font-size:15px}
+.txt{white-space:pre-wrap;background:var(--panel);padding:8px 10px;border-radius:8px;font-size:14px;margin:6px 0}
 </style>
 </head>
 <body>
 <header class="top"><div class="top-in"><div class="brand">REGAL <span>HARDWARE</span><small>SUPPLIERS</small></div><div class="who" id="who"></div></div></header>
+<nav class="menu" id="menu" style="display:none"></nav>
 <main id="main"></main>
 <script>
 /* ======================= the supplier's page =======================
-   Talks only to /api/sup/*.  A rep signs in with the mobile the shop has on file for the supplier.
-   Two jobs: answer the orders the shop sends, and send in the orders taken by hand (photos). */
+   Talks only to /api/sup/*. A rep signs in with the user name the shop made for them (their name, and
+   that name with 123 as the first password). One menu, five places:
+     Orders from the shop — complete an order as it was sent, or edit it and complete; it goes to the
+                            shop's owner to approve, and then shows under Sent Orders
+     Create an Order      — pick their own items at the shop or type new ones; the owner approves it
+     Sent Orders          — everything completed and approved, waiting to be bought in or bought
+     Payment Portal       — their bills, how old each is against the credit period, and asking to be paid
+     Account              — their user name and password, and asking for a sign-in for someone else */
 const API='/api/sup';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -119,16 +151,18 @@ async function askToBePaid(){
 /* Somebody else from their side needs to get in. The shop decides; until it does,
    there is nothing to sign in with. */
 function teamCard(){
+  if(st.team===undefined&&!st.teamBusy){ st.teamBusy=true; loadTeam().finally(()=>{ st.teamBusy=false; render() }) }
   const asks = st.team || [];
   const waiting = asks.filter(a => a.status === 'waiting');
   return `<div class="card">
-   <h2>Someone else who needs to sign in</h2>
+   <h2>Give someone from your firm a sign-in</h2>
    <div class="muted" style="margin-bottom:10px">Your own sign-in was made for you. If somebody else here needs one — the accountant, the storekeeper — ask for it and the shop will decide. They are texted the user name and the password only once the shop says yes.</div>
    ${st.teamSent ? `<div class="card" style="text-align:center;padding:22px 14px;margin:0 0 10px"><div style="font-size:36px">📨</div>
      <b>Asked the shop</b><div class="muted">They will see it straight away. Nobody can sign in until they say yes.</div>
      <button class="btn" id="teamAgain" style="margin-top:12px">Ask for another</button></div>` : `
-   <div class="f"><label>Their name</label><input id="tmName" placeholder="e.g. Mr Perera" maxlength="80"></div>
-   <div class="f"><label>What they do</label><input id="tmRole" placeholder="accountant, storekeeper…" maxlength="40"></div>
+   <div class="f"><label>Their name</label><input id="tmName" placeholder="e.g. Nimal Perera" maxlength="80">
+    <div class="muted">Their user name is made from it — e.g. nimal.perera, with the password nimal.perera123 until they change it.</div></div>
+   <div class="f"><label>Role</label><input id="tmRole" placeholder="branch manager, accountant, storekeeper…" maxlength="40"></div>
    <div class="f"><label>Their mobile</label><input id="tmPhone" inputmode="tel" placeholder="07XXXXXXXX" maxlength="15">
     <div class="muted">The sign-in is texted here if the shop agrees.</div></div>
    <div class="f"><label>Anything to tell the shop</label><input id="tmNote" placeholder="optional" maxlength="300"></div>
@@ -147,12 +181,13 @@ async function loadTeam(){
 }
 async function askForPerson(){
   const name = ($('#tmName')||{}).value || '', phone = ($('#tmPhone')||{}).value || '';
+  const role = ($('#tmRole')||{}).value || '', note = ($('#tmNote')||{}).value || '';
   const msg = $('#tmMsg');
   if(!name.trim()){ if(msg) msg.textContent = 'Who is it for?'; return }
   if(!phone.replace(/\D/g,'')){ if(msg) msg.textContent = 'A mobile is needed — that is where the sign-in goes.'; return }
   st.busy = true; render();
   try{
-    await api('/team', { method:'POST', body:{ name, phone, role:($('#tmRole')||{}).value||'', note:($('#tmNote')||{}).value||'' } });
+    await api('/team', { method:'POST', body:{ name, phone, role, note } });
     st.teamSent = true; await loadTeam();
   }catch(e){ alert(e.message) }
   finally{ st.busy = false; render() }
@@ -161,166 +196,286 @@ function signOut(redraw=true){ st.token=''; st.me=null; ls.set('token',''); if(r
 const PAYSTATUS={sent:['warn','With the shop'],accepted:['blue','Agreed — being made ready'],ready:['ok','Ready to collect'],issued:['ok','Paid'],rejected:['bad','Turned down']};
 const PAYACT={asked:'Asked to be paid',accepted:'The shop agreed',queried:'The shop asked about it',rejected:'The shop turned it down',ready:'The money is ready',issued:'Handed over'};
 const paytag=s=>{const x=PAYSTATUS[s]||['',s];return `<span class="tag ${x[0]}">${esc(x[1])}</span>`};
-const STATUS={sent:['warn','Waiting for your answer'],accepted:['ok','You confirmed it'],changes:['warn','You asked for a change'],dispatched:['blue','On its way'],received:['ok','Received by the shop'],cancelled:['bad','Cancelled by the shop'],pending:['warn','Waiting for the shop'],rejected:['bad','Not accepted'],adjusted:['warn','Shop asked for a change'],revised:['','Replaced']};
+const STATUS={sent:['warn','Waiting for your answer'],accepted:['ok','You confirmed it'],changes:['warn','You asked for a change'],dispatched:['blue','On its way'],received:['ok','Received by the shop'],cancelled:['bad','Cancelled by the shop'],pending:['warn','Waiting for the shop'],rejected:['bad','Not accepted'],adjusted:['warn','Shop asked for a change'],revised:['','Replaced'],completed:['blue','Completed — with the shop for approval'],approved:['ok','Approved']};
 const tag=s=>{const x=STATUS[s]||['',s];return `<span class="tag ${x[0]}">${esc(x[1])}</span>`};
 const ACT={sent:'Order sent',accepted:'Accepted',changes:'Asked for a change',dispatched:'Dispatched',received:'Goods received',cancelled:'Cancelled',uploaded:'Order sent in',rejected:'Not accepted',adjusted:'Change requested',comment:''};
 
+/* ---- the five pages, one menu ---- */
+const MENU=[['orders','📥','Orders from the shop','Orders'],['create','➕','Create an Order','Create'],['sent','📦','Sent Orders','Sent'],['pay','💳','Payment Portal','Payments'],['account','👤','Account','Account']];
+const ACTIVE=['sent','accepted','changes','dispatched','adjusted','completed'];      // a shop order still in the supplier's hands, or with the shop to approve
+const NEEDS_ME=['sent','accepted','changes','dispatched','adjusted'];
+
 function render(){
-  const m=$('#main'); $('#who').innerHTML=st.token&&st.me?`${esc(st.me.supplier.name.split(/[–(]/)[0].trim())}${st.rep?' · '+esc(st.rep):''}<br><a href="#" id="out">sign out</a>`:'';
+  const m=$('#main');
+  $('#who').innerHTML=st.token&&st.me?`${esc(st.me.supplier.name.split(/[–(]/)[0].trim())}${st.rep?' · '+esc(st.rep):''}<br><a href="#" id="out">Sign out</a>`:'';
   const out=$('#out'); if(out) out.onclick=e=>{e.preventDefault();signOut()};
-  if(!st.token){ m.innerHTML=`<div class="hero"><b>For our suppliers</b><div class="muted">See the orders Regal Hardware has sent you, confirm them, tell us when the goods are on the way — and send in the orders our reps took by hand.</div></div>
-    <div class="card"><h2>Sign in</h2><div class="muted" style="margin-bottom:10px">Use the mobile number the shop has for your company. We text you a code.</div><button class="btn tape big" id="signin">Sign in with my mobile</button></div>`; $('#signin').onclick=()=>signIn(load); return }
-  if(!st.me){ m.innerHTML='<div class="card muted">Loading…</div>'; return }
-  const me=st.me, open=me.pos.filter(o=>['sent','changes'].includes(o.status)).length;
-  const payDue=(st.me.payReqs||[]).filter(r=>r.status==='ready').length;
-  // the Stock tab is only there while the shop has opened it, and goes when the day is up
-  const stockOn=!!(me.stockUntil && Date.now() < me.stockUntil);
-  if(!stockOn && st.tab==='stock') st.tab='orders';
-  m.innerHTML=`<div class="tabs"><button class="${st.tab==='orders'?'on':''}" data-t="orders">Orders from the shop${open?`<i>${open}</i>`:''}</button><button class="${st.tab==='send'?'on':''}" data-t="send">Send an order</button><button class="${st.tab==='sent'?'on':''}" data-t="sent">Sent</button><button class="${st.tab==='pay'?'on':''}" data-t="pay">Get paid${payDue?`<i>${payDue}</i>`:''}</button>${stockOn?`<button class="${st.tab==='stock'?'on':''}" data-t="stock">Stock</button>`:''}<button class="${st.tab==='account'?'on':''}" data-t="account">Account</button></div>
-   ${({orders,send,sent,pay,stock,account})[st.tab]()}`;
-  $$('[data-t]',m).forEach(b=>b.onclick=()=>{st.tab=b.dataset.t;render()}); bind();
+  const nav=$('#menu');
+  if(!st.token){ nav.innerHTML=''; nav.style.display='none';
+    m.innerHTML=`<div class="hero"><b>For our suppliers</b><div class="muted">See the orders Regal Hardware sends you, complete them, send your own orders, and ask to be paid — all in one place.</div></div>
+    <div class="card"><h2>Sign in</h2><div class="muted" style="margin-bottom:10px">With the user name and password the shop gave you.</div><button class="btn tape big" id="signin">Sign in</button></div>`;
+    $('#signin').onclick=()=>signIn(load); return }
+  if(!st.me){ nav.style.display='none'; m.innerHTML='<div class="card muted">Loading…</div>'; return }
+  const me=st.me;
+  const badge={orders:me.pos.filter(o=>NEEDS_ME.includes(o.status)).length, pay:(me.payReqs||[]).filter(r=>r.status==='ready').length};
+  if(!MENU.some(x=>x[0]===st.tab)) st.tab='orders';
+  nav.style.display='';
+  nav.innerHTML=`<div class="menu-in">${MENU.map(([k,ic,label,short])=>`<button class="${st.tab===k?'on':''}" data-t="${k}" title="${label}"><span class="ic">${ic}</span><span class="long">${label}</span><span class="short">${short}</span>${badge[k]?`<i>${badge[k]}</i>`:''}</button>`).join('')}</div>`;
+  $$('[data-t]',nav).forEach(b=>b.onclick=()=>{st.tab=b.dataset.t; st.flash=''; render(); window.scrollTo(0,0)});
+  m.innerHTML=(st.flash?`<div class="flash">${st.flash}</div>`:'')+({orders:ordersPage,create:createPage,sent:sentPage,pay,account})[st.tab]();
+  bind();
 }
-function orders(){ const me=st.me; if(!me.pos.length) return '<div class="card muted">The shop has not sent you an order yet.</div>';
-  return me.pos.map(o=>`<div class="card o">
-   <div class="h"><div><b>${esc(o.no)}</b><div class="muted">Sent ${esc(o.date)}${o.want?' · wanted by '+esc(o.want):''} · by ${esc(o.by)}</div>${o.note?`<div class="muted">“${esc(o.note)}”</div>`:''}</div>${tag(o.status)}</div>
-   <table>${o.lines.map(l=>`<tr><td>${esc(l.desc)}${l.known?'':' <span class="tag blue">new item</span>'}</td><td class="n">${fq(l.qty)} ${esc(l.unit)}</td></tr>`).join('')}</table>
-   <div class="ev">${o.events.map(e=>`<div class="${e.pending?'pending':''}"><b>${esc(e.who)}</b> <span class="muted">· ${when(e.at)}</span>${e.pending?' <span class="muted">(reaching the shop)</span>':''}<div>${esc(ACT[e.action]||e.action)}${e.note?': '+esc(e.note):''}</div></div>`).join('')}</div>
-   ${['received','cancelled'].includes(o.status)?'':`<div class="acts">
-    ${o.status==='sent'||o.status==='changes'?`<button class="btn green" data-resp="accepted" data-no="${esc(o.no)}">✓ Confirm the order</button><button class="btn" data-resp="changes" data-no="${esc(o.no)}">Ask for a change</button>`:''}
-    ${o.status!=='dispatched'?`<button class="btn dark" data-resp="dispatched" data-no="${esc(o.no)}">🚚 Goods dispatched</button>`:`<div class="muted">Invoice ${esc(o.invoiceNo||'—')} · waiting for the shop to receive it</div>`}</div>`}</div>`).join('');
+
+/* ---------- Orders from the shop: complete as sent, or edit and complete ---------- */
+function linesTable(lines,priced){
+  return `<table>${lines.map(l=>`<tr><td>${esc(l.desc)}${l.pid||l.known?'':' <span class="tag blue">new item</span>'}</td><td class="n">${fq(l.qty)} ${esc(l.unit||'')}</td>${priced?`<td class="n">${+l.price?money(l.price):''}</td>`:''}</tr>`).join('')}</table>`;
 }
-function send(){ if(st.done) return `<div class="card" style="text-align:center;padding:30px 16px"><div style="font-size:44px">✅</div><h2>Sent to the shop</h2><div class="muted">${st.done.photos} photo${st.done.photos===1?'':'s'} · the owner will approve it and you will see the answer under <b>Sent</b>.</div><div style="margin-top:16px;display:flex;gap:8px;justify-content:center"><button class="btn tape" id="another">Send another</button><button class="btn" id="seeSent">See sent orders</button></div></div>`;
-  return `<div class="card"><h2>An order you took by hand</h2><div class="muted" style="margin-bottom:10px">Photograph the order sheet (up to 6 photos) and add anything the shop should know. It goes to the owner for approval.</div>
-   <div class="photos">${st.photos.map((p,i)=>`<div class="ph"><img src="${p}"><button data-rm="${i}">✕</button></div>`).join('')}${st.photos.length<6?`<div class="snap" id="snap"><b>📷</b>Camera / photo</div>`:''}</div>
-   <input type="file" id="file" accept="image/*" capture="environment" multiple style="display:none">
-   <div class="f"><label>Your name</label><input id="rep" value="${esc(st.rep)}" placeholder="Rep's name"></div>
-   <div class="f"><label>Note, or the order typed out</label><textarea id="text" placeholder="e.g. 20 bags Tokyo cement, 10 lengths 25mm PVC — delivery Thursday">${esc(st.text)}</textarea></div>
-   <div class="f"><label>A special price on this order — leave it empty if there is none</label>
-    <div class="discrow">
-     <select id="discKind">
-      <option value="pct" ${st.disc.kind==='pct'?'selected':''}>Per cent off</option>
-      <option value="amt" ${st.disc.kind==='amt'?'selected':''}>An amount off</option></select>
-     <input id="discVal" type="number" step="any" min="0" value="${esc(st.disc.value)}" placeholder="0" inputmode="decimal">
-    </div>
-    <input id="discNote" value="${esc(st.disc.note)}" placeholder="what it is for — e.g. 5% on the cement only" maxlength="120">
-    <div class="muted">The owner sees this with the order, and it is held against the invoice when the goods come.</div></div>
-   <button class="btn tape big" id="sendOrder" ${st.busy?'disabled':''}>${st.busy?'Sending…':'Send to the shop'}</button></div>`;
+function ordersPage(){
+  const me=st.me, list=me.pos.filter(o=>ACTIVE.includes(o.status));
+  if(!list.length) return '<div class="empty"><div>📭</div><b>No orders waiting</b><span>When the shop sends you an order it shows here. Completed ones are under <b>Sent Orders</b>.</span></div>';
+  return list.map(o=>{
+    const ed=st.edit&&st.edit[o.no];
+    const shopSaid=(o.events||[]).filter(e=>e.action==='adjusted').slice(-1)[0];
+    return `<div class="card o">
+     <div class="h"><div><b>${esc(o.no)}</b><div class="muted">${esc(o.date)}${o.want?' · wanted by '+esc(o.want):''}</div>${o.note?`<div class="muted">“${esc(o.note)}”</div>`:''}</div>${tag(o.status==='completed'?'completed':o.status)}</div>
+     ${o.status==='adjusted'&&shopSaid?`<div class="notice">The shop asked for a change: <b>${esc(shopSaid.note||'')}</b></div>`:''}
+     ${o.status==='completed'
+       ?`${linesTable(o.supLines||o.lines,true)}<div class="muted">You completed this order — it is with the shop for approval. Once they approve it, it moves to <b>Sent Orders</b>.</div>`
+       :ed?editOrder(o,ed):`${linesTable(o.lines,false)}
+         <div class="acts"><button class="btn green" data-done="${esc(o.no)}">✓ Complete as it is</button><button class="btn" data-edit="${esc(o.no)}">✎ Edit</button></div>`}
+    </div>`}).join('');
 }
-function sent(){ const me=st.me; if(!me.sent.length) return '<div class="card muted">Nothing sent yet. Use <b>Send an order</b>.</div>';
-  return me.sent.map(o=>`<div class="card o"><div class="h"><div><b>${esc(o.date)}</b><div class="muted">${esc(o.rep||'')}${o.photos?` · ${o.photos} photo${o.photos===1?'':'s'}`:''}${o.grn?' · became '+esc(o.grn):''}</div></div>${o.waiting?'<span class="tag warn">Reaching the shop</span>':tag(o.status)}</div>
-   ${o.text?`<div style="white-space:pre-wrap;background:var(--panel);padding:8px 10px;border-radius:8px;font-size:14px;margin:6px 0">${esc(o.text)}</div>`:''}
-   ${o.note&&o.status!=='pending'?`<div class="muted"><b>Shop:</b> ${esc(o.note)}</div>`:''}
-   <div class="ev">${o.events.map(e=>`<div><b>${esc(e.who)}</b> <span class="muted">· ${when(e.at)}</span><div>${esc(ACT[e.action]||e.action)}${e.note&&e.action!=='uploaded'?': '+esc(e.note):''}</div></div>`).join('')}</div></div>`).join('');
+function editOrder(o,ed){
+  const total=ed.lines.reduce((a,l)=>a+(+l.qty||0)*(+l.price||0),0);
+  return `<div class="muted" style="margin:4px 0 8px">Change what you can send — the quantity, your price, or take a line off. The shop sees exactly what changed.</div>
+   <table class="paytbl"><tr><th>Item</th><th class="n">Qty</th><th class="n">Your price</th><th></th></tr>
+    ${ed.lines.map((l,i)=>`<tr><td><b>${esc(l.desc)}</b>${l.unit?`<div class="muted">${esc(l.unit)}</div>`:''}</td>
+     <td class="n"><input class="qtyin" data-eq="${esc(o.no)}|${i}" type="number" step="any" min="0" inputmode="decimal" value="${l.qty}"></td>
+     <td class="n"><input class="qtyin" data-ep="${esc(o.no)}|${i}" type="number" step="any" min="0" inputmode="decimal" value="${l.price||''}" placeholder="price"></td>
+     <td class="n"><button class="btn sm" data-ed="${esc(o.no)}|${i}" title="Cannot supply this">✕</button></td></tr>`).join('')}
+   </table>
+   ${total?`<div class="kv"><span class="muted">At your prices</span><b>${money(total)}</b></div>`:''}
+   <div class="f" style="margin-top:10px"><label>Your invoice number (optional)</label><input data-einv="${esc(o.no)}" value="${esc(ed.invoice||'')}" placeholder="e.g. INV-4521"></div>
+   <div class="f"><label>A note for the shop (optional)</label><input data-enote="${esc(o.no)}" value="${esc(ed.note||'')}" placeholder="e.g. 25mm out of stock until Friday"></div>
+   <div class="acts"><button class="btn green" data-esave="${esc(o.no)}" ${st.busy?'disabled':''}>✓ Complete the order</button><button class="btn" data-ecancel="${esc(o.no)}">Cancel</button></div>`;
 }
-/* Asking to be paid: tick the bills, change a figure where it is wrong, say why, send it.
-   Nothing here settles anything — the shop goes through it and tells you where it is. */
+async function completeOrder(no,edited){
+  const o=st.me.pos.find(x=>x.no===no); if(!o) return;
+  const ed=edited?st.edit[no]:null;
+  const lines=(ed?ed.lines:o.lines).filter(l=>+l.qty>0).map(l=>({desc:l.desc,pid:l.pid||null,unit:l.unit||'',qty:+l.qty,price:+l.price||0}));
+  if(!lines.length) return toast('Nothing is left on the order — ring the shop to cancel it instead');
+  if(!edited&&!confirm(`Complete ${no} as the shop sent it?`)) return;
+  st.busy=true; render();
+  try{
+    await api('/po/'+encodeURIComponent(no)+'/respond',{method:'POST',body:{action:'completed',lines,invoice:ed?ed.invoice||'':'',note:ed?ed.note||'':''}});
+    if(st.edit) delete st.edit[no];
+    st.flash=`✓ ${esc(no)} completed — it is with the shop for approval`;
+    await load();
+  }catch(e){ toast(e.message) }
+  finally{ st.busy=false; render() }
+}
+
+/* ---------- Create an Order: pick their items or type, then send ---------- */
+function createPage(){
+  const me=st.me, D=st.draft=st.draft||{lines:[],q:'',pick:null,qty:'',price:'',note:''};
+  if(!st.items&&!st.itemsBusy){ st.itemsBusy=true; api('/products').then(j=>{st.items=j.items||[]}).catch(()=>{st.items=[]}).finally(()=>{st.itemsBusy=false; render()}) }
+  const items=st.items||[], q=String(D.q||'').trim().toLowerCase();
+  const hits=q?items.filter(p=>p.name.toLowerCase().includes(q)||String(p.code).toLowerCase().includes(q)).slice(0,8):[];
+  const waiting=(me.sent||[]).filter(o=>['pending','adjusted','rejected'].includes(o.status)||o.waiting);
+  const total=D.lines.reduce((a,l)=>a+(+l.qty||0)*(+l.price||0),0);
+  return `<div class="card">
+    <h2>New order to the shop</h2>
+    <div class="muted" style="margin-bottom:10px">Pick from your items at the shop${items.length?` (${items.length})`:''}, or type anything that is not on the list.</div>
+    <div class="f" style="position:relative;margin-bottom:6px"><input id="cq" value="${esc(D.pick?D.pick.desc:D.q)}" placeholder="Search your items, or type a new one…" autocomplete="off">
+     ${!D.pick&&q?`<div class="sug">${hits.map(p=>`<div data-cpick="${p.pid}"><b>${esc(p.name)}</b><span class="muted">${esc(p.code)}${p.unit?' · '+esc(p.unit):''}</span></div>`).join('')}
+       <div data-ctyped="1"><b>＋ Add “${esc(D.q.trim())}”</b><span class="muted">not on the list — the shop will set it up</span></div></div>`:''}</div>
+    ${D.pick?`<div class="pickrow">
+      <div><b>${esc(D.pick.desc)}</b><div class="muted">${D.pick.pid?esc(D.pick.unit||'')+' · on the shop\'s list':'new item'}</div></div>
+      <input id="cqty" type="number" step="any" inputmode="decimal" value="${esc(D.qty)}" placeholder="Qty">
+      <input id="cprice" type="number" step="any" inputmode="decimal" value="${esc(D.price)}" placeholder="Price">
+      <button class="btn tape" id="cadd">Add</button></div>`:''}
+    ${D.lines.length?`<table class="paytbl" style="margin-top:12px"><tr><th>Item</th><th class="n">Qty</th><th class="n">Price</th><th></th></tr>
+      ${D.lines.map((l,i)=>`<tr><td><b>${esc(l.desc)}</b>${l.pid?'':' <span class="tag blue">new</span>'}</td>
+       <td class="n"><input class="qtyin" data-cq="${i}" type="number" step="any" value="${l.qty}"></td>
+       <td class="n"><input class="qtyin" data-cp="${i}" type="number" step="any" value="${l.price||''}" placeholder="price"></td>
+       <td class="n"><button class="btn sm" data-cdel="${i}">✕</button></td></tr>`).join('')}</table>
+      ${total?`<div class="kv"><span class="muted">${D.lines.length} item${D.lines.length===1?'':'s'}</span><b>${money(total)}</b></div>`:''}`
+     :'<div class="muted" style="margin-top:10px">Nothing on the order yet.</div>'}
+    <div class="f" style="margin-top:10px"><label>Note for the shop (optional)</label><textarea id="cnote" style="min-height:70px" placeholder="e.g. delivery Thursday morning">${esc(D.note)}</textarea></div>
+    <button class="btn tape big" id="csend" ${D.lines.length&&!st.busy?'':'disabled'}>${st.busy?'Sending…':'Send the order to the shop'}</button>
+   </div>
+   ${waiting.length?`<h2 style="margin:16px 0 8px">With the shop</h2>${waiting.map(o=>sentCard(o,true)).join('')}`:''}`;
+}
+function addDraftLine(){
+  const D=st.draft; if(!D||!D.pick) return;
+  const qty=+D.qty; if(!(qty>0)) return toast('How many?');
+  const at=D.lines.findIndex(l=>D.pick.pid?l.pid===D.pick.pid:(!l.pid&&l.desc.toLowerCase()===D.pick.desc.toLowerCase()));
+  if(at>=0){ D.lines[at].qty=Math.round((D.lines[at].qty+qty)*1000)/1000; if(+D.price) D.lines[at].price=+D.price }
+  else D.lines.push({desc:D.pick.desc,pid:D.pick.pid||null,unit:D.pick.unit||'',qty,price:+D.price||0});
+  D.pick=null; D.q=''; D.qty=''; D.price=''; render(); const f=$('#cq'); if(f) f.focus();
+}
+async function sendDraft(){
+  const D=st.draft; if(!D||!D.lines.length||st.busy) return;
+  st.busy=true; render();
+  try{
+    await api('/order',{method:'POST',body:{lines:D.lines,text:D.note||'',rep:st.rep||''}});
+    st.draft={lines:[],q:'',pick:null,qty:'',price:'',note:''};
+    st.flash='✓ Order sent — the shop will approve it, then it shows under <b>Sent Orders</b>';
+    await load();
+  }catch(e){ toast(e.message) }
+  finally{ st.busy=false; render() }
+}
+
+/* ---------- Sent Orders: everything completed and approved ---------- */
+function sentCard(o,mine){
+  const lines=(o.lines&&o.lines.length)?o.lines:null;
+  const state=mine
+    ?(o.waiting?['warn','Reaching the shop']:o.status==='rejected'?['bad','Not accepted']:o.status==='adjusted'?['warn','The shop asked for a change']:['warn','Waiting for approval'])
+    :null;
+  return `<div class="card o"><div class="h"><div><b>${esc(o.no||'Your order')}</b><div class="muted">${esc(o.date)}${o.rep?' · '+esc(o.rep):''}${o.grn?' · purchased as '+esc(o.grn):''}</div></div>
+     ${state?`<span class="tag ${state[0]}">${state[1]}</span>`:o.grn||o.status==='received'?'<span class="tag ok">Purchased</span>':'<span class="tag blue">Approved — waiting for purchase</span>'}</div>
+    ${lines?linesTable(lines,true):o.text?`<div class="txt">${esc(o.text)}</div>`:''}
+    ${o.note&&mine?`<div class="muted"><b>Shop:</b> ${esc(o.note)}</div>`:''}</div>`;
+}
+function sentPage(){
+  const me=st.me;
+  const ours=(me.sent||[]).filter(o=>['accepted','received'].includes(o.status)).map(o=>({...o,no:''}));
+  const theirs=me.pos.filter(o=>['approved','received'].includes(o.status)).map(o=>({no:o.no,date:o.date,lines:o.supLines||o.lines,grn:o.grn,status:o.status}));
+  const all=theirs.concat(ours);
+  if(!all.length) return '<div class="empty"><div>📦</div><b>Nothing here yet</b><span>Orders show here once the shop approves them — the ones they sent you that you completed, and the ones you sent.</span></div>';
+  return all.map(o=>sentCard(o,false)).join('');
+}
+
+/* ---------- Payment Portal: the bills, how old they are, and asking to be paid ---------- */
 function pay(){
   const me=st.me, s=me.supplier;
-  if(!s.showAccount) return '<div class="card muted">The shop has not switched your account page on yet. Ask them to, and you will be able to see what is outstanding and ask to be paid from here.</div>';
   const bills=me.bills||[], reqs=me.payReqs||[];
   const asked=new Set(reqs.filter(r=>['sent','accepted','ready'].includes(r.status)).flatMap(r=>(r.lines||[]).map(l=>l.no)));
   const picked=st.payPick||{};
   const chosen=bills.filter(b=>picked[b.no]);
   const total=chosen.reduce((a,b)=>a+(picked[b.no].claim===''?b.owing:+picked[b.no].claim||0),0);
-  return `${st.paySent?`<div class="card" style="text-align:center;padding:26px 16px"><div style="font-size:40px">📨</div>
-     <h2>Sent to the shop</h2><div class="muted">${st.paySent.lines} bill${st.paySent.lines===1?'':'s'} · ${money(st.paySent.total)}. You will see it move below as they go through it.</div>
+  const owing=bills.reduce((a,b)=>a+b.owing,0), over=bills.filter(b=>b.due!==null&&b.due<0);
+  const dueTag=b=>b.due===null?'':b.due<0?`<span class="tag bad">${-b.due}d over</span>`:b.due===0?'<span class="tag warn">due today</span>':`<span class="tag ok">${b.due}d left</span>`;
+  return `<div class="stats">
+     <div><span>Outstanding</span><b>${money(owing)}</b></div>
+     <div><span>Bills</span><b>${bills.length}</b></div>
+     <div><span>Credit period</span><b>${s.terms?s.terms+' days':'—'}</b></div>
+     <div class="${over.length?'bad':''}"><span>Past the credit period</span><b>${over.length}</b></div></div>
+   ${st.paySent?`<div class="card" style="text-align:center;padding:26px 16px"><div style="font-size:40px">📨</div>
+     <h2>Sent to the shop</h2><div class="muted">${st.paySent.lines} bill${st.paySent.lines===1?'':'s'} · ${money(st.paySent.total)}. The shop has been told — you will see it move below.</div>
      <button class="btn tape" id="payAgain" style="margin-top:14px">Ask for something else</button></div>`:
    bills.length?`<div class="card">
-     <h2>What is outstanding</h2>
-     <div class="muted" style="margin-bottom:10px">Tick the bills you want settled. If a figure is wrong — a credit note, short delivery, a price agreed later — put what it should be and say why.</div>
-     <table class="paytbl">
-      <tr><th></th><th>Invoice</th><th class="n">Owing</th><th class="n">Asking for</th></tr>
+     <h2>Your bills at the shop</h2>
+     <div class="muted" style="margin-bottom:10px">Tick the bills you want paid. If a figure is wrong — a credit note, a short delivery — put what it should be and say why.</div>
+     <div class="tblwrap"><table class="paytbl">
+      <tr><th></th><th>Invoice</th><th class="n">Amount</th><th class="n">Days</th><th class="n">Owing</th><th class="n">Asking for</th></tr>
       ${bills.map(b=>{ const p=picked[b.no], on=!!p, already=asked.has(b.no);
         return `<tr class="${on?'on':''}">
         <td><input type="checkbox" data-paypick="${esc(b.no)}" ${on?'checked':''} ${already?'disabled':''}></td>
         <td><b>${esc(b.supInv||b.no)}</b><div class="muted">${esc(b.date)}${already?' · already asked for':''}</div></td>
+        <td class="n">${money(b.total)}</td>
+        <td class="n"><b>${b.days}</b>d${b.terms?`<div class="muted">of ${b.terms}d</div>`:''}<div>${dueTag(b)}</div></td>
         <td class="n">${money(b.owing)}</td>
         <td class="n">${on?`<input class="payamt" type="number" step="any" data-payamt="${esc(b.no)}" value="${p.claim}" placeholder="${b.owing}">`:'<span class="muted">—</span>'}</td>
-       </tr>${on?`<tr class="sub"><td></td><td colspan="3"><input data-paynote="${esc(b.no)}" value="${esc(p.note||'')}" placeholder="why it is different, if it is — optional"></td></tr>`:''}`}).join('')}
-     </table>
+       </tr>${on?`<tr class="sub"><td></td><td colspan="5"><input data-paynote="${esc(b.no)}" value="${esc(p.note||'')}" placeholder="why it is different, if it is — optional"></td></tr>`:''}`}).join('')}
+     </table></div>
      <div class="kv" style="margin-top:10px"><span class="muted">${chosen.length} bill${chosen.length===1?'':'s'} ticked</span><b>${money(total)}</b></div>
      <div class="f" style="margin-top:8px"><label>Anything else the shop should know</label>
-      <textarea id="payNote" placeholder="e.g. cheque please, the rep will collect on Friday">${esc(st.payNote||'')}</textarea></div>
-     <div class="f"><label>Your name</label><input id="payRep" value="${esc(st.rep)}" placeholder="Rep's name"></div>
-     <button class="btn tape big" id="paySend" ${chosen.length&&!st.busy?'':'disabled'}>${st.busy?'Sending…':`Ask to be paid ${chosen.length?money(total):''}`}</button>
-    </div>`:'<div class="card muted">Nothing is outstanding — every bill of yours is settled.</div>'}
-
-   ${reqs.length?`<h2 style="margin:16px 0 8px">What you have asked for</h2>
+      <textarea id="payNote" style="min-height:70px" placeholder="e.g. cheque please, the rep will collect on Friday">${esc(st.payNote||'')}</textarea></div>
+     <button class="btn tape big" id="paySend" ${chosen.length&&!st.busy?'':'disabled'}>${st.busy?'Sending…':`Request payment ${chosen.length?money(total):''}`}</button>
+    </div>`:'<div class="empty"><div>✅</div><b>Nothing outstanding</b><span>Every bill of yours is settled.</span></div>'}
+   ${reqs.length?`<h2 style="margin:16px 0 8px">Your payment requests</h2>
     ${reqs.map(r=>`<div class="card o">
       <div class="h"><div><b>${money(r.total)}</b><div class="muted">${esc(r.date)} · ${(r.lines||[]).length} bill${(r.lines||[]).length===1?'':'s'}</div></div>
        ${r.waiting?'<span class="tag warn">Reaching the shop</span>':paytag(r.status)}</div>
-      ${r.status==='ready'?'<div class="card" style="margin:8px 0;background:var(--tint-green);border-color:var(--green)"><b>The money is ready.</b> <span class="muted">Call in for the cheque or the cash.</span></div>':''}
+      ${r.status==='ready'?'<div class="notice ok"><b>The money is ready.</b> Call in for the cheque or the cash.</div>':''}
       <table>${(r.lines||[]).map(l=>`<tr><td>${esc(l.supInv||l.no)}${l.note?`<div class="muted">${esc(l.note)}</div>`:''}</td><td class="n">${money(l.claim)}</td></tr>`).join('')}</table>
-      ${r.pay?`<div class="muted" style="margin-top:6px">Handed over ${esc(r.pay.date)} · ${esc(r.pay.what||'')}</div>`:''}
-      <div class="ev">${(r.events||[]).map(e=>`<div><b>${esc(e.who)}</b> <span class="muted">· ${when(e.at)}</span><div>${esc(PAYACT[e.action]||e.action)}${e.note?': '+esc(e.note):''}</div></div>`).join('')}</div>
+      ${r.pay?`<div class="muted" style="margin-top:6px">Paid ${esc(r.pay.date)} · ${esc(r.pay.what||'')}</div>`:''}
      </div>`).join('')}`:''}`;
 }
-/* What the shop is holding of their lines. It is read when the tab is opened rather than kept with
-   the rest, so the figures are the ones on the shelf now, and so the shop's list of who looked is
-   honest — one entry for one look. */
-function stock(){
-  if(!st.stock && !st.stockBusy){ st.stockBusy=true;
-    api('/stock').then(j=>{ st.stock=j; st.stockErr=''; }).catch(e=>{ st.stockErr=e.message })
-      .finally(()=>{ st.stockBusy=false; render() });
-    return '<div class="card muted">Reading the shelves…</div>';
-  }
-  if(st.stockErr) return `<div class="card"><div class="msg bad">${esc(st.stockErr)}</div></div>`;
-  const j=st.stock; if(!j) return '<div class="card muted">Reading the shelves…</div>';
-  const hrs=Math.max(0,Math.floor((j.until-Date.now())/36e5));
-  const O=st.ord=st.ord||{lines:[],q:'',code:null,qty:''};
-  const q=String(O.q||'').trim().toLowerCase();
-  const hits=!q?[]:j.lines.filter(l=>String(l.name||'').toLowerCase().includes(q)||String(l.code||'').toLowerCase().includes(q)).slice(0,8);
-  const picked=O.code?j.lines.find(l=>l.code===O.code||l.name===O.code):null;
-  const low=j.lines.filter(l=>l.low);
-  return `<div class="card">
-    <h2>Your items at the shop</h2>
-    <div class="muted" style="margin-bottom:10px">${j.lines.length} lines${j.low?` · <b>${j.low}</b> running low`:''}.
-     Open to you for another ${hrs>=1?hrs+(hrs===1?' hour':' hours'):'few minutes'}.</div>
-    <div class="f" style="position:relative"><input id="stockQ" value="${esc(O.q||'')}" placeholder="Type an item name or code…" autocomplete="off">
-     ${hits.length&&!picked?`<div class="sug">${hits.map(l=>`<div data-pick="${esc(l.code||l.name)}"><b>${esc(l.name)}</b>
-       <span class="muted">${l.stock} ${esc(l.unit)} on the shelf${l.low?' · low':''}</span></div>`).join('')}</div>`:''}</div>
-    ${picked?`<div class="pickrow">
-      <div><b>${esc(picked.name)}</b><div class="muted">${picked.stock} ${esc(picked.unit)} on the shelf${picked.low?' · running low':''}</div></div>
-      <input id="stockQty" type="number" step="any" inputmode="decimal" value="${esc(O.qty)}" placeholder="How many">
-      <input id="stockPrice" type="number" step="any" inputmode="decimal" value="${esc(O.price===undefined?'':O.price)}" placeholder="Your price">
-      <button class="btn tape" id="stockAdd">Add</button></div>`:''}
-    ${O.lines.length?`<table class="paytbl" style="margin-top:10px">
-      <tr><th>On your order</th><th class="n">Qty</th><th class="n">Your price</th><th></th></tr>
-      ${O.lines.map((l,i)=>`<tr><td><b>${esc(l.name)}</b>${l.code?`<div class="muted">${esc(l.code)}</div>`:''}</td>
-        <td class="n"><input data-oq="${i}" type="number" step="any" value="${l.qty}" style="width:70px;text-align:right"></td>
-        <td class="n"><input data-op="${i}" type="number" step="any" value="${l.price||''}" placeholder="price" style="width:84px;text-align:right"></td>
-        <td class="n"><button class="btn" data-od="${i}">✕</button></td></tr>`).join('')}
-     </table>
-     <button class="btn tape big" id="stockSend" style="margin-top:10px">Send these ${O.lines.length} to the shop</button>`
-     :'<div class="muted" style="margin-top:10px">Nothing on the order yet. Find an item above, put the quantity, and add it.</div>'}
-    ${low.length?`<div class="muted" style="margin-top:12px"><b>Running low:</b> ${low.slice(0,8).map(l=>esc(l.name)).join(', ')}${low.length>8?` and ${low.length-8} more`:''}</div>`:''}
-    <div class="muted" style="margin-top:8px">Only what is on the shelf is shown. The shop can see that you looked.</div>
-   </div>`;
-}
-/* Item, then how many, then Add — the way a bill is keyed at the counter. */
-function stockAddLine(){
-  const O=st.ord; if(!O||!O.code) return;
-  const l=((st.stock||{}).lines||[]).find(x=>(x.code||x.name)===O.code); if(!l) return;
-  const qty=+O.qty; if(!(qty>0)) return;
-  const at=O.lines.findIndex(x=>(x.code||x.name)===O.code);
-  if(at>=0) O.lines[at].qty=Math.round((O.lines[at].qty+qty)*1000)/1000;
-  else O.lines.push({name:l.name,code:l.code||'',unit:l.unit||'',qty});
-  O.code=null; O.qty=''; O.q=''; render();
-  const f=$('#stockQ'); if(f) f.focus();
-}
-function stockSendOrder(){
-  const O=st.ord; if(!O||!O.lines.length) return;
-  st.text=O.lines.map(l=>`${l.name}${l.code?' ('+l.code+')':''} — ${l.qty} ${l.unit||''}${+l.price>0?` at ${money(l.price)}`:''}`.trim()).join('\n');
-  O.lines=[]; O.code=null; O.qty=''; O.price=''; O.q='';
-  st.tab='send'; st.done=null; render();
-  const t=$('#text'); if(t){ t.value=st.text; t.focus() }
-}
-function account(){ const me=st.me, s=me.supplier; return teamCard() + `<div class="card"><h2>${esc(s.name)}</h2>
-   <div class="kv"><span class="muted">Contact on file</span><b>${esc(s.contact||'—')}</b></div><div class="kv"><span class="muted">Mobile</span><b>${esc(s.phone||'—')}</b></div><div class="kv"><span class="muted">Terms</span><b>${s.terms?s.terms+' days':'—'}</b></div>
-   ${s.showAccount?`<div class="kv"><span class="muted">The shop owes you</span><b>${money(s.owed)}</b></div>`:'<div class="muted" style="margin-top:8px">Ask the shop to switch on your account page to see what is owed here.</div>'}</div>
+
+/* ---------- Account: your sign-in, your password, and the people of your firm ---------- */
+function account(){
+  const me=st.me, s=me.supplier, L=me.login;
+  return `${L?`<div class="card"><h2>Your sign-in</h2>
+     <div class="kv"><span class="muted">User name</span><b>${esc(L.username)}</b></div>
+     ${L.own?'':'<div class="notice">You are still on the password the shop gave you. Choose your own below.</div>'}
+     <h3>Change your user name</h3>
+     <div class="f"><label>New user name</label><input id="aUser" value="" placeholder="${esc(L.username)}" autocapitalize="off" spellcheck="false"></div>
+     <div class="f"><label>Your password now</label><input id="aUserPass" type="password" autocomplete="current-password"></div>
+     <button class="btn dark" id="aUserGo">Change user name</button>
+     <h3>Change your password</h3>
+     <div class="f"><label>Your password now</label><input id="aCur" type="password" autocomplete="current-password"></div>
+     <div class="f"><label>New password</label><input id="aNew" type="password" autocomplete="new-password" placeholder="at least six characters"></div>
+     <button class="btn dark" id="aPassGo">Change password</button></div>`
+    :'<div class="card muted">You signed in with a code to the mobile — sign in with your user name to change it or your password.</div>'}
+   ${teamCard()}
+   <div class="card"><h2>${esc(s.name)}</h2>
+    <div class="kv"><span class="muted">Contact on file</span><b>${esc(s.contact||'—')}</b></div><div class="kv"><span class="muted">Mobile</span><b>${esc(s.phone||'—')}</b></div><div class="kv"><span class="muted">Credit period</span><b>${s.terms?s.terms+' days':'—'}</b></div>
+    <div class="kv"><span class="muted">The shop owes you</span><b>${money(s.owed)}</b></div></div>
    ${damageCard()}
    <div class="card"><h2>${esc(me.shop.name)}</h2><div class="muted">${esc(me.shop.addr||'')}</div>${me.shop.phone?`<div style="margin-top:8px"><a class="btn" href="tel:${esc(me.shop.phone)}">📞 ${esc(me.shop.phone)}</a></div>`:''}</div>`;
 }
+async function changeUser(){
+  const u=($('#aUser')||{}).value||'', c=($('#aUserPass')||{}).value||'';
+  if(u.trim().length<3) return toast('A user name needs at least three letters');
+  try{ const j=await api('/username',{method:'POST',body:{username:u,current:c}}); ls.set('user',j.username); toast('Your user name is now '+j.username); await load() }
+  catch(e){ toast(e.message) }
+}
+async function changePass(){
+  const c=($('#aCur')||{}).value||'', n=($('#aNew')||{}).value||'';
+  if(n.length<6) return toast('A password needs at least six characters');
+  try{ await api('/password',{method:'POST',body:{current:c,password:n}}); toast('Password changed'); await load() }
+  catch(e){ toast(e.message) }
+}
+
+function bind(){
+  const m=$('#main');
+  // orders from the shop
+  $$('[data-done]',m).forEach(b=>b.onclick=()=>completeOrder(b.dataset.done,false));
+  $$('[data-edit]',m).forEach(b=>b.onclick=()=>{ const o=st.me.pos.find(x=>x.no===b.dataset.edit); st.edit=st.edit||{};
+    st.edit[o.no]={lines:o.lines.map(l=>({...l,price:l.price||''})),invoice:'',note:''}; render() });
+  const ed=(v)=>{ const [no,i]=v.split('|'); return [st.edit[no],+i] };
+  $$('[data-eq]',m).forEach(el=>el.oninput=()=>{ const [e,i]=ed(el.dataset.eq); e.lines[i].qty=el.value });
+  $$('[data-ep]',m).forEach(el=>el.oninput=()=>{ const [e,i]=ed(el.dataset.ep); e.lines[i].price=el.value });
+  $$('[data-eq],[data-ep]',m).forEach(el=>el.onblur=()=>render());
+  $$('[data-ed]',m).forEach(b=>b.onclick=()=>{ const [e,i]=ed(b.dataset.ed); e.lines.splice(i,1); render() });
+  $$('[data-einv]',m).forEach(el=>el.oninput=()=>{ st.edit[el.dataset.einv].invoice=el.value });
+  $$('[data-enote]',m).forEach(el=>el.oninput=()=>{ st.edit[el.dataset.enote].note=el.value });
+  $$('[data-esave]',m).forEach(b=>b.onclick=()=>completeOrder(b.dataset.esave,true));
+  $$('[data-ecancel]',m).forEach(b=>b.onclick=()=>{ delete st.edit[b.dataset.ecancel]; render() });
+  // create an order
+  const cq=$('#cq'); if(cq){ cq.oninput=()=>{ const D=st.draft; D.q=cq.value; D.pick=null; const at=cq.selectionStart; render();
+      const a=$('#cq'); if(a){ a.focus(); try{ a.setSelectionRange(at,at) }catch(e){} } };
+    cq.onkeydown=e=>{ if(e.key==='Enter'&&st.draft.q.trim()&&!st.draft.pick){ e.preventDefault();
+      const hit=(st.items||[]).find(p=>p.name.toLowerCase()===st.draft.q.trim().toLowerCase());
+      st.draft.pick=hit?{desc:hit.name,pid:hit.pid,unit:hit.unit}:{desc:st.draft.q.trim(),pid:null,unit:''}; render(); const f=$('#cqty'); if(f) f.focus() } } }
+  $$('[data-cpick]',m).forEach(el=>el.onclick=()=>{ const p=(st.items||[]).find(x=>x.pid===+el.dataset.cpick);
+    st.draft.pick={desc:p.name,pid:p.pid,unit:p.unit}; render(); const f=$('#cqty'); if(f) f.focus() });
+  $$('[data-ctyped]',m).forEach(el=>el.onclick=()=>{ st.draft.pick={desc:st.draft.q.trim(),pid:null,unit:''}; render(); const f=$('#cqty'); if(f) f.focus() });
+  const cqty=$('#cqty'); if(cqty){ cqty.oninput=()=>{ st.draft.qty=cqty.value }; cqty.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); const p=$('#cprice'); if(p) p.focus() } } }
+  const cpr=$('#cprice'); if(cpr){ cpr.oninput=()=>{ st.draft.price=cpr.value }; cpr.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); addDraftLine() } } }
+  const cadd=$('#cadd'); if(cadd) cadd.onclick=addDraftLine;
+  $$('[data-cq]',m).forEach(el=>el.onchange=()=>{ const v=+el.value; if(v>0) st.draft.lines[+el.dataset.cq].qty=v; else st.draft.lines.splice(+el.dataset.cq,1); render() });
+  $$('[data-cp]',m).forEach(el=>el.onchange=()=>{ st.draft.lines[+el.dataset.cp].price=+el.value||0; render() });
+  $$('[data-cdel]',m).forEach(b=>b.onclick=()=>{ st.draft.lines.splice(+b.dataset.cdel,1); render() });
+  const cn=$('#cnote'); if(cn) cn.oninput=()=>{ st.draft.note=cn.value };
+  const cs=$('#csend'); if(cs) cs.onclick=sendDraft;
+  // payment portal
+  $$('[data-paypick]',m).forEach(cb=>cb.onchange=()=>{ st.payPick=st.payPick||{};
+    if(cb.checked) st.payPick[cb.dataset.paypick]={claim:'',note:''}; else delete st.payPick[cb.dataset.paypick];
+    render() });
+  $$('[data-payamt]',m).forEach(el=>{ el.oninput=()=>{ st.payPick[el.dataset.payamt].claim=el.value }; el.onblur=()=>render() });
+  $$('[data-paynote]',m).forEach(el=>el.oninput=()=>{ st.payPick[el.dataset.paynote].note=el.value });
+  const pn=$('#payNote'); if(pn) pn.oninput=()=>{ st.payNote=pn.value };
+  const ag=$('#payAgain'); if(ag) ag.onclick=()=>{ st.paySent=null; render() };
+  const ps=$('#paySend'); if(ps) ps.onclick=askToBePaid;
+  // account
+  const au=$('#aUserGo'); if(au) au.onclick=changeUser;
+  const ap=$('#aPassGo'); if(ap) ap.onclick=changePass;
+  const ts=$('#tmSend'); if(ts) ts.onclick=askForPerson;
+  const ta=$('#teamAgain'); if(ta) ta.onclick=()=>{ st.teamSent=null; render() };
+}
+
 /* Goods of theirs that came in broken. The value came off what the shop owes them the moment it
    was raised, so a rep who cannot see why the figure moved would otherwise have to ring and ask. */
 const DMG_SAID={held:['Waiting to go back','warn'],sent:['Sent back to you','blue'],
@@ -339,71 +494,7 @@ function damageCard(){
      <td class="n">${d.qty}</td><td class="n">${money(d.value)}</td><td>${tag(d.status)}</td></tr>`).join('')}
    </table></div>`;
 }
-function bind(){
-  const m=$('#main');
-  $$('[data-resp]',m).forEach(b=>b.onclick=()=>respond(b.dataset.no,b.dataset.resp));
-  const sn=$('#snap'); if(sn) sn.onclick=()=>$('#file').click();
-  // ticking a bill, changing what is asked for, and sending it
-  $('[data-paypick]',m).forEach(cb=>cb.onchange=()=>{ st.payPick=st.payPick||{};
-    if(cb.checked) st.payPick[cb.dataset.paypick]={claim:'',note:''}; else delete st.payPick[cb.dataset.paypick];
-    render() });
-  $('[data-payamt]',m).forEach(el=>{ el.oninput=()=>{ st.payPick[el.dataset.payamt].claim=el.value };
-    el.onblur=()=>render() });
-  $('[data-paynote]',m).forEach(el=>el.oninput=()=>{ st.payPick[el.dataset.paynote].note=el.value });
-  const pn=$('#payNote'); if(pn) pn.oninput=()=>{ st.payNote=pn.value };
-  const pr=$('#payRep'); if(pr) pr.oninput=()=>{ st.rep=pr.value; ls.set('rep',pr.value) };
-  const ag=$('#payAgain'); if(ag) ag.onclick=()=>{ st.paySent=null; render() };
-  const sq=$('#stockQ'); if(sq) sq.oninput=()=>{ st.ord=st.ord||{lines:[],q:'',code:null,qty:''};
-    st.ord.q=sq.value; st.ord.code=null; const at=sq.selectionStart; render();
-    const again=$('#stockQ'); if(again){ again.focus(); try{ again.setSelectionRange(at,at) }catch(e){} } };
-  $('[data-pick]',m).forEach(el=>el.onclick=()=>{ st.ord.code=el.dataset.pick; st.ord.qty=''; render();
-    const f=$('#stockQty'); if(f) f.focus() });
-  // item, then how many, then what you are charging, then it goes on — all on the keyboard
-  const sqty=$('#stockQty'); if(sqty){ sqty.oninput=()=>{ st.ord.qty=sqty.value };
-    sqty.onkeydown=(e)=>{ if(e.key==='Enter'){ e.preventDefault();
-      const pf=$('#stockPrice'); if(pf){ pf.focus(); pf.select() } else stockAddLine() } } }
-  const sprc=$('#stockPrice'); if(sprc){ sprc.oninput=()=>{ st.ord.price=sprc.value };
-    sprc.onkeydown=(e)=>{ if(e.key==='Enter'){ e.preventDefault(); stockAddLine() } } }
-  $('[data-op]',m).forEach(el=>el.onchange=()=>{ st.ord.lines[+el.dataset.op].price=+el.value||'' });
-  const sadd=$('#stockAdd'); if(sadd) sadd.onclick=stockAddLine;
-  $('[data-oq]',m).forEach(el=>el.onchange=()=>{ const i=+el.dataset.oq, v=+el.value;
-    if(v>0) st.ord.lines[i].qty=v; else st.ord.lines.splice(i,1); render() });
-  $('[data-od]',m).forEach(el=>el.onclick=()=>{ st.ord.lines.splice(+el.dataset.od,1); render() });
-  const ssend=$('#stockSend'); if(ssend) ssend.onclick=stockSendOrder;
-  const ts=$('#tmSend'); if(ts) ts.onclick=askForPerson;
-  const ta=$('#teamAgain'); if(ta) ta.onclick=()=>{ st.teamSent=null; render() };
-  const ps=$('#paySend'); if(ps) ps.onclick=askToBePaid;
-  const f=$('#file'); if(f) f.onchange=()=>{ [...f.files].slice(0,6-st.photos.length).forEach(file=>shrink(file).then(d=>{ st.photos.push(d); render() }).catch(()=>toast('Could not read that picture'))) };
-  $$('[data-rm]',m).forEach(b=>b.onclick=()=>{ st.photos.splice(+b.dataset.rm,1); render() });
-  const t=$('#text'); if(t) t.oninput=()=>{ st.text=t.value };
-  const dk=$('#discKind'); if(dk) dk.onchange=()=>{ st.disc.kind=dk.value };
-  const dv=$('#discVal'); if(dv) dv.oninput=()=>{ st.disc.value=dv.value };
-  const dn=$('#discNote'); if(dn) dn.oninput=()=>{ st.disc.note=dn.value };
-  const rp=$('#rep'); if(rp) rp.onchange=()=>{ st.rep=rp.value.trim(); ls.set('rep',st.rep) };
-  const so=$('#sendOrder'); if(so) so.onclick=sendOrder;
-  const an=$('#another'); if(an) an.onclick=()=>{ st.done=null; render() };
-  const ss=$('#seeSent'); if(ss) ss.onclick=()=>{ st.done=null; st.tab='sent'; load() };
-}
 function shrink(file){ return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{ const sc=Math.min(1,1600/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc); const g=c.getContext('2d'); g.drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src); res(c.toDataURL('image/jpeg',0.82)) }; img.onerror=rej; img.src=URL.createObjectURL(file) }) }
-async function sendOrder(){ if(st.busy) return; st.rep=($('#rep')||{}).value||st.rep; st.text=($('#text')||{}).value||''; ls.set('rep',st.rep);
-  if(!st.text.trim()&&!st.photos.length) return toast('Add a photo of the order or type it');
-  const d=st.disc, disc=(+d.value>0)?{kind:d.kind,value:+d.value,note:d.note}:null;
-  st.busy=true; render();
-  try{ const j=await api('/order',{method:'POST',body:{text:st.text,rep:st.rep,photos:st.photos,disc}}); st.done=j; st.photos=[]; st.text=''; st.disc={kind:'pct',value:'',note:''}; st.busy=false; render() }
-  catch(e){ st.busy=false; render(); toast(e.message) }
-}
-function respond(no,action){
-  const el=document.createElement('div'); el.className='sheet';
-  const title={accepted:'Confirm '+no,changes:'What needs to change on '+no+'?',dispatched:no+' — goods dispatched'}[action];
-  el.innerHTML=`<div class="box"><h2>${esc(title)}</h2>
-   ${action==='dispatched'?`<div class="f"><label>Your invoice number</label><input id="rInv" placeholder="e.g. INV-4521"></div><div class="f"><label>Expected at the shop</label><input id="rEta" type="date"></div>`:''}
-   <div class="f"><label>${action==='changes'?'The change':'A note for the shop (optional)'}</label><textarea id="rNote" style="min-height:80px" placeholder="${action==='changes'?'e.g. only 15 bags available this week':action==='dispatched'?'e.g. on the lorry leaving 2 pm':'e.g. delivery Thursday morning'}"></textarea></div>
-   <div style="display:flex;gap:8px"><button class="btn" id="rX">Cancel</button><button class="btn ${action==='accepted'?'green':'dark'}" id="rGo" style="flex:1">${{accepted:'Confirm',changes:'Send the change',dispatched:'Mark dispatched'}[action]}</button></div></div>`;
-  document.body.appendChild(el); $('#rX',el).onclick=()=>el.remove(); ($('#rInv',el)||$('#rNote',el)).focus();
-  $('#rGo',el).onclick=async()=>{ const b=$('#rGo',el); b.disabled=true;
-    try{ await api('/po/'+encodeURIComponent(no)+'/respond',{method:'POST',body:{action,note:$('#rNote',el).value,invoice:($('#rInv',el)||{}).value||'',eta:($('#rEta',el)||{}).value||''}}); el.remove(); toast({accepted:'Confirmed — the shop has been told',changes:'Sent to the shop',dispatched:'Marked dispatched'}[action]); load() }
-    catch(e){ toast(e.message); b.disabled=false } };
-}
 /* Signing in: by the user name the shop gave you, or the old way with the mobile on file and a
    texted code. Forgotten sends a code to the number kept against that sign-in. */
 function signIn(then){
@@ -466,7 +557,8 @@ function signIn(then){
   document.body.appendChild(el); draw();
 }
 async function load(){ if(!st.token) return render(); try{ st.me=await api('/me') }catch(e){ if(st.token) toast(e.message); st.me=null } render() }
-load(); setInterval(()=>{ if(st.token&&!st.busy&&document.activeElement.tagName!=='TEXTAREA') load() },60000);
+load(); setInterval(()=>{ const typing=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  if(st.token&&!st.busy&&!typing&&!(st.edit&&Object.keys(st.edit).length)&&!(st.draft&&st.draft.lines.length)) load() },60000);
 </script>
 </body>
 </html>
