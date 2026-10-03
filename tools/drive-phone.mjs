@@ -113,6 +113,26 @@ ok(bar && bar.text.includes(shown), `and the total on it is the real total (${sh
 await noSideways('with a bill on it');
 await shot('3-bill');
 
+/* ---- what a thing is marked at, as well as what it sells for ---- */
+const mrp = await pg.evaluate(async () => {
+  const p = S.products.find(x => +x.mrp > 0 && +x.mrp > (x.retail || 0));
+  if (!p) return { skip: true };
+  S.pos.lines = [{ pid: p.id, qty: 1, price: p.retail, disc: 0 }];
+  PH.q = p.name.slice(0, 4); render();
+  await new Promise(r => setTimeout(r, 250));
+  const hit = document.querySelector('.ph-hit .pr');
+  const sub = document.querySelector('.ph-line .sub');
+  return { skip: false, mrp: p.mrp,
+    hits: document.querySelectorAll('.ph-hit').length,
+    // at least one of the things offered carries a struck-through marked price with a figure in it
+    onHit: [...document.querySelectorAll('.ph-hit .pr .mrp')].some(el => /[0-9]/.test(el.textContent)),
+    onLine: sub ? /MRP/.test(sub.textContent) : false };
+});
+ok(mrp.skip || mrp.onHit, 'a search offers the marked price beside what it sells for');
+ok(mrp.skip || mrp.onLine, 'and the line on the bill carries it too');
+await pg.evaluate(() => { PH.q = ''; S.pos.lines = []; render() });
+await new Promise(r => setTimeout(r, 200));
+
 /* ---- a long bill still keeps the bar in place ---- */
 await pg.evaluate(() => { for (let i = 3; i <= 12; i++) addLine(i); render() });
 await new Promise(r => setTimeout(r, 600));
