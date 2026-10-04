@@ -22,7 +22,10 @@ const pendingCount = async () => (await pendingShopCount()) + (await pendingSupp
 const r = Router();
 const BOOKS_KEY = 'regal';
 const HISTORY_KEEP = 200;
-const LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'held', 'heldBills', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId', 'isDemo'];
+// What belongs to one till's screen and is never kept in the shared books. It must agree with the
+// list in app/regal-bridge.js. Held bills are NOT on it: a bill held on one till (a phone) is picked
+// up on another, so they travel with the books — this list used to throw them away on every save.
+const LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId', 'isDemo'];
 
 function sign(user) {
   return jwt.sign({ kind: 'regal', name: user.name, role: user.role, perms: user.perms || [] }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES || '12h' });

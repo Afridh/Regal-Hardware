@@ -14644,7 +14644,7 @@ function holdCurrentBill(notify = true, ref){
   alexaNote('hold', bill);
   S.pos = { lines: [], customer: null, salesman: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill };
   if(typeof CS !== 'undefined') CS = { ...CS, pid: null, q: '', qty: 1, price: 0, disc: 0, focus: '', editLine: null };
-  render();
+  render(); persist(true);                       // the other tills see it straight away
   if(notify) toast(`Held as "${bill.ref}" (${S.heldBills.length} on hold) — F5 / Ctrl+R brings it back`,'ok');
   return true;
 }
@@ -14706,7 +14706,7 @@ function recallHeldBill(which){
   S.held = S.heldBills[0] || null;
   if(typeof CS !== 'undefined') CS = { ...CS, pid: null, q: '', qty: 1, price: 0, disc: 0, focus: '', editLine: null };
   closeModals();
-  render();
+  render(); persist(true);                       // gone from every till's held list at once
   toast(`${bill.ref ? '"' + bill.ref + '"' : 'Bill'} is back on the till`);
   const qEl = document.getElementById('csQ') || document.getElementById('q') || document.getElementById('qq');
   if(qEl){ qEl.focus(); qEl.select && qEl.select(); }
@@ -14738,7 +14738,7 @@ function discardHeldBill(idx){
     S.heldBills.splice(at, 1);
     S.held = S.heldBills[0] || null;
     logTrail('holdDiscard', `${b.ref || c.name} — ${n} line${n === 1 ? '' : 's'}`, { amount: net, bill: b, who: c.name });
-    render(); persist();
+    render(); persist(true);
     toast(`Thrown away · ${S.heldBills.length} still on hold — it is on the Trail page if it was a mistake`, 'warn');
     if(S.heldBills.length) showHeldBillsModal(Math.min(at, S.heldBills.length - 1));
   };
@@ -14752,7 +14752,7 @@ function discardHeldBill(idx){
 function showHeldBillsModal(initIdx = 0){
   closeModals();
   S.heldBills = S.heldBills || [];
-  if(S.held && S.held.lines && S.held.lines.length && !S.heldBills.length){
+  if(S.held && !S.held.id && S.held.lines && S.held.lines.length && !S.heldBills.length){
     S.heldBills.push({
       id: 'hb_' + Date.now(),
       date: new Date().toISOString(),

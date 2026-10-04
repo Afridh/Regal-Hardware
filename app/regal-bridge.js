@@ -149,12 +149,20 @@
      order being looked at) does not: one left open used to stop the till hearing anything at all, so
      orders from the suppliers never arrived. The two order popups are drawn again from what is kept for
      them, so they do not count either. strict: about to reload the page, when any popup counts. */
+  // the last time anybody pressed a key or touched the screen here
+  var lastInputAt = 0;
+  ['keydown', 'pointerdown', 'input'].forEach(function (t) { document.addEventListener(t, function () { lastInputAt = Date.now(); }, true); });
+  var IDLE_MS = 4000;
   function tillBusy(strict) {
     var S = window.S;
     var filling = Array.prototype.some.call(document.querySelectorAll('.modal'), function (m) {
       return strict || (m.id !== 'ordModal' && m.id !== 'poModal' && !!m.querySelector('input,textarea,select'));
     });
-    return !!(filling || document.querySelector('.lock') || (S && S.view === 'pos' && S.pos && S.pos.lines && S.pos.lines.length));
+    // A bill open on the till screen is this till's own and is kept whatever comes in, so the books can
+    // be brought up to date under it — the other tills' held bills, customers, stock. Only not while
+    // somebody is in the middle of keying it: the screen is redrawn when they stop for a moment.
+    var billing = S && S.view === 'pos' && S.pos && S.pos.lines && S.pos.lines.length && (strict || Date.now() - lastInputAt < IDLE_MS);
+    return !!(filling || document.querySelector('.lock') || billing);
   }
   function say(msg) { if (typeof window.toast === 'function') window.toast(msg); }
   function badge(txt) { ['savedAt', 'csSync'].forEach(function (id) { var el = document.getElementById(id); if (el) el.textContent = txt; }); }
