@@ -25,6 +25,13 @@ await new Promise(r => setTimeout(r, 800));
 // start from a clean circle: the list, and anything the journal remembers of one
 await pg.evaluate(() => { S.circle = []; S.trail = [];
   S.journal = S.journal.filter(j => !j.lines.some(l => l.party && l.party.type === 'X'));
+  /* Books carried over from the old system start with an empty drawer on purpose — the cash and
+     bank figures were never reconciled there, so they are keyed in here from the real count. This
+     check is about moving money, not about where it came from, so it puts a float in the same way
+     an opening balance is posted (3100 is the account the import uses for them). */
+  const yday = addDays(D(today), -1);
+  if (bal('1010', D(today)) < 50000) post(yday, 'Opening float for this check', 'OPEN-TEST',
+    [{ ac: '1010', dr: 50000 }, { ac: '3100', cr: 50000 }]);
   dayTab = 'start'; go('cashup'); });
 
 // the morning page shows every account
@@ -108,10 +115,18 @@ ok(Math.abs(books.off) < 0.005, 'the journal still balances', JSON.stringify(boo
 ok(Math.abs(books.control - books.people) < 0.005,
    'the control account agrees with the people in the circle', JSON.stringify(books));
 
-// giving out more than there is in the drawer is refused
+/* Giving out more than there is in the drawer is refused — while the shop is keeping a drawer it
+   trusts. The refusal is switched off by CFG.stock.allowNegative, which a shop coming off the old
+   system has on, because the drawer there was never counted into the books. So the condition is
+   set here rather than assumed, and put back afterwards. */
 const short = await pg.evaluate((pid) => {
-  try { circleMove({ pid, dir: 'out', amount: bal('1010', D(today)) + 1, method: 'CASH', date: D(today) }); return 'let through' }
-  catch (e) { return e.message }
+  const was = (CFG.stock || {}).allowNegative;
+  CFG.stock = { ...(CFG.stock || {}), allowNegative: false };
+  let r;
+  try { circleMove({ pid, dir: 'out', amount: bal('1010', D(today)) + 1, method: 'CASH', date: D(today) }); r = 'let through' }
+  catch (e) { r = e.message }
+  CFG.stock = { ...(CFG.stock || {}), allowNegative: was };
+  return r;
 }, borrow.id);
 ok(/Only /.test(short), 'the shop cannot give out cash it has not got', short);
 

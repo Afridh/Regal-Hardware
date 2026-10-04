@@ -44,7 +44,11 @@ ok(odd.even.length===3&&new Set(odd.even).size<=2,'spread evenly is still there 
 // a day that is full, a Sunday and a holiday are all stepped over
 const stepped=await pg.evaluate(()=>{
   CFG.plan.dayMax=150000;
-  const d1=addDays(D(today),7);
+  // a week out, unless that is a Sunday or a holiday — a day the diary calls shut carries nothing,
+  // so filling one says nothing about a day that is full
+  const d1=(()=>{ let x=addDays(D(today),7);
+    for(let i=0;i<14;i++){ if(!diaryIsSunday(x)&&!holidayOf(x)) return x; x=addDays(x,1) } return x })();
+  window.__loaded=d1;
   // fill that day right up
   S.cheques.push({dir:'ISSUED',no:'T1',bankId:1,bank:'HNB',date:d1,payee:'X',amount:150000,status:'ISSUED',party:'X'});
   const sun=(()=>{ let x=D(today); for(let i=0;i<8;i++){ if(diaryIsSunday(x)) return x; x=addDays(x,1) } return null })();
@@ -60,7 +64,7 @@ ok(!stepped.onHol,'and a holiday',stepped.hol);
 
 // what a day already carries, said in words
 const says=await pg.evaluate(()=>{
-  const d1=addDays(D(today),7);
+  const d1=window.__loaded;                 // the same day that was filled right up, above
   return { full:diarySays(d1,0), sun:diarySays((()=>{let x=D(today);for(let i=0;i<8;i++){if(diaryIsSunday(x))return x;x=addDays(x,1)}})(),0),
     empty:diarySays((()=>{ let x=addDays(D(today),200); for(let i=0;i<40;i++){ if(diaryWeight(x)==='free') return x; x=addDays(x,1) } return x })(),0), weight:diaryWeight(d1) };
 });
@@ -94,8 +98,9 @@ const win=await pg.evaluate(()=>{
   const s=S.suppliers.sort((a,b)=>partyBal('S',b.id)-partyBal('S',a.id))[0];
   const owed=partyBal('S',s.id);
   CFG.plan.chequeMax=Math.max(1000,Math.floor(owed/3/1000)*1000);
+  closeModals();                           // the shift board may be asking us to clock in first
   supPayModal(s.id);
-  const box=document.querySelector('.modal .box');
+  const box=[...document.querySelectorAll('.modal .box')].at(-1);
   box.querySelector('#spGo').click();      // the day buttons live on the second stage
   const html=box.innerHTML;
   const out={ dates:box.querySelectorAll('[data-day]').length,

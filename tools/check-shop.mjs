@@ -19,7 +19,10 @@ w.promos=[{code:'BUILDER10',kind:'pct',value:10,minOrder:5000,limit:0,from:'',un
           {code:'STOPPED',kind:'amt',value:500,minOrder:0,limit:0,from:'',until:'',off:true}];
 w.holdStock=true; w.minOrder=1000; w.delivery=600; w.freeOver=25000;
 data.CFG.stock={...(data.CFG.stock||{}),track:true};   // the website counts stock in this check
-const p=data.S.products.find(x=>x.active!==false&&x.web!==false&&(+x.stock||0)>5);
+// any item the website would show; the stock it needs is put there on the next line, so there is
+// no reason to insist the books already came with some
+const p=data.S.products.find(x=>x.active!==false&&x.web!==false&&+x.retail>0);
+if(!p){ console.log('FAIL no item the website could sell'); process.exit(1) }
 p.stock=8;
 await fetch(BASE+'/api/books/regal',{method:'PUT',headers:H,body:JSON.stringify({data,rev:got.rev})});
 

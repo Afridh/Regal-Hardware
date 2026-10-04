@@ -65,11 +65,16 @@ function findItem(S, spoken) {
   if (!q) return null;
   const list = (S.products || []).filter(p => p.active !== false);
   const words = q.split(/[^a-z0-9]+/).filter(w => w.length > 2);
+  /* Tried in order, each looser than the last. The loosest — any one word turning up anywhere
+     inside a name — has to insist on a longer word than the others, because a short one buried in
+     a longer word is not a match at all: in a shop of six thousand items, "a thing we have never
+     sold" found SOLDER IRON on the strength of "sold". Answering confidently about the wrong item
+     is worse than saying it could not be found, so five letters is the price of that last guess. */
   return list.find(p => String(p.code || '').toLowerCase() === q)
       || list.find(p => p.name.toLowerCase() === q)
       || list.find(p => words.length && words.every(w => p.name.toLowerCase().includes(w)))
       || list.find(p => words.some(w => p.name.toLowerCase().split(/\s+/).includes(w)))
-      || list.find(p => words.some(w => p.name.toLowerCase().includes(w)))
+      || list.find(p => words.some(w => w.length >= 5 && p.name.toLowerCase().includes(w)))
       || null;
 }
 

@@ -301,7 +301,16 @@ ok('A: cannot spend more points than held', /only has/.test(tooMany || ''), tooM
   w.eval("CFG.bill.showCode=false; CFG.bill.showMrp=false");
   ok('P: A5 columns follow the toggles', !/<th>Code<\/th>/.test(w.billHtml(inv1, 'a5')) && !/>MRP</.test(w.billHtml(inv1, 'a5')) && />Price</.test(w.billHtml(inv1, 'a5')));
   w.eval("CFG.shop.logo=''; CFG.shop.name='REGAL HARDWARE'; CFG.bill.showBarcode=true; CFG.bill.signLeft='Authorised By'; CFG.bill.showCode=true; CFG.bill.showMrp=true; CFG.bill.t80Thanks='Thank you, come again!'");
-  let printed = 0; w.print = () => { printed++; }; w.eval("CFG.print.agent=''"); w.printBill(inv1, 'r80'); await sleep(200);
+  let printed = 0; w.print = () => { printed++; }; w.eval("CFG.print.agent=''"); w.printBill(inv1, 'r80');
+  /* A bill is offered to the helper on this machine, then to the shop's queue, and only if neither
+     will take it does this browser print. Each of those is a round trip, so wait for the bill to get
+     somewhere rather than for a number of milliseconds that was right before the middle one existed.
+     With no helper here and none at the counter the till now says so and asks, rather than throwing
+     up a print box out of nowhere — so the last step is a person pressing the button. */
+  let askedHere = null;
+  for (let i = 0; i < 120 && !printed && !askedHere; i++) { await sleep(50); askedHere = d.getElementById('pfHere') }
+  ok('P: with no printer either side, the till says so instead of printing unasked', !!askedHere && !printed);
+  if (askedHere) { askedHere.click(); for (let i = 0; i < 40 && !printed; i++) await sleep(50) }
   ok('P: printBill goes straight to print with the receipt page size', printed === 1 && /size:80mm \d+mm/.test(d.getElementById('printPage')?.textContent || '') && d.body.classList.contains('direct-print'));
   w.dispatchEvent(new w.Event('afterprint')); await sleep(400);
   ok('P: … stays while the print box is open', !!d.getElementById('printArea'));
@@ -463,7 +472,7 @@ let webNo = null;
 {
   const j = async (path, opts = {}) => { const r = await fetch(BASE + path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined }); return { status: r.status, ...(await r.json().catch(() => ({}))) }; };
   const page = await (await fetch(BASE + '/supplier')).text();
-  ok('S: /supplier is the suppliers\' page', /api\/sup/.test(page) && /Send an order/.test(page));
+  ok('S: /supplier is the suppliers\' page', /api\/sup/.test(page) && /New order to the shop/.test(page));
   const sup = A.w.S.suppliers.find(s => /^0\d{9}$/.test((s.phone || '').replace(/\D/g, '')));
   const phone = sup.phone.replace(/\D/g, '');
   const stranger = await j('/api/sup/otp', { method: 'POST', body: { phone: '0700000000' } });
