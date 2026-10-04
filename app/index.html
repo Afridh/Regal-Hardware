@@ -5557,7 +5557,7 @@ function syncUsersAndStaff(){
     if(nl === 'demo' || nl === 'demo user') return false;
     if(isLegacyName(nl) && !S.users.some(u => String(u.name).toLowerCase().trim() === nl && u.addedAt)) return false;
     if(S.deletedUsers.includes(nl)) return false;
-    return S.users.some(u => String(u.name).toLowerCase().trim() === nl);
+    return true;                    // having no till login is not a reason to stop paying somebody
   });
 
   // Ensure every active user in S.users has a matching entry in S.employees
@@ -10346,8 +10346,18 @@ function renderNow(){
       el.onchange=()=>{ CFG.tpl[el.dataset.tpl].text=el.value; render(); toast('Wording saved') } });
     document.querySelectorAll('[data-apk]').forEach(el=>{ el.onchange=()=>{ CFG.approvals=CFG.approvals||{}; CFG.approvals[el.dataset.apk]=el.checked; toast(el.checked?'Needs approval from now on':'No approval needed') } });
     const lf=$('#logoFile'); if(lf) lf.onchange=()=>{ const file=lf.files[0]; if(!file) return; const rd=new FileReader();
-      rd.onload=()=>{ const img=new Image(); img.onload=()=>{ const sc=Math.min(1,360/img.width,180/img.height); const cv=document.createElement('canvas'); cv.width=Math.max(1,Math.round(img.width*sc)); cv.height=Math.max(1,Math.round(img.height*sc));
-        const cx=cv.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,cv.width,cv.height); cx.drawImage(img,0,0,cv.width,cv.height); CFG.shop.logo=cv.toDataURL('image/png'); render(); toast('Logo set — it is on every bill now') };
+      rd.onload=()=>{ const img=new Image(); img.onload=()=>{ const sc=Math.min(1,640/img.width,320/img.height); const cv=document.createElement('canvas'); cv.width=Math.max(1,Math.round(img.width*sc)); cv.height=Math.max(1,Math.round(img.height*sc));
+        const cx=cv.getContext('2d',{willReadFrequently:true}); cx.clearRect(0,0,cv.width,cv.height); cx.drawImage(img,0,0,cv.width,cv.height);
+        try{
+          const d=cx.getImageData(0,0,cv.width,cv.height), px=d.data;
+          for(let i=0;i<px.length;i+=4){
+            const lum=px[i]*0.299+px[i+1]*0.587+px[i+2]*0.114;     // how bright this pixel is
+            px[i+3]=Math.round(px[i+3]*(255-lum)/255);             // the darker it was, the more of it there is
+            px[i]=px[i+1]=px[i+2]=0;                               // and what is left is black
+          }
+          cx.putImageData(d,0,0);
+        }catch(e){ /* a picture the browser will not let us read: better the logo than nothing */ }
+        CFG.shop.logo=cv.toDataURL('image/png'); render(); toast('Logo set — it is on every bill now') };
         img.onerror=()=>toast('That file could not be read as an image'); img.src=rd.result }; rd.readAsDataURL(file) };
     const st=$('#agentStatus'); if(st){ const url=printAgentUrl();
       if(!url) st.textContent='Browser print box (no helper set)';
