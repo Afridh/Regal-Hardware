@@ -205,7 +205,7 @@ const ACT={sent:'Order sent',accepted:'Accepted',changes:'Asked for a change',di
 
 /* ---- the five pages, one menu ---- */
 const MENU=[['orders','📥','Orders from the shop','Orders'],['create','➕','Create an Order','Create'],['sent','📦','Sent Orders','Sent'],['pay','💳','Payment Portal','Payments'],['account','👤','Account','Account']];
-const ACTIVE=['sent','accepted','changes','dispatched','adjusted','completed'];      // a shop order still in the supplier's hands, or with the shop to approve
+const ACTIVE=['sent','accepted','changes','dispatched','adjusted'];      // a shop order still in the supplier's hands — once completed it is under Sent Orders
 const NEEDS_ME=['sent','accepted','changes','dispatched','adjusted'];
 
 function render(){
@@ -234,7 +234,7 @@ function linesTable(lines,priced){
 }
 function ordersPage(){
   const me=st.me, list=me.pos.filter(o=>ACTIVE.includes(o.status));
-  if(!list.length) return '<div class="empty"><div>📭</div><b>No orders waiting</b><span>When the shop sends you an order it shows here. Completed ones are under <b>Sent Orders</b>.</span></div>';
+  if(!list.length) return '<div class="empty"><div>📭</div><b>No orders waiting</b><span>When the shop sends you an order it shows here. Once you complete it, it moves to <b>Sent Orders</b>.</span></div>';
   return list.map(o=>{
     const ed=st.edit&&st.edit[o.no];
     const shopSaid=(o.events||[]).filter(e=>e.action==='adjusted').slice(-1)[0];
@@ -271,7 +271,7 @@ async function completeOrder(no,edited){
   try{
     await api('/po/'+encodeURIComponent(no)+'/respond',{method:'POST',body:{action:'completed',lines,invoice:ed?ed.invoice||'':'',note:ed?ed.note||'':''}});
     if(st.edit) delete st.edit[no];
-    st.flash=`✓ ${esc(no)} completed — it is with the shop for approval`;
+    st.flash=`✓ ${esc(no)} completed — it is under <b>Sent Orders</b>, waiting for the shop to approve it`;
     await load();
   }catch(e){ toast(e.message) }
   finally{ st.busy=false; render() }
@@ -362,25 +362,33 @@ async function sendDraft(){
   finally{ st.busy=false; render() }
 }
 
-/* ---------- Sent Orders: everything completed and approved ---------- */
+/* ---------- Sent Orders: everything that has left the supplier's hands ---------- */
+/* where an order stands, said for the one who sent it — and whose order it was */
+function sentState(o){
+  if(o.from==='shop') return o.status==='completed'?['warn','Order from shop — waiting for approval']
+    :o.status==='received'||o.grn?['ok','Order from shop — purchased']:['blue','Order from shop — approved'];
+  return o.waiting?['warn','Reaching the shop']:o.status==='pending'?['warn','Your order — waiting for approval']
+    :o.status==='rejected'?['bad','Your order — not accepted']:o.status==='adjusted'?['warn','The shop asked for a change']
+    :o.status==='received'||o.grn?['ok','Your order — purchased']:['blue','Your order — approved'];
+}
 function sentCard(o,mine){
   const lines=(o.lines&&o.lines.length)?o.lines:null;
-  const state=mine
-    ?(o.waiting?['warn','Reaching the shop']:o.status==='rejected'?['bad','Not accepted']:o.status==='adjusted'?['warn','The shop asked for a change']:['warn','Waiting for approval'])
-    :null;
+  const state=sentState(o);
   return `<div class="card o"><div class="h"><div><b>${esc(o.no||'Your order')}</b><div class="muted">${esc(o.date)}${o.rep?' · '+esc(o.rep):''}${o.grn?' · purchased as '+esc(o.grn):''}</div></div>
-     ${state?`<span class="tag ${state[0]}">${state[1]}</span>`:o.grn||o.status==='received'?'<span class="tag ok">Purchased</span>':'<span class="tag blue">Approved — waiting for purchase</span>'}</div>
+     <span class="tag ${state[0]}">${state[1]}</span></div>
     ${lines?linesTable(lines,true):o.text&&o.text!=='(photo only)'?`<div class="txt">${esc(o.text)}</div>`:''}
     ${o.photos?`<div class="muted">📷 Sent as ${o.photos} photo${o.photos===1?'':'s'} of the invoice</div>`:''}
-    ${o.note&&mine?`<div class="muted"><b>Shop:</b> ${esc(o.note)}</div>`:''}</div>`;
+    ${o.note&&o.from!=='shop'&&o.status!=='pending'?`<div class="muted"><b>Shop:</b> ${esc(o.note)}</div>`:''}</div>`;
 }
 function sentPage(){
   const me=st.me;
-  const ours=(me.sent||[]).filter(o=>['accepted','received'].includes(o.status)).map(o=>({...o,no:''}));
-  const theirs=me.pos.filter(o=>['approved','received'].includes(o.status)).map(o=>({no:o.no,date:o.date,lines:o.supLines||o.lines,grn:o.grn,status:o.status}));
-  const all=theirs.concat(ours);
-  if(!all.length) return '<div class="empty"><div>📦</div><b>Nothing here yet</b><span>Orders show here once the shop approves them — the ones they sent you that you completed, and the ones you sent.</span></div>';
-  return all.map(o=>sentCard(o,false)).join('');
+  // ours: every order sent to the shop, as soon as it goes. theirs: shop orders once completed
+  const ours=(me.sent||[]).filter(o=>o.status!=='revised').map(o=>({...o,no:'',from:'you'}));
+  const theirs=me.pos.filter(o=>['completed','approved','received'].includes(o.status)).map(o=>({no:o.no,date:o.date,lines:o.supLines||o.lines,grn:o.grn,status:o.status,from:'shop'}));
+  const all=theirs.concat(ours).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  if(!all.length) return '<div class="empty"><div>📦</div><b>Nothing here yet</b><span>Every order you send to the shop shows here, and every order from the shop once you complete it — with where it stands.</span></div>';
+  const wait=all.filter(o=>sentState(o)[1].includes('waiting')||o.waiting).length;
+  return (wait?`<div class="muted" style="margin-bottom:10px">${wait} waiting for the shop to approve.</div>`:'')+all.map(o=>sentCard(o,o.from==='you')).join('');
 }
 
 /* ---------- Payment Portal: the bills, how old they are, and asking to be paid ---------- */
