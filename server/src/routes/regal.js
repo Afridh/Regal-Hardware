@@ -10,8 +10,13 @@ import { injectCustInbox, markCustImported, pendingCustCount } from './customer.
 import { catchUpLogins } from '../services/portalLogins.js';
 // everything that arrived from outside the tills — the website's orders, the suppliers', and what a
 // customer said on their own page — in one go
-const injectInbox = async data => (await injectShopInbox(data)) + (await injectSupplierInbox(data)) + (await injectCustInbox(data));
-const markImported = async data => (await markShopImported(data)) + (await markSupplierImported(data)) + (await markCustImported(data));
+// Each one on its own, and none of them allowed to fail the books: if an inbox cannot be read, the till
+// still gets the books (and can save), and what is waiting comes in on the next read that works.
+const safely = (what, fn) => async data => { try { return await fn(data); } catch (e) { console.error(`${what} failed:`, e.message); return 0; } };
+const INJECT = [safely('website orders', injectShopInbox), safely('supplier inbox', injectSupplierInbox), safely('customer inbox', injectCustInbox)];
+const MARK = [safely('marking website orders', markShopImported), safely('marking supplier inbox', markSupplierImported), safely('marking customer inbox', markCustImported)];
+const injectInbox = async data => { let n = 0; for (const f of INJECT) n += await f(data); return n; };
+const markImported = async data => { let n = 0; for (const f of MARK) n += await f(data); return n; };
 const pendingCount = async () => (await pendingShopCount()) + (await pendingSupplierCount()) + (await pendingCustCount());
 
 const r = Router();

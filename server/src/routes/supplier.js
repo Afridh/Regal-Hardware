@@ -77,6 +77,22 @@ function supAuth(req, _res, next) {
 }
 
 // ---------------------------------------------------------------- books ↔ inbox
+/* What suppliers sent that no till has taken yet, with the ids of any photos. Read as two plain
+   queries rather than one grouped one: a GROUP BY over the joined photos is refused by a MariaDB or
+   MySQL that runs with ONLY_FULL_GROUP_BY, and when that read failed the till could not load the
+   books at all — so it saved nothing, and the supplier's page showed nothing. */
+const parsed = v => { if (v && typeof v === 'object') return v; try { return JSON.parse(v || '{}') || {}; } catch { return {}; } };
+async function inboxRows(sid) {
+  const { rows } = sid === undefined
+    ? await query(`SELECT id, sid, kind, data, created_at FROM sup_inbox WHERE imported_at IS NULL ORDER BY id`)
+    : await query(`SELECT id, sid, kind, data, created_at FROM sup_inbox WHERE sid = $1 AND imported_at IS NULL ORDER BY id DESC`, [sid]);
+  if (!rows.length) return [];
+  const ids = rows.map(r => Number(r.id));
+  const { rows: media } = await query(`SELECT id, inbox_id FROM sup_media WHERE inbox_id = ANY($1::bigint[]) ORDER BY id`, [ids]);
+  const photos = new Map();
+  for (const m of media) { const k = Number(m.inbox_id); if (!photos.has(k)) photos.set(k, []); photos.get(k).push(Number(m.id)); }
+  return rows.map(r => ({ id: Number(r.id), sid: Number(r.sid), kind: r.kind, data: parsed(r.data), created_at: r.created_at, photos: photos.get(Number(r.id)) || [] }));
+}
 export async function pendingSupplierCount() {
   await ensureSupplierTables();
   const { rows: [{ n }] } = await query(`SELECT count(*)::int AS n FROM sup_inbox WHERE imported_at IS NULL`);
@@ -86,18 +102,12 @@ export async function pendingSupplierCount() {
 export async function injectSupplierInbox(data) {
   if (!data || !data.S) return 0;
   await ensureSupplierTables();
-  const rows = dbKind === 'mysql'
-    // no arrays in MySQL: the photo ids come as a list of text and are split here
-    ? (await query(`SELECT i.id, i.sid, i.kind, i.data, i.created_at, GROUP_CONCAT(m.id ORDER BY m.id) AS photos
-                    FROM sup_inbox i LEFT JOIN sup_media m ON m.inbox_id = i.id WHERE i.imported_at IS NULL GROUP BY i.id ORDER BY i.id`))
-        .rows.map(r => ({ ...r, photos: String(r.photos || '').split(',').filter(Boolean).map(Number) }))
-    : (await query(`SELECT i.id, i.sid, i.kind, i.data, i.created_at, coalesce(array_agg(m.id ORDER BY m.id) FILTER (WHERE m.id IS NOT NULL), '{}') AS photos
-                                FROM sup_inbox i LEFT JOIN sup_media m ON m.inbox_id = i.id WHERE i.imported_at IS NULL GROUP BY i.id ORDER BY i.id`)).rows;
+  const rows = await inboxRows();
   if (!rows.length) return 0;
   const S = data.S; S.orders = S.orders || []; S.notif = S.notif || []; S.payReqs = S.payReqs || [];
   let added = 0;
   const orphans = [];                       // replies to an order the shop has since deleted
-  for (const row of rows) {
+  for (const row of rows) try {
     const sup = (S.suppliers || []).find(s => s.id === row.sid);
     const name = sup ? sup.name.split(/[–(]/)[0].trim() : 'Supplier';
     if (row.kind === 'order') {
@@ -149,7 +159,7 @@ export async function injectSupplierInbox(data) {
       S.notif.unshift({ id: 'n' + row.id.toString(36) + 'r', kind: 'order', text: `${name}: order ${po.no} ${{ accepted: 'confirmed', changes: 'needs a change', dispatched: 'is on its way', completed: 'completed — needs your approval' }[d.action] || d.action}`, view: 'orders', at: localTime(), read: false, forApprovers: d.action === 'completed' });
       added++;
     }
-  }
+  } catch (e) { console.error('supplier inbox row', row.id, 'could not be merged:', e.message); }
   S.notif = S.notif.slice(0, 60);
   if (orphans.length) await query(`UPDATE sup_inbox SET imported_at = now() WHERE imported_at IS NULL AND id = ANY($1::bigint[])`, [orphans]);
   return added;
@@ -378,7 +388,7 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
   const sup = (S.suppliers || []).find(s => s.id === req.sup.sid);
   if (!sup) throw new HttpError(404, 'Supplier no longer on file');
   await ensureSupplierTables();
-  const { rows: pending } = await query(`SELECT i.id, i.kind, i.data, i.created_at, count(m.id)::int AS photos FROM sup_inbox i LEFT JOIN sup_media m ON m.inbox_id = i.id WHERE i.sid = $1 AND i.imported_at IS NULL GROUP BY i.id ORDER BY i.id DESC`, [sup.id]);
+  const pending = (await inboxRows(sup.id)).map(p => ({ ...p, photos: p.photos.length }));
   const pendingReplies = pending.filter(p => p.kind === 'reply');
   const pos = (S.orders || []).filter(o => o.dir === 'OUT' && o.sid === sup.id).map(o => {
     const mine = pendingReplies.filter(p => p.data.no === o.no).map(p => ({ action: p.data.action, note: p.data.note, invoice: p.data.invoice, lines: p.data.lines || null, at: new Date(p.created_at).getTime(), pending: true }));
