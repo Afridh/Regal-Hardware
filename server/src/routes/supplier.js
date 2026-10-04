@@ -96,6 +96,7 @@ export async function injectSupplierInbox(data) {
   if (!rows.length) return 0;
   const S = data.S; S.orders = S.orders || []; S.notif = S.notif || []; S.payReqs = S.payReqs || [];
   let added = 0;
+  const orphans = [];                       // replies to an order the shop has since deleted
   for (const row of rows) {
     const sup = (S.suppliers || []).find(s => s.id === row.sid);
     const name = sup ? sup.name.split(/[–(]/)[0].trim() : 'Supplier';
@@ -132,7 +133,9 @@ export async function injectSupplierInbox(data) {
       added++;
     } else if (row.kind === 'reply') {
       const d = row.data, po = S.orders.find(o => o.no === d.no && o.dir === 'OUT');
-      if (!po) { continue; }                                        // an order that was thrown away: nothing to attach to
+      // an order that was thrown away: nothing to attach to. It is let go, or the till would be told
+      // there is something waiting for ever, and pull the books every two seconds to look for it
+      if (!po) { orphans.push(row.id); continue; }
       if ((po.events || []).some(e => e.inboxId === row.id)) continue;
       po.events = po.events || [];
       po.events.push({ id: 'e' + row.id, inboxId: row.id, actor: 'supplier', name: d.rep || name, action: d.action, note: [d.note, d.invoice ? 'invoice ' + d.invoice : '', d.eta ? 'expected ' + d.eta : ''].filter(Boolean).join(' · '), at: new Date(row.created_at).getTime() });
@@ -148,6 +151,7 @@ export async function injectSupplierInbox(data) {
     }
   }
   S.notif = S.notif.slice(0, 60);
+  if (orphans.length) await query(`UPDATE sup_inbox SET imported_at = now() WHERE imported_at IS NULL AND id = ANY($1::bigint[])`, [orphans]);
   return added;
 }
 /** A till has saved books that carry these — they are in the shop's hands now. */
@@ -156,6 +160,7 @@ export async function markSupplierImported(data) {
   const ids = new Set();
   for (const o of (S.orders || [])) { if (o.inboxId) ids.add(o.inboxId); for (const e of (o.events || [])) if (e.inboxId) ids.add(e.inboxId); }
   for (const p of (S.payReqs || [])) if (p.inboxId) ids.add(p.inboxId);
+  for (const x of (S.supStockLog || [])) if (x.inboxId) ids.add(x.inboxId);     // who read the shelves
   if (!ids.size) return 0;
   await ensureSupplierTables();
   const { rowCount } = await query(`UPDATE sup_inbox SET imported_at = now() WHERE imported_at IS NULL AND id = ANY($1::bigint[])`, [[...ids]]);

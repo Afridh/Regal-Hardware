@@ -8242,7 +8242,7 @@ function sendPO(){
   S.orders.push(o); poDraft=null; ordTab='out';
   const link=(S.web.settings.domain||location.host)+'/supplier';
   if(s.phone) supSms(s.phone,`${CFG.shop.name}: order ${o.no} — ${good.map(l=>`${l.desc} × ${fq(l.qty)} ${l.unit}`).join(', ').slice(0,300)}${d.want?'. Wanted by '+d.want:''}. Confirm at ${link}`);
-  render(); poPrint(o.no);
+  persist(true); render(); poPrint(o.no);
   toast(`${o.no} sent to ${s.name.split(' ')[0]}${s.phone?' — texted, with the link to confirm':''}`);
 }
 const poText=o=>{ const s=SU(o.sid); return `${CFG.shop.name} — purchase order ${o.no} (${o.date})\n`+o.lines.map((l,i)=>`${i+1}. ${l.desc} — ${fq(l.qty)} ${l.unit}`).join('\n')+(o.want?`\nWanted by ${o.want}`:'')+(o.note?`\n${o.note}`:'')+`\nPlease confirm at ${(S.web.settings.domain||location.host)}/supplier` };
@@ -8280,7 +8280,7 @@ function poAct(no,status,note){
   o.status=status; o.unreadSup=true;
   o.events.push({id:'e'+Math.random().toString(36).slice(2,6),actor:'shop',name:S.user.name,action:status,note:note||'',at:Date.now()});
   poTell(o,s,status,note);
-  render(); drawPhone(); toast(`${o.no} ${status}`);
+  persist(true); render(); drawPhone(); toast(`${o.no} ${status}`);
 }
 function poReceive(no){
   const o=S.orders.find(x=>x.no===no);
@@ -9165,12 +9165,12 @@ function ordAct(id,status,note=''){
   const msg={accepted:tpl('orderAccepted',v),rejected:tpl('orderRejected',v),adjusted:tpl('orderAdjusted',v),received:''}[status];
   if(msg&&CFG.msg.autoOrder) supSms(s.phone,msg);
   notify('order',`Order ${OLABEL[status].toLowerCase()} — ${s.name.split(/[–(]/)[0].trim()}`,'orders');
-  render(); drawPhone(); toast(`Order ${OLABEL[status].toLowerCase()}${msg?' · SMS queued to '+s.name.split(' ')[0]:''}`);
+  persist(true); render(); drawPhone(); toast(`Order ${OLABEL[status].toLowerCase()}${msg?' · SMS queued to '+s.name.split(' ')[0]:''}`);
 }
 function ordComment(id,note){
   const o=S.orders.find(x=>x.id===id);
   o.events.push({id:Math.random().toString(36).slice(2,8),actor:'shop',name:S.user.name,action:'comment',note,at:Date.now()});
-  o.unreadShop=false; o.unreadSup=true; render(); drawPhone(); toast('Reply sent to the rep');
+  o.unreadShop=false; o.unreadSup=true; persist(true); render(); drawPhone(); toast('Reply sent to the rep');
 }
 
 /* ---- the customer's own page: what they owe, nothing else ---- */

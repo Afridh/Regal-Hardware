@@ -144,7 +144,18 @@
   function restoreLocal(k) { if (k && window.S) Object.keys(k).forEach(function (n) { window.S[n] = k[n]; }); }
   // someone is mid-entry when the focused box holds something (an empty search box a page focused by itself does not count)
   function typing() { var a = document.activeElement; return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && (a.tagName === 'SELECT' || a.type === 'checkbox' || String(a.value || '').length > 0)); }
-  function tillBusy() { var S = window.S; return !!(document.querySelector('.modal') || document.querySelector('.lock') || (S && S.pos && S.pos.lines && S.pos.lines.length)); }
+  /* Whether pulling the books now would get in somebody's way. A bill being rung up on the till screen,
+     or a popup somebody is filling in, does. A popup that only shows something (a print preview, an
+     order being looked at) does not: one left open used to stop the till hearing anything at all, so
+     orders from the suppliers never arrived. The two order popups are drawn again from what is kept for
+     them, so they do not count either. strict: about to reload the page, when any popup counts. */
+  function tillBusy(strict) {
+    var S = window.S;
+    var filling = Array.prototype.some.call(document.querySelectorAll('.modal'), function (m) {
+      return strict || (m.id !== 'ordModal' && m.id !== 'poModal' && !!m.querySelector('input,textarea,select'));
+    });
+    return !!(filling || document.querySelector('.lock') || (S && S.view === 'pos' && S.pos && S.pos.lines && S.pos.lines.length));
+  }
   function say(msg) { if (typeof window.toast === 'function') window.toast(msg); }
   function badge(txt) { ['savedAt', 'csSync'].forEach(function (id) { var el = document.getElementById(id); if (el) el.textContent = txt; }); }
 
@@ -365,7 +376,7 @@
     if (j.build) {
       if (!build) build = j.build;
       else if (j.build !== build) {
-        if (!typing() && !tillBusy()) { say('A newer version is ready — reloading'); setTimeout(function () { location.reload(); }, 900); return; }
+        if (!typing() && !tillBusy(true) && !(window.S && window.S.pos && window.S.pos.lines && window.S.pos.lines.length)) { say('A newer version is ready — reloading'); setTimeout(function () { location.reload(); }, 900); return; }
         if (!toldBuild) { toldBuild = true; say('A newer version is ready — it will load when the bill is done, or press F5'); }
       }
     }
@@ -376,6 +387,8 @@
     }
   }
   function startPolling() { stopPolling(); pollTimer = setInterval(poll, POLL_MS); }
+  // a till that comes back to the front catches up at once, not on the next tick
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && pollTimer) poll(); });
   function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
 
   /* ---------------- SMS through the server ---------------- */

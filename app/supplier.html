@@ -612,8 +612,12 @@ function signIn(then){
   document.body.appendChild(el); draw();
 }
 async function load(){ if(!st.token) return render(); try{ st.me=await api('/me') }catch(e){ if(st.token) toast(e.message); st.me=null } render() }
-load(); setInterval(()=>{ const typing=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
-  if(st.token&&!st.busy&&!typing&&!(st.edit&&Object.keys(st.edit).length)&&!(st.draft&&st.draft.lines.length)) load() },60000);
+/* what the shop does shows here within seconds: read again every 15 seconds while the page is in
+   front, and at once when it comes back to the front — never while something is being filled in */
+const quiet=()=>{ const typing=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  return st.token&&!st.busy&&!typing&&!document.hidden&&!(st.edit&&Object.keys(st.edit).length)&&!(st.draft&&st.draft.lines.length)&&!(st.photo&&st.photo.photos.length) };
+load(); setInterval(()=>{ if(quiet()) load() },15000);
+document.addEventListener('visibilitychange',()=>{ if(quiet()) load() });
 </script>
 </body>
 </html>
