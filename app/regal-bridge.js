@@ -364,6 +364,7 @@
   }
 
   /* ---------------- other tills ---------------- */
+  var toldOld = false;
   async function poll() {
     if (isDemoSession()) return;
     if (!token || busy || document.hidden) return;       // a tab nobody is looking at does not poll
@@ -371,6 +372,12 @@
     if (Date.now() - lastPushAt < 3000) return;          // our own save is still settling
     var j = await call('GET', '/books/' + KEY + '/rev');
     if (j.__status !== 200) return;
+    // the server has not been restarted since the pages were updated: things this page shares (held
+    // bills) are thrown away by it on every save. Said once, on the screen, so nobody has to guess.
+    if (!(j.server && (j.server.features || []).indexOf('held') >= 0)) {
+      badge('not shared — server needs a restart');           // every poll, so a save does not hide it
+      if (!toldOld) { toldOld = true; say('The server is running an older version — restart the Node.js app in cPanel. Until then held bills do not reach the other tills.'); }
+    }
     // A till that could not read the books refuses to save, so that it never writes its sample data
     // over a real shop. The books are only pulled when the revision moves, though — and a till that is
     // not saving cannot move it. That deadlocked: one failed read and the till went quiet for good.

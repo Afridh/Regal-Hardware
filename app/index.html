@@ -3211,6 +3211,12 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .hb-c-custtag{font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;text-transform:uppercase}
 .hb-c-custtag.walkin{background:var(--line2);color:var(--steel)}
 .hb-c-custtag.named{background:var(--tint-blue);color:var(--chip-blue)}
+.hb-c-custtag.cashier{background:var(--tint-green,#DCF1E7);color:#12613D;text-transform:none;margin-left:auto}
+.hb-c-btns{display:inline-flex;gap:6px;align-items:center}
+.hb-c-del-btn{display:inline-flex;align-items:center;justify-content:center;padding:3px 8px;background:#fff;color:var(--chip-rust,#C0442C);
+  border:1px solid rgba(192,68,44,.35);border-radius:3px;font-size:12px;cursor:pointer}
+.hb-c-del-btn:hover{background:var(--tint-rust,#FBE4DE)}
+@media (max-width:760px){ .hb-c-del-btn{padding:6px 12px;font-size:14px;border-radius:4px} }
 .hb-c-name{font-weight:700;font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px}
 .hb-c-ref{font-size:11px;color:var(--steel);margin:-3px 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* the yes/no before a held bill comes back or a saved bill is opened for changing */
@@ -14808,13 +14814,15 @@ function showHeldBillsModal(initIdx = 0){
           <span class="hb-c-time">${formatHeldTime(b.date)}</span>
           <span class="hb-c-custtag ${isNamed ? 'named' : 'walkin'}">${isNamed ? 'Account' : 'Walk-in'}</span>
           ${b.terminal && b.terminal !== S.terminal ? `<span class="hb-c-custtag">held at ${b.terminal}</span>` : ''}
+          ${b.user ? `<span class="hb-c-custtag cashier" title="Held by ${noteEsc(b.user)}">👤 ${noteEsc(b.user)}</span>` : ''}
         </div>
         <div class="hb-c-name">${(b.ref || c.name || 'WALK-IN').toUpperCase()}</div>
         ${b.ref && isNamed && b.ref !== c.name ? `<div class="hb-c-ref">${c.name}</div>` : ''}
         <div class="hb-c-bottom">
           <span class="hb-c-meta">${(b.lines || []).length} item${(b.lines || []).length === 1 ? '' : 's'} · ${fq(qty)} qty</span>
           <span class="hb-c-amt">${fmt(net)}</span>
-          <button type="button" class="hb-c-recall-btn" data-hb-recall="${b.id}" title="Recall this bill to till">Recall ↵</button>
+          <span class="hb-c-btns"><button type="button" class="hb-c-del-btn" data-hb-del="${i}" title="Throw this held bill away">🗑</button>
+          <button type="button" class="hb-c-recall-btn" data-hb-recall="${b.id}" title="Recall this bill to till">Recall ↵</button></span>
         </div>
       </div>`;
     }).join('');
@@ -14943,6 +14951,8 @@ function showHeldBillsModal(initIdx = 0){
   bindPreviewActions();
 
   m.querySelector('#hbList').addEventListener('click', (e) => {
+    const delBtn = e.target.closest('[data-hb-del]');
+    if(delBtn){ discardHeldBill(+delBtn.dataset.hbDel); return; }
     const recallBtn = e.target.closest('[data-hb-recall]');
     if(recallBtn){
       recallAsk(recallBtn.dataset.hbRecall);

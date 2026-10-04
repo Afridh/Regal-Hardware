@@ -21,6 +21,10 @@ const pendingCount = async () => (await pendingShopCount()) + (await pendingSupp
 
 const r = Router();
 const BOOKS_KEY = 'regal';
+/* What this server can do, and when it was started. The pages change the moment the files are pulled;
+   the server's own code only when the Node app is restarted. A till reads this to know which it is
+   talking to, and says so when the server is behind the page (held bills, for one, need the new one). */
+const SERVER = { started: new Date().toISOString(), features: ['held'] };
 const HISTORY_KEEP = 200;
 // What belongs to one till's screen and is never kept in the shared books. It must agree with the
 // list in app/regal-bridge.js. Held bills are NOT on it: a bill held on one till (a phone) is picked
@@ -240,7 +244,8 @@ r.get('/books/:key/rev', asyncHandler(async (req, res) => {
   if (req.params.key === BOOKS_KEY) {
     try { inbox = await pendingCount(); } catch (e) { console.error('pending orders count failed:', e.message); }
   }
-  res.json({ rev: row ? Number(row.rev) : 0, updated_at: row?.updated_at || null, updated_by: row?.updated_by || null, inbox, build: appBuild() });
+  res.json({ rev: row ? Number(row.rev) : 0, updated_at: row?.updated_at || null, updated_by: row?.updated_by || null, inbox, build: appBuild(),
+    server: SERVER });
 }));
 
 r.get('/books/:key', regalAuth, asyncHandler(async (req, res) => {
