@@ -9098,12 +9098,25 @@ function poClose(){
   if(poDraft&&poDraft.lines.length&&!confirm('Close this order? What is on it will be lost.')) return;
   poDraft=null; render();
 }
+/* The till redraws often — the clock, a sale on another till — and a popup drawn again from scratch
+   each time loses whatever is being typed in it. So a popup is drawn again only when what it shows has
+   changed, never while a reply is being written in it, and the cursor is put back where it was. */
+function popDraw(b,html,always){
+  if(!always&&b._html===html) return;
+  const a=document.activeElement, mine=a&&b.contains(a)&&!a.classList.contains('dd-field');
+  const sel=!mine?null:a.id?'#'+a.id:[...a.attributes].filter(x=>x.name.startsWith('data-')).map(x=>`[${x.name}="${x.value}"]`).join('')||null;
+  let s0=null,s1=null; try{ if(sel){ s0=a.selectionStart; s1=a.selectionEnd } }catch(e){}
+  const y=b.scrollTop; b.innerHTML=html; b._html=html; b.scrollTop=y;
+  if(sel){ const n=b.querySelector(sel); if(n){ n.focus(); try{ if(s0!==null) n.setSelectionRange(s0,s1) }catch(e){} } }
+}
 function ordPopsSync(){
   const pm=document.getElementById('poModal');
-  if(poDraft&&S.view==='orders'&&pm){ const b=pm.querySelector('.box'), y=b.scrollTop; b.innerHTML=poForm(); b.scrollTop=y }
+  if(poDraft&&S.view==='orders'&&pm) popDraw(pm.querySelector('.box'),poForm(),true);   // its dropdowns are put back by the wiring after every draw
   else { if(pm) pm.remove(); poDraft=null }
   const om=document.getElementById('ordModal'), o=ordOpen&&S.view==='orders'&&ordFind(ordOpen);
-  if(om&&o){ const b=om.querySelector('.box'), y=b.scrollTop; b.innerHTML=ordDetail(o); b.scrollTop=y }
+  if(om&&o){ const b=om.querySelector('.box');
+    // a reply or a change being written: leave it alone until it is sent or the popup is closed
+    if(!b.querySelector('[id^="ob-"] input')) popDraw(b,ordDetail(o)) }
   else if(om||ordOpen) ordClose();
 }
 document.addEventListener('keydown',e=>{
@@ -9153,7 +9166,7 @@ function ordBox(id,kind){
   const h=document.getElementById('ob-'+id);
   h.innerHTML=`<div style="display:flex;gap:6px;margin-top:8px"><input id="obx" placeholder="${kind==='adjusted'?'What needs to change?':'Message to the rep…'}"><button class="btn sm" id="obgo">Send</button></div>`;
   const i=h.querySelector('#obx'); i.focus();
-  const go=()=>{const t=i.value.trim(); if(!t)return; kind==='adjusted'?ordAct(id,'adjusted',t):ordComment(id,t)};
+  const go=()=>{const t=i.value.trim(); if(!t)return; h.innerHTML=''; kind==='adjusted'?ordAct(id,'adjusted',t):ordComment(id,t)};
   h.querySelector('#obgo').onclick=go; i.onkeydown=e=>e.key==='Enter'&&go();
 }
 function ordAct(id,status,note=''){
@@ -23807,7 +23820,7 @@ document.addEventListener('click',e=>{
     poAskChange:()=>{const o=S.orders.find(x=>x.no===a.dataset.no), h=document.getElementById('ob-'+o.no);
       h.innerHTML='<div style="display:flex;gap:6px;margin-top:8px"><input id="obx" placeholder="What needs to change?"><button class="btn sm" id="obgo">Send</button></div>';
       const i=h.querySelector('#obx'); i.focus();
-      const go=()=>{ const t=i.value.trim(); if(!t) return; o.status='adjusted'; o.supLines=null; o.unreadSup=true; o.needsOwner=false;
+      const go=()=>{ const t=i.value.trim(); if(!t) return; h.innerHTML=''; o.status='adjusted'; o.supLines=null; o.unreadSup=true; o.needsOwner=false;
         o.events.push({id:Math.random().toString(36).slice(2,8),actor:'shop',name:S.user.name,action:'adjusted',note:t,at:Date.now()});
         const s=SU(o.sid); if(CFG.msg.autoOrder&&s&&s.phone) supSms(s.phone,`${CFG.shop.name}: about order ${o.no} — ${t}. Please complete it again.`);
         persist(true); render(); toast('Sent back to them to complete again') };
