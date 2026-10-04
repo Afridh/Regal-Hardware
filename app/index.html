@@ -4575,6 +4575,9 @@ const CFG={
  /* The Echo in the office. Everything is off until the shop turns it on, and money is off even
     then until it is turned on separately — it is the one thing an Echo says out loud that
     somebody standing there should not hear. */
+ /* Moving pictures from the shop's cameras, where the PC they are on can manage it. On by
+    default: a shop that has gone to the trouble of a camera wants to see it move. */
+ cams:{live:true},
  alexa:{on:false,skillId:'',word:'',stock:true,price:true,money:false,news:true,
    sayOrders:true,sayHolds:true,sayCheques:false},
  /* What closing a day insists on. Counting is worth insisting on; the list of things left
@@ -5041,6 +5044,12 @@ function settings(){
       :'<div class="card note" style="margin-top:10px">No cameras yet. Run the finder on the shop PC and it will tell you what is there.</div>'}
 
      <button class="btn tape" style="margin-top:10px" data-act="camAdd">Add a camera</button>
+
+     <h2 style="margin-top:16px">Moving pictures</h2>
+     ${fld('cams.live','','Show moving pictures where the shop PC can manage it','check')}
+     <div class="muted">The recorder sends H.265, which most browsers will not show, so the PC the cameras
+      are on turns it into pictures they will. It only does that while somebody has the camera page open.
+      Turn this off and you get a still every couple of seconds instead, which costs that PC nothing.</div>
 
      <div class="card note" style="margin-top:14px">
       <b>Finding them</b><br>
@@ -9905,6 +9914,7 @@ function quietTap(){
   try { privacyToggle() } catch (e) {}
 }
 function go(v){ if(!allowed(v)){toast('That is not open to '+S.user.name);return} document.body.classList.remove('drawer');
+  if(S.view==='cameras'&&v!=='cameras') camStop();   // nobody is watching now; let that PC be
   if(v==='dashboard') quietTap();
   S.view=v;
   const supplierTab=['suppliers','orders'].includes(v), customerTab=(v==='customers');
@@ -10849,6 +10859,14 @@ let camHelper=null, camTick=0, camErr={};
 
 function camList(){ if(!Array.isArray(S.cameras)) S.cameras=[]; return S.cameras }
 const camUrl=(c)=>`${CAM_HELPER}/snap?host=${encodeURIComponent(c.host)}&port=${c.port||80}&ch=${c.channel||101}&t=${camTick}`;
+/* The moving picture is JPEGs one after another, which an <img> plays on its own — no player, no
+   library, nothing added to this file. It is one long-lived request, so it carries no cache-buster:
+   the picture keeps coming until the page stops asking. */
+const camLiveUrl=(c)=>`${CAM_HELPER}/live?host=${encodeURIComponent(c.host)}&port=${c.port||80}&ch=${c.channel||101}&rtsp=${c.rtsp||554}&fps=${CAM_FPS}`;
+const CAM_FPS=8;
+/* Moving where the shop PC can manage it, stills otherwise. The shop can also say "stills" and be
+   left alone, which is the right answer on a machine with other things to do. */
+const camMoving=()=>!!(camHelper&&camHelper.live)&&(CFG.cams||{}).live!==false;
 
 async function camCheckHelper(again){
   if(again) camHelper=null;
@@ -10895,36 +10913,83 @@ function cameras(){
      <button class="btn ghost" style="margin-top:10px" data-view="settings">Settings</button></div>`;
 
   return `<h1>Cameras <span class="muted" style="font-size:14px">· ${list.length}${h.ready?'':' · no password set in the helper'}</span></h1>
-   <div class="muted">A fresh picture every couple of seconds. Moving video needs more than this — see the note at the bottom.</div>
+   <div class="muted">${camMoving()?`Live from the shop’s own recorder.`:`A fresh picture every couple of seconds.`} ${list.length} camera${list.length===1?'':'s'}.</div>
    <div class="camgrid">
     ${list.map(c=>`<div class="camcard">
       <div class="cam-h"><b>${noteEsc(c.name||'Camera')}</b><span class="muted">${noteEsc(c.host)}${c.channel?' · ch '+c.channel:''}</span></div>
-      <div class="cam-img">
-        <img src="${camUrl(c)}" alt="${noteEsc(c.name||'Camera')}" data-cam="${c.id}" loading="lazy">
+      <div class="cam-img" data-slot="${c.id}">
         ${camErr[c.id]?`<div class="cam-bad">${noteEsc(camErr[c.id])}</div>`:''}
       </div>
      </div>`).join('')}
    </div>
-   <div class="card note" style="margin-top:12px">These are stills, a second or two apart. Real moving video
-     would mean converting the camera's stream on the shop PC — a much bigger job, and a great deal more
-     over the line. Say the word if the stills are not enough.</div>`;
+   <div class="card note" style="margin-top:12px">${camMoving()
+     ? `Moving, about ${CAM_FPS} pictures a second. The recorder sends a kind of video most browsers will not
+        show, so the shop PC turns it into something they will — which it only does while this page is open,
+        and stops the moment you leave it. Turn it off under <b>Settings → Cameras</b> if that PC has better
+        things to do, and you will get a still every couple of seconds instead.`
+     : `These are stills, a second or two apart. Moving pictures need <b>ffmpeg</b> on the shop PC${
+        camHelper&&camHelper.live===false?' — it was not found there':''}.`}</div>`;
 }
 
+/* Stop the pictures arriving. Emptying the src is what ends the request — and ending the request
+   is what stops the shop PC working, so this is not tidiness, it is the off switch. */
+const camKey=(c)=>`${c.host}:${c.rtsp||554}/${c.channel||101}`;
+/* One picture element per camera, kept between redraws and moved into whatever slot the new page
+   has for it. Keyed on where it points, so changing a camera's address in Settings does build a
+   new one — but a redraw on its own never does. */
+const camImgs=new Map();
+function camSlot(c){
+  const want=camMoving()?camLiveUrl(c):camUrl(c);
+  let im=camImgs.get(c.id);
+  if(im&&im.dataset.want!==want&&camMoving()){ im.src=''; im=null; camImgs.delete(c.id) }
+  if(!im){
+    im=new Image();
+    im.alt=c.name||'Camera'; im.dataset.cam=c.id; im.dataset.want=want;
+    im.onerror=()=>{ camErr[c.id]='no picture — is the camera on?' };
+    im.onload=()=>{ if(camErr[c.id]){ delete camErr[c.id] } };
+    im.src=want;
+    camImgs.set(c.id,im);
+  }
+  return im;
+}
+function camStop(){
+  for(const [,im] of camImgs){ try{ im.src='' }catch(e){} }
+  camImgs.clear();
+  clearInterval(window._camTimer);
+  clearInterval(window._camBeat);
+  window._camBeat=null;
+}
+addEventListener('pagehide',()=>{ try{ camStop() }catch(e){} });
 function camerasAfter(){
   if(camHelper===null){ camCheckHelper(); return }
   if(!camHelper.ok||!camList().length) return;
-  document.querySelectorAll('img[data-cam]').forEach(im=>{
-    im.onerror=()=>{ camErr[im.dataset.cam]='no picture — is the camera on?'; };
-    im.onload=()=>{ if(camErr[im.dataset.cam]){ delete camErr[im.dataset.cam] } };
+  // put each kept picture back into the slot this redraw made for it
+  camList().forEach(c=>{
+    const slot=document.querySelector(`.cam-img[data-slot="${c.id}"]`);
+    if(slot) slot.insertBefore(camSlot(c),slot.firstChild);
   });
+  // anything no longer on the page is let go, so its stream is not left running
+  for(const [id,im] of camImgs){ if(!camList().some(c=>String(c.id)===String(id))){ im.src=''; camImgs.delete(id) } }
   clearInterval(window._camTimer);
+  /* A moving picture is already arriving and must not be interrupted; only stills have to be asked
+     for again. What the moving ones need instead is to be claimed, every few seconds, for as long
+     as somebody is looking — the helper stops any camera that nobody claims. */
+  if(camMoving()){
+    clearInterval(window._camBeat);
+    const beat=()=>{
+      if(S.view!=='cameras'){ clearInterval(window._camBeat); window._camBeat=null; return }
+      const keys=camList().map(camKey).join(',');
+      fetch(`${CAM_HELPER}/watching?keys=${encodeURIComponent(keys)}`).catch(()=>{});
+    };
+    beat();
+    window._camBeat=setInterval(beat,5000);
+    return;
+  }
   window._camTimer=setInterval(()=>{
     if(S.view!=='cameras'){ clearInterval(window._camTimer); return }
     if(document.hidden) return;                    // a page nobody is looking at asks for nothing
     camTick=Date.now();
-    document.querySelectorAll('img[data-cam]').forEach(im=>{
-      const c=camList().find(x=>String(x.id)===im.dataset.cam); if(c) im.src=camUrl(c);
-    });
+    for(const c of camList()){ const im=camImgs.get(c.id); if(im) im.src=camUrl(c) }
   },2000);
 }
 
