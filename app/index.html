@@ -1102,6 +1102,8 @@ tr.off td{opacity:.55}
 .or-side{display:flex;gap:8px;align-items:center;flex-shrink:0}
 .or-go{color:var(--steel);font-size:20px;line-height:1}
 #ordModal,#poModal{z-index:50}
+.modal.askbox{z-index:70}
+.modal.askbox .box{max-width:520px}
 #ordModal .box{max-width:860px}
 .po-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
 #ordModal .box>.card{margin-bottom:0!important;border:0;box-shadow:none;padding:0}
@@ -9121,6 +9123,7 @@ function ordPopsSync(){
 }
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape'||e.defaultPrevented) return;
+  if(document.querySelector('.modal.askbox')) return;          // the writing window closes itself
   if(document.getElementById('ordModal')) return ordClose();
   if(document.getElementById('poModal')&&poDraft&&!poDraft.supOpen&&!poDraft.prodOpen) poClose();
 });
@@ -9162,12 +9165,21 @@ function orders(){
   ${rest.length?`<h2 style="margin-top:14px">Earlier</h2>
   ${rest.map(o=>ordRow(o,o.status==='rejected'?`<button class="btn ghost sm" data-act="ordDelete" data-id="${o.id}" title="Delete this turned-down order" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)">🗑</button>`:'')).join('')}`:''}`;
 }
+/* Writing to the supplier — what needs to change, or a reply — happens in a window of its own, over the
+   order. Nothing the till redraws (the clock, another till's save, the order popup) can touch it. */
+function askText(title,hint,send){
+  const m=modal(`<h2 style="margin:0 0 4px">${title}</h2><div class="muted" style="margin-bottom:8px">The supplier sees this on their page.</div>
+    <textarea id="askT" rows="4" placeholder="${hint}" style="width:100%;resize:vertical"></textarea>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" id="askNo">Cancel</button><button class="btn tape" id="askGo">Send</button></div>`);
+  m.classList.add('askbox');
+  const t=m.querySelector('#askT'); setTimeout(()=>t.focus(),0);
+  const go=()=>{ const v=t.value.trim(); if(!v){ toast('Write it first'); t.focus(); return } m.remove(); send(v) };
+  m.querySelector('#askGo').onclick=go; m.querySelector('#askNo').onclick=()=>m.remove();
+  t.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); go() } if(e.key==='Escape'){ e.preventDefault(); m.remove() } };
+}
 function ordBox(id,kind){
-  const h=document.getElementById('ob-'+id);
-  h.innerHTML=`<div style="display:flex;gap:6px;margin-top:8px"><input id="obx" placeholder="${kind==='adjusted'?'What needs to change?':'Message to the rep…'}"><button class="btn sm" id="obgo">Send</button></div>`;
-  const i=h.querySelector('#obx'); i.focus();
-  const go=()=>{const t=i.value.trim(); if(!t)return; h.innerHTML=''; kind==='adjusted'?ordAct(id,'adjusted',t):ordComment(id,t)};
-  h.querySelector('#obgo').onclick=go; i.onkeydown=e=>e.key==='Enter'&&go();
+  if(kind==='adjusted') askText('Ask for a change','What needs to change? e.g. send 3 bags, not 2',t=>ordAct(id,'adjusted',t));
+  else askText('Reply to the rep','Message to the rep…',t=>ordComment(id,t));
 }
 function ordAct(id,status,note=''){
   const o=S.orders.find(x=>x.id===id), s=SU(o.sid);
@@ -23817,14 +23829,11 @@ document.addEventListener('click',e=>{
       const known=(o.lines||[]).filter(l=>l.pid&&P(l.pid));
       newPurModal(o.sid,known.length?{...o,orderId:o.id,lines:known.map(l=>({pid:l.pid,qty:l.qty,cost:+l.price||P(l.pid).cost}))}:o)},
     poApprove:()=>poApprove(a.dataset.no),
-    poAskChange:()=>{const o=S.orders.find(x=>x.no===a.dataset.no), h=document.getElementById('ob-'+o.no);
-      h.innerHTML='<div style="display:flex;gap:6px;margin-top:8px"><input id="obx" placeholder="What needs to change?"><button class="btn sm" id="obgo">Send</button></div>';
-      const i=h.querySelector('#obx'); i.focus();
-      const go=()=>{ const t=i.value.trim(); if(!t) return; h.innerHTML=''; o.status='adjusted'; o.supLines=null; o.unreadSup=true; o.needsOwner=false;
+    poAskChange:()=>{const o=S.orders.find(x=>x.no===a.dataset.no);
+      askText('Ask for a change','What needs to change?',t=>{ o.status='adjusted'; o.supLines=null; o.unreadSup=true; o.needsOwner=false;
         o.events.push({id:Math.random().toString(36).slice(2,8),actor:'shop',name:S.user.name,action:'adjusted',note:t,at:Date.now()});
         const s=SU(o.sid); if(CFG.msg.autoOrder&&s&&s.phone) supSms(s.phone,`${CFG.shop.name}: about order ${o.no} — ${t}. Please complete it again.`);
-        persist(true); render(); toast('Sent back to them to complete again') };
-      h.querySelector('#obgo').onclick=go; i.onkeydown=e=>e.key==='Enter'&&go()},
+        persist(true); render(); toast('Sent back to them to complete again') })},
     zoom:()=>{const o=S.orders.find(x=>x.id===a.dataset.no); const src=o.files[+a.dataset.i];
       const m=modal(`<img src="${src}" style="width:100%;border-radius:6px"><div style="text-align:right;margin-top:8px"><button class="btn ghost" data-act="closeModal">Close</button></div>`)},
     supShow:()=>{const s=SU(+a.dataset.id);
