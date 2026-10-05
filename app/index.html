@@ -2401,7 +2401,7 @@ tr.rowlink,.cu-row,.bl-row{transition:background var(--mo-fast) var(--mo-ease)}
     nothing is on the paper. */
  body.direct-print .printArea,body.direct-print .printArea *{visibility:visible!important}
  body.direct-print .printArea .print{border:0!important;box-shadow:none;margin:0;transform:none!important}
- body.direct-print .printArea.r80 .print{padding:0;margin:0 auto!important}   /* centred on the roll */
+ body.direct-print .printArea.r80 .print{padding:0}   /* placed on the roll by r80Place() */
  body.direct-print .printArea.a5 .print{height:auto;aspect-ratio:auto}
 }
 
@@ -8019,6 +8019,12 @@ function applyKept(kept){
   // the tills no longer carry a salesperson button, so the question at the end of the
   // bill is the way it is set — switched on once for books saved before that was true
   if(CFG.done&&!CFG.done.askMoved){ CFG.done.askSalesman=true; CFG.done.askMoved=true }
+  // the barcode of the invoice number is off the receipt (asked for, 5 Oct 2026) — once, so Design the bill can put it back
+  if(CFG.bill&&!CFG.bill.barcodeOff1){
+    CFG.bill.showBarcode=false;
+    if(CFG.bill.r80&&Array.isArray(CFG.bill.r80.off)&&!CFG.bill.r80.off.includes('barcode')) CFG.bill.r80.off.push('barcode');
+    CFG.bill.barcodeOff1=true;
+  }
   if(S.users.length === 0){
     for(const acc of DEFAULT_ACCOUNTS){
       const an = acc.name.toLowerCase().trim();
@@ -16005,9 +16011,7 @@ function docToPaper(doc,f){
   document.body.appendChild(el); document.body.classList.add('direct-print');
   const pr=el.querySelector('.print'), sc=+pr.dataset.scale||1;
   if(f==='r80'){
-    pr.style.width=`calc(72mm / ${sc})`;
-    const px=(pr.offsetHeight||600)*sc, mm=Math.min(1000,Math.ceil(px*25.4/96*1.06)+8);
-    el.querySelector('#printPage').textContent=`@page{size:80mm ${mm}mm;margin:2mm 4mm}`;
+    r80Place(pr,el.querySelector('#printPage'));
   } else {
     el.querySelector('#printPage').textContent='@page{size:A5 landscape;margin:4mm 6mm}';
   }
@@ -18708,6 +18712,18 @@ function billdesign(){
      </div>
 
      <div class="card" style="margin-top:12px">
+      <h2 style="margin-top:0">Position on the roll</h2>
+      <div class="bd-size">
+       <button class="btn ghost sm" data-act="bdLeft" data-v="-0.5">◀ left</button>
+       <b>${r80Left()} mm</b>
+       <button class="btn ghost sm" data-act="bdLeft" data-v="0.5">right ▶</button>
+      </div>
+      <div class="muted">How far in from the left edge of the paper the bill starts. If the first letters
+       of the lines are cut off, move it right; if the amounts on the right are cut, move it left.
+       Print one to check after each change.</div>
+     </div>
+
+     <div class="card" style="margin-top:12px">
       <h2 style="margin-top:0">What prints, and in what order</h2>
       <div class="muted" style="margin-bottom:8px">Untick what you do not want. Move anything up or
        down with the arrows. The paper on the left changes as you go.</div>
@@ -18946,6 +18962,20 @@ function printHere(inv,f,why){
   const go=m.querySelector('#pfHere');
   if(go) go.onclick=()=>{ m.remove(); browserPrint(inv,f) };
 }
+/* Where the receipt sits on the 80mm roll. A thermal printer does not print the whole width of the
+   paper, and where its head starts differs from printer to printer — on the counter's printer the bill
+   printed about 3.5mm to the left of where it was drawn, and the first letters of every left-hand line
+   were lost. So the page has no side margins of its own, the bill is 70mm wide, and it is set in from
+   the left by an amount the shop can nudge (Settings → Design the bill → Position on the roll). */
+const R80_WIDTH_MM=70;
+const r80Left=()=>{ const v=+(CFG.bill&&CFG.bill.r80Left); return Number.isFinite(v)&&CFG.bill.r80Left!==''&&CFG.bill.r80Left!=null?Math.max(0,Math.min(12,v)):8 };
+function r80Place(pr,page){
+  const sc=+pr.dataset.scale||1;
+  pr.style.width=`calc(${R80_WIDTH_MM}mm / ${sc})`;
+  pr.style.margin=`0 0 0 calc(${r80Left()}mm / ${sc})`;
+  const px=(pr.offsetHeight||600)*sc, mm=Math.min(1000,Math.ceil(px*25.4/96*1.06)+8);
+  page.textContent=`@page{size:80mm ${mm}mm;margin:2mm 0}`;
+}
 function browserPrint(inv,f='a5'){
   const html=billHtml(inv,f);
   const old=document.getElementById('printArea'); if(old) old.remove();
@@ -18954,8 +18984,7 @@ function browserPrint(inv,f='a5'){
   document.body.appendChild(el); document.body.classList.add('direct-print');
   // the page size follows the format: A5 landscape, or an 80mm roll cut to the length of this receipt
   const page=el.querySelector('#printPage');
-  if(f==='r80'){ const pr=el.querySelector('.print'); const sc=+pr.dataset.scale||1; pr.style.width=`calc(72mm / ${sc})`;   // inside the 80mm page's margins
-    const px=(pr.offsetHeight||600)*sc; const mm=Math.min(1000,Math.ceil(px*25.4/96*1.06)+8); page.textContent=`@page{size:80mm ${mm}mm;margin:2mm 4mm}` }
+  if(f==='r80') r80Place(el.querySelector('.print'),page);
   else page.textContent='@page{size:A5 landscape;margin:4mm 6mm}';
   // Chrome fires afterprint as soon as print() returns, while its preview is still being drawn — so the
   // bill stays until the person is back at the till (any click or key means the print box has closed)
@@ -23562,6 +23591,7 @@ document.addEventListener('click',e=>{
     promoDel:()=>{ const w=webCfg(); const p=w.promos[+a.dataset.i];
       if(p&&p.code&&!confirm(`Take ${p.code} off? Orders that used it keep their discount.`)) return;
       w.promos.splice(+a.dataset.i,1); persist(true); render() },
+    bdLeft:()=>{ CFG.bill.r80Left=Math.max(0,Math.min(12,Math.round((r80Left()+(+a.dataset.v||0))*2)/2)); persist(true); render() },
     bdScale:()=>{ const v=Math.max(60,Math.min(200,(+CFG.bill.r80Scale||100)+(+a.dataset.v||0)));
       CFG.bill.r80Scale=v; persist(true); render() },
     bdReset:()=>{ if(!confirm('Put the receipt back the way it came? Your wording is kept.')) return;
