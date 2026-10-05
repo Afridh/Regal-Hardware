@@ -20406,6 +20406,7 @@ function inventory(){
     body=`<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
       <input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search item name, code, short code, barcode or category…" style="max-width:380px">
       ${!isSalesman?`<button class="btn tape" data-act="newProd">Add a product</button>`:''}
+      ${!isSalesman?`<button class="btn ghost" data-act="prodCsv" title="Every product as a spreadsheet — or only what the search found">⬇ Save as Excel (CSV)${q?' — '+list.length+' found':''}</button>`:''}
       <span class="muted" style="margin-left:auto">${list.length} of ${S.products.length} products</span></div>
      <table><tr><th>No.</th><th>Code</th><th>Short</th><th>Item</th><th>Supplier</th><th>Unit</th><th class="n">MRP</th>${!isSalesman?`<th class="n">Cost${CFG.cost.inProducts&&can('cost')?' code':''}</th>`:''}<th class="n">Discounted</th><th class="n">Wholesale</th>${!isSalesman?'<th class="n">Margin</th>':''}<th class="n">In stock</th>${!isSalesman?'<th></th>':''}</tr>
      ${shown.map(p=>`<tr class="rowlink" ${!isSalesman?`data-act="prodHist" data-id="${p.id}"`:''}><td><span class="pnum">${p.num||''}</span></td><td>${p.code}<div class="muted">${p.barcode}</div></td>
@@ -23804,6 +23805,18 @@ document.addEventListener('click',e=>{
     trTab:()=>{ trailTab=a.dataset.t; render() },
     trShow:()=>trailShow(a.dataset.id),
     trBack:()=>trailBack(a.dataset.id),
+    // the product list as a spreadsheet: all of it, or what the search on the page found. The cost goes
+    // in only for someone allowed to see it; Excel opens the file as it is (the BOM keeps the Sinhala)
+    prodCsv:()=>{ const q=prodQ.toLowerCase().trim();
+      const list=S.products.filter(p=>!q||p.name.toLowerCase().includes(q)||String(p.code||'').toLowerCase().includes(q)||(p.short||'').toLowerCase()===q||String(p.barcode||'').includes(q)||String(p.cat||'').toLowerCase().includes(q));
+      const cost=can('cost');
+      const head=['No.','Code','Short code','Barcode','Item','Category','Supplier','Unit','MRP',...(cost?['Cost']:[]),'Retail price','Wholesale price','Stock','Reorder at','Active'];
+      const rows=list.map(p=>{ const s=p.supplierId?SU(p.supplierId):null;
+        return [p.num||'',p.code||'',p.short||'',p.barcode||'',p.name||'',p.cat||'',s?s.name:'',p.unit||'',+p.mrp||0,...(cost?[+p.cost||0]:[]),+p.retail||0,+p.wholesale||0,+p.stock||0,+p.min||0,p.active===false?'No':'Yes'] });
+      const csv=[head,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+      const a2=document.createElement('a'); a2.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
+      a2.download=`products-${q?'search-':''}${D(today)}.csv`; a2.click(); setTimeout(()=>URL.revokeObjectURL(a2.href),5000);
+      toast(`${list.length} product${list.length===1?'':'s'} saved as a spreadsheet`,'ok') },
     trCsv:()=>{ const rows=trailRows().map(r=>[String(r.date||r.at).slice(0,10),r.time||'',(TRAIL_KINDS[r.kind]||TRAIL_KINDS.other)[0],r.what||'',r.why||'',r.who||'',r.amount==null?'':(+r.amount).toFixed(2),r.by||'',r.till||'']);
       const csv=[['Date','Time','What happened','Detail','Why','Who it was for','Amount','By','Till'],...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
       const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
