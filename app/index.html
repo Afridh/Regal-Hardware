@@ -4590,7 +4590,7 @@ const CFG={
  bill:{prefix:'INVM-',style:'plain',digits:4,printTo:'here',warrantyNote:'Covers manufacturing faults only. Misuse, water damage and normal wear are not covered. Bring this card with the machine.',returnDays:7,quoteDays:14,showMrp:true,showSaving:true,defaultFormat:'r80',
    title:'INVOICE',creditTitle:'CREDIT INVOICE',showLogo:true,showSinhala:true,showStrap:true,
    showCode:true,showUom:true,showQr:true,showWords:true,showCashier:true,showOutstanding:true,
-   showSign:true,signLeft:'Authorised By',signRight:'Received By',showItemCount:true,showBarcode:true,t80Sign:true,showWeb:true,a5Scale:118,r80Scale:100,
+   showSign:true,signLeft:'Authorised By',signRight:'Received By',showItemCount:true,showBarcode:true,t80Sign:true,showWeb:true,a5Scale:118,r80Scale:100,a5Font:'sans',r80Font:'sans',
    t80Logo:true,t80Qr:true,t80Thanks:'Thank you, come again!',t80Footer:true,
    footer:'Only returns will be accepted within {days} days with the original invoice. Goods once sold are checked and accepted by the customer.',
    blankLines:9,summaryTime:'19:30'},
@@ -5037,7 +5037,12 @@ function settings(){
         ${fld('bill.showWeb','','Website line at the foot','check')}
         ${fld('bill.showSaving','','MRP and D.Price columns','check')}
        </div>
-       <h2 style="margin-top:14px">Text size</h2>
+       <h2 style="margin-top:14px">Font and text size</h2>
+       <div class="grid2">
+        <div class="f"><label>A5 invoice font</label><select data-set="bill.a5Font">${BILL_FONTS.map(f=>`<option value="${f[0]}" ${(CFG.bill.a5Font||'sans')===f[0]?'selected':''}>${f[2]}</option>`).join('')}</select></div>
+        <div class="f"><label>80mm receipt font</label><select data-set="bill.r80Font">${BILL_FONTS.map(f=>`<option value="${f[0]}" ${(CFG.bill.r80Font||'sans')===f[0]?'selected':''}>${f[2]}</option>`).join('')}</select></div>
+       </div>
+       <div class="muted" style="margin:2px 0 8px">The receipt prints on a thermal head, where a plain sans stays crisp and a thin or serif face can come out broken. The A5 goes to a laser, where any of them print cleanly.</div>
        <div class="grid2">${fld('bill.a5Scale','A5 bill text size, %','100 is the old size; 130 is a good size up','number')}${fld('bill.r80Scale','80mm receipt text size, %','100 fits the most in; bigger wraps long item names','number')}</div>
        <div class="grid2" style="margin-top:8px">${fld('bill.prefix','Invoice number prefix')}${fld('bill.returnDays','Return window in days','','number')}</div>
       </div>
@@ -15964,7 +15969,7 @@ function docPaperHtml(doc,f){
   const disc=doc.lines.reduce((a,l)=>a+(l.disc||0),0)+(doc.billDisc||0);
   const sc=Math.max(0.6,Math.min(2,(+B.r80Scale||100)/100));
   if(f!=='r80') return null;                       // the A5 sheet is the one drawn below, unchanged
-  return `<div class="print r80 sb80" data-scale="${sc}" style="zoom:${sc};width:calc(302px / ${sc})">
+  return `<div class="print r80 sb80" data-scale="${sc}" style="zoom:${sc};width:calc(302px / ${sc});font-family:${billFontCss(B.r80Font)}">
    <div class="sb-top"><span>${k.label.toUpperCase()}</span><span>${doc.date}</span></div>
    ${B.t80Logo!==false?`<div class="sb-logo">${SH.logo?`<img src="${SH.logo}" style="height:50px;object-fit:contain;filter:grayscale(1) brightness(0)">`:mark(50)}</div>`:''}
    <div class="sb-name">${SH.name||'REGAL HARDWARE'}</div>
@@ -18579,6 +18584,22 @@ const billDate=(inv)=>new Date(inv.date).toLocaleDateString('en-GB',{day:'2-digi
    Nothing here invents a new bill. These are the same parts the receipt has always been made
    of; what is new is being able to see them, turn them off, and put them in your own order. */
 
+/* The fonts a shop may set its bills in. A short key is stored, never the stylesheet line, so a
+   value hand-edited in the books can only ever be one of these — nothing can slip CSS onto a bill.
+   The sans faces are the safe ones for the thermal receipt; the serif and typewriter faces are
+   there for the A5, which goes to a laser. */
+const BILL_FONTS = [
+  ['sans',    'Arial, Helvetica, sans-serif',          'Arial \u2014 plain and clear'],
+  ['verdana', 'Verdana, Geneva, sans-serif',           'Verdana \u2014 wide, easy to read'],
+  ['tahoma',  'Tahoma, Geneva, sans-serif',            'Tahoma \u2014 narrower, fits more'],
+  ['segoe',   "'Segoe UI', Arial, sans-serif",         'Segoe UI \u2014 the Windows look'],
+  ['courier', "'Courier New', monospace",              'Courier \u2014 the old till look'],
+  ['consolas',"Consolas, 'Courier New', monospace",    'Consolas \u2014 a cleaner typewriter'],
+  ['times',   "'Times New Roman', Times, serif",       'Times \u2014 a formal, printed look'],
+  ['georgia', "Georgia, 'Times New Roman', serif",     'Georgia \u2014 a softer serif'],
+];
+const BILL_FONT = Object.fromEntries(BILL_FONTS.map(f => [f[0], f[1]]));
+const billFontCss = key => BILL_FONT[key] || BILL_FONT.sans;
 const R80_BLOCKS = [
   ['top',     'The line across the top',    'INVOICE, and the day and time it was made'],
   ['logo',    'The mark',                   'the shop’s logo, or the printed mark if there is none'],
@@ -18835,7 +18856,7 @@ function billHtml(inv,f='a5'){
     thanks:B.t80Thanks?`<div class="sb-thanks">${B.t80Thanks}</div>`:'',
     web:(SH.web||(S.web&&S.web.settings&&S.web.settings.domain))?`<div class="sb-web">${SH.web||S.web.settings.domain}</div>`:'',
    };
-   return `<div class="print r80 sb80" data-scale="${sc80}" style="zoom:${sc80};width:calc(302px / ${sc80})">
+   return `<div class="print r80 sb80" data-scale="${sc80}" style="zoom:${sc80};width:calc(302px / ${sc80});font-family:${billFontCss(B.r80Font)}">
    ${r80Order().filter(k=>r80On(k)).map(k=>part[k]||'').join('')}
   </div>`;
   }
@@ -18844,7 +18865,7 @@ function billHtml(inv,f='a5'){
   const rows=inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="${anyChecked&&l.checked!==true?'notck':''}"><td>${i+1})</td>${showCode?`<td>${p.num||p.code}</td>`:''}<td class="d">${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td>
     <td class="n">${l.qty.toFixed(2)}</td>${showUom?`<td class="u">${(p.unit||'').toUpperCase()}</td>`:''}${showMrp?`<td class="n">${money2(p.mrp)}</td>`:''}<td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td>${anyChecked?`<td class="ck">${l.checked===true?'✓':'✗'}</td>`:''}</tr>`}).join('');
   const nm=(SH.name||'REGAL HARDWARE');
-  return `<div class="print a5 sba5" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5})">
+  return `<div class="print a5 sba5" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5});font-family:${billFontCss(B.a5Font)}">
    <div class="sb-top"><span>${copy}</span><span>Printed on ${billWhen({date:D(today),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})})}</span></div>
    <div class="sb-head">
     <div class="sb-brand">
