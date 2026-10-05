@@ -1093,6 +1093,22 @@ tr.off td{opacity:.55}
 .de-open:last-child{border-bottom:0}
 .de-open>b{font-family:Archivo,sans-serif;font-size:17px;min-width:26px;text-align:right}
 .dd{position:relative}
+.ordrow{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--white);border:1px solid var(--line);
+  border-radius:var(--r);padding:10px 12px;margin-bottom:6px;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+.ordrow:hover{border-color:var(--chip-yellow);box-shadow:0 2px 10px rgba(22,32,29,.08)}
+.ordrow.wait{border-left:4px solid var(--chip-yellow)}
+.ordrow.unread{border-left:4px solid var(--chip-blue)}
+.or-main{min-width:0}
+.or-main b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.or-side{display:flex;gap:8px;align-items:center;flex-shrink:0}
+.or-go{color:var(--steel);font-size:20px;line-height:1}
+#ordModal,#poModal{z-index:50}
+.modal.askbox{z-index:70}
+.modal.askbox .box{max-width:520px}
+#ordModal .box{max-width:860px}
+.po-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+#ordModal .box>.card{margin-bottom:0!important;border:0;box-shadow:none;padding:0}
+@media (max-width:640px){ .ordrow{flex-wrap:wrap} .or-side{width:100%;justify-content:flex-end} }
 .dd-field{width:100%;display:block;margin:0;text-align:left;border:1px solid var(--line);border-radius:var(--r);
   background:var(--white);padding:9px 40px 9px 12px;font:inherit;color:var(--ink);min-height:40px;cursor:text}
 .dd-caret{position:absolute;right:1px;top:1px;bottom:1px;width:36px;display:flex;align-items:center;justify-content:center;
@@ -3196,6 +3212,12 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .hb-c-custtag{font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;text-transform:uppercase}
 .hb-c-custtag.walkin{background:var(--line2);color:var(--steel)}
 .hb-c-custtag.named{background:var(--tint-blue);color:var(--chip-blue)}
+.hb-c-custtag.cashier{background:var(--tint-green,#DCF1E7);color:#12613D;text-transform:none;margin-left:auto}
+.hb-c-btns{display:inline-flex;gap:6px;align-items:center}
+.hb-c-del-btn{display:inline-flex;align-items:center;justify-content:center;padding:3px 8px;background:#fff;color:var(--chip-rust,#C0442C);
+  border:1px solid rgba(192,68,44,.35);border-radius:3px;font-size:12px;cursor:pointer}
+.hb-c-del-btn:hover{background:var(--tint-rust,#FBE4DE)}
+@media (max-width:760px){ .hb-c-del-btn{padding:6px 12px;font-size:14px;border-radius:4px} }
 .hb-c-name{font-weight:700;font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px}
 .hb-c-ref{font-size:11px;color:var(--steel);margin:-3px 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* the yes/no before a held bill comes back or a saved bill is opened for changing */
@@ -8178,7 +8200,7 @@ window.poState=()=>poDraft; // exposed for tests
 function newPO(sid){
   poDraft={sid:sid||null,supQ:'',prodQ:'',lines:[],note:'',want:D(today),q:'',pid:null,qty:'',wide:false};
   if(!sid) poDraft.supOpen=true; else poDraft.prodOpen=true;     // the first thing to choose is already open
-  ordTab='out'; render();
+  ordClose(); ordPop('poModal'); render();
 }
 /* the supplier is typed and picked, the way an item is */
 function poPickSup(sid){
@@ -8235,10 +8257,10 @@ function sendPO(){
     unreadSup:true,unreadShop:false,
     events:[{id:'e'+Math.random().toString(36).slice(2,6),actor:'shop',name:S.user.name,action:'sent',
       note:`${good.length} line${good.length===1?'':'s'}${d.want?' · wanted by '+d.want:''}`,at:Date.now()}]};
-  S.orders.push(o); poDraft=null;
+  S.orders.push(o); poDraft=null; ordTab='out';
   const link=(S.web.settings.domain||location.host)+'/supplier';
   if(s.phone) supSms(s.phone,`${CFG.shop.name}: order ${o.no} — ${good.map(l=>`${l.desc} × ${fq(l.qty)} ${l.unit}`).join(', ').slice(0,300)}${d.want?'. Wanted by '+d.want:''}. Confirm at ${link}`);
-  render(); poPrint(o.no);
+  persist(true); render(); poPrint(o.no);
   toast(`${o.no} sent to ${s.name.split(' ')[0]}${s.phone?' — texted, with the link to confirm':''}`);
 }
 const poText=o=>{ const s=SU(o.sid); return `${CFG.shop.name} — purchase order ${o.no} (${o.date})\n`+o.lines.map((l,i)=>`${i+1}. ${l.desc} — ${fq(l.qty)} ${l.unit}`).join('\n')+(o.want?`\nWanted by ${o.want}`:'')+(o.note?`\n${o.note}`:'')+`\nPlease confirm at ${(S.web.settings.domain||location.host)}/supplier` };
@@ -8276,7 +8298,7 @@ function poAct(no,status,note){
   o.status=status; o.unreadSup=true;
   o.events.push({id:'e'+Math.random().toString(36).slice(2,6),actor:'shop',name:S.user.name,action:status,note:note||'',at:Date.now()});
   poTell(o,s,status,note);
-  render(); drawPhone(); toast(`${o.no} ${status}`);
+  persist(true); render(); drawPhone(); toast(`${o.no} ${status}`);
 }
 function poReceive(no){
   const o=S.orders.find(x=>x.no===no);
@@ -8317,14 +8339,13 @@ function poReceive(no){
   newPurModal(o.sid,{sid:o.sid,date:o.date,text:o.lines.map(l=>`${l.desc} — ${fq(l.qty)} ${l.unit}`).join('\n'),
     po:o.no,lines:o.lines.map(l=>({pid:l.pid,qty:l.qty,cost:+l.est||P(l.pid).cost}))});
 }
-function ordersOut(){
-  const list=S.orders.filter(o=>o.dir==='OUT'&&!['completed','approved'].includes(o.status)).sort((a,b)=>b.no.localeCompare(a.no));
-  if(poDraft){
+/* the order form — it opens as a popup over Supplier orders */
+function poForm(){
     const d=poDraft, s=d.sid?SU(d.sid):null;
     const theirs=s?poTheirs():new Set();
     const picked=d.pid?P(d.pid):null;
     const est=d.lines.reduce((a,l)=>a+l.qty*(+l.est||0),0);
-    return `<div class="card" style="margin-bottom:12px">
+    return `<div class="po-head"><h2 style="margin:0">✎ Write an order to a supplier</h2><button class="btn ghost sm" data-act="poCancel" title="Close">✕</button></div><div>
       <div class="grid3">
        <div class="f"><label>Order to</label>
         <div class="dd" data-dd="sup"><input class="dd-field" value="${s?noteEsc(s.name):''}" placeholder="Choose or type a supplier…" autocomplete="off" spellcheck="false"><b class="dd-caret" data-act="ddToggle" data-dd="sup">▾</b></div>
@@ -8359,20 +8380,14 @@ function ordersOut(){
        <div style="display:flex;gap:8px"><button class="btn ghost" data-act="poCancel">Cancel</button>
         <button class="btn tape" data-act="poSend">Send order</button></div></div>
      </div>`;
-  }
-  const open=list.filter(o=>['sent','accepted','changes','dispatched'].includes(o.status));
-  return `<div class="row" style="margin-bottom:12px">
-    ${stat('Orders out',open.length,`${fmt(open.reduce((a,o)=>a+o.lines.reduce((x,l)=>x+l.qty*(+l.est||0),0),0))} expected`,'y')}
-    ${stat('Waiting on the supplier',list.filter(o=>o.status==='sent').length,'not answered yet','b')}
-    ${stat('Confirmed or on the way',list.filter(o=>['accepted','dispatched'].includes(o.status)).length,`${list.filter(o=>o.status==='dispatched').length} dispatched`,'g')}
-    ${stat('New items ordered',list.filter(o=>['sent','accepted','dispatched'].includes(o.status)).reduce((a,o)=>a+o.lines.filter(l=>!l.known).length,0),'not on the system yet','r')}
-   </div>
-   <div class="card note" style="margin-bottom:12px"><b>Anything can go on an order</b> — items we carry are picked from the list; anything we have never stocked is typed in and gets a code and prices only when the goods arrive. The supplier gets a text (and WhatsApp) with the order and a link to confirm it, ask for a change, or mark it dispatched with their invoice number.</div>
-   ${list.map(o=>{const s=SU(o.sid);const est=o.lines.reduce((a,l)=>a+l.qty*(+l.est||0),0);return `<div class="card" style="margin-bottom:12px${o.unreadShop?';border-left:4px solid var(--chip-blue)':''}">
+}
+/* the whole of one of our orders: what was asked, what was said, and what can be done with it */
+const outTag=o=>`<span class="tag ${o.status==='received'?'ok':o.status==='cancelled'?'bad':o.status==='accepted'||o.status==='approved'?'ok':o.status==='dispatched'?'blue':'warn'}">${
+  {sent:'waiting on them',accepted:'they confirmed it',changes:'they want a change',dispatched:'on its way',received:'goods received',cancelled:'cancelled',adjusted:'sent back to them to complete again',completed:'completed — needs approval',approved:'ready to purchase'}[o.status]||o.status}</span>`;
+const poOutCard=o=>{const s=SU(o.sid)||{name:'Supplier'};const est=o.lines.reduce((a,l)=>a+l.qty*(+l.est||0),0);return `<div class="card" style="margin-bottom:12px${o.unreadShop?';border-left:4px solid var(--chip-blue)':''}">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
      <div><b>${o.no} · ${s.name}</b><div class="muted">Sent ${o.date} by ${o.by}${o.want?` · wanted by ${o.want}`:''}${o.note?` · ${o.note}`:''}${o.invoiceNo?` · their invoice <b>${o.invoiceNo}</b>`:''}</div></div>
-     <span class="tag ${o.status==='received'?'ok':o.status==='cancelled'?'bad':o.status==='accepted'?'ok':o.status==='dispatched'?'blue':'warn'}">${
-       {sent:'waiting on them',accepted:'they confirmed it',changes:'they want a change',dispatched:'on its way',received:'goods received',cancelled:'cancelled',adjusted:'sent back to them to complete again'}[o.status]||o.status}</span></div>
+     ${outTag(o)}</div>
     <table style="margin-top:8px"><tr><th>Item</th><th class="n">Qty</th><th class="n">Expected</th></tr>
      ${o.lines.map(l=>`<tr><td>${l.desc}${l.known?'':' <span class="tag blue">new to us</span>'}</td>
       <td class="n">${fq(l.qty)} ${l.unit}</td><td class="n">${fmt(l.qty*(+l.est||0))}</td></tr>`).join('')}
@@ -8387,7 +8402,18 @@ function ordersOut(){
       <button class="btn ghost sm" data-act="poRemind" data-no="${o.no}">Chase them</button>
       <button class="btn ghost sm" data-act="poCancelOne" data-no="${o.no}">Cancel it</button>`:''}
      ${o.status==='cancelled'?`<button class="btn ghost sm" data-act="ordDelete" data-id="${o.id}" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)">🗑 Delete</button>`:''}
-    </div></div>`}).join('')||'<div class="card muted">No orders sent yet.</div>'}`;
+    </div></div>`};
+function ordersOut(){
+  const list=S.orders.filter(o=>o.dir==='OUT'&&!['completed','approved'].includes(o.status)).sort((a,b)=>b.no.localeCompare(a.no));
+  const open=list.filter(o=>['sent','accepted','changes','dispatched'].includes(o.status));
+  return `<div class="row" style="margin-bottom:12px">
+    ${stat('Orders out',open.length,`${fmt(open.reduce((a,o)=>a+o.lines.reduce((x,l)=>x+l.qty*(+l.est||0),0),0))} expected`,'y')}
+    ${stat('Waiting on the supplier',list.filter(o=>o.status==='sent').length,'not answered yet','b')}
+    ${stat('Confirmed or on the way',list.filter(o=>['accepted','dispatched'].includes(o.status)).length,`${list.filter(o=>o.status==='dispatched').length} dispatched`,'g')}
+    ${stat('New items ordered',list.filter(o=>['sent','accepted','dispatched'].includes(o.status)).reduce((a,o)=>a+o.lines.filter(l=>!l.known).length,0),'not on the system yet','r')}
+   </div>
+   <div class="card note" style="margin-bottom:12px"><b>Anything can go on an order</b> — items we carry are picked from the list; anything we have never stocked is typed in and gets a code and prices only when the goods arrive. The supplier gets a text (and WhatsApp) with the order and a link to confirm it, ask for a change, or mark it dispatched with their invoice number.</div>
+   ${list.map(o=>ordRow(o,o.status==='cancelled'?`<button class="btn ghost sm" data-act="ordDelete" data-id="${o.id}" title="Delete this cancelled order" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)">🗑</button>`:'')).join('')||'<div class="card muted">No orders sent yet.</div>'}`;
 }
 
 /* ====================== THE ONLINE SHOP ======================
@@ -9033,17 +9059,10 @@ function poApprove(no){
   o.events.push({id:Math.random().toString(36).slice(2,8),actor:'shop',name:S.user.name,action:'approved',note:'',at:Date.now()});
   if(CFG.msg.autoOrder&&s&&s.phone) supSms(s.phone,`${CFG.shop.name}: your order ${o.no} is approved — ${o.lines.length} item${o.lines.length===1?'':'s'}. Send the goods with your invoice.`);
   notify('order',`Order ${o.no} approved — ${s?s.name.split(/[–(]/)[0].trim():'supplier'}`,'orders');
-  persist(true); render(); toast(`${o.no} approved — it waits under History for the goods`);
+  persist(true); render(); toast(`${o.no} approved — it waits under Ready to purchase for the goods`);
 }
-function orders(){
-  S.orders.forEach(o=>{ if(!o.dir) o.dir='IN' });
-  // ours, completed by the supplier, wait here for the owner; once approved they wait for the goods
-  const done=S.orders.filter(o=>o.dir==='OUT'&&o.status==='completed');
-  const waitGoods=S.orders.filter(o=>o.dir==='OUT'&&o.status==='approved').sort((a,b)=>(b.approvedAt||0)-(a.approvedAt||0));
-  const pend=S.orders.filter(o=>o.dir!=='OUT'&&(o.status==='pending'||o.unreadShop)).concat(done);
-  const rest=S.orders.filter(o=>o.dir!=='OUT'&&!(o.status==='pending'||o.unreadShop)).sort((a,b)=>b.events[0].at-a.events[0].at);
-  const mayApprove=canApprove();
-  const card=o=>{const s=SU(o.sid)||{name:'Supplier'}, fromPortal=o.src==='portal';return `<div class="card" style="margin-bottom:12px${o.status==='pending'?';border-left:4px solid var(--chip-yellow)':''}">
+/* the whole of an order a supplier sent us */
+const ordInCard=o=>{const mayApprove=canApprove(), s=SU(o.sid)||{name:'Supplier'}, fromPortal=o.src==='portal';return `<div class="card" style="margin-bottom:12px${o.status==='pending'?';border-left:4px solid var(--chip-yellow)':''}">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
       <div><b>${s.name}</b><div class="muted">From ${o.rep} · ${o.date}${fromPortal?' · sent from the supplier page':o.src==='shop'?' · entered at the shop':''}</div></div>
       <div style="text-align:right">${otag(o.status)}${o.status==='pending'?`<div class="muted" style="font-size:11px;margin-top:4px">${mayApprove?'needs your approval':'waiting for the owner'}</div>`:''}</div></div>
@@ -9064,36 +9083,119 @@ function orders(){
       ${s.phone?`<button class="btn ghost sm wa" data-act="ordWa" data-no="${o.id}">${WA_ICON} WhatsApp</button>`:''}
       ${o.status==='accepted'&&!o.grn?`<button class="btn tape sm" data-act="ordPurchase" data-no="${o.id}">Goods arrived — enter the purchase</button>`:''}
     </div><div id="ob-${o.id}"></div></div>`};
+/* one order as a row: who, when, how much, where it stands. A press opens the whole of it. */
+function ordRow(o,act,cls){
+  const s=SU(o.sid)||{name:'Supplier'}, out=o.dir==='OUT';
+  const n=(out&&['completed'].includes(o.status)?o.supLines:o.lines)||[];
+  const val=n.reduce((a,l)=>a+(+l.qty||0)*(+(l.price||l.est)||0),0);
+  const pics=(o.files||[]).length;
+  return `<div class="ordrow${o.unreadShop?' unread':''}${cls?' '+cls:''}" data-act="ordView" data-id="${o.id||o.no}" title="Open the order">
+    <div class="or-main"><b>${out?o.no+' · ':''}${noteEsc(s.name)}</b>
+     <div class="muted">${out?'Our order':'From '+noteEsc(o.rep||'their rep')} · ${o.date}${n.length?` · ${n.length} item${n.length===1?'':'s'}`:''}${pics?` · 📷 ${pics} photo${pics===1?'':'s'}`:''}${val?' · '+fmt(val):''}${o.invoiceNo?' · invoice '+noteEsc(o.invoiceNo):''}${o.grn?' · became '+o.grn:''}</div></div>
+    <div class="or-side">${act||''}${out?outTag(o):otag(o.status)}<span class="or-go">›</span></div></div>`;
+}
+const ordFind=id=>S.orders.find(x=>x.id===id||x.no===id);
+function ordDetail(o){
+  const s=SU(o.sid)||{name:'a supplier'};
+  const body=o.dir==='OUT'?(o.status==='completed'?poDoneCard(o):poOutCard(o)):ordInCard(o);
+  return `<div class="po-head"><h2 style="margin:0">${o.dir==='OUT'?'Our order '+o.no:'Order from '+noteEsc(s.name)}</h2><button class="btn ghost sm" data-act="ordClose" title="Close">✕</button></div>${body}`;
+}
+/* the two popups on this page: the order being written, and the order being looked at.
+   They are drawn again with the page, so whatever is done inside them shows straight away. */
+let ordOpen=null;
+function ordPop(id){
+  let m=document.getElementById(id); if(m) return m;
+  m=document.createElement('div'); m.className='modal wide'; m.id=id; m.innerHTML='<div class="box"></div>';
+  let down=false;
+  m.addEventListener('mousedown',e=>{ down=e.target===m });
+  m.addEventListener('click',e=>{ if(e.target===m&&down){ id==='poModal'?poClose():ordClose() } down=false });
+  document.body.appendChild(m); return m;
+}
+function ordClose(){ ordOpen=null; const m=document.getElementById('ordModal'); if(m) m.remove() }
+function poClose(){
+  if(poDraft&&poDraft.lines.length&&!confirm('Close this order? What is on it will be lost.')) return;
+  poDraft=null; render();
+}
+/* The till redraws often — the clock, a sale on another till — and a popup drawn again from scratch
+   each time loses whatever is being typed in it. So a popup is drawn again only when what it shows has
+   changed, never while a reply is being written in it, and the cursor is put back where it was. */
+function popDraw(b,html,always){
+  if(!always&&b._html===html) return;
+  const a=document.activeElement, mine=a&&b.contains(a)&&!a.classList.contains('dd-field');
+  const sel=!mine?null:a.id?'#'+a.id:[...a.attributes].filter(x=>x.name.startsWith('data-')).map(x=>`[${x.name}="${x.value}"]`).join('')||null;
+  let s0=null,s1=null; try{ if(sel){ s0=a.selectionStart; s1=a.selectionEnd } }catch(e){}
+  const y=b.scrollTop; b.innerHTML=html; b._html=html; b.scrollTop=y;
+  if(sel){ const n=b.querySelector(sel); if(n){ n.focus(); try{ if(s0!==null) n.setSelectionRange(s0,s1) }catch(e){} } }
+}
+function ordPopsSync(){
+  const pm=document.getElementById('poModal');
+  if(poDraft&&S.view==='orders'&&pm) popDraw(pm.querySelector('.box'),poForm(),true);   // its dropdowns are put back by the wiring after every draw
+  else { if(pm) pm.remove(); poDraft=null }
+  const om=document.getElementById('ordModal'), o=ordOpen&&S.view==='orders'&&ordFind(ordOpen);
+  if(om&&o){ const b=om.querySelector('.box');
+    // a reply or a change being written: leave it alone until it is sent or the popup is closed
+    if(!b.querySelector('[id^="ob-"] input')) popDraw(b,ordDetail(o)) }
+  else if(om||ordOpen) ordClose();
+}
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape'||e.defaultPrevented) return;
+  if(document.querySelector('.modal.askbox')) return;          // the writing window closes itself
+  if(document.getElementById('ordModal')) return ordClose();
+  if(document.getElementById('poModal')&&poDraft&&!poDraft.supOpen&&!poDraft.prodOpen) poClose();
+});
+function orders(){
+  S.orders.forEach(o=>{ if(!o.dir) o.dir='IN' });
+  const mayApprove=canApprove();
+  // ours, completed by the supplier, wait here for the owner; theirs wait here until answered
+  const done=S.orders.filter(o=>o.dir==='OUT'&&o.status==='completed');
+  const pend=S.orders.filter(o=>o.dir!=='OUT'&&(o.status==='pending'||o.unreadShop)).concat(done);
+  // approved — ours completed by them, or theirs — and waiting for the goods to come in
+  const isReady=o=>o.dir==='OUT'?o.status==='approved':(o.status==='accepted'&&!o.grn);
+  const ready=S.orders.filter(isReady).sort((a,b)=>(b.approvedAt||(b.events[b.events.length-1]||{}).at||0)-(a.approvedAt||(a.events[a.events.length-1]||{}).at||0));
+  const rest=S.orders.filter(o=>o.dir!=='OUT'&&!(o.status==='pending'||o.unreadShop)&&!isReady(o)).sort((a,b)=>b.events[0].at-a.events[0].at);
+  const nb=n=>n?` <span class="nbadge">${n}</span>`:'';
   const head=`<h1>Supplier orders</h1>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 14px"><button class="btn tape" data-act="poNew">✎ Write an order to a supplier</button>
      <a class="btn ghost" href="/supplier" target="_blank" title="What a rep sees — they sign in with their own user name">Open the supplier page</a></div>
-   <div class="tabs">${[['in',`From suppliers${pend.length?` <span class="nbadge">${pend.length}</span>`:''}`],['out','Orders we sent']].map(t=>`<button class="${ordTab===t[0]?'on':''}" data-act="ordTab" data-t="${t[0]}">${t[1]}</button>`).join('')}</div>`;
+   <div class="tabs">${[['in','From suppliers'+nb(pend.length)],['out','Orders we sent'],['ready','Ready to purchase'+nb(ready.length)]].map(t=>`<button class="${ordTab===t[0]?'on':''}" data-act="ordTab" data-t="${t[0]}">${t[1]}</button>`).join('')}</div>`;
   if(ordTab==='out') return head+ordersOut();
+  if(ordTab==='ready') return head+`<div class="card note" style="margin-bottom:12px"><b>Approved, waiting for the goods</b>
+    <div class="muted">Our orders the supplier completed and the owner approved, and orders suppliers sent that were approved. When the goods come in, <i>Enter the purchase</i> turns the order into a purchase — stock, the supplier's balance and the ledger all move together.</div></div>
+   ${ready.map(o=>ordRow(o,o.dir==='OUT'
+      ?`<button class="btn tape sm" data-act="poReceive" data-no="${o.no}">Enter the purchase</button>`
+      :`<button class="btn tape sm" data-act="ordPurchase" data-no="${o.id}">Enter the purchase</button>`)).join('')
+    ||'<div class="card muted">Nothing is waiting to be purchased. Approved orders show here until the goods arrive.</div>'}`;
   return head+`<div class="card note" style="margin-bottom:12px">
    <b>How it works</b>
-   <div class="muted">Suppliers sign in at <b>${location.host}/supplier</b> with their own user name. Two things land here for the owner (or anyone with the approve right) to approve: an order a supplier creates there, and one of <i>our</i> orders once the supplier has completed it — as we sent it, or with their changes shown line by line. Once approved it shows on their <i>Sent Orders</i> and waits under History; <i>Goods arrived</i> turns it into a purchase — stock, the supplier's balance and the ledger all move together.</div>
+   <div class="muted">Suppliers sign in at <b>${location.host}/supplier</b> with their own user name. Orders a supplier creates there land here for the owner (or anyone with the approve right) to approve, ask for a change, or reject — a corrected order replaces the one sent back. <i>Our</i> orders need no second approval: once the supplier completes one (as we sent it, or with their changes) it goes straight to <i>Ready to purchase</i>. Press an order to see all of it.</div>
   </div>
   ${S.notices.filter(n=>n.kind==='supplier'&&n.status==='open').map(n=>`<div class="card note" style="margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
      <div><b>${SU(n.sid).name} asked a question</b><div class="muted">${n.text} — ${n.date}</div></div>
      <button class="btn ghost" data-act="noticeDrop" data-id="${n.id}">Mark handled</button></div></div>`).join('')}
-  <h2>Needs your attention (${pend.length})</h2>
-  ${pend.length?pend.map(o=>o.dir==='OUT'?poDoneCard(o):card(o)).join(''):'<div class="card muted">Nothing waiting. Orders reps send from the supplier page, and our orders they complete, land here.</div>'}
-  <h2 style="margin-top:14px">History</h2>
-  ${waitGoods.map(o=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <div><b>${o.no} · ${SU(o.sid).name}</b><div class="muted">Our order, completed and approved${o.invoiceNo?' · their invoice '+o.invoiceNo:''} · ${o.lines.length} item${o.lines.length===1?'':'s'}</div></div>
-    <div style="display:flex;gap:8px;align-items:center"><button class="btn tape sm" data-act="poReceive" data-no="${o.no}">Goods arrived — enter the purchase</button>${otag('approved')}</div></div>`).join('')}
-  ${rest.map(o=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <div><b>${SU(o.sid).name}</b><div class="muted">${o.date}${o.note?' · '+o.note:''}${o.disc?' · '+discSays(o.disc)+' offered':''}${o.grn?' · became '+o.grn:''}</div></div>
-    <div style="display:flex;gap:8px;align-items:center">${o.status==='accepted'?`<button class="btn tape sm" data-act="ordPurchase" data-no="${o.id}">Create purchase</button>`:''}${otag(o.status)}
-     ${o.status==='rejected'?`<button class="btn ghost sm" data-act="ordDelete" data-id="${o.id}" title="Delete this turned-down order" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)">🗑</button>`:''}</div></div>`).join('')||'<div class="muted">Nothing yet.</div>'}`;
+  <h2>Waiting for approval (${pend.length})</h2>
+  ${pend.length?pend.map(o=>ordRow(o,!mayApprove?'':o.dir==='OUT'
+      ?`<button class="btn tape sm" data-act="poApprove" data-no="${o.no}">✓ Approve</button>`
+      :o.status==='pending'?`<button class="btn tape sm" data-act="ord" data-no="${o.id}" data-st="accepted">✓ Approve</button>`:'','wait')).join('')
+    :'<div class="card muted">Nothing waiting. Orders reps send from the supplier page, and our orders they complete, land here.</div>'}
+  ${rest.length?`<h2 style="margin-top:14px">Earlier</h2>
+  ${rest.map(o=>ordRow(o,o.status==='rejected'?`<button class="btn ghost sm" data-act="ordDelete" data-id="${o.id}" title="Delete this turned-down order" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)">🗑</button>`:'')).join('')}`:''}`;
+}
+/* Writing to the supplier — what needs to change, or a reply — happens in a window of its own, over the
+   order. Nothing the till redraws (the clock, another till's save, the order popup) can touch it. */
+function askText(title,hint,send){
+  const m=modal(`<h2 style="margin:0 0 4px">${title}</h2><div class="muted" style="margin-bottom:8px">The supplier sees this on their page.</div>
+    <textarea id="askT" rows="4" placeholder="${hint}" style="width:100%;resize:vertical"></textarea>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" id="askNo">Cancel</button><button class="btn tape" id="askGo">Send</button></div>`);
+  m.classList.add('askbox');
+  const t=m.querySelector('#askT'); setTimeout(()=>t.focus(),0);
+  const go=()=>{ const v=t.value.trim(); if(!v){ toast('Write it first'); t.focus(); return } m.remove(); send(v) };
+  m.querySelector('#askGo').onclick=go; m.querySelector('#askNo').onclick=()=>m.remove();
+  t.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); go() } if(e.key==='Escape'){ e.preventDefault(); m.remove() } };
 }
 function ordBox(id,kind){
-  const h=document.getElementById('ob-'+id);
-  h.innerHTML=`<div style="display:flex;gap:6px;margin-top:8px"><input id="obx" placeholder="${kind==='adjusted'?'What needs to change?':'Message to the rep…'}"><button class="btn sm" id="obgo">Send</button></div>`;
-  const i=h.querySelector('#obx'); i.focus();
-  const go=()=>{const t=i.value.trim(); if(!t)return; kind==='adjusted'?ordAct(id,'adjusted',t):ordComment(id,t)};
-  h.querySelector('#obgo').onclick=go; i.onkeydown=e=>e.key==='Enter'&&go();
+  if(kind==='adjusted') askText('Ask for a change','What needs to change? e.g. send 3 bags, not 2',t=>ordAct(id,'adjusted',t));
+  else askText('Reply to the rep','Message to the rep…',t=>ordComment(id,t));
 }
 function ordAct(id,status,note=''){
   const o=S.orders.find(x=>x.id===id), s=SU(o.sid);
@@ -9104,12 +9206,12 @@ function ordAct(id,status,note=''){
   const msg={accepted:tpl('orderAccepted',v),rejected:tpl('orderRejected',v),adjusted:tpl('orderAdjusted',v),received:''}[status];
   if(msg&&CFG.msg.autoOrder) supSms(s.phone,msg);
   notify('order',`Order ${OLABEL[status].toLowerCase()} — ${s.name.split(/[–(]/)[0].trim()}`,'orders');
-  render(); drawPhone(); toast(`Order ${OLABEL[status].toLowerCase()}${msg?' · SMS queued to '+s.name.split(' ')[0]:''}`);
+  persist(true); render(); drawPhone(); toast(`Order ${OLABEL[status].toLowerCase()}${msg?' · SMS queued to '+s.name.split(' ')[0]:''}`);
 }
 function ordComment(id,note){
   const o=S.orders.find(x=>x.id===id);
   o.events.push({id:Math.random().toString(36).slice(2,8),actor:'shop',name:S.user.name,action:'comment',note,at:Date.now()});
-  o.unreadShop=false; o.unreadSup=true; render(); drawPhone(); toast('Reply sent to the rep');
+  o.unreadShop=false; o.unreadSup=true; persist(true); render(); drawPhone(); toast('Reply sent to the rep');
 }
 
 /* ---- the customer's own page: what they owe, nothing else ---- */
@@ -10145,6 +10247,7 @@ function renderNow(){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
   }
+  if(typeof ordPopsSync==='function') ordPopsSync();
   document.body.classList.toggle('csfull',tillNow()==='classic'&&S.view==='pos');
   if(S.view==='pos'){ const w=tillNow();
     if(w==='phone') posPhoneAfter(); else if(w==='quick') bindQuick(); else if(w==='classic') bindClassic(); else posAfter() }
@@ -12393,7 +12496,22 @@ function aiAfter(){
    icon, its line in `allowed`, the badge in the menu, the `updDone` act, and
    tools/update-log.mjs. Put PREF_DEFAULTS.start back to 'dashboard'. */
 /* <<UPDATE-LOG>> generated by tools/update-log.mjs — do not edit by hand */
-const UPDATE_LOG={at:'03 Oct 2026, 19:38',head:'89b6430',count:80,items:[
+const UPDATE_LOG={at:'04 Oct 2026, 23:05',head:'acf55a2',count:80,items:[
+ {h:'acf55a2',d:'2026-10-04 23:05',w:'Aathif',s:'Held bills: who held each one, a delete on the card, and a warning when the server needs a restart'},
+ {h:'1570ffc',d:'2026-10-04 22:42',w:'Aathif',s:'The update page catches up'},
+ {h:'f1381fa',d:'2026-10-04 22:42',w:'Aathif',s:'Held bills reach every till, and every till keeps up while it bills'},
+ {h:'52ff7d9',d:'2026-10-04 22:24',w:'unknown',s:'The update page catches up'},
+ {h:'fe7e39d',d:'2026-10-04 22:24',w:'unknown',s:'"Ask for a change" and "Reply" open a window of their own to write in'},
+ {h:'33b1c0b',d:'2026-10-04 22:14',w:'unknown',s:'Order popups keep what is being typed: "Ask for a change" and "Reply" can be written again'},
+ {h:'ca1ad86',d:'2026-10-04 22:03',w:'unknown',s:'Supplier page: a menu down the left, Pending Orders and Order History, no second approval'},
+ {h:'218c4c7',d:'2026-10-04 21:36',w:'unknown',s:'The books always load: the supplier inbox read without a GROUP BY, and no inbox can fail the books'},
+ {h:'5676552',d:'2026-10-04 21:25',w:'unknown',s:'Orders between the shop and the suppliers come through again'},
+ {h:'3fd09ba',d:'2026-10-04 21:06',w:'unknown',s:'Supplier orders: three tabs, rows that open the details, the order form as a popup'},
+ {h:'27fc788',d:'2026-10-04 00:13',w:'unknown',s:'Supplier orders: the write button under the heading, dead orders deleted, invoice photos from the portal'},
+ {h:'dc60541',d:'2026-10-03 23:41',w:'unknown',s:'The order form\'s dropdowns: type in the field, no lag, and a new supplier starts a new order'},
+ {h:'2dd731c',d:'2026-10-03 22:59',w:'unknown',s:'Writing an order to a supplier: type the supplier, pick from their products'},
+ {h:'fb706cb',d:'2026-10-03 21:35',w:'unknown',s:'The supplier portal: five places, orders completed and approved, default sign-ins'},
+ {h:'401f04c',d:'2026-10-03 19:38',w:'Afridh',s:'The update page catches up'},
  {h:'89b6430',d:'2026-10-03 19:38',w:'Afridh',s:'Held bills: the other list, which was still throwing them away'},
  {h:'23936c2',d:'2026-10-03 19:13',w:'Afridh',s:'The update page catches up'},
  {h:'44e13c6',d:'2026-10-03 19:13',w:'Afridh',s:'A print box out of nowhere now says why it is there'},
@@ -12458,22 +12576,7 @@ const UPDATE_LOG={at:'03 Oct 2026, 19:38',head:'89b6430',count:80,items:[
  {h:'7e5c877',d:'2026-10-01 10:06',w:'Afridh',s:'The system moves: pages, rows, figures and the bill'},
  {h:'09528bc',d:'2026-09-30 12:00',w:'Afridh',s:'The update page catches up'},
  {h:'02357e1',d:'2026-09-30 12:00',w:'Afridh',s:'Products, Stock and the ledger stop being the same page three times'},
- {h:'c60ed90',d:'2026-09-29 16:32',w:'Afridh',s:'The update page catches up'},
- {h:'e95f26f',d:'2026-09-29 16:32',w:'Afridh',s:'The supplier side, against the list the shop gave'},
- {h:'9749a88',d:'2026-09-29 11:28',w:'Afridh',s:'The update page catches up'},
- {h:'8b79f3a',d:'2026-09-29 11:28',w:'Afridh',s:'The AI setup steps point at the hosting the shop actually has'},
- {h:'b43c093',d:'2026-09-29 11:24',w:'Afridh',s:'The update page catches up'},
- {h:'f835f43',d:'2026-09-29 09:12',w:'Afridh',s:'One page for the day\'s money: opening the shop, the circle, and shutting it'},
- {h:'3ec3aab',d:'2026-09-29 08:47',w:'Afridh',s:'Shutting up shop is a walk-through now, not just a drawer count'},
- {h:'5141da5',d:'2026-09-29 08:13',w:'Afridh',s:'A supplier can see their own stock, and orders are built the way a bill is'},
- {h:'050603c',d:'2026-09-28 23:29',w:'Afridh',s:'The update page catches up'},
- {h:'9229ecf',d:'2026-09-28 23:29',w:'Afridh',s:'Counting the drawer without reaching for the mouse'},
- {h:'13d4ef1',d:'2026-09-28 23:20',w:'Afridh',s:'The update page catches up'},
- {h:'321ece2',d:'2026-09-28 23:20',w:'Afridh',s:'Counting the drawer, note by note'},
- {h:'fe257f8',d:'2026-09-28 22:58',w:'Afridh',s:'The demo comes up as a two-store shop, ready to try'},
- {h:'a65842c',d:'2026-09-28 22:46',w:'Afridh',s:'The update page catches up'},
- {h:'e6fec17',d:'2026-09-28 22:46',w:'Afridh',s:'Stores, and the orders one store raises on another'},
- {h:'4f22bf3',d:'2026-09-28 22:13',w:'Afridh',s:'The update page catches up'}
+ {h:'c60ed90',d:'2026-09-29 16:32',w:'Afridh',s:'The update page catches up'}
 ]};
 /* <</UPDATE-LOG>> */
 
@@ -14623,7 +14726,7 @@ function holdCurrentBill(notify = true, ref){
   alexaNote('hold', bill);
   S.pos = { lines: [], customer: null, salesman: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill };
   if(typeof CS !== 'undefined') CS = { ...CS, pid: null, q: '', qty: 1, price: 0, disc: 0, focus: '', editLine: null };
-  render();
+  render(); persist(true);                       // the other tills see it straight away
   if(notify) toast(`Held as "${bill.ref}" (${S.heldBills.length} on hold) — F5 / Ctrl+R brings it back`,'ok');
   return true;
 }
@@ -14685,7 +14788,7 @@ function recallHeldBill(which){
   S.held = S.heldBills[0] || null;
   if(typeof CS !== 'undefined') CS = { ...CS, pid: null, q: '', qty: 1, price: 0, disc: 0, focus: '', editLine: null };
   closeModals();
-  render();
+  render(); persist(true);                       // gone from every till's held list at once
   toast(`${bill.ref ? '"' + bill.ref + '"' : 'Bill'} is back on the till`);
   const qEl = document.getElementById('csQ') || document.getElementById('q') || document.getElementById('qq');
   if(qEl){ qEl.focus(); qEl.select && qEl.select(); }
@@ -14717,7 +14820,7 @@ function discardHeldBill(idx){
     S.heldBills.splice(at, 1);
     S.held = S.heldBills[0] || null;
     logTrail('holdDiscard', `${b.ref || c.name} — ${n} line${n === 1 ? '' : 's'}`, { amount: net, bill: b, who: c.name });
-    render(); persist();
+    render(); persist(true);
     toast(`Thrown away · ${S.heldBills.length} still on hold — it is on the Trail page if it was a mistake`, 'warn');
     if(S.heldBills.length) showHeldBillsModal(Math.min(at, S.heldBills.length - 1));
   };
@@ -14731,7 +14834,7 @@ function discardHeldBill(idx){
 function showHeldBillsModal(initIdx = 0){
   closeModals();
   S.heldBills = S.heldBills || [];
-  if(S.held && S.held.lines && S.held.lines.length && !S.heldBills.length){
+  if(S.held && !S.held.id && S.held.lines && S.held.lines.length && !S.heldBills.length){
     S.heldBills.push({
       id: 'hb_' + Date.now(),
       date: new Date().toISOString(),
@@ -14787,13 +14890,15 @@ function showHeldBillsModal(initIdx = 0){
           <span class="hb-c-time">${formatHeldTime(b.date)}</span>
           <span class="hb-c-custtag ${isNamed ? 'named' : 'walkin'}">${isNamed ? 'Account' : 'Walk-in'}</span>
           ${b.terminal && b.terminal !== S.terminal ? `<span class="hb-c-custtag">held at ${b.terminal}</span>` : ''}
+          ${b.user ? `<span class="hb-c-custtag cashier" title="Held by ${noteEsc(b.user)}">👤 ${noteEsc(b.user)}</span>` : ''}
         </div>
         <div class="hb-c-name">${(b.ref || c.name || 'WALK-IN').toUpperCase()}</div>
         ${b.ref && isNamed && b.ref !== c.name ? `<div class="hb-c-ref">${c.name}</div>` : ''}
         <div class="hb-c-bottom">
           <span class="hb-c-meta">${(b.lines || []).length} item${(b.lines || []).length === 1 ? '' : 's'} · ${fq(qty)} qty</span>
           <span class="hb-c-amt">${fmt(net)}</span>
-          <button type="button" class="hb-c-recall-btn" data-hb-recall="${b.id}" title="Recall this bill to till">Recall ↵</button>
+          <span class="hb-c-btns"><button type="button" class="hb-c-del-btn" data-hb-del="${i}" title="Throw this held bill away">🗑</button>
+          <button type="button" class="hb-c-recall-btn" data-hb-recall="${b.id}" title="Recall this bill to till">Recall ↵</button></span>
         </div>
       </div>`;
     }).join('');
@@ -14922,6 +15027,8 @@ function showHeldBillsModal(initIdx = 0){
   bindPreviewActions();
 
   m.querySelector('#hbList').addEventListener('click', (e) => {
+    const delBtn = e.target.closest('[data-hb-del]');
+    if(delBtn){ discardHeldBill(+delBtn.dataset.hbDel); return; }
     const recallBtn = e.target.closest('[data-hb-recall]');
     if(recallBtn){
       recallAsk(recallBtn.dataset.hbRecall);
@@ -23604,15 +23711,17 @@ document.addEventListener('click',e=>{
 
     prefMini:()=>{setPref('collapsed',!pref('collapsed')); render()},
     prefKeys:()=>{setPref('keys',!pref('keys')); render()},
-    ordTab:()=>{ordTab=a.dataset.t; if(ordTab!=='out')poDraft=null; render()},
+    ordTab:()=>{ordTab=a.dataset.t; render()},
+    ordView:()=>{ ordOpen=a.dataset.id; const o=ordFind(ordOpen); if(!o) return; ordPop('ordModal'); render() },
+    ordClose:()=>ordClose(),
     poNew:()=>newPO(), poFree:()=>{poAddFree()}, poAdd:()=>poAddKnown(+a.dataset.id),
     poPickSup:()=>poPickSup(+a.dataset.id),
     ddToggle:()=>{ const k=a.dataset.dd; if(poDraft&&poDraft[ddKey(k)]){ ddClose(k); const i=ddIn(k); if(i) i.blur() } else ddOpen(k) },
     poPut:()=>poPut(), poDrop:()=>poDrop(),
     poWide:()=>{ poDraft.wide=!poDraft.wide; render(); const q=$('#poQ'); if(q){ q.focus(); q.setSelectionRange(q.value.length,q.value.length) } },
     poDel:()=>{poDraft.lines.splice(+a.dataset.i,1);render()},
-    poCancel:()=>{poDraft=null;render()}, poSend:()=>sendPO(),
-    poPrint:()=>poPrint(a.dataset.no), poReceive:()=>poReceive(a.dataset.no),
+    poCancel:()=>poClose(), poSend:()=>sendPO(),
+    poPrint:()=>poPrint(a.dataset.no), poReceive:()=>{ ordClose(); poReceive(a.dataset.no) },
     poCancelOne:()=>{const note=prompt('Why is it cancelled?')||''; poAct(a.dataset.no,'cancelled',note)},
     // only a dead order goes: one we cancelled, or one of theirs we turned down
     ordDelete:()=>{ const o=S.orders.find(x=>x.id===a.dataset.id);
@@ -23805,18 +23914,15 @@ document.addEventListener('click',e=>{
     custOpen:()=>{const c=C(+a.dataset.id); S.cportal.pick=c.id; S.cportal.session=c.id; c.lastLogin=D(today);
       S.phoneMode='customer'; S.phoneOpen=true; document.body.classList.add('withPhone'); drawPhone(); render()},
     ord:()=>ordAct(a.dataset.no,a.dataset.st), ordAdjust:()=>ordBox(a.dataset.no,'adjusted'), ordReply:()=>ordBox(a.dataset.no,'comment'),
-    ordPurchase:()=>{const o=S.orders.find(x=>x.id===a.dataset.no);
+    ordPurchase:()=>{ordClose(); const o=S.orders.find(x=>x.id===a.dataset.no);
       const known=(o.lines||[]).filter(l=>l.pid&&P(l.pid));
       newPurModal(o.sid,known.length?{...o,orderId:o.id,lines:known.map(l=>({pid:l.pid,qty:l.qty,cost:+l.price||P(l.pid).cost}))}:o)},
     poApprove:()=>poApprove(a.dataset.no),
-    poAskChange:()=>{const o=S.orders.find(x=>x.no===a.dataset.no), h=document.getElementById('ob-'+o.no);
-      h.innerHTML='<div style="display:flex;gap:6px;margin-top:8px"><input id="obx" placeholder="What needs to change?"><button class="btn sm" id="obgo">Send</button></div>';
-      const i=h.querySelector('#obx'); i.focus();
-      const go=()=>{ const t=i.value.trim(); if(!t) return; o.status='adjusted'; o.supLines=null; o.unreadSup=true; o.needsOwner=false;
+    poAskChange:()=>{const o=S.orders.find(x=>x.no===a.dataset.no);
+      askText('Ask for a change','What needs to change?',t=>{ o.status='adjusted'; o.supLines=null; o.unreadSup=true; o.needsOwner=false;
         o.events.push({id:Math.random().toString(36).slice(2,8),actor:'shop',name:S.user.name,action:'adjusted',note:t,at:Date.now()});
         const s=SU(o.sid); if(CFG.msg.autoOrder&&s&&s.phone) supSms(s.phone,`${CFG.shop.name}: about order ${o.no} — ${t}. Please complete it again.`);
-        persist(true); render(); toast('Sent back to them to complete again') };
-      h.querySelector('#obgo').onclick=go; i.onkeydown=e=>e.key==='Enter'&&go()},
+        persist(true); render(); toast('Sent back to them to complete again') })},
     zoom:()=>{const o=S.orders.find(x=>x.id===a.dataset.no); const src=o.files[+a.dataset.i];
       const m=modal(`<img src="${src}" style="width:100%;border-radius:6px"><div style="text-align:right;margin-top:8px"><button class="btn ghost" data-act="closeModal">Close</button></div>`)},
     supShow:()=>{const s=SU(+a.dataset.id);
@@ -23842,6 +23948,7 @@ document.addEventListener('keydown',e=>{
     if(k==='n'){ e.preventDefault(); csSetPaper('r80'); render(); toast('Normal bill — 80mm receipt will print'); return }
   }   // retail ⇄ wholesale for the bill
   if(e.key==='Escape'){
+    if(document.getElementById('poModal')||document.getElementById('ordModal')) return;   // the order popups close themselves
     const hadModal=!!document.querySelector('.modal'); closeModals();
     // on the shop's own screen, Esc with nothing open clears the bill, as CLEAR does
     if(!hadModal&&S.view==='pos'&&pref('till')!=='quick'&&!/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName)) csClearAsk();

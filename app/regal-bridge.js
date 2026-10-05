@@ -144,7 +144,26 @@
   function restoreLocal(k) { if (k && window.S) Object.keys(k).forEach(function (n) { window.S[n] = k[n]; }); }
   // someone is mid-entry when the focused box holds something (an empty search box a page focused by itself does not count)
   function typing() { var a = document.activeElement; return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && (a.tagName === 'SELECT' || a.type === 'checkbox' || String(a.value || '').length > 0)); }
-  function tillBusy() { var S = window.S; return !!(document.querySelector('.modal') || document.querySelector('.lock') || (S && S.pos && S.pos.lines && S.pos.lines.length)); }
+  /* Whether pulling the books now would get in somebody's way. A bill being rung up on the till screen,
+     or a popup somebody is filling in, does. A popup that only shows something (a print preview, an
+     order being looked at) does not: one left open used to stop the till hearing anything at all, so
+     orders from the suppliers never arrived. The two order popups are drawn again from what is kept for
+     them, so they do not count either. strict: about to reload the page, when any popup counts. */
+  // the last time anybody pressed a key or touched the screen here
+  var lastInputAt = 0;
+  ['keydown', 'pointerdown', 'input'].forEach(function (t) { document.addEventListener(t, function () { lastInputAt = Date.now(); }, true); });
+  var IDLE_MS = 4000;
+  function tillBusy(strict) {
+    var S = window.S;
+    var filling = Array.prototype.some.call(document.querySelectorAll('.modal'), function (m) {
+      return strict || (m.id !== 'ordModal' && m.id !== 'poModal' && !!m.querySelector('input,textarea,select'));
+    });
+    // A bill open on the till screen is this till's own and is kept whatever comes in, so the books can
+    // be brought up to date under it — the other tills' held bills, customers, stock. Only not while
+    // somebody is in the middle of keying it: the screen is redrawn when they stop for a moment.
+    var billing = S && S.view === 'pos' && S.pos && S.pos.lines && S.pos.lines.length && (strict || Date.now() - lastInputAt < IDLE_MS);
+    return !!(filling || document.querySelector('.lock') || billing);
+  }
   function say(msg) { if (typeof window.toast === 'function') window.toast(msg); }
   function badge(txt) { ['savedAt', 'csSync'].forEach(function (id) { var el = document.getElementById(id); if (el) el.textContent = txt; }); }
 
@@ -345,6 +364,7 @@
   }
 
   /* ---------------- other tills ---------------- */
+  var toldOld = false;
   async function poll() {
     if (isDemoSession()) return;
     if (!token || busy || document.hidden) return;       // a tab nobody is looking at does not poll
@@ -352,6 +372,12 @@
     if (Date.now() - lastPushAt < 3000) return;          // our own save is still settling
     var j = await call('GET', '/books/' + KEY + '/rev');
     if (j.__status !== 200) return;
+    // the server has not been restarted since the pages were updated: things this page shares (held
+    // bills) are thrown away by it on every save. Said once, on the screen, so nobody has to guess.
+    if (!(j.server && (j.server.features || []).indexOf('held') >= 0)) {
+      badge('not shared — server needs a restart');           // every poll, so a save does not hide it
+      if (!toldOld) { toldOld = true; say('The server is running an older version — restart the Node.js app in cPanel. Until then held bills do not reach the other tills.'); }
+    }
     // A till that could not read the books refuses to save, so that it never writes its sample data
     // over a real shop. The books are only pulled when the revision moves, though — and a till that is
     // not saving cannot move it. That deadlocked: one failed read and the till went quiet for good.
@@ -365,7 +391,7 @@
     if (j.build) {
       if (!build) build = j.build;
       else if (j.build !== build) {
-        if (!typing() && !tillBusy()) { say('A newer version is ready — reloading'); setTimeout(function () { location.reload(); }, 900); return; }
+        if (!typing() && !tillBusy(true) && !(window.S && window.S.pos && window.S.pos.lines && window.S.pos.lines.length)) { say('A newer version is ready — reloading'); setTimeout(function () { location.reload(); }, 900); return; }
         if (!toldBuild) { toldBuild = true; say('A newer version is ready — it will load when the bill is done, or press F5'); }
       }
     }
@@ -376,6 +402,8 @@
     }
   }
   function startPolling() { stopPolling(); pollTimer = setInterval(poll, POLL_MS); }
+  // a till that comes back to the front catches up at once, not on the next tick
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && pollTimer) poll(); });
   function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
 
   /* ---------------- SMS through the server ---------------- */

@@ -42,6 +42,12 @@ export function ensureSupplierTables() {
       mime        varchar(40) NOT NULL,
       data        bytea NOT NULL,
       created_at  timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS sup_hidden (
+      id          bigserial PRIMARY KEY,
+      sid         integer NOT NULL,
+      ref         varchar(60) NOT NULL,
+      created_at  timestamptz NOT NULL DEFAULT now()
     );`).catch(e => { ready = null; throw e; });
   return ready;
 }
@@ -77,6 +83,22 @@ function supAuth(req, _res, next) {
 }
 
 // ---------------------------------------------------------------- books ↔ inbox
+/* What suppliers sent that no till has taken yet, with the ids of any photos. Read as two plain
+   queries rather than one grouped one: a GROUP BY over the joined photos is refused by a MariaDB or
+   MySQL that runs with ONLY_FULL_GROUP_BY, and when that read failed the till could not load the
+   books at all — so it saved nothing, and the supplier's page showed nothing. */
+const parsed = v => { if (v && typeof v === 'object') return v; try { return JSON.parse(v || '{}') || {}; } catch { return {}; } };
+async function inboxRows(sid) {
+  const { rows } = sid === undefined
+    ? await query(`SELECT id, sid, kind, data, created_at FROM sup_inbox WHERE imported_at IS NULL ORDER BY id`)
+    : await query(`SELECT id, sid, kind, data, created_at FROM sup_inbox WHERE sid = $1 AND imported_at IS NULL ORDER BY id DESC`, [sid]);
+  if (!rows.length) return [];
+  const ids = rows.map(r => Number(r.id));
+  const { rows: media } = await query(`SELECT id, inbox_id FROM sup_media WHERE inbox_id = ANY($1::bigint[]) ORDER BY id`, [ids]);
+  const photos = new Map();
+  for (const m of media) { const k = Number(m.inbox_id); if (!photos.has(k)) photos.set(k, []); photos.get(k).push(Number(m.id)); }
+  return rows.map(r => ({ id: Number(r.id), sid: Number(r.sid), kind: r.kind, data: parsed(r.data), created_at: r.created_at, photos: photos.get(Number(r.id)) || [] }));
+}
 export async function pendingSupplierCount() {
   await ensureSupplierTables();
   const { rows: [{ n }] } = await query(`SELECT count(*)::int AS n FROM sup_inbox WHERE imported_at IS NULL`);
@@ -86,29 +108,28 @@ export async function pendingSupplierCount() {
 export async function injectSupplierInbox(data) {
   if (!data || !data.S) return 0;
   await ensureSupplierTables();
-  const rows = dbKind === 'mysql'
-    // no arrays in MySQL: the photo ids come as a list of text and are split here
-    ? (await query(`SELECT i.id, i.sid, i.kind, i.data, i.created_at, GROUP_CONCAT(m.id ORDER BY m.id) AS photos
-                    FROM sup_inbox i LEFT JOIN sup_media m ON m.inbox_id = i.id WHERE i.imported_at IS NULL GROUP BY i.id ORDER BY i.id`))
-        .rows.map(r => ({ ...r, photos: String(r.photos || '').split(',').filter(Boolean).map(Number) }))
-    : (await query(`SELECT i.id, i.sid, i.kind, i.data, i.created_at, coalesce(array_agg(m.id ORDER BY m.id) FILTER (WHERE m.id IS NOT NULL), '{}') AS photos
-                                FROM sup_inbox i LEFT JOIN sup_media m ON m.inbox_id = i.id WHERE i.imported_at IS NULL GROUP BY i.id ORDER BY i.id`)).rows;
+  const rows = await inboxRows();
   if (!rows.length) return 0;
   const S = data.S; S.orders = S.orders || []; S.notif = S.notif || []; S.payReqs = S.payReqs || [];
   let added = 0;
-  for (const row of rows) {
+  const orphans = [];                       // replies to an order the shop has since deleted
+  for (const row of rows) try {
     const sup = (S.suppliers || []).find(s => s.id === row.sid);
     const name = sup ? sup.name.split(/[–(]/)[0].trim() : 'Supplier';
     if (row.kind === 'order') {
       const id = 'sp' + row.id;
       if (S.orders.some(o => o.id === id)) continue;
       const d = row.data;
+      // the corrected version of an order the shop asked them to change: the old one is set aside
+      const old = d.replaces ? S.orders.find(o => o.id === d.replaces && o.dir !== 'OUT' && o.sid === row.sid) : null;
+      if (old) { old.status = 'revised'; old.unreadShop = false; old.events = old.events || [];
+        old.events.push({ id: 'e' + row.id + 'r', actor: 'supplier', name: d.rep || name, action: 'revised', note: 'Replaced by a corrected order', at: new Date(row.created_at).getTime() }); }
       S.orders.push({ id, inboxId: row.id, dir: 'IN', sid: row.sid, rep: d.rep || 'Rep', text: d.text || '(photo only)', lines: Array.isArray(d.lines) ? d.lines : [], supNote: d.note || '', date: d.date || localDate(), status: 'pending', note: '', disc: d.disc || null,
-        files: row.photos.map(photoUrl), unreadShop: true, unreadSup: false, src: 'portal', needsOwner: true,
-        events: [{ id: 'e' + row.id, actor: 'supplier', name: d.rep || name, action: 'uploaded', note: d.text || '', at: new Date(row.created_at).getTime() }] });
+        files: row.photos.map(photoUrl), unreadShop: true, unreadSup: false, src: 'portal', needsOwner: true, replaces: old ? old.id : null,
+        events: [{ id: 'e' + row.id, actor: 'supplier', name: d.rep || name, action: old ? 'revised' : 'uploaded', note: old ? ('Corrected order' + (d.text ? ' — ' + d.text : '')) : (d.text || ''), at: new Date(row.created_at).getTime() }] });
       const offer = d.disc ? `, offering ${d.disc.kind === 'pct' ? d.disc.value + '%' : d.disc.value} off` : '';
       const what = (d.lines || []).length ? `${d.lines.length} item${d.lines.length === 1 ? '' : 's'}` : `${row.photos.length} photo${row.photos.length === 1 ? '' : 's'}`;
-      S.notif.unshift({ id: 'n' + row.id.toString(36) + 's', kind: 'order', text: `${name} sent an order (${what})${offer} — needs the owner's approval`, view: 'orders', at: localTime(), read: false, forApprovers: true });
+      S.notif.unshift({ id: 'n' + row.id.toString(36) + 's', kind: 'order', text: `${name} sent ${old ? 'a corrected order' : 'an order'} (${what})${offer} — needs the owner's approval`, view: 'orders', at: localTime(), read: false, forApprovers: true });
       added++;
     } else if (row.kind === 'payreq') {
       const id = 'pr' + row.id;
@@ -132,22 +153,34 @@ export async function injectSupplierInbox(data) {
       added++;
     } else if (row.kind === 'reply') {
       const d = row.data, po = S.orders.find(o => o.no === d.no && o.dir === 'OUT');
-      if (!po) { continue; }                                        // an order that was thrown away: nothing to attach to
+      // an order that was thrown away: nothing to attach to. It is let go, or the till would be told
+      // there is something waiting for ever, and pull the books every two seconds to look for it
+      if (!po) { orphans.push(row.id); continue; }
       if ((po.events || []).some(e => e.inboxId === row.id)) continue;
       po.events = po.events || [];
       po.events.push({ id: 'e' + row.id, inboxId: row.id, actor: 'supplier', name: d.rep || name, action: d.action, note: [d.note, d.invoice ? 'invoice ' + d.invoice : '', d.eta ? 'expected ' + d.eta : ''].filter(Boolean).join(' · '), at: new Date(row.created_at).getTime() });
       if (d.action === 'accepted' && po.status === 'sent') po.status = 'accepted';
       if (d.action === 'changes') po.status = 'changes';
       if (d.action === 'dispatched') { po.status = 'dispatched'; po.invoiceNo = d.invoice || po.invoiceNo; }
-      // completed: the order moves from "Orders we sent" to "From suppliers" and waits for the owner
-      if (d.action === 'completed') { po.status = 'completed'; po.supLines = d.lines || []; po.invoiceNo = d.invoice || po.invoiceNo;
-        po.completedAt = new Date(row.created_at).getTime(); po.needsOwner = true; }
+      // completed: the shop asked for this order, so it needs nobody's approval a second time. It goes
+      // straight to "Ready to purchase", as the supplier will send it (their quantities and prices)
+      if (d.action === 'completed') {
+        const key = l => l.pid ? 'p' + l.pid : 'd' + String(l.desc || '').toLowerCase().trim();
+        const was = new Map((po.lines || []).map(l => [key(l), l]));
+        const have = new Set((S.products || []).map(p => p.id));
+        po.supLines = d.lines || []; po.origLines = po.lines;
+        po.lines = po.supLines.map(l => { const w = was.get(key(l)); const pid = l.pid || (w && w.pid) || null;
+          return { desc: l.desc, unit: l.unit || (w && w.unit) || '', qty: l.qty, est: +l.price || (w && +w.est) || 0, pid, known: !!(pid && have.has(pid)) }; });
+        po.status = 'approved'; po.invoiceNo = d.invoice || po.invoiceNo; po.needsOwner = false;
+        po.completedAt = po.approvedAt = new Date(row.created_at).getTime();
+      }
       po.unreadShop = true;
-      S.notif.unshift({ id: 'n' + row.id.toString(36) + 'r', kind: 'order', text: `${name}: order ${po.no} ${{ accepted: 'confirmed', changes: 'needs a change', dispatched: 'is on its way', completed: 'completed — needs your approval' }[d.action] || d.action}`, view: 'orders', at: localTime(), read: false, forApprovers: d.action === 'completed' });
+      S.notif.unshift({ id: 'n' + row.id.toString(36) + 'r', kind: 'order', text: `${name}: order ${po.no} ${{ accepted: 'confirmed', changes: 'needs a change', dispatched: 'is on its way', completed: 'completed — ready to purchase' }[d.action] || d.action}`, view: 'orders', at: localTime(), read: false });
       added++;
     }
-  }
+  } catch (e) { console.error('supplier inbox row', row.id, 'could not be merged:', e.message); }
   S.notif = S.notif.slice(0, 60);
+  if (orphans.length) await query(`UPDATE sup_inbox SET imported_at = now() WHERE imported_at IS NULL AND id = ANY($1::bigint[])`, [orphans]);
   return added;
 }
 /** A till has saved books that carry these — they are in the shop's hands now. */
@@ -156,6 +189,7 @@ export async function markSupplierImported(data) {
   const ids = new Set();
   for (const o of (S.orders || [])) { if (o.inboxId) ids.add(o.inboxId); for (const e of (o.events || [])) if (e.inboxId) ids.add(e.inboxId); }
   for (const p of (S.payReqs || [])) if (p.inboxId) ids.add(p.inboxId);
+  for (const x of (S.supStockLog || [])) if (x.inboxId) ids.add(x.inboxId);     // who read the shelves
   if (!ids.size) return 0;
   await ensureSupplierTables();
   const { rowCount } = await query(`UPDATE sup_inbox SET imported_at = now() WHERE imported_at IS NULL AND id = ANY($1::bigint[])`, [[...ids]]);
@@ -373,19 +407,22 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
   const sup = (S.suppliers || []).find(s => s.id === req.sup.sid);
   if (!sup) throw new HttpError(404, 'Supplier no longer on file');
   await ensureSupplierTables();
-  const { rows: pending } = await query(`SELECT i.id, i.kind, i.data, i.created_at, count(m.id)::int AS photos FROM sup_inbox i LEFT JOIN sup_media m ON m.inbox_id = i.id WHERE i.sid = $1 AND i.imported_at IS NULL GROUP BY i.id ORDER BY i.id DESC`, [sup.id]);
+  const pending = (await inboxRows(sup.id)).map(p => ({ ...p, photos: p.photos.length }));
+  const hidden = new Set((await query(`SELECT ref FROM sup_hidden WHERE sid = $1`, [sup.id])).rows.map(r => r.ref));
   const pendingReplies = pending.filter(p => p.kind === 'reply');
   const pos = (S.orders || []).filter(o => o.dir === 'OUT' && o.sid === sup.id).map(o => {
     const mine = pendingReplies.filter(p => p.data.no === o.no).map(p => ({ action: p.data.action, note: p.data.note, invoice: p.data.invoice, lines: p.data.lines || null, at: new Date(p.created_at).getTime(), pending: true }));
     const last = mine[0];
-    return { no: o.no, date: o.date, want: o.want, note: o.note, by: o.by, status: last ? (last.action === 'accepted' ? 'accepted' : last.action) : o.status, invoiceNo: o.invoiceNo || (last && last.invoice) || '',
+    return { no: o.no, date: o.date, want: o.want, note: o.note, by: o.by, status: last ? ({ accepted: 'accepted', completed: 'approved' }[last.action] || last.action) : o.status, invoiceNo: o.invoiceNo || (last && last.invoice) || '',
       lines: (o.lines || []).map(l => ({ desc: l.desc, unit: l.unit, qty: l.qty, known: !!l.known, pid: l.pid || null })),
       supLines: (last && last.lines) || o.supLines || null, grn: o.grn || null, approvedAt: o.approvedAt || null,
       events: (o.events || []).map(e => ({ who: e.actor === 'shop' ? (CFG.shop?.name || 'The shop') : e.name, action: e.action, note: e.note, at: e.at })).concat(mine.map(m => ({ who: req.sup.rep || 'You', action: m.action, note: m.note, at: m.at, pending: true }))) };
-  }).sort((a, b) => b.no.localeCompare(a.no));
-  const sent = (S.orders || []).filter(o => o.dir !== 'OUT' && o.sid === sup.id).map(o => ({ id: o.id, date: o.date, rep: o.rep, text: o.text, lines: o.lines || [], supNote: o.supNote || '', status: o.status, note: o.note, photos: (o.files || []).length, grn: o.grn || null, disc: o.disc || null,
+  }).filter(o => !hidden.has('po:' + o.no)).sort((a, b) => b.no.localeCompare(a.no));
+  // an order already replaced by a corrected one still on its way to the shop is not shown twice
+  const replaced = new Set(pending.filter(p => p.kind === 'order' && p.data.replaces).map(p => p.data.replaces));
+  const sent = (S.orders || []).filter(o => o.dir !== 'OUT' && o.sid === sup.id && !hidden.has('in:' + o.id) && !replaced.has(o.id)).map(o => ({ id: o.id, date: o.date, rep: o.rep, text: o.text, lines: o.lines || [], supNote: o.supNote || '', status: o.status, note: o.note, photos: (o.files || []).length, grn: o.grn || null, disc: o.disc || null, replaces: o.replaces || null,
       events: (o.events || []).map(e => ({ who: e.actor === 'shop' ? (CFG.shop?.name || 'The shop') : e.name, action: e.action, note: e.note, at: e.at })) }))
-    .concat(pending.filter(p => p.kind === 'order').map(p => ({ id: 'pending' + p.id, date: p.data.date, rep: p.data.rep, text: p.data.text, lines: p.data.lines || [], supNote: p.data.note || '', status: 'pending', note: '', photos: p.photos, disc: p.data.disc || null, events: [{ who: p.data.rep || 'You', action: 'uploaded', note: p.data.text, at: new Date(p.created_at).getTime() }], waiting: true })))
+    .concat(pending.filter(p => p.kind === 'order').map(p => ({ id: 'pending' + p.id, replaces: p.data.replaces || null, date: p.data.date, rep: p.data.rep, text: p.data.text, lines: p.data.lines || [], supNote: p.data.note || '', status: 'pending', note: '', photos: p.photos, disc: p.data.disc || null, events: [{ who: p.data.rep || 'You', action: 'uploaded', note: p.data.text, at: new Date(p.created_at).getTime() }], waiting: true })))
     .sort((a, b) => (b.events[0]?.at || 0) - (a.events[0]?.at || 0));
   // what the shop owes them, from the journal, like the till does
   let dr = 0, cr = 0;
@@ -519,7 +556,15 @@ r.post('/order', supAuth, asyncHandler(async (req, res) => {
     bufs.push([m[1], b]);
   }
   await ensureSupplierTables();
-  const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'order', $2) RETURNING id`, [req.sup.sid, JSON.stringify({ text, note: typed, lines, rep, disc, date: localDate(), time: localTime() })]);
+  // the corrected version of one the shop asked them to change: only one of theirs, and only then
+  let replaces = null;
+  if (req.body?.replaces) {
+    const old = ((await books())?.S?.orders || []).find(o => o.id === String(req.body.replaces) && o.dir !== 'OUT' && o.sid === req.sup.sid);
+    if (!old || old.status !== 'adjusted') throw new HttpError(400, 'That order is not waiting for your changes any more');
+    if ((await inboxRows(req.sup.sid)).some(p => p.kind === 'order' && p.data.replaces === old.id)) throw new HttpError(400, 'The corrected order is already on its way to the shop');
+    replaces = old.id;
+  }
+  const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'order', $2) RETURNING id`, [req.sup.sid, JSON.stringify({ text, note: typed, lines, rep, disc, replaces, date: localDate(), time: localTime() })]);
   for (const [mime, b] of bufs) await query(`INSERT INTO sup_media (inbox_id, mime, data) VALUES ($1, $2, $3)`, [id, mime, b]);
   res.json({ ok: true, id, photos: bufs.length });
 }));
@@ -557,6 +602,21 @@ r.post('/payreq', supAuth, asyncHandler(async (req, res) => {
     [req.sup.sid, JSON.stringify({ lines, total, note: String(req.body?.note || '').trim().slice(0, 1000),
       rep: String(req.body?.rep || req.sup.rep || '').trim().slice(0, 60), date: localDate(), time: localTime() })]);
   res.json({ ok: true, id, lines: lines.length, total });
+}));
+
+/** Clear away an order that is finished with: one the shop cancelled, or one of theirs the shop turned
+    down. It goes from the supplier's page only — the shop's books keep it. */
+r.post('/hide', supAuth, asyncHandler(async (req, res) => {
+  const ref = String(req.body?.ref || '');
+  const S = (await books())?.S || {};
+  const [kind, id] = [ref.slice(0, ref.indexOf(':')), ref.slice(ref.indexOf(':') + 1)];
+  const o = kind === 'po' ? (S.orders || []).find(x => x.dir === 'OUT' && x.no === id && x.sid === req.sup.sid)
+    : kind === 'in' ? (S.orders || []).find(x => x.dir !== 'OUT' && x.id === id && x.sid === req.sup.sid) : null;
+  if (!o) throw new HttpError(404, 'No such order of yours');
+  if (!['cancelled', 'rejected', 'revised'].includes(o.status)) throw new HttpError(400, 'Only a cancelled or turned-down order can be deleted');
+  await ensureSupplierTables();
+  await query(`INSERT INTO sup_hidden (sid, ref) VALUES ($1, $2)`, [req.sup.sid, ref]);
+  res.json({ ok: true });
 }));
 
 /** The supplier's answer to an order the shop sent: accepted / changes / dispatched (+ invoice no). */

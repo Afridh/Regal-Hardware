@@ -10,14 +10,26 @@ import { injectCustInbox, markCustImported, pendingCustCount } from './customer.
 import { catchUpLogins } from '../services/portalLogins.js';
 // everything that arrived from outside the tills — the website's orders, the suppliers', and what a
 // customer said on their own page — in one go
-const injectInbox = async data => (await injectShopInbox(data)) + (await injectSupplierInbox(data)) + (await injectCustInbox(data));
-const markImported = async data => (await markShopImported(data)) + (await markSupplierImported(data)) + (await markCustImported(data));
+// Each one on its own, and none of them allowed to fail the books: if an inbox cannot be read, the till
+// still gets the books (and can save), and what is waiting comes in on the next read that works.
+const safely = (what, fn) => async data => { try { return await fn(data); } catch (e) { console.error(`${what} failed:`, e.message); return 0; } };
+const INJECT = [safely('website orders', injectShopInbox), safely('supplier inbox', injectSupplierInbox), safely('customer inbox', injectCustInbox)];
+const MARK = [safely('marking website orders', markShopImported), safely('marking supplier inbox', markSupplierImported), safely('marking customer inbox', markCustImported)];
+const injectInbox = async data => { let n = 0; for (const f of INJECT) n += await f(data); return n; };
+const markImported = async data => { let n = 0; for (const f of MARK) n += await f(data); return n; };
 const pendingCount = async () => (await pendingShopCount()) + (await pendingSupplierCount()) + (await pendingCustCount());
 
 const r = Router();
 const BOOKS_KEY = 'regal';
+/* What this server can do, and when it was started. The pages change the moment the files are pulled;
+   the server's own code only when the Node app is restarted. A till reads this to know which it is
+   talking to, and says so when the server is behind the page (held bills, for one, need the new one). */
+const SERVER = { started: new Date().toISOString(), features: ['held'] };
 const HISTORY_KEEP = 200;
-const LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'held', 'heldBills', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId', 'isDemo'];
+// What belongs to one till's screen and is never kept in the shared books. It must agree with the
+// list in app/regal-bridge.js. Held bills are NOT on it: a bill held on one till (a phone) is picked
+// up on another, so they travel with the books — this list used to throw them away on every save.
+const LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId', 'isDemo'];
 
 function sign(user) {
   return jwt.sign({ kind: 'regal', name: user.name, role: user.role, perms: user.perms || [] }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES || '12h' });
@@ -232,7 +244,8 @@ r.get('/books/:key/rev', asyncHandler(async (req, res) => {
   if (req.params.key === BOOKS_KEY) {
     try { inbox = await pendingCount(); } catch (e) { console.error('pending orders count failed:', e.message); }
   }
-  res.json({ rev: row ? Number(row.rev) : 0, updated_at: row?.updated_at || null, updated_by: row?.updated_by || null, inbox, build: appBuild() });
+  res.json({ rev: row ? Number(row.rev) : 0, updated_at: row?.updated_at || null, updated_by: row?.updated_by || null, inbox, build: appBuild(),
+    server: SERVER });
 }));
 
 r.get('/books/:key', regalAuth, asyncHandler(async (req, res) => {

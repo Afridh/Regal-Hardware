@@ -81,16 +81,35 @@ input:focus,textarea:focus{outline:none;border-color:var(--yellow);box-shadow:0 
 .hero{background:linear-gradient(135deg,var(--ink),#16323A);color:#fff;border-radius:var(--r);padding:18px;margin-bottom:12px}
 .hero b{font-family:Archivo,sans-serif;font-size:22px;display:block}.hero .muted{color:#B9C8C6}
 .kv{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:14px}
-/* the menu: five places, always in reach — a bar under the header, scrolling sideways on a phone */
-.menu{position:sticky;top:59px;z-index:15;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 2px 6px rgba(16,30,34,.05)}
-.menu-in{max-width:760px;margin:0 auto;display:flex;gap:4px;padding:6px 8px;overflow-x:auto;scrollbar-width:none}
+/* the menu: across the top on a phone, down the left (as on the till) on anything wider */
+.menu{position:sticky;top:59px;z-index:15;background:var(--ink);border-bottom:1px solid #0A1416}
+.menu-in{display:flex;gap:2px;padding:6px 6px;overflow-x:auto;scrollbar-width:none}
 .menu-in::-webkit-scrollbar{display:none}
-.menu button{flex:1 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;border:0;background:none;border-radius:10px;padding:7px 10px;cursor:pointer;color:var(--steel);font-size:12px;font-weight:600;position:relative;white-space:nowrap}
+.menu button{flex:1 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;border:0;background:none;border-radius:10px;padding:7px 8px;cursor:pointer;color:#B9C8C6;font-size:11.5px;font-weight:600;position:relative;white-space:nowrap}
 .menu button .ic{font-size:18px;line-height:1}
-.menu button.on{background:var(--ink);color:#fff}
-.menu .short{display:none}
-@media (max-width:620px){.menu .long{display:none}.menu .short{display:inline}.menu button{flex:1 1 0;padding:7px 4px;font-size:11.5px}}
-.menu button i{position:absolute;top:2px;right:6px;background:var(--rust);color:#fff;font-style:normal;font-size:10px;font-weight:700;border-radius:99px;padding:0 6px;line-height:16px}
+.menu button.on{background:rgba(240,168,30,.16);color:var(--yellow)}
+.menu .long{display:none}
+.menu button i{position:absolute;top:2px;right:4px;background:var(--rust);color:#fff;font-style:normal;font-size:10px;font-weight:700;border-radius:99px;padding:0 6px;line-height:16px}
+@media (min-width:860px){
+  .menu{position:fixed;top:59px;left:0;bottom:0;width:236px;border:0;border-right:1px solid #0A1416;overflow-y:auto}
+  .menu-in{flex-direction:column;gap:3px;padding:14px 10px}
+  .menu button{flex:none;flex-direction:row;justify-content:flex-start;gap:12px;padding:11px 14px;font-size:14px;color:#C9D4D2;border-radius:8px;border-left:3px solid transparent}
+  .menu button:hover{background:rgba(255,255,255,.06);color:#fff}
+  .menu button.on{background:rgba(240,168,30,.14);color:#fff;border-left-color:var(--yellow)}
+  .menu button .ic{width:22px;text-align:center}
+  .menu .long{display:inline}.menu .short{display:none}
+  .menu button i{position:static;margin-left:auto;line-height:18px}
+  body.in main{margin-left:236px;max-width:none;padding:22px 28px 60px}
+  body.in main>*{max-width:860px}
+  .top-in{max-width:none;padding:0 22px}
+}
+.ptitle{font-size:22px;margin:2px 0 14px}
+h2.sec{display:flex;align-items:center;gap:8px;margin:18px 0 8px}h2.sec:first-child{margin-top:0}
+h2.sec i{font-style:normal;background:var(--ink);color:#fff;border-radius:99px;font-size:12px;padding:1px 9px}
+.o.attn{border-left:4px solid var(--yellow)}
+.o.dead{opacity:.85;border-left:4px solid var(--rust)}
+.notice.bad{background:var(--tint-rust);border-color:#EBB1A3}
+.btn.del{color:var(--rust);border-color:rgba(192,68,44,.35)}
 h3{font-family:Archivo,sans-serif;font-size:14px;margin:16px 0 8px}
 .seg{display:flex;gap:4px;background:#fff;border:1px solid var(--line);border-radius:99px;padding:4px;margin-bottom:12px}
 .seg button{flex:1;border:0;background:none;border-radius:99px;padding:9px 8px;font-weight:600;cursor:pointer;color:var(--steel);font-size:14px}
@@ -118,13 +137,16 @@ h3{font-family:Archivo,sans-serif;font-size:14px;margin:16px 0 8px}
 <script>
 /* ======================= the supplier's page =======================
    Talks only to /api/sup/*. A rep signs in with the user name the shop made for them (their name, and
-   that name with 123 as the first password). One menu, five places:
-     Orders from the shop — complete an order as it was sent, or edit it and complete; it goes to the
-                            shop's owner to approve, and then shows under Sent Orders
-     Create an Order      — pick their own items at the shop or type new ones; the owner approves it
-     Sent Orders          — everything completed and approved, waiting to be bought in or bought
-     Payment Portal       — their bills, how old each is against the credit period, and asking to be paid
-     Account              — their user name and password, and asking for a sign-in for someone else */
+   that name with 123 as the first password). A menu down the left, as on the till:
+     Orders From Shop  — complete an order as it was sent, or edit it and complete. The shop asked for
+                         it, so it goes straight to Pending Orders to wait for the purchase
+     Create new order  — pick their own items at the shop or type new ones, or send a photo of the
+                         invoice; the owner approves it
+     Pending Orders    — everything not yet bought in: waiting for approval, waiting for the purchase,
+                         sent back for changes (edit and resend), and cancelled or turned down (delete)
+     Order History     — what the shop has bought in
+     Payment Request   — their bills, how old each is against the credit period, and asking to be paid
+     Account           — their user name and password, and asking for a sign-in for someone else */
 const API='/api/sup';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -204,8 +226,8 @@ const tag=s=>{const x=STATUS[s]||['',s];return `<span class="tag ${x[0]}">${esc(
 const ACT={sent:'Order sent',accepted:'Accepted',changes:'Asked for a change',dispatched:'Dispatched',received:'Goods received',cancelled:'Cancelled',uploaded:'Order sent in',rejected:'Not accepted',adjusted:'Change requested',comment:''};
 
 /* ---- the five pages, one menu ---- */
-const MENU=[['orders','📥','Orders from the shop','Orders'],['create','➕','Create an Order','Create'],['sent','📦','Sent Orders','Sent'],['pay','💳','Payment Portal','Payments'],['account','👤','Account','Account']];
-const ACTIVE=['sent','accepted','changes','dispatched','adjusted','completed'];      // a shop order still in the supplier's hands, or with the shop to approve
+const MENU=[['orders','📥','Orders From Shop','From shop'],['create','➕','Create new order','Create'],['pending','⏳','Pending Orders','Pending'],['history','🗂️','Order History','History'],['pay','💳','Payment Request','Payment'],['account','👤','Account','Account']];
+const ACTIVE=['sent','accepted','changes','dispatched','adjusted'];      // a shop order still in the supplier's hands — once completed it is under Pending Orders
 const NEEDS_ME=['sent','accepted','changes','dispatched','adjusted'];
 
 function render(){
@@ -213,18 +235,20 @@ function render(){
   $('#who').innerHTML=st.token&&st.me?`${esc(st.me.supplier.name.split(/[–(]/)[0].trim())}${st.rep?' · '+esc(st.rep):''}<br><a href="#" id="out">Sign out</a>`:'';
   const out=$('#out'); if(out) out.onclick=e=>{e.preventDefault();signOut()};
   const nav=$('#menu');
-  if(!st.token){ nav.innerHTML=''; nav.style.display='none';
+  if(!st.token){ nav.innerHTML=''; nav.style.display='none'; document.body.classList.remove('in');
     m.innerHTML=`<div class="hero"><b>For our suppliers</b><div class="muted">See the orders Regal Hardware sends you, complete them, send your own orders, and ask to be paid — all in one place.</div></div>
     <div class="card"><h2>Sign in</h2><div class="muted" style="margin-bottom:10px">With the user name and password the shop gave you.</div><button class="btn tape big" id="signin">Sign in</button></div>`;
     $('#signin').onclick=()=>signIn(load); return }
-  if(!st.me){ nav.style.display='none'; m.innerHTML='<div class="card muted">Loading…</div>'; return }
+  if(!st.me){ nav.style.display='none'; document.body.classList.remove('in'); m.innerHTML='<div class="card muted">Loading…</div>'; return }
+  document.body.classList.add('in');
   const me=st.me;
-  const badge={orders:me.pos.filter(o=>NEEDS_ME.includes(o.status)).length, pay:(me.payReqs||[]).filter(r=>r.status==='ready').length};
+  const badge={orders:me.pos.filter(o=>NEEDS_ME.includes(o.status)).length, pending:(me.sent||[]).filter(o=>o.status==='adjusted').length, pay:(me.payReqs||[]).filter(r=>r.status==='ready').length};
   if(!MENU.some(x=>x[0]===st.tab)) st.tab='orders';
   nav.style.display='';
   nav.innerHTML=`<div class="menu-in">${MENU.map(([k,ic,label,short])=>`<button class="${st.tab===k?'on':''}" data-t="${k}" title="${label}"><span class="ic">${ic}</span><span class="long">${label}</span><span class="short">${short}</span>${badge[k]?`<i>${badge[k]}</i>`:''}</button>`).join('')}</div>`;
   $$('[data-t]',nav).forEach(b=>b.onclick=()=>{st.tab=b.dataset.t; st.flash=''; render(); window.scrollTo(0,0)});
-  m.innerHTML=(st.flash?`<div class="flash">${st.flash}</div>`:'')+({orders:ordersPage,create:createPage,sent:sentPage,pay,account})[st.tab]();
+  const title=(MENU.find(x=>x[0]===st.tab)||[])[2]||'';
+  m.innerHTML=`<h1 class="ptitle">${esc(title)}</h1>`+(st.flash?`<div class="flash">${st.flash}</div>`:'')+({orders:ordersPage,create:createPage,pending:pendingPage,history:historyPage,pay,account})[st.tab]();
   bind();
 }
 
@@ -234,7 +258,7 @@ function linesTable(lines,priced){
 }
 function ordersPage(){
   const me=st.me, list=me.pos.filter(o=>ACTIVE.includes(o.status));
-  if(!list.length) return '<div class="empty"><div>📭</div><b>No orders waiting</b><span>When the shop sends you an order it shows here. Completed ones are under <b>Sent Orders</b>.</span></div>';
+  if(!list.length) return '<div class="empty"><div>📭</div><b>No orders waiting</b><span>When the shop sends you an order it shows here. Once you complete it, it moves to <b>Pending Orders</b>.</span></div>';
   return list.map(o=>{
     const ed=st.edit&&st.edit[o.no];
     const shopSaid=(o.events||[]).filter(e=>e.action==='adjusted').slice(-1)[0];
@@ -242,7 +266,7 @@ function ordersPage(){
      <div class="h"><div><b>${esc(o.no)}</b><div class="muted">${esc(o.date)}${o.want?' · wanted by '+esc(o.want):''}</div>${o.note?`<div class="muted">“${esc(o.note)}”</div>`:''}</div>${tag(o.status==='completed'?'completed':o.status)}</div>
      ${o.status==='adjusted'&&shopSaid?`<div class="notice">The shop asked for a change: <b>${esc(shopSaid.note||'')}</b></div>`:''}
      ${o.status==='completed'
-       ?`${linesTable(o.supLines||o.lines,true)}<div class="muted">You completed this order — it is with the shop for approval. Once they approve it, it moves to <b>Sent Orders</b>.</div>`
+       ?`${linesTable(o.supLines||o.lines,true)}<div class="muted">You completed this order — it is under <b>Pending Orders</b>, waiting for the shop to buy it in.</div>`
        :ed?editOrder(o,ed):`${linesTable(o.lines,false)}
          <div class="acts"><button class="btn green" data-done="${esc(o.no)}">✓ Complete as it is</button><button class="btn" data-edit="${esc(o.no)}">✎ Edit</button></div>`}
     </div>`}).join('');
@@ -271,7 +295,7 @@ async function completeOrder(no,edited){
   try{
     await api('/po/'+encodeURIComponent(no)+'/respond',{method:'POST',body:{action:'completed',lines,invoice:ed?ed.invoice||'':'',note:ed?ed.note||'':''}});
     if(st.edit) delete st.edit[no];
-    st.flash=`✓ ${esc(no)} completed — it is with the shop for approval`;
+    st.flash=`✓ ${esc(no)} completed — it is under <b>Pending Orders</b>, waiting for the shop to buy it in`;
     await load();
   }catch(e){ toast(e.message) }
   finally{ st.busy=false; render() }
@@ -280,13 +304,16 @@ async function completeOrder(no,edited){
 /* ---------- Create an Order: pick their items or type, then send ---------- */
 /* Two ways to send an order: pick the items, or photograph the invoice and send that. */
 function createPage(){
-  const mode=st.cmode||'items';
-  return `<div class="seg"><button class="${mode==='items'?'on':''}" data-cmode="items">🧾 Pick items</button><button class="${mode==='photo'?'on':''}" data-cmode="photo">📷 Photo of the invoice</button></div>`
+  const mode=st.cmode||'items', R=st.replacing;
+  return (R?`<div class="notice"><b>Correcting your order of ${esc(R.date)}.</b>${R.note?` The shop asked: “${esc(R.note)}”.`:''}
+      Change it here and send it — it replaces the old one.
+      <div class="acts"><button class="btn sm" data-unreplace="1">Start a new order instead</button></div></div>`:'')
+    +`<div class="seg"><button class="${mode==='items'?'on':''}" data-cmode="items">🧾 Pick items</button><button class="${mode==='photo'?'on':''}" data-cmode="photo">📷 Photo of the invoice</button></div>`
     +(mode==='photo'?photoPage():itemsPage());
 }
 function waitingList(){
-  const waiting=(st.me.sent||[]).filter(o=>['pending','adjusted','rejected'].includes(o.status)||o.waiting);
-  return waiting.length?`<h2 style="margin:16px 0 8px">With the shop</h2>${waiting.map(o=>sentCard(o,true)).join('')}`:'';
+  const n=(st.me.sent||[]).filter(o=>['pending','adjusted'].includes(o.status)||o.waiting).length;
+  return n?`<div class="muted" style="margin-top:4px">${n} of your orders ${n===1?'is':'are'} with the shop — see <a href="#" data-goto="pending">Pending Orders</a>.</div>`:'';
 }
 function photoPage(){
   const P=st.photo=st.photo||{photos:[],inv:'',note:''};
@@ -306,9 +333,11 @@ async function sendPhotos(){
   st.busy=true; render();
   try{
     const text=[P.inv.trim()?'Invoice '+P.inv.trim():'',P.note.trim()].filter(Boolean).join('\n');
-    await api('/order',{method:'POST',body:{photos:P.photos,text,rep:st.rep||''}});
+    await api('/order',{method:'POST',body:{photos:P.photos,text,rep:st.rep||'',replaces:st.replacing?st.replacing.id:null}});
     st.photo={photos:[],inv:'',note:''};
-    st.flash='✓ Photos sent — the shop will look at them and approve the order. It shows under <b>Sent Orders</b> once they do.';
+    if(st.replacing){ st.tab='pending'; st.replacing=null }
+    st.flash=st.replacing?'✓ Corrected order sent — it replaces the old one and waits under <b>Pending Orders</b>'
+      :'✓ Photos sent — it waits under <b>Pending Orders</b> for the shop to approve it';
     await load();
   }catch(e){ toast(e.message) }
   finally{ st.busy=false; render() }
@@ -338,7 +367,7 @@ function itemsPage(){
       ${total?`<div class="kv"><span class="muted">${D.lines.length} item${D.lines.length===1?'':'s'}</span><b>${money(total)}</b></div>`:''}`
      :'<div class="muted" style="margin-top:10px">Nothing on the order yet.</div>'}
     <div class="f" style="margin-top:10px"><label>Note for the shop (optional)</label><textarea id="cnote" style="min-height:70px" placeholder="e.g. delivery Thursday morning">${esc(D.note)}</textarea></div>
-    <button class="btn tape big" id="csend" ${D.lines.length&&!st.busy?'':'disabled'}>${st.busy?'Sending…':'Send the order to the shop'}</button>
+    <button class="btn tape big" id="csend" ${D.lines.length&&!st.busy?'':'disabled'}>${st.busy?'Sending…':st.replacing?'Send the corrected order':'Send the order to the shop'}</button>
    </div>
    ${waitingList()}`;
 }
@@ -354,33 +383,82 @@ async function sendDraft(){
   const D=st.draft; if(!D||!D.lines.length||st.busy) return;
   st.busy=true; render();
   try{
-    await api('/order',{method:'POST',body:{lines:D.lines,text:D.note||'',rep:st.rep||''}});
+    await api('/order',{method:'POST',body:{lines:D.lines,text:D.note||'',rep:st.rep||'',replaces:st.replacing?st.replacing.id:null}});
     st.draft={lines:[],q:'',pick:null,qty:'',price:'',note:''};
-    st.flash='✓ Order sent — the shop will approve it, then it shows under <b>Sent Orders</b>';
+    if(st.replacing){ st.tab='pending'; st.replacing=null }
+    st.flash=st.replacing?'✓ Corrected order sent — it replaces the old one and waits under <b>Pending Orders</b>'
+      :'✓ Order sent — it waits under <b>Pending Orders</b> for the shop to approve it';
     await load();
   }catch(e){ toast(e.message) }
   finally{ st.busy=false; render() }
 }
 
-/* ---------- Sent Orders: everything completed and approved ---------- */
-function sentCard(o,mine){
-  const lines=(o.lines&&o.lines.length)?o.lines:null;
-  const state=mine
-    ?(o.waiting?['warn','Reaching the shop']:o.status==='rejected'?['bad','Not accepted']:o.status==='adjusted'?['warn','The shop asked for a change']:['warn','Waiting for approval'])
-    :null;
-  return `<div class="card o"><div class="h"><div><b>${esc(o.no||'Your order')}</b><div class="muted">${esc(o.date)}${o.rep?' · '+esc(o.rep):''}${o.grn?' · purchased as '+esc(o.grn):''}</div></div>
-     ${state?`<span class="tag ${state[0]}">${state[1]}</span>`:o.grn||o.status==='received'?'<span class="tag ok">Purchased</span>':'<span class="tag blue">Approved — waiting for purchase</span>'}</div>
+/* ---------- Pending Orders and Order History ----------
+   One list of every order, theirs and the shop's, each saying where it stands. Pending is everything
+   not bought in yet; History is what the shop has bought in. */
+function allOrders(){
+  const me=st.me;
+  const theirs=me.pos.filter(o=>['completed','approved','received','cancelled'].includes(o.status))
+    .map(o=>({from:'shop',ref:'po:'+o.no,no:o.no,date:o.date,lines:o.supLines||o.lines,grn:o.grn,status:o.status,note:o.note,invoiceNo:o.invoiceNo,events:o.events||[]}));
+  const ours=(me.sent||[]).filter(o=>o.status!=='revised')
+    .map(o=>({...o,from:'you',ref:'in:'+o.id,no:''}));
+  return theirs.concat(ours).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+}
+const bought=o=>!!o.grn||o.status==='received';
+/* where an order stands, said for the one who sent it — and whose order it was */
+function orderState(o){
+  if(o.from==='shop') return bought(o)?['ok','Order from shop — purchased']
+    :o.status==='cancelled'?['bad','Order from shop — cancelled by the shop']
+    :o.status==='completed'?['warn','Order from shop — waiting for approval']
+    :['blue','Order from shop — waiting for purchase'];
+  return bought(o)?['ok','Your order — purchased']
+    :o.waiting?['warn','Your order — reaching the shop']
+    :o.status==='pending'?['warn','Your order — waiting for approval']
+    :o.status==='adjusted'?['warn','The shop asked for changes']
+    :o.status==='rejected'?['bad','Your order — rejected by the shop']
+    :['blue','Your order — approved, waiting for purchase'];
+}
+function shopSaid(o){ const e=(o.events||[]).filter(e=>['adjusted','rejected','cancelled'].includes(e.action)).slice(-1)[0]; return (e&&e.note)||o.note||'' }
+function orderCard(o){
+  const lines=(o.lines&&o.lines.length)?o.lines:null, state=orderState(o), said=shopSaid(o);
+  const closed=o.status==='cancelled'||o.status==='rejected';
+  return `<div class="card o${o.status==='adjusted'?' attn':closed?' dead':''}"><div class="h"><div><b>${esc(o.no||'Your order')}</b><div class="muted">${esc(o.date)}${o.rep?' · '+esc(o.rep):''}${o.invoiceNo?' · invoice '+esc(o.invoiceNo):''}${o.grn?' · purchased as '+esc(o.grn):''}</div></div>
+     <span class="tag ${state[0]}">${state[1]}</span></div>
+    ${['adjusted','rejected','cancelled'].includes(o.status)&&said?`<div class="notice${closed?' bad':''}"><b>The shop said:</b> ${esc(said)}</div>`:''}
     ${lines?linesTable(lines,true):o.text&&o.text!=='(photo only)'?`<div class="txt">${esc(o.text)}</div>`:''}
     ${o.photos?`<div class="muted">📷 Sent as ${o.photos} photo${o.photos===1?'':'s'} of the invoice</div>`:''}
-    ${o.note&&mine?`<div class="muted"><b>Shop:</b> ${esc(o.note)}</div>`:''}</div>`;
+    ${o.status==='adjusted'&&!o.waiting?`<div class="acts"><button class="btn tape" data-resend="${esc(o.id)}">✎ Edit and resend</button></div>`:''}
+    ${closed?`<div class="acts"><button class="btn sm del" data-hide="${esc(o.ref)}">🗑 Delete</button></div>`:''}</div>`;
 }
-function sentPage(){
-  const me=st.me;
-  const ours=(me.sent||[]).filter(o=>['accepted','received'].includes(o.status)).map(o=>({...o,no:''}));
-  const theirs=me.pos.filter(o=>['approved','received'].includes(o.status)).map(o=>({no:o.no,date:o.date,lines:o.supLines||o.lines,grn:o.grn,status:o.status}));
-  const all=theirs.concat(ours);
-  if(!all.length) return '<div class="empty"><div>📦</div><b>Nothing here yet</b><span>Orders show here once the shop approves them — the ones they sent you that you completed, and the ones you sent.</span></div>';
-  return all.map(o=>sentCard(o,false)).join('');
+function pendingPage(){
+  const all=allOrders().filter(o=>!bought(o));
+  const changes=all.filter(o=>o.status==='adjusted');
+  const approval=all.filter(o=>o.waiting||o.status==='pending'||o.status==='completed');
+  const purchase=all.filter(o=>o.status==='approved'||(o.from==='you'&&o.status==='accepted'));
+  const closed=all.filter(o=>o.status==='cancelled'||o.status==='rejected');
+  if(!all.length) return '<div class="empty"><div>⏳</div><b>Nothing pending</b><span>Orders you send, and orders from the shop once you complete them, wait here until the shop buys them in.</span></div>';
+  const part=(title,sub,list)=>list.length?`<h2 class="sec">${title} <i>${list.length}</i></h2>${sub?`<div class="muted" style="margin:-4px 0 8px">${sub}</div>`:''}${list.map(orderCard).join('')}`:'';
+  return part('Needs your changes','The shop asked for a change. Edit the order and send it again — the new one replaces the old.',changes)
+    +part('Waiting for approval','',approval)
+    +part('Waiting for purchase','Approved — the shop enters the purchase when the goods arrive.',purchase)
+    +part('Cancelled or rejected','The shop will not take these. Delete them to clear them away.',closed);
+}
+function historyPage(){
+  const done=allOrders().filter(bought);
+  if(!done.length) return '<div class="empty"><div>🗂️</div><b>No history yet</b><span>Once the shop buys in an order, it shows here.</span></div>';
+  return done.map(orderCard).join('');
+}
+async function hideOrder(ref){
+  if(!confirm('Delete this order from your page? The shop keeps its own record.')) return;
+  try{ await api('/hide',{method:'POST',body:{ref}}); toast('Deleted'); await load() }catch(e){ toast(e.message) }
+}
+function resendOrder(id){
+  const o=(st.me.sent||[]).find(x=>x.id===id); if(!o) return;
+  st.replacing={id:o.id,date:o.date,note:shopSaid(o)};
+  if((o.lines||[]).length){ st.cmode='items';
+    st.draft={lines:o.lines.map(l=>({desc:l.desc,pid:l.pid||null,unit:l.unit||'',qty:+l.qty||0,price:+l.price||0})),q:'',pick:null,qty:'',price:'',note:o.supNote||''} }
+  else { st.cmode='photo'; st.photo={photos:[],inv:'',note:o.supNote||''} }
+  st.tab='create'; st.flash=''; render(); window.scrollTo(0,0);
 }
 
 /* ---------- Payment Portal: the bills, how old they are, and asking to be paid ---------- */
@@ -507,6 +585,11 @@ function bind(){
   const pinv=$('#pinv'); if(pinv) pinv.oninput=()=>{ st.photo.inv=pinv.value };
   const pnote=$('#pnote'); if(pnote) pnote.oninput=()=>{ st.photo.note=pnote.value };
   const psend=$('#psend'); if(psend) psend.onclick=sendPhotos;
+  // pending orders: edit and resend, delete; links between places
+  $$('[data-resend]',m).forEach(b=>b.onclick=()=>resendOrder(b.dataset.resend));
+  $$('[data-hide]',m).forEach(b=>b.onclick=()=>hideOrder(b.dataset.hide));
+  $$('[data-unreplace]',m).forEach(b=>b.onclick=()=>{ st.replacing=null; st.draft={lines:[],q:'',pick:null,qty:'',price:'',note:''}; st.photo={photos:[],inv:'',note:''}; render() });
+  $$('[data-goto]',m).forEach(a=>a.onclick=e=>{ e.preventDefault(); st.tab=a.dataset.goto; st.flash=''; render(); window.scrollTo(0,0) });
   // payment portal
   $$('[data-paypick]',m).forEach(cb=>cb.onchange=()=>{ st.payPick=st.payPick||{};
     if(cb.checked) st.payPick[cb.dataset.paypick]={claim:'',note:''}; else delete st.payPick[cb.dataset.paypick];
@@ -604,8 +687,12 @@ function signIn(then){
   document.body.appendChild(el); draw();
 }
 async function load(){ if(!st.token) return render(); try{ st.me=await api('/me') }catch(e){ if(st.token) toast(e.message); st.me=null } render() }
-load(); setInterval(()=>{ const typing=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
-  if(st.token&&!st.busy&&!typing&&!(st.edit&&Object.keys(st.edit).length)&&!(st.draft&&st.draft.lines.length)) load() },60000);
+/* what the shop does shows here within seconds: read again every 15 seconds while the page is in
+   front, and at once when it comes back to the front — never while something is being filled in */
+const quiet=()=>{ const typing=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  return st.token&&!st.busy&&!typing&&!document.hidden&&!(st.edit&&Object.keys(st.edit).length)&&!(st.draft&&st.draft.lines.length)&&!(st.photo&&st.photo.photos.length) };
+load(); setInterval(()=>{ if(quiet()) load() },15000);
+document.addEventListener('visibilitychange',()=>{ if(quiet()) load() });
 </script>
 </body>
 </html>
