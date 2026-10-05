@@ -22535,6 +22535,14 @@ window.refreshMe=function(){
   S.user.role=u.role;
   S.user.perms=[...(u.perms||[])];
 };
+/* The server ended this till's sign-in (it ran out, or was signed out elsewhere). Carrying on would
+   look like work but nothing would reach the server, so it goes back to the sign-in screen; the bill
+   on the screen is kept, as with any sign-out. */
+window.serverSignedOut=()=>{
+  if(window.isDemo||!S||S.signedOut) return;
+  signOut();
+  setTimeout(()=>toast('Your sign-in to the server ran out — please sign in again','warn'),400);
+};
 function signOut(){
   if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){ leaveDemo(); return }
   // the bill on the screen is kept on this till and comes back when they sign in again, so signing
@@ -24289,7 +24297,7 @@ if(window.__sandboxDemo){
       if(!name){
         try{ name=JSON.parse(atob(regalBridge.token().split('.')[1])).name }catch(e){}
       }
-      if(!explicitlySignedOut && name){
+      if(!explicitlySignedOut && name && regalBridge.online()){
         backAtTheTill(name);
       } else {
         S.signedOut=true;
@@ -24318,12 +24326,10 @@ if(window.__sandboxDemo){
       }
     }).catch(()=>{})
     .finally(()=>{
-      if(!explicitlySignedOut && rememberedUser){
-        backAtTheTill(rememberedUser);
-      } else {
-        S.signedOut=true;
-        shopLock();
-      }
+      // no sign-in with the server: whoever was here last has to sign in again, or nothing they did
+      // would be saved — the books on the screen are not the shop's until the server hands them over
+      S.signedOut=true;
+      shopLock();
     });
   }
 } else {

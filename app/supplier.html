@@ -226,7 +226,9 @@ const tag=s=>{const x=STATUS[s]||['',s];return `<span class="tag ${x[0]}">${esc(
 const ACT={sent:'Order sent',accepted:'Accepted',changes:'Asked for a change',dispatched:'Dispatched',received:'Goods received',cancelled:'Cancelled',uploaded:'Order sent in',rejected:'Not accepted',adjusted:'Change requested',comment:''};
 
 /* ---- the five pages, one menu ---- */
-const MENU=[['orders','📥','Orders From Shop','From shop'],['create','➕','Create new order','Create'],['pending','⏳','Pending Orders','Pending'],['history','🗂️','Order History','History'],['pay','💳','Payment Request','Payment'],['account','👤','Account','Account']];
+const MENU=[['orders','📥','Orders From Shop','From shop'],['create','➕','Create new order','Create'],['pending','⏳','Pending Orders','Pending'],['history','🗂️','Order History','History'],['stock','📦','Your stock','Stock'],['pay','💳','Payment Request','Payment'],['account','👤','Account','Account']];
+/* Their stock is a place only while the shop has opened it to them (Suppliers → Show them their stock). */
+const stockOpen=()=>!!(st.me&&+st.me.stockUntil>Date.now());
 const ACTIVE=['sent','accepted','changes','dispatched','adjusted'];      // a shop order still in the supplier's hands — once completed it is under Pending Orders
 const NEEDS_ME=['sent','accepted','changes','dispatched','adjusted'];
 
@@ -243,12 +245,13 @@ function render(){
   document.body.classList.add('in');
   const me=st.me;
   const badge={orders:me.pos.filter(o=>NEEDS_ME.includes(o.status)).length, pending:(me.sent||[]).filter(o=>o.status==='adjusted').length, pay:(me.payReqs||[]).filter(r=>r.status==='ready').length};
-  if(!MENU.some(x=>x[0]===st.tab)) st.tab='orders';
+  const menu=MENU.filter(x=>x[0]!=='stock'||stockOpen());
+  if(!menu.some(x=>x[0]===st.tab)) st.tab='orders';
   nav.style.display='';
-  nav.innerHTML=`<div class="menu-in">${MENU.map(([k,ic,label,short])=>`<button class="${st.tab===k?'on':''}" data-t="${k}" title="${label}"><span class="ic">${ic}</span><span class="long">${label}</span><span class="short">${short}</span>${badge[k]?`<i>${badge[k]}</i>`:''}</button>`).join('')}</div>`;
+  nav.innerHTML=`<div class="menu-in">${menu.map(([k,ic,label,short])=>`<button class="${st.tab===k?'on':''}" data-t="${k}" title="${label}"><span class="ic">${ic}</span><span class="long">${label}</span><span class="short">${short}</span>${badge[k]?`<i>${badge[k]}</i>`:''}</button>`).join('')}</div>`;
   $$('[data-t]',nav).forEach(b=>b.onclick=()=>{st.tab=b.dataset.t; st.flash=''; render(); window.scrollTo(0,0)});
   const title=(MENU.find(x=>x[0]===st.tab)||[])[2]||'';
-  m.innerHTML=`<h1 class="ptitle">${esc(title)}</h1>`+(st.flash?`<div class="flash">${st.flash}</div>`:'')+({orders:ordersPage,create:createPage,pending:pendingPage,history:historyPage,pay,account})[st.tab]();
+  m.innerHTML=`<h1 class="ptitle">${esc(title)}</h1>`+(st.flash?`<div class="flash">${st.flash}</div>`:'')+({orders:ordersPage,create:createPage,pending:pendingPage,history:historyPage,stock:stockPage,pay,account})[st.tab]();
   bind();
 }
 
@@ -461,19 +464,53 @@ function resendOrder(id){
   st.tab='create'; st.flash=''; render(); window.scrollTo(0,0);
 }
 
+/* ---------- Your stock: what the shop holds of their lines, while the shop has it open ---------- */
+async function loadStock(){
+  st.stockBusy=true; render();
+  try{ st.stock=await api('/stock') }catch(e){ st.stock={error:e.message} }
+  finally{ st.stockBusy=false; render() }
+}
+function stockPage(){
+  if(!stockOpen()) return '<div class="empty"><div>📦</div><b>Not open just now</b><span>The shop opens this for you for a day at a time. Ask them to show you your stock.</span></div>';
+  if(!st.stock&&!st.stockBusy){ setTimeout(loadStock,0); return '<div class="card muted">Loading your stock…</div>' }
+  if(st.stockBusy&&!st.stock) return '<div class="card muted">Loading your stock…</div>';
+  const S2=st.stock||{};
+  if(S2.error) return `<div class="card"><b>Could not load it</b><div class="muted">${esc(S2.error)}</div><div class="acts"><button class="btn" id="stockAgain">Try again</button></div></div>`;
+  const lines=S2.lines||[], q=(st.stockQ||'').trim().toLowerCase();
+  const shown=q?lines.filter(l=>(l.name+' '+l.code).toLowerCase().includes(q)):lines;
+  const until=new Date(+st.me.stockUntil).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'});
+  return `<div class="stats">
+     <div><span>Your items</span><b>${lines.length}</b></div>
+     <div class="${S2.low?'bad':''}"><span>Low or out</span><b>${S2.low||0}</b></div>
+     <div><span>Open until</span><b style="font-size:14px">${esc(until)}</b></div></div>
+   <div class="card">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+     <input id="stockQ" value="${esc(st.stockQ||'')}" placeholder="Search your items…" autocomplete="off" style="margin:0">
+     <button class="btn" id="stockAgain" title="Read it again">↻</button></div>
+    ${shown.length?`<div class="tblwrap"><table class="paytbl"><tr><th>Item</th><th class="n">In the shop</th><th class="n">Reorder at</th><th></th></tr>
+     ${shown.map(l=>`<tr><td><b>${esc(l.name)}</b><div class="muted">${esc(l.code)}${l.unit?' · '+esc(l.unit):''}</div></td>
+      <td class="n"><b>${fq(l.stock)}</b></td><td class="n">${fq(l.min)}</td>
+      <td class="n">${l.stock<=0?'<span class="tag bad">Out</span>':l.low?'<span class="tag warn">Low</span>':''}</td></tr>`).join('')}</table></div>`
+     :`<div class="muted">${lines.length?'Nothing matches that.':'None of your items are on the shop\'s list yet.'}</div>`}
+   </div>`;
+}
+
 /* ---------- Payment Portal: the bills, how old they are, and asking to be paid ---------- */
 function pay(){
   const me=st.me, s=me.supplier;
-  const bills=me.bills||[], reqs=me.payReqs||[];
-  const asked=new Set(reqs.filter(r=>['sent','accepted','ready'].includes(r.status)).flatMap(r=>(r.lines||[]).map(l=>l.no)));
+  const reqs=me.payReqs||[];
+  // a bill already asked for is under "Your payment requests", not here; if the shop turns the request
+  // down it comes back to this list to be asked for again
+  const asked=new Set(reqs.filter(r=>r.waiting||['sent','accepted','ready','queried'].includes(r.status)).flatMap(r=>(r.lines||[]).map(l=>l.no)));
+  const bills=(me.bills||[]).filter(b=>!asked.has(b.no));
   const picked=st.payPick||{};
   const chosen=bills.filter(b=>picked[b.no]);
   const total=chosen.reduce((a,b)=>a+(picked[b.no].claim===''?b.owing:+picked[b.no].claim||0),0);
-  const owing=bills.reduce((a,b)=>a+b.owing,0), over=bills.filter(b=>b.due!==null&&b.due<0);
+  const all=me.bills||[], owing=all.reduce((a,b)=>a+b.owing,0), over=all.filter(b=>b.due!==null&&b.due<0);
   const dueTag=b=>b.due===null?'':b.due<0?`<span class="tag bad">${-b.due}d over</span>`:b.due===0?'<span class="tag warn">due today</span>':`<span class="tag ok">${b.due}d left</span>`;
   return `<div class="stats">
      <div><span>Outstanding</span><b>${money(owing)}</b></div>
-     <div><span>Bills</span><b>${bills.length}</b></div>
+     <div><span>Bills</span><b>${all.length}</b></div>
      <div><span>Credit period</span><b>${s.terms?s.terms+' days':'—'}</b></div>
      <div class="${over.length?'bad':''}"><span>Past the credit period</span><b>${over.length}</b></div></div>
    ${st.paySent?`<div class="card" style="text-align:center;padding:26px 16px"><div style="font-size:40px">📨</div>
@@ -484,7 +521,7 @@ function pay(){
      <div class="muted" style="margin-bottom:10px">Tick the bills you want paid. If a figure is wrong — a credit note, a short delivery — put what it should be and say why.</div>
      <div class="tblwrap"><table class="paytbl">
       <tr><th></th><th>Invoice</th><th class="n">Amount</th><th class="n">Days</th><th class="n">Owing</th><th class="n">Asking for</th></tr>
-      ${bills.map(b=>{ const p=picked[b.no], on=!!p, already=asked.has(b.no);
+      ${bills.map(b=>{ const p=picked[b.no], on=!!p, already=false;
         return `<tr class="${on?'on':''}">
         <td><input type="checkbox" data-paypick="${esc(b.no)}" ${on?'checked':''} ${already?'disabled':''}></td>
         <td><b>${esc(b.supInv||b.no)}</b><div class="muted">${esc(b.date)}${already?' · already asked for':''}</div></td>
@@ -498,11 +535,13 @@ function pay(){
      <div class="f" style="margin-top:8px"><label>Anything else the shop should know</label>
       <textarea id="payNote" style="min-height:70px" placeholder="e.g. cheque please, the rep will collect on Friday">${esc(st.payNote||'')}</textarea></div>
      <button class="btn tape big" id="paySend" ${chosen.length&&!st.busy?'':'disabled'}>${st.busy?'Sending…':`Request payment ${chosen.length?money(total):''}`}</button>
-    </div>`:'<div class="empty"><div>✅</div><b>Nothing outstanding</b><span>Every bill of yours is settled.</span></div>'}
+    </div>`:all.length?'<div class="empty"><div>📨</div><b>Every bill is asked for</b><span>They are under <b>Your payment requests</b> below. If the shop turns one down, its bills come back here.</span></div>'
+     :'<div class="empty"><div>✅</div><b>Nothing outstanding</b><span>Every bill of yours is settled.</span></div>'}
    ${reqs.length?`<h2 style="margin:16px 0 8px">Your payment requests</h2>
     ${reqs.map(r=>`<div class="card o">
       <div class="h"><div><b>${money(r.total)}</b><div class="muted">${esc(r.date)} · ${(r.lines||[]).length} bill${(r.lines||[]).length===1?'':'s'}</div></div>
        ${r.waiting?'<span class="tag warn">Reaching the shop</span>':paytag(r.status)}</div>
+      ${r.status==='rejected'?`<div class="notice bad">The shop turned this down${(r.events||[]).filter(e=>e.action==='rejected').slice(-1).map(e=>e.note?': <b>'+esc(e.note)+'</b>':'')[0]||''}. Its bills are back under <b>Your bills at the shop</b> to ask for again.</div>`:''}
       ${r.status==='ready'?'<div class="notice ok"><b>The money is ready.</b> Call in for the cheque or the cash.</div>':''}
       <table>${(r.lines||[]).map(l=>`<tr><td>${esc(l.supInv||l.no)}${l.note?`<div class="muted">${esc(l.note)}</div>`:''}</td><td class="n">${money(l.claim)}</td></tr>`).join('')}</table>
       ${r.pay?`<div class="muted" style="margin-top:6px">Paid ${esc(r.pay.date)} · ${esc(r.pay.what||'')}</div>`:''}
@@ -590,6 +629,9 @@ function bind(){
   $$('[data-hide]',m).forEach(b=>b.onclick=()=>hideOrder(b.dataset.hide));
   $$('[data-unreplace]',m).forEach(b=>b.onclick=()=>{ st.replacing=null; st.draft={lines:[],q:'',pick:null,qty:'',price:'',note:''}; st.photo={photos:[],inv:'',note:''}; render() });
   $$('[data-goto]',m).forEach(a=>a.onclick=e=>{ e.preventDefault(); st.tab=a.dataset.goto; st.flash=''; render(); window.scrollTo(0,0) });
+  // their stock
+  const sq=$('#stockQ'); if(sq) sq.oninput=()=>{ st.stockQ=sq.value; const at=sq.selectionStart; render(); const n=$('#stockQ'); if(n){ n.focus(); try{ n.setSelectionRange(at,at) }catch(e){} } };
+  const sa=$('#stockAgain'); if(sa) sa.onclick=()=>{ st.stock=null; loadStock() };
   // payment portal
   $$('[data-paypick]',m).forEach(cb=>cb.onchange=()=>{ st.payPick=st.payPick||{};
     if(cb.checked) st.payPick[cb.dataset.paypick]={claim:'',note:''}; else delete st.payPick[cb.dataset.paypick];

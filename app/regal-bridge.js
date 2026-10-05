@@ -347,6 +347,20 @@
   function onSignedOut() {
     stopPolling();
     badge('signed out of the server');
+    // the till must not go on as if nothing happened: nothing it does would reach the server
+    if (typeof window.serverSignedOut === 'function') { try { window.serverSignedOut(); } catch (e) {} }
+  }
+  /* when the sign-in was made: renewed once it is an hour old, so a till in use never runs out */
+  function tokenAge() {
+    try { var p = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); return Date.now() / 1000 - (p.iat || 0); }
+    catch (e) { return 0; }
+  }
+  var renewTried = 0;
+  async function renew() {
+    if (!token || isDemoSession() || tokenAge() < 3600 || Date.now() - renewTried < 600000) return;
+    renewTried = Date.now();
+    var j = await call('POST', '/books/refresh', {});
+    if (j.__status === 200 && j.token) { token = j.token; localStorage.setItem(TOKEN_KEY, token); }
   }
   function logout() { token = ''; localStorage.removeItem(TOKEN_KEY); onSignedOut(); }
 
@@ -370,6 +384,7 @@
     if (!token || busy || document.hidden) return;       // a tab nobody is looking at does not poll
     if (window.privacyOn) return;                          // the privacy screen is up: nothing moves until it is taken down
     if (Date.now() - lastPushAt < 3000) return;          // our own save is still settling
+    renew();                                              // keeps the sign-in alive while the till is in use
     var j = await call('GET', '/books/' + KEY + '/rev');
     if (j.__status !== 200) return;
     // the server has not been restarted since the pages were updated: things this page shares (held

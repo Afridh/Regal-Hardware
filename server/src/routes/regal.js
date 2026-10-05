@@ -163,6 +163,16 @@ async function usersFromBooks() {
 }
 
 // ---------------------------------------------------------------- sign in
+/* A till in use keeps its sign-in: it asks for a fresh one well before the old one runs out. A sign-in
+   lasted twelve hours and then simply stopped, and a till left open from one day to the next went on
+   working with nothing reaching the server — the orders it sent, the bills it made — and nothing
+   coming in from the suppliers. Only a sign-in that is still good can be renewed. */
+r.post('/books/refresh', regalAuth, asyncHandler(async (req, res) => {
+  const p = req.regalUser;
+  if (p.isDemo) throw new HttpError(403, 'Demo sign-ins are not renewed');
+  res.json({ ok: true, token: sign({ name: p.name, role: p.role, perms: p.perms || [] }) });
+}));
+
 r.post('/books/login', asyncHandler(async (req, res) => {
   const { user, password } = req.body || {};
   if (!user || typeof password !== 'string') throw new HttpError(400, 'Name and password required');
