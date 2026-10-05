@@ -1103,6 +1103,10 @@ tr.off td{opacity:.55}
 .or-side{display:flex;gap:8px;align-items:center;flex-shrink:0}
 .or-go{color:var(--steel);font-size:20px;line-height:1}
 #ordModal,#poModal{z-index:50}
+.seg-tabs{display:inline-flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg-tabs button{border:0;background:var(--white);padding:7px 14px;font:inherit;font-weight:600;cursor:pointer;color:var(--steel)}
+.seg-tabs button+button{border-left:1px solid var(--line)}
+.seg-tabs button.on{background:var(--ink);color:#fff;cursor:default}
 .modal.askbox{z-index:70}
 .modal.askbox .box{max-width:520px}
 #ordModal .box{max-width:860px}
@@ -19133,6 +19137,7 @@ function productModal(pid){
   const p=pid?P(pid):null;
   const f=(id,label,val,type='text',hint='')=>`<div class="f"><label>${label}</label><input id="${id}" ${type==='number'?'type="number" step="any"':''} value="${val??''}">${hint?`<div class="muted">${hint}</div>`:''}</div>`;
   const m=modal(`<h2>${p?'Edit '+p.name:'New product'}</h2>
+   ${p?'':`<div class="seg-tabs" style="margin:-2px 0 12px"><button class="on" type="button">One product</button><button type="button" id="pbulk">Many at once (from Excel)</button></div>`}
    <div class="grid3">
     ${f('pcode','Item code',p?p.code:'')}
     ${f('pname','Description',p?p.name:'','text','As it should read on the bill')}
@@ -19172,6 +19177,7 @@ function productModal(pid){
     <button class="btn ghost" data-act="closeModal">Cancel</button>
     <button class="btn tape" id="psave">${p?'Save changes':'Add product'}</button></div>`);
   const g=id=>+m.querySelector('#'+id).value||0;
+  const pb=m.querySelector('#pbulk'); if(pb) pb.onclick=()=>{ m.remove(); bulkProductModal() };
   let tiers=(p&&p.tiers?p.tiers.map(t=>({...t})):[]);
   const drawTiers=()=>{
     m.querySelector('#ptiers').innerHTML=`<tr><th>From this many</th><th>Price each</th><th>What to call it on the screen</th><th></th></tr>`+
@@ -19230,6 +19236,167 @@ function productModal(pid){
       const op=g('popen'); if(op>0){ move(np.id,op,'OPENING','New item',np.cost);
         post(D(today),'Opening stock '+np.code,np.code,[{ac:'1200',dr:+(op*np.cost).toFixed(2)},{ac:'3100',cr:+(op*np.cost).toFixed(2)}]) }
       m.remove(); render(); toast(`${name} added${op>0?` with ${fq(op)} ${np.unit} in stock`:''}`) }
+  };
+}
+/* ==================== MANY PRODUCTS AT ONCE ====================
+   Rows copied out of Excel and pasted in, or an Excel / CSV file. The first row may be headings (any
+   order, the usual names understood); without them the columns are taken in the template's order.
+   Every row is checked before anything is added: a missing code, name or price, a code already on the
+   system or twice in the list, a short code someone else has, a price below cost. Only good rows go in,
+   each made exactly as the one-product form makes one — number, barcode, opening stock and its ledger. */
+const BULK_COLS=[
+  ['code','Item code',['code','itemcode','sku','productcode']],
+  ['name','Description',['description','name','item','itemname','product','productname']],
+  ['cat','Category',['category','cat','group','department']],
+  ['unit','Unit',['unit','uom','units']],
+  ['cost','Cost',['cost','costprice','buyingprice','purchaseprice']],
+  ['mrp','MRP',['mrp','printedprice','maxretailprice']],
+  ['retail','Discounted price',['discountedprice','price','retail','retailprice','sellingprice','sellprice','counterprice']],
+  ['wholesale','Wholesale price',['wholesale','wholesaleprice']],
+  ['min','Reorder level',['reorderlevel','reorder','min','minimum','minstock']],
+  ['open','Opening stock',['openingstock','opening','stock','qty','quantity','onhand']],
+  ['short','Short code',['shortcode','short']],
+  ['barcode','Barcode',['barcode','ean','upc']],
+  ['supplier','Supplier',['supplier','suppliername','vendor']]];
+const bulkKey=h=>String(h||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+function bulkSplit(text){
+  const t=String(text||'').replace(/^\ufeff/,'').replace(/\r\n?/g,'\n');
+  const first=t.split('\n')[0]||'';
+  const sep=first.includes('\t')?'\t':(first.split(';').length>first.split(',').length?';':',');
+  const rows=[]; let row=[], cell='', q=false;
+  for(let i=0;i<t.length;i++){ const c=t[i];
+    if(q){ if(c==='"'){ if(t[i+1]==='"'){ cell+='"'; i++ } else q=false } else cell+=c; continue }
+    if(c==='"'&&cell==='') { q=true; continue }
+    if(c===sep){ row.push(cell); cell=''; continue }
+    if(c==='\n'){ row.push(cell); rows.push(row); row=[]; cell=''; continue }
+    cell+=c }
+  if(cell!==''||row.length){ row.push(cell); rows.push(row) }
+  return rows.map(r=>r.map(x=>String(x).trim())).filter(r=>r.some(x=>x!==''));
+}
+const bulkNum=v=>{ const n=parseFloat(String(v??'').replace(/rs\.?|,|\s/gi,'')); return Number.isFinite(n)?n:0 };
+function bulkRead(rows){
+  if(!rows.length) return [];
+  const syn=new Map(); BULK_COLS.forEach(([k,,names])=>names.forEach(n=>syn.set(n,k)));
+  const hits=rows[0].map(h=>syn.get(bulkKey(h))||null);
+  const hasHead=hits.filter(Boolean).length>=2;
+  const map=hasHead?hits:BULK_COLS.map(c=>c[0]);
+  return (hasHead?rows.slice(1):rows).map((r,i)=>{ const o={line:i+(hasHead?2:1)};
+    map.forEach((k,j)=>{ if(k&&o[k]===undefined) o[k]=r[j]??'' }); return o });
+}
+function bulkCheck(list,update){
+  const codes=new Map(S.products.map(p=>[String(p.code).toLowerCase(),p]));
+  const shorts=new Map(S.products.filter(p=>p.short).map(p=>[String(p.short).toLowerCase(),p]));
+  const seen=new Set(), seenShort=new Set();
+  const supOf=n=>{ const t=String(n||'').toLowerCase().trim(); if(!t) return null;
+    return S.suppliers.find(s=>s.name.toLowerCase()===t||String(s.code||'').toLowerCase()===t)||S.suppliers.find(s=>s.name.toLowerCase().includes(t))||null };
+  return list.map(r=>{
+    const code=String(r.code||'').trim(), name=String(r.name||'').trim(), lc=code.toLowerCase();
+    const cost=bulkNum(r.cost), retail=bulkNum(r.retail)||bulkNum(r.mrp), short=String(r.short||'').trim().toLowerCase();
+    const sup=supOf(r.supplier), old=codes.get(lc);
+    const bad=[];
+    if(!code) bad.push('no item code'); if(!name&&!old) bad.push('no description');
+    if(!(retail>0)&&!old) bad.push('no price');
+    if(cost>0&&retail>0&&cost>retail) bad.push('price below cost');
+    if(lc&&seen.has(lc)) bad.push('code twice in the list');
+    if(short){ const o=shorts.get(short); if((o&&o!==old)||seenShort.has(short)) bad.push(`short code ${short} is taken`) }
+    if(r.supplier&&!sup) bad.push(`no supplier called "${r.supplier}"`);
+    if(lc) seen.add(lc); if(short) seenShort.add(short);
+    const what=bad.length?'bad':old?(update?'update':'skip'):'new';
+    return {...r,code,name,cost,retail,mrp:bulkNum(r.mrp)||retail,wholesale:bulkNum(r.wholesale)||retail,min:r.min===''||r.min==null?10:bulkNum(r.min),
+      open:bulkNum(r.open),short,sup,old,bad,what};
+  });
+}
+function bulkTemplate(){
+  const head=BULK_COLS.map(c=>c[1]);
+  const eg=['CEM-TOK-50','Tokyo Super Cement 50kg','Cement & building','bag','2150','2865','2350','2290','20','0','cem','','Tokyo Cement'];
+  const csv=[head,eg].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download='products-template.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+}
+/* an .xlsx is read with SheetJS, fetched the first time it is needed */
+function bulkXlsx(file){
+  const go=()=>file.arrayBuffer().then(buf=>{ const wb=XLSX.read(buf,{type:'array'}); const sh=wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_csv(sh,{FS:'\t',blankrows:false}) });
+  if(window.XLSX) return go();
+  return new Promise((res,rej)=>{ const sc=document.createElement('script');
+    sc.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    sc.onload=()=>go().then(res,rej); sc.onerror=()=>rej(new Error('Could not load the Excel reader — save the sheet as CSV, or copy and paste the rows'));
+    document.head.appendChild(sc) });
+}
+function bulkProductModal(){
+  if(S.user && S.user.role === 'Salesman') return toast('Adding products is not open to Salesman');
+  const askApproval=needsApproval('prodPrice');
+  const m=modal(`<h2>New products — many at once</h2>
+   <div class="seg-tabs" style="margin:-2px 0 12px"><button type="button" id="bOne">One product</button><button class="on" type="button">Many at once (from Excel)</button></div>
+   <div class="muted" style="margin-bottom:8px">Copy the rows from Excel and paste them below, or choose the file. The first row can be the headings
+    — <b>Item code, Description, Category, Unit, Cost, MRP, Discounted price, Wholesale price, Reorder level, Opening stock, Short code, Barcode, Supplier</b> —
+    in any order; without headings the columns are read in that order. Only the code, the description and a price are needed.</div>
+   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+    <button class="btn ghost sm" id="bTpl">⬇ Download the template</button>
+    <label class="btn ghost sm" style="cursor:pointer">📄 Choose an Excel or CSV file<input type="file" id="bFile" accept=".csv,.txt,.xlsx,.xls" style="display:none"></label>
+    <span class="muted" id="bFileName"></span></div>
+   <textarea id="bText" rows="6" placeholder="Paste the rows here (Ctrl+V)…" style="width:100%;font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre;border:1px solid var(--line);border-radius:var(--r);padding:8px"></textarea>
+   <label class="chk" style="margin-top:6px;${askApproval?'opacity:.55':''}"><input type="checkbox" id="bUpd" ${askApproval?'disabled':''}> Update the ones already on the system (their prices, category, unit and reorder level)${askApproval?' — price changes need approval here, so they are skipped':''}</label>
+   <div id="bOut" style="margin-top:10px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="bGo" disabled>Add products</button></div>`);
+  m.classList.add('wide'); m.style.zIndex=50;          // over the narrow side menu too
+  let rows=[];
+  const draw=()=>{
+    rows=bulkCheck(bulkRead(bulkSplit(m.querySelector('#bText').value)),m.querySelector('#bUpd').checked);
+    const n={new:0,update:0,skip:0,bad:0}; rows.forEach(r=>n[r.what]++);
+    const go=n.new+n.update;
+    m.querySelector('#bGo').disabled=!go;
+    m.querySelector('#bGo').textContent=!go?'Add products':[n.new?`Add ${n.new} product${n.new===1?'':'s'}`:'',n.update?`${n.new?'update':'Update'} ${n.update} product${n.update===1?'':'s'}`:''].filter(Boolean).join(' and ');
+    if(!rows.length){ m.querySelector('#bOut').innerHTML=''; return }
+    const tag={new:'<span class="tag ok">new</span>',update:'<span class="tag blue">update</span>',skip:'<span class="tag">already on the system — skipped</span>'};
+    const show=rows.slice(0,300);
+    m.querySelector('#bOut').innerHTML=`<div class="row" style="margin-bottom:8px">
+       ${stat('Rows',rows.length,'read from what you gave','b')}${stat('New',n.new,'will be added','g')}
+       ${stat('Already here',n.update+n.skip,n.update?n.update+' to update':'skipped','y')}${stat('Need fixing',n.bad,n.bad?'left out — see below':'none','r')}</div>
+     <div style="max-height:42vh;overflow:auto;border:1px solid var(--line);border-radius:var(--r)">
+     <table><tr><th>Row</th><th>Code</th><th>Description</th><th>Category</th><th>Unit</th><th class="n">Cost</th><th class="n">MRP</th><th class="n">Price</th><th class="n">Wholesale</th><th class="n">Opening</th><th>Supplier</th><th></th></tr>
+      ${show.map(r=>`<tr style="${r.what==='bad'?'background:var(--tint-rust,#FBE4DE)':''}"><td class="muted">${r.line}</td><td>${noteEsc(r.code)}</td><td>${noteEsc(r.name||(r.old?r.old.name:''))}</td>
+        <td>${noteEsc(r.cat||'')}</td><td>${noteEsc(r.unit||'')}</td><td class="n">${r.cost?fmt(r.cost):''}</td><td class="n">${r.mrp?fmt(r.mrp):''}</td>
+        <td class="n">${r.retail?fmt(r.retail):''}</td><td class="n">${r.wholesale?fmt(r.wholesale):''}</td><td class="n">${r.open?fq(r.open):''}</td>
+        <td>${r.sup?noteEsc(r.sup.name.split(/[–(]/)[0].trim()):''}</td>
+        <td>${r.what==='bad'?`<span class="tag bad">${noteEsc(r.bad.join(', '))}</span>`:tag[r.what]}</td></tr>`).join('')}
+     </table></div>${rows.length>show.length?`<div class="muted" style="margin-top:4px">Showing the first ${show.length} of ${rows.length} rows — all of them are checked.</div>`:''}`;
+  };
+  const ta=m.querySelector('#bText'); let t0=0;
+  ta.oninput=()=>{ clearTimeout(t0); t0=setTimeout(draw,250) };
+  m.querySelector('#bUpd').onchange=draw;
+  m.querySelector('#bTpl').onclick=bulkTemplate;
+  m.querySelector('#bOne').onclick=()=>{ m.remove(); productModal() };
+  m.querySelector('#bFile').onchange=async()=>{ const f=m.querySelector('#bFile').files[0]; if(!f) return;
+    m.querySelector('#bFileName').textContent=f.name;
+    try{ ta.value=/\.xlsx?$/i.test(f.name)?await bulkXlsx(f):await f.text(); draw() }
+    catch(e){ toast(e.message) } };
+  m.querySelector('#bGo').onclick=()=>{
+    const good=rows.filter(r=>r.what==='new'||r.what==='update'); if(!good.length) return;
+    if(!confirm(`Add ${good.filter(r=>r.what==='new').length} product(s)${good.some(r=>r.what==='update')?` and update ${good.filter(r=>r.what==='update').length}`:''}?`)) return;
+    const used=new Set(S.products.map(p=>+p.num||0)); let num=1000;
+    const nextFree=()=>{ while(used.has(num)) num++; used.add(num); return String(num) };
+    let id=Math.max(0,...S.products.map(x=>x.id)), added=0, updated=0, opening=0;
+    for(const r of good){
+      if(r.what==='update'){ const p=r.old;
+        if(r.name) p.name=r.name; if(r.cat) p.cat=r.cat; if(r.unit) p.unit=r.unit;
+        if(r.cost) p.cost=r.cost; if(bulkNum(r.retail)) p.retail=r.retail; if(bulkNum(r.mrp)) p.mrp=r.mrp; if(bulkNum(r.wholesale)) p.wholesale=r.wholesale;
+        if(r.min!==''&&r.min!=null) p.min=r.min; if(r.short) p.short=r.short; if(r.barcode) p.barcode=String(r.barcode).trim(); if(r.sup) p.supplierId=r.sup.id;
+        updated++; continue }
+      const np={id:++id,stock:0,code:r.code,name:r.name,cat:r.cat||'General',unit:r.unit||'pcs',
+        barcode:String(r.barcode||'').trim()||String(8+Math.floor(Math.random()*8.9e11)),
+        mrp:r.mrp,cost:r.cost,retail:r.retail,wholesale:r.wholesale,min:r.min,short:r.short,num:nextFree(),
+        webPrice:0,warrantyMonths:0,serialised:false,desc:'',tiers:[]};
+      if(r.sup) np.supplierId=r.sup.id;
+      S.products.push(np); added++;
+      if(r.open>0){ move(np.id,r.open,'OPENING','New item',np.cost);
+        post(D(today),'Opening stock '+np.code,np.code,[{ac:'1200',dr:+(r.open*np.cost).toFixed(2)},{ac:'3100',cr:+(r.open*np.cost).toFixed(2)}]); opening++ }
+    }
+    logTrail('bulkProducts',`${added} product${added===1?'':'s'} added${updated?`, ${updated} updated`:''} from a list`,{amount:null});
+    m.remove(); persist(true); render();
+    toast(`${added} product${added===1?'':'s'} added${updated?`, ${updated} updated`:''}${opening?` · ${opening} with opening stock`:''}`,'ok');
   };
 }
 /* pictures for the shop site live in the server's shop_media table, never in the books */
@@ -20406,7 +20573,6 @@ function inventory(){
     body=`<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
       <input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search item name, code, short code, barcode or category…" style="max-width:380px">
       ${!isSalesman?`<button class="btn tape" data-act="newProd">Add a product</button>`:''}
-      ${!isSalesman?`<button class="btn ghost" data-act="prodCsv" title="Every product as a spreadsheet — or only what the search found">⬇ Save as Excel (CSV)${q?' — '+list.length+' found':''}</button>`:''}
       <span class="muted" style="margin-left:auto">${list.length} of ${S.products.length} products</span></div>
      <table><tr><th>No.</th><th>Code</th><th>Short</th><th>Item</th><th>Supplier</th><th>Unit</th><th class="n">MRP</th>${!isSalesman?`<th class="n">Cost${CFG.cost.inProducts&&can('cost')?' code':''}</th>`:''}<th class="n">Discounted</th><th class="n">Wholesale</th>${!isSalesman?'<th class="n">Margin</th>':''}<th class="n">In stock</th>${!isSalesman?'<th></th>':''}</tr>
      ${shown.map(p=>`<tr class="rowlink" ${!isSalesman?`data-act="prodHist" data-id="${p.id}"`:''}><td><span class="pnum">${p.num||''}</span></td><td>${p.code}<div class="muted">${p.barcode}</div></td>
@@ -23805,18 +23971,6 @@ document.addEventListener('click',e=>{
     trTab:()=>{ trailTab=a.dataset.t; render() },
     trShow:()=>trailShow(a.dataset.id),
     trBack:()=>trailBack(a.dataset.id),
-    // the product list as a spreadsheet: all of it, or what the search on the page found. The cost goes
-    // in only for someone allowed to see it; Excel opens the file as it is (the BOM keeps the Sinhala)
-    prodCsv:()=>{ const q=prodQ.toLowerCase().trim();
-      const list=S.products.filter(p=>!q||p.name.toLowerCase().includes(q)||String(p.code||'').toLowerCase().includes(q)||(p.short||'').toLowerCase()===q||String(p.barcode||'').includes(q)||String(p.cat||'').toLowerCase().includes(q));
-      const cost=can('cost');
-      const head=['No.','Code','Short code','Barcode','Item','Category','Supplier','Unit','MRP',...(cost?['Cost']:[]),'Retail price','Wholesale price','Stock','Reorder at','Active'];
-      const rows=list.map(p=>{ const s=p.supplierId?SU(p.supplierId):null;
-        return [p.num||'',p.code||'',p.short||'',p.barcode||'',p.name||'',p.cat||'',s?s.name:'',p.unit||'',+p.mrp||0,...(cost?[+p.cost||0]:[]),+p.retail||0,+p.wholesale||0,+p.stock||0,+p.min||0,p.active===false?'No':'Yes'] });
-      const csv=[head,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
-      const a2=document.createElement('a'); a2.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
-      a2.download=`products-${q?'search-':''}${D(today)}.csv`; a2.click(); setTimeout(()=>URL.revokeObjectURL(a2.href),5000);
-      toast(`${list.length} product${list.length===1?'':'s'} saved as a spreadsheet`,'ok') },
     trCsv:()=>{ const rows=trailRows().map(r=>[String(r.date||r.at).slice(0,10),r.time||'',(TRAIL_KINDS[r.kind]||TRAIL_KINDS.other)[0],r.what||'',r.why||'',r.who||'',r.amount==null?'':(+r.amount).toFixed(2),r.by||'',r.till||'']);
       const csv=[['Date','Time','What happened','Detail','Why','Who it was for','Amount','By','Till'],...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
       const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
