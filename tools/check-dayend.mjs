@@ -25,6 +25,12 @@ await new Promise(r => setTimeout(r, 800));
 // a day's trading, from a clean slate so the figures are known
 const setup = await pg.evaluate(() => {
   const d = D(today);
+  /* Books carried over from the old system start with an empty drawer on purpose — the cash and
+     bank figures were never reconciled there, so they are keyed in here from the real count. This
+     check is about moving money, not about where it came from, so it puts a float in the same way
+     an opening balance is posted (3100 is the account the import uses for them). */
+  if (bal('1010', d) < 20000) post(addDays(d, -1), 'Opening float for this check', 'OPEN-TEST',
+    [{ ac: '1010', dr: 20000 }, { ac: '3100', cr: 20000 }]);
   S.sales = S.sales.filter(s => s.date !== d);
   S.payments = S.payments.filter(p => p.date !== d);
   S.cheques = [];

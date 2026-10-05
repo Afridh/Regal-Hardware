@@ -12,7 +12,11 @@ const data=got.data;
 const SKILL='amzn1.ask.skill.test-regal';
 data.CFG.alexa={on:true,skillId:SKILL,word:'thunder',stock:true,price:true,money:true,news:true,
   sayOrders:true,sayHolds:true,sayCheques:false};
-const item=data.S.products.find(p=>p.active!==false&&(+p.stock||0)>0);
+/* "How many of those have we got" needs something to count, and books brought over from the old
+   system start every item at zero — so the one being asked about is given a few. */
+const item=data.S.products.find(p=>p.active!==false&&+p.retail>0&&p.name&&p.name.length>3);
+if(!item){ console.log('FAIL no product to ask about'); process.exit(1) }
+if(!(+item.stock>0)) item.stock=7;
 await fetch(BASE+'/api/books/regal',{method:'PUT',headers:H,body:JSON.stringify({data,rev:got.rev})});
 
 const ask=(intent,slots,skill=SKILL)=>fetch(BASE+'/api/alexa',{method:'POST',headers:{'Content-Type':'application/json'},
