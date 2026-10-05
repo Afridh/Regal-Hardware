@@ -124,9 +124,12 @@ const offer = await pg.evaluate(() => {
   o.disc = { kind: 'pct', value: 5, note: 'on the cement only' };
   o.status = 'pending'; o.sid = s.id;   // the offer matters while the owner is still deciding
   go('orders'); ordTab = 'in'; render();
-  const shown = document.getElementById('main').innerHTML.includes('They are offering');
-  return { shown, says: discSays(o.disc), amt: discSays({ kind: 'amt', value: 2500 }),
+  ordOpen = o.id; ordPop('ordModal'); render();          // the owner opens the order to decide on it
+  const shown = document.body.innerHTML.includes('They are offering');
+  const out = { shown, says: discSays(o.disc), amt: discSays({ kind: 'amt', value: 2500 }),
     on100k: discOn(o.disc, 100000) };
+  ordClose(); render();
+  return out;
 });
 ok(offer.shown, 'the offer is on the card the owner decides from');
 ok(offer.says === '5% off' && /2,500/.test(offer.amt), 'an offer is put in words', `${offer.says} · ${offer.amt}`);
