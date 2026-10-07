@@ -972,7 +972,7 @@ tr.off td{opacity:.55}
    a hole under every short one. */
 .bd-wrap{display:grid;grid-template-columns:minmax(330px,420px) 1fr;gap:14px;align-items:start}
 @media(max-width:900px){.bd-wrap{grid-template-columns:1fr}}
-.bd-paper{position:sticky;top:8px}
+.bd-paper{position:sticky;top:8px;min-width:0}
 .bd-ph{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px}
 .bd-ph b{font-family:Archivo,sans-serif;font-size:15px}
 .bd-roll{background:repeating-linear-gradient(45deg,#e9ecec 0 8px,#eff2f2 8px 16px);
@@ -3620,6 +3620,14 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .cam-bad{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   color:#e7c9bd;background:rgba(17,22,28,.86);font-size:13px;text-align:center;padding:10px}
 @media (max-width:760px){ .camgrid{grid-template-columns:1fr} }
+/* the large bill in the designer: a sheet, not a roll */
+.bd-sheet{background:#8a8f93;padding:14px;border-radius:8px;overflow:auto;max-height:68vh}
+.bd-fitbox{overflow:hidden;width:100%}
+.bd-fit{width:210mm;transform-origin:top left}   /* shrunk to the column by bdFit() */
+.bd-sheet .bd-bill{background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.3);width:210mm}
+.bd-reg{font:600 11px/1 "Segoe UI",sans-serif;letter-spacing:.12em;text-transform:uppercase;
+  opacity:.55;margin:12px 0 4px}
+.bd-reg:first-child{margin-top:0}
 </style>
 <link rel="stylesheet" href="bill-print.css">
 </head>
@@ -18660,6 +18668,173 @@ function r80Move(k, d){
   c.order.splice(j, 0, c.order.splice(i, 1)[0]);
 }
 
+/* The large bill's side of the designer. The same idea as the receipt's — tick what prints,
+   move it about, watch the sheet on the left change — but its parts sit in three places on
+   the sheet rather than one column, so they are grouped and move within their own group. */
+/* An A5 sheet is 210mm across — wider than the half of the screen it is being shown in. Rather
+   than cut the right-hand side off, where the invoice boxes and the QR squares live, the whole
+   sheet is shrunk to the room there is. What is on screen is then the sheet, in miniature. */
+function bdFit(){
+  const fit = document.querySelector('.bd-sheet .bd-fit');
+  if (!fit) return;
+  fit.style.transform = 'none';
+  const room = fit.parentElement.clientWidth;
+  const wide = fit.getBoundingClientRect().width;
+  if (!room || !wide) return;
+  const k = Math.min(1, room / wide);
+  fit.style.transform = 'scale(' + k + ')';
+  fit.parentElement.style.height = Math.ceil(fit.getBoundingClientRect().height) + 'px';
+}
+addEventListener('resize', () => { if (S && S.view === 'billdesign') bdFit() });
+
+function a5design(inv, tabs){
+  const B = CFG.bill, c = a5Cfg();
+  const sc = Math.max(0.6, Math.min(2, (+B.a5Scale || 100) / 100));
+  const REG = [['head', 'Across the top'], ['body', 'Down the middle'],
+               ['foot', 'The bottom left'], ['sum', 'The bottom right']];
+
+  const row = (k) => {
+    const [, label, hint] = A5_BLOCKS.find(x => x[0] === k) || [k, k, ''];
+    const on = a5On(k), fixed = A5_FIXED.includes(k);
+    const [first, last] = a5Ends(k);
+    return `<div class="bd-row ${on ? '' : 'off'}">
+      <label class="bd-tick"><input type="checkbox" data-a5on="${k}" ${on ? 'checked' : ''} ${fixed ? 'disabled' : ''}></label>
+      <div><b>${label}</b>${hint ? `<em>${hint}</em>` : ''}</div>
+      <div class="bd-mv">
+       <button class="btn ghost sm" data-a5up="${k}" ${first || fixed ? 'disabled' : ''}>↑</button>
+       <button class="btn ghost sm" data-a5dn="${k}" ${last || fixed ? 'disabled' : ''}>↓</button></div>
+     </div>`;
+  };
+  const col = (f, label, hint) => `<label class="bd-tick" style="display:flex;gap:10px;align-items:flex-start;padding:6px 0">
+     <input type="checkbox" data-a5col="${f}" ${CFG.bill[f] !== false ? 'checked' : ''}>
+     <span><b>${label}</b>${hint ? `<em class="muted" style="display:block;font-style:normal;font-size:12px">${hint}</em>` : ''}</span></label>`;
+
+  return `<h1>Design the bill<span class="muted" style="font-size:14px;font-weight:400"> · the large bill, as it comes off the A5 sheet</span></h1>
+   ${tabs}
+   <div class="bd-wrap">
+    <div class="bd-paper">
+     <div class="bd-ph">
+      <b>A5 landscape</b>
+      <span class="muted">${inv.lines.length} item${inv.lines.length === 1 ? '' : 's'} · ${(S.sales || []).length ? 'bill ' + inv.no : 'a made-up bill'}</span>
+     </div>
+     <div class="bd-sheet"><div class="bd-fitbox"><div class="bd-fit">
+      <div class="bd-bill">${billHtml(inv, 'a5')}</div></div></div></div>
+     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn tape" data-act="printTest" data-f="a5">Print one to check</button>
+      <button class="btn ghost" data-act="a5Reset">Put it back as it was</button>
+     </div>
+    </div>
+
+    <div class="bd-side">
+     <div class="card">
+      <h2 style="margin-top:0">How big the print is</h2>
+      <div class="bd-size">
+       <button class="btn ghost sm" data-act="a5Scale" data-v="-5">smaller</button>
+       <b>${Math.round(sc * 100)}%</b>
+       <button class="btn ghost sm" data-act="a5Scale" data-v="5">bigger</button>
+      </div>
+      <div class="muted">The sheet stays A5; the writing on it grows or shrinks. Bigger is easier to
+       read across a counter and fits fewer lines before it runs to a second sheet.</div>
+     </div>
+
+     <div class="card" style="margin-top:12px">
+      <h2 style="margin-top:0">What prints, and in what order</h2>
+      <div class="muted" style="margin-bottom:8px">Untick what you do not want. The arrows move a part
+       within its own part of the sheet — the address cannot climb into the head row without breaking it.</div>
+      ${REG.map(([reg, label]) => {
+        const ks = c.order.filter(k => A5_REGION[k] === reg);
+        return ks.length ? `<div class="bd-reg">${label}</div>${ks.map(row).join('')}` : '';
+      }).join('')}
+     </div>
+
+     <div class="card" style="margin-top:12px">
+      <h2 style="margin-top:0">Columns in the table</h2>
+      <div class="muted" style="margin-bottom:4px">Fewer columns leave more room for the description.</div>
+      ${col('showCode', 'Code', 'the item number the counter keys in')}
+      ${col('showUom', 'UOM', 'bag, length, piece')}
+      ${col('showMrp', 'MRP', 'the printed price, with the sold price beside it as D.Price')}
+     </div>
+
+     <div class="card" style="margin-top:12px">
+      <h2 style="margin-top:0">The wording</h2>
+      <div class="muted" style="margin-bottom:6px">Shared with the receipt — changing it here changes it there.</div>
+      <div class="grid2">
+       <div class="f"><label>Left signature</label><input data-bdw="signLeft" value="${noteEsc(B.signLeft || '')}"></div>
+       <div class="f"><label>Right signature</label><input data-bdw="signRight" value="${noteEsc(B.signRight || '')}"></div>
+      </div>
+      <div class="f"><label>The returns note</label><input data-bdw="footer" value="${noteEsc(B.footer || '')}">
+       <div class="muted">{days} is replaced by the return window, ${+B.returnDays || 7} days.</div></div>
+     </div>
+    </div>
+   </div>`;
+}
+
+/* ============ the large bill, in the same way ============
+   The A5 is a sheet, not a roll, so its parts do not run in one column: they sit across the
+   head, down the middle, and down the left of the footer. Order runs within each of those.
+   The lines and the totals box stay where they are — a bill without them is not a bill. */
+const A5_BLOCKS = [
+  ['brand',  'The shop, top left',        'the mark, the name, the Sinhala name and the strap line', 'head'],
+  ['qr',     'The two QR squares',        'one for the invoice, one for the customer',               'head'],
+  ['meta',   'Invoice and customer boxes','the number, who made it, the day, and who it is for',     'head'],
+  ['addr',   'The address line',          'the address, the landmark and the phones',                'body'],
+  ['items',  'What was sold',             'the table itself — this one cannot be taken off',         'body'],
+  ['words',  'The amount in words',       '“… Rupees Only”, under the table',                        'body'],
+  ['outstanding','What was owed before',  'only ever prints on a credit bill',                       'foot'],
+  ['signs',  'The two signature lines',   'the wording is below',                                    'foot'],
+  ['note',   'The returns note',          'the wording is under Settings → What the bill shows',     'foot'],
+  ['summary','The totals box',            'gross, discount, net and paid — it stays bottom right',   'sum'],
+];
+const A5_DEFAULT = A5_BLOCKS.map(b => b[0]);
+const A5_LABEL = Object.fromEntries(A5_BLOCKS.map(b => [b[0], b[1]]));
+const A5_REGION = Object.fromEntries(A5_BLOCKS.map(b => [b[0], b[3]]));
+const A5_FIXED = ['items', 'summary'];
+/* The switches the shop already set under "What the bill shows" still mean what they meant:
+   they are read once, here, and from then on this page is where they are changed. */
+const A5_OLD = { qr:'showQr', words:'showWords', outstanding:'showOutstanding', signs:'showSign' };
+
+function a5Cfg(){
+  const B = CFG.bill;
+  if (!B.a5 || !Array.isArray(B.a5.order)) {
+    B.a5 = { order: [...A5_DEFAULT], off: [] };
+    if (!B.showQr) B.a5.off.push('qr');                       // these two were off unless asked for
+    if (!B.showWords) B.a5.off.push('words');
+    if (!B.showOutstanding) B.a5.off.push('outstanding');
+    if (B.showSign === false) B.a5.off.push('signs');         // this one was on unless turned off
+    if (!B.footer) B.a5.off.push('note');
+  }
+  A5_DEFAULT.forEach(k => { if (!B.a5.order.includes(k)) B.a5.order.push(k) });
+  B.a5.order = B.a5.order.filter(k => A5_DEFAULT.includes(k));
+  if (!Array.isArray(B.a5.off)) B.a5.off = [];
+  return B.a5;
+}
+const a5Order = () => a5Cfg().order;
+function a5On(k){
+  if (A5_FIXED.includes(k)) return true;
+  return !a5Cfg().off.includes(k);
+}
+function a5Set(k, on){
+  const c = a5Cfg();
+  c.off = c.off.filter(x => x !== k);
+  if (!on) c.off.push(k);
+  const old = A5_OLD[k];
+  if (old) CFG.bill[old] = !!on;                              // the old switch keeps saying the same thing
+}
+/* Up and down move a part past the next one IN ITS OWN REGION — moving the address into the
+   head row would only break the sheet. */
+function a5Move(k, d){
+  const c = a5Cfg(), reg = A5_REGION[k];
+  const mine = c.order.filter(x => A5_REGION[x] === reg);
+  const at = mine.indexOf(k), to = at + d;
+  if (at < 0 || to < 0 || to >= mine.length) return;
+  const i = c.order.indexOf(k), j = c.order.indexOf(mine[to]);
+  c.order.splice(j, 0, c.order.splice(i, 1)[0]);
+}
+const a5Ends = (k) => {                                       // is it first or last in its region?
+  const mine = a5Order().filter(x => A5_REGION[x] === A5_REGION[k]);
+  return [mine.indexOf(k) === 0, mine.indexOf(k) === mine.length - 1];
+};
+
 /* A bill to draw the preview from: a real one if the shop has made any, otherwise a made-up one
    so the page is never empty on the first day. */
 function billSample(){
@@ -18688,6 +18863,9 @@ function r80Mm(inv){
 }
 
 let bdFmt = 'r80';
+let bdWhich = 'r80';
+const BD_TABS = [['r80', 'The receipt', '80mm roll'], ['a5', 'The large bill', 'A5 sheet']];
+
 function billdesign(){
   const inv = billSample();
   if (!inv) return `<h1>Design the bill</h1><div class="card muted">Put a product on the system first,
@@ -18709,7 +18887,14 @@ function billdesign(){
      </div>`;
   };
 
+  const tabs = `<div class="cu-tabs" style="margin-bottom:12px">${BD_TABS.map(t =>
+    `<button class="${bdWhich === t[0] ? 'on' : ''}" data-act="bdWhich" data-w="${t[0]}">${t[1]}
+      <i>${t[2]}</i></button>`).join('')}</div>`;
+
+  if (bdWhich === 'a5') return a5design(inv, tabs);
+
   return `<h1>Design the bill<span class="muted" style="font-size:14px;font-weight:400"> · the till receipt, as the printer will burn it</span></h1>
+   ${tabs}
 
    <div class="bd-wrap">
     <div class="bd-paper">
@@ -18795,6 +18980,20 @@ function billdesignAfter(){
   document.querySelectorAll('[data-bddn]').forEach(el => {
     el.onclick = () => { r80Move(el.dataset.bddn, 1); persist(true); render() };
   });
+  /* the same three, for the large bill */
+  document.querySelectorAll('[data-a5on]').forEach(el => {
+    el.onchange = () => { a5Set(el.dataset.a5on, el.checked); persist(true); render() };
+  });
+  document.querySelectorAll('[data-a5up]').forEach(el => {
+    el.onclick = () => { a5Move(el.dataset.a5up, -1); persist(true); render() };
+  });
+  document.querySelectorAll('[data-a5dn]').forEach(el => {
+    el.onclick = () => { a5Move(el.dataset.a5dn, 1); persist(true); render() };
+  });
+  document.querySelectorAll('[data-a5col]').forEach(el => {
+    el.onchange = () => { CFG.bill[el.dataset.a5col] = el.checked; persist(true); render() };
+  });
+  bdFit();
 }
 
 function billHtml(inv,f='a5'){
@@ -18869,43 +19068,49 @@ function billHtml(inv,f='a5'){
   const rows=inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="${anyChecked&&l.checked!==true?'notck':''}"><td>${i+1})</td>${showCode?`<td>${p.num||p.code}</td>`:''}<td class="d">${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td>
     <td class="n">${l.qty.toFixed(2)}</td>${showUom?`<td class="u">${(p.unit||'').toUpperCase()}</td>`:''}${showMrp?`<td class="n">${money2(p.mrp)}</td>`:''}<td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td>${anyChecked?`<td class="ck">${l.checked===true?'✓':'✗'}</td>`:''}</tr>`}).join('');
   const nm=(SH.name||'REGAL HARDWARE');
-  return `<div class="print a5 sba5" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5});font-family:${billFontCss(B.a5Font)}">
-   <div class="sb-top"><span>${copy}</span><span>Printed on ${billWhen({date:D(today),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})})}</span></div>
-   <div class="sb-head">
-    <div class="sb-brand">
+  /* Every piece of the sheet by name, so the shop can say which print and in what order
+     (Design the bill → The large bill). Each is built whether or not it is wanted; what is
+     wanted is decided when they are put together, which keeps this readable. */
+  const a5part={
+   brand:`<div class="sb-brand">
      ${B.showLogo!==false?`<div class="sb-mark">${logo(44)}${SH.logo?'':`<div class="sb-markw">${nm.toUpperCase()}</div>`}</div>`:''}
      <div class="sb-brandtxt">
       <div class="sb-bname"><span class="blk">${nm.split(' ')[0]}</span> ${nm.split(' ').slice(1).join(' ')}</div>
       ${B.showSinhala&&SH.sinhala?`<div class="sb-bsin">${SH.sinhala}</div>`:''}
       ${B.showStrap&&(SH.line1||SH.line2)?`<div class="sb-strap">${SH.line1||''} ${SH.line2||''}</div>`:''}
      </div>
-    </div>
-    <div class="sb-qrs">${B.showQr?`${qr(inv.no,44)}${qr('c'+inv.no,44)}`:''}</div>
-    <div class="sb-meta">
+    </div>`,
+   qr:`<div class="sb-qrs">${qr(inv.no,44)}${qr('c'+inv.no,44)}</div>`,
+   meta:`<div class="sb-meta">
      <div class="sb-box"><div><span>Invoice No</span><b>${inv.no}</b></div>${B.showCashier!==false?`<div><span>Invoice By</span><b>${(inv.by||'').toUpperCase()} /</b></div>`:''}<div><span>Date</span><b>${billDate(inv)} &nbsp; ${timeOf(inv)}</b></div></div>
      <div class="sb-box cust"><div><span>Customer</span><b>${walk?'Null':c.name.toUpperCase()}</b></div>${walk?'':`<div><span>&nbsp;</span><b>${c.phone||''}${c.address?' · '+c.address:''}</b></div>`}</div>
-    </div>
-   </div>
-   <div class="sb-addrline"><b>${SH.addr||SHOP.addr}</b> <i>${SH.near||''}</i><span>${phones}</span></div>
-   <table class="sb-tbl">
+    </div>`,
+   addr:`<div class="sb-addrline"><b>${SH.addr||SHOP.addr}</b> <i>${SH.near||''}</i><span>${phones}</span></div>`,
+   items:`<table class="sb-tbl">
     <tr><th>#</th>${showCode?'<th>Code</th>':''}<th class="d">Description</th><th class="n">Qty</th>${showUom?'<th>UOM</th>':''}${showMrp?'<th class="n">MRP</th>':''}<th class="n">${showMrp?'D.Price':'Price'}</th><th class="n">Amount</th>${anyChecked?'<th class="ck">✓</th>':''}</tr>
     ${rows}
-   </table>
-   ${B.showWords?`<div class="sb-words"><span>Amount in words :</span> <b>${words(inv.total)} Rupees Only</b></div>`:''}
-   <div class="sb-fill"></div>
-   <div class="sb-bottom">
-    <div class="sb-left">
-     ${credit&&B.showOutstanding?`<div class="sb-out"><div><span>Previous Outstanding</span><b>${money2(prev)}</b></div><div><span>This Invoice Credit</span><b>${money2(inv.balance)}</b></div><div class="tot"><span>Total Outstanding Rs.</span><b>${money2(prev+inv.balance)}</b></div></div>`:''}
-     ${B.showSign!==false?`<div class="sb-signs"><div>${B.signLeft||'Authorised By'}</div><div>${B.signRight||'Received By'}</div></div>`:''}
-     ${B.footer?`<div class="sb-note">${B.footer.replace('{days}',B.returnDays)}</div>`:''}
-    </div>
-    <table class="sb-sum">
+   </table>`,
+   words:`<div class="sb-words"><span>Amount in words :</span> <b>${words(inv.total)} Rupees Only</b></div>`,
+   outstanding:credit?`<div class="sb-out"><div><span>Previous Outstanding</span><b>${money2(prev)}</b></div><div><span>This Invoice Credit</span><b>${money2(inv.balance)}</b></div><div class="tot"><span>Total Outstanding Rs.</span><b>${money2(prev+inv.balance)}</b></div></div>`:'',
+   signs:`<div class="sb-signs"><div>${B.signLeft||'Authorised By'}</div><div>${B.signRight||'Received By'}</div></div>`,
+   note:B.footer?`<div class="sb-note">${B.footer.replace('{days}',B.returnDays)}</div>`:'',
+   summary:`<table class="sb-sum">
      <tr><td>Gross Total</td><td class="n">${money2(gross)}</td></tr>
      <tr><td>- Inv.Discount</td><td class="n">${money2(disc)}</td></tr>
      <tr class="net"><td>Net Total</td><td class="n">${money2(inv.total)}</td></tr>
      <tr><td>Amount Paid</td><td class="n">${money2(inv.paid)}</td></tr>
      ${credit?`<tr class="cr"><td>CREDIT RS.</td><td class="n">${money2(inv.balance)}</td></tr>`:`<tr><td>CHANGE RS.</td><td class="n">${money2(Math.max(0,inv.paid-inv.total))}</td></tr>`}
-    </table>
+    </table>`
+  };
+  const a5bit=(region)=>a5Order().filter(k=>A5_REGION[k]===region&&a5On(k)).map(k=>a5part[k]||'').join('');
+  return `<div class="print a5 sba5" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5});font-family:${billFontCss(B.a5Font)}">
+   <div class="sb-top"><span>${copy}</span><span>Printed on ${billWhen({date:D(today),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})})}</span></div>
+   <div class="sb-head">${a5bit('head')}</div>
+   ${a5bit('body')}
+   <div class="sb-fill"></div>
+   <div class="sb-bottom">
+    <div class="sb-left">${a5bit('foot')}</div>
+    ${a5part.summary}
    </div>
   </div>`;
 }
@@ -23788,6 +23993,11 @@ document.addEventListener('click',e=>{
       if(p&&p.code&&!confirm(`Take ${p.code} off? Orders that used it keep their discount.`)) return;
       w.promos.splice(+a.dataset.i,1); persist(true); render() },
     bdLeft:()=>{ CFG.bill.r80Left=Math.max(0,Math.min(12,Math.round((r80Left()+(+a.dataset.v||0))*2)/2)); persist(true); render() },
+    bdWhich:()=>{ bdWhich=a.dataset.w; render(); const mn=document.getElementById('main'); if(mn) mn.scrollTop=0 },
+    a5Scale:()=>{ CFG.bill.a5Scale=Math.max(60,Math.min(200,(+CFG.bill.a5Scale||100)+(+a.dataset.v||0)));
+      persist(true); render() },
+    a5Reset:()=>{ if(!confirm('Put the large bill back the way it came? Your wording is kept.')) return;
+      delete CFG.bill.a5; a5Cfg(); persist(true); render(); toast('Back as it came') },
     bdScale:()=>{ const v=Math.max(60,Math.min(200,(+CFG.bill.r80Scale||100)+(+a.dataset.v||0)));
       CFG.bill.r80Scale=v; persist(true); render() },
     bdReset:()=>{ if(!confirm('Put the receipt back the way it came? Your wording is kept.')) return;
