@@ -49,21 +49,20 @@ tr.ret td{color:#9F1239}
   padding:11px 12px;font:600 14px Inter,sans-serif;color:var(--ink);text-decoration:none;cursor:pointer}
 .btn.pay{background:var(--amber);border-color:#D08F09}
 @media print{header{background:#fff;color:#000}.btns,.shopfoot a{display:none}.card{border:0}}
-/* the real bill, exactly as the till printed it */
-.paper{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:14px;overflow-x:auto}
+/* The exact branded bill the till printed — kept so "save as PDF" is the real invoice with its
+   logo and QR, but hidden on screen, where the clean card above reads properly on a phone. */
+.paper{background:#fff;padding:0;margin:0;overflow:hidden}
 .paper .print{border:0;margin:0 auto;padding:0}
-/* the A5 is a fluid layout: it is given the width it was drawn for and then scaled to the screen */
-.paper{overflow:hidden}
 .fit.a5{width:760px}
 .fit.r80{width:302px}
 .paper .print.a5{width:100%;aspect-ratio:auto;min-height:0}
 .paper .print.r80{width:302px}
-.whichpaper{font-size:11.5px;color:var(--faint);text-align:center;margin-top:8px}
+.forprint{display:none}
 @media print{
   body{background:#fff}
-  header,.btns,.shopfoot,.whichpaper{display:none!important}
-  .wrap{max-width:none;padding:0}
-  .paper{border:0;border-radius:0;padding:0;margin:0}
+  header,.btns,.shopfoot,.screenview{display:none!important}
+  .wrap{max-width:none;padding:0;margin:0}
+  .forprint{display:block!important}
 }
 
 </style>
@@ -74,21 +73,13 @@ tr.ret td{color:#9F1239}
 <div class="wrap"><div id="out"><div class="card msg">Reading the bill…</div></div></div>
 <script>
 
-/* A printed bill has a fixed width — 210mm for the A5, 302px for the receipt. Rather than reflow it,
-   which would no longer be the bill the shop printed, it is drawn at its own size and scaled to the
-   screen it is opened on. */
-function fitPaper(){
-  const box = document.querySelector('.paper'), sheet = document.querySelector('.paper .fit');
-  if (!box || !sheet) return;
-  // zoom rather than transform: it shrinks the layout box too, so the page around it sizes itself and
-  // nothing is left hanging off the bottom
-  sheet.style.zoom = 1;
-  const avail = box.clientWidth, real = sheet.scrollWidth || sheet.offsetWidth;
-  if (real > avail) sheet.style.zoom = String(Math.max(0.3, avail / real));
-}
 const $=(s)=>document.querySelector(s);
 const money=(n)=>'Rs '+(+n||0).toLocaleString('en-LK',{minimumFractionDigits:2,maximumFractionDigits:2});
 const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/* The shop sometimes keeps two numbers in the one phone field ("027… , 077…"). A tel: link can only
+   dial one, so take the first and strip it to digits — otherwise the phone tries to call both at
+   once and does nothing. */
+const firstPhone=(s)=>String(s==null?'':s).split(/[,/;]|\s(?:or)\s/i)[0].replace(/[^0-9+]/g,'');
 
 (async () => {
   const id = location.pathname.split('/').filter(Boolean).pop() || '';
@@ -101,19 +92,13 @@ const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;
     $('#shopSub').textContent = b.customer ? b.customer.name : 'your bill';
     $('#mk').textContent = (b.shop.name||'RH').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
     document.title = b.shop.name + ' · bill ' + b.no;
-    // the till sent the paper it printed: show that, and nothing of our own around it
-    if (b.html) {
-      $('#out').innerHTML = `
-        <div class="paper"><div class="fit printArea ${b.paper === 'r80' ? 'r80' : 'a5'}">${b.html}</div></div>
-        <div class="whichpaper">${b.paper === 'r80' ? 'Till receipt' : 'Printed bill (A5)'} · ${esc(b.no)}</div>
-        <div class="btns"><button class="btn" onclick="window.print()">Print or save as PDF</button>
-          ${b.shop.phone ? `<a class="btn pay" href="tel:${esc(String(b.shop.phone).replace(/[^0-9+]/g,''))}">Ring the shop</a>` : ''}</div>`;
-      fitPaper();
-      addEventListener('resize', fitPaper);
-      return;
-    }
-    $('#out').innerHTML = `
-      <div class="card">
+    /* On screen: a clean card that reads on a phone. For "save as PDF": the exact branded bill the
+       till printed, kept hidden on screen and shown only when printing. If the till did not send a
+       printed copy, the card itself prints. */
+    const telNum = firstPhone(b.shop.phone) || firstPhone(b.shop.land);
+    const telBtn = telNum ? `<a class="btn pay" href="tel:${esc(telNum)}">Ring the shop</a>` : '';
+    const card = `
+      <div class="card ${b.html ? 'screenview' : ''}">
         <div class="big">
           <div><div class="no">${esc(b.no)}</div>
             <div class="when">${esc(b.date)}${b.time ? ' · ' + esc(b.time) : ''}</div></div>
@@ -132,11 +117,18 @@ const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;
         ${b.balance > 0.005
           ? `<div class="tot due"><span>Still owing</span><b>${money(b.balance)}</b></div>`
           : `<div class="tot ok"><span>Settled</span><b>✓</b></div>`}
-        <div class="btns"><button class="btn" onclick="window.print()">Print or save</button>
-          ${b.shop.phone ? `<a class="btn pay" href="tel:${esc(String(b.shop.phone).replace(/[^0-9+]/g,''))}">Ring the shop</a>` : ''}</div>
       </div>
-      <div class="shopfoot"><b>${esc(b.shop.name)}</b><br>${esc(b.shop.addr)}<br>
-        ${esc(b.shop.phone)}${b.shop.land ? ' · ' + esc(b.shop.land) : ''}</div>`;
+      <div class="shopfoot screenview"><b>${esc(b.shop.name)}</b><br>${esc(b.shop.addr)}<br>
+        ${esc(b.shop.phone)}</div>`;
+    const paper = b.html
+      ? `<div class="paper forprint"><div class="fit printArea ${b.paper === 'r80' ? 'r80' : 'a5'}">${b.html}</div></div>`
+      : '';
+    // size the printed page to the bill it holds, so the saved PDF is one clean sheet
+    const pageRule = b.html
+      ? `<style media="print">@page{size:${b.paper === 'r80' ? '80mm auto;margin:2mm' : 'A5 landscape;margin:6mm'}}</style>`
+      : '';
+    $('#out').innerHTML = pageRule + card + paper +
+      `<div class="btns screenview"><button class="btn" onclick="window.print()">Print or save as PDF</button>${telBtn}</div>`;
   } catch (e) {
     $('#out').innerHTML = `<div class="card msg"><b>We cannot show that bill</b>${esc(e.message)}.<br>
       Please ring the shop and they will help.</div>`;
