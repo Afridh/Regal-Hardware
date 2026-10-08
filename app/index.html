@@ -3976,7 +3976,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   if(credit>0.005 && !customerId) throw new Error('Credit sale needs a customer');
   lines.forEach(l=>{ if(l.qty<0) return;                      // a return goes back at what it was sold for
     const p=P(l.pid), net=(l.qty*l.price-(l.disc||0))/l.qty;
-    if(net<p.cost-0.005&&!l.belowCost&&!override) throw new Error(`${p.name} is under cost — an admin has to allow it`) });
+    if(net<p.cost-0.005&&!l.belowCost&&!override&&!(CFG.stock&&CFG.stock.allowBelowCost)) throw new Error(`${p.name} is under cost — an admin has to allow it`) });
   let overLimit=false;
   if(credit>0.005){ const c=C(customerId);
     if(partyBal('C',c.id)+credit>c.limit){
@@ -4625,7 +4625,7 @@ const CFG={
  done:{askSize:true,cashDefault:'r80',creditDefault:'r80',rememberPick:true,notice:true,noticeMs:3200,
    askCustomer:true,askSalesman:true,                  // the two questions once the money is taken
    printAnim:true,animMs:1000,creditStamp:true,creditWord:'CREDIT BILL',cashWord:'PAID',sound:false},
- stock:{allowNegative:false},
+ stock:{allowNegative:false,allowBelowCost:false},
  print:{agent:'http://localhost:4100'},               // the print helper on the till PC (tools/print-agent); empty = browser print
  pos:{discFromMrp:true,repriceToLast:true,dragLines:true},          // a discount typed as a percentage comes off the maker's price; lines can be dragged into order
 
@@ -4926,6 +4926,7 @@ function settings(){
     <div class="grid3">
     ${fld('bill.returnDays','Return window in days','','number')}${fld('bill.quoteDays','How long a quotation holds good, in days','','number')}
       ${fld('stock.allowNegative','','Let a bill go out when the stock count is short (stock goes negative until the purchase is entered)','check')}
+      ${fld('stock.allowBelowCost','','Let a bill go out under cost without asking an admin (the price may be below what the item cost)','check')}
       ${fld('pos.discFromMrp','','A discount typed as a percentage comes off the MRP, not off the counter price','check')}
       ${fld('pos.repriceToLast','','When a customer is picked, put the bill back to the prices they were charged last time','check')}
       ${fld('pos.dragLines','','Let the lines on a bill be dragged up and down by the ⠿ handle to change their order — the bill prints in that order','check')}${fld('bill.blankLines','Ruled blank lines on the A5 bill','Keeps short bills looking full','number')}</div>
@@ -13420,7 +13421,7 @@ function posAfter(){
         S.pos.lines.push({pid:e.pid,qty:e.qty,price:e.price,disc:e.disc||0,auto:!!e.auto,...(okBy?{belowCost:okBy}:{})});
         S.pos.sel=S.pos.lines.length-1; S.pos.entry=null; render();
       };
-      if(net<p.cost-0.005) return belowCostAsk(p,net,push);
+      if(net<p.cost-0.005&&!(CFG.stock&&CFG.stock.allowBelowCost)) return belowCostAsk(p,net,push);
       push();
     };
     f.onkeydown=ev=>{
@@ -13779,7 +13780,7 @@ function qLineModal(i){
     if(!(q>0)) return toast('Quantity must be above zero'); if(!(pr>0)) return toast('Price must be above zero');
     const disc=dr?readDiscount(dr,q*pr):0, net=(q*pr-disc)/q;
     const apply=(by)=>{ Object.assign(l,{qty:q,price:pr,disc,discRaw:dr}); if(by) l.belowCost=by; m.remove(); render() };
-    if(net<p.cost-0.005&&!l.belowCost) return belowCostAsk(p,net,apply);
+    if(net<p.cost-0.005&&!l.belowCost&&!(CFG.stock&&CFG.stock.allowBelowCost)) return belowCostAsk(p,net,apply);
     apply() };
   m.querySelector('#qlOk').onclick=ok;
   m.querySelectorAll('input').forEach(x=>x.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();ok()} });
@@ -14521,7 +14522,7 @@ function csLineDone(save){
     if(Math.abs(pr-priceFor(p,q))>0.005) l.auto=false;
     if(!CFG.stock.allowNegative&&q>p.stock+1e-9) toast(`Only ${fq(p.stock)} ${p.unit} of ${p.name} on the floor`);
     leave() };
-  if(net<p.cost-0.005&&!l.belowCost) return belowCostAsk(p,net,put);   // the boxes stay open if the admin says no
+  if(net<p.cost-0.005&&!l.belowCost&&!(CFG.stock&&CFG.stock.allowBelowCost)) return belowCostAsk(p,net,put);   // the boxes stay open if the admin says no
   put(l.belowCost);
 }
 /* a line already on the bill: change its quantity, price, discount or warranty */
@@ -14578,7 +14579,7 @@ function csEditLine(i){
       if(pctTyped!==null) l.discPct=pctTyped; else delete l.discPct;
       if(by) l.belowCost=by; if(pr!==priceFor(p,q)) l.auto=false;
       m.remove(); render(); toast(`${lineName(l)} — ${fq(q)} at ${money2(pr)}`) };
-    if(net<p.cost-0.005&&!l.belowCost){ m.remove(); return belowCostAsk(p,net,put) }
+    if(net<p.cost-0.005&&!l.belowCost&&!(CFG.stock&&CFG.stock.allowBelowCost)){ m.remove(); return belowCostAsk(p,net,put) }
     put(l.belowCost);
   };
   m.querySelector('#elOk').onclick=save;
