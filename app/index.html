@@ -4895,7 +4895,15 @@ function settings(){
     ${fld('shop.line1','Bill strapline, first line')}
     ${fld('shop.line2','Bill strapline, second line')}
     ${fld('shop.owner','Owner mobile for the daily summary')}
-    <div class="card note" style="margin-top:10px">These go straight onto every bill, voucher and statement. Print one after changing to check the fit.</div>`;
+    <div class="card note" style="margin-top:10px">These go straight onto every bill, voucher and statement. Print one after changing to check the fit.</div>
+    ${isSuperUser()?`<div class="card note" style="border:1px solid var(--chip-rust,#C0442C);margin-top:16px">
+      <b style="color:var(--chip-rust,#C0442C)">Start fresh — clear the shop data</b>
+      <div class="muted" style="margin-top:4px">Removes every product, customer, supplier and bill, so you can load the real shop — upload the sheets under each Add screen, or run the one-time load. Your settings, sign-ins, staff, bank accounts and the SMS key stay. It is saved to the server's history, so it can be put back if it was a mistake.</div>
+      <div class="muted" style="margin-top:6px">On the system now: <b>${S.products.length}</b> products · <b>${S.customers.length}</b> customers · <b>${S.suppliers.length}</b> suppliers · <b>${(S.sales||[]).length}</b> bills.</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+        <input id="clearWord" placeholder="type CLEAR" autocomplete="off" style="border:1px solid var(--line);border-radius:var(--r);padding:8px;max-width:150px">
+        <button class="btn" data-act="clearShop" style="background:var(--chip-rust,#C0442C);color:#fff;border-color:var(--chip-rust,#C0442C)">Clear the shop data</button></div>
+    </div>`:''}`;
   if(setTab==='bill') body=`<div class="card note" style="margin-bottom:10px"><b>The bill number</b>
      <div class="muted">Figures alone: the cashier's own number, then a running number of theirs. ${S.users.filter(u=>u.active!==false).slice(0,4).map(u=>`<b>${u.name}</b> ${userNo(u.name)}${''.padStart(billDigits(),'0').replace(/0$/,'…')}`).join(' · ')}. Each person's number is set against them under Users &amp; permissions.</div></div>
     <div class="card note" style="margin-bottom:10px"><b>Where a bill comes out</b>
@@ -7688,6 +7696,29 @@ function webTheme(){ const t=S.web.theme=S.web.theme&&typeof S.web.theme==='obje
   t.hero={...WEB_THEME_DEFAULTS.hero,...t.hero}; t.band={...WEB_THEME_DEFAULTS.band,...t.band};
   WEB_THEME_DEFAULTS.sections.forEach(d=>{ if(!t.sections.some(s=>s.k===d.k)) t.sections.push({...d}) });
   return t }
+
+/* ==================== START FRESH: CLEAR THE SHOP DATA ====================
+   For a shop still being set up: wipe the sample products, customers, suppliers and bills so the
+   real ones can be loaded (uploaded as sheets, or the one-time load). What a shop has set up — its
+   settings, sign-ins, staff, bank accounts and the SMS key — is kept. Every save is a new revision
+   on the server, which keeps the last couple of hundred, so a clear can be put back if it was a
+   mistake. Owner only, and the word CLEAR has to be typed, so it cannot happen by a stray tap. */
+function clearShopData(){
+  S.products=[]; S.suppliers=[];
+  S.customers=[{id:1,code:'WALKIN',name:'Walk-in customer',phone:'',level:'retail',limit:0,address:'',portal:false,lastLogin:null,points:0}];
+  ['sales','purchases','payments','expenses','damages','movements','journal','cheques','docs','orders','prns','stocktakes','counts','serials','jobs','notices','payruns','advances','vouchers','transfers','notif','approvals','messages'].forEach(k=>{ if(Array.isArray(S[k])) S[k]=[]; else S[k]=[]; });
+  S.web={...(S.web||{}),orders:[],cart:[],session:null};
+  S.seq={PRN:1,STK:1,WEB:1,PO:1,QTN:1,DN:1,INV:1,PUR:1,PAY:1,RCT:1,VCH:1,EXP:1,DMG:1,JOB:1,JE:1}; S.seqBy={};
+}
+function clearShopFlow(){
+  if(!isSuperUser()) return toast('Only the owner can clear the shop data');
+  const w=document.getElementById('clearWord'); const word=String(w&&w.value||'').trim().toUpperCase();
+  if(word!=='CLEAR') return toast('Type CLEAR in the box first');
+  if(!confirm(`Remove all ${S.products.length} products, ${S.customers.length} customers, ${S.suppliers.length} suppliers and ${S.sales.length} bills?\n\nSettings, sign-ins, staff, banks and the SMS key are kept. It is saved to the server history, so it can be put back if this is a mistake.`)) return;
+  clearShopData();
+  try{ logTrail('clearShop','shop data cleared to start fresh',{amount:null}) }catch(e){}
+  persist(true); render(); toast('Shop data cleared — now upload the real products, customers and suppliers','ok');
+}
 
 /* ---- seed ---- */
 function seed(){
@@ -24112,6 +24143,7 @@ document.addEventListener('click',e=>{
     camAgain:()=>camCheckHelper(true),
     camAdd:()=>{ camList().push({id:'c'+Math.random().toString(36).slice(2,7),name:'',host:'',port:80,channel:101}); render() },
     custBulk:()=>{ closeModals(); bulkPeopleModal('cust') },
+    clearShop:()=>clearShopFlow(),
     supBulk:()=>{ closeModals(); bulkPeopleModal('sup') },
     camDrop:()=>{ const i=camList().findIndex(c=>String(c.id)===a.dataset.id); if(i>=0) camList().splice(i,1); render() },
     cashSave:()=>cashSave(a.dataset.k),
