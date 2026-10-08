@@ -18261,7 +18261,7 @@ function custDetails(c){
 function custModal(id,preset){
   const c=id?C(id):null;
   const q=(preset||'').trim(), qIsPhone=/^0\d{6,9}$/.test(q);
-  const m=modal(`<h2>${c?'Edit '+c.name:'New customer'}</h2>
+  const m=modal(`<h2>${c?'Edit '+c.name:'New customer'}</h2>${c?'':'<div class="seg-tabs" style="margin:-2px 0 12px"><button class="on" type="button">One customer</button><button type="button" data-act="custBulk">Many at once (from Excel)</button></div>'}
    <div class="grid2" style="margin-top:8px">
     <div class="f"><label>Name or shop</label><input id="cmName" value="${c?c.name.replace(/"/g,'&quot;'):(qIsPhone?'':q.replace(/"/g,'&quot;'))}" placeholder="e.g. Nimal Constructions"></div>
     <div class="f"><label>Mobile</label><input id="cmPhone" value="${c?(c.phone||''):(qIsPhone?q:'')}" placeholder="07XXXXXXXX" inputmode="tel"></div></div>
@@ -19604,6 +19604,143 @@ function bulkProductModal(){
     toast(`${added} product${added===1?'':'s'} added${updated?`, ${updated} updated`:''}${opening?` · ${opening} with opening stock`:''}`,'ok');
   };
 }
+/* ==================== CUSTOMERS AND SUPPLIERS, MANY AT ONCE ====================
+   The same idea as the product importer, for the people side. A sheet exported from SePOS
+   (db/sepos-to-excel.js) or typed in Excel: headings in any order, or the template's order
+   without them. Every row is checked before anything is added, and a code already on the system
+   is matched — so the same list uploaded twice adds nothing new rather than making doubles. */
+const CUST_COLS=[
+  ['code','Code',['code','custcode','customercode','ccode','accountno','account']],
+  ['name','Name',['name','customer','customername','cname','shop']],
+  ['phone','Phone',['phone','mobile','tel','telephone','contact','phoneno','mobileno']],
+  ['address','Address',['address','addr','town','city','location']],
+  ['level','Price level',['pricelevel','level','pricecategory','pricetype','type']],
+  ['limit','Credit limit',['creditlimit','limit','credit']],
+  ['notes','Notes',['notes','note','remark','remarks','comment']]];
+const SUP_COLS=[
+  ['code','Code',['code','supcode','suppliercode','vendorcode']],
+  ['name','Name',['name','supplier','suppliername','sname','vendor']],
+  ['contact','Contact person',['contact','contactperson','person','cperson','rep']],
+  ['phone','Phone',['phone','mobile','tel','telephone','phoneno','mobileno']],
+  ['days','Payment terms (days)',['days','terms','paymentterms','creditterm','credit','term']],
+  ['address','Address',['address','addr','town','city']],
+  ['notes','Notes',['notes','note','remark','remarks','comment']]];
+function bulkReadWith(rows,COLS){
+  if(!rows.length) return [];
+  const syn=new Map(); COLS.forEach(([k,,names])=>names.forEach(nm=>syn.set(nm,k)));
+  const hits=rows[0].map(h=>syn.get(bulkKey(h))||null);
+  const hasHead=hits.filter(Boolean).length>=2;
+  const map=hasHead?hits:COLS.map(c=>c[0]);
+  return (hasHead?rows.slice(1):rows).map((r,i)=>{ const o={line:i+(hasHead?2:1)};
+    map.forEach((k,j)=>{ if(k&&o[k]===undefined) o[k]=r[j]??'' }); return o });
+}
+const cleanPhone=v=>{ let d=String(v||'').replace(/\D/g,''); if(d.startsWith('94')&&d.length===11) d='0'+d.slice(2); if(d.length===9&&!d.startsWith('0')) d='0'+d; return /^0\d{6,9}$/.test(d)?d:'' };
+function custBulkCheck(list){
+  const byCode=new Map(S.customers.map(c=>[String(c.code||'').toLowerCase(),c]));
+  const byName=new Map(S.customers.map(c=>[String(c.name||'').toLowerCase().trim(),c]));
+  const seen=new Set();
+  return list.map(r=>{
+    const code=String(r.code||'').trim(), name=String(r.name||'').trim(), lc=code.toLowerCase(), ln=name.toLowerCase();
+    const old=(lc&&byCode.get(lc))||(ln&&byName.get(ln))||null, bad=[];
+    if(!name) bad.push('no name');
+    const key=lc||ln; if(key&&seen.has(key)) bad.push('the same one twice in the list'); if(key) seen.add(key);
+    const level=/whole|dealer|trade/i.test(String(r.level||''))?'wholesale':'retail';
+    const what=bad.length?'bad':old?'skip':'new';
+    return {...r,code,name,phone:cleanPhone(r.phone),address:String(r.address||'').trim(),level,limit:bulkNum(r.limit),notes:String(r.notes||'').trim(),old,bad,what};
+  });
+}
+function supBulkCheck(list){
+  const byCode=new Map(S.suppliers.map(x=>[String(x.code||'').toLowerCase(),x]));
+  const byName=new Map(S.suppliers.map(x=>[String(x.name||'').toLowerCase().trim(),x]));
+  const seen=new Set();
+  return list.map(r=>{
+    const code=String(r.code||'').trim(), name=String(r.name||'').trim(), lc=code.toLowerCase(), ln=name.toLowerCase();
+    const old=(lc&&byCode.get(lc))||(ln&&byName.get(ln))||null, bad=[];
+    if(!name) bad.push('no name');
+    const key=lc||ln; if(key&&seen.has(key)) bad.push('the same one twice in the list'); if(key) seen.add(key);
+    const what=bad.length?'bad':old?'skip':'new';
+    return {...r,code,name,contact:String(r.contact||'').trim(),phone:cleanPhone(r.phone),days:(r.days===''||r.days==null?30:bulkNum(r.days)),address:String(r.address||'').trim(),notes:String(r.notes||'').trim(),old,bad,what};
+  });
+}
+const PEOPLE={
+  cust:{ title:'customers', one:'One customer', singular:'customer', plural:'customers',
+    cols:CUST_COLS, check:custBulkCheck, back:()=>custModal(),
+    heads:['Code','Name','Phone','Address','Prices','Limit'],
+    cells:r=>[r.code,r.name||(r.old&&r.old.name)||'',r.phone,r.address,r.level,r.limit?fmt(r.limit):''],
+    add:good=>{ let id=Math.max(0,...S.customers.map(x=>x.id)), seq=S.customers.length+1, added=0;
+      for(const r of good){ const code=r.code||('C'+String(seq++).padStart(4,'0'));
+        S.customers.push({id:++id,code,name:r.name,phone:r.phone,address:r.address,level:r.level,limit:r.limit,notes:r.notes,portal:false,lastLogin:null,points:0}); added++; }
+      return added; } },
+  sup:{ title:'suppliers', one:'One supplier', singular:'supplier', plural:'suppliers',
+    cols:SUP_COLS, check:supBulkCheck, back:()=>supModal(),
+    heads:['Code','Name','Contact','Phone','Terms','Address'],
+    cells:r=>[r.code,r.name||(r.old&&r.old.name)||'',r.contact,r.phone,r.days?r.days+'d':'',r.address],
+    add:good=>{ let id=Math.max(0,...S.suppliers.map(x=>x.id)), seq=S.suppliers.length+1, added=0;
+      for(const r of good){ const code=r.code||('S'+String(seq++).padStart(4,'0'));
+        S.suppliers.push({id:++id,code,name:r.name,contact:r.contact,phone:r.phone,days:r.days,address:r.address,notes:r.notes,pin:'',showAccounts:false,enabled:false,lastLogin:null}); added++; }
+      return added; } },
+};
+function peopleTemplate(kind){
+  const cfg=PEOPLE[kind], head=cfg.cols.map(c=>c[1]);
+  const eg=kind==='cust'?['C0001','Nimal Constructions','0771234501','New Town, Polonnaruwa','wholesale','400000','pays at month end']
+    :['S0001','Tokyo Cement Distributor','Mr. Silva','0771234500','30','Colombo Road','lorry comes Tuesdays'];
+  const csv=[head,eg].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download=kind+'-template.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+}
+function bulkPeopleModal(kind){
+  if(S.user && S.user.role==='Salesman') return toast('Not open to Salesman');
+  const cfg=PEOPLE[kind];
+  const m=modal(`<h2>New ${cfg.title} — many at once</h2>
+   <div class="seg-tabs" style="margin:-2px 0 12px"><button type="button" id="pbOne">${cfg.one}</button><button class="on" type="button">Many at once (from Excel)</button></div>
+   <div class="muted" style="margin-bottom:8px">Paste the rows from Excel, or choose the file. The first row can be the headings —
+     <b>${cfg.cols.map(c=>c[1]).join(', ')}</b> — in any order. Only the name is needed; the code is matched against what is
+     already here, so the same list uploaded twice makes no doubles.</div>
+   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+    <button class="btn ghost sm" id="pbTpl">⬇ Download the template</button>
+    <label class="btn ghost sm" style="cursor:pointer">📄 Choose an Excel or CSV file<input type="file" id="pbFile" accept=".csv,.txt,.xlsx,.xls" style="display:none"></label>
+    <span class="muted" id="pbFileName"></span></div>
+   <textarea id="pbText" rows="6" placeholder="Paste the rows here (Ctrl+V)…" style="width:100%;font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre;border:1px solid var(--line);border-radius:var(--r);padding:8px"></textarea>
+   <div id="pbOut" style="margin-top:10px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="pbGo" disabled>Add ${cfg.plural}</button></div>`);
+  m.classList.add('wide'); m.style.zIndex=50;
+  let rows=[];
+  const draw=()=>{
+    rows=cfg.check(bulkReadWith(bulkSplit(m.querySelector('#pbText').value),cfg.cols));
+    const n={new:0,skip:0,bad:0}; rows.forEach(r=>n[r.what]++);
+    m.querySelector('#pbGo').disabled=!n.new;
+    m.querySelector('#pbGo').textContent=n.new?`Add ${n.new} ${n.new===1?cfg.singular:cfg.plural}`:`Add ${cfg.plural}`;
+    if(!rows.length){ m.querySelector('#pbOut').innerHTML=''; return }
+    const tag={new:'<span class="tag ok">new</span>',skip:'<span class="tag">already here — skipped</span>'};
+    const show=rows.slice(0,300);
+    m.querySelector('#pbOut').innerHTML=`<div class="row" style="margin-bottom:8px">
+       ${stat('Rows',rows.length,'read','b')}${stat('New',n.new,'will be added','g')}${stat('Already here',n.skip,'skipped','y')}${stat('Need fixing',n.bad,n.bad?'left out':'none','r')}</div>
+     <div style="max-height:42vh;overflow:auto;border:1px solid var(--line);border-radius:var(--r)">
+     <table><tr><th>Row</th>${cfg.heads.map(h=>`<th>${h}</th>`).join('')}<th></th></tr>
+      ${show.map(r=>`<tr style="${r.what==='bad'?'background:var(--tint-rust,#FBE4DE)':''}"><td class="muted">${r.line}</td>
+        ${cfg.cells(r).map(v=>`<td>${noteEsc(String(v==null?'':v))}</td>`).join('')}
+        <td>${r.what==='bad'?`<span class="tag bad">${noteEsc(r.bad.join(', '))}</span>`:tag[r.what]}</td></tr>`).join('')}
+     </table></div>${rows.length>show.length?`<div class="muted" style="margin-top:4px">Showing the first ${show.length} of ${rows.length} — all are checked.</div>`:''}`;
+  };
+  const ta=m.querySelector('#pbText'); let t0=0;
+  ta.oninput=()=>{ clearTimeout(t0); t0=setTimeout(draw,250) };
+  m.querySelector('#pbTpl').onclick=()=>peopleTemplate(kind);
+  m.querySelector('#pbOne').onclick=()=>{ m.remove(); cfg.back() };
+  m.querySelector('#pbFile').onchange=async()=>{ const f=m.querySelector('#pbFile').files[0]; if(!f) return;
+    m.querySelector('#pbFileName').textContent=f.name;
+    try{ ta.value=/\.xlsx?$/i.test(f.name)?await bulkXlsx(f):await f.text(); draw() }catch(e){ toast(e.message) } };
+  m.querySelector('#pbGo').onclick=()=>{
+    const good=rows.filter(r=>r.what==='new'); if(!good.length) return;
+    if(!confirm(`Add ${good.length} ${good.length===1?cfg.singular:cfg.plural}?`)) return;
+    const added=cfg.add(good);
+    logTrail('bulkPeople',`${added} ${added===1?cfg.singular:cfg.plural} added from a list`,{amount:null});
+    m.remove(); persist(true); render();
+    toast(`${added} ${added===1?cfg.singular:cfg.plural} added`,'ok');
+  };
+}
+
 /* pictures for the shop site live in the server's shop_media table, never in the books */
 function shopMediaUpload(key,file,maxPx=900,link=''){
   return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{ const sc=Math.min(1,maxPx/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
@@ -20442,7 +20579,7 @@ function supDetails(s,orders){
 function supModal(id,preset){
   const s=id?SU(id):null;
   const q=(preset||'').trim(), qIsPhone=/^0\d{6,9}$/.test(q);
-  const m=modal(`<h2>${s?'Edit '+s.name:'New supplier'}</h2>
+  const m=modal(`<h2>${s?'Edit '+s.name:'New supplier'}</h2>${s?'':'<div class="seg-tabs" style="margin:-2px 0 12px"><button class="on" type="button">One supplier</button><button type="button" data-act="supBulk">Many at once (from Excel)</button></div>'}
    <div class="grid2" style="margin-top:8px">
     <div class="f"><label>Supplier name</label><input id="smName" value="${s?s.name.replace(/"/g,'&quot;'):(qIsPhone?'':q.replace(/"/g,'&quot;'))}" placeholder="e.g. Tokyo Cement Distributor"></div>
     <div class="f"><label>Contact person (the rep)</label><input id="smContact" value="${s?(s.contact||'').replace(/"/g,'&quot;'):''}" placeholder="e.g. Mr. Silva"></div></div>
@@ -23974,6 +24111,8 @@ document.addEventListener('click',e=>{
     pqDrop:()=>{ if(confirm('Take this one off the list? The bill itself is not touched.')) pqDo(a.dataset.id,'drop') },
     camAgain:()=>camCheckHelper(true),
     camAdd:()=>{ camList().push({id:'c'+Math.random().toString(36).slice(2,7),name:'',host:'',port:80,channel:101}); render() },
+    custBulk:()=>{ closeModals(); bulkPeopleModal('cust') },
+    supBulk:()=>{ closeModals(); bulkPeopleModal('sup') },
     camDrop:()=>{ const i=camList().findIndex(c=>String(c.id)===a.dataset.id); if(i>=0) camList().splice(i,1); render() },
     cashSave:()=>cashSave(a.dataset.k),
     cashLast:()=>{ const prev=cashList().filter(c=>c.kind==='open'&&(c.loc||0)===cashStore()).slice(-1)[0];
