@@ -3780,7 +3780,7 @@ function partyBalMap(){ const J=S.journal; if(J===_pbArr&&J.length===_pbLen) ret
 function partyBal(type,id){ const v=partyBalMap().get(type+id); if(!v) return 0; return type==='C'?v[0]-v[1]:v[1]-v[0] }
 /* what a customer has paid ahead, held in 2050 until a bill uses it */
 function custCredit(id){ let d=0,c=0; for(const j of S.journal) for(const l of j.lines) if(l.ac==='2050'&&l.party&&l.party.type==='C'&&l.party.id===id){d+=l.dr;c+=l.cr} return +(c-d).toFixed(2) }
-function move(pid,qty,type,ref,cost,date,loc){ const p=P(pid); p.stock=+(p.stock+qty).toFixed(3);
+function move(pid,qty,type,ref,cost,date,loc){ if(pid===OPEN_PID) return; const p=P(pid); p.stock=+(p.stock+qty).toFixed(3);
   // the per-location split follows every movement (regal-ext.js); a transfer passes the location explicitly
   if(typeof extMove==='function'&&Array.isArray(S.locations)&&S.locations.length) extMove(p,qty,loc);
   S.movements.push({date:date||D(today),pid,qty,type,ref,cost,after:p.stock,loc:loc||S.locId||undefined}) }
@@ -3792,7 +3792,12 @@ const indexed=(get)=>{ let arr=null, len=-1, map=new Map(), retried=false;
   return (id)=>{ const a=get(); if(a!==arr||a.length!==len){ build(); retried=false }
     let x=map.get(id); if(x===undefined&&!retried){ build(); retried=true; x=map.get(id) }   // a miss rebuilds once, in case an item was swapped in place
     return x } };
-const P=indexed(()=>S.products), C=indexed(()=>S.customers), SU=(id)=>S.suppliers.find(s=>s.id===id), B=(id)=>S.banks.find(b=>b.id===id);
+const OPEN_PID='__open__';
+const OPEN_PRODUCT=()=>({id:OPEN_PID,name:'Open item',code:'',short:'',num:'',barcode:'',unit:'',cat:'Open items',supplierId:null,cost:0,mrp:0,retail:0,wholesale:0,stock:0,min:0,tiers:[],open:true,active:true,serialised:false,warrantyMonths:0});
+const isOpenLine=(l)=>!!(l&&(l.open||l.pid===OPEN_PID));
+const _Pbase=indexed(()=>S.products);
+const P=(id)=> id===OPEN_PID ? OPEN_PRODUCT() : _Pbase(id);
+const C=indexed(()=>S.customers), SU=(id)=>S.suppliers.find(s=>s.id===id), B=(id)=>S.banks.find(b=>b.id===id);
 /* Supplier test mode (Settings → Messaging): while the shop tries out the suppliers' side, every message
    meant for a supplier goes to the shop's test number instead, saying who it was for. Only the
    suppliers' messages pass through here — customers and staff are sent as always. */
@@ -3988,12 +3993,12 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   let usedCredit=0;
   if(credit>0.005&&customerId!==1){ const held=custCredit(customerId); usedCredit=+Math.min(held,credit).toFixed(2); if(usedCredit>0.005) credit=+(credit-usedCredit).toFixed(2) }
   const assignedSalesman = salesman !== undefined ? salesman : ((S.pos && S.pos.salesman) || null);
-  const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>({...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,loc:(S.locId||undefined),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true}).toUpperCase(),link:billLinkFor()};
+  const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>(isOpenLine(l)?{...l,cost:l.price,mrp:l.price,open:true}:{...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,loc:(S.locId||undefined),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true}).toUpperCase(),link:billLinkFor()};
   S.sales.push(inv);
   if(typeof BroadcastChannel !== 'undefined'){
     try { bcSend('sale_completed'); }catch(_){}
   }
-  let cogs=0; for(const l of inv.lines){ move(l.pid,-l.qty,'SALE',inv.no,l.cost,date,l.loc); cogs+=l.qty*l.cost }
+  let cogs=0; for(const l of inv.lines){ if(isOpenLine(l)) continue; move(l.pid,-l.qty,'SALE',inv.no,l.cost,date,l.loc); cogs+=l.qty*l.cost }
   // goods this store sold but another store is holding: an order for them to hand over
   if(typeof storeRaiseIssues==='function') try{ storeRaiseIssues(inv) }catch(e){}
   const jl=[{ac:'4100',cr:total}];
@@ -4008,7 +4013,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   post(date,(total<0?'Goods back ':'COGS ')+inv.no,inv.no,[{ac:'5100',dr:+cogs.toFixed(2)},{ac:'1200',cr:+cogs.toFixed(2)}]);
   const c=C(customerId);
   if(typeof extAfterSale==='function') extAfterSale(inv,c,pays);   // loyalty points earned / spent, vouchers used
-  inv.lines.forEach(l=>{ const pp=P(l.pid);
+  inv.lines.forEach(l=>{ if(isOpenLine(l)) return; const pp=P(l.pid);
     if(pp.stock<=pp.min&&pp.stock+l.qty>pp.min) notify('stock',`${pp.name} is down to ${fq(pp.stock)} ${pp.unit}`,'inventory') });
   if(overLimit) notify('warn',`${c.name} was let past their credit limit`,'customers');
   const v={invoice:inv.no,total:fmt(total),balance:fmt(credit),link:inv.link,
@@ -4627,7 +4632,7 @@ const CFG={
    printAnim:true,animMs:1000,creditStamp:true,creditWord:'CREDIT BILL',cashWord:'PAID',sound:false},
  stock:{allowNegative:false,allowBelowCost:false},
  print:{agent:'http://localhost:4100'},               // the print helper on the till PC (tools/print-agent); empty = browser print
- pos:{discFromMrp:true,repriceToLast:true,dragLines:true},          // a discount typed as a percentage comes off the maker's price; lines can be dragged into order
+ pos:{discFromMrp:true,repriceToLast:true,dragLines:true,openCode:'1'},          // a discount typed as a percentage comes off the maker's price; lines can be dragged into order
 
  /* ownerBills / ownerMin: which bills the owner is told about on their own phone, and from
     what size up. A shop doing three hundred counter sales a day does not want three hundred
@@ -13474,6 +13479,7 @@ function posAfter(){
     else if(ev.key==='ArrowUp'){sugIdx=Math.max(sugIdx-1,0);drawSug();ev.preventDefault()}
     else if(ev.key==='Enter'){ ev.preventDefault();
       const typed=q.value.trim();
+      if(typed===openCode()){ armed=0; q.value=''; sugList=[]; drawSug(); openItemAdd(); return }
       if(typed && sugList.length){ armed=0; startLine(sugList[sugIdx].id); return }
       if(typed){ armed=0; toast('No item matches “'+typed+'”'); return }
       if(!S.pos.lines.length) return;
@@ -13591,6 +13597,43 @@ function lineDiscount(i){
 function startLine(pid){ S.pos.entry={pid,step:'qty',qty:1,price:priceFor(P(pid),1),disc:0,discRaw:''}; render() }
 function addLine(pid){ const ex=S.pos.lines.find(l=>l.pid===pid); if(ex)ex.qty+=1; else S.pos.lines.push({pid,qty:1,price:price(P(pid)),disc:0}); S.pos.sel=S.pos.lines.length-1; render() }
 
+/* OPEN ITEM — something not in the system. Press 1 then Enter at the counter (or the OPEN button),
+   type what to call it and a price. It sells at that price and does NOT touch stock, cost or profit:
+   the line's cost is taken as its price, so it makes no GP, and no stock is moved. The name typed is
+   kept on the bill and prints on it. */
+const openCode=()=>String((CFG.pos&&CFG.pos.openCode)||'1');
+function openItemAdd(){
+  if(S.view!=='pos'){ go('pos'); }
+  const m=modal(`<h2>Open item</h2>
+   <div class="muted" style="margin-bottom:10px">For something not in the system. It sells for the price you type and does not touch stock or profit — the name you type prints on the bill.</div>
+   <div class="f"><label>What to call it on the bill</label>
+     <input id="oiName" maxlength="90" placeholder="e.g. LOOSE BOLTS" autocomplete="off" spellcheck="false" style="font-size:16px;text-transform:uppercase"></div>
+   <div style="display:flex;gap:10px;margin-top:10px">
+     <div class="f" style="flex:1"><label>Price each</label><input id="oiPrice" type="number" step="any" inputmode="decimal" placeholder="0.00" style="font-size:16px"></div>
+     <div class="f" style="width:110px"><label>Quantity</label><input id="oiQty" type="number" step="any" inputmode="decimal" value="1" style="font-size:16px"></div>
+   </div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+     <button class="btn ghost" data-act="closeModal">Cancel <i class="kbd">Esc</i></button>
+     <button class="btn tape" id="oiOk">Add to bill <i class="kbd">Enter</i></button></div>`);
+  const nm=m.querySelector('#oiName'), pr=m.querySelector('#oiPrice'), qt=m.querySelector('#oiQty');
+  const ok=()=>{
+    const name=(nm.value||'').trim(), price=+pr.value||0, qty=+qt.value||0;
+    if(!name){ toast('Type what to call it'); nm.focus(); return }
+    if(!(price>0)){ toast('Enter a price above zero'); pr.focus(); pr.select&&pr.select(); return }
+    if(!qty){ toast('Enter a quantity, or -1 to take one back'); qt.focus(); qt.select&&qt.select(); return }
+    S.pos.lines.push({pid:OPEN_PID,name,qty,price,disc:0,open:true,auto:false});
+    S.pos.sel=S.pos.lines.length-1; m.remove(); render();
+    toast(`${name} — ${fq(qty)} at ${money2(price)}`);
+    const f=$('#csQ')||$('#q')||$('#qq')||$('#phQ'); if(f) f.focus();
+  };
+  m.querySelector('#oiOk').onclick=ok;
+  const chain=(el,next)=>{ if(!el) return; el.onkeydown=e=>{ e.stopPropagation();
+    if(e.key==='Enter'){ e.preventDefault(); if(next){ next.focus(); next.select&&next.select() } else ok() } }; };
+  chain(nm,pr); chain(pr,qt); chain(qt,null);
+  nm.focus();
+}
+
+
 /* ---- payment, then how the bill goes out ---- */
 function creditSale(){
   // F6 and the on-account button: the same path as pressing C on the payment screen
@@ -13686,6 +13729,7 @@ function posPhoneAfter(){
   box.onkeydown=e=>{
     if(e.key!=='Enter') return;
     e.preventDefault();
+    if((PH.q||'').trim()===openCode()){ PH.q=''; openItemAdd(); return }
     const first=document.querySelector('.ph-hit[data-act="phAdd"]');
     if(first) first.click();            // a barcode scanner types and presses Enter
   };
@@ -13728,7 +13772,7 @@ function posQuick(){
      </button>
     </div>
     <div class="qlines">${L.length?L.map((l,i)=>{const p=P(l.pid);return `<div class="qline ${i===S.pos.sel?'sel':''}">
-      <div class="ql-n"><b>${p.name}</b>${(()=>{const sp=lastSupplier(l.pid);return sp?`<span class="linesup">${sp.name.split(/[–(]/)[0].trim()}</span>`:''})()}<span>${money2(l.price)} × ${fq(l.qty)} ${p.unit}${l.disc?' · less '+money2(l.disc):''}${l.qty>p.stock?' · <em>only '+fq(p.stock)+' on the floor</em>':''}</span></div>
+      <div class="ql-n"><b>${lineName(l)}</b>${(()=>{const sp=lastSupplier(l.pid);return sp?`<span class="linesup">${sp.name.split(/[–(]/)[0].trim()}</span>`:''})()}<span>${money2(l.price)} × ${fq(l.qty)} ${p.unit}${l.disc?' · less '+money2(l.disc):''}${!isOpenLine(l)&&l.qty>p.stock?' · <em>only '+fq(p.stock)+' on the floor</em>':''}</span></div>
       <div class="ql-q"><button data-act="qLess" data-i="${i}">−</button><b>${fq(l.qty)}</b><button data-act="qMore" data-i="${i}">+</button></div>
       <div class="ql-a">${fmt(l.qty*l.price-l.disc)}</div>
       <div class="ql-x"><button data-act="qEdit" data-i="${i}" title="quantity, price, discount">✎</button><button data-act="del" data-i="${i}">✕</button></div></div>`}).reverse().join('')
@@ -13824,6 +13868,7 @@ function bindQuick(){
     s.oninput=e=>{ QT.q=e.target.value; render(); const n=$('#qq'); n.focus(); n.setSelectionRange(n.value.length,n.value.length) };
     s.onkeydown=e=>{
       if(e.key==='Enter'){ e.preventDefault(); const v=QT.q.trim().toLowerCase(); if(!v){ if(S.pos.lines.length) qDone(); return }
+        if(v===openCode()){ QT.q=''; openItemAdd(); return }
         const hit=S.products.find(p=>(p.short||'')===v||String(p.num||'')===v||p.barcode===v)||S.products.find(p=>p.name.toLowerCase().includes(v)||p.code.toLowerCase().includes(v));
         if(hit) qAdd(hit.id); else toast('No item matches “'+QT.q+'”') }
       if(e.key==='Escape'){ QT.q=''; render() } };
@@ -14283,7 +14328,7 @@ const lineFrom=(l,inv)=>(typeof extFromName==='function')?extFromName(l,inv&&inv
 const gpOdd=(s)=>(s.lines||[]).some(l=>l.cost>0&&l.price>0&&l.cost>l.price*3);
 function gpOf(lines,billDisc=0){
   const take=lines.reduce((a,l)=>a+(l.qty*l.price-(l.disc||0)),0)-(+billDisc||0);
-  const cost=lines.reduce((a,l)=>{ const c=(l.cost!==undefined&&l.cost!==null)?l.cost:((P(l.pid)||{}).cost||0); return a+l.qty*c },0);
+  const cost=lines.reduce((a,l)=>{ const c=isOpenLine(l)?l.price:((l.cost!==undefined&&l.cost!==null)?l.cost:((P(l.pid)||{}).cost||0)); return a+l.qty*c },0);
   const gp=+(take-cost).toFixed(2);
   return {gp,take,cost,pct:take>0?+(gp/take*100).toFixed(1):0};
 }
@@ -14329,6 +14374,7 @@ function posClassic(){
     <button class="till-hold" data-act="hold" ${L.length?'':'disabled'} title="Put this bill aside, or make it a quotation (F7, Ctrl+H)">HOLD<i>F7</i></button>
     <button class="till-clear" data-act="csClear" ${L.length||CS.pid||S.pos.customer?'':'disabled'} title="Throw this bill away (Esc)">CLEAR<i>Esc</i></button>
     <button class="till-held ${S.heldBills&&S.heldBills.length?'has-held':''}" data-act="showHeld" title="The bills on hold — see what is on each and bring one back (F5, Ctrl+R)">HELD<i>F5</i>${(S.heldBills&&S.heldBills.length)?`<b>${S.heldBills.length}</b>`:''}</button>
+    <button class="till-hold" data-act="openItem" title="Add something not in the system — type a name and a price (or press 1 then Enter)">OPEN<i>1</i></button>
     <div class="till-who ${c.id===1?'':'named'}" data-act="pickCust" role="button" title="Change customer (F4)">
      <b>${c.id===1?'WALK-IN CUSTOMER':c.name.toUpperCase()}</b>
      <em>${c.id===1?'no account · tap or F4 to choose':`${c.phone||''} · owes ${fmt(owed)} of ${fmt(c.limit)}${owed>c.limit?' · over limit':''}`}</em>
@@ -14384,7 +14430,7 @@ function posClassic(){
              title="These goods are at ${lineFrom(l)} — click to choose a different shop">issue from ${lineFrom(l)}</span>`:''}
           ${(l.serials&&l.serials.length)?`<em>serial ${l.serials.join(', ')}</em>`:''}
           ${l.fromLast?`<span class="tag blue">their last price · ${l.fromLast}</span>`:''}
-          ${l.qty>p.stock+1e-9&&CFG.stock.track!==false?'<span class="tag bad">short on the floor</span>':''}
+          ${!isOpenLine(l)&&l.qty>p.stock+1e-9&&CFG.stock.track!==false?'<span class="tag bad">short on the floor</span>':''}
           ${l.belowCost?'<span class="tag bad">under cost</span>':''}</td>
          <td class="w">${l.warranty&&l.warranty!=='0'?l.warranty:'—'}</td>
          <td class="n q">${ed?`<input class="ln-in" id="lnQty" type="number" step="any" value="${l.qty}">`:fq(l.qty)}</td>
@@ -15305,6 +15351,7 @@ function bindClassic(){
       if(e.key==='ArrowUp'){ e.preventDefault(); cur=Math.max(0,cur-1); mark(); return }
       if(e.key==='Escape'){ e.preventDefault(); CS.q=''; q.value=''; draw(); return }
       if(e.key!=='Enter') return; e.preventDefault();
+      if(q.value.trim()===openCode()){ csArmed=0; CS.q=''; q.value=''; draw(); openItemAdd(); return }
       if(q.value.trim()){ csArmed=0;
         const b=list()[cur];
         if(b) csStart(+b.dataset.id); else toast('No item matches that');
@@ -24315,6 +24362,7 @@ document.addEventListener('click',e=>{
     csSignOut:()=>signOut(),
     csSel:()=>{ if(CS.editLine===+a.dataset.i) return;   // clicking into the boxes of the line being edited
       CS.editLine=null; S.pos.sel=+a.dataset.i; CS.focus='list'; fastUpdatePosSel(S.pos.sel); const el=document.querySelector('.till-lines'); if(el) el.focus(); },
+    openItem:()=>openItemAdd(),
     csClear:()=>csClearAsk(),
     csLineDisc:()=>{const l=S.pos.lines[S.pos.sel]; if(!l)return;
       const v=prompt(`Discount on ${P(l.pid).name} — rupees, or 10% for a tenth`,''); if(v===null)return;
