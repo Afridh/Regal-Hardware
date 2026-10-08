@@ -4725,9 +4725,9 @@ function tpl(key,vars={}){
 function voucherPrint(v){
   const rows=v.rows.map(r=>`<tr><td class="k">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join('');
   const lines=(v.lines||[]).map((l,i)=>`<tr><td>${i+1}</td><td>${l[0]}</td><td class="n">${money2(l[1])}</td></tr>`).join('');
-  modal(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
+  const vm=modal(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
     <h2 style="margin:0">${v.title} — ${v.no}</h2>
-    <div style="display:flex;gap:6px"><button class="btn sm" onclick="window.print()">Print</button>
+    <div style="display:flex;gap:6px"><button class="btn sm" data-act="rePrintPaper">Print</button>
      <button class="btn ghost sm" data-act="closeModal">Close</button></div></div>
    <div class="print a5 bill voucher">
     <div class="bhead">
@@ -4753,6 +4753,7 @@ function voucherPrint(v){
     <div class="bnote"><span>${CFG.shop.name} · this voucher is a record of payment and must be kept with the day's documents.</span>
      <em>PRINTED ${D(today).split('-').reverse().join(' ')} · PAGE 1 OF 1</em></div>
    </div>`);
+  const pr=vm&&vm.querySelector('.print'); if(pr){ const inner=pr.outerHTML; window._paperNow={inner,f:'a5',no:v.no}; printPaper(printDocument(inner,'a5'),'a5',v.no,()=>paperFallback(inner,'a5')); }
 }
 function supplierVoucher(pv){
   const s=SU(pv.supplierId);
@@ -16122,34 +16123,20 @@ function docPaperHtml(doc,f){
   </div>`;
 }
 /** Send it to the printer the way a bill goes: the helper if it is there, otherwise this browser. */
+/* A quotation or delivery note reaches paper the way a bill does: the helper if it is there, else the
+   browser — no save-as-PDF box in the way, and sized to fit the sheet. */
 function docToPaper(doc,f){
-  let html=docPaperHtml(doc,f);
-  if(!html){
+  let inner=docPaperHtml(doc,f);
+  if(!inner){
     // the A5 sheet is drawn by the preview, so that same drawing is taken and printed rather than a
     // second one written here that could drift away from it
     docPrint(doc.no,{preview:true,format:'a5'});
     const sheet=document.querySelector('.modal .print.a5');
     if(!sheet) return;
-    html=sheet.outerHTML; closeModals();
+    inner=sheet.outerHTML; closeModals(); f='a5';
   }
-  const old=document.getElementById('printArea'); if(old) old.remove();
-  const el=document.createElement('div'); el.id='printArea'; el.className='printArea '+(f==='r80'?'r80':'a5');
-  el.innerHTML=`<style id="printPage"></style>${html}`;
-  document.body.appendChild(el); document.body.classList.add('direct-print');
-  const pr=el.querySelector('.print'), sc=+pr.dataset.scale||1;
-  if(f==='r80'){
-    r80Place(pr,el.querySelector('#printPage'));
-  } else {
-    el.querySelector('#printPage').textContent='@page{size:A5 landscape;margin:4mm 6mm}';
-  }
-  let done=false;
-  const finish=()=>{ if(done) return; done=true; document.body.classList.remove('direct-print'); el.remove();
-    ['pointerdown','keydown'].forEach(ev=>window.removeEventListener(ev,finish,true)) };
-  window.addEventListener('afterprint',()=>setTimeout(()=>{
-    ['pointerdown','keydown'].forEach(ev=>window.addEventListener(ev,finish,true)); setTimeout(finish,6e5) },300),{once:true});
-  setTimeout(()=>{ try{ window.print() }catch(e){ finish(); docPrint(doc.no,{preview:true}) } },60);
+  printPaper(printDocument(inner,f),f,doc.no,()=>paperFallback(inner,f));
 }
-
 /* A quotation is printed the way a bill is: straight to the paper the till is set to, with no
    preview in the way. Preview is a button of its own for the times somebody wants to look first. */
 function docPrint(no,opts){
@@ -19228,59 +19215,73 @@ function billHtml(inv,f='a5'){
    With the print helper running on the PC (tools/print-agent) the bill goes to the printer set
    for its format — 80mm receipts to one, A5 bills to another — with no print box at all.
    Without it, the browser's own print is used, page size set to suit. */
-function billDocument(inv,f){
+function printDocument(inner,f){
   const inline=[...document.querySelectorAll('style')].map(s=>s.textContent).join('\n');
   // the bill's own rules live in bill-print.css now, so the linked sheets are gathered too
   const linked=[...document.styleSheets].map(sh=>{ try{ return [...sh.cssRules].map(r=>r.cssText).join('\n') }catch(e){ return '' } }).join('\n');
   const css=inline+'\n'+linked;
   const base=(typeof location!=='undefined'&&location.href)?location.href:'';
-  return `<!doctype html><html><head><meta charset="utf-8">${base?`<base href="${base}">`:''}<style>${css}</style></head><body class="direct-print"><div id="printArea" class="printArea ${f}">${billHtml(inv,f)}</div></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8">${base?`<base href="${base}">`:''}<style>${css}</style></head><body class="direct-print"><div id="printArea" class="printArea ${f}">${inner}</div></body></html>`;
 }
+function billDocument(inv,f){ return printDocument(billHtml(inv,f),f); }
 const printAgentUrl=()=>(CFG.print&&CFG.print.agent!==undefined)?String(CFG.print.agent||'').replace(/\/$/,''):'http://localhost:4100';
-async function agentPrint(inv,f){
+async function agentPrintHtml(html,no,f){
   const url=printAgentUrl(); if(!url) return false;
   try{
-    const r=await fetch(url+'/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({format:f,no:inv.no,html:billDocument(inv,f)})});
+    const r=await fetch(url+'/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({format:f,no:no||'',html})});
     const j=await r.json().catch(()=>({}));
-    if(r.ok&&j.ok){ toast(`${inv.no} printed on ${j.printer}`); return true }
+    if(r.ok&&j.ok){ toast(`${no||'It'} printed on ${j.printer}`); return true }
     toast('Print helper could not print: '+(j.error||r.status)+' — using the browser instead'); return false;
   }catch(e){ return false }   // helper not running: the browser prints
 }
-/* Sending a bill to the shop's printers from somewhere else — a phone at the counter, a second till,
+/* Sending anything to the shop's printers from somewhere else — a phone at the counter, a second till,
    the site on the internet. The job is left on the shop's server and the helper on the PC the printers
    are plugged into takes it within a couple of seconds. */
-async function queuePrint(inv,f){
+async function queuePrintHtml(html,no,f){
   if(!window.regalBridge||!regalBridge.token()) return false;
   try{
     const r=await fetch('/api/print',{method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},
-      body:JSON.stringify({format:f,no:inv.no,html:billDocument(inv,f),till:S.terminal||''})});
+      body:JSON.stringify({format:f,no:no||'',html,till:S.terminal||''})});
     const j=await r.json().catch(()=>({}));
-    if(r.ok&&j.ok){ toast(`${inv.no} sent to the shop printer`,'ok'); return true }
+    if(r.ok&&j.ok){ toast(`${no||'It'} sent to the shop printer`,'ok'); return true }
     if(r.status===401) return {ok:false,why:'This till is not signed in to the shop server.'};
     return {ok:false,why:j.error||('The shop server said '+r.status)};
   }catch(e){ return {ok:false,why:'The shop server could not be reached.'} }
 }
-function printBill(inv,f='a5'){
-  /* Three ways a bill can reach paper, tried in the order the shop asked for:
-       the helper on THIS machine, for a till with its own printer beside it
-       the shop's queue, which the helper at the main counter takes within a second or two
-       this browser's own print box, which is better than nothing and asks a person
-     With "the main counter" chosen, a bill made on a phone in the yard or on a second till
-     comes out at the counter — which is the whole point — but if the shop's server cannot
-     be reached it still tries the printer in front of the person rather than losing it. */
+/* One road to paper for every document — bill, quotation, voucher: the helper on this machine, then the
+   shop's queue, and failing both whatever fallback the caller gives (the browser, or a modal). */
+function printPaper(html,f,no,fallback){
   const toMain=(CFG.bill&&CFG.bill.printTo)==='main';
-  const onThisMachine=()=>agentPrint(inv,f);
-  const atTheCounter=()=>queuePrint(inv,f);
+  const onThisMachine=()=>agentPrintHtml(html,no,f);
+  const atTheCounter=()=>queuePrintHtml(html,no,f);
   const first=toMain?atTheCounter:onThisMachine;
   const then=toMain?onThisMachine:atTheCounter;
   const done=(v)=>v===true||!!(v&&v.ok===true);
   const why=(v)=>(v&&v.why)||'';
   first().then(a=>{ if(done(a)) return;
-    then().then(b=>{ if(done(b)) return;
-      printHere(inv,f,why(b)||why(a));
-    });
+    then().then(b=>{ if(done(b)) return; if(typeof fallback==='function') fallback(why(b)||why(a)); });
   });
+}
+/* The browser's own print for one document, sized to fit: an 80mm roll cut to length, or A5 landscape
+   with even margins. Used when the helper is not there. */
+function paperFallback(inner,f){
+  const old=document.getElementById('printArea'); if(old) old.remove();
+  const el=document.createElement('div'); el.id='printArea'; el.className='printArea '+(f==='r80'?'r80':'a5');
+  el.innerHTML=`<style id="printPage"></style>${inner}`;
+  document.body.appendChild(el); document.body.classList.add('direct-print');
+  const page=el.querySelector('#printPage'), pr=el.querySelector('.print');
+  if(f==='r80'&&pr) r80Place(pr,page);
+  else page.textContent='@page{size:A5 landscape;margin:4mm 6mm}';
+  let done=false;
+  const finish=()=>{ if(done) return; done=true; document.body.classList.remove('direct-print'); el.remove();
+    ['pointerdown','keydown'].forEach(ev=>window.removeEventListener(ev,finish,true)) };
+  window.addEventListener('afterprint',()=>setTimeout(()=>{ ['pointerdown','keydown'].forEach(ev=>window.addEventListener(ev,finish,true)); setTimeout(finish,6e5) },300),{once:true});
+  setTimeout(()=>{ try{ window.print() }catch(e){ finish() } },60);
+}
+function printBill(inv,f='a5'){
+  /* the helper on this machine, the shop's queue, then the browser — the order the shop chose */
+  printPaper(billDocument(inv,f),f,inv.no,(why)=>printHere(inv,f,why));
 }
 
 /* The last way out. It used to open the browser's print box the moment the counter refused
@@ -24137,6 +24138,7 @@ document.addEventListener('click',e=>{
       depositSlip(picked,S.banks[0].id,D(today))},
     credit:()=>creditSale(),
     doc:()=>{ if(a.dataset.k==='QUOTE'){ if(!S.pos.lines.length) return toast('Nothing on the screen to quote for'); return holdAsk('quote') } saveDoc(a.dataset.k) },
+    rePrintPaper:()=>{ const p=window._paperNow; if(p) printPaper(printDocument(p.inner,p.f),p.f,p.no,()=>paperFallback(p.inner,p.f)); },
     docPrint:()=>docPrint(a.dataset.no),
     docPreview:()=>docPrint(a.dataset.no,{preview:true}),
     docRecall:()=>quoteRecall(),
