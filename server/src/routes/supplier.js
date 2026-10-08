@@ -487,7 +487,7 @@ r.get('/stock', supAuth, asyncHandler(async (req, res) => {
     for (const l of (pu.lines || [])) if (l.pid) theirs.add(l.pid);
   const mine = (S.products || []).filter(p => theirs.has(p.id) && p.active !== false);
   const lines = mine.map(p => ({
-    code: p.code || '', name: p.name || '', unit: p.unit || '',
+    pid: p.id, code: p.code || '', name: p.name || '', unit: p.unit || '',
     stock: Math.round((+p.stock || 0) * 1000) / 1000,
     min: +p.min || 0,
     low: (+p.stock || 0) <= (+p.min || 0),

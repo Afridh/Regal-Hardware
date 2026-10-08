@@ -470,6 +470,34 @@ async function loadStock(){
   try{ st.stock=await api('/stock') }catch(e){ st.stock={error:e.message} }
   finally{ st.stockBusy=false; render() }
 }
+/* ---------- Easy ordering from the stock list ----------
+   Each item on the Stock page can be put straight on an order: the quantity is suggested (enough to
+   get back to the reorder level), the supplier changes it if they like, and "Review & send" takes
+   them to Create with the lines already on it. Nothing is sent until they send it there. */
+function stockSug(l){ const need=(+l.min||0)-(+l.stock||0); return need>0?Math.ceil(need):(+l.min||1); }
+function stockLineByKey(k){ return ((st.stock&&st.stock.lines)||[]).find(l=>String(l.code||l.name)===k); }
+function stockOrder(l,qty){
+  const D=st.draft=st.draft||{lines:[],q:'',pick:null,qty:'',price:'',note:''};
+  const at=D.lines.findIndex(x=> l.pid? x.pid===l.pid : (!x.pid&&String(x.desc||'').toLowerCase()===String(l.name||'').toLowerCase()));
+  if(!(qty>0)){ if(at>=0){ D.lines.splice(at,1); toast(`${l.name} taken off the order`) } render(); return; }
+  if(at>=0){ D.lines[at].qty=qty; if(l.pid) D.lines[at].pid=l.pid; }
+  else D.lines.push({desc:l.name,pid:l.pid||null,unit:l.unit||'',qty,price:0});
+  toast(`${l.name} — ${fq(qty)} on your order`); render();
+}
+function addAllShownToOrder(){
+  const q=(st.stockQ||'').trim().toLowerCase();
+  const all=((st.stock&&st.stock.lines)||[]).filter(l=>!q||(l.name+' '+l.code).toLowerCase().includes(q));
+  const low=all.filter(l=>l.low);
+  let pick=q?all:(low.length?low:all);
+  const CAP=120; let capped=false;
+  if(pick.length>CAP){ pick=pick.slice(0,CAP); capped=true; }
+  const D=st.draft=st.draft||{lines:[],q:'',pick:null,qty:'',price:'',note:''};
+  let n=0;
+  pick.forEach(l=>{ const at=D.lines.findIndex(x=> l.pid? x.pid===l.pid : (!x.pid&&String(x.desc||'').toLowerCase()===String(l.name||'').toLowerCase()));
+    if(at<0){ D.lines.push({desc:l.name,pid:l.pid||null,unit:l.unit||'',qty:stockSug(l),price:0}); n++; } });
+  toast(n?`${n} item${n===1?'':'s'} added${capped?` (first ${CAP} — search to add more)`:''}`:'They are already on your order');
+  render();
+}
 function stockPage(){
   if(!stockOpen()) return '<div class="empty"><div>📦</div><b>Not open just now</b><span>The shop opens this for you for a day at a time. Ask them to show you your stock.</span></div>';
   if(!st.stock&&!st.stockBusy){ setTimeout(loadStock,0); return '<div class="card muted">Loading your stock…</div>' }
@@ -479,20 +507,25 @@ function stockPage(){
   const lines=S2.lines||[], q=(st.stockQ||'').trim().toLowerCase();
   const shown=q?lines.filter(l=>(l.name+' '+l.code).toLowerCase().includes(q)):lines;
   const until=new Date(+st.me.stockUntil).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'});
+  const D=st.draft=st.draft||{lines:[],q:'',pick:null,qty:'',price:'',note:''};
+  const inDraft=l=>D.lines.find(x=> l.pid? x.pid===l.pid : (!x.pid&&String(x.desc||'').toLowerCase()===String(l.name||'').toLowerCase()));
+  const onOrder=D.lines.length;
   return `<div class="stats">
      <div><span>Your items</span><b>${lines.length}</b></div>
      <div class="${S2.low?'bad':''}"><span>Low or out</span><b>${S2.low||0}</b></div>
      <div><span>Open until</span><b style="font-size:14px">${esc(until)}</b></div></div>
    <div class="card">
+    <div class="muted" style="margin-bottom:8px">Tap <b>＋</b> to put an item on your order — the quantity is filled in for you, change it if you like, then <b>Review &amp; send</b>.</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
      <input id="stockQ" value="${esc(st.stockQ||'')}" placeholder="Search your items…" autocomplete="off" style="margin:0">
      <button class="btn" id="stockAgain" title="Read it again">↻</button></div>
-    ${shown.length?`<div class="tblwrap"><table class="paytbl"><tr><th>Item</th><th class="n">In the shop</th><th class="n">Reorder at</th><th></th></tr>
-     ${shown.map(l=>`<tr><td><b>${esc(l.name)}</b><div class="muted">${esc(l.code)}${l.unit?' · '+esc(l.unit):''}</div></td>
-      <td class="n"><b>${fq(l.stock)}</b></td><td class="n">${fq(l.min)}</td>
-      <td class="n">${l.stock<=0?'<span class="tag bad">Out</span>':l.low?'<span class="tag warn">Low</span>':''}</td></tr>`).join('')}</table></div>`
+    ${shown.length?`<button class="btn" id="stockAddAll" style="width:100%;margin-bottom:10px">＋ Add all ${q?'shown':'low'} items to the order</button><div class="tblwrap"><table class="paytbl"><tr><th>Item</th><th class="n">In shop</th><th class="n">Reorder</th><th class="n">Order</th></tr>
+     ${shown.map(l=>{const od=inDraft(l);return `<tr${od?' class="on"':''}><td><b>${esc(l.name)}</b><div class="muted">${esc(l.code)}${l.unit?' · '+esc(l.unit):''}</div></td>
+      <td class="n"><b>${fq(l.stock)}</b>${l.stock<=0?'<div><span class="tag bad">Out</span></div>':l.low?'<div><span class="tag warn">Low</span></div>':''}</td><td class="n">${fq(l.min)}</td>
+      <td class="n"><div style="display:flex;gap:4px;align-items:center;justify-content:flex-end"><input class="qtyin stqin" style="width:54px" type="number" step="any" inputmode="decimal" value="${od?fq(od.qty):stockSug(l)}"><button class="btn sm${od?' tape':''}" data-stockadd="${esc(l.code||l.name)}" title="${od?'On your order — tap to update':'Put on your order'}">${od?'✓':'＋'}</button></div></td></tr>`}).join('')}</table></div>`
      :`<div class="muted">${lines.length?'Nothing matches that.':'None of your items are on the shop\'s list yet.'}</div>`}
-   </div>`;
+   </div>
+   ${onOrder?`<div class="card" style="position:sticky;bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px"><span><b>${onOrder}</b> item${onOrder===1?'':'s'} on your order</span><button class="btn tape" id="stockReview">Review &amp; send →</button></div>`:''}`;
 }
 
 /* ---------- Payment Portal: the bills, how old they are, and asking to be paid ---------- */
@@ -632,6 +665,10 @@ function bind(){
   // their stock
   const sq=$('#stockQ'); if(sq) sq.oninput=()=>{ st.stockQ=sq.value; const at=sq.selectionStart; render(); const n=$('#stockQ'); if(n){ n.focus(); try{ n.setSelectionRange(at,at) }catch(e){} } };
   const sa=$('#stockAgain'); if(sa) sa.onclick=()=>{ st.stock=null; loadStock() };
+  $$('[data-stockadd]',m).forEach(b=>b.onclick=()=>{ const l=stockLineByKey(b.dataset.stockadd); if(!l) return; const inp=b.closest('td').querySelector('.stqin'); stockOrder(l, inp?+inp.value||0:0); });
+  $$('.stqin',m).forEach(el=>el.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); const b=el.closest('td').querySelector('[data-stockadd]'); if(b) b.click(); } });
+  const saa=$('#stockAddAll'); if(saa) saa.onclick=addAllShownToOrder;
+  const sr=$('#stockReview'); if(sr) sr.onclick=()=>{ st.tab='create'; st.cmode='items'; st.flash=''; render(); window.scrollTo(0,0); };
   // payment portal
   $$('[data-paypick]',m).forEach(cb=>cb.onchange=()=>{ st.payPick=st.payPick||{};
     if(cb.checked) st.payPick[cb.dataset.paypick]={claim:'',note:''}; else delete st.payPick[cb.dataset.paypick];
