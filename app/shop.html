@@ -3175,7 +3175,16 @@ body.nav-open { overflow: hidden }
   .btn-primary,.aiz-card-box,.aiz-card-box .pic img{transition:none!important}
   .aiz-card-box:hover{transform:none}.aiz-card-box:hover .pic img{transform:none}
 }
+/* Shop-by-category tiles */
+.home-cat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.home-cat-tile{display:flex;flex-direction:column;align-items:center;gap:6px;background:var(--bg-card);border:1.5px solid var(--border-subtle);border-radius:var(--radius-lg);padding:22px 14px;cursor:pointer;text-align:center;transition:transform .2s cubic-bezier(.2,.7,.3,1),box-shadow .2s,border-color .2s}
+.home-cat-tile:hover{transform:translateY(-4px);box-shadow:0 14px 30px rgba(174,30,43,.12);border-color:var(--brand-red)}
+.home-cat-tile .hct-ic{font-size:34px;line-height:1}
+.home-cat-tile .hct-nm{font-weight:800;font-size:15px;color:var(--brand-dark)}
+.home-cat-tile .hct-ct{font-size:12px;color:var(--secondary)}
+@media(max-width:860px){.home-cat-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
+
 </head>
 <body>
 <div id="app"></div>
@@ -4656,6 +4665,34 @@ function productBox(p) {
   </div>`;
 }
 
+/* Shop-by-category tiles for the homepage (electronics-store style) */
+function homeCategoriesSection(){
+  const cats=(st.cat.categories||[]).slice(0,8);
+  if(!cats.length) return '';
+  const icon=(name)=>{const n=(name||'').toLowerCase();
+    if(/cement|build|block|sand|steel/.test(n))return'🧱';
+    if(/paint|brush|thinner|colour|color/.test(n))return'🎨';
+    if(/electric|wire|cable|switch|bulb|led|light|lamp/.test(n))return'💡';
+    if(/pvc|plumb|pipe|water|tap|fitting|faucet/.test(n))return'🚰';
+    if(/tool|drill|machine|grinder|saw/.test(n))return'🔧';
+    if(/fasten|screw|bolt|nail|nut|anchor/.test(n))return'🔩';
+    if(/motor|garden|pump|agri/.test(n))return'🌿';
+    if(/safe|security|fire|lock/.test(n))return'🛡️';
+    return'🛠️';};
+  return `<section class="container" id="categories" style="margin:56px auto">
+    <div style="text-align:center;margin-bottom:26px">
+      <span style="font-size:12px;font-weight:800;color:var(--brand-red);letter-spacing:.08em;text-transform:uppercase">Browse the depot</span>
+      <h2 style="font-size:32px;font-weight:800;margin-top:4px">Shop by Category</h2>
+    </div>
+    <div class="home-cat-grid">
+      ${cats.map(c=>`<button class="home-cat-tile" onclick="go('search',{cat:'${esc(c.name)}'})" title="Browse ${esc(c.name)}">
+        <span class="hct-ic">${icon(c.name)}</span>
+        <span class="hct-nm">${esc(c.name)}</span>
+        <span class="hct-ct">${c.count} item${c.count===1?'':'s'}</span>
+      </button>`).join('')}
+    </div>
+  </section>`;
+}
 /* Home Page Assembly with High-Impact Marketing & Smooth Section Flow */
 function home() {
   const prods = st.cat.products.filter(p => st.cat.settings.showOutOfStock || p.stock === null || p.stock > 0);
@@ -4665,6 +4702,7 @@ function home() {
   return `
     ${heroSection()}
     ${trustStrip()}
+    ${homeCategoriesSection()}
     ${partnerLogosSection()}
     ${marketingSolutionsSection()}
     ${capabilitiesSection()}
