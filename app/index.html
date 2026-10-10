@@ -19295,6 +19295,26 @@ function paperFallback(inner,f){
   window.addEventListener('afterprint',()=>setTimeout(()=>{ ['pointerdown','keydown'].forEach(ev=>window.addEventListener(ev,finish,true)); setTimeout(finish,6e5) },300),{once:true});
   setTimeout(()=>{ try{ window.print() }catch(e){ finish() } },60);
 }
+/* A sample bill for the "Print one to check" buttons, so the 80mm (and A5) printer can be tested
+   through the print helper even before the shop has rung anything up. Uses real products when there
+   are some, otherwise a few stand-in lines. Nothing is saved — it only renders and prints. */
+function sampleInvoice(){
+  const now=new Date();
+  const picks=(S.products||[]).filter(p=>p.active!==false&&!p.open).slice(0,5);
+  let lines;
+  if(picks.length){ const qs=[1,5,1,1,1];
+    lines=picks.map((p,i)=>({pid:p.id,qty:qs[i]||1,price:(+(p.retail||p.mrp||p.cost)||100),disc:0})); }
+  else { lines=[
+    {pid:OPEN_PID,open:true,name:'1 X 1/2 REDUCING TEE - SLON',qty:1,price:155,disc:0,mrp:195},
+    {pid:OPEN_PID,open:true,name:'KEVILTON 13AMP PLUG BASE',qty:1,price:600,disc:0,mrp:1045},
+    {pid:OPEN_PID,open:true,name:'WATER TEC GARDEN TAP',qty:1,price:650,disc:0,mrp:878} ]; }
+  const total=+lines.reduce((a,l)=>a+l.qty*l.price-(l.disc||0),0).toFixed(2);
+  return { no:((CFG.bill&&CFG.bill.prefix)||'INVM-')+'TEST', date:D(today), customerId:1, lines,
+    sub:total, billDisc:0, total, paid:total, balance:0, pays:[{method:'CASH',amount:total}],
+    by:(S.user&&S.user.name)||'TEST', terminal:S.terminal,
+    time:now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}),
+    proof:true, serial:'TEST' };
+}
 function printBill(inv,f='a5'){
   /* the helper on this machine, the shop's queue, then the browser — the order the shop chose */
   printPaper(billDocument(inv,f),f,inv.no,(why)=>printHere(inv,f,why));
@@ -23959,7 +23979,7 @@ document.addEventListener('click',e=>{
     invoice:()=>showInvoice(S.sales.find(s=>s.no===a.dataset.no)), showInv:()=>{closeModals();showInvoice(S.sales.find(s=>s.no===a.dataset.no),a.dataset.f)}, closeModal:closeModals,
     doPrint:()=>{ try{ window.print() }catch(e){ toast("The preview is open — use the browser's own print, or pop the window out first") } },
     logoClear:()=>{ CFG.shop.logo=''; render(); toast('Back to the default mark') },
-    printTest:()=>{ const last=S.sales.slice().reverse().find(x=>x.lines.length)||S.sales.at(-1); if(!last) return toast('No bill to print yet'); toast('Sending a test bill…'); printBill({...last,proof:true},a.dataset.f) },
+    printTest:()=>{ const f=a.dataset.f||'r80'; const last=S.sales.slice().reverse().find(x=>x.lines&&x.lines.length); const inv=last?{...last,proof:true}:sampleInvoice(); toast('Sending a test '+(f==='r80'?'80mm receipt':'A5 bill')+' to the printer…'); printBill(inv,f) },
     printNow:()=>{ const inv=window._shownBill&&window._shownBill.no===a.dataset.no?window._shownBill:S.sales.find(x=>x.no===a.dataset.no); if(!inv) return toast('No such bill'); closeModals(); printBill({...inv,reprint:!inv.proof},a.dataset.f||'r80') },
     proofA5:()=>proofBill('a5'), proof80:()=>proofBill('r80'),
     cust:()=>{ const id=+a.dataset.id; if(id===custSel&&S.view==='customers') return;
