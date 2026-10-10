@@ -4007,7 +4007,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   let usedCredit=0;
   if(credit>0.005&&customerId!==1){ const held=custCredit(customerId); usedCredit=+Math.min(held,credit).toFixed(2); if(usedCredit>0.005) credit=+(credit-usedCredit).toFixed(2) }
   const assignedSalesman = salesman !== undefined ? salesman : ((S.pos && S.pos.salesman) || null);
-  const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>(isOpenLine(l)?{...l,cost:l.price,mrp:l.price,open:true}:{...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,loc:(S.locId||undefined),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true}).toUpperCase(),link:billLinkFor(),serial:(S.serial=(((+S.serial)||((+(CFG.bill&&CFG.bill.serialStart))||0))+1))};
+  const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>(isOpenLine(l)?{...l,cost:l.price,mrp:l.price,open:true}:{...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,loc:(S.locId||undefined),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}),link:billLinkFor(),serial:(S.serial=(((+S.serial)||((+(CFG.bill&&CFG.bill.serialStart))||0))+1))};
   S.sales.push(inv);
   if(typeof BroadcastChannel !== 'undefined'){
     try { bcSend('sale_completed'); }catch(_){}
@@ -19143,12 +19143,9 @@ function billHtml(inv,f='a5'){
     addr:`<div class="sb-addr">${(SH.addr||SHOP.addr).toUpperCase()}${SH.near?`<span class="sb-near">${SH.near}</span>`:''}</div>`,
     phone:`<div class="sb-phone">${phones}</div>`,
     detail:`<div class="sb-rule"></div>
-     <div class="sb-kv2"><span>Serial No</span><b>${serialOf(inv)}</b></div>
-     <div class="sb-kv2"><span>Invoice No</span><b>${inv.no}</b></div>
-     <div class="sb-kv2"><span>Invoice Date</span><b>${billDate(inv)}</b></div>
-     <div class="sb-kv2"><span>Invoice Time</span><b>${timeOf(inv)}</b></div>
-     ${B.showCashier!==false?`<div class="sb-kv2"><span>Invoice By</span><b>${(inv.by||'').toUpperCase()}</b></div>`:''}
-     ${walk?'':`<div class="sb-kv2"><span>Customer</span><b>${c.name.toUpperCase()}${c.phone?' · '+c.phone:''}</b></div>`}
+     <div class="sb-kv"><span>Serial No :</span><b>${serialOf(inv)} | ${inv.no}</b><span>${billDate(inv)}</span></div>
+     ${B.showCashier!==false?`<div class="sb-kv"><span>Invoice by:</span><b>${(inv.by||'').toUpperCase()} /</b><span>${timeOf(inv)}</span></div>`:`<div class="sb-kv"><span>Time :</span><b></b><span>${timeOf(inv)}</span></div>`}
+     ${walk?'':`<div class="sb-kv"><span>Customer :</span><b>${c.name.toUpperCase()}</b><span>${c.phone||''}</span></div>`}
      <div class="sb-rule"></div>`,
     items:B.showSaving!==false?`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>MRP</th><th>D.Price</th><th>Amount</th></tr>
      ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td></tr>
@@ -19159,14 +19156,14 @@ function billHtml(inv,f='a5'){
       <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`}).join('')}
      </table>`,
     totals:`<div class="sb-rule"></div>
-     <div class="sb-tot"><span>Gross Total Rs.</span><b>${money2(gross)}</b></div>
-     ${disc>0?`<div class="sb-tot"><span>- Line Discount ${discPct.toFixed(2)} % :</span><b>${money2(disc)}</b></div>`:''}
-     <div class="sb-dbl"></div>
-     <div class="sb-net"><span>Invoice Total Rs. :</span><b>${money2(inv.total)}</b></div>
-     <div class="sb-dbl"></div>`,
-    paid:credit?`<div class="sb-tot"><span>Credit Rs. :</span><b>${money2(inv.balance)}</b></div>${inv.paid>0?`<div class="sb-tot"><span>Paid Rs. :</span><b>${money2(inv.paid)}</b></div>`:''}
-      ${CFG.bill.showOutstanding?`<div class="sb-tot"><span>Previous Outstanding :</span><b>${money2(prev)}</b></div><div class="sb-tot"><span>Total Outstanding Rs. :</span><b>${money2(prev+inv.balance)}</b></div>`:''}`
-     :`<div class="sb-tot"><span>${payWord} Payment Rs. :</span><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div class="sb-tot"><span>Change Rs. :</span><b>${money2(inv.paid-inv.total)}</b></div>`:''}`,
+     <div class="sb-tot"><span>Gross Total Rs.</span><i>:</i><b>${money2(gross)}</b></div>
+     ${disc>0?`<div class="sb-tot bold"><span>- Line Discount ${discPct.toFixed(2)} %</span><i>:</i><b>${money2(disc)}</b></div>`:''}
+     <div class="sb-stars">${'*'.repeat(46)}</div>
+     <div class="sb-net"><span>Invoice Total Rs.</span><i>:</i><b>${money2(inv.total)}</b></div>
+     <div class="sb-stars">${'*'.repeat(46)}</div>`,
+    paid:credit?`<div class="sb-tot"><span>Credit Rs.</span><i>:</i><b>${money2(inv.balance)}</b></div>${inv.paid>0?`<div class="sb-tot"><span>Paid Rs.</span><i>:</i><b>${money2(inv.paid)}</b></div>`:''}
+      ${CFG.bill.showOutstanding?`<div class="sb-tot"><span>Previous Outstanding</span><i>:</i><b>${money2(prev)}</b></div><div class="sb-tot"><span>Total Outstanding Rs.</span><i>:</i><b>${money2(prev+inv.balance)}</b></div>`:''}`
+     :`<div class="sb-tot"><span>${payWord} Payment Rs.</span><i>:</i><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div class="sb-tot"><span>Change Rs.</span><i>:</i><b>${money2(inv.paid-inv.total)}</b></div>`:''}`,
     barcode:`<div class="sb-bc">${barcode128(inv.no,40)}</div>`,
     sign:`<div class="sb-sign"><span>${B.signLeft||'Authorized By'}</span><span>${B.signRight||'Checked By'}</span></div>`,
     count:`<div class="sb-cnt">No of Item / Qty - &nbsp; ${inv.lines.length.toFixed(2)} &nbsp;/&nbsp; ${qty.toFixed(2)}</div>`,
@@ -23231,7 +23228,7 @@ function proofBill(fmtWanted){
     lines:L.map(l=>({...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),
     sub,billDisc:S.pos.billDisc,total,paid:total,balance:0,pays:[{method:'CASH',amount:total}],
     by:S.user.name,terminal:S.terminal,
-    time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true}).toUpperCase(),
+    time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}),
     link:'regalhw.lk/b/proof',proof:true};
   showInvoice(proof,fmtWanted||S.pos.lastBill||CFG.bill.defaultFormat);
 }
