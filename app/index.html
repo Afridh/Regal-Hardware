@@ -3643,7 +3643,7 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
   opacity:.55;margin:12px 0 4px}
 .bd-reg:first-child{margin-top:0}
 </style>
-<link rel="stylesheet" href="bill-print.css?v=2">
+<link rel="stylesheet" href="bill-print.css?v=3">
 </head>
 <body>
 <!-- The Shift Board used to be carried here as a whole second app and shown in a frame.
@@ -18758,6 +18758,12 @@ function r80Cfg(){
   return B.r80;
 }
 const r80Order = () => r80Cfg().order;
+/* How big each part prints, in px — the shop can nudge every line in Design the bill. Kept with the
+   other receipt settings so it travels with the books. */
+const R80_SIZE_DEF = {top:9,name:18,sinhala:14,addr:11,phone:12,detail:12,items:12,totals:12,count:10.5,sign:10,foot:9.5,thanks:10.5,web:9.5};
+function r80Size(k){ const s=(r80Cfg().size||{}); const v=+s[k]; return Number.isFinite(v)&&v>0?v:(R80_SIZE_DEF[k]!=null?R80_SIZE_DEF[k]:12); }
+function r80SetSize(k,delta){ const c=r80Cfg(); if(!c.size)c.size={}; c.size[k]=Math.max(6,Math.min(40,+(r80Size(k)+delta).toFixed(1))); }
+const r80SizeVars=()=>Object.keys(R80_SIZE_DEF).map(k=>'--s-'+k+':'+r80Size(k)+'px').join(';');
 /* The old switches still rule where they are set, so a shop that has already turned the logo or
    the barcode off does not find them back on after an update. */
 const R80_OLD = { logo:'t80Logo', barcode:'showBarcode', sign:'t80Sign', sinhala:'showSinhala', web:'showWeb' };
@@ -18993,7 +18999,7 @@ function billdesign(){
     const on = r80On(k), fixed = k === 'items';
     return `<div class="bd-row ${on ? '' : 'off'}">
       <label class="bd-tick"><input type="checkbox" data-bdon="${k}" ${on ? 'checked' : ''} ${fixed ? 'disabled' : ''}></label>
-      <div><b>${label}</b>${hint ? `<em>${hint}</em>` : ''}</div>
+      <div><b>${label}</b>${hint ? `<em>${hint}</em>` : ''}${R80_SIZE_DEF[k]!=null?`<div style="display:flex;align-items:center;gap:5px;margin-top:4px"><span class="muted" style="font-size:11px">size</span><button class="btn ghost sm" data-bdsz="${k}" data-v="-0.5">A-</button><b style="font-size:12px;min-width:36px;text-align:center">${r80Size(k)}px</b><button class="btn ghost sm" data-bdsz="${k}" data-v="0.5">A+</button></div>`:''}</div>
       <div class="bd-mv">
        <button class="btn ghost sm" data-bdup="${k}" ${i === 0 ? 'disabled' : ''}>↑</button>
        <button class="btn ghost sm" data-bddn="${k}" ${i === c.order.length - 1 ? 'disabled' : ''}>↓</button></div>
@@ -19093,6 +19099,9 @@ function billdesignAfter(){
   document.querySelectorAll('[data-bddn]').forEach(el => {
     el.onclick = () => { r80Move(el.dataset.bddn, 1); persist(true); render() };
   });
+  document.querySelectorAll('[data-bdsz]').forEach(el => {
+    el.onclick = () => { r80SetSize(el.dataset.bdsz, +el.dataset.v); persist(true); render() };
+  });
   /* the same three, for the large bill */
   document.querySelectorAll('[data-a5on]').forEach(el => {
     el.onchange = () => { a5Set(el.dataset.a5on, el.checked); persist(true); render() };
@@ -19172,7 +19181,7 @@ function billHtml(inv,f='a5'){
     thanks:B.t80Thanks?`<div class="sb-thanks">${B.t80Thanks}</div>`:'',
     web:(SH.web||(S.web&&S.web.settings&&S.web.settings.domain))?`<div class="sb-web">${SH.web||S.web.settings.domain}</div>`:'',
    };
-   return `<div class="print r80 sb80" data-scale="${sc80}" style="zoom:${sc80};width:calc(302px / ${sc80});font-family:${billFontCss(B.r80Font)}">
+   return `<div class="print r80 sb80" data-scale="${sc80}" style="zoom:${sc80};width:calc(302px / ${sc80});font-family:${billFontCss(B.r80Font)};${r80SizeVars()}">
    <div class="sb-inner">${r80Order().filter(k=>r80On(k)).map(k=>part[k]||'').join('')}</div>
   </div>`;
   }
