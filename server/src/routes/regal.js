@@ -25,7 +25,7 @@ const BOOKS_KEY = 'regal';
    the server's own code only when the Node app is restarted. A till reads this to know which it is
    talking to, and says so when the server is behind the page (held bills, for one, need the new one). */
 const SERVER = { started: new Date().toISOString(), features: ['held'] };
-const HISTORY_KEEP = 200;
+const HISTORY_KEEP = 500;
 // What belongs to one till's screen and is never kept in the shared books. It must agree with the
 // list in app/regal-bridge.js. Held bills are NOT on it: a bill held on one till (a phone) is picked
 // up on another, so they travel with the books — this list used to throw them away on every save.
@@ -468,7 +468,18 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   const out = await withTransaction(async client => {
     const { rows: [cur] } = await client.query(`SELECT rev, data FROM books WHERE key = $1 FOR UPDATE`, [key]);
     const curRev = cur ? Number(cur.rev) : 0;
+    // Guard: never let a till write sample/empty data over a real catalogue — the "demo wiped the shop"
+    // failure. A save that cuts the product list down to a fraction of what is there is refused and the
+    // real books handed back, unless an owner's explicit wipe token (a deliberate fresh start) rides with it.
+    const curProducts = Array.isArray(cur?.data?.S?.products) ? cur.data.S.products.length : 0;
+    const newProducts = Array.isArray(data.S?.products) ? data.S.products.length : 0;
+    const wipeOk = data._allowWipe && (Date.now() - Number(data._allowWipe) < 120000);
+    if (curProducts >= 50 && newProducts < Math.max(1, Math.floor(curProducts * 0.4)) && !wipeOk) {
+      return { blocked: true, rev: curRev, data: cur.data, curProducts, newProducts };
+    }
+    delete data._allowWipe;
     let merged = null;
+
     if (cur && rev !== undefined && rev !== null && Number(rev) !== curRev) {
       // _fullRev is the revision of the last whole-document save. If the till loaded that one or later,
       // everything since has been punches from the shift page: keep this save and lay those punches over it.
@@ -488,7 +499,13 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
     await client.query(`DELETE FROM books_history WHERE key = $1 AND id < (SELECT id FROM (SELECT id FROM books_history WHERE key = $1 ORDER BY id DESC LIMIT 1 OFFSET ${HISTORY_KEEP - 1}) t)`, [key]);
     return { conflict: false, rev: next, merged };
   });
+  if (out.blocked) {
+    console.error(`[books guard] blocked a save by ${req.regalUser.name}: products ${out.curProducts} -> ${out.newProducts} (looks like sample data over the real shop)`);
+    const inbox = key === BOOKS_KEY ? await injectInbox(out.data) : 0;
+    return res.status(409).json({ error: 'Save blocked to protect the shop — it would have replaced the full product list with sample data. The real books have been reloaded on this till.', rev: out.rev, data: out.data, inbox, blocked: true });
+  }
   if (out.conflict) {
+
     const inbox = key === BOOKS_KEY ? await injectInbox(out.data) : 0;
     return res.status(409).json({ error: 'Someone else saved first', rev: out.rev, data: out.data, inbox });
   }
@@ -507,8 +524,25 @@ r.delete('/books/:key', regalAuth, asyncHandler(async (req, res) => {
 }));
 
 r.get('/books/:key/history', regalAuth, asyncHandler(async (req, res) => {
-  const { rows } = await query(`SELECT id, rev, saved_at, saved_by FROM books_history WHERE key = $1 ORDER BY id DESC LIMIT 50`, [req.params.key]);
+  const sql = dbKind === 'mysql'
+    ? `SELECT id, rev, saved_at, saved_by, JSON_LENGTH(data, '$.S.products') AS products, JSON_LENGTH(data, '$.S.customers') AS customers, JSON_LENGTH(data, '$.S.sales') AS sales FROM books_history WHERE ${KEY_COL} = $1 ORDER BY id DESC LIMIT 50`
+    : `SELECT id, rev, saved_at, saved_by, jsonb_array_length(data->'S'->'products') AS products, jsonb_array_length(data->'S'->'customers') AS customers, jsonb_array_length(data->'S'->'sales') AS sales FROM books_history WHERE ${KEY_COL} = $1 ORDER BY id DESC LIMIT 50`;
+  const { rows } = await query(sql, [req.params.key]);
   res.json(rows);
+}));
+
+/* A quick health read for the owner: how big the shop is now, when it last saved, and how many backup
+   copies are kept — the status page polls this. */
+r.get('/shop-status', regalAuth, asyncHandler(async (req, res) => {
+  const key = BOOKS_KEY;
+  const { rows: [b] } = await query(`SELECT rev, updated_at, updated_by FROM books WHERE ${KEY_COL} = $1`, [key]);
+  const row = await loadBooks(key); const S = (row && row.data && row.data.S) || {};
+  const n = a => Array.isArray(a) ? a.length : 0;
+  const { rows: [h] } = await query(`SELECT rev, saved_at, saved_by FROM books_history WHERE ${KEY_COL} = $1 ORDER BY id DESC LIMIT 1`, [key]);
+  const { rows: [hc] } = await query(`SELECT COUNT(*) AS c FROM books_history WHERE ${KEY_COL} = $1`, [key]);
+  res.json({ ok: true, rev: Number(b ? b.rev : 0), updated_at: b && b.updated_at, updated_by: b && b.updated_by,
+    counts: { products: n(S.products), customers: n(S.customers), suppliers: n(S.suppliers), sales: n(S.sales) },
+    history: { kept: hc ? Number(hc.c) : null, newest: h ? { rev: Number(h.rev), at: h.saved_at, by: h.saved_by } : null } });
 }));
 
 r.post('/books/:key/restore/:rev', regalAuth, asyncHandler(async (req, res) => {

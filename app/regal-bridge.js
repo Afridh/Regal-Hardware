@@ -265,6 +265,8 @@
       lastPushAt = Date.now();
       try {
         var doc = strip(JSON.parse(txt));
+        if (window._allowWipeOnce && Date.now() - window._allowWipeOnce < 120000) doc._allowWipe = window._allowWipeOnce;
+        window._allowWipeOnce = 0;
         var j = await call('PUT', '/books/' + KEY, { data: doc, rev: rev });
         if (j.__status === 200) {
           rev = j.rev; lastPushAt = Date.now(); offlineSince = 0; base = doc;
@@ -272,6 +274,7 @@
           badge('saved ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' · shared');
           return true;
         }
+        if (j.blocked) { rev = j.rev; base = strip(j.data); applyRemote(j.data); say(j.error || 'Save blocked — the real books were reloaded'); return true; }
         if (j.__status === 409 && base) {
           // another till saved first: put both tills' work together and save that (again, if yet another
           // till gets in between)
