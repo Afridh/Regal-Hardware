@@ -3643,7 +3643,7 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
   opacity:.55;margin:12px 0 4px}
 .bd-reg:first-child{margin-top:0}
 </style>
-<link rel="stylesheet" href="bill-print.css?v=8">
+<link rel="stylesheet" href="bill-print.css?v=9">
 </head>
 <body>
 <!-- The Shift Board used to be carried here as a whole second app and shown in a frame.
@@ -19238,18 +19238,18 @@ function billHtml(inv,f='a5'){
   const qrH=on('qr')?`<div class="x-qrs">${qr(inv.no,50)}${qr('c'+inv.no,50)}</div>`:'';
   const custLine=walk?'':[c.address,c.phone?`Mob ${c.phone}`:'',c.nic?`NIC ${c.nic}`:''].filter(Boolean).map(esc5).join(' · ');
   const bandH=on('meta')?`<div class="x-band">
-    <div class="x-inv"><div class="x-ttl">${title}</div><div class="x-no">${esc5(inv.no)}</div><div class="x-sale">${sale}</div></div>
+    <div class="x-inv"><div class="x-ttl">${title}</div><div class="x-no"><span>Invoice No.</span> ${esc5(inv.no)}</div><div class="x-sale">${sale}</div></div>
     <div class="x-kv">${kv('Date / Time',when)}${B.showCashier!==false?kv('Invoice By',esc5((inv.by||'').toUpperCase())):''}${kv('Payment',credit?'CREDIT':esc5(payWord.toUpperCase()))}${inv.salesman?kv('Sales Rep',esc5(String(inv.salesman).toUpperCase())):''}${inv.vehicle?kv('Vehicle / Ref',esc5(inv.vehicle)):''}${kv('Terminal',esc5(inv.terminal||S.terminal||''))}</div>
-    ${(!walk&&credit)?`<div class="x-acct">${kv('Credit Limit',money2(+c.limit||0))}${c.chqLimit?kv('Cheque Limit',money2(c.chqLimit)):''}${kv('Prev. Outstanding',money2(prev))}</div>`:''}
     <div class="x-to"><div class="x-lbl">BILL TO</div><div class="x-cn">${walk?'WALK-IN CUSTOMER':esc5(c.name.toUpperCase())}</div>${custLine?`<div class="x-ca">${custLine}</div>`:''}</div>
    </div>`:'';
   /* the remarks box only when something was written on the bill at the till */
   const remH=inv.note?`<div class="x-box x-rem"><div class="x-bh">REMARKS</div><div class="x-bb">${esc5(inv.note)}</div></div>`:'';
   const subH=`<div class="x-box x-sub"><div class="x-bh">SUB TOTAL</div><div class="x-bb"><div><span>Lines</span><b>${inv.lines.length}</b></div><div><span>Quantity</span><b>${fq(qtyAll)}</b></div><div><span>Gross value</span><b>${money2(gross)}</b></div>${disc>0.005?`<div><span>Discount</span><b>− ${money2(disc)}</b></div>`:''}<div class="net"><span>Net</span><b>${money2(inv.total)}</b></div></div></div>`;
-  const paidH=credit?`<div><span>Paid now</span><b>${money2(inv.paid)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div>${on('outstanding')?`<div class="x-os"><div><span>Previous outstanding</span><b>${money2(prev)}</b></div><div class="tot"><span>TOTAL OUTSTANDING</span><b>${money2(prev+inv.balance)}</b></div></div>`:''}`
+  const paidH=credit?`<div><span>Paid now</span><b>${money2(inv.paid)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div>`
     :`<div><span>${esc5(payWord)} received</span><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div><span>Change</span><b>${money2(inv.paid-inv.total)}</b></div>`:''}`;
+  const osH=(credit&&!walk&&on('outstanding'))?`<div class="x-box x-osb"><div class="x-bh">ACCOUNT OUTSTANDING</div><div class="x-bb"><div><span>Previous outstanding</span><b>${money2(prev)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div><div class="tot"><span>TOTAL OUTSTANDING</span><b>${money2(prev+inv.balance)}</b></div></div></div>`:'';
   const totH=`<div class="x-tot"><div class="x-paid">${paidH}</div><div class="x-grand"><span>INVOICE TOTAL</span><b><small>LKR</small> ${money2(inv.total)}</b></div></div>`;
-  const termsH=`<div class="x-terms">${(on('note')&&B.footer)?`<b>Terms:</b> ${esc5(B.footer.replace('{days}',B.returnDays))}<br>`:''}Printed on ${D(today)} ${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true})} by ${esc5((S.user&&S.user.name)||inv.by||'')} · Page 1 of 1 · ${esc5(nm)} · a computer generated invoice.</div>`;
+  const termsH=`<div class="x-terms">${(on('note')&&B.footer)?`<b>Terms:</b> ${esc5(B.footer.replace('{days}',B.returnDays))}`:''}</div>`;
   const signH=on('signs')?`<div class="x-sign"><div>${esc5((B.signLeft||'Authorised By').toUpperCase())}</div><div>${esc5((B.signRight||'Received By').toUpperCase())}</div></div>`:'';
   return `<div class="print a5 sbx x-${a5Style()}" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5});font-family:${billFontCss(B.a5Font)};${a5SizeVars()}">
    <div class="x-head">${brandH}${shopH}${qrH}</div>
@@ -19257,7 +19257,7 @@ function billHtml(inv,f='a5'){
    <table class="x-tbl"><thead><tr><th class="c">#</th>${showCode?'<th>ITEM CODE</th>':''}<th class="d">DESCRIPTION</th>${showUom?'<th>UOM</th>':''}<th class="n">QTY</th>${showMrp?'<th class="n">MRP</th><th class="n">DISC</th>':''}<th class="n">UNIT PRICE</th><th class="n">AMOUNT (LKR)</th></tr></thead><tbody>${rowsX}</tbody></table>
    ${on('words')?`<div class="x-words">Amount in words: <b>${words(inv.total)} Rupees Only</b></div>`:''}
    <div class="x-fill"></div>
-   <div class="x-foot">${remH}${on('summary')?subH+totH:''}</div>
+   <div class="x-foot">${remH}${osH}${on('summary')?totH:''}</div>
    <div class="x-end">${termsH}${signH}</div>
   </div>`;
 }
