@@ -20,16 +20,16 @@ let html = fs.readFileSync(path.join(here, '../app/index.html'), 'utf8')
 const tmp = path.join(here, '_preview.html'); fs.writeFileSync(tmp, html);
 await page.goto(pathToFileURL(tmp).href, { waitUntil: 'load' });
 await new Promise(r => setTimeout(r, 1500));
-const ok = await page.evaluate((fmt) => {
+const ok = await page.evaluate((fmt, nLines) => {
   if (typeof billHtml !== 'function' || !window.S || !S.products || !S.products.length) return 'no app';
   const c = S.customers.find(x => x.id !== 1) || S.customers[0];
-  const lines = S.products.slice(0, 9).map((p, i) => ({ pid: p.id, qty: [6, 12, 1, 4, 3, 40, 2, 10, 1][i] || 1, price: +(p.retail * (i % 3 ? 1 : 0.93)).toFixed(2), disc: 0, discPct: i % 3 ? undefined : 7.5, mrp: p.mrp, warranty: i === 2 ? '1 YEAR' : '0' }));
+  const lines = S.products.slice(0, nLines).map((p, i) => ({ pid: p.id, qty: [6, 12, 1, 4, 3, 40, 2, 10, 1][i] || 1, price: +(p.retail * (i % 3 ? 1 : 0.93)).toFixed(2), disc: 0, discPct: i % 3 ? undefined : 7.5, mrp: p.mrp, warranty: i === 2 ? '1 YEAR' : '0' }));
   const total = +lines.reduce((a, l) => a + l.qty * l.price, 0).toFixed(2);
   const inv = { no: 'INVM-11-0472', date: '2026-10-11', time: '02:38:12 pm', customerId: c.id, lines, sub: total, billDisc: 0, total, paid: 20000, balance: +(total - 20000).toFixed(2), pays: [{ method: 'CASH', amount: 20000 }, { method: 'CREDIT', amount: +(total - 20000).toFixed(2) }], by: 'SAMEERA K.', salesman: 'NIMAL', terminal: 'T1', note: 'Goods delivered to Site B. Balance tiles to follow.', serial: 36186 };
   const box = document.createElement('div'); box.id = 'pv'; box.style.cssText = 'position:absolute;left:0;top:0;width:' + (fmt === 'a5' ? '880px' : '302px') + ';background:#fff;z-index:99999';
-  box.innerHTML = billHtml(inv, fmt); document.body.appendChild(box);
+  box.innerHTML = billHtml(inv, fmt); document.body.appendChild(box); const pr = box.querySelector('.print'); if (pr) { pr.style.aspectRatio = 'auto'; pr.style.zoom = '1'; pr.style.width = '100%'; }
   return 'ok';
-}, fmt);
+}, fmt, +(process.env.LINES || 9));
 console.log('render:', ok);
 const el = await page.$('#pv');
 if (el) await el.screenshot({ path: out });
