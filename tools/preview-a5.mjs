@@ -20,7 +20,8 @@ let html = fs.readFileSync(path.join(here, '../app/index.html'), 'utf8')
 const tmp = path.join(here, '_preview.html'); fs.writeFileSync(tmp, html);
 await page.goto(pathToFileURL(tmp).href, { waitUntil: 'load' });
 await new Promise(r => setTimeout(r, 1500));
-const ok = await page.evaluate((fmt, nLines) => {
+const ok = await page.evaluate((fmt, nLines, style) => {
+  if (style) CFG.bill.a5Style = style;
   if (typeof billHtml !== 'function' || !window.S || !S.products || !S.products.length) return 'no app';
   const c = S.customers.find(x => x.id !== 1) || S.customers[0];
   const lines = S.products.slice(0, nLines).map((p, i) => ({ pid: p.id, qty: [6, 12, 1, 4, 3, 40, 2, 10, 1][i] || 1, price: +(p.retail * (i % 3 ? 1 : 0.93)).toFixed(2), disc: 0, discPct: i % 3 ? undefined : 7.5, mrp: p.mrp, warranty: i === 2 ? '1 YEAR' : '0' }));
@@ -29,7 +30,7 @@ const ok = await page.evaluate((fmt, nLines) => {
   const box = document.createElement('div'); box.id = 'pv'; box.style.cssText = 'position:absolute;left:0;top:0;width:' + (fmt === 'a5' ? '880px' : '302px') + ';background:#fff;z-index:99999';
   box.innerHTML = billHtml(inv, fmt); document.body.appendChild(box); const pr = box.querySelector('.print'); if (pr) { pr.style.aspectRatio = 'auto'; pr.style.zoom = '1'; pr.style.width = '100%'; }
   return 'ok';
-}, fmt, +(process.env.LINES || 9));
+}, fmt, +(process.env.LINES || 9), process.env.STYLE || '');
 console.log('render:', ok);
 const el = await page.$('#pv');
 if (el) await el.screenshot({ path: out });
