@@ -3643,7 +3643,7 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
   opacity:.55;margin:12px 0 4px}
 .bd-reg:first-child{margin-top:0}
 </style>
-<link rel="stylesheet" href="bill-print.css?v=4">
+<link rel="stylesheet" href="bill-print.css?v=5">
 </head>
 <body>
 <!-- The Shift Board used to be carried here as a whole second app and shown in a frame.
@@ -19185,55 +19185,58 @@ function billHtml(inv,f='a5'){
    <div class="sb-inner">${r80Order().filter(k=>r80On(k)).map(k=>part[k]||'').join('')}</div>
   </div>`;
   }
-  // ---------- A5 landscape ----------
+  // ---------- A5 landscape: the large invoice ----------
+  /* Laid out like a printed tax invoice: a header band with the shop, a row of boxes (the invoice,
+     who it is for, the details, the account), a dark-headed item table, then remarks, the
+     subtotal and the total, terms and signatures. Every value comes from the bill; a box whose
+     data the shop does not keep (VAT number, e-mail, NIC) simply does not print. The switches under
+     Design the bill → The large bill still turn each part on and off. */
   const showCode=B.showCode!==false, showUom=B.showUom!==false, showMrp=B.showMrp!==false;
-  const rows=inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="${anyChecked&&l.checked!==true?'notck':''}"><td>${i+1})</td>${showCode?`<td>${p.num||p.code}</td>`:''}<td class="d">${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td>
-    <td class="n">${l.qty.toFixed(2)}</td>${showUom?`<td class="u">${(p.unit||'').toUpperCase()}</td>`:''}${showMrp?`<td class="n">${money2(p.mrp)}</td>`:''}<td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td>${anyChecked?`<td class="ck">${l.checked===true?'✓':'✗'}</td>`:''}</tr>`}).join('');
-  const nm=(SH.name||'REGAL HARDWARE');
-  /* Every piece of the sheet by name, so the shop can say which print and in what order
-     (Design the bill → The large bill). Each is built whether or not it is wanted; what is
-     wanted is decided when they are put together, which keeps this readable. */
-  const a5part={
-   brand:`<div class="sb-brand">
-     ${B.showLogo!==false?`<div class="sb-mark">${logo(44)}${SH.logo?'':`<div class="sb-markw">${nm.toUpperCase()}</div>`}</div>`:''}
-     <div class="sb-brandtxt">
-      <div class="sb-bname"><span class="blk">${nm.split(' ')[0]}</span> ${nm.split(' ').slice(1).join(' ')}</div>
-      ${B.showSinhala&&SH.sinhala?`<div class="sb-bsin">${SH.sinhala}</div>`:''}
-      ${B.showStrap&&(SH.line1||SH.line2)?`<div class="sb-strap">${SH.line1||''} ${SH.line2||''}</div>`:''}
-     </div>
-    </div>`,
-   qr:`<div class="sb-qrs">${qr(inv.no,44)}${qr('c'+inv.no,44)}</div>`,
-   meta:`<div class="sb-meta">
-     <div class="sb-box"><div><span>Invoice No</span><b>${inv.no}</b></div>${B.showCashier!==false?`<div><span>Invoice By</span><b>${(inv.by||'').toUpperCase()} /</b></div>`:''}<div><span>Date</span><b>${billDate(inv)} &nbsp; ${timeOf(inv)}</b></div></div>
-     <div class="sb-box cust"><div><span>Customer</span><b>${walk?'Null':c.name.toUpperCase()}</b></div>${walk?'':`<div><span>&nbsp;</span><b>${c.phone||''}${c.address?' · '+c.address:''}</b></div>`}</div>
-    </div>`,
-   addr:`<div class="sb-addrline"><b>${SH.addr||SHOP.addr}</b> <i>${SH.near||''}</i><span>${phones}</span></div>`,
-   items:`<table class="sb-tbl">
-    <tr><th>#</th>${showCode?'<th>Code</th>':''}<th class="d">Description</th><th class="n">Qty</th>${showUom?'<th>UOM</th>':''}${showMrp?'<th class="n">MRP</th>':''}<th class="n">${showMrp?'D.Price':'Price'}</th><th class="n">Amount</th>${anyChecked?'<th class="ck">✓</th>':''}</tr>
-    ${rows}
-   </table>`,
-   words:`<div class="sb-words"><span>Amount in words :</span> <b>${words(inv.total)} Rupees Only</b></div>`,
-   outstanding:credit?`<div class="sb-out"><div><span>Previous Outstanding</span><b>${money2(prev)}</b></div><div><span>This Invoice Credit</span><b>${money2(inv.balance)}</b></div><div class="tot"><span>Total Outstanding Rs.</span><b>${money2(prev+inv.balance)}</b></div></div>`:'',
-   signs:`<div class="sb-signs"><div>${B.signLeft||'Authorised By'}</div><div>${B.signRight||'Received By'}</div></div>`,
-   note:B.footer?`<div class="sb-note">${B.footer.replace('{days}',B.returnDays)}</div>`:'',
-   summary:`<table class="sb-sum">
-     <tr><td>Gross Total</td><td class="n">${money2(gross)}</td></tr>
-     <tr><td>- Inv.Discount</td><td class="n">${money2(disc)}</td></tr>
-     <tr class="net"><td>Net Total</td><td class="n">${money2(inv.total)}</td></tr>
-     <tr><td>Amount Paid</td><td class="n">${money2(inv.paid)}</td></tr>
-     ${credit?`<tr class="cr"><td>CREDIT RS.</td><td class="n">${money2(inv.balance)}</td></tr>`:`<tr><td>CHANGE RS.</td><td class="n">${money2(Math.max(0,inv.paid-inv.total))}</td></tr>`}
-    </table>`
-  };
-  const a5bit=(region)=>a5Order().filter(k=>A5_REGION[k]===region&&a5On(k)).map(k=>a5part[k]||'').join('');
-  return `<div class="print a5 sba5" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5});font-family:${billFontCss(B.a5Font)}">
-   <div class="sb-top"><span>${copy}</span><span>Printed on ${billWhen({date:D(today),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})})}</span></div>
-   <div class="sb-head">${a5bit('head')}</div>
-   ${a5bit('body')}
-   <div class="sb-fill"></div>
-   <div class="sb-bottom">
-    <div class="sb-left">${a5bit('foot')}</div>
-    ${a5part.summary}
-   </div>
+  const on=(k)=>a5On(k), nm=(SH.name||'REGAL HARDWARE');
+  const esc5=(v)=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const nmA=nm.split(' ')[0], nmB=nm.split(' ').slice(1).join(' ');
+  const shopLine=[SH.addr||SHOP.addr, ...[...new Set([...String(phones||'').split(/[·,|]/),SH.land||''].map(x=>x.trim()).filter(Boolean))]].join(' · ');
+  const strap=SH.line1||SH.tags||'';
+  const webAddr=SH.web||(S.web&&S.web.settings&&S.web.settings.domain)||'';
+  const ids=[SH.vat?`VAT Reg No <b>${esc5(SH.vat)}</b>`:'', webAddr?`Web <b>${esc5(webAddr)}</b>`:'', SH.email?`Email <b>${esc5(SH.email)}</b>`:''].filter(Boolean).join(' · ');
+  const title=inv.proof?'PROOF — NOT A BILL':((SH.vat?'TAX INVOICE':heading.toUpperCase())+(inv.reprint?' · COPY':''));
+  const sale=credit?'CREDIT SALE':'CASH SALE';
+  const when=`${(inv.date||D(today))} ${timeOf(inv)}`;
+  const qtyAll=inv.lines.reduce((a,l)=>a+(+l.qty||0),0);
+  const pts=(!walk&&typeof extPointsFor==='function')?extPointsFor(inv.total):0;
+  const ptsBal=!walk?(+c.points||0):0;
+  const kv=(k,v)=>(v===''||v==null)?'':`<div><span>${k}</span><b>${v}</b></div>`;
+  const rowsX=inv.lines.map((l,i)=>{ const p=P(l.pid)||{}; const q=+l.qty||0; const net=q*(+l.price||0)-(+l.disc||0);
+    const unit=q?net/q:0; const mrp=Math.max(+l.mrp||0,+p.mrp||0);
+    const pct=(x)=>x.toFixed(1).replace(/\.0$/,'')+'%';
+    const dsc=l.discPct?pct(+l.discPct):((+l.disc||0)>0.005?money2(l.disc):(mrp>unit+0.005?pct((1-unit/mrp)*100):'—'));
+    const extra=[lineFrom(l,inv)?`issue from ${lineFrom(l,inv)}`:'', (l.serials&&l.serials.length)?`S/N ${l.serials.join(', ')}`:'', (l.warranty&&l.warranty!=='0')?`${l.warranty} warranty`:''].filter(Boolean).join(' · ');
+    return `<tr class="${anyChecked&&l.checked!==true?'notck':''}"><td class="c">${i+1}</td>${showCode?`<td class="cd">${esc5(p.num||p.code||'')}</td>`:''}<td class="d"><b>${esc5(lineName(l))}</b>${extra?` <i>${esc5(extra)}</i>`:''}</td>${showUom?`<td class="u">${esc5((p.unit||'').toUpperCase())}</td>`:''}<td class="n">${q.toFixed(q%1?3:2)}</td>${showMrp?`<td class="n mrp">${mrp>0?(mrp>unit+0.005?`<s>${money2(mrp)}</s>`:money2(mrp)):'—'}</td><td class="n">${dsc}</td>`:''}<td class="n">${money2(unit)}</td><td class="n amt">${money2(net)}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`; }).join('');
+  const brandH=on('brand')?`<div class="x-brand">${B.showLogo!==false?`<div class="x-mark">${logo(46)}</div>`:''}<div class="x-name"><div class="x-nm"><span class="blk">${esc5(nmA)}</span> ${esc5(nmB)}</div>${(SH.sinhala||SHOP.sinhala)?`<div class="x-sin">${SH.sinhala||SHOP.sinhala}</div>`:''}</div></div>`:'';
+  const shopH=on('addr')?`<div class="x-shop"><div class="x-line">${esc5(shopLine)}</div>${strap?`<div class="x-strap">${esc5(strap)}</div>`:''}${ids?`<div class="x-ids">${ids}</div>`:''}</div>`:'<div class="x-shop"></div>';
+  const qrH=on('qr')?`<div class="x-qrs">${qr(inv.no,50)}${qr('c'+inv.no,50)}</div>`:'';
+  const custLine=walk?'':[c.address,c.phone?`Mob ${c.phone}`:'',c.nic?`NIC ${c.nic}`:''].filter(Boolean).map(esc5).join(' · ');
+  const bandH=on('meta')?`<div class="x-band">
+    <div class="x-inv"><div class="x-ttl">${title}</div><div class="x-no">${esc5(inv.no)}</div><div class="x-sale">${sale}</div></div>
+    <div class="x-to"><div class="x-lbl">BILL TO</div><div class="x-cn">${walk?'WALK-IN CUSTOMER':esc5(c.name.toUpperCase())}</div>${custLine?`<div class="x-ca">${custLine}</div>`:''}</div>
+    <div class="x-kv">${kv('Date / Time',when)}${B.showCashier!==false?kv('Invoice By',esc5((inv.by||'').toUpperCase())):''}${kv('Payment',credit?'CREDIT':esc5(payWord.toUpperCase()))}${inv.salesman?kv('Sales Rep',esc5(String(inv.salesman).toUpperCase())):''}${inv.vehicle?kv('Vehicle / Ref',esc5(inv.vehicle)):''}${kv('Terminal',esc5(inv.terminal||S.terminal||''))}</div>
+    ${walk?'':`<div class="x-acct">${kv('Credit Limit',money2(+c.limit||0))}${c.chqLimit?kv('Cheque Limit',money2(c.chqLimit)):''}${kv('Prev. Outstanding',money2(prev))}${ptsBal?kv('Loyalty Balance',`${fq(ptsBal)} pts`):''}</div>`}
+   </div>`:'';
+  const remH=`<div class="x-box x-rem"><div class="x-bh">REMARKS · LOYALTY · ACCOUNT STATUS</div><div class="x-bb">${inv.note?`<div><b>Remark:</b> ${esc5(inv.note)}</div>`:''}${walk?'<div class="x-muted">Walk-in customer — no account.</div>':`<div class="x-pills">${pts?`<span>Points Earned <b>${fq(pts)}</b></span>`:''}${ptsBal?`<span>Points Balance <b>${fq(ptsBal)}</b></span>`:''}<span>Prev. O/S <b>${money2(prev)}</b></span><span>Credit Limit <b>${money2(+c.limit||0)}</b></span>${credit?`<span class="red">Total O/S <b>${money2(prev+inv.balance)}</b></span>`:''}</div>`}</div></div>`;
+  const subH=`<div class="x-box x-sub"><div class="x-bh">SUB TOTAL</div><div class="x-bb"><div><span>Lines</span><b>${inv.lines.length}</b></div><div><span>Quantity</span><b>${fq(qtyAll)}</b></div><div><span>Gross value</span><b>${money2(gross)}</b></div>${disc>0.005?`<div><span>Discount</span><b>− ${money2(disc)}</b></div>`:''}<div class="net"><span>Net</span><b>${money2(inv.total)}</b></div></div></div>`;
+  const paidH=credit?`<div><span>Paid</span><b>${money2(inv.paid)}</b></div><div class="red"><span>Balance due (credit)</span><b>${money2(inv.balance)}</b></div>`
+    :`<div><span>${esc5(payWord)} received</span><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div><span>Change</span><b>${money2(inv.paid-inv.total)}</b></div>`:''}`;
+  const totH=`<div class="x-tot"><div class="x-paid">${paidH}</div><div class="x-grand"><span>INVOICE TOTAL</span><b><small>LKR</small> ${money2(inv.total)}</b></div></div>`;
+  const termsH=`<div class="x-terms">${(on('note')&&B.footer)?`<b>Terms:</b> ${esc5(B.footer.replace('{days}',B.returnDays))}<br>`:''}Printed on ${D(today)} ${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:true})} by ${esc5((S.user&&S.user.name)||inv.by||'')} · Page 1 of 1 · ${esc5(nm)} · a computer generated invoice.</div>`;
+  const signH=on('signs')?`<div class="x-sign"><div>${esc5((B.signLeft||'Authorised By').toUpperCase())}</div><div>${esc5((B.signRight||'Received By').toUpperCase())}</div></div>`:'';
+  return `<div class="print a5 sbx" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5});font-family:${billFontCss(B.a5Font)}">
+   <div class="x-head">${brandH}${shopH}${qrH}</div>
+   ${bandH}
+   <table class="x-tbl"><thead><tr><th class="c">#</th>${showCode?'<th>ITEM CODE</th>':''}<th class="d">DESCRIPTION</th>${showUom?'<th>UOM</th>':''}<th class="n">QTY</th>${showMrp?'<th class="n">MRP</th><th class="n">DISC</th>':''}<th class="n">UNIT PRICE</th><th class="n">AMOUNT (LKR)</th></tr></thead><tbody>${rowsX}</tbody></table>
+   ${on('words')?`<div class="x-words">Amount in words: <b>${words(inv.total)} Rupees Only</b></div>`:''}
+   <div class="x-fill"></div>
+   <div class="x-foot">${remH}${on('summary')?subH+totH:''}</div>
+   <div class="x-end">${termsH}${signH}</div>
   </div>`;
 }
 /* ---- printing ----
