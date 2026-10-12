@@ -89,6 +89,46 @@ const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;
    once and does nothing. */
 const firstPhone=(s)=>String(s==null?'':s).split(/[,/;]|\s(?:or)\s/i)[0].replace(/[^0-9+]/g,'');
 
+/* A real PDF file of the bill the till printed, made on the customer's own phone: the paper is drawn
+   to a picture and laid on an A5 landscape page (or an 80 mm strip for a receipt). "Print or save as
+   PDF" is still there, but on most phones it is three steps and a print dialog; this is one tap. */
+const load=(src)=>new Promise((ok,no)=>{ const s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=()=>no(new Error('could not load the PDF maker')); document.head.appendChild(s) });
+let bill=null;
+async function downloadPdf(btn){
+  const b=bill; if(!b||!b.html) return window.print();
+  const was=btn.textContent; btn.disabled=true; btn.textContent='Making the PDF…';
+  const host=document.createElement('div');
+  try{
+    if(!window.html2canvas) await load('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+    if(!window.jspdf) await load('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    const r80=b.paper==='r80';
+    host.style.cssText='position:fixed;left:-10000px;top:0;background:#fff';
+    host.innerHTML=`<div class="paper"><div class="fit printArea ${r80?'r80':'a5'}">${b.html}</div></div>`;
+    document.body.appendChild(host);
+    await document.fonts.ready;
+    await Promise.all([...host.querySelectorAll('img')].map(i=>i.complete?0:new Promise(r=>{ i.onload=i.onerror=r })));
+    const el=host.querySelector('.fit');
+    const canvas=await html2canvas(el,{scale:3,backgroundColor:'#ffffff',useCORS:true,logging:false});
+    const img=canvas.toDataURL('image/jpeg',0.92);
+    const { jsPDF }=window.jspdf;
+    let doc;
+    if(r80){
+      const w=80, m=2, h=(w-2*m)*canvas.height/canvas.width+2*m;
+      doc=new jsPDF({unit:'mm',format:[w,Math.max(h,w)],orientation:'portrait'});
+      doc.addImage(img,'JPEG',m,m,w-2*m,h-2*m);
+    }else{
+      doc=new jsPDF({unit:'mm',format:'a5',orientation:'landscape'});
+      const W=210, H=148, m=6; let w=W-2*m, h=w*canvas.height/canvas.width;
+      if(h>H-2*m){ h=H-2*m; w=h*canvas.width/canvas.height }
+      doc.addImage(img,'JPEG',(W-w)/2,m,w,h);
+    }
+    doc.save(String(b.no||'bill').replace(/[^\w.-]+/g,'-')+'.pdf');
+  }catch(e){
+    alert('The PDF could not be made here ('+e.message+'). The print window will open instead — choose "Save as PDF".');
+    window.print();
+  }finally{ host.remove(); btn.disabled=false; btn.textContent=was }
+}
+
 (async () => {
   const id = location.pathname.split('/').filter(Boolean).pop() || '';
   try {
@@ -136,7 +176,9 @@ const firstPhone=(s)=>String(s==null?'':s).split(/[,/;]|\s(?:or)\s/i)[0].replace
       ? `<style media="print">@page{size:${b.paper === 'r80' ? '80mm auto;margin:2mm' : 'A5 landscape;margin:6mm'}}</style>`
       : '';
     $('#out').innerHTML = pageRule + card + paper +
-      `<div class="btns screenview"><button class="btn" onclick="window.print()">Print or save as PDF</button>${telBtn}</div>`;
+      (b.html ? `<div class="btns screenview"><button class="btn pay" id="pdfBtn" onclick="downloadPdf(this)">Download the bill (PDF)</button></div>` : '') +
+      `<div class="btns screenview"><button class="btn" onclick="window.print()">Print</button>${telBtn.replace('btn pay','btn')}</div>`;
+    bill = b;
   } catch (e) {
     $('#out').innerHTML = `<div class="card msg"><b>We cannot show that bill</b>${esc(e.message)}.<br>
       Please ring the shop and they will help.</div>`;
