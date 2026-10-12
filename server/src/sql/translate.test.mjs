@@ -69,5 +69,12 @@ const ins = toMySQL(`INSERT INTO cust_logins (owner, username, admin_hash) VALUE
 is('insert keeps its RETURNING aside', ins.returning, '*');
 is('and loses it from the sql', ins.sql, 'INSERT INTO cust_logins (owner, username, admin_hash) VALUES (?,?,?)');
 
+/* a column that is itself called text keeps its name; only the type text becomes LONGTEXT */
+const notes = toMySQL(`CREATE TABLE IF NOT EXISTS alexa_notes (id bigserial PRIMARY KEY, kind varchar(24) NOT NULL,
+  text varchar(300) NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`, []).sql;
+is('a column named text is not retyped', /,\s*text varchar\(300\)/.test(notes) && !/LONGTEXT varchar/.test(notes), true);
+const jobs = toMySQL(`CREATE TABLE IF NOT EXISTS print_jobs (id bigserial PRIMARY KEY, html text NOT NULL, error text)`, []).sql;
+is('the type text still becomes LONGTEXT', /html LONGTEXT NOT NULL/.test(jobs) && /error LONGTEXT/.test(jobs), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

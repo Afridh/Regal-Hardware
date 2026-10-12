@@ -293,7 +293,8 @@ export function ddl(sql) {
       .replace(/\bbytea\b/gi, 'LONGBLOB').replace(/\btimestamptz\b/gi, 'DATETIME').replace(/\bjsonb\b/gi, 'JSON')
       .replace(/\bDEFAULT\s+now\(\)/gi, 'DEFAULT CURRENT_TIMESTAMP').replace(/\bboolean\b/gi, 'TINYINT(1)')
       // PostgreSQL's text has no size; MySQL's TEXT stops at 64 KB, short of a bill sent to print
-      .replace(/\btext\b/gi, 'LONGTEXT');
+      // only where text is the type (after a column name), never a column that is itself called text
+      .replace(/(\b[A-Za-z_]\w*\s+)text\b/gi, '$1LONGTEXT');
     if (!/\bENGINE\s*=/i.test(s)) s += ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci';
   }
   return s;
