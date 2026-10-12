@@ -3889,7 +3889,7 @@ function heldHere(cfg,to){
   return list.length?list.indexOf(intlHere(to))<0:false;
 }
 
-async function smsSend(m){
+async function smsSend(m,quiet){
   const cfg=CFG.msg;
   // on the server build the Node backend makes the provider call, so the key never leaves it
   if(window.regalBridge&&regalBridge.online()){
@@ -3897,15 +3897,15 @@ async function smsSend(m){
     catch(e){ m.status='Failed — '+(e.message||'network') }
     /* Say what actually happened. The button that asked for this said it had gone before
        the server had been asked, so a message held back or refused still read as sent. */
-    if(!/^Sent/i.test(m.status)) toast(m.status,/^Held|^Queued/i.test(m.status)?'':'bad');
+    if(!quiet&&!/^Sent/i.test(m.status)) toast(m.status,/^Held|^Queued/i.test(m.status)?'':'bad');
     if(typeof persist==='function') persist();
     if(typeof render==='function'&&S.view==='messages') render();
     return;
   }
-  if(!cfg.apiUrl||!cfg.apiKey){ m.status='Not sent — no API set'; toast(m.status,'bad'); return }
+  if(!cfg.apiUrl||!cfg.apiKey){ m.status='Not sent — no API set'; if(!quiet) toast(m.status,'bad'); return }
   if(heldHere(cfg,m.to)){
     m.status='Held — while testing, messages only go to '+cfg.testOnly;
-    toast(m.status);
+    if(!quiet) toast(m.status);
     if(typeof render==='function'&&S.view==='messages') render();
     return;
   }
@@ -3916,7 +3916,7 @@ async function smsSend(m){
     const r=await fetch(cfg.apiUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     m.status=r.ok?'Sent':'Failed ('+r.status+')';
   }catch(e){ m.status='Failed — '+(e.message||'network') }
-  if(!/^Sent/i.test(m.status)) toast(m.status,'bad');
+  if(!quiet&&!/^Sent/i.test(m.status)) toast(m.status,'bad');
   if(typeof render==='function'&&S.view==='messages') render();
 }
 
@@ -21956,17 +21956,19 @@ function accounting(){ const tabs=[['tb','Trial balance'],['pl','Profit & loss']
   return `<h1>Accounting</h1><div class="tabs">${tabs.map(t=>`<button class="${accTab===t[0]?'on':''}" data-acc="${t[0]}">${t[1]}</button>`).join('')}</div><div class="card">${body}</div>` }
 
 /* ---- messages ---- */
+const unsentSms=m=>m.via!=='wa'&&/fail|held|not sent|queued/i.test(m.status||'');
 function messages(){ loadWaInbox();
+  const unsent=S.messages.filter(unsentSms).length;
   const held=S.messages.filter(m=>/^Held/.test(m.status||'')).length, waOn=CFG.msg.waMode==='cloud';
   const tagOf=st=>/sent|delivered|read/i.test(st)?'ok':/fail|held|not sent/i.test(st)?'bad':/queued|sending|opened/i.test(st)?'warn':'blue';
   const ago=(t)=>{ const d=(Date.now()-new Date(t).getTime())/60000; return d<1?'just now':d<60?Math.round(d)+' min ago':d<1440?Math.round(d/60)+' h ago':new Date(t).toLocaleDateString('en-GB') };
-  return `<h1>Messages</h1>
+  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h1>Messages</h1>${unsent?`<button class="btn sm" data-act="smsRetryAll">Send again — ${unsent} not sent</button>`:''}</div>
   <div class="muted" style="margin-bottom:10px">Texts go through ${CFG.msg.provider||'the SMS gateway'}${CFG.msg.live?'':' — <b>sending is off</b> (Settings → Messaging)'}${CFG.msg.testOnly?` · <b>test mode</b>: only ${CFG.msg.testOnly} gets them${held?` (${held} held)`:''}`:''}${supTest()?` · <b>supplier test mode</b>: suppliers' messages go to ${supTest()}`:''}${waOn?' · WhatsApp through the Cloud API':' · WhatsApp buttons open WhatsApp on this PC'}.</div>
   ${waOn?`<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">${WA_ICON} WhatsApp replies ${waInbox.unread?`<span class="nbadge">${waInbox.unread} new</span>`:''}</h2>
      <span style="display:flex;gap:6px"><button class="btn ghost sm" data-act="waInboxRefresh">Refresh</button>${waInbox.unread?`<button class="btn ghost sm" data-act="waInboxRead">Mark all read</button>`:''}</span></div>
     ${waInbox.rows.length?`<table style="margin-top:8px"><tr><th>When</th><th>From</th><th>Message</th><th></th></tr>${waInbox.rows.slice(0,60).map(r=>{ const c=S.customers.find(x=>(x.phone||'').replace(/\D/g,'').replace(/^0/,'94')===r.from_no); return `<tr class="${r.read_at?'':'new'}"><td>${ago(r.at)}</td><td><b>${c?c.name:(r.name||'')}</b><div class="muted">${r.from_no.replace(/^94/,'0')}</div></td><td>${r.body}</td><td><button class="btn ghost sm wa" data-act="waReply" data-to="${r.from_no}" data-name="${(c?c.name:r.name||'').replace(/"/g,'&quot;')}">${WA_ICON} Reply</button>${c?` <button class="btn ghost sm" data-act="cust" data-id="${c.id}">Account</button>`:''}</td></tr>`}).join('')}</table>`
      :`<div class="muted" style="margin-top:6px">Nothing yet. Replies arrive here once the webhook is set in Meta (Settings → Messaging → WhatsApp, step 5).</div>`}</div>`:''}
-  <div class="card"><table><tr><th>Time</th><th>To</th><th>Message</th><th>Status</th></tr>${S.messages.slice(0,300).map(m=>`<tr><td>${m.at}</td><td>${m.to||'—'}</td><td>${m.via==='wa'?WA_ICON+' ':''}${m.body}</td><td><span class="tag ${tagOf(m.status||'')}">${m.status}</span></td></tr>`).join('')||'<tr><td colspan="4" class="muted">No messages yet.</td></tr>'}</table>
+  <div class="card"><table><tr><th>Time</th><th>To</th><th>Message</th><th>Status</th><th></th></tr>${S.messages.slice(0,300).map(m=>`<tr><td>${m.at}</td><td>${m.to||'—'}</td><td>${m.via==='wa'?WA_ICON+' ':''}${m.body}</td><td><span class="tag ${tagOf(m.status||'')}">${m.status}</span></td><td>${unsentSms(m)&&m.to?`<button class="btn ghost sm" data-act="smsRetry" data-id="${m.id}">Send again</button>`:''}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">No messages yet.</td></tr>'}</table>
    ${S.messages.length>300?`<div class="muted" style="margin-top:6px">Showing the latest 300 of ${S.messages.length}.</div>`:''}</div>` }
 
 /* ---- reports ---- */
@@ -24605,6 +24607,14 @@ document.addEventListener('click',e=>{
       try{ const r=await fetch('/api/wa/send',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+regalBridge.token()},body:JSON.stringify({to,template:{name:'hello_world',lang:'en_US',params:[]}})}); const j=await r.json(); out.textContent=(j.ok?'Sent ✓ ':'')+(j.status||j.error||''); toast(j.ok?'hello_world sent to '+to:(j.status||j.error)) }catch(e){ out.textContent='Failed — '+e.message } },
     waMap:()=>{ const k=a.dataset.k, sel=$(`[data-wamap="${k}"]`); CFG.msg.waTemplates=CFG.msg.waTemplates||{}; const name=sel?sel.value:''; const found=(waTplList||[]).find(t=>t.name===name);
       CFG.msg.waTemplates[k]={name,lang:found?found.lang:'en',params:($(`[data-waparams="${k}"]`)||{}).value||''}; toast('Saved') },
+    smsRetry:async()=>{ const m=S.messages.find(x=>x.id===a.dataset.id); if(!m) return; if(!CFG.msg.live) return toast('Sending is off — tick "Send messages through the provider" in Settings → Messaging','bad');
+      if(/^: /.test(m.body)&&CFG.shop.name) m.body=CFG.shop.name+m.body;   // made while the shop name was blank
+      m.status='Sending'; render(); await smsSend(m); if(/^Sent/i.test(m.status)) toast('Sent to '+m.to); persist(); render() },
+    smsRetryAll:async()=>{ if(!CFG.msg.live) return toast('Sending is off — tick "Send messages through the provider" in Settings → Messaging','bad');
+      const list=S.messages.filter(m=>unsentSms(m)&&m.to); if(!list.length) return; if(!confirm('Send '+list.length+' text'+(list.length===1?'':'s')+' again?')) return;
+      toast('Sending '+list.length+'…'); let ok=0;
+      for(const m of list){ if(/^: /.test(m.body)&&CFG.shop.name) m.body=CFG.shop.name+m.body; m.status='Sending'; await smsSend(m,true); if(/^Sent/i.test(m.status)) ok++ }
+      persist(); render(); toast(ok+' of '+list.length+' sent'+(ok<list.length?' — the rest still show why':''),ok<list.length?'bad':'') },
     waInboxRefresh:()=>{ loadWaInbox(true); toast('Checking WhatsApp…') },
     waInboxRead:()=>{ fetch('/api/wa/inbox/read',{method:'POST',headers:{Authorization:'Bearer '+regalBridge.token()}}).then(()=>{ waInbox.unread=0; waInbox.rows.forEach(r=>r.read_at=r.read_at||1); render() }) },
     waReply:()=>{ const to=a.dataset.to; const body=prompt('Reply on WhatsApp to '+to+(a.dataset.name?' ('+a.dataset.name+')':'')); if(body&&body.trim()) { wa(to.replace(/^94/,'0'),body.trim()); render() } },
