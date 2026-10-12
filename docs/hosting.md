@@ -45,7 +45,7 @@ Now sign in at `https://<site>/pos` with the usual staff logins.
 After the copy there are two databases with the same books. Whichever the tills write to is the
 real one, and the other drifts. Pick one:
 
-- **Recommended — everything on the hosted database.** In `server/.env` on the shop PC set
+- **Recommended — everything on the hosted database.** In `backend/.env` on the shop PC set
   `DATABASE_URL` to the Neon string (keep the embedded one as a fallback) and restart the API.
   The tills, the website and the suppliers' page then all read and write the same books; the
   shop PC can be switched off and the site keeps working.

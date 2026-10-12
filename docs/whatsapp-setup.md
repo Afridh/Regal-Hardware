@@ -34,7 +34,7 @@ Then: app → WhatsApp → *API Setup* → *Add phone number* → display name "
 Test them before typing them into the till:
 
 ```
-node tools/wa-check.mjs <PHONE_NUMBER_ID> <TOKEN> 0777849964
+node backend/tools/wa-check.mjs <PHONE_NUMBER_ID> <TOKEN> 0777849964
 ```
 
 That prints what Meta knows about the number, lists templates, and sends the built-in `hello_world` template to the number given.

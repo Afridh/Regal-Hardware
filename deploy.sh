@@ -8,9 +8,9 @@
 #   1. backs up the books to db/backups (aborts if that fails — never deploy without a backup)
 #   2. remembers the current commit so it can roll back
 #   3. git pull (fast-forward only)
-#   4. npm install in server/
+#   4. npm install in backend/
 #   5. syntax-checks every server .js file
-#   6. restarts the app (Passenger: touches server/tmp/restart.txt)
+#   6. restarts the app (Passenger: touches backend/tmp/restart.txt)
 #   7. waits for /api/health to say the database is up
 #   8. if the pull, install, self-test or health check fails, puts the old code back and restarts
 #
@@ -18,7 +18,7 @@
 set -u
 cd "$(dirname "$0")" || exit 1
 ROOT="$(pwd)"
-APP="$ROOT/server"
+APP="$ROOT/backend"
 NODE="${NODE:-node}"
 HEALTH_URL="${HEALTH_URL:-https://regalhw.lk/api/health}"
 say(){ printf '\n\033[1m%s\033[0m\n' "$*"; }

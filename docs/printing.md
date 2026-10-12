@@ -23,12 +23,12 @@ forwarding, no fixed address, and it works just as well when the till is the sit
 One key, the same on both sides.
 
 ```
-# server/.env  (the shop server, or the hosted one)
+# backend/.env  (the shop server, or the hosted one)
 PRINT_DEVICE_KEY=make-up-something-long
 ```
 
 ```jsonc
-// tools/print-agent/config.json  (the PC the printers are on)
+// backend/tools/print-agent/config.json  (the PC the printers are on)
 {
   "port": 4100,
   "server": "http://127.0.0.1:4000",   // or https://www.regalhw.lk when the till is the hosted site
@@ -40,7 +40,7 @@ PRINT_DEVICE_KEY=make-up-something-long
 ```
 
 Start it the way it has always been started — the **Regal print helper** shortcut, or
-`node tools/print-agent/agent.mjs`. It says on the first line which printers it has and which
+`node backend/tools/print-agent/agent.mjs`. It says on the first line which printers it has and which
 server it is watching. With no key set it goes on serving only that PC, as before.
 
 ## What happens when a bill prints

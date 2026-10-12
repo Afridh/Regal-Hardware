@@ -43,7 +43,7 @@ is told about.
 Set a key on the server and use the same one on the shop PC:
 
 ```
-# server/.env
+# backend/.env
 SHIFT_DEVICE_KEY=make-up-something-long
 SHIFT_PHOTO_DAYS=120          # how long clock-in snapshots are kept
 ```
@@ -51,10 +51,10 @@ SHIFT_PHOTO_DAYS=120          # how long clock-in snapshots are kept
 Then, after the machine's software has written its log:
 
 ```
-node tools/finger-sync.mjs --file "C:\ZKTeco\attlog.txt"
-node tools/finger-sync.mjs --file attlog.txt --date 2026-09-22
-node tools/finger-sync.mjs --file attlog.txt --url https://regalhw.lk/shift/shift-api.php
-node tools/finger-sync.mjs --file attlog.txt --dry        # read the file, send nothing
+node backend/tools/finger-sync.mjs --file "C:\ZKTeco\attlog.txt"
+node backend/tools/finger-sync.mjs --file attlog.txt --date 2026-09-22
+node backend/tools/finger-sync.mjs --file attlog.txt --url https://regalhw.lk/shift/shift-api.php
+node backend/tools/finger-sync.mjs --file attlog.txt --dry        # read the file, send nothing
 ```
 
 Run it from Task Scheduler every evening, or whenever the machine is read.
