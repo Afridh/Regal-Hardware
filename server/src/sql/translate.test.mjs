@@ -1,6 +1,6 @@
 // The translator is what every query in the system passes through, so it is checked on its own.
 //   node src/sql/translate.test.mjs
-import { toMySQL, placeholders, casts, upserts, dialect, returning } from './translate.js';
+import { toMySQL, placeholders, casts, upserts, dialect, returning, ddl } from './translate.js';
 
 let pass = 0, fail = 0;
 const is = (what, got, want) => {
@@ -70,10 +70,10 @@ is('insert keeps its RETURNING aside', ins.returning, '*');
 is('and loses it from the sql', ins.sql, 'INSERT INTO cust_logins (owner, username, admin_hash) VALUES (?,?,?)');
 
 /* a column that is itself called text keeps its name; only the type text becomes LONGTEXT */
-const notes = toMySQL(`CREATE TABLE IF NOT EXISTS alexa_notes (id bigserial PRIMARY KEY, kind varchar(24) NOT NULL,
-  text varchar(300) NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`, []).sql;
+const notes = ddl(toMySQL(`CREATE TABLE IF NOT EXISTS alexa_notes (id bigserial PRIMARY KEY, kind varchar(24) NOT NULL,
+  text varchar(300) NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`, []).sql);
 is('a column named text is not retyped', /,\s*text varchar\(300\)/.test(notes) && !/LONGTEXT varchar/.test(notes), true);
-const jobs = toMySQL(`CREATE TABLE IF NOT EXISTS print_jobs (id bigserial PRIMARY KEY, html text NOT NULL, error text)`, []).sql;
+const jobs = ddl(toMySQL(`CREATE TABLE IF NOT EXISTS print_jobs (id bigserial PRIMARY KEY, html text NOT NULL, error text)`, []).sql);
 is('the type text still becomes LONGTEXT', /html LONGTEXT NOT NULL/.test(jobs) && /error LONGTEXT/.test(jobs), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
