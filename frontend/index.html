@@ -3818,7 +3818,7 @@ const isOpenLine=(l)=>!!(l&&(l.open||l.pid===OPEN_PID));
 const _Pbase=indexed(()=>S.products);
 const P=(id)=> id===OPEN_PID ? OPEN_PRODUCT() : _Pbase(id);
 const C=indexed(()=>S.customers), SU=(id)=>S.suppliers.find(s=>s.id===id), B=(id)=>S.banks.find(b=>b.id===id);
-/* Supplier test mode (Settings → Messaging): while the shop tries out the suppliers' side, every message
+/* Supplier test mode (Settings → Messages): while the shop tries out the suppliers' side, every message
    meant for a supplier goes to the shop's test number instead, saying who it was for. Only the
    suppliers' messages pass through here — customers and staff are sent as always. */
 const supTest=()=>{ const m=CFG.msg||{}; const to=String(m.supTestTo||'').trim(); return m.supTestOn&&to?to:null };
@@ -3869,7 +3869,7 @@ function sms(to,body,aud){
   const m={id:'m'+Math.random().toString(36).slice(2,8),to,body,at:D(today)+' '+new Date().toTimeString().slice(0,5),status:CFG.msg.live?'Sending':'Queued (demo)'};
   S.messages.unshift(m);
   if(CFG.msg.live) smsSend(m);
-  // the same message on WhatsApp, as the template mapped to it (Settings → Messaging → WhatsApp)
+  // the same message on WhatsApp, as the template mapped to it (Settings → Messages → WhatsApp)
   if(CFG.msg.waMode==='cloud'&&CFG.msg.waAuto&&tpl.last&&tpl.last.body===plain) waTemplate(to,tpl.last.key,tpl.last.vars);
   return m;
 }
@@ -3898,7 +3898,7 @@ function waTemplate(to,key,vars){
     .catch(e=>{ m.status='WhatsApp failed — '+e.message }).finally(()=>{ persist(); if(S.view==='messages') render() });
   return m;
 }
-/* WhatsApp. Two ways, chosen in Settings → Messaging:
+/* WhatsApp. Two ways, chosen in Settings → Messages:
    - chat: opens WhatsApp (desktop app or web) on the number with the message typed in — nothing to
      set up, works today, someone presses Send;
    - cloud: the server posts it through Meta's WhatsApp Business Cloud API (needs a Meta business
@@ -3931,7 +3931,7 @@ function wa(to,body,key,vars,aud){
   window.open('https://wa.me/'+waIntl(to)+'?text='+encodeURIComponent(body),'_blank','noopener');
   return m;
 }
-/* the real send — the provider's endpoint and key live in Settings → Messaging.
+/* the real send — the provider's endpoint and key live in Settings → Messages.
    On the live system the same call is made by the backend worker, which also
    keeps the key off the browser. */
 /* The same rule the server keeps in backend/src/lib/phone.js. Without the server in front
@@ -5403,7 +5403,7 @@ function settings(){
   }
   return subnavPage('Settings','How the till behaves for everyone',tabs.map(t=>[t[0],t[1],(meta[t[0]]||['',ICONS.settings])[0],(meta[t[0]]||['',ICONS.settings])[1]]),setTab,'data-settab',body);
 }
-/* Settings → Messaging → WhatsApp: the whole set-up on one screen, in the order Meta wants it done */
+/* Settings → Messages → WhatsApp: the whole set-up on one screen, in the order Meta wants it done */
 function waSetup(fld){
   const m=CFG.msg, hook=location.origin+'/api/wa/webhook', std=WA_STD_TEMPLATES;
   const tplKeys=[['cashSale','Cash bill after a sale'],['creditSale','Credit bill after a sale'],['ownerBill','Your own copy of a bill'],['billLink','Bill sent again'],['paymentReceived','Payment received'],['statement','Customer statement'],['portalInvite','Invite to their page'],['webOrder','Online order update']];
@@ -7336,7 +7336,7 @@ function socCompose(cfg){
         <span><b>${l}</b> <span class="muted">— ${h}</span></span></label>`).join('')}</div></div>
     ${chosen.has('wa')?`<div class="f" style="max-width:340px"><label>Who on WhatsApp</label>
       <select id="socAud">${WA_AUDIENCE.map(a=>`<option value="${a[0]}" ${SOC.audience===a[0]?'selected':''}>${a[1]}</option>`).join('')}</select>
-      <div class="muted">${waN} customer${waN===1?'':'s'} match${waN===1?'es':''}${waN>SOCIAL_MAX_WA?` — only the first ${SOCIAL_MAX_WA} are sent`:''}. Free text only reaches someone who has written to the shop in the last 24 hours; the rest need an approved template (Settings → Messaging).</div></div>`:''}
+      <div class="muted">${waN} customer${waN===1?'':'s'} match${waN===1?'es':''}${waN>SOCIAL_MAX_WA?` — only the first ${SOCIAL_MAX_WA} are sent`:''}. Free text only reaches someone who has written to the shop in the last 24 hours; the rest need an approved template (Settings → Messages).</div></div>`:''}
     <div class="findbar">
      <div class="f"><label>When</label><input id="socWhen" type="datetime-local" value="${SOC.when||''}"></div>
      <div class="f" style="flex:0;align-self:flex-end;display:flex;gap:8px;flex-wrap:wrap">
@@ -7411,8 +7411,8 @@ function socConnect(cfg){
     <div class="muted">It is given <code>${location.origin}/api/shop/media/…</code>, which is served without a sign-in. Meta has to be able to reach it, so Instagram will not work from a till running on localhost — put the shop's own address in front of it first.</div></div>
   </div>
   <div class="card" style="margin-top:12px"><h2>WhatsApp</h2>
-   <div class="muted">WhatsApp posting uses the Cloud API that Messaging is already set up with — ${CFG.msg.waMode==='cloud'?'<b>it is on</b>.':'<b>it is not on yet</b>: Settings → Messaging → WhatsApp.'} Free text only reaches someone who has written to the shop in the last 24 hours; anything else needs a template Meta has approved.</div>
-   <div style="margin-top:8px"><button class="btn ghost" data-view="settings">Open Settings → Messaging</button></div></div>`;
+   <div class="muted">WhatsApp posting uses the Cloud API that Messaging is already set up with — ${CFG.msg.waMode==='cloud'?'<b>it is on</b>.':'<b>it is not on yet</b>: Settings → Messages → WhatsApp.'} Free text only reaches someone who has written to the shop in the last 24 hours; anything else needs a template Meta has approved.</div>
+   <div style="margin-top:8px"><button class="btn ghost" data-view="settings">Open Settings → Messages</button></div></div>`;
 }
 
 function socialAfter(){
@@ -16027,7 +16027,7 @@ function tenderDetail(t){
    <div class="bl-btns">
     <button class="btn ghost" data-act="tdEdit" data-id="${t.id}">Edit details</button>
     ${hasLines?`<button class="btn ghost" data-act="tdPrint" data-id="${t.id}">Print our quotation</button>`:''}
-    <button class="btn ghost" data-act="tdEmail" data-id="${t.id}" title="${CFG.mail&&CFG.mail.host?'Sends through your mail server with the files you pick':'Set up email under Settings → Messaging to send from here'}">Send by email</button>
+    <button class="btn ghost" data-act="tdEmail" data-id="${t.id}" title="${CFG.mail&&CFG.mail.host?'Sends through your mail server with the files you pick':'Set up email under Settings → Messages to send from here'}">Send by email</button>
     ${t.phone?`<button class="btn ghost wa" data-act="tdWa" data-id="${t.id}">${WA_ICON} WhatsApp</button>`:''}
     ${['submitted','opened'].includes(t.status)?`<button class="btn tape" data-act="tdResult" data-id="${t.id}">Record the result</button>`:''}
     ${t.status!=='cancelled'&&!['won','lost'].includes(t.status)?`<button class="btn ghost" data-act="tdCancel" data-id="${t.id}">Not quoting</button>`:''}
@@ -16174,7 +16174,7 @@ function tenderResultModal(t){
     t.result={date:g('rDate'),amount:out==='won'?+g('rAmt')||0:0,winner:g('rWin'),note:g('rNote')}; t.status=out; tdEvent(t,out==='won'?`Won — ${fmt(t.result.amount)}`:out==='lost'?`Lost${t.result.winner?' to '+t.result.winner:''}`:'Opened, result pending'); m.remove(); render(); toast(out==='won'?'Well done — load it into the till when the order comes':'Recorded') };
 }
 function tenderEmail(t){
-  if(!(CFG.mail&&CFG.mail.host)) return toast('Set up email under Settings → Messaging first');
+  if(!(CFG.mail&&CFG.mail.host)) return toast('Set up email under Settings → Messages first');
   const files=(t.files||[]); const total=tdTotal(t); if(!t.quoteNo){ t.quoteNo=tdNo('QTN'); if(t.status==='received') t.status='priced' }
   const body=`Dear Sir / Madam,\n\nWith reference to your request${t.ref?' '+t.ref:''}${t.subject?' — '+t.subject:''}, please find our quotation ${t.quoteNo} below${files.length?' and attached':''}.\n\n${(t.lines||[]).map((l,i)=>`${i+1}. ${l.desc} — ${fq(l.qty)} ${l.unit||''} × Rs ${money2(l.price)} = Rs ${money2((+l.qty||0)*(+l.price||0))}${l.remark?' ('+l.remark+')':''}`).join('\n')}\n\nTotal: Rs ${money2(total)} (${words(total)} rupees only)\nPrices hold good for ${t.terms?.validDays||30} days.${t.terms?.delivery?'\nDelivery: '+t.terms.delivery:''}${t.terms?.payment?'\nPayment: '+t.terms.payment:''}${t.terms?.note?'\n'+t.terms.note:''}\n\nThank you,\n${S.user.name}\n${CFG.shop.name}\n${CFG.shop.addr}\n${CFG.shop.phone}`;
   const m=modal(`<h2>Email the quotation</h2>
@@ -22071,11 +22071,11 @@ function messages(){ loadWaInbox();
   const tagOf=st=>/sent|delivered|read/i.test(st)?'ok':/fail|held|not sent/i.test(st)?'bad':/queued|sending|opened/i.test(st)?'warn':'blue';
   const ago=(t)=>{ const d=(Date.now()-new Date(t).getTime())/60000; return d<1?'just now':d<60?Math.round(d)+' min ago':d<1440?Math.round(d/60)+' h ago':new Date(t).toLocaleDateString('en-GB') };
   return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h1>Messages</h1>${unsent?`<button class="btn sm" data-act="smsRetryAll">Send again — ${unsent} not sent</button>`:''}</div>
-  <div class="muted" style="margin-bottom:10px">Texts go through ${CFG.msg.provider||'the SMS gateway'}${CFG.msg.live?'':' — <b>sending is off</b> (Settings → Messaging)'}${CFG.msg.testOnly?` · <b>test mode</b>: only ${CFG.msg.testOnly} gets them${held?` (${held} held)`:''}`:''}${supTest()?` · <b>supplier test mode</b>: suppliers' messages go to ${supTest()}`:''}${waOn?' · WhatsApp through the Cloud API':' · WhatsApp buttons open WhatsApp on this PC'}.</div>
+  <div class="muted" style="margin-bottom:10px">Texts go through ${CFG.msg.provider||'the SMS gateway'}${CFG.msg.live?'':' — <b>sending is off</b> (Settings → Messages)'}${CFG.msg.testOnly?` · <b>test mode</b>: only ${CFG.msg.testOnly} gets them${held?` (${held} held)`:''}`:''}${supTest()?` · <b>supplier test mode</b>: suppliers' messages go to ${supTest()}`:''}${waOn?' · WhatsApp through the Cloud API':' · WhatsApp buttons open WhatsApp on this PC'}.</div>
   ${waOn?`<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">${WA_ICON} WhatsApp replies ${waInbox.unread?`<span class="nbadge">${waInbox.unread} new</span>`:''}</h2>
      <span style="display:flex;gap:6px"><button class="btn ghost sm" data-act="waInboxRefresh">Refresh</button>${waInbox.unread?`<button class="btn ghost sm" data-act="waInboxRead">Mark all read</button>`:''}</span></div>
     ${waInbox.rows.length?`<table style="margin-top:8px"><tr><th>When</th><th>From</th><th>Message</th><th></th></tr>${waInbox.rows.slice(0,60).map(r=>{ const c=S.customers.find(x=>(x.phone||'').replace(/\D/g,'').replace(/^0/,'94')===r.from_no); return `<tr class="${r.read_at?'':'new'}"><td>${ago(r.at)}</td><td><b>${c?c.name:(r.name||'')}</b><div class="muted">${r.from_no.replace(/^94/,'0')}</div></td><td>${r.body}</td><td><button class="btn ghost sm wa" data-act="waReply" data-to="${r.from_no}" data-name="${(c?c.name:r.name||'').replace(/"/g,'&quot;')}">${WA_ICON} Reply</button>${c?` <button class="btn ghost sm" data-act="cust" data-id="${c.id}">Account</button>`:''}</td></tr>`}).join('')}</table>`
-     :`<div class="muted" style="margin-top:6px">Nothing yet. Replies arrive here once the webhook is set in Meta (Settings → Messaging → WhatsApp, step 5).</div>`}</div>`:''}
+     :`<div class="muted" style="margin-top:6px">Nothing yet. Replies arrive here once the webhook is set in Meta (Settings → Messages → WhatsApp, step 5).</div>`}</div>`:''}
   <div class="card"><table><tr><th>Time</th><th>To</th><th>Message</th><th>Status</th><th></th></tr>${S.messages.slice(0,300).map(m=>`<tr><td>${m.at}</td><td>${m.to||'—'}</td><td>${m.via==='wa'?WA_ICON+' ':''}${m.body}</td><td><span class="tag ${tagOf(m.status||'')}">${m.status}</span></td><td>${unsentSms(m)&&m.to?`<button class="btn ghost sm" data-act="smsRetry" data-id="${m.id}">Send again</button>`:''}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">No messages yet.</td></tr>'}</table>
    ${S.messages.length>300?`<div class="muted" style="margin-top:6px">Showing the latest 300 of ${S.messages.length}.</div>`:''}</div>` }
 
@@ -24715,10 +24715,10 @@ document.addEventListener('click',e=>{
       try{ const r=await fetch('/api/wa/send',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+regalBridge.token()},body:JSON.stringify({to,template:{name:'hello_world',lang:'en_US',params:[]}})}); const j=await r.json(); out.textContent=(j.ok?'Sent ✓ ':'')+(j.status||j.error||''); toast(j.ok?'hello_world sent to '+to:(j.status||j.error)) }catch(e){ out.textContent='Failed — '+e.message } },
     waMap:()=>{ const k=a.dataset.k, sel=$(`[data-wamap="${k}"]`); CFG.msg.waTemplates=CFG.msg.waTemplates||{}; const name=sel?sel.value:''; const found=(waTplList||[]).find(t=>t.name===name);
       CFG.msg.waTemplates[k]={name,lang:found?found.lang:'en',params:($(`[data-waparams="${k}"]`)||{}).value||''}; toast('Saved') },
-    smsRetry:async()=>{ const m=S.messages.find(x=>x.id===a.dataset.id); if(!m) return; if(!CFG.msg.live) return toast('Sending is off — tick "Send messages through the provider" in Settings → Messaging','bad');
+    smsRetry:async()=>{ const m=S.messages.find(x=>x.id===a.dataset.id); if(!m) return; if(!CFG.msg.live) return toast('Sending is off — tick "Send messages through the provider" in Settings → Messages','bad');
       if(/^: /.test(m.body)&&CFG.shop.name) m.body=CFG.shop.name+m.body;   // made while the shop name was blank
       m.status='Sending'; render(); await smsSend(m); if(/^Sent/i.test(m.status)) toast('Sent to '+m.to); persist(); render() },
-    smsRetryAll:async()=>{ if(!CFG.msg.live) return toast('Sending is off — tick "Send messages through the provider" in Settings → Messaging','bad');
+    smsRetryAll:async()=>{ if(!CFG.msg.live) return toast('Sending is off — tick "Send messages through the provider" in Settings → Messages','bad');
       const list=S.messages.filter(m=>unsentSms(m)&&m.to); if(!list.length) return; if(!confirm('Send '+list.length+' text'+(list.length===1?'':'s')+' again?')) return;
       toast('Sending '+list.length+'…'); let ok=0;
       for(const m of list){ if(/^: /.test(m.body)&&CFG.shop.name) m.body=CFG.shop.name+m.body; m.status='Sending'; await smsSend(m,true); if(/^Sent/i.test(m.status)) ok++ }

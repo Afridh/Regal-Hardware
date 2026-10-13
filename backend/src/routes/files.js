@@ -55,11 +55,11 @@ r.delete('/:id', regalAuth, asyncHandler(async (req, res) => {
   res.json({ ok: true, removed: rowCount });
 }));
 
-// ---------------------------------------------------------------- email (SMTP, Settings → Messaging → Email)
+// ---------------------------------------------------------------- email (SMTP, Settings → Messages → Email)
 async function mailCfg() {
   const { rows: [row] } = await query(`SELECT data FROM books WHERE key = 'regal'`);
   const cfg = row?.data?.CFG?.mail || {};
-  if (!cfg.host || !cfg.user || !cfg.pass) throw new HttpError(400, 'Email is not set up (Settings → Messaging → Email)');
+  if (!cfg.host || !cfg.user || !cfg.pass) throw new HttpError(400, 'Email is not set up (Settings → Messages → Email)');
   return { cfg, shop: row?.data?.CFG?.shop || {} };
 }
 /* Who the mail says it is from. The address is always the mailbox we sign in with: hosts like
