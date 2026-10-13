@@ -4875,8 +4875,12 @@ async function mailPaper(o){
   const r=await fetch('/api/files/mail/send',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},
     body:JSON.stringify({to:o.to.trim(),subject:o.subject,text:o.text,attach:[{name:String(o.filename||'document').replace(/[^\w.-]+/g,'-')+'.pdf',mime:'application/pdf',data}]})});
   const j=await r.json().catch(()=>({}));
+  /* a shop server still running the older code sends the mail and quietly leaves the PDF off
+     (it only knew quotation files) — it then says 0 attachments, and that is said out loud here */
+  const bare=r.ok&&j.attachments===0;
   S.messages.unshift({id:'e'+Math.random().toString(36).slice(2,8),to:o.to.trim(),body:`Email: ${o.subject} (PDF attached)`,at:D(today)+' '+new Date().toTimeString().slice(0,5),
-    status:r.ok?'Emailed':'Email failed — '+(j.error||r.status),via:'mail'});
+    status:bare?'Emailed WITHOUT the PDF — the shop server needs a restart':r.ok?'Emailed':'Email failed — '+(j.error||r.status),via:'mail'});
+  if(bare) throw new Error('The email went, but without the PDF: the shop server is running older code. Restart it (cPanel → Setup Node.js App → Restart), then send again');
   if(!r.ok) throw new Error(j.error||('The mail server said '+r.status));
   return true;
 }
