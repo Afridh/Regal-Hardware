@@ -1,6 +1,6 @@
 # WhatsApp for the Regal till — setting it up
 
-The till can use WhatsApp two ways (Settings → Messaging → WhatsApp):
+The till can use WhatsApp two ways (Settings → Messages → WhatsApp):
 
 | Mode | What happens | Needs |
 |---|---|---|
@@ -39,19 +39,30 @@ node backend/tools/wa-check.mjs <PHONE_NUMBER_ID> <TOKEN> 0777849964
 
 That prints what Meta knows about the number, lists templates, and sends the built-in `hello_world` template to the number given.
 
-Then in the till: Settings → Messaging → WhatsApp → *Send automatically* → paste both → **Check the number**.
+Then in the till: Settings → Messages → WhatsApp → *Send automatically* → paste both → **Check the number**.
 
 ## 4. Templates
 
-A message to a customer who has not written to you in the last 24 hours must be a template Meta has approved. The till ships with five:
+A message to a customer who has not written to you in the last 24 hours must be a template Meta has approved. The till ships with five. Each is laid out like every other message — the customers' greeting and the shop's sign-off from Settings → Messages are fixed text in the template, taken when you press *Register* (so set them first):
 
-| Template | Text | Used for |
+```
+Dear Customer,
+Your bill {{1}} for {{2}} is ready. See it at {{3}} any time.
+
+Thank you,
+Regal Hardware
+077 222 22 59
+```
+
+| Template | The middle line | Used for |
 |---|---|---|
-| `regal_bill` | {{1}}: your bill {{2}} for {{3}} — see it at {{4}} | cash bill, credit bill, bill sent again |
-| `regal_payment` | {{1}}: payment of {{2}} received, receipt {{3}}. Your balance is now {{4}}. Thank you. | payment received |
-| `regal_statement` | {{1}} statement for {{2}}: {{3}} unpaid bill(s), total {{4}}. See them at {{5}} | statement |
-| `regal_portal` | {{1}}: check what you owe any time at {{2}} — sign in with a code we text you. | invite to their page |
-| `regal_order` | {{1}}: your order {{2}} for {{3}} is {{4}}. | online order updates |
+| `regal_bill_v2` | Your bill {{1}} for {{2}} is ready. See it at {{3}} any time. | cash bill, credit bill, bill sent again |
+| `regal_payment_v2` | We have received your payment of {{1}}, receipt {{2}}. Your balance is now {{3}}. | payment received |
+| `regal_statement_v2` | Your statement for {{1}}: {{2}} unpaid bill(s), total {{3}}. See them at {{4}} any time. | statement |
+| `regal_portal_v2` | You can check what you owe any time at {{1}}. Sign in with a code we text you. | invite to their page |
+| `regal_order_v2` | Your order {{1}} for {{2}} is {{3}}. | online order updates |
+
+Changing the greeting or sign-off later does not change templates already approved — register them again under new names for that.
 
 Press **Register the standard templates** once (they are created on your account as *Utility*, English). Meta approves in minutes to a day. Press **Fetch from Meta** to see their state; the mapping table shows which template carries which message and in what order the till fills the {{n}} slots. You can make your own templates in WhatsApp Manager and pick them there instead.
 
@@ -61,7 +72,7 @@ Tick *Also send every automatic text on WhatsApp* and every text the till raises
 
 So that customers' answers show on the Messages page (and so staff can reply in free text inside the 24-hour window):
 
-1. Settings → Messaging → WhatsApp → *Webhook verify token* — type any word, e.g. `regal-2026`.
+1. Settings → Messages → WhatsApp → *Webhook verify token* — type any word, e.g. `regal-2026`.
 2. Meta app → WhatsApp → *Configuration* → Webhook → *Edit*: Callback URL `https://<your site>/api/wa/webhook`, Verify token the same word → *Verify and save*.
 3. *Webhook fields* → subscribe to **messages**.
 

@@ -3874,12 +3874,18 @@ function sms(to,body,aud){
   return m;
 }
 /* the standard templates the shop registers with Meta, and which of the till's messages each one carries */
+/* Laid out like every other message (13 Oct 2026): the customers' greeting and the shop's sign-off from
+   Settings → Messages are fixed text in the template, read when it is registered, and the {{n}} slots
+   sit only inside — Meta refuses a template that starts or ends with one. The shop's name is in the
+   sign-off, so it is no longer a parameter. Named _v2 so they never collide with the earlier wording. */
+const waStdBody=(core)=>letter('customer',core).replace(/\n{3,}/g,'\n\n');
 const WA_STD_TEMPLATES=[
-  {name:'regal_bill',category:'UTILITY',lang:'en',body:'{{1}}: your bill {{2}} for {{3}} — see it at {{4}}',example:['Regal Hardware','INVM-T1-AF-00031','Rs 4,890.00','regalhw.lk/b/abc123'],params:'shop,invoice,total,link',keys:['cashSale','creditSale','billLink']},
-  {name:'regal_payment',category:'UTILITY',lang:'en',body:'{{1}}: payment of {{2}} received, receipt {{3}}. Your balance is now {{4}}. Thank you.',example:['Regal Hardware','Rs 10,000.00','RCP-00012','Rs 5,000.00'],params:'shop,amount,receipt,outstanding',keys:['paymentReceived']},
-  {name:'regal_statement',category:'UTILITY',lang:'en',body:'{{1}} statement for {{2}}: {{3}} unpaid bill(s), total {{4}}. See them at {{5}}',example:['Regal Hardware','Nimal Constructions','3','Rs 45,000.00','regalhw.lk/my/c0012'],params:'shop,customer,count,outstanding,link',keys:['statement']},
-  {name:'regal_portal',category:'UTILITY',lang:'en',body:'{{1}}: check what you owe any time at {{2}} — sign in with a code we text you.',example:['Regal Hardware','regalhw.lk/my/c0012'],params:'shop,link',keys:['portalInvite']},
-  {name:'regal_order',category:'UTILITY',lang:'en',body:'{{1}}: your order {{2}} for {{3}} is {{4}}.',example:['Regal Hardware','ONL-00012','Rs 12,500.00','on the way to you'],params:'shop,order,total,status',keys:['webOrder']}];
+  {name:'regal_bill_v2',category:'UTILITY',lang:'en',core:'Your bill {{1}} for {{2}} is ready. See it at {{3}} any time.',example:['INVM-T1-AF-00031','Rs 4,890.00','regalhw.lk/b/abc123'],params:'invoice,total,link',keys:['cashSale','creditSale','billLink']},
+  {name:'regal_payment_v2',category:'UTILITY',lang:'en',core:'We have received your payment of {{1}}, receipt {{2}}. Your balance is now {{3}}.',example:['Rs 10,000.00','RCP-00012','Rs 5,000.00'],params:'amount,receipt,outstanding',keys:['paymentReceived']},
+  {name:'regal_statement_v2',category:'UTILITY',lang:'en',core:'Your statement for {{1}}: {{2}} unpaid bill(s), total {{3}}. See them at {{4}} any time.',example:['Nimal Constructions','3','Rs 45,000.00','regalhw.lk/my/c0012'],params:'customer,count,outstanding,link',keys:['statement']},
+  {name:'regal_portal_v2',category:'UTILITY',lang:'en',core:'You can check what you owe any time at {{1}}. Sign in with a code we text you.',example:['regalhw.lk/my/c0012'],params:'link',keys:['portalInvite']},
+  {name:'regal_order_v2',category:'UTILITY',lang:'en',core:'Your order {{1}} for {{2}} is {{3}}.',example:['ONL-00012','Rs 12,500.00','on the way to you'],params:'order,total,status',keys:['webOrder']}
+].map(t=>Object.defineProperty(t,'body',{get(){ return waStdBody(this.core) },enumerable:true}));
 function waTemplateFor(key){ const map=CFG.msg.waTemplates||{}; if(map[key]&&map[key].name) return map[key]; const std=WA_STD_TEMPLATES.find(t=>t.keys.includes(key)); return std?{name:std.name,lang:std.lang,params:std.params}:null }
 function waTemplate(to,key,vars){
   const t=waTemplateFor(key); if(!t) return null;
