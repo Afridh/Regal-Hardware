@@ -62,6 +62,17 @@ async function mailCfg() {
   if (!cfg.host || !cfg.user || !cfg.pass) throw new HttpError(400, 'Email is not set up (Settings → Messaging → Email)');
   return { cfg, shop: row?.data?.CFG?.shop || {} };
 }
+/* Who the mail says it is from. The address is always the mailbox we sign in with: hosts like
+   cPanel's discard a message whose From differs from the login at all ("FROM does not match
+   SENDER ADDRESS or AUTHENTICATION ID"). "Shown as from" only gives the name in front of it —
+   typed as a plain name or as "Name <address>", the name is taken and the address ignored. */
+function fromOf(cfg, shop) {
+  const raw = String(cfg.from || '').trim();
+  const m = raw.match(/^"?([^"<]*?)"?\s*<[^>]*>\s*$/);
+  let name = m ? m[1].trim() : (raw && !raw.includes('@') ? raw : '');
+  if (!name) name = String(shop.name || 'Regal Hardware').replace(/^REGAL HARDWARE$/, 'Regal Hardware');
+  return { name, address: String(cfg.user || '').trim() };
+}
 function transport(cfg) {
   return nodemailer.createTransport({ host: cfg.host, port: +cfg.port || 587, secure: (+cfg.port || 587) === 465 || cfg.secure === true, auth: { user: cfg.user, pass: cfg.pass }, connectionTimeout: 20000 });
 }
@@ -74,7 +85,7 @@ r.post('/mail/send', regalAuth, asyncHandler(async (req, res) => {
   const ids = (Array.isArray(fileIds) ? fileIds : []).map(Number).filter(Boolean).slice(0, 10);
   const { rows } = ids.length ? await query(`SELECT id, name, mime, data FROM files WHERE id = ANY($1::bigint[])`, [ids]) : { rows: [] };
   const info = await transport(cfg).sendMail({
-    from: cfg.from || `"${shop.name || 'Regal Hardware'}" <${cfg.user}>`, to, cc: cc || undefined, subject,
+    from: fromOf(cfg, shop), to, cc: cc || undefined, subject,
     text: text || '', html: html || undefined,
     attachments: rows.map(f => ({ filename: f.name, content: f.data, contentType: f.mime })) });
   res.json({ ok: true, status: 'Sent', id: info.messageId, attachments: rows.length });
@@ -84,7 +95,7 @@ r.post('/mail/test', regalAuth, asyncHandler(async (req, res) => {
   const to = req.body?.to || cfg.user;
   try { await transport(cfg).verify(); }
   catch (e) { return res.json({ ok: false, status: 'Cannot reach the mail server — ' + e.message }); }
-  const info = await transport(cfg).sendMail({ from: cfg.from || `"${shop.name || 'Regal Hardware'}" <${cfg.user}>`, to, subject: `${shop.name || 'Regal Hardware'}: test email from the till`, text: 'If you can read this, email from the till is working.' });
+  const info = await transport(cfg).sendMail({ from: fromOf(cfg, shop), to, subject: `${shop.name || 'Regal Hardware'}: test email from the till`, text: 'If you can read this, email from the till is working.' });
   res.json({ ok: true, status: 'Sent to ' + to, id: info.messageId });
 }));
 
