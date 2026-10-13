@@ -687,6 +687,10 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 .tplprev{background:var(--panel);border-left:3px solid var(--chip-green);padding:7px 10px;border-radius:var(--r);font-size:12.5px}
 .tplprev span{display:block;font-size:10.5px;color:var(--steel);letter-spacing:.04em}
 .tplprev i{font-style:normal}
+/* the Messages settings page: one row of links to its parts */
+.msgjump{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;position:sticky;top:0;z-index:2;background:var(--white);padding:6px 0;border-bottom:1px solid var(--line2)}
+.msgjump a{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12.5px;color:var(--ink);background:var(--panel)}
+.msgjump a:hover{border-color:var(--brand);color:var(--brand)}
 #main textarea{min-height:52px;resize:vertical}
 
 .chips{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:7px}
@@ -3818,14 +3822,55 @@ const C=indexed(()=>S.customers), SU=(id)=>S.suppliers.find(s=>s.id===id), B=(id
    meant for a supplier goes to the shop's test number instead, saying who it was for. Only the
    suppliers' messages pass through here — customers and staff are sent as always. */
 const supTest=()=>{ const m=CFG.msg||{}; const to=String(m.supTestTo||'').trim(); return m.supTestOn&&to?to:null };
-function supSms(to,body){ const t=supTest(); return t?sms(t,`[TEST · for ${to||'no number'}] ${body}`):sms(to,body) }
-function supWa(to,body){ const t=supTest(); return t?wa(t,`[TEST · for ${to||'no number'}] ${body}`):wa(to,body) }
-function sms(to,body){
+/* Every message goes out as a short letter (Settings → Messages → How every message is laid out):
+     Dear Customer,            ← the greeting for whoever it is going to
+     <the message itself>
+                               ← a blank line
+     Thank you,                ← the shop's sign-off
+     Regal Hardware
+     077 222 22 59
+   Who it is for is worked out from the number — the owner's mobile, a supplier, a member of staff,
+   and anyone else is a customer — unless the caller says. The shop name some messages used to
+   start with ("Regal Hardware: …") comes off the front, as the sign-off carries it now. */
+const MSG_AUD=[['customer','Customers','Dear Customer,'],['supplier','Suppliers','Dear Supplier,'],['owner','The owner','Dear Owner,'],['staff','Staff','Dear Team Member,']];
+const msgGreetKey=(aud)=>'greet'+aud.charAt(0).toUpperCase()+aud.slice(1);
+const escM=(v)=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const phone9=(n)=>String(n||'').replace(/\D/g,'').slice(-9);
+function msgAudience(to){
+  const p=phone9(to); if(p.length<9) return 'customer';
+  if(String(CFG.shop.owner||'').split(/[,;\s]+/).some(x=>phone9(x)===p)) return 'owner';
+  if((S.suppliers||[]).some(s=>phone9(s.phone)===p)) return 'supplier';
+  if((S.employees||[]).some(e=>phone9(e.phone)===p)||(S.users||[]).some(u=>phone9(u.phone)===p)) return 'staff';
+  return 'customer';
+}
+function msgSignOff(){
+  const shop=CFG.shop.name.replace(/^REGAL HARDWARE$/,'Regal Hardware');
+  return String(CFG.msg.signOff??'Thank you,\n{shop}\n{phone}').replace(/\{shop\}/g,shop).replace(/\{phone\}/g,CFG.shop.phone||'').trim();
+}
+/* open=true is a WhatsApp message left for the person at the counter to finish typing: it gets the
+   greeting, and no sign-off under the place they are about to type. */
+function letter(aud,body,open){
+  let b=String(body??'');
+  if(CFG.msg.letterOn===false||aud==='raw'||/^\s*Dear /i.test(b)||/^\s*\[TEST/.test(b)) return b;
+  const names=[CFG.shop.name,'Regal Hardware',S.web&&S.web.settings&&S.web.settings.name].filter(Boolean)
+    .map(n=>String(n).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+  b=b.replace(new RegExp('^\\s*(?:'+names.join('|')+')(\\s+statement)?\\s*:\\s*','i'),(m,st)=>st?'Statement: ':'');
+  b=b.charAt(0).toUpperCase()+b.slice(1);
+  const greet=String(CFG.msg[msgGreetKey(aud)]??(MSG_AUD.find(a=>a[0]===aud)||MSG_AUD[0])[2]).trim();
+  if(open) return (greet?greet+'\n':'')+b;
+  const sign=msgSignOff();
+  return (greet?greet+'\n':'')+b.trim()+(sign?'\n\n'+sign:'');
+}
+function supSms(to,body){ const t=supTest(); return t?sms(t,`[TEST · for ${to||'no number'}]\n${letter('supplier',body)}`,'raw'):sms(to,body,'supplier') }
+function supWa(to,body){ const t=supTest(); return t?wa(t,`[TEST · for ${to||'no number'}]\n${letter('supplier',body,/\s$/.test(body))}`,null,null,'raw'):wa(to,body,null,null,'supplier') }
+function sms(to,body,aud){
+  const plain=body;
+  body=letter(aud||msgAudience(to),body);
   const m={id:'m'+Math.random().toString(36).slice(2,8),to,body,at:D(today)+' '+new Date().toTimeString().slice(0,5),status:CFG.msg.live?'Sending':'Queued (demo)'};
   S.messages.unshift(m);
   if(CFG.msg.live) smsSend(m);
   // the same message on WhatsApp, as the template mapped to it (Settings → Messaging → WhatsApp)
-  if(CFG.msg.waMode==='cloud'&&CFG.msg.waAuto&&tpl.last&&tpl.last.body===body) waTemplate(to,tpl.last.key,tpl.last.vars);
+  if(CFG.msg.waMode==='cloud'&&CFG.msg.waAuto&&tpl.last&&tpl.last.body===plain) waTemplate(to,tpl.last.key,tpl.last.vars);
   return m;
 }
 /* the standard templates the shop registers with Meta, and which of the till's messages each one carries */
@@ -3862,9 +3907,11 @@ function loadWaInbox(force){ if(!(window.regalBridge&&regalBridge.online())||CFG
 setInterval(()=>{ try{ if(window.S&&S.user&&window.CFG) loadWaInbox() }catch(e){} },60000);
 const WA_ICON='<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="vertical-align:-2px"><path d="M13.6 2.3A7.9 7.9 0 0 0 1.1 11.8L0 16l4.3-1.1A7.9 7.9 0 0 0 13.6 2.3zM8 14.5a6.6 6.6 0 0 1-3.4-.9l-.2-.1-2.5.7.7-2.5-.2-.3A6.6 6.6 0 1 1 8 14.5zm3.6-4.9c-.2-.1-1.2-.6-1.4-.6s-.3-.1-.4.1-.5.6-.6.7-.2.2-.4.1a5.4 5.4 0 0 1-2.7-2.3c-.2-.4.2-.3.6-1.1v-.4l-.6-1.5c-.2-.4-.3-.3-.4-.3h-.4a.7.7 0 0 0-.5.2 2.2 2.2 0 0 0-.7 1.6 3.8 3.8 0 0 0 .8 2 8.7 8.7 0 0 0 3.3 2.9c1.2.5 1.7.6 2.3.5a2 2 0 0 0 1.3-.9 1.6 1.6 0 0 0 .1-.9c-.1-.1-.2-.1-.3-.1z"/></svg>';
 const waIntl=(p)=>{ const d=String(p||'').replace(/\D/g,''); return d.startsWith('94')?d:d.startsWith('0')?'94'+d.slice(1):d };
-function wa(to,body,key,vars){
+function wa(to,body,key,vars,aud){
   // through the Cloud API a customer who has not written in the last 24 h can only get a template — use it when there is one
   if(CFG.msg.waMode==='cloud'&&key&&waTemplateFor(key)) return waTemplate(to,key,{shop:CFG.shop.name.replace(/^REGAL HARDWARE$/,'Regal Hardware'),...(vars||{})});
+  // laid out like every other message; one ending in a space is for the counter to finish typing
+  body=letter(aud||msgAudience(to),body,!String(body||'').trim()||/\s$/.test(body));
   const m={id:'w'+Math.random().toString(36).slice(2,8),to,body,at:D(today)+' '+new Date().toTimeString().slice(0,5),status:'WhatsApp',via:'wa'};
   S.messages.unshift(m);
   if(CFG.msg.waMode==='cloud'&&window.regalBridge&&regalBridge.online()){
@@ -4654,7 +4701,8 @@ const CFG={
     what size up. A shop doing three hundred counter sales a day does not want three hundred
     texts, so the floor is there to be raised — it is the figure above which the owner would
     want to know without being told. */
- msg:{provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',supTestOn:true,supTestTo:'0769442270',timeout:30,autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,ownerBills:'all',ownerMin:0,
+ msg:{letterOn:true,greetCustomer:'Dear Customer,',greetSupplier:'Dear Supplier,',greetOwner:'Dear Owner,',greetStaff:'Dear Team Member,',signOff:'Thank you,\n{shop}\n{phone}',
+  provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',supTestOn:true,supTestTo:'0769442270',timeout:30,autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,ownerBills:'all',ownerMin:0,
   waMode:'chat',waPhoneId:'',waToken:'',waWabaId:'',waVerifyToken:'',waAuto:true,waTemplates:{},
    quietFrom:'21:00',quietTo:'07:00'},
  mail:{host:'',port:587,user:'',pass:'',from:'',cc:''},   // outgoing email — quotations to institutions go from here
@@ -4662,35 +4710,35 @@ const CFG={
  shift:{url:'',user:'',autoPull:true},              // where the attendance records live — empty is this server
  tpl:{
   cashSale:{label:'Cash bill',vars:'{shop} {invoice} {total} {link} {customer}',
-    text:'{shop}: thank you for your purchase. Bill {invoice} for {total} — {link}'},
+    text:'Thank you for your purchase. Your bill {invoice} for {total}: {link}'},
   creditSale:{label:'Credit bill',vars:'{shop} {invoice} {total} {balance} {outstanding} {link}',
-    text:'{shop}: credit bill {invoice} for {total}. Your total outstanding is now {outstanding}. See it at {link}'},
+    text:'Your credit bill {invoice} is for {total}. Your total outstanding is now {outstanding}. See it at {link}'},
   ownerBill:{label:'Your own copy of a bill',vars:'{shop} {kind} {invoice} {total} {customer} {by} {balance} {outstanding} {link}',
-    text:'{shop}: {kind} {invoice} {total} — {customer}, by {by}{balancePart} — see it at {link}'},
+    text:'{kind} {invoice} {total} — {customer}, by {by}{balancePart}. See it at {link}'},
   billLink:{label:'Resending a bill link',vars:'{shop} {invoice} {total} {balance} {link}',
-    text:'{shop}: your bill {invoice} for {total}{balancePart} — {link}'},
+    text:'Your bill {invoice} for {total}{balancePart}: {link}'},
   paymentReceived:{label:'Payment received',vars:'{shop} {amount} {receipt} {outstanding} {customer}',
-    text:'{shop}: payment of {amount} received, receipt {receipt}. Balance now {outstanding}. Thank you.'},
+    text:'We have received your payment of {amount}, receipt {receipt}. Your balance is now {outstanding}.'},
   statement:{label:'Customer statement',vars:'{shop} {customer} {count} {outstanding} {link}',
-    text:'{shop} statement for {customer}: {count} unpaid bill(s), total {outstanding}. See them at {link} or call {phone}.'},
+    text:'Your statement for {customer}: {count} unpaid bill(s), total {outstanding}. See them at {link}.'},
   portalInvite:{label:'Inviting a customer to their page',vars:'{shop} {customer} {link}',
-    text:'{shop}: check what you owe any time at {link} — sign in with a code we text you.'},
+    text:'You can check what you owe any time at {link}. Sign in with a code we text you.'},
   portalLogin:{label:'A sign-in given to a customer’s person',vars:'{shop} {customer} {who} {user} {pass} {link}',
-    text:'{shop}: your sign-in for {customer} is ready. Open {link}, user name {user}, password {pass}. Change the password once you are in.'},
+    text:'Your sign-in for {customer} is ready. Open {link}, user name {user}, password {pass}. Please change the password once you are in.'},
   portalPassword:{label:'A new password for a customer’s person',vars:'{shop} {customer} {who} {user} {pass} {link}',
-    text:'{shop}: a new password for {user} at {link} — {pass}. Change it once you are in.'},
+    text:'Your new password for {user} at {link} is {pass}. Please change it once you are in.'},
   otp:{label:'Sign-in code',vars:'{shop} {code} — the code itself is never stored',
-    text:'{shop}: your sign-in code is {code}. It expires in 10 minutes. Do not share it.'},
+    text:'Your sign-in code is {code}. It expires in 10 minutes. Please do not share it.'},
   orderAccepted:{label:'Supplier order accepted',vars:'{shop} {supplier} {date}',
-    text:'{shop}: your order has been accepted. We will confirm delivery shortly.'},
+    text:'Your order has been accepted. We will confirm delivery shortly.'},
   orderRejected:{label:'Supplier order rejected',vars:'{shop} {reason}',
-    text:'{shop}: your order could not be accepted — {reason}. Please call the shop.'},
+    text:'We could not accept your order: {reason}. Please call the shop.'},
   orderAdjusted:{label:'Supplier order needs a change',vars:'{shop} {reason}',
-    text:'{shop}: we need a change to your order — {reason}.'},
+    text:'We need a change to your order: {reason}.'},
   orderReceived:{label:'Goods received',vars:'{shop} {grn} {supplier}',
-    text:'{shop}: your order has been received as {grn}. Thank you.'},
+    text:'Your goods have been received as {grn}.'},
   dailySummary:{label:'Owner summary at close',vars:'{sales} {cash} {credit} {expenses} {outstanding}',
-    text:'{shop} today — sales {sales}, cash {cash}, credit {credit}, expenses {expenses}. Customers owe {outstanding}.'}
+    text:'Today — sales {sales}, cash {cash}, credit {credit}, expenses {expenses}. Customers owe {outstanding}.'}
  }
 };
 window.CFG=CFG; // exposed so settings can be scripted in tests
@@ -4899,7 +4947,7 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
 function settingsTabs(){
-  return [['screen','My screen'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messaging'],['tpl','Message templates'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  return [['screen','My screen'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messages'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
 }
 function settings(){
   const tabs=settingsTabs();
@@ -4909,6 +4957,7 @@ function settings(){
       ${type==='check'?`<label class="chk"><input type="checkbox" data-set="${path}" ${val?'checked':''}> ${hint}</label>`
       :`<input data-set="${path}" ${type==='number'?'type="number"':''} value="${String(val??'').replace(/"/g,'&quot;')}">${hint?`<div class="muted">${hint}</div>`:''}`}</div>`};
   if(setTab==='site') setTab='shop';        // the site has its own page now
+  if(setTab==='tpl') setTab='msg';          // the wording lives with the rest of the messages now
   let body='';
   if(setTab==='shop') body=`<div class="grid2">${fld('shop.name','Shop name, as printed')}${fld('shop.sinhala','Sinhala name')}</div>
     <div class="grid2">${fld('shop.addr','Address')}${fld('shop.near','Landmark line','Printed under the address')}</div>
@@ -5162,7 +5211,28 @@ function settings(){
      </div>
      <div class="card note" style="margin-top:10px">Only the code is ever printed or shown — never the figure itself. Change the word and every screen and label follows straight away.</div>`;
   }
-  if(setTab==='msg') body=`<div class="card note" style="margin-bottom:10px"><b>Sending for real</b>
+  if(setTab==='msg') body=`<div class="msgjump">${[['msg-layout','How every message is laid out'],['msg-words','The wording of each message'],['msg-send','Sending'],['msg-auto','Send automatically'],['msg-wa','WhatsApp'],['msg-mail','Email']]
+      .map(j=>`<a href="#${j[0]}" onclick="document.getElementById('${j[0]}').scrollIntoView({behavior:'smooth'});return false">${j[1]}</a>`).join('')}</div>
+    <h2 id="msg-layout">How every message is laid out</h2>
+    <div class="muted" style="margin-bottom:8px">Every text and WhatsApp message goes out as a short letter: the greeting for whoever it is going to, the message, then the sign-off. Who it is for is worked out from the number — the owner's mobile, a supplier, a member of staff, and anyone else is a customer.</div>
+    ${fld('msg.letterOn','','Lay every message out this way','check')}
+    <div class="grid2">${MSG_AUD.map(a=>fld('msg.'+msgGreetKey(a[0]),'Greeting — '+a[1].toLowerCase(),'e.g. '+a[2])).join('')}</div>
+    <div class="grid2"><div class="f"><label>Sign-off</label><textarea data-set="msg.signOff" rows="3">${escM(CFG.msg.signOff??'')}</textarea>
+      <div class="muted">{shop} is the shop's name and {phone} its mobile. Each line goes on its own line of the message.</div></div>
+     <div class="f"><label>How a customer reads it</label><div class="tplprev" style="margin:0"><i style="white-space:pre-line">${escM(letter('customer','We have received your payment of '+fmt(25000)+', receipt RV-00146. Your balance is now '+fmt(170750)+'.'))}</i></div>
+      <div class="muted">Every line costs characters — a long sign-off can turn a one-part SMS into two.</div></div></div>
+    <h2 id="msg-words" style="margin-top:16px">The wording of each message</h2>
+    <div class="muted" style="margin-bottom:10px">Write only the message itself — the greeting and sign-off above are put round it. Anything in curly brackets is filled in when the message goes out.</div>
+    ${Object.entries(CFG.tpl).map(([k,t])=>`<div class="card" style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
+       <b>${t.label} <span class="tag">${(MSG_AUD.find(a=>a[0]===(TPL_AUD[k]||'customer'))||MSG_AUD[0])[1].replace(/s$/,'')}</span></b><span class="muted">${t.vars}</span></div>
+      <textarea data-tpl="${k}" rows="2" style="margin:6px 0">${t.text}</textarea>
+      <div class="tplprev"><span>How it reads</span>${tplPreview(k)}</div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+       <button class="btn ghost sm" data-act="tplReset" data-k="${k}">Put the original back</button>
+       <button class="btn ghost sm" data-act="tplTest" data-k="${k}">Send it to me as a test</button></div></div>`).join('')}
+    <h2 id="msg-send" style="margin-top:16px">Sending</h2>
+    <div class="card note" style="margin-bottom:10px"><b>Sending for real</b>
       <div class="muted">Off, messages queue on the Messages page and go nowhere. On, each one is posted to the provider the moment it is raised. On the live system the backend worker does this, so the key never sits in a browser.</div>
       <div class="grid3" style="margin-top:8px">${fld('msg.live','','Send messages through the provider','check')}${fld('msg.apiUrl','Provider API URL','e.g. https://smslenz.lk/api/send-sms')}${fld('msg.userId','Provider user ID')}</div>
       ${fld('msg.apiKey','API key','kept in settings only')}
@@ -5172,7 +5242,7 @@ function settings(){
     <div class="grid3">${fld('msg.provider','SMS provider')}${fld('msg.sender','Sender name shown on the phone')}
     <div class="f"><label>Messages sent so far</label><input value="${S.messages.length}" readonly></div></div>
     <div class="grid2">${fld('msg.quietFrom','Hold messages from','Nothing goes out between these times')}${fld('msg.quietTo','until')}</div>
-    <h2 style="margin-top:12px">Send automatically</h2>
+    <h2 id="msg-auto" style="margin-top:12px">Send automatically</h2>
     <div class="grid2">
      ${fld('msg.autoBill','','Bill link to the customer after every sale','check')}
      ${fld('msg.autoReceipt','','Receipt after a payment is recorded','check')}
@@ -5188,27 +5258,19 @@ function settings(){
      ${fld('msg.ownerMin','Only from this much up','Leave at 0 for all of them. On a busy counter this is what keeps it from being a text a minute.','number')}
     </div>
     <div class="card note" style="margin-top:10px">Sign-in codes always go out, whatever is set here — without them nobody can open their page.</div>
-    <h2 style="margin-top:16px">WhatsApp</h2>
+    <h2 id="msg-wa" style="margin-top:16px">WhatsApp</h2>
     <div class="muted" style="margin-bottom:8px">Every WhatsApp button in the till (bills, statements, reminders, online orders) uses this. The shop's own WhatsApp number for customers goes under The shop site → Words &amp; contact.</div>
     <div class="grid2">
      <label class="chk"><input type="radio" name="waMode" data-set="msg.waMode" value="chat" ${CFG.msg.waMode!=='cloud'?'checked':''}> <span><b>Open WhatsApp on this PC</b><br><span class="muted">Nothing to set up. The message is typed in for you on the customer's number in WhatsApp Desktop or WhatsApp Web — press Send. Works today.</span></span></label>
      <label class="chk"><input type="radio" name="waMode" data-set="msg.waMode" value="cloud" ${CFG.msg.waMode==='cloud'?'checked':''}> <span><b>Send automatically (WhatsApp Business Cloud API)</b><br><span class="muted">Needs a Meta business account with a verified WhatsApp number. Messages to a customer who has not written to you in the last 24 hours must use a template Meta has approved.</span></span></label>
     </div>
     ${CFG.msg.waMode==='cloud'?waSetup(fld):''}
-    <h2 style="margin-top:16px">Email</h2>
+    <h2 id="msg-mail" style="margin-top:16px">Email</h2>
     <div class="muted" style="margin-bottom:8px">Quotations to institutions and companies go out from here (Quotations &amp; tenders → Send by email), with the letter or the signed copy attached. Any mailbox with SMTP works — Gmail: smtp.gmail.com, port 587, your address and an <i>app password</i> (Google account → Security → 2-step verification → App passwords).</div>
     <div class="grid3">${fld('mail.host','Mail server (SMTP host)','e.g. smtp.gmail.com')}${fld('mail.port','Port','587 (or 465)','number')}${fld('mail.user','Address / user name','the mailbox that sends')}</div>
     <div class="grid3">${fld('mail.pass','Password / app password','kept in settings only')}${fld('mail.from','Shown as from','e.g. Regal Hardware <sales@regalhw.lk> — empty uses the address above')}${fld('mail.cc','Copy every quotation to','optional — e.g. the owner')}</div>
     <div class="f"><label>Send a test email</label><div style="display:flex;gap:6px;max-width:460px"><input id="mailTestTo" value="${CFG.mail.user||''}" placeholder="to…"><button class="btn tape" data-act="mailTest">Send</button></div><div class="muted" id="mailTestOut"></div></div>`;
-  if(setTab==='tpl') body=`<div class="muted" style="margin-bottom:10px">Edit the wording. Anything in curly brackets is filled in when the message goes out.</div>
-    ${Object.entries(CFG.tpl).map(([k,t])=>`<div class="card" style="margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
-       <b>${t.label}</b><span class="muted">${t.vars}</span></div>
-      <textarea data-tpl="${k}" rows="2" style="margin:6px 0">${t.text}</textarea>
-      <div class="tplprev"><span>How it reads</span>${tplPreview(k)}</div>
-      <div style="display:flex;gap:6px;margin-top:6px">
-       <button class="btn ghost sm" data-act="tplReset" data-k="${k}">Put the original back</button>
-       <button class="btn ghost sm" data-act="tplTest" data-k="${k}">Send it to me as a test</button></div></div>`).join('')}`;
+
   if(setTab==='privacy'&&S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')){ const p=CFG.privacy||{};
     body=`<div class="card note" style="margin-bottom:12px"><b>What it does</b><div class="muted">One key, and every screen shows a quieter shop — a share of the bills you choose, no credit customers, the day's takings and the reports following suit. The real books are not touched: they are held aside and come straight back when the key is pressed again, or after the time below. While the screen is up nothing can be billed or saved (staff see “till is busy”) and nothing comes in from the server, so the two can never mix. Only you see this page.</div></div>
      ${fld('privacy.on','','Privacy screen switched on','check')}
@@ -5326,7 +5388,7 @@ function settings(){
   if(!body&&typeof extSettingsBody==='function') body=extSettingsBody(setTab);
   const meta={screen:['Menu, landing page and shortcuts — yours alone','M3 5h18v11H3zM8 20h8M12 16v4'],done:['What happens after a bill is finished','M9 12l2 2 4-4M12 3a9 9 0 110 18 9 9 0 010-18z'],
     shop:['Name, address and phones as printed','M3 9l2-5h14l2 5M4 9h16v11H4zM9 20v-6h6v6'],bill:['Numbering, formats and the return window',ICONS.bills],layout:['Logo, lines and text size on the bill',ICONS.docs],
-    cost:['The code that hides cost on labels',ICONS.labels],msg:['The SMS gateway and who gets texts',ICONS.messages],tpl:['Wording of every text that goes out','M4 6h16M4 12h10M4 18h7'],
+    cost:['The code that hides cost on labels',ICONS.labels],msg:['How texts read, their wording, and who gets them',ICONS.messages],
     shift:['The Shift Board, the fingerprint machine and pay','M12 7v5l3 2M12 3a9 9 0 110 18 9 9 0 010-18z'],
     approvals:['What needs the owner’s nod',ICONS.approvals],buying:['How goods are allowed in',ICONS.purchases],alexa:['What the Echo may say out loud',ICONS.messages],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
   if(!_setIndexing){
@@ -5374,6 +5436,24 @@ function subnavPage(title,sub,items,cur,attr,body){
    <div class="setbody"><div class="sbhead"><h1>${curItem[1]}</h1>${curItem[2]?`<div class="muted">${curItem[2]}</div>`:''}</div><div class="card">${body}</div></div></div>`;
 }
 const TPL_ORIG=JSON.parse(JSON.stringify(CFG.tpl));
+// the wording each message had before they became letters (13 Oct 2026) — the shop's unchanged ones move to the new wording
+const TPL_OLD_DEFAULT={cashSale:'{shop}: thank you for your purchase. Bill {invoice} for {total} — {link}',
+  creditSale:'{shop}: credit bill {invoice} for {total}. Your total outstanding is now {outstanding}. See it at {link}',
+  ownerBill:'{shop}: {kind} {invoice} {total} — {customer}, by {by}{balancePart} — see it at {link}',
+  billLink:'{shop}: your bill {invoice} for {total}{balancePart} — {link}',
+  paymentReceived:'{shop}: payment of {amount} received, receipt {receipt}. Balance now {outstanding}. Thank you.',
+  statement:'{shop} statement for {customer}: {count} unpaid bill(s), total {outstanding}. See them at {link} or call {phone}.',
+  portalInvite:'{shop}: check what you owe any time at {link} — sign in with a code we text you.',
+  portalLogin:'{shop}: your sign-in for {customer} is ready. Open {link}, user name {user}, password {pass}. Change the password once you are in.',
+  portalPassword:'{shop}: a new password for {user} at {link} — {pass}. Change it once you are in.',
+  otp:'{shop}: your sign-in code is {code}. It expires in 10 minutes. Do not share it.',
+  orderAccepted:'{shop}: your order has been accepted. We will confirm delivery shortly.',
+  orderRejected:'{shop}: your order could not be accepted — {reason}. Please call the shop.',
+  orderAdjusted:'{shop}: we need a change to your order — {reason}.',
+  orderReceived:'{shop}: your order has been received as {grn}. Thank you.',
+  dailySummary:'{shop} today — sales {sales}, cash {cash}, credit {credit}, expenses {expenses}. Customers owe {outstanding}.'};
+// who each template is written to, for its preview and its test
+const TPL_AUD={orderAccepted:'supplier',orderRejected:'supplier',orderAdjusted:'supplier',orderReceived:'supplier',ownerBill:'owner',dailySummary:'owner'};
 function labelSampleBill(inv){
   const c=C(inv.customerId), credit=inv.balance>0;
   const cols=[CFG.bill.showCode&&'CODE','DESCRIPTION','QTY',CFG.bill.showUom&&'UOM',CFG.bill.showMrp&&'MRP','PRICE','AMOUNT'].filter(Boolean);
@@ -5399,7 +5479,7 @@ function tplPreview(k){
     outstanding:fmt(170750),link:'regalhw.lk/i/8k2p1a',customer:'Milco Pvt Ltd',receipt:'RV-00146',amount:fmt(25000),
     count:3,code:'418302',supplier:'Tokyo Cement',reason:'only 60 bags this week',grn:'GRN-00213',date:D(today),
     sales:fmt(48250),cash:fmt(31400),credit:fmt(16850),expenses:fmt(4800)};
-  return `<i>${tpl(k,sample)}</i>`;
+  return `<i style="white-space:pre-line">${escM(letter(TPL_AUD[k]||'customer',tpl(k,sample)))}</i>`;
 }
 
 
@@ -8106,6 +8186,15 @@ function applyKept(kept){
   // set once so a till that had picked another look follows it; Design the bill can still change it
   if(CFG.bill&&!CFG.bill.a5Modern1){ CFG.bill.a5Style='modern'; CFG.bill.a5Lockup=true; CFG.bill.a5Modern1=true; }
   if(CFG.bill&&!CFG.bill.a5Bands1){ CFG.bill.a5Style='bands'; CFG.bill.a5Bands1=true; }   // the shop chose Tinted bands as the large bill
+  /* 13 Oct 2026: messages became letters (Dear Customer, … Thank you, Regal Hardware). The shop's name
+     came off the front of each wording, once — the sign-off carries it now. Wording the shop never
+     changed takes the new default; wording it did change only loses the "{shop}:" in front. */
+  if(CFG.msg&&!CFG.msg.letter1){
+    Object.keys(CFG.tpl||{}).forEach(k=>{ const t=CFG.tpl[k]; if(!t||!TPL_ORIG[k]) return;
+      const was=String(t.text||''), bare=was.replace(/^\{shop\}\s*:?\s*/,'');
+      t.text=TPL_OLD_DEFAULT[k]===was?TPL_ORIG[k].text:bare===was?was:bare.charAt(0).toUpperCase()+bare.slice(1); });
+    CFG.msg.letter1=true;
+  }
   if(CFG.bill&&!CFG.bill.a5Bw1){ CFG.bill.a5Style='bw'; CFG.bill.a5Bw1=true; }   // 13 Oct 2026: the shop chose the black-and-white black-bar design (design 1) for the LBP6030w
   // the barcode of the invoice number is off the receipt (asked for, 5 Oct 2026) — once, so Design the bill can put it back
   if(CFG.bill&&!CFG.bill.barcodeOff1){
@@ -24597,7 +24686,7 @@ document.addEventListener('click',e=>{
       askNumber(inv,'whatsapp',send); },
     custWa:()=>{ const c=C(+a.dataset.id); if(!c||!c.phone) return toast('No mobile on file'); const owed=partyBal('C',c.id);
       const v={customer:c.name,count:S.sales.filter(s=>s.customerId===c.id&&s.balance>0).length,outstanding:fmt(owed),link:'regalhw.lk/my/'+(c.code||'').toLowerCase()};
-      if(owed>0) wa(c.phone,tpl('statement',v),'statement',v); else wa(c.phone,`Hello ${c.name}, this is ${CFG.shop.name}. `); render() },
+      if(owed>0) wa(c.phone,tpl('statement',v),'statement',v); else wa(c.phone,''); render() },
     orderWa:()=>{ const o=S.web.orders.find(x=>x.no===a.dataset.no); if(!o) return; const c=C(o.cid); if(!c||!c.phone) return toast('No mobile on file');
       const st={placed:'we have it and will confirm shortly',accepted:'accepted — we are picking it now',picking:'being picked now',ready:o.deliver?'ready, the lorry will bring it':'ready to collect at the counter',despatched:'on the way to you',done:'delivered',collected:'collected',invoiced:'billed',rejected:'not accepted'+(o.note?' — '+o.note:''),cancelled:'cancelled'}[o.status]||o.status;
       wa(c.phone,`${S.web.settings.name}: your order ${o.no} for ${fmt(o.total)} is ${st}.`,'webOrder',{order:o.no,total:fmt(o.total),status:st}); render() },

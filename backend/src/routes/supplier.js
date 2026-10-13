@@ -12,6 +12,7 @@ import crypto from 'node:crypto';
 import { query, dbKind } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { sendViaProvider, regalAuth, mayRevealCode } from './regal.js';
+import { letter } from '../lib/letter.js';
 import { listLogins, findLogin, addLogin, setLogin, removeLogin, checkLogin, loginLine, cleanUser, passOk, suggestUser, inviteMany, startersFor, defaultLogin, resetToDefaults,
          askForLogin, myRequests, waitingRequests, waitingCount, acceptRequest, rejectRequest } from '../services/portalLogins.js';
 
@@ -207,7 +208,7 @@ function supTestTo(cfg) {
 }
 function supSend(cfg, phone, text) {
   const t = supTestTo(cfg);
-  return t ? sendViaProvider(cfg, t, `[TEST · for ${phone}] ${text}`) : sendViaProvider(cfg, phone, text);
+  return t ? sendViaProvider(cfg, t, `[TEST · for ${phone}]\n${text}`) : sendViaProvider(cfg, phone, text);
 }
 
 // ---------------------------------------------------------------- the portal API
@@ -220,7 +221,7 @@ r.post('/otp', asyncHandler(async (req, res) => {
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
-    try { await supSend(cfg, phone, `${data?.CFG?.shop?.name || 'Regal Hardware'}: your supplier sign-in code is ${code}. It works for 5 minutes.`); return res.json({ ok: true, sent: true, name: sup.name }); }
+    try { await supSend(cfg, phone, letter(data?.CFG, 'supplier', `Your supplier sign-in code is ${code}. It works for 5 minutes.`)); return res.json({ ok: true, sent: true, name: sup.name }); }
     catch (e) { console.error('sup otp sms failed', e.message); }
   }
   res.json({ ok: true, sent: false, name: sup.name, ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });
@@ -262,7 +263,7 @@ r.post('/forgot', asyncHandler(async (req, res) => {
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
-    try { await supSend(cfg, phone, `${data?.CFG?.shop?.name || 'Regal Hardware'}: your code to set a new password is ${code}. It works for 5 minutes.`);
+    try { await supSend(cfg, phone, letter(data?.CFG, 'supplier', `Your code to set a new password is ${code}. It works for 5 minutes.`));
       return res.json({ ok: true, sent: true, phone: phone.replace(/^(\d{3})\d{4}(\d{3})$/, '$1••••$2') }); }
     catch (e) { console.error('sup forgot sms failed', e.message); }
   }
