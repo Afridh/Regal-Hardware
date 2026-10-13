@@ -4623,7 +4623,7 @@ const CFG={
  bill:{prefix:'INVM-',style:'plain',digits:4,printTo:'here',warrantyNote:'Covers manufacturing faults only. Misuse, water damage and normal wear are not covered. Bring this card with the machine.',returnDays:7,quoteDays:14,showMrp:true,showSaving:true,defaultFormat:'r80',
    title:'INVOICE',creditTitle:'CREDIT INVOICE',showLogo:true,showSinhala:true,showStrap:true,
    showCode:true,showUom:true,showQr:true,showWords:true,showCashier:true,showOutstanding:true,
-   showSign:true,signLeft:'Authorised By',signRight:'Received By',showItemCount:true,showBarcode:true,t80Sign:true,showWeb:true,a5Scale:118,r80Scale:100,a5Style:'bands',a5Font:'sans',r80Font:'sans',
+   showSign:true,signLeft:'Authorised By',signRight:'Received By',showItemCount:true,showBarcode:true,t80Sign:true,showWeb:true,a5Scale:118,r80Scale:100,a5Style:'bw',a5Font:'sans',r80Font:'sans',
    t80Logo:true,t80Qr:true,t80Thanks:'Thank you, come again!',t80Footer:true,
    footer:'Only returns will be accepted within {days} days with the original invoice. Goods once sold are checked and accepted by the customer.',
    blankLines:9,summaryTime:'19:30'},
@@ -8106,6 +8106,7 @@ function applyKept(kept){
   // set once so a till that had picked another look follows it; Design the bill can still change it
   if(CFG.bill&&!CFG.bill.a5Modern1){ CFG.bill.a5Style='modern'; CFG.bill.a5Lockup=true; CFG.bill.a5Modern1=true; }
   if(CFG.bill&&!CFG.bill.a5Bands1){ CFG.bill.a5Style='bands'; CFG.bill.a5Bands1=true; }   // the shop chose Tinted bands as the large bill
+  if(CFG.bill&&!CFG.bill.a5Bw1){ CFG.bill.a5Style='bw'; CFG.bill.a5Bw1=true; }   // 13 Oct 2026: the shop chose the black-and-white black-bar design (design 1) for the LBP6030w
   // the barcode of the invoice number is off the receipt (asked for, 5 Oct 2026) — once, so Design the bill can put it back
   if(CFG.bill&&!CFG.bill.barcodeOff1){
     CFG.bill.showBarcode=false;
@@ -18941,8 +18942,8 @@ function a5Cfg(){
 const a5Order = () => a5Cfg().order;
 /* The size of each part of the large bill, in px — nudged from Design the bill → The large bill. */
 /* The looks the large bill can take — the same parts and figures, dressed differently. */
-const A5_STYLES = [['bands','Tinted bands — header and footer panels'],['standard','Standard — light grey'],['classic','Classic ledger — ruled lines'],['modern','Modern — red accents'],['minimal','Minimal — least ink'],['bold','Bold — black headings']];
-const a5Style = () => A5_STYLES.some(x => x[0] === CFG.bill.a5Style) ? CFG.bill.a5Style : 'bands';
+const A5_STYLES = [['bw','Black and white — black bars'],['bands','Tinted bands — header and footer panels'],['standard','Standard — light grey'],['classic','Classic ledger — ruled lines'],['modern','Modern — red accents'],['minimal','Minimal — least ink'],['bold','Bold — black headings']];
+const a5Style = () => A5_STYLES.some(x => x[0] === CFG.bill.a5Style) ? CFG.bill.a5Style : 'bw';
 const A5_SIZE_DEF = {brand:18,addr:9,meta:8,items:8,words:7.5,outstanding:8.5,summary:8.5,signs:7,note:6.8};
 function a5Size(k){ const s=(a5Cfg().size||{}); const v=+s[k]; return Number.isFinite(v)&&v>0?v:(A5_SIZE_DEF[k]!=null?A5_SIZE_DEF[k]:9); }
 function a5SetSize(k,d){ const c=a5Cfg(); if(!c.size)c.size={}; c.size[k]=Math.max(5,Math.min(30,+(a5Size(k)+d).toFixed(1))); }
@@ -19257,7 +19258,7 @@ function billHtml(inv,f='a5'){
   const totH=`<div class="x-tot"><div class="x-paid">${paidH}</div><div class="x-grand"><span>INVOICE TOTAL</span><b><small>LKR</small> ${money2(inv.total)}</b></div></div>`;
   const termsH=`<div class="x-terms">${(on('note')&&B.footer)?`<b>Terms:</b> ${esc5(B.footer.replace('{days}',B.returnDays))}`:''}</div>`;
   const signH=on('signs')?`<div class="x-sign"><div>${esc5((B.signLeft||'Authorised By').toUpperCase())}</div><div>${esc5((B.signRight||'Received By').toUpperCase())}</div></div>`:'';
-  return `<div class="print a5 sbx x-${a5Style()==='bands'?'modern x-bands':a5Style()}" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5});font-family:${billFontCss(B.a5Font)};${a5SizeVars()}">
+  return `<div class="print a5 sbx x-${{bands:'modern x-bands',bw:'standard x-bw'}[a5Style()]||a5Style()}" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5});font-family:${billFontCss(B.a5Font)};${a5SizeVars()}">
    <div class="x-head">${brandH}${shopH}${qrH}</div>
    ${bandH}
    <table class="x-tbl"><thead><tr><th class="c">#</th>${showCode?'<th>ITEM CODE</th>':''}<th class="d">DESCRIPTION</th>${showUom?'<th>UOM</th>':''}<th class="n">QTY</th>${showMrp?'<th class="n">MRP</th>':''}<th class="n">UNIT PRICE</th><th class="n">AMOUNT (LKR)</th></tr></thead><tbody>${rowsX}</tbody></table>
