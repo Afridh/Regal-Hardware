@@ -4088,6 +4088,8 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   const v={invoice:inv.no,total:fmt(total),balance:fmt(credit),link:inv.link,
     customer:c?c.name:'Cash customer',outstanding:fmt(partyBal('C',(c||{}).id))};
   if(c&&c.phone&&CFG.msg.autoBill) sms(c.phone, tpl(credit>0?'creditSale':'cashSale',v));
+  // a credit bill goes to a customer who keeps an email with us as the A5 invoice, in a PDF
+  if(c&&c.id!==1&&credit>0.005&&isEmail(c.email)&&autoMailOn('autoInvoice')) setTimeout(()=>mailPaperAuto(invoiceMail(inv)),300);
 
   /* The owner's own copy. Written for them, not for the customer: a shop owner wants to
      know what went out of the shop while they were not standing in it — who bought it, who
@@ -4711,7 +4713,7 @@ const CFG={
   provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',supTestOn:true,supTestTo:'0769442270',timeout:30,autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,ownerBills:'all',ownerMin:0,
   waMode:'chat',waPhoneId:'',waToken:'',waWabaId:'',waVerifyToken:'',waAuto:true,waTemplates:{},
    quietFrom:'21:00',quietTo:'07:00'},
- mail:{host:'',port:587,user:'',pass:'',from:'',cc:''},   // outgoing email — quotations to institutions go from here
+ mail:{host:'',port:587,user:'',pass:'',from:'',cc:'',autoInvoice:true,autoVoucher:true},   // outgoing email — quotations, credit invoices and vouchers go from here
  privacy:{on:false,key:'ctrl+shift+x',pct:35,hideCredit:true,minutes:20,dot:true},   // the privacy screen (owner only)
  shift:{url:'',user:'',autoPull:true},              // where the attendance records live — empty is this server
  tpl:{
@@ -4798,6 +4800,7 @@ function voucherPrint(v){
   const vm=modal(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
     <h2 style="margin:0">${v.title} — ${v.no}</h2>
     <div style="display:flex;gap:6px"><button class="btn sm" data-act="rePrintPaper">Print</button>
+     ${v.mail?`<button class="btn ghost sm" id="vMail" title="${v.mail.to?'Email it to '+v.mail.to:'Their email is asked for'}">Email PDF</button>`:''}
      <button class="btn ghost sm" data-act="closeModal">Close</button></div></div>
    <div class="print a5 bill voucher">
     <div class="bhead">
@@ -4823,11 +4826,105 @@ function voucherPrint(v){
     <div class="bnote"><span>${CFG.shop.name} · this voucher is a record of payment and must be kept with the day's documents.</span>
      <em>PRINTED ${D(today).split('-').reverse().join(' ')} · PAGE 1 OF 1</em></div>
    </div>`);
-  const pr=vm&&vm.querySelector('.print'); if(pr){ const inner=pr.outerHTML; window._paperNow={inner,f:'a5',no:v.no}; printPaper(printDocument(inner,'a5'),'a5',v.no,()=>paperFallback(inner,'a5')); }
+  const pr=vm&&vm.querySelector('.print'); if(pr){ const inner=pr.outerHTML; window._paperNow={inner,f:'a5',no:v.no}; printPaper(printDocument(inner,'a5'),'a5',v.no,()=>paperFallback(inner,'a5'));
+    if(v.mail){ const b=vm.querySelector('#vMail'); if(b) b.onclick=()=>mailPaperModal({...v.mail,inner}); if(v.mail.auto) mailPaperAuto({...v.mail,inner}); } }
 }
-function supplierVoucher(pv){
+
+/* ---- papers by email: a credit invoice or a voucher as a PDF, from the shop's own mailbox ----
+   The PDF is made here, from the very paper the till prints, so what the customer or supplier
+   opens is the shop's own invoice or voucher — drawn to a picture and laid on an A5 landscape page,
+   the same way the bill link's "Download (PDF)" does it. It then goes out through the mail server
+   set in Settings → Messages → Email, and is written on the Messages page like a text. */
+const isEmail=(s)=>/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(String(s||'').trim());
+const shopNice=()=>String(CFG.shop.name||'Regal Hardware').replace(/^REGAL HARDWARE$/,'Regal Hardware');
+let pdfLibsP=null;
+function pdfLibs(){
+  if(window.html2canvas&&window.jspdf) return Promise.resolve();
+  if(!pdfLibsP) pdfLibsP=Promise.all(['https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js','https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js']
+    .map(src=>new Promise((ok,no)=>{ const s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=()=>{ pdfLibsP=null; no(new Error('the PDF maker could not be loaded — is the internet on?')) }; document.head.appendChild(s) })));
+  return pdfLibsP;
+}
+async function paperPdf(inner){
+  await pdfLibs();
+  const fr=document.createElement('iframe');
+  fr.setAttribute('aria-hidden','true'); fr.style.cssText='position:fixed;left:-12000px;top:0;width:900px;height:1400px;border:0';
+  document.body.appendChild(fr);
+  try{
+    const d=fr.contentDocument; d.open(); d.write(printDocument(inner,'a5')); d.close();
+    await new Promise(r=>{ if(d.readyState==='complete') return r(); fr.addEventListener('load',r,{once:true}); setTimeout(r,2500) });
+    if(d.fonts&&d.fonts.ready) await d.fonts.ready;
+    await Promise.all([...d.images].map(i=>i.complete?0:new Promise(r=>{ i.onload=i.onerror=r; setTimeout(r,4000) })));
+    const el=d.querySelector('.print')||d.body;
+    // laid out at its own size and enlarged by the canvas — the drawing does not follow CSS zoom
+    const k=+el.dataset.scale||parseFloat(el.style.zoom)||1, w0=Math.round(760/k);
+    el.style.zoom='1'; el.style.width=w0+'px'; el.style.minHeight='0'; el.style.aspectRatio='auto';
+    const canvas=await html2canvas(el,{scale:3*k,backgroundColor:'#ffffff',useCORS:true,logging:false,windowWidth:w0+40});
+    const img=canvas.toDataURL('image/jpeg',0.9);
+    const doc=new window.jspdf.jsPDF({unit:'mm',format:'a5',orientation:'landscape'});
+    const W=210,H=148,m=6; let w=W-2*m, h=w*canvas.height/canvas.width;
+    if(h>H-2*m){ h=H-2*m; w=h*canvas.width/canvas.height }
+    doc.addImage(img,'JPEG',(W-w)/2,m,w,h);
+    return doc.output('datauristring').split(',')[1];
+  } finally { fr.remove() }
+}
+async function mailPaper(o){
+  if(!(CFG.mail&&CFG.mail.host)) throw new Error('Email is not set up — Settings → Messages → Email');
+  if(!(window.regalBridge&&regalBridge.online())) throw new Error('Email goes through the shop server, and this till is not connected to it');
+  if(!isEmail(o.to)) throw new Error(`“${o.to||''}” is not an email address`);
+  const data=await paperPdf(o.inner);
+  const r=await fetch('/api/files/mail/send',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},
+    body:JSON.stringify({to:o.to.trim(),subject:o.subject,text:o.text,attach:[{name:String(o.filename||'document').replace(/[^\w.-]+/g,'-')+'.pdf',mime:'application/pdf',data}]})});
+  const j=await r.json().catch(()=>({}));
+  S.messages.unshift({id:'e'+Math.random().toString(36).slice(2,8),to:o.to.trim(),body:`Email: ${o.subject} (PDF attached)`,at:D(today)+' '+new Date().toTimeString().slice(0,5),
+    status:r.ok?'Emailed':'Email failed — '+(j.error||r.status),via:'mail'});
+  if(!r.ok) throw new Error(j.error||('The mail server said '+r.status));
+  return true;
+}
+/* sent by itself after a sale or a payment: the counter carries on, and a failure lands on the bell */
+function mailPaperAuto(o){
+  mailPaper(o).then(()=>{ toast(`${o.what} emailed to ${o.to}`,'ok'); if(S.view==='messages') render() })
+    .catch(e=>notify('warn',`${o.what} was not emailed to ${o.to}: ${e.message}`,'messages'));
+}
+/* sent by hand: the address (asked for when there is none), the subject and the words can be changed first */
+function mailPaperModal(o){
+  const m=modal(`<h2>Email ${escM(o.what)}</h2>
+   <div class="f"><label>To</label><input id="epTo" type="email" value="${escM(o.to||'')}" placeholder="their email"></div>
+   ${o.party&&!o.to?`<label class="chk"><input type="checkbox" id="epKeep" checked> Keep this address on their account</label>`:''}
+   <div class="f"><label>Subject</label><input id="epSub" value="${escM(o.subject)}"></div>
+   <div class="f"><label>Message</label><textarea id="epTxt" rows="8" style="width:100%;border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;font:inherit">${escM(o.text)}</textarea></div>
+   <div class="muted">${escM(String(o.filename||'document'))}.pdf is attached — the same paper the till prints.</div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="epGo">Send</button></div>`);
+  const g=id=>m.querySelector('#'+id);
+  g(o.to?'epGo':'epTo').focus();
+  g('epGo').onclick=async()=>{
+    const to=g('epTo').value.trim(); if(!isEmail(to)){ g('epTo').focus(); return toast('Enter an email address') }
+    const b=g('epGo'); b.disabled=true; b.textContent='Making the PDF…';
+    try{
+      await mailPaper({...o,to,subject:g('epSub').value.trim()||o.subject,text:g('epTxt').value});
+      const keep=g('epKeep'); if(keep&&keep.checked&&o.party){ const p=o.party.kind==='C'?C(o.party.id):SU(o.party.id);
+        if(p&&!p.email){ if(o.party.kind==='C'&&needsApproval('custEdit')) toast('Ask the owner to put the email on their account'); else p.email=to } }
+      m.remove(); render(); toast(`${o.what} emailed to ${to}`,'ok');
+    }catch(e){ toast(e.message,'bad'); b.disabled=false; b.textContent='Send' }
+  };
+}
+function invoiceMail(inv){
+  const c=C(inv.customerId)||{}, credit=inv.balance>0.005;
+  return { to:isEmail(c.email)?c.email.trim():'', party:c.id&&c.id!==1?{kind:'C',id:c.id}:null, filename:inv.no,
+    what:(credit?'Credit invoice ':'Invoice ')+inv.no, subject:`${credit?'Credit invoice':'Invoice'} ${inv.no} — ${shopNice()}`,
+    text:letter('customer',`Please find attached ${credit?'your credit invoice':'your invoice'} ${inv.no} dated ${inv.date} for ${fmt(inv.total)}.`
+      +(credit&&c.id?` ${fmt(inv.balance)} of it is on your account, and your total outstanding is now ${fmt(partyBal('C',c.id))}.`:'')),
+    inner:billHtml(inv,'a5') };
+}
+function mailInvoice(inv){ mailPaperModal(invoiceMail(inv)) }
+const autoMailOn=(k)=>!!(CFG.mail&&CFG.mail.host&&CFG.mail[k]!==false);
+function supplierVoucher(pv,fresh){
   const s=SU(pv.supplierId);
+  const owe=partyBal('S',s.id), how=(pv.lines||[]).map(l=>l.method==='CHEQUE'?`cheque #${l.no}${l.date?' dated '+l.date:''}`:String(l.method||'').toLowerCase()).filter(Boolean).join(' and ');
   voucherPrint({title:'Payment Voucher',no:pv.voucher,date:pv.date,payee:s.name,payeeSub:`${s.contact} · ${s.phone} · account ${s.code}`,
+    mail:{to:isEmail(s.email)?s.email.trim():'',party:{kind:'S',id:s.id},filename:pv.voucher,what:'Payment voucher '+pv.voucher,
+      subject:`Payment voucher ${pv.voucher} — ${shopNice()}`,
+      text:letter('supplier',`Please find attached our payment voucher ${pv.voucher} dated ${pv.date} for ${fmt(pv.total)}${how?', paid by '+how:''}.`+(owe>0.005?` After this payment we owe you ${fmt(owe)}.`:' This settles our account with you.')),
+      auto:!!fresh&&isEmail(s.email)&&autoMailOn('autoVoucher')},
     amount:pv.total,totalLabel:'TOTAL PAID',
     rows:[['Payment reference',pv.no],['Supplier account',s.code],
       ['Settles',(pv.against&&pv.against.length)?pv.against.map(n=>{const p=S.purchases.find(x=>x.no===n);return p?p.supInv:n}).join(', '):'oldest unpaid bills first'],['Balance after this payment',fmt(partyBal('S',s.id))],
@@ -4842,9 +4939,17 @@ function expenseVoucher(e){
       ['Account',e.method==='CASH'?'Cash in hand':B(e.bank||1).name],['Entered by',e.by||S.user.name]],
     note:'Attach the bill or receipt to this voucher.'});
 }
-function receiptVoucher(rv){
+/* what goes with a receipt voucher when it is emailed to the customer */
+function receiptMail(c,no,date,amount,fresh){
+  const bal=partyBal('C',c.id);
+  return { to:isEmail(c.email)?c.email.trim():'', party:c.id!==1?{kind:'C',id:c.id}:null, filename:no, what:'Receipt voucher '+no,
+    subject:`Receipt ${no} — ${shopNice()}`,
+    text:letter('customer',`Thank you for your payment of ${fmt(amount)}. Please find attached receipt voucher ${no} dated ${date}.`+(bal>0.005?` Your balance after this payment is ${fmt(bal)}.`:' Your account is now settled.')),
+    auto:!!fresh&&c.id!==1&&isEmail(c.email)&&autoMailOn('autoVoucher') };
+}
+function receiptVoucher(rv,fresh){
   const c=C(rv.customerId);
-  voucherPrint({title:'Receipt Voucher',no:rv.voucher,date:rv.date,payee:c.name,payeeLabel:'RECEIVED FROM',
+  voucherPrint({title:'Receipt Voucher',no:rv.voucher,date:rv.date,payee:c.name,payeeLabel:'RECEIVED FROM',mail:receiptMail(c,rv.voucher,rv.date,rv.amount,fresh),
     payeeSub:`${c.phone||''}${c.code?' · account '+c.code:''}`,amount:rv.amount,totalLabel:'AMOUNT RECEIVED',
     rows:[['Receipt number',rv.no],['Method',rv.method],
       ['Against',(rv.against&&rv.against.length)?rv.against.join(', '):'oldest bills first'],
@@ -5275,7 +5380,11 @@ function settings(){
     <div class="muted" style="margin-bottom:8px">Quotations to institutions and companies go out from here (Quotations &amp; tenders → Send by email), with the letter or the signed copy attached. Any mailbox with SMTP works — Gmail: smtp.gmail.com, port 587, your address and an <i>app password</i> (Google account → Security → 2-step verification → App passwords).</div>
     <div class="grid3">${fld('mail.host','Mail server (SMTP host)','e.g. smtp.gmail.com')}${fld('mail.port','Port','587 (or 465)','number')}${fld('mail.user','Address / user name','the mailbox that sends')}</div>
     <div class="grid3">${fld('mail.pass','Password / app password','kept in settings only')}${fld('mail.from','Name shown as from','e.g. Regal Hardware — the mail always comes from the address above, which mail servers insist on')}${fld('mail.cc','Copy every quotation to','optional — e.g. the owner')}</div>
-    <div class="f"><label>Send a test email</label><div style="display:flex;gap:6px;max-width:460px"><input id="mailTestTo" value="${CFG.mail.user||''}" placeholder="to…"><button class="btn tape" data-act="mailTest">Send</button></div><div class="muted" id="mailTestOut"></div></div>`;
+    <div class="f"><label>Send a test email</label><div style="display:flex;gap:6px;max-width:460px"><input id="mailTestTo" value="${CFG.mail.user||''}" placeholder="to…"><button class="btn tape" data-act="mailTest">Send</button></div><div class="muted" id="mailTestOut"></div></div>
+    <div class="grid2" style="margin-top:6px">
+     ${fld('mail.autoInvoice','','Email each credit invoice as a PDF to a customer who has an email on their account','check')}
+     ${fld('mail.autoVoucher','','Email receipt vouchers to customers, and payment vouchers to suppliers, as PDFs when a payment is recorded','check')}</div>
+    <div class="muted">Any bill or voucher can also be emailed by hand — the <b>Email PDF</b> button on the bill and on the voucher.</div>`;
 
   if(setTab==='privacy'&&S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')){ const p=CFG.privacy||{};
     body=`<div class="card note" style="margin-bottom:12px"><b>What it does</b><div class="muted">One key, and every screen shows a quieter shop — a share of the bills you choose, no credit customers, the day's takings and the reports following suit. The real books are not touched: they are held aside and come straight back when the key is pressed again, or after the time below. While the screen is up nothing can be billed or saved (staff see “till is busy”) and nothing comes in from the server, so the two can never mix. Only you see this page.</div></div>
@@ -7182,7 +7291,7 @@ function prIssue(r){
       r.pay={ date:D(today), what:`${how.toLowerCase()}${how!=='CASH'?' · '+B(line.bank).name:''} · ${fmt(amt)}`,
               voucher:pv.voucher, by:S.user.name, no:pv.no };
       prStep(r,'issued',`${how.toLowerCase()} ${fmt(amt)}`);
-      m.remove(); render(); supplierVoucher(pv);
+      m.remove(); render(); supplierVoucher(pv,true);
       toast(`${fmt(amt)} handed to ${sp.name} · voucher ${pv.voucher}`);
     }catch(e){ g('piMsg').textContent=e.message }
   };
@@ -17581,6 +17690,7 @@ function billDetail(inv){
     <button class="btn ghost" data-act="showInv" data-no="${inv.no}" data-f="r80">80mm receipt</button>
     <button class="btn ghost" data-act="billSms" data-no="${inv.no}" title="${c.phone||inv.phone?'Text the link to '+(inv.phone||c.phone):'The number is asked for — this bill has none on it'}">Text e-bill</button>
     <button class="btn ghost wa" data-act="billWa" data-no="${inv.no}" title="${c.phone||inv.phone?'WhatsApp the link to '+(inv.phone||c.phone):'The number is asked for — this bill has none on it'}">${WA_ICON} WhatsApp</button>
+    <button class="btn ghost" data-act="billMail" data-no="${inv.no}" title="${isEmail(c.email)?'Email the A5 invoice as a PDF to '+c.email:'Email the A5 invoice as a PDF — their email is asked for'}">Email PDF</button>
     ${inv.balance>0?`<button class="btn tape" data-act="custPay" data-id="${inv.customerId}">Take payment</button>`:''}
     <button class="btn ghost" data-act="billCopy" data-no="${inv.no}">Bill again</button>
     ${canEdit?`<button class="btn ghost" data-act="billEdit" data-no="${inv.no}">Edit in the till</button><button class="btn ghost" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}
@@ -18488,7 +18598,9 @@ function custModal(id,preset){
    <div class="grid2" style="margin-top:8px">
     <div class="f"><label>Name or shop</label><input id="cmName" value="${c?c.name.replace(/"/g,'&quot;'):(qIsPhone?'':q.replace(/"/g,'&quot;'))}" placeholder="e.g. Nimal Constructions"></div>
     <div class="f"><label>Mobile</label><input id="cmPhone" value="${c?(c.phone||''):(qIsPhone?q:'')}" placeholder="07XXXXXXXX" inputmode="tel"></div></div>
-   <div class="f"><label>Address</label><input id="cmAddr" value="${c?(c.address||'').replace(/"/g,'&quot;'):''}" placeholder="Town, road, landmark"></div>
+   <div class="grid2">
+    <div class="f"><label>Address</label><input id="cmAddr" value="${c?(c.address||'').replace(/"/g,'&quot;'):''}" placeholder="Town, road, landmark"></div>
+    <div class="f"><label>Email <span class="muted">(credit invoices and receipts go here as PDFs)</span></label><input id="cmEmail" type="email" value="${c?(c.email||'').replace(/"/g,'&quot;'):''}" placeholder="name@company.lk"></div></div>
    <div class="grid2">
     <div class="f"><label>Prices</label><select id="cmLevel"><option value="retail" ${!c||c.level==='retail'?'selected':''}>Retail</option><option value="wholesale" ${c&&c.level==='wholesale'?'selected':''}>Wholesale</option></select></div>
     <div class="f"><label>Credit limit (Rs)</label><input id="cmLimit" type="number" step="1000" value="${c?c.limit:25000}"></div></div>
@@ -18497,17 +18609,18 @@ function custModal(id,preset){
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="cmOk">${c?'Save':'Add customer'}</button></div>`);
   const g=id2=>m.querySelector('#'+id2);
   const save=()=>{
-    const name=g('cmName').value.trim(), phone=g('cmPhone').value.trim(), addr=g('cmAddr').value.trim(), level=g('cmLevel').value, limit=+g('cmLimit').value||0, notes=g('cmNotes').value.trim();
+    const name=g('cmName').value.trim(), phone=g('cmPhone').value.trim(), addr=g('cmAddr').value.trim(), email=g('cmEmail').value.trim(), level=g('cmLevel').value, limit=+g('cmLimit').value||0, notes=g('cmNotes').value.trim();
     if(!name){ g('cmMsg').textContent='A name is needed.'; g('cmName').focus(); return }
+    if(email&&!isEmail(email)){ g('cmMsg').textContent='Enter an email like name@company.lk, or leave it empty.'; g('cmEmail').focus(); return }
     if(phone&&!/^0\d{6,9}$/.test(phone)){ g('cmMsg').textContent='Enter a mobile like 0771234567, or leave it empty.'; g('cmPhone').focus(); return }
     const dup=phone&&S.customers.find(x=>x.phone===phone&&x.id!==(c?c.id:-1));
     if(dup){ g('cmMsg').textContent=`${dup.name} already has that number.`; return }
     if(c){
       /* who they are is not changed quietly: a name, a mobile, an address or a counter note that
          someone alters waits for the owner, with the old and the new wording side by side. */
-      const was={name:c.name,phone:c.phone||'',address:c.address||'',notes:c.notes||''};
-      const now={name,phone,address:addr,notes};
-      const LABEL={name:'Name',phone:'Mobile',address:'Address',notes:'Note'};
+      const was={name:c.name,phone:c.phone||'',address:c.address||'',email:c.email||'',notes:c.notes||''};
+      const now={name,phone,address:addr,email,notes};
+      const LABEL={name:'Name',phone:'Mobile',address:'Address',email:'Email',notes:'Note'};
       const changed=Object.keys(now).filter(k=>(was[k]||'')!==(now[k]||''));
       const termsChanged=limit!==c.limit||level!==c.level;
       const asks=[];
@@ -18524,12 +18637,12 @@ function custModal(id,preset){
       m.remove(); render();
       if(asks.length) return;                                  // requestApproval has already said so
       toast(changed.length||termsChanged?'Saved':'Nothing changed'); return }
-    const nc={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),name,phone,address:addr,level,limit,notes,portal:false,lastLogin:null,points:0};
+    const nc={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),name,phone,address:addr,email,level,limit,notes,portal:false,lastLogin:null,points:0};
     S.customers.push(nc); custSel=nc.id; custQ=''; custFilter='all'; custTab='overview'; m.remove(); render(); toast(`${name} added`);
   };
   g('cmOk').onclick=save;
   // Enter goes to the next box; on the last one it saves
-  const order=['cmName','cmPhone','cmAddr','cmLevel','cmLimit','cmNotes'];
+  const order=['cmName','cmPhone','cmAddr','cmEmail','cmLevel','cmLimit','cmNotes'];
   order.forEach((id2,i)=>{ g(id2).addEventListener('keydown',e=>{ if(e.key!=='Enter'||(id2==='cmNotes'&&e.shiftKey)) return; e.preventDefault(); e.stopPropagation();
     const nx=order[i+1]; if(!nx) return save(); const el=g(nx); el.focus(); if(el.select) el.select() }) });
   g(c?'cmName':(qIsPhone?'cmName':'cmPhone')).focus();
@@ -18702,7 +18815,7 @@ function custPayModal(id){
     const msgsBefore=S.messages.length;
     const rvs=parts.map(p=>receiveCustomer({customerId:id,amount:p.amount,method:p.method,bank:p.bank,ref:p.ref,chq:p.chq,against:[...sel]}));
     if(!g('#rsms').checked) S.messages.splice(0,S.messages.length-msgsBefore);
-    m.remove(); render(); receiptVoucherCombined(rvs);
+    m.remove(); render(); receiptVoucherCombined(rvs,true);
   };
   const bind=()=>{
     const iq=g('#iq'); iq.oninput=ev=>{q=ev.target.value;draw(()=>{const n=g('#iq');n.focus();n.setSelectionRange(n.value.length,n.value.length)})};
@@ -18731,10 +18844,10 @@ function custPayModal(id){
   draw();
 }
 /* one voucher for a payment that came in parts */
-function receiptVoucherCombined(rvs){
-  if(rvs.length===1) return receiptVoucher(rvs[0]);
+function receiptVoucherCombined(rvs,fresh){
+  if(rvs.length===1) return receiptVoucher(rvs[0],fresh);
   const first=rvs[0], c=C(first.customerId), total=rvs.reduce((a,r)=>a+r.amount,0);
-  voucherPrint({title:'Receipt Voucher',no:first.voucher,date:first.date,payee:c.name,payeeLabel:'RECEIVED FROM',
+  voucherPrint({title:'Receipt Voucher',no:first.voucher,date:first.date,payee:c.name,payeeLabel:'RECEIVED FROM',mail:receiptMail(c,first.voucher,first.date,total,fresh),
     payeeSub:`${c.phone||''}${c.code?' · account '+c.code:''}`,amount:total,totalLabel:'AMOUNT RECEIVED',
     rows:[['Receipt numbers',rvs.map(r=>r.no).join(', ')],['Against',(first.against&&first.against.length)?first.against.join(', '):'oldest bills first'],
       ['Balance after this payment',fmt(partyBal('C',c.id))],['Received by',first.by||S.user.name]],
@@ -20646,7 +20759,7 @@ function chequePlanModal(sid,amount,from,pur){
     try{
       const pv=paySupplier({supplierId:sid,lines:split.map(x=>({method:'CHEQUE',bank:+bank,date:x.date,amount:x.amount})),
         against:pur?[pur]:[]});
-      m.remove(); render(); supplierVoucher(pv);
+      m.remove(); render(); supplierVoucher(pv,true);
       toast(`${pv.no} saved · ${split.length} cheque${split.length===1?'':'s'} ready to print`);
     }catch(e){ toast(e.message) }
   };
@@ -20878,25 +20991,28 @@ function supModal(id,preset){
    <div class="grid2">
     <div class="f"><label>Phone</label><input id="smPhone" value="${s?(s.phone||''):(qIsPhone?q:'')}" placeholder="07XXXXXXXX" inputmode="tel"></div>
     <div class="f"><label>Payment terms (days)</label><input id="smDays" type="number" value="${s?(s.days||30):30}"></div></div>
-   <div class="f"><label>Address</label><input id="smAddr" value="${s?(s.address||'').replace(/"/g,'&quot;'):''}" placeholder="Town, road"></div>
+   <div class="grid2">
+    <div class="f"><label>Address</label><input id="smAddr" value="${s?(s.address||'').replace(/"/g,'&quot;'):''}" placeholder="Town, road"></div>
+    <div class="f"><label>Email <span class="muted">(payment vouchers go here as PDFs)</span></label><input id="smEmail" type="email" value="${s?(s.email||'').replace(/"/g,'&quot;'):''}" placeholder="accounts@supplier.lk"></div></div>
    <div class="f"><label>Notes for the desk</label><textarea id="smNotes" rows="2" placeholder="e.g. lorry comes Tuesdays · ask for Sunil">${s?(s.notes||''):''}</textarea></div>
    <div class="muted" id="smMsg"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="smOk">${s?'Save':'Add supplier'}</button></div>`);
   const g=id2=>m.querySelector('#'+id2);
   const save=()=>{
-    const name=g('smName').value.trim(), contact=g('smContact').value.trim(), phone=g('smPhone').value.trim(), days=Math.max(0,+g('smDays').value||0), addr=g('smAddr').value.trim(), notes=g('smNotes').value.trim();
+    const name=g('smName').value.trim(), contact=g('smContact').value.trim(), phone=g('smPhone').value.trim(), days=Math.max(0,+g('smDays').value||0), addr=g('smAddr').value.trim(), email=g('smEmail').value.trim(), notes=g('smNotes').value.trim();
     if(!name){ g('smMsg').textContent='A name is needed.'; g('smName').focus(); return }
+    if(email&&!isEmail(email)){ g('smMsg').textContent='Enter an email like accounts@supplier.lk, or leave it empty.'; g('smEmail').focus(); return }
     if(phone&&!/^0\d{6,9}$/.test(phone)){ g('smMsg').textContent='Enter a phone like 0771234567, or leave it empty.'; g('smPhone').focus(); return }
     const dup=S.suppliers.find(x=>x.name.toLowerCase()===name.toLowerCase()&&x.id!==(s?s.id:-1));
     if(dup){ g('smMsg').textContent=`${dup.name} is already on the list.`; return }
-    if(s){ const oldName=s.name; Object.assign(s,{name,contact,phone,days,address:addr,notes});
+    if(s){ const oldName=s.name; Object.assign(s,{name,contact,phone,days,address:addr,email,notes});
       if(oldName!==name) S.cheques.forEach(c=>{ if(c.dir==='ISSUED'&&c.party===oldName) c.party=name });   // cheques are filed by name
       m.remove(); render(); toast('Saved'); return }
-    const ns={id:Math.max(0,...S.suppliers.map(x=>x.id))+1,code:'S'+String(S.suppliers.length+1).padStart(4,'0'),name,contact,phone,days,address:addr,notes,pin:'',showAccounts:false,enabled:false,lastLogin:null};
+    const ns={id:Math.max(0,...S.suppliers.map(x=>x.id))+1,code:'S'+String(S.suppliers.length+1).padStart(4,'0'),name,contact,phone,days,address:addr,email,notes,pin:'',showAccounts:false,enabled:false,lastLogin:null};
     S.suppliers.push(ns); supSel=ns.id; supQ=''; supFilter='all'; supTab='overview'; m.remove(); render(); toast(`${name} added`);
   };
   g('smOk').onclick=save;
-  const order=['smName','smContact','smPhone','smDays','smAddr','smNotes'];
+  const order=['smName','smContact','smPhone','smDays','smAddr','smEmail','smNotes'];
   order.forEach((id2,i)=>{ g(id2).addEventListener('keydown',e=>{ if(e.key!=='Enter'||(id2==='smNotes'&&e.shiftKey)) return; e.preventDefault(); e.stopPropagation();
     const nx=order[i+1]; if(!nx) return save(); const el=g(nx); el.focus(); if(el.select) el.select() }) });
   g('smName').focus();
@@ -21080,7 +21196,7 @@ function supPayModal(id){
       if(sum>t+0.005) return toast(`That is ${fmt(sum-t)} more than the bills come to`);
       const pv=paySupplier({supplierId:id,lines:ls,against:[...sel]});
       const chq=ls.filter(l=>l.method==='CHEQUE').length;
-      m.remove(); render(); supplierVoucher(pv);
+      m.remove(); render(); supplierVoucher(pv,true);
       toast(`${pv.no} saved · ${chq} cheque${chq===1?'':'s'} ready to print`);
     };
   };
@@ -21831,7 +21947,7 @@ function endorseModal(no){
       lines:[{method:'CHEQUE',no:ch.no,amount:ch.amount,date:ch.date,endorsed:ch.party}],notes:`Customer cheque from ${ch.party} passed on`};
     S.payments.push(pv);
     if(CFG.msg.autoOrder&&s.phone) supSms(s.phone,`Regal Hardware: cheque ${ch.no} for ${fmt(ch.amount)} dated ${ch.date} has been handed over against your account.`);
-    m.remove(); render(); supplierVoucher(pv); toast(`${ch.no} passed to ${s.name.split(' ')[0]}`);
+    m.remove(); render(); supplierVoucher(pv,true); toast(`${ch.no} passed to ${s.name.split(' ')[0]}`);
   };
 }
 /* ---- cheques coming in ---- */
@@ -24211,6 +24327,7 @@ document.addEventListener('click',e=>{
       custPayModal(n.cid); const box=document.querySelector('.modal #ra'); if(box)box.value=n.amount; render(); drawPhone()},
     noticeDrop:()=>{const n=S.notices.find(x=>x.id===a.dataset.id); n.status='closed'; render(); drawPhone(); toast('Marked handled')},
     supStmt:()=>supplierStatement(+a.dataset.id),
+    billMail:()=>{ const inv=S.sales.find(x=>x.no===a.dataset.no); if(inv) mailInvoice(inv); else toast('No such bill') },
     supVoucher:()=>{const pv=S.payments.find(x=>x.no===a.dataset.no); supplierVoucher(pv)},
     recGo:()=>{recSel=+a.dataset.id; go('receipts')},
     recPick:()=>{recSel=+a.dataset.id;render()},

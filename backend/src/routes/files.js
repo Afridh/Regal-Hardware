@@ -76,19 +76,28 @@ function fromOf(cfg, shop) {
 function transport(cfg) {
   return nodemailer.createTransport({ host: cfg.host, port: +cfg.port || 587, secure: (+cfg.port || 587) === 465 || cfg.secure === true, auth: { user: cfg.user, pass: cfg.pass }, connectionTimeout: 20000 });
 }
-/** { to, cc?, subject, text, html?, fileIds? } — attachments are files uploaded above. */
+/** { to, cc?, subject, text, html?, fileIds?, attach? } — attachments are files uploaded above, and/or
+    papers the till has just made itself (a bill or a voucher as a PDF): attach = [{ name, mime, data }]
+    with data in base64. Only PDFs and pictures, up to 8 MB between them. */
+const ATTACH_OK = /^(application\/pdf|image\/(png|jpeg|webp))$/;
 r.post('/mail/send', regalAuth, asyncHandler(async (req, res) => {
-  const { to, cc, subject, text, html, fileIds } = req.body || {};
+  const { to, cc, subject, text, html, fileIds, attach } = req.body || {};
   if (!to || !subject) throw new HttpError(400, 'to and subject required');
+  if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(String(to).trim())) throw new HttpError(400, `“${to}” is not an email address`);
   const { cfg, shop } = await mailCfg();
   await ensure();
   const ids = (Array.isArray(fileIds) ? fileIds : []).map(Number).filter(Boolean).slice(0, 10);
   const { rows } = ids.length ? await query(`SELECT id, name, mime, data FROM files WHERE id = ANY($1::bigint[])`, [ids]) : { rows: [] };
+  const made = (Array.isArray(attach) ? attach : []).slice(0, 5).map(a => {
+    if (!a || !ATTACH_OK.test(String(a.mime || ''))) throw new HttpError(400, 'Only PDFs and pictures can be attached');
+    return { filename: String(a.name || 'document.pdf').replace(/[^\w .()-]+/g, '-').slice(0, 120), content: Buffer.from(String(a.data || ''), 'base64'), contentType: a.mime };
+  });
+  if (made.reduce((n, a) => n + a.content.length, 0) > 8 * 1024 * 1024) throw new HttpError(413, 'The attachments come to more than 8 MB');
   const info = await transport(cfg).sendMail({
-    from: fromOf(cfg, shop), to, cc: cc || undefined, subject,
+    from: fromOf(cfg, shop), to: String(to).trim(), cc: cc || undefined, subject,
     text: text || '', html: html || undefined,
-    attachments: rows.map(f => ({ filename: f.name, content: f.data, contentType: f.mime })) });
-  res.json({ ok: true, status: 'Sent', id: info.messageId, attachments: rows.length });
+    attachments: [...rows.map(f => ({ filename: f.name, content: f.data, contentType: f.mime })), ...made] });
+  res.json({ ok: true, status: 'Sent', id: info.messageId, attachments: rows.length + made.length });
 }));
 r.post('/mail/test', regalAuth, asyncHandler(async (req, res) => {
   const { cfg, shop } = await mailCfg();
