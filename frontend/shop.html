@@ -1069,15 +1069,14 @@ body[data-tpl="ella"] .e-card .info .cat{display:none}
 </style>
 
 <script>
-/* The welcome: once a visit, and never for a device that has asked for less motion or a shop that
-   switched it off (Look & layout → Motion; remembered here from the last visit). Decided before the
-   page is drawn, so it never flashes up and away. */
+/* The welcome: every time the site is opened or refreshed — never for a device that has asked for
+   less motion, or a shop that switched it off (Look & layout → Motion; remembered here from the
+   last visit). Decided before the page is drawn, so it never flashes up and away. */
 (function () {
   try {
-    var off = localStorage.getItem('rh_intro') === 'off', seen = sessionStorage.getItem('rh_intro_seen'),
+    var off = localStorage.getItem('rh_intro') === 'off',
         calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (off || seen || calm) { document.documentElement.classList.add('no-intro'); return; }
-    sessionStorage.setItem('rh_intro_seen', '1');
+    if (off || calm) { document.documentElement.classList.add('no-intro'); return; }
     document.documentElement.classList.add('intro-on');
   } catch (e) { document.documentElement.classList.add('no-intro'); }
 })();
@@ -3122,14 +3121,24 @@ function signIn(then) {
   if (g) g.onclick = () => notify('warning', 'Sign in with your mobile number — orders are confirmed on it.');
 }
 
+/* What the page needs to draw itself in the shop's own look before the catalogue has arrived: the
+   template and colours, the shop's details and its departments. Kept from the last visit (a few KB),
+   so a refresh does not show the plain look, or the sample goods, for the second the catalogue takes. */
+const LOOK_KEY = 'look_v1';
+function lookFromLastVisit() {
+  const c = ls.get(LOOK_KEY, null);
+  if (!c || !c.settings) return null;
+  return { shop: c.shop || {}, settings: c.settings, categories: c.categories || [], products: [], slides: c.slides || [], banners: c.banners || [], _early: true };
+}
+function keepLook(cat) {
+  try { ls.set(LOOK_KEY, { shop: cat.shop, settings: cat.settings, categories: (cat.categories || []).slice(0, 40), slides: cat.slides || [], banners: cat.banners || [] }); } catch (e) {}
+}
 async function loadCatalog() {
   try {
-    st.cat = await api('/catalog');
+    // once — it is the whole shop (thousands of items), and asking twice made every visit wait twice
     const live = await api('/catalog');
-    if (live && live.products && live.products.length > 0) {
-      st.cat = live;
-      render();
-    }
+    if (live && live.products && live.products.length > 0) { st.cat = live; keepLook(live); }
+    else st.cat = live || st.cat;
   } catch (e) {
     st.cat = {
       shop: { name: 'Regal Hardware' },
@@ -3165,8 +3174,14 @@ async function loadCatalog() {
 
 (async () => {
   st.route = parseRoute();
-  render();
+  /* Before the catalogue is here: the home page is drawn at once in the shop's own look from the last
+     visit (the welcome covers it the first time). Any other page — a product, the cart — waits the
+     second for the real goods, rather than showing "not found" or the sample items. */
+  const early = lookFromLastVisit();
+  if (early && !(st.route.parts[0] || '')) { st.cat = early; render(); }
+  else { if (early) { const keep = st.cat; st.cat = early; try { applyTheme(TH()); } catch (e) {} st.cat = keep; } loading(true); }
   await loadCatalog();
+  loading(false);
   render();
 })();
 </script>
