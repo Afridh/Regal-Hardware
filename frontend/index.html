@@ -3718,6 +3718,33 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .ph-top button.on{border-color:#b4791a;background:#fdf6e7}
 #main .ph-find input{width:100%;min-height:54px;font-size:17px;padding:10px 12px;border-radius:12px}
 .ph-findrow{display:flex;gap:8px}#main .ph-findrow input{flex:1;min-width:0}
+/* supplier price lists */
+.pl-drop{position:relative;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:16px 18px;margin-bottom:14px;border:2px dashed var(--line);border-radius:14px;background:var(--card,#fff);transition:border-color .15s,background .15s}
+.pl-drop.over{border-color:var(--tape,#AE1E2B);background:color-mix(in srgb,var(--tape,#AE1E2B) 6%,transparent)}
+.pl-drop>div{flex:1 1 220px;min-width:0}.pl-drop .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;color:var(--tape,#AE1E2B);background:color-mix(in srgb,var(--tape,#AE1E2B) 10%,transparent)}
+.pl-drop .ic svg{width:22px;height:22px}
+.pl-busy{flex-basis:100%;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.pl-busy i{width:14px;height:14px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--tape,#AE1E2B);animation:pl-spin .8s linear infinite}
+@keyframes pl-spin{to{transform:rotate(360deg)}}
+.pl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.pl-grid.mini{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.pl-card{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card,#fff);animation:act-in .35s ease both}
+.pl-card.new{border-color:#1f6fb2;box-shadow:0 0 0 2px rgba(31,111,178,.15)}
+.pl-thumb{position:relative;display:grid;place-items:center;height:150px;padding:0;border:0;border-bottom:1px solid var(--line);background:#f4f1f0;cursor:zoom-in;overflow:hidden}
+.pl-grid.mini .pl-thumb{height:110px}
+.pl-thumb img{width:100%;height:100%;object-fit:cover;object-position:top;transition:transform .3s}
+.pl-thumb:hover img{transform:scale(1.04)}
+.pl-thumb.pdf{color:#c0392b;background:linear-gradient(160deg,#fff,#f6eeee)}.pl-thumb.pdf svg{width:58px;height:58px}
+.pl-new{position:absolute;left:8px;top:8px;font-style:normal;font-size:11px;font-weight:800;color:#fff;background:#1f6fb2;padding:2px 8px;border-radius:999px}
+.pl-info{display:grid;gap:3px;padding:10px 12px;font-size:13px;min-width:0}
+.pl-info b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-note{color:var(--ink);background:var(--tint-yellow,#fff7df);border-radius:6px;padding:3px 7px;font-size:12.5px}
+.pl-acts{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+.modal.pl-modal .box{width:min(1100px,96vw);max-width:none;padding:12px}
+.pl-view{display:grid;gap:10px}.pl-vhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.pl-vhead b{margin-right:4px}.pl-vhead .muted{margin-right:auto}
+.pl-view iframe{width:100%;height:78vh;border:1px solid var(--line);border-radius:10px;background:#fff}
+.pl-vimg{max-height:78vh;overflow:auto;border:1px solid var(--line);border-radius:10px;background:#f4f1f0;text-align:center}
+.pl-vimg img{max-width:100%;cursor:zoom-in}.pl-vimg img.zoom{max-width:none;cursor:zoom-out}
 .ph-cam{flex:none;display:grid;place-items:center;align-content:center;gap:1px;width:64px;border:0;border-radius:12px;background:var(--tape,#AE1E2B);color:#fff;font:inherit;font-size:11px;font-weight:700;cursor:pointer}
 .ph-cam svg{width:24px;height:24px}
 .ph-empty.ph-start{opacity:1}.ph-start>span{opacity:.6}
@@ -4639,7 +4666,7 @@ function receiveInvoiceOnly({supplierId,supInv,total,date=D(today),due=null,note
 function purUpload(file,onDone){
   const send=(dataUrl)=>fetch('/api/files',{method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+(window.regalBridge?regalBridge.token():'')},
-      body:JSON.stringify({name:file.name,mime:file.type,data:dataUrl})})
+      body:JSON.stringify({kind:'purchase',ref:'invoice',name:file.name,dataUrl})})
     .then(async r=>{ const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'could not be attached');
       onDone({id:j.id,url:j.url,name:j.name||file.name,mime:j.mime||file.type}) })
     .catch(e=>toast('Not attached: '+e.message,'bad'));
@@ -9581,6 +9608,11 @@ function actionItems(){
   if(typeof dnOpen==='function') for(const p of dnOpen()){ const s=SU(p.sid)||{name:'Supplier'};
     push({cat:'work',view:'purchases',pri:4,key:'dn'+p.no,who:s.name,when:p.date,amount:typeof dnValue==='function'?dnValue(p):null,title:`${s.name}'s goods came on a delivery note`,sub:`${p.no} — match it to their invoice when it comes`,tag:'No invoice yet',
       acts:[actBtn('purMatch','Match the invoice',`data-no="${esA(p.no)}"`,'tape'),actOpen('purchases','Purchases')]}); }
+  /* price lists a supplier sent from their page, not yet looked at */
+  for(const s of S.suppliers||[]) for(const p of plOf(s).filter(x=>x.unread)){
+    const sid=`data-sid="${s.id}" data-id="${esA(p.id)}"`;
+    push({cat:'supord',view:'suppliers',pri:4,key:'pl'+p.id,who:s.name,when:p.date,title:`${s.name} sent a new price list`,sub:`${p.name}${p.note?` · “${p.note}”`:''}`,tag:'Price list',
+      acts:[actBtn('plView','Open it',sid,'tape'),actBtn('plSeen','Seen',sid)]}); }
   /* texts that did not go */
   const unsent=(S.messages||[]).filter(m=>m.via!=='wa'&&m.via!=='mail'&&/fail|held|not sent/i.test(m.status||''));
   if(unsent.length) push({cat:'msg',view:'messages',pri:3,key:'sms',title:`${unsent.length} text${unsent.length===1?'':'s'} did not go`,sub:unsent.slice(0,3).map(m=>`${m.to}: ${String(m.body||'').replace(/\s+/g,' ').slice(0,50)}`).join(' · '),tag:CFG.msg&&CFG.msg.live?'Not sent':'Sending is off',
@@ -11290,6 +11322,7 @@ function renderNow(){
   document.querySelectorAll('[data-supfilter]').forEach(b=>b.onclick=()=>{supFilter=b.dataset.supfilter;render()});
   document.querySelectorAll('[data-supsort]').forEach(b=>b.onclick=()=>{supSort=b.dataset.supsort;render()});
   document.querySelectorAll('[data-suptab]').forEach(b=>b.onclick=()=>{supTab=b.dataset.suptab;render()});
+  supPlAfter();
   document.querySelectorAll('[data-supbills]').forEach(b=>b.onclick=()=>{supBillsF=b.dataset.supbills;render()});
   document.querySelectorAll('[data-suprange]').forEach(b=>b.onclick=()=>{supStmtRange=b.dataset.suprange;render()});
   const sq=$('#supQ'); if(sq){
@@ -21659,6 +21692,93 @@ function suppliers(){
    <div class="card flex1 cu-panel" style="min-width:0">${s?supplierPanel(s):'<div class="muted">No suppliers yet — add the first one.</div>'}</div>
   </div>`;
 }
+/* ---- price lists: a supplier's own sheets, photos or PDFs, kept on the server with the other files.
+   The shop puts them up here; the supplier can send theirs from their own page, and those arrive the
+   same way their orders do, marked as from them. The books hold only the links. */
+const plFresh=new Set();
+const plOf=(s)=>((s&&s.priceLists)||[]).filter(p=>!p.removed);
+const plIsPdf=(p)=>/pdf/i.test(p.mime||'')||/\.pdf$/i.test(p.name||'');
+const plSize=(b)=>!b?'':b>1e6?(b/1e6).toFixed(1)+' MB':Math.max(1,Math.round(b/1e3))+' KB';
+const PL_PDF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/><text x="12" y="17" font-size="5.2" font-weight="800" text-anchor="middle" fill="currentColor" stroke="none" font-family="Arial">PDF</text></svg>';
+function plCard(s,p,small,isNew){
+  isNew=isNew||p.unread;
+  return `<div class="pl-card ${isNew?'new':''}">
+    <button type="button" class="pl-thumb ${plIsPdf(p)?'pdf':''}" data-act="plView" data-sid="${s.id}" data-id="${p.id}" title="Open ${escM(p.name)}">
+      ${plIsPdf(p)?PL_PDF:`<img src="${escM(p.url)}" alt="" loading="lazy">`}${isNew?'<i class="pl-new">New</i>':''}</button>
+    <div class="pl-info"><b title="${escM(p.name)}">${escM(p.name)}</b>
+      <span class="muted">${escM(p.date||'')}${p.bytes?' · '+plSize(p.bytes):''}</span>
+      <span>${p.src==='supplier'?`<span class="tag blue">from ${escM(p.by||'the supplier')}</span>`:`<span class="muted">put up by ${escM(p.by||'the shop')}</span>`}</span>
+      ${p.note?`<span class="pl-note">${escM(p.note)}</span>`:''}
+      ${small?'':`<span class="pl-acts"><button class="btn ghost sm" data-act="plView" data-sid="${s.id}" data-id="${p.id}">Open</button>
+        <a class="btn ghost sm" href="${escM(p.url)}&dl=1" download="${escM(p.name)}">Download</a>
+        <button class="btn ghost sm" data-act="plEdit" data-sid="${s.id}" data-id="${p.id}">Rename</button>
+        <button class="btn ghost sm" data-act="plDrop" data-sid="${s.id}" data-id="${p.id}">Remove</button></span>`}</div></div>`;
+}
+function supPriceLists(s){
+  const L=plOf(s), online=!!(window.regalBridge&&regalBridge.online());
+  // seen now — off the Action centre — but still marked New on this page until the till is reloaded
+  L.filter(p=>p.unread).forEach(p=>{ plFresh.add(p.id); delete p.unread });
+  return `<div class="pl-drop" id="plDrop" data-sid="${s.id}">
+     <input type="file" id="plFile" accept="image/*,application/pdf,.pdf" multiple hidden>
+     <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg></span>
+     <div><b>Add price lists</b><div class="muted">Photos or PDFs — choose several at once, or drop them here. Up to 8 MB each.${online?'':' <b style="color:var(--chip-rust)">Needs the shop server — this till is not connected.</b>'}</div></div>
+     <button class="btn tape" data-act="plPick">Choose files</button>
+     ${S.plBusy?`<div class="pl-busy"><i></i>Uploading ${S.plBusy} file${S.plBusy===1?'':'s'}…</div>`:''}</div>
+   ${s.enabled?`<div class="muted" style="margin:-4px 0 12px;font-size:12.5px">${escM(s.name)} can also send theirs from their own page — they appear here marked <span class="tag blue">from them</span>.</div>`:''}
+   ${L.length?`<div class="pl-grid">${L.map(p=>plCard(s,p,false,plFresh.has(p.id))).join('')}</div>`
+     :'<div class="muted" style="padding:18px 4px">No price lists yet.</div>'}`;
+}
+/* in Details: the latest few, each opens in place */
+function supPriceListsMini(s){
+  const L=plOf(s);
+  return `<h2 style="font-size:15px;margin-top:16px;display:flex;align-items:center;gap:8px">Price lists ${L.length?`<i class="nbadge" style="position:static">${L.length}</i>`:''}
+     <button class="btn ghost sm" style="margin-left:auto" data-act="plTab">${L.length?'All price lists':'Add one'}</button></h2>
+   ${L.length?`<div class="pl-grid mini">${L.slice(0,4).map(p=>plCard(s,p,true)).join('')}</div>`:'<div class="muted">None yet.</div>'}`;
+}
+function plUpload(s,files){
+  files=[...files||[]];
+  if(!files.length) return;
+  if(!(window.regalBridge&&regalBridge.online())) return toast('Price lists are kept on the shop server — this till is not connected to it','bad');
+  const bad=files.filter(f=>!/^image\//.test(f.type)&&!/pdf/.test(f.type)&&!/\.pdf$/i.test(f.name));
+  if(bad.length) toast(`${bad.map(f=>f.name).join(', ')} — only photos and PDFs`,'bad');
+  files=files.filter(f=>!bad.includes(f));
+  const big=files.filter(f=>!/^image\//.test(f.type)&&f.size>8e6);
+  if(big.length) toast(`${big.map(f=>f.name).join(', ')} is over 8 MB`,'bad');
+  files=files.filter(f=>!big.includes(f));
+  if(!files.length) return;
+  S.plBusy=(S.plBusy||0)+files.length; render();
+  const read=(f)=>new Promise((ok,no)=>{
+    if(/^image\//.test(f.type)&&!/gif/.test(f.type)){ const img=new Image(); img.onload=()=>{   // a price list has to stay readable, so it is kept large
+        const sc=Math.min(1,2600/Math.max(img.width,img.height)), c=document.createElement('canvas'); c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
+        const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src); ok(c.toDataURL('image/jpeg',0.86)) };
+      img.onerror=()=>no(new Error('that picture could not be read')); img.src=URL.createObjectURL(f); return }
+    const rd=new FileReader(); rd.onload=()=>ok(String(rd.result).replace(/^data:(application\/octet-stream|);/,'data:application/pdf;')); rd.onerror=()=>no(new Error('could not be read')); rd.readAsDataURL(f) });
+  files.forEach(f=>read(f).then(dataUrl=>fetch('/api/files',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},
+      body:JSON.stringify({kind:'pricelist',ref:String(s.id),name:f.name.replace(/\.(jpe?g|png|webp|heic|gif)$/i,''),dataUrl})}))
+    .then(async r=>{ const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'upload failed');
+      s.priceLists=s.priceLists||[];
+      s.priceLists.unshift({id:j.id,url:j.url,name:j.name,mime:j.mime,bytes:j.bytes,at:Date.now(),date:D(today),by:S.user.name,src:'shop'});
+      toast(`${j.name} added to ${s.name}'s price lists`,'ok') })
+    .catch(e=>toast(`${f.name}: not added — ${e.message}`,'bad'))
+    .finally(()=>{ S.plBusy=Math.max(0,(S.plBusy||1)-1); render() }));
+}
+function plView(s,p){
+  const m=modal(`<div class="pl-view"><div class="pl-vhead"><b>${escM(p.name)}</b><span class="muted">${escM(s.name)} · ${escM(p.date||'')}</span>
+     <a class="btn ghost sm" href="${escM(p.url)}" target="_blank" rel="noopener">Open in a new tab</a><a class="btn ghost sm" href="${escM(p.url)}&dl=1" download="${escM(p.name)}">Download</a>
+     <button class="btn ghost sm" data-act="closeModal">Close</button></div>
+    ${plIsPdf(p)?`<iframe src="${escM(p.url)}" title="${escM(p.name)}"></iframe>`:`<div class="pl-vimg"><img src="${escM(p.url)}" alt="${escM(p.name)}"></div>`}</div>`);
+  m.classList.add('pl-modal');
+  const im=m.querySelector('.pl-vimg img'); if(im) im.onclick=()=>im.classList.toggle('zoom');
+}
+function supPlAfter(){
+  const box=document.getElementById('plDrop'); if(!box) return;
+  const s=SU(+box.dataset.sid), inp=document.getElementById('plFile');
+  inp.onchange=()=>{ plUpload(s,inp.files); inp.value='' };
+  box.ondragover=e=>{ e.preventDefault(); box.classList.add('over') };
+  box.ondragleave=()=>box.classList.remove('over');
+  box.ondrop=e=>{ e.preventDefault(); box.classList.remove('over'); plUpload(s,e.dataTransfer.files) };
+}
+
 function supplierPanel(s){
   const pur=S.purchases.filter(p=>p.supplierId===s.id).sort((a,b)=>b.date.localeCompare(a.date)||b.no.localeCompare(a.no));
   const open=pur.filter(p=>p.total-p.paid>0.005);
@@ -21669,7 +21789,7 @@ function supplierPanel(s){
   const bought=pur.reduce((a,p)=>a+p.total,0), paidTot=pay.reduce((a,p)=>a+p.total,0);
   const first=pur.length?pur[pur.length-1].date:null, lastPay=pay[0]||null;
   const orders=S.orders.filter(o=>o.sid===s.id), waiting=orders.filter(o=>o.status==='pending'||o.unreadShop).length;
-  const tabs=[['overview','Overview'],['bills','Their bills',pur.length],['payments','Payments',pay.length],['cheques','Cheques',chq.length],['notes','Notes',partyNoteList('S',s.id).length],['statement','Statement'],['details','Details']];
+  const tabs=[['overview','Overview'],['bills','Their bills',pur.length],['payments','Payments',pay.length],['cheques','Cheques',chq.length],['notes','Notes',partyNoteList('S',s.id).length],['prices','Price lists',plOf(s).length],['statement','Statement'],['details','Details']];
   return `${portalBar('S',s)}
    <div class="cu-head ${s.enabled?'haspage':''}">
     <div class="cu-acts">
@@ -21706,7 +21826,7 @@ function supplierPanel(s){
    ${partyNoteFlags('S',s.id)}
 
    <div class="cu-tabs">${tabs.map(t=>`<button class="${supTab===t[0]?'on':''}" data-suptab="${t[0]}">${t[1]}${t[2]!==undefined?`<i>${t[2]}</i>`:''}</button>`).join('')}</div>
-   <div class="cu-tab-body">${({overview:()=>supOverview(s,pur,open,pay,chq,orders,owed),bills:()=>supBills(s,pur),payments:()=>supPayments(s,pay),cheques:()=>supCheques(s,chq),notes:()=>partyNotesPanel('S',s.id),statement:()=>supStatement(s),details:()=>supDetails(s,orders)})[supTab]()}</div>`;
+   <div class="cu-tab-body">${({overview:()=>supOverview(s,pur,open,pay,chq,orders,owed),bills:()=>supBills(s,pur),payments:()=>supPayments(s,pay),cheques:()=>supCheques(s,chq),notes:()=>partyNotesPanel('S',s.id),prices:()=>supPriceLists(s),statement:()=>supStatement(s),details:()=>supDetails(s,orders)})[supTab]()}</div>`;
 }
 function supOverview(s,pur,open,pay,chq,orders,owed){
   const ev=[
@@ -21797,7 +21917,8 @@ function supDetails(s,orders){
      ${orders.length?`<tr><th>Orders</th><td>${orders.length} sent to them</td></tr>`:''}
     </table>
     <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap"><button class="btn tape" data-act="supEdit" data-id="${s.id}">Edit details</button>
-     ${S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'?`<button class="btn ghost" data-act="supRemove" data-id="${s.id}" ${partyBal('S',s.id)>0.005?'disabled title="Settle the account first"':''}>Remove supplier</button>`:''}</div></div>
+     ${S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'?`<button class="btn ghost" data-act="supRemove" data-id="${s.id}" ${partyBal('S',s.id)>0.005?'disabled title="Settle the account first"':''}>Remove supplier</button>`:''}</div>
+    ${supPriceListsMini(s)}</div>
    <div><h2 style="font-size:15px">Messages sent</h2>
     ${(S.messages||[]).filter(m=>s.phone&&m.to===s.phone).slice(0,8).map(m=>`<div style="padding:6px 0;border-bottom:1px solid var(--line2)"><div class="muted" style="font-size:12px">${m.at||''} · ${m.status||''}</div><div style="font-size:13px">${m.body||''}</div></div>`).join('')||'<div class="muted">No texts to this supplier yet.</div>'}</div>
   </div>`;
@@ -25284,6 +25405,7 @@ document.addEventListener('click',e=>{
       const c2=$('#webChat'); if(c2)c2.scrollTop=c2.scrollHeight},
     storeGo:()=>storeGo(a.dataset.t),
     actCat:()=>{ actCat=a.dataset.c||'all'; render() },
+    plSeen:()=>{ const p=plOf(SU(+a.dataset.sid)).find(x=>String(x.id)===a.dataset.id); if(p){ delete p.unread; render() } },
     apTab:()=>{ apTab=a.dataset.t; render() },
     storeOrdF:()=>{ storeOrdF=a.dataset.f; render() },
     storeCustF:()=>{ storeCustF=a.dataset.f; render() },
@@ -25349,6 +25471,19 @@ document.addEventListener('click',e=>{
       toast(`${p.name} saved${webHasOwn(p)?` · ${fmt(+p.webPrice)} on the site`:''}`) },
     siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
     phScan:()=>scanOpen(),
+    plPick:()=>{ const i=document.getElementById('plFile'); if(i) i.click() },
+    plTab:()=>{ supTab='prices'; render() },
+    plView:()=>{ const s=SU(+a.dataset.sid), p=plOf(s).find(x=>String(x.id)===a.dataset.id); if(p){ delete p.unread; closeModals(); plView(s,p); render() } },
+    plEdit:()=>{ const s=SU(+a.dataset.sid), p=plOf(s).find(x=>String(x.id)===a.dataset.id); if(!p) return;
+      const m=modal(`<h2>Rename the price list</h2><div class="f"><label>Name</label><input id="plN" value="${escM(p.name)}" maxlength="120"></div>
+        <div class="f"><label>Note (optional)</label><input id="plNote" value="${escM(p.note||'')}" maxlength="200" placeholder="e.g. valid from 1 November, cement prices only"></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="plOk">Save</button></div>`);
+      const go=()=>{ p.name=m.querySelector('#plN').value.trim()||p.name; p.note=m.querySelector('#plNote').value.trim(); m.remove(); render(); toast('Saved','ok') };
+      m.querySelector('#plOk').onclick=go; m.querySelectorAll('input').forEach(i=>i.onkeydown=e=>{ if(e.key==='Enter') go() }) },
+    plDrop:()=>{ const s=SU(+a.dataset.sid), p=plOf(s).find(x=>String(x.id)===a.dataset.id); if(!p) return;
+      if(!confirm(`Remove “${p.name}” from ${s.name}'s price lists?${p.src==='supplier'?' They sent it — it goes from their page too.':''}`)) return;
+      p.removed=true; p.removedBy=S.user.name; render(); toast('Price list removed','ok');
+      if(window.regalBridge&&regalBridge.online()) fetch('/api/files/'+p.id,{method:'DELETE',headers:{'Authorization':'Bearer '+regalBridge.token()}}).catch(()=>{}) },
     phAdd:()=>{ addLine(+a.dataset.id); PH.q=''; render();
       const b=document.getElementById('phQ'); if(b) b.focus() },
     phMore:()=>{ const l=S.pos.lines[+a.dataset.i]; if(!l) return; l.qty=+(l.qty+1).toFixed(3); render() },

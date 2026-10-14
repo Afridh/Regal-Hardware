@@ -15,7 +15,7 @@ export const fileUrl = id => `/api/files/${id}?k=${sig(id)}`;
 const ALLOWED = /^(image\/(jpeg|png|webp|gif)|application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet)|application\/vnd\.ms-excel|text\/plain)$/;
 
 let ready = null;
-function ensure() {
+export function ensure() {
   if (!ready) ready = query(`CREATE TABLE IF NOT EXISTS files (
     id bigserial PRIMARY KEY, kind varchar(20) NOT NULL, ref varchar(40) NOT NULL, name varchar(200) NOT NULL, mime varchar(100) NOT NULL,
     data bytea NOT NULL, bytes integer NOT NULL, uploaded_by varchar(80), created_at timestamptz NOT NULL DEFAULT now());
@@ -23,18 +23,26 @@ function ensure() {
   return ready;
 }
 
-/** Upload: { kind, ref, name, dataUrl }.  Returns the id and a link the till keeps in the books. */
-r.post('/', regalAuth, asyncHandler(async (req, res) => {
-  const { kind, ref, name, dataUrl } = req.body || {};
+/** Keeps one file and gives back what the books hold of it. `only` narrows the types (price lists: a
+    picture or a PDF). Used by the till's upload below and by the supplier portal. */
+export async function saveFile({ kind, ref, name, dataUrl, by, only }) {
   if (!/^[a-z]{2,20}$/.test(kind || '') || !ref) throw new HttpError(400, 'kind and ref required');
   const m = /^data:([\w.+/-]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
   if (!m || !ALLOWED.test(m[1])) throw new HttpError(400, 'Attach a photo, PDF, Word, Excel or text file');
+  if (only && !only.test(m[1])) throw new HttpError(400, 'Attach a photo or a PDF');
   const buf = Buffer.from(m[2], 'base64');
   if (buf.length > 8e6) throw new HttpError(400, 'That file is too big — keep it under 8 MB');
   await ensure();
+  const nm = String(name || 'file').slice(0, 200);
   const { rows: [{ id }] } = await query(`INSERT INTO files (kind, ref, name, mime, data, bytes, uploaded_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-    [kind, String(ref).slice(0, 40), String(name || 'file').slice(0, 200), m[1], buf, buf.length, req.regalUser.name]);
-  res.json({ ok: true, id, url: fileUrl(id), name: String(name || 'file').slice(0, 200), mime: m[1], bytes: buf.length });
+    [kind, String(ref).slice(0, 40), nm, m[1], buf, buf.length, String(by || '').slice(0, 80)]);
+  return { id: Number(id), url: fileUrl(id), name: nm, mime: m[1], bytes: buf.length };
+}
+
+/** Upload: { kind, ref, name, dataUrl }.  Returns the id and a link the till keeps in the books. */
+r.post('/', regalAuth, asyncHandler(async (req, res) => {
+  const { kind, ref, name, dataUrl } = req.body || {};
+  res.json({ ok: true, ...(await saveFile({ kind, ref, name, dataUrl, by: req.regalUser.name })) });
 }));
 
 /** The file itself, by its signed link (works in <img>, <a> and email attachments). */

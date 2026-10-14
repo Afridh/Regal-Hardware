@@ -13,6 +13,7 @@ import { query, dbKind } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { sendViaProvider, regalAuth, mayRevealCode } from './regal.js';
 import { letter } from '../lib/letter.js';
+import { saveFile, ensure as ensureFiles } from './files.js';
 import { listLogins, findLogin, addLogin, setLogin, removeLogin, checkLogin, loginLine, cleanUser, passOk, suggestUser, inviteMany, startersFor, defaultLogin, resetToDefaults,
          askForLogin, myRequests, waitingRequests, waitingCount, acceptRequest, rejectRequest } from '../services/portalLogins.js';
 
@@ -143,6 +144,22 @@ export async function injectSupplierInbox(data) {
         text: `${name} is asking to be paid — ${(d.lines || []).length} bill${(d.lines || []).length === 1 ? '' : 's'}`,
         view: 'payreqs', at: localTime(), read: false, forApprovers: true });
       added++;
+    } else if (row.kind === 'pricelist' || row.kind === 'pricedrop') {
+      // a price list the supplier put up from their page — or took down again (only one of their own)
+      const d = row.data;
+      if (!sup) continue;
+      sup.priceLists = sup.priceLists || [];
+      if (row.kind === 'pricelist') {
+        if (sup.priceLists.some(p => p.inboxId === row.id || p.id === d.fileId)) continue;
+        sup.priceLists.unshift({ id: d.fileId, url: d.url, name: d.name, mime: d.mime, bytes: d.bytes || 0, note: d.note || '',
+          at: new Date(row.created_at).getTime(), date: d.date || localDate(), by: d.rep || name, src: 'supplier', inboxId: row.id, unread: true });
+        S.notif.unshift({ id: 'n' + row.id.toString(36) + 'l', kind: 'info', text: `${name} sent a new price list — ${d.name}`, view: 'suppliers', sid: row.sid, at: localTime(), read: false });
+      } else {
+        const p = sup.priceLists.find(x => x.id === d.fileId && x.src === 'supplier');
+        if (!p || p.dropInbox === row.id) { orphans.push(row.id); continue; }
+        p.removed = true; p.dropInbox = row.id; p.removedBy = d.rep || name;
+      }
+      added++;
     } else if (row.kind === 'stockread') {
       // somebody read the shelves: it goes on the till's own list, so the shop can see who and when
       const d = row.data;
@@ -191,6 +208,7 @@ export async function markSupplierImported(data) {
   for (const o of (S.orders || [])) { if (o.inboxId) ids.add(o.inboxId); for (const e of (o.events || [])) if (e.inboxId) ids.add(e.inboxId); }
   for (const p of (S.payReqs || [])) if (p.inboxId) ids.add(p.inboxId);
   for (const x of (S.supStockLog || [])) if (x.inboxId) ids.add(x.inboxId);     // who read the shelves
+  for (const s of (S.suppliers || [])) for (const p of (s.priceLists || [])) { if (p.inboxId) ids.add(p.inboxId); if (p.dropInbox) ids.add(p.dropInbox); }
   if (!ids.size) return 0;
   await ensureSupplierTables();
   const { rowCount } = await query(`UPDATE sup_inbox SET imported_at = now() WHERE imported_at IS NULL AND id = ANY($1::bigint[])`, [[...ids]]);
@@ -457,10 +475,18 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const damageValue = Math.round(damages.reduce((a, d) => a + d.value, 0) * 100) / 100;
 
+  // their price lists: what the shop holds (theirs and the shop's own copies), and what is still on its way
+  const dropping = new Set(pending.filter(p => p.kind === 'pricedrop').map(p => +p.data.fileId));
+  const priceLists = pending.filter(p => p.kind === 'pricelist').map(p => ({ id: +p.data.fileId, url: p.data.url, name: p.data.name, mime: p.data.mime, bytes: p.data.bytes || 0,
+      note: p.data.note || '', date: p.data.date, by: p.data.rep || '', mine: true, waiting: true, at: new Date(p.created_at).getTime() }))
+    .concat((sup.priceLists || []).filter(p => !p.removed).map(p => ({ id: p.id, url: p.url, name: p.name, mime: p.mime, bytes: p.bytes || 0, note: p.note || '',
+      date: p.date, by: p.src === 'supplier' ? p.by : (CFG.shop?.name || 'The shop'), mine: p.src === 'supplier', at: p.at || 0 })))
+    .filter((p, i, a) => !dropping.has(p.id) && a.findIndex(x => x.id === p.id) === i)
+    .sort((a, b) => (b.at || 0) - (a.at || 0));
   const me = req.sup.lid ? (await listLogins(LOGINS, sup.id)).find(x => Number(x.id) === req.sup.lid) : null;
   res.json({ ok: true, supplier: { name: sup.name, contact: sup.contact || '', phone: sup.phone || '', terms: sup.days || 0, owed: Math.round((cr - dr) * 100) / 100, showAccount: true },
     login: me ? { username: me.username, name: me.name || '', role: me.role || '', own: !!me.own_hash } : null,
-    bills, payReqs, damages, damageValue,
+    bills, payReqs, damages, damageValue, priceLists,
     // when the shop's door onto their stock closes; the page shows the tab only while it is open
     stockUntil: +sup.stockUntil || 0,
     shop: { name: CFG.shop?.name || 'Regal Hardware', phone: CFG.shop?.phone || '', addr: CFG.shop?.addr || '' }, rep: req.sup.rep || '', pos, sent });
@@ -640,6 +666,33 @@ r.post('/po/:no/respond', supAuth, asyncHandler(async (req, res) => {
   await ensureSupplierTables();
   const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'reply', $2) RETURNING id`, [req.sup.sid, JSON.stringify({ no: po.no, action, note, invoice, eta, lines, rep: req.sup.rep || '' })]);
   res.json({ ok: true, id });
+}));
+
+/** A price list from the supplier — a photo or a PDF. It is kept with the shop's other files and waits
+    in the inbox for the next till, which puts it on the supplier's page under Price lists. */
+const PRICE_TYPES = /^(image\/(jpeg|png|webp)|application\/pdf)$/;
+r.post('/pricelist', supAuth, asyncHandler(async (req, res) => {
+  const { name, dataUrl, note } = req.body || {};
+  const f = await saveFile({ kind: 'pricelist', ref: String(req.sup.sid), name: String(name || 'Price list').trim() || 'Price list', dataUrl, by: req.sup.rep || 'Supplier', only: PRICE_TYPES });
+  await ensureSupplierTables();
+  const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'pricelist', $2) RETURNING id`,
+    [req.sup.sid, JSON.stringify({ fileId: f.id, url: f.url, name: f.name, mime: f.mime, bytes: f.bytes, note: String(note || '').slice(0, 300), rep: req.sup.rep || '', date: localDate() })]);
+  res.json({ ok: true, id, file: f });
+}));
+/** Taking one of their own price lists down. One the shop put up is the shop's to remove. */
+r.post('/pricelist/:id/remove', supAuth, asyncHandler(async (req, res) => {
+  const fileId = +req.params.id || 0;
+  await ensureFiles(); await ensureSupplierTables();
+  const { rows: [f] } = await query(`SELECT id FROM files WHERE id = $1 AND kind = 'pricelist' AND ref = $2`, [fileId, String(req.sup.sid)]);
+  if (!f) throw new HttpError(404, 'That price list is not one of yours');
+  const data = await books(), sup = (data?.S?.suppliers || []).find(s => s.id === req.sup.sid);
+  const held = sup && (sup.priceLists || []).find(p => p.id === fileId);
+  if (held && held.src !== 'supplier') throw new HttpError(403, 'The shop put that one up — ask the shop to take it down');
+  // still on its way to the shop: it is simply not sent
+  const waiting = (await inboxRows(req.sup.sid)).find(p => p.kind === 'pricelist' && +p.data.fileId === fileId);
+  if (waiting) await query(`UPDATE sup_inbox SET imported_at = now() WHERE id = $1`, [waiting.id]);
+  else await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'pricedrop', $2)`, [req.sup.sid, JSON.stringify({ fileId, rep: req.sup.rep || '' })]);
+  res.json({ ok: true });
 }));
 
 /** A photo, by its signed link (the till shows these in the order card). */

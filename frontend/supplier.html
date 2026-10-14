@@ -173,6 +173,14 @@ input:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 4px rgba(1
 @keyframes fade{from{opacity:0}}
 @keyframes pop{from{opacity:0;transform:scale(.6)}}
 .flash{border-radius:14px;animation:slideDown .45s var(--spring) both}
+.pl-btns{display:flex;gap:8px;flex-wrap:wrap}.pl-btns .btn{flex:1 1 160px}
+.pl-list{display:grid;gap:0}
+.pl-item{display:flex;gap:12px;align-items:flex-start}
+.pl-th{flex:none;width:86px;height:110px;border-radius:10px;overflow:hidden;border:1px solid var(--line);display:grid;place-items:center;background:#f6f1f1;text-decoration:none}
+.pl-th img{width:100%;height:100%;object-fit:cover;object-position:top}.pl-th.pdf b{color:#c0392b;font-size:18px;letter-spacing:.04em}
+.pl-tx{display:grid;gap:4px;min-width:0;flex:1}.pl-tx>b{overflow-wrap:anywhere}
+.pl-nt{background:#fff7df;border-radius:6px;padding:3px 8px;font-size:13px}
+.pl-ac{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 @keyframes slideDown{from{opacity:0;transform:translateY(-12px)}}
 
 /* a page opening: the title, then each card in turn */
@@ -221,7 +229,8 @@ main.enter>*:nth-child(6){animation-delay:.25s}main.enter>*:nth-child(n+7){anima
     border:0;border-top:1px solid var(--line);box-shadow:0 -8px 24px -10px rgba(60,10,15,.18);padding-bottom:env(safe-area-inset-bottom,0px);animation:barUp .5s var(--ease) both}
   @keyframes barUp{from{transform:translateY(100%)}}
   .menu-in{padding:6px 6px;gap:2px;height:var(--bar)}
-  .menu button{flex:1 0 58px;color:#8A7B7D;font-size:10.5px;gap:3px;padding:6px 4px;border-radius:14px;transition:color .2s}
+  .menu button{flex:1 1 0;min-width:0;color:#8A7B7D;font-size:10px;gap:3px;padding:6px 1px;border-radius:14px;transition:color .2s}
+  .menu button .short{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}   /* seven or eight places across a phone */
   .menu button .ic{font-size:21px;transition:transform .3s var(--spring);filter:grayscale(.7) opacity(.75)}
   .menu button.on{background:none;color:var(--brand)}
   .menu button.on .ic{transform:translateY(-3px) scale(1.15);filter:none}
@@ -340,7 +349,7 @@ const tag=s=>{const x=STATUS[s]||['',s];return `<span class="tag ${x[0]}">${esc(
 const ACT={sent:'Order sent',accepted:'Accepted',changes:'Asked for a change',dispatched:'Dispatched',received:'Goods received',cancelled:'Cancelled',uploaded:'Order sent in',rejected:'Not accepted',adjusted:'Change requested',comment:''};
 
 /* ---- the five pages, one menu ---- */
-const MENU=[['orders','📥','Orders From Shop','From shop'],['create','➕','Create new order','Create'],['pending','⏳','Pending Orders','Pending'],['history','🗂️','Order History','History'],['stock','📦','Your stock','Stock'],['pay','💳','Payment Request','Payment'],['account','👤','Account','Account']];
+const MENU=[['orders','📥','Orders From Shop','From shop'],['create','➕','Create new order','Create'],['pending','⏳','Pending Orders','Pending'],['history','🗂️','Order History','History'],['stock','📦','Your stock','Stock'],['pay','💳','Payment Request','Payment'],['prices','📄','Price lists','Prices'],['account','👤','Account','Account']];
 /* Their stock is a place only while the shop has opened it to them (Suppliers → Show them their stock). */
 const stockOpen=()=>!!(st.me&&+st.me.stockUntil>Date.now());
 const ACTIVE=['sent','accepted','changes','dispatched','adjusted'];      // a shop order still in the supplier's hands — once completed it is under Pending Orders
@@ -370,10 +379,61 @@ function render(){
   const title=(MENU.find(x=>x[0]===st.tab)||[])[2]||'';
   // the page animates in when it is opened, not when the 15-second refresh redraws it
   const fresh=st.shown!==st.tab; st.shown=st.tab; m.classList.toggle('enter',fresh);
-  m.innerHTML=(st.tab==='orders'?dash(badge):'')+`<h1 class="ptitle">${esc(title)}</h1>`+(st.flash?`<div class="flash">${st.flash}</div>`:'')+({orders:ordersPage,create:createPage,pending:pendingPage,history:historyPage,stock:stockPage,pay,account})[st.tab]();
+  m.innerHTML=(st.tab==='orders'?dash(badge):'')+`<h1 class="ptitle">${esc(title)}</h1>`+(st.flash?`<div class="flash">${st.flash}</div>`:'')+({orders:ordersPage,create:createPage,pending:pendingPage,history:historyPage,stock:stockPage,pay,prices:pricesPage,account})[st.tab]();
   $$('[data-go]',m).forEach(b=>b.onclick=()=>{st.tab=b.dataset.go; st.flash=''; render(); window.scrollTo(0,0)});
   if(fresh) countUp(m);
-  bind();
+  bind(); pricesBind();
+}
+/* ---- price lists: photos or PDFs of their prices, sent to the shop. Each goes as soon as it is
+   chosen; the shop sees it on their supplier page, marked as from them. They can take down their own. */
+const plPdf=p=>/pdf/i.test(p.mime||'')||/\.pdf$/i.test(p.name||'');
+const plKB=b=>!b?'':b>1e6?(b/1e6).toFixed(1)+' MB':Math.max(1,Math.round(b/1e3))+' KB';
+function pricesPage(){
+  const L=st.me.priceLists||[];
+  return `<div class="card pl-up">
+     <h2>Send your price list</h2>
+     <div class="muted" style="margin-bottom:10px">Take a photo of the price sheet, or choose PDFs or pictures from the phone — several at once is fine. Up to 8 MB each.</div>
+     <div class="f"><label>Note for the shop (optional)</label><input id="plNote" value="${esc(st.plNote||'')}" placeholder="e.g. new prices from 1 November"></div>
+     <input type="file" id="plFiles" accept="image/*,application/pdf,.pdf" multiple style="display:none">
+     <input type="file" id="plCam" accept="image/*" capture="environment" style="display:none">
+     <div class="pl-btns"><button class="btn tape big" id="plChoose" ${st.plBusy?'disabled':''}>${st.plBusy?`Sending ${st.plBusy}…`:'📎 Choose files'}</button>
+       <button class="btn big" id="plSnap" ${st.plBusy?'disabled':''}>📷 Take a photo</button></div>
+   </div>
+   ${L.length?`<div class="pl-list">${L.map(p=>`<div class="card pl-item">
+      <a class="pl-th ${plPdf(p)?'pdf':''}" href="${esc(p.url)}" target="_blank" rel="noopener">${plPdf(p)?'<b>PDF</b>':`<img src="${esc(p.url)}" alt="" loading="lazy">`}</a>
+      <div class="pl-tx"><b>${esc(p.name)}</b><span class="muted">${esc(p.date||'')}${p.bytes?' · '+plKB(p.bytes):''} · ${p.mine?esc(p.by||'you'):'from '+esc(p.by)}</span>
+        ${p.note?`<span class="pl-nt">${esc(p.note)}</span>`:''}
+        ${p.waiting?'<span class="tag warn">On its way to the shop</span>':''}
+        <span class="pl-ac"><a class="btn" href="${esc(p.url)}" target="_blank" rel="noopener">Open</a>${p.mine?`<button class="btn" data-pldrop="${p.id}">Take it down</button>`:''}</span></div></div>`).join('')}</div>`
+    :'<div class="card muted">You have not sent a price list yet.</div>'}`;
+}
+function pricesBind(){
+  const files=$('#plFiles'); if(!files) return;
+  const note=$('#plNote'); note.oninput=()=>{ st.plNote=note.value };
+  $('#plChoose').onclick=()=>files.click(); $('#plSnap').onclick=()=>$('#plCam').click();
+  files.onchange=()=>{ sendPriceLists([...files.files]); files.value='' };
+  $('#plCam').onchange=e=>{ sendPriceLists([...e.target.files]); e.target.value='' };
+  $$('[data-pldrop]').forEach(b=>b.onclick=async()=>{ if(!confirm('Take this price list down? The shop will no longer see it.')) return;
+    try{ await api('/pricelist/'+b.dataset.pldrop+'/remove',{method:'POST',body:{}}); toast('Taken down'); await load() }catch(e){ toast(e.message) } });
+}
+function readPrice(f){ return new Promise((ok,no)=>{
+  if(/^image\//.test(f.type)&&!/gif/.test(f.type)){ const img=new Image(); img.onload=()=>{ const sc=Math.min(1,2600/Math.max(img.width,img.height)), c=document.createElement('canvas');
+      c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc); const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src); ok(c.toDataURL('image/jpeg',0.86)) };
+    img.onerror=()=>no(new Error('That picture could not be read')); img.src=URL.createObjectURL(f); return }
+  if(f.size>8e6) return no(new Error(f.name+' is over 8 MB'));
+  const rd=new FileReader(); rd.onload=()=>ok(String(rd.result).replace(/^data:(application\/octet-stream|);/,'data:application/pdf;')); rd.onerror=()=>no(new Error('Could not read '+f.name)); rd.readAsDataURL(f) }) }
+async function sendPriceLists(list){
+  list=list.filter(f=>/^image\//.test(f.type)||/pdf/.test(f.type)||/\.pdf$/i.test(f.name));
+  if(!list.length) return toast('Choose a photo or a PDF');
+  st.plBusy=list.length; render();
+  let sent=0;
+  for(const f of list){
+    try{ const dataUrl=await readPrice(f);
+      await api('/pricelist',{method:'POST',body:{name:f.name.replace(/\.(jpe?g|png|webp|heic)$/i,''),dataUrl,note:st.plNote||''}}); sent++ }
+    catch(e){ toast(e.message) }
+    st.plBusy=Math.max(0,st.plBusy-1); render();
+  }
+  if(sent){ st.plNote=''; st.flash=`✓ ${sent} price list${sent===1?'':'s'} sent to the shop`; await load() }
 }
 /* hello, and the three things a rep looks for first, each a way into its page */
 function dash(badge){
