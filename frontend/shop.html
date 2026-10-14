@@ -1015,6 +1015,19 @@ body[data-tpl="builder"] .t-foot{border-top:10px solid var(--brand)}
 body[data-tpl="builder"] .t-band{background:#111}
 body[data-tpl="builder"] .t-band .e-btn{border-radius:var(--rad);background:var(--accent);border-color:var(--accent);color:#111}
 
+/* ---- the pop-up poster (Online store → Posters & banners in the till) ---- */
+.e-poster{position:relative;width:min(760px,100%);background:#fff;border-radius:calc(var(--rad) * 1.2);overflow:hidden;display:grid;grid-template-columns:1fr 1fr;box-shadow:0 30px 80px rgba(0,0,0,.35);animation:e-posterin .6s cubic-bezier(.2,.9,.25,1.15) both}
+.e-poster.noimg{grid-template-columns:1fr;width:min(460px,100%)}
+@keyframes e-posterin{from{opacity:0;transform:translateY(24px) scale(.94)}}
+.e-poster .pi{background:#f2f2f2 center/cover no-repeat;min-height:340px}
+.e-poster .pt{padding:clamp(28px,4vw,44px);display:grid;align-content:center;gap:12px}
+.e-poster .pt .e-eyebrow{color:var(--brand)}
+.e-poster h3{font-size:clamp(24px,3vw,34px);font-weight:800;line-height:1.08;text-transform:none}
+.e-poster p{margin:0;color:var(--muted);font-size:15px}
+.e-poster .e-btn{justify-self:start;margin-top:6px}
+.e-poster .e-x{position:absolute;right:10px;top:8px;z-index:2;background:rgba(255,255,255,.9);border-radius:50%;width:38px;height:38px;display:grid;place-items:center}
+body[data-tpl="techoze"] .e-poster .e-btn,body[data-tpl="builder"] .e-poster .e-btn{border-radius:999px}
+@media (max-width:640px){.e-poster{grid-template-columns:1fr}.e-poster .pi{min-height:220px}}
 /* ---- the editorial template keeps its own footer, and hides the dark one ---- */
 body[data-tpl="ella"] .t-foot{display:none}
 
@@ -3144,6 +3157,30 @@ async function loadCatalog() {
   }
 }
 
+/* The pop-up poster the shop puts up from the till. It waits for the welcome to finish, and keeps to
+   how often the shop chose — every visit, once a day, or once per person; a new picture or a new
+   line counts as a new poster, so a change is seen. */
+function showPoster() {
+  const p = st.cat && st.cat.settings && st.cat.settings.poster;
+  if (!p || (!p.img && !p.title)) return;
+  const sig = (p.v || 0) + '|' + (p.title || '') + '|' + (p.text || '');
+  const seen = ls.get('poster_seen', {}), dayKey = new Date().toDateString();
+  if (p.every === 'once' && seen.sig === sig) return;
+  if (p.every === 'day' && seen.sig === sig && seen.day === dayKey) return;
+  const open = () => {
+    if (document.querySelector('.modal-bg')) return;          // someone is already in the cart or signing in
+    ls.set('poster_seen', { sig, day: dayKey });
+    const el = modal(`<div class="e-poster ${p.img ? '' : 'noimg'}" role="dialog" aria-label="${esc(p.title || 'Offer')}">
+      <button class="e-x" data-close aria-label="Close">&times;</button>
+      ${p.img ? `<div class="pi" style="background-image:url('${esc(p.img)}')"></div>` : ''}
+      <div class="pt"><span class="e-eyebrow">${esc(shopName())}</span>${p.title ? `<h3>${esc(p.title)}</h3>` : ''}${p.text ? `<p>${esc(p.text)}</p>` : ''}
+        ${p.button ? `<a class="e-btn" href="${esc(p.link || '#/search')}" data-close>${esc(p.button)}</a>` : ''}</div></div>`);
+    el.querySelectorAll('a[data-close]').forEach(a => a.addEventListener('click', () => el.remove()));
+  };
+  const wait = () => document.getElementById('intro') ? setTimeout(wait, 300) : setTimeout(open, 700);
+  wait();
+}
+
 (async () => {
   st.route = parseRoute();
   /* Before the catalogue is here: the home page is drawn at once in the shop's own look from the last
@@ -3155,6 +3192,7 @@ async function loadCatalog() {
   await loadCatalog();
   loading(false);
   render();
+  showPoster();
 })();
 </script>
 </body>

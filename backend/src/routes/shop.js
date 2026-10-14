@@ -44,6 +44,15 @@ export function ensureShopTables() {
       data        bytea NOT NULL,
       link        varchar(300),
       updated_at  timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS shop_customers (
+      phone       varchar(20) PRIMARY KEY,
+      name        varchar(120) NOT NULL,
+      first_at    timestamptz NOT NULL DEFAULT now(),
+      last_at     timestamptz NOT NULL DEFAULT now(),
+      logins      integer NOT NULL DEFAULT 0,
+      blocked     boolean NOT NULL DEFAULT false,
+      note        varchar(500)
     );`).catch(e => { ready = null; throw e; });
   return ready;
 }
@@ -115,6 +124,10 @@ function catalogOf(data, pending = [], media = {}) {
               bank: !!w.pays?.bank, card: !!w.pays?.card },
       lowAt: Math.max(0, +w.lowAt || 0), holdStock: w.holdStock !== false,
       tagline: w.tagline, about: w.about, email: w.email, whatsapp: w.whatsapp, facebook: w.facebook, instagram: w.instagram, youtube: w.youtube, color: w.color,
+      // the pop-up poster (Online store → Posters & banners): only when switched on, and only what a visitor sees
+      poster: w.poster && w.poster.on ? { title: String(w.poster.title || '').slice(0, 80), text: String(w.poster.text || '').slice(0, 240),
+        button: String(w.poster.button || '').slice(0, 30), link: String(w.poster.link || '').slice(0, 300), every: ['visit', 'day', 'once'].includes(w.poster.every) ? w.poster.every : 'day',
+        img: pic('poster'), v: (media.poster && media.poster.v) || 0 } : null,
       theme: (S.web?.theme && typeof S.web.theme === 'object') ? S.web.theme : {} },
     categories,
     slides: strip('s:'), banners: strip('b:'),
@@ -216,13 +229,13 @@ r.get('/catalog', asyncHandler(async (_req, res) => {
 }));
 
 // ---------------------------------------------------------------- pictures
-const MEDIA_KEY = /^(p:\d+|c:.{1,60}|s:[1-9]|b:[1-9]|logo)$/;
+const MEDIA_KEY = /^(p:\d+|c:.{1,60}|s:[1-9]|b:[1-9]|logo|poster)$/;
 
 /** Just the keys that have a picture — the till asks once instead of trying every product's photo. */
 r.get('/media', asyncHandler(async (_req, res) => {
   const m = await mediaIndex();
   res.set('Cache-Control', 'no-store');
-  res.json({ keys: Object.keys(m) });
+  res.json({ keys: Object.keys(m), links: Object.fromEntries(Object.entries(m).map(([k, x]) => [k, x.link || ''])), v: Object.fromEntries(Object.entries(m).map(([k, x]) => [k, x.v])) });
 }));
 
 /** A picture, cached for a year — the catalogue changes the ?v= when it is replaced. */
@@ -250,6 +263,14 @@ r.post('/media/:key', regalAuth, asyncHandler(async (req, res) => {
   res.json({ ok: true, key, bytes: buf.length });
 }));
 
+/** Where a tap on a picture goes, changed without sending the picture again. */
+r.post('/media/:key/link', regalAuth, asyncHandler(async (req, res) => {
+  await ensureShopTables();
+  const { rowCount } = await query(`UPDATE shop_media SET link = $2 WHERE key = $1`, [req.params.key, String(req.body?.link || '').slice(0, 300)]);
+  if (!rowCount) throw new HttpError(404, 'Put the picture up first');
+  res.json({ ok: true });
+}));
+
 r.delete('/media/:key', regalAuth, asyncHandler(async (req, res) => {
   await ensureShopTables();
   const { rowCount } = await query(`DELETE FROM shop_media WHERE key = $1`, [req.params.key]);
@@ -269,10 +290,26 @@ r.post('/track', asyncHandler(async (req, res) => {
   res.json({ ok: true, order: { no: row.no, date: row.data.date, time: row.data.time, lines: row.data.lines, total: row.data.total, del: row.data.del, deliver: row.data.deliver, status: b?.status || 'placed', invoice: b?.invoice || null, reason: b?.note || '', events: b?.events || row.data.events || [] } });
 }));
 
+/* The people who sign in on the site, kept in shop_customers: when they first and last came, how often,
+   and whether the shop has paused them (Online store → Customers). A paused number cannot get a code,
+   sign in or order — it is told to call the shop. */
+const PAUSED = 'This number is paused on the site — please call the shop and we will sort it out';
+async function isBlocked(phone) {
+  await ensureShopTables();
+  const { rows: [row] } = await query(`SELECT blocked FROM shop_customers WHERE phone = $1`, [phone]);
+  return !!(row && row.blocked);
+}
+async function sawCustomer(phone, name) {
+  await ensureShopTables();
+  await query(`INSERT INTO shop_customers (phone, name, first_at, last_at, logins) VALUES ($1, $2, now(), now(), 1)
+               ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name, last_at = now(), logins = shop_customers.logins + 1`, [phone, String(name || '').slice(0, 120)]);
+}
+
 /** Step 1 of signing in: a code by SMS. If SMS is not set up, the code comes back in the reply so the site still works. */
 r.post('/otp', asyncHandler(async (req, res) => {
   const phone = digits(req.body?.phone);
   if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'Enter a mobile like 0771234567');
+  if (await isBlocked(phone)) throw new HttpError(403, PAUSED);
   const code = otpFor(phone);
   const data = await books();
   const cfg = data?.CFG?.msg;
@@ -289,11 +326,55 @@ r.post('/otp', asyncHandler(async (req, res) => {
 r.post('/login', asyncHandler(async (req, res) => {
   const phone = digits(req.body?.phone);
   if (!otpOk(phone, req.body?.code)) throw new HttpError(401, 'That code is not right, or it has expired');
+  if (await isBlocked(phone)) throw new HttpError(403, PAUSED);
   const data = await books();
   const known = (data?.S?.customers || []).find(x => digits(x.phone) === phone);
   const name = (known?.name || String(req.body?.name || '').trim()).slice(0, 120);
   if (!name) return res.json({ ok: false, needName: true });
+  await sawCustomer(phone, name).catch(e => console.error('shop customer not recorded', e.message));
   res.json({ ok: true, token: signShop(phone, name), name, phone, known: !!known });
+}));
+
+/* ---- the shop's own view of the people on its site (staff only) ---- */
+r.get('/admin/customers', regalAuth, asyncHandler(async (_req, res) => {
+  await ensureShopTables();
+  const { rows } = await query(`SELECT phone, name, first_at, last_at, logins, blocked, note FROM shop_customers ORDER BY last_at DESC LIMIT 5000`);
+  const { rows: ords } = await query(`SELECT phone, no, data, created_at FROM shop_orders ORDER BY id DESC LIMIT 20000`);
+  const data = await books();
+  const S = data?.S || {};
+  const inBooks = new Map((S.web?.orders || []).map(o => [o.no, o]));
+  const byPhone = new Map();
+  for (const o of ords) {
+    const p = digits(o.phone), b = inBooks.get(o.no), status = b?.status || 'placed';
+    const s = byPhone.get(p) || { orders: 0, spent: 0, last: null, open: 0 };
+    s.orders++; if (!['rejected', 'cancelled'].includes(status)) s.spent = round2(s.spent + (+o.data?.total || 0));
+    if (['placed', 'accepted', 'ready'].includes(status)) s.open++;
+    if (!s.last) s.last = { no: o.no, at: o.created_at, status };
+    byPhone.set(p, s);
+  }
+  const people = rows.map(r => ({ ...r, blocked: !!r.blocked }));
+  // people who ordered before sign-ins were kept still belong on the list
+  for (const [p, s] of byPhone) if (!people.some(x => digits(x.phone) === p)) {
+    const o = ords.find(x => digits(x.phone) === p);
+    people.push({ phone: p, name: o?.data?.name || '', first_at: o?.created_at, last_at: s.last?.at, logins: 0, blocked: false, note: '' });
+  }
+  res.json({ ok: true, customers: people.map(x => {
+    const p = digits(x.phone), s = byPhone.get(p) || { orders: 0, spent: 0, last: null, open: 0 };
+    const c = (S.customers || []).find(y => digits(y.phone) === p);
+    return { phone: p, name: x.name || c?.name || '', firstAt: x.first_at, lastAt: x.last_at, logins: +x.logins || 0, blocked: !!x.blocked, note: x.note || '',
+      orders: s.orders, spent: s.spent, open: s.open, lastOrder: s.last, cid: c ? c.id : null };
+  }) });
+}));
+r.post('/admin/customers/:phone', regalAuth, asyncHandler(async (req, res) => {
+  const phone = digits(req.params.phone);
+  if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'Not a mobile number');
+  await ensureShopTables();
+  const b = req.body || {};
+  const { rows: [had] } = await query(`SELECT phone FROM shop_customers WHERE phone = $1`, [phone]);
+  if (!had) await query(`INSERT INTO shop_customers (phone, name, logins) VALUES ($1, $2, 0)`, [phone, String(b.name || '').slice(0, 120)]);
+  if (b.blocked !== undefined) await query(`UPDATE shop_customers SET blocked = $2 WHERE phone = $1`, [phone, !!b.blocked]);
+  if (b.note !== undefined) await query(`UPDATE shop_customers SET note = $2 WHERE phone = $1`, [phone, String(b.note || '').slice(0, 500)]);
+  res.json({ ok: true });
 }));
 
 r.get('/me', shopAuth, asyncHandler(async (req, res) => {
@@ -367,6 +448,7 @@ r.post('/quote', optionalAuth, asyncHandler(async (req, res) => {
 
 r.post('/order', shopAuth, asyncHandler(async (req, res) => {
   const { phone, name } = req.shopUser;
+  if (await isBlocked(digits(phone))) throw new HttpError(403, PAUSED);
   const data = await books();
   if (!data) throw new HttpError(503, 'The shop has not opened its books yet');
   const cat = catalogOf(data);
