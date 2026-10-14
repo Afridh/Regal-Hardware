@@ -713,6 +713,9 @@ body.no-anim .rv{opacity:1;transform:none}
 .t-tabs button.on{color:var(--ink)}
 .t-tabs.small button{font-size:15px;font-weight:600}
 .t-tabs.small button.on{color:var(--brand)}
+.rel-tabs{padding:0 var(--pad);margin:-6px 0 18px}
+.rel-tabs button small{margin-left:6px;font-size:12px;opacity:.6}
+.rel .t-railwrap{position:relative}
 .t-pane{display:none}
 .t-pane.on{display:block;animation:t-in .5s var(--ease)}
 @keyframes t-in{from{opacity:0;transform:translateY(10px)}}
@@ -2927,6 +2930,48 @@ function listing() {
 }
 
 /* ---------------- one product ---------------- */
+/* "You may also need": the product's series, its brand and its category, as tabs. The books keep no brand
+   or series, so both are read from the name: a switch's series is its range (Kevilton Mahogany, Orange
+   Enigma Gunmetal ...), anything else's is its brand within its category (Nippon varnish, S-lon elbows ...). */
+const KNOWN_BRANDS = [
+  ['Kevilton', /\bKEVILTON\b|\bKEVI\b|\bKEV\b/], ['Orange', /\bORANGE\b/], ['S-lon', /\bS-?LON\b/], ['Asian Paints', /\bASIAN\b/],
+  ['Nippon', /\bNIPPON\b/], ['Dulux', /\bDULUX\b/], ['Kevin', /\bKEVIN\b/], ['Kobe', /\bKOBE\b/], ['Hasky', /\bHASKY\b/],
+  ['PE+', /\bPE\+/], ['Polycrome', /\bPOLYCROME\b/], ['Akko Star', /\bAKKO ?STAR\b/], ['Maxta', /\bMAXTA\b/], ['Welloo', /\bWELLOO\b/],
+  ['Deli', /\bDELI\b/], ['Dingqi', /\bDINGQI\b/], ['Multibond', /\bMULTIBOND\b/], ['Sheenlac', /\bSHEENLAC\b/], ['Robbialac', /\bROBB?IALAC\b|\bROBULAC\b/],
+  ['Multilac', /\bMULTILAC\b/], ['Causeway', /\bCAUSEWAY\b/], ['Water Tec', /\bW\/TEC\b|\bWATER ?TEC/], ['Kronnex', /\bKRONN?EX\b/],
+  ['Wireman', /WIRE ?MAN/], ['Chint', /\bCHINT\b/], ['Bosun', /\bBOSUN\b/], ['Sadi', /\bSADI\b/], ['Epica', /\bEPICA\b/],
+  ['Feibo', /\bFE?IBO\b/], ['Crompton', /\bCROMP?TON\b/], ['Singer', /\bSINGER\b/], ['Solex', /\bSOLEX\b/], ['Capri', /\bCAPRI\b/],
+  ['Kobe', /\bKOBE\b/], ['Neptune', /\bNEPTUNE\b/], ['Cemento', /\bCEMENTO\b/], ['Dr Fixit', /\bDR\.? ?FIXIT\b/], ['Lanwa', /\bLANWA\b/],
+];
+const brandName = (p) => { const b = brandOf(p); if (b) return b; const n = String(p.name || '').toUpperCase(); const hit = KNOWN_BRANDS.find(([, re]) => re.test(n)); return hit ? hit[0] : ''; };
+const SERIES_NAMES = { Kevilton: ['White', 'Modular White', 'Modular Black', 'Modular Jet Black', 'Mahogany', 'Kumbuk', 'Teak'], Orange: ['Casablanca', 'Enigma White', 'Enigma Gunmetal', 'Kumbuk'] };
+function seriesOf(p) {
+  const brand = brandName(p), n = String(p.name || '').toUpperCase();
+  if (deptOf(p.cat) === 'Switches' && SWITCH_RANGES[brand]) {
+    const r = SWITCH_RANGES[brand].find(([re]) => re.test(n)), k = r ? r[1] : (brand === 'Orange' && /ENIGMA/.test(n) ? 1 : 0);
+    return { key: 'SW|' + brand + '|' + k, name: `${brand} ${SERIES_NAMES[brand][k]} series` };
+  }
+  return brand ? { key: brand + '|' + p.cat, name: `${brand} ${p.cat.charAt(0) + p.cat.slice(1).toLowerCase()}` } : null;
+}
+function relatedFor(p) {
+  const pool = listed().filter(x => x.id !== p.id && (!p.vg || x.vg !== p.vg));
+  const S = seriesOf(p), B = brandName(p), N = 10, taken = new Set();
+  const pick = (f) => { const l = oneEach(shopOrder(pool.filter(x => !taken.has(x) && !(x.vg && taken.has(x.vg)) && f(x)))).slice(0, N); l.forEach(x => { taken.add(x); if (x.vg) taken.add(x.vg); }); return l; };
+  const tabs = [];
+  if (S) tabs.push({ k: 'series', label: S.name, list: pick(x => { const s = seriesOf(x); return s && s.key === S.key; }) });
+  if (B) tabs.push({ k: 'brand', label: 'More from ' + B, list: pick(x => brandName(x) === B), href: deptOf(p.cat) === 'Switches' ? url('search', { cat: 'Switches', brand: B }) : url('search', { q: B }) });
+  tabs.push({ k: 'cat', label: 'More in ' + p.cat.charAt(0) + p.cat.slice(1).toLowerCase(), list: pick(x => x.cat === p.cat), href: url('search', { cat: p.cat }) });
+  return tabs.filter(t => t.list.length);
+}
+function relatedSection(p) {
+  const tabs = relatedFor(p);
+  if (!tabs.length) return '';
+  return `<section class="e-sec soft rel"><div class="e-head"><h2 class="e-h2">You may also need</h2><a class="e-link" href="${url('search', { cat: p.cat })}">Shop ${esc(p.cat)}</a></div>
+    <div class="t-tabs small rel-tabs">${tabs.map((t, k) => `<button class="${k ? '' : 'on'}" data-tab="rel:${t.k}">${esc(t.label)}<small>${t.list.length}</small></button>`).join('')}</div>
+    ${tabs.map((t, k) => `<div class="t-pane ${k ? '' : 'on'}" data-pane="rel:${t.k}"><div class="t-railwrap"><div class="e-rail" id="rel_${t.k}">${t.list.map(productBox).join('')}</div>
+      <button class="t-arrow l" aria-label="Back" data-rail="rel_${t.k}" data-d="-1">&#8249;</button><button class="t-arrow r" aria-label="More" data-rail="rel_${t.k}" data-d="1">&#8250;</button></div></div>`).join('')}
+  </section>`;
+}
 function productPage() {
   const p = P(st.route.parts[1]);
   if (!p) return `<div class="e-empty"><h2 class="e-h2">Product not found</h2><p>It may have been taken off the site. Everything that is on it is in the shop.</p><a class="e-btn" href="#/search">Shop all products</a></div>`;
@@ -2934,7 +2979,6 @@ function productPage() {
   const qty = st.pdQty || 1, price = priceFor(p, qty), d = discPct(p), out = isOut(p);
   const w = st.cat.settings || {};
   const opt = st.selectedOptions[p.id] || (p.options && p.options[0]) || '';
-  const same = listed().filter(x => x.cat === p.cat && x.id !== p.id && (!p.vg || x.vg !== p.vg)).slice(0, 8);
   const waText = encodeURIComponent(`Hello ${shopName()}, I'd like to ask about ${p.name} (${p.code || ''}).`);
   return `
   <div class="e-page">
@@ -2968,8 +3012,7 @@ function productPage() {
       </div>
     </div>
   </div>
-  ${same.length ? `<section class="e-sec soft"><div class="e-head"><h2 class="e-h2">You may also need</h2><a class="e-link" href="${url('search', { cat: p.cat })}">Shop ${esc(p.cat)}</a></div>
-    <div class="e-rail">${same.map(productBox).join('')}</div></section>` : ''}`;
+  ${relatedSection(p)}`;
 }
 
 /* ---------------- cart ---------------- */
