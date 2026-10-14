@@ -390,6 +390,9 @@ body.search-open .e-search{display:block}
 /* ---------- inner pages ---------- */
 .e-page{padding:clamp(34px,4vw,56px) var(--pad) clamp(60px,7vw,100px)}
 .e-crumb{font-size:13px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.e-back{display:inline-flex;align-items:center;gap:8px;margin-bottom:16px;padding:8px 16px;border:1px solid var(--line2);border-radius:999px;font-size:13px;letter-spacing:.04em;color:var(--ink);text-decoration:none;background:var(--bg,#fff)}
+.e-back:hover{border-color:var(--ink)}
+.e-back span{font-size:16px;line-height:1}
 .e-crumb a:hover{color:var(--ink);text-decoration:underline}
 .e-title{text-align:center;padding:clamp(40px,5vw,70px) var(--pad) clamp(24px,3vw,36px)}
 .e-title .e-crumb{justify-content:center}
@@ -434,6 +437,12 @@ body.search-open .e-search{display:block}
 .e-opts{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px}
 .e-opts button{border:1px solid var(--line);padding:10px 14px;font-size:14px}
 .e-opts button.on,.e-opts button:hover{border-color:var(--ink)}
+.e-opts a{border:1px solid var(--line);padding:9px 14px;font-size:14px;color:inherit;text-decoration:none}
+.e-opts a.on{border-color:var(--ink);background:var(--ink);color:#fff}
+.e-opts a:hover{border-color:var(--ink)}
+.e-opts a.gone{opacity:.45;text-decoration:line-through}
+.e-card .pr .from{font-size:12px;color:var(--muted);margin-right:6px;font-weight:400}
+.e-card .sub .vars{color:var(--ink);font-weight:500}
 .e-tiers{border:1px solid var(--line);margin-bottom:24px}
 .e-tiers div{display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line2);font-size:14px}
 .e-tiers div:last-child{border-bottom:0}
@@ -820,7 +829,7 @@ body[data-tpl="techoze"] .e-btn.line:hover{background:var(--ink);color:#fff;bord
 body[data-tpl="techoze"] .e-btn.light{background:#fff;color:var(--ink);border-color:#fff}
 body[data-tpl="techoze"] .e-btn.light:hover{background:var(--brand);color:#fff;border-color:var(--brand)}
 body[data-tpl="techoze"] .e-btn.wa{background:#1f7a45;border-color:#1f7a45}
-body[data-tpl="techoze"] .e-input,body[data-tpl="techoze"] .e-choice label,body[data-tpl="techoze"] .e-qty,body[data-tpl="techoze"] .e-opts button,body[data-tpl="techoze"] .e-tiers{border-radius:12px}
+body[data-tpl="techoze"] .e-input,body[data-tpl="techoze"] .e-choice label,body[data-tpl="techoze"] .e-qty,body[data-tpl="techoze"] .e-opts button,body[data-tpl="techoze"] .e-opts a,body[data-tpl="techoze"] .e-tiers{border-radius:12px}
 body[data-tpl="techoze"] .e-sum,body[data-tpl="techoze"] .e-kv,body[data-tpl="techoze"] .e-help>div{border-radius:16px}
 body[data-tpl="techoze"] .e-help{border:0;gap:16px;grid-template-columns:repeat(3,1fr)}
 body[data-tpl="techoze"] .e-help>div{border:1px solid var(--line)}
@@ -1823,11 +1832,42 @@ const CAT_PHOTOS = {
   'SWITCHES': 'switches', 'BLACK SCREW NAIL': 'screws', 'DOOR LOCK': 'door-lock', 'ASIAN BASE': 'paint-base',
   'PVC ITEMS': 'pvc-pipe', 'POP RIVERTS': 'pop-rivets', 'PADLOCK': 'padlock', 'SCREW DRIVER': 'screwdriver',
   'DRILL BIT': 'drill-bit', 'BALL VALVE': 'valve', 'TOOLS': 'tools', 'LED PANEL': 'led-panel',
-  'CONCRETE NAIL': 'nails', 'ABC BOX': 'electrical-box', 'ENAMAL': 'enamel', 'LED BULB N/W': 'led-bulb'
+  'CONCRETE NAIL': 'nails', 'ABC BOX': 'electrical-box', 'ENAMAL': 'enamel', 'LED BULB N/W': 'led-bulb',
+  // the departments
+  'LIGHTING': 'led-bulb', 'WIRING ITEMS': 'electrical-box', 'MACHINERIES': 'drill-bit', 'PAINTS & COATINGS': 'paint-base',
+  'DOOR LOCKS': 'door-lock', 'CONSTRUCTION ITEMS': 'nails', 'HAND TOOLS': 'tools'
 };
 const catKey = (n) => String(n || '').toUpperCase().replace(/\s+/g, ' ').trim();
 const stockPhoto = (c) => (c && !c.img && CAT_PHOTOS[catKey(c.name)]) ? '/img/categories/' + CAT_PHOTOS[catKey(c.name)] + '.webp' : '';
 const catImg = (c) => (c && c.img) || stockPhoto(c);
+/* The shop's departments, in the order they are shown, and the till's categories in each (the till
+   keeps hundreds of small ones). A category not listed here is under "Others". */
+const DEPTS = [
+  ['Switches', 'SWITCHES|PLUG BASS|BLANK PLATE|BELL|FAN CONTROLLER|CORD SWITCH|CODE SWITCH|MULTY SOCKET|ADAPTER|CONVERTER|AMANA SOCKET|EXTNTION CODE|WIRE CODE|SWITCH NAIL|LAMP COVER'],
+  ['Lighting', 'LED PANEL|LED BULB N/W|HOLDER|DOUBEL HOLDER|SCREW HOLDER|SWANECK HOLDER|FLASH LIGHT|MAXTA LED|KOBE PANEL LIGHT|CAPRI LED|SAFETAA LED|ORANGE LED|INDICATOR BULB|HALIGANT BULB|LIGHT CUP|STEP LIGHT|SURFACE LIGHT|SOLAR LAMP|VEEDHI LAMP|LOTUS BULB|BULB|CFL BULB|TORCH|TOURCH|BOUTH|CHOKE|STARTER|DRIVER|SENSER|BATTERY'],
+  ['Wiring Items', 'SUNK BOX|PLUG TOP|CELLING ROSE|ABC BOX|ABCBOX|BREAKER|BRACKER|TRIP|MAIN SWITCH|CHANGE OVER|STEEL BOX|BUS BAR|CONNECTOR BAR|TERMINAL BOX|JUNCTION BOX|UNIVERSAL BOX|EARTH ROD|EIRTH ROD|EARTH WIRE|WIRE|1044 WIRE|2 CORE|3 CORE WIRE|15 AMP WIRE|MAIN WIRE|TT WIRE|WIER CORD|EIYAM|CABLE TIE|CABLE TIE 250MM|INSULATION TAPE|CONDUTE|CONDOIT|CONDIUTE BEND|FLEXIBLE CONDUTE|CASHING|CASIN BAR|C/CLIP|U/CLIP|T SOCKET|LUGE|TESTER|FLOATER SWITCH|CAPASITOR|ANTENA|NOB'],
+  ['Machineries', 'WATER PUMPS|SUBMERSIBLE PUMP|TUBE WELL PUMP|DEEP WELL PUMP|ACIT PUMP|HOISE MOTOR|FAN MOTOR|HAND DRILL|SADI HAMMER|HAMMER|GRINDER|CIRCULAR SAW|BLOWER|WELLOO TOOLS|SANDER|GLUE GUN|SOLDER IRON|WELDING HOLDER|WELDING ROD|VALDIN ROD|WALDING ROD 12NO|WELDINGHOLDER|DRILL BIT|HSS DRILL BIT|MASONARY DRILL BIT|HILTYBIT|FLAT/POND BIT|CHISEL|DRILL CHUCK|CHUK KEY|HOLE SAW|SAW BLADE|JIG SAW|CUTTING DISK|DIAMOND DISK|DIAMOND WHEEL|GRINDING DISK|FLAB DISK|CUP WHEEL|CUP BRUSH|GRINDER NUT|GRINDER PAD|RUBBER PAD|WELCO PAD|WELCO BACKING|VELCO PAPER|MAGIC PAD|NUT PAD 4"-4 1/2"|GRASS CUTTER|GRASS TRIMMER|BRUSH CUTTERS|GRASS CUTTING WIRE|CHAIN SAW ADAPTER|CELLING FAN|WALL FAN|TABLE FAN|STAND FAN|COOLING FAN|EXHAUSD FAN|HEATER|WATER HEATER|KEROSENE COOKER|JACK'],
+  ['Paints & Coatings', 'ASIAN BASE|ENAMAL|DULUX PAINT|EMULSION|ASIAN PAINT|VARNISH|FLOOR PAINT|FLOORPAINT|WATER BASE|N/P WATER BASE|NIPPON WATER SHINE|SEALER|SANDING SEALER|ROOFING PAINT|PUTTY|FILLERS|POLISH|SPRAY CAN|SPRAY TIN|SPARY GUN|WALZZ PAINT|BRILLIANT WHITE|PAINT|AUTO PAINT|METLA PRIMER Q/D|VITALIA|DAMP PROOF|THINNER|LACQUER|PAINT REMOVER|WOOD PRESERVATIVE|TITANIUM|DIE|CREAK SEAL|SKIM KOTE|BRUSH|ROLLER BRUSH|ROLLER SET|ART BRUSH|PAINT TRAY|SAND PAPER|POTY MIXTURE|HINOL|BRASO|RED POWDER|REDPOWDER|BLACK PODER'],
+  ['Door Locks', 'DOOR LOCK|PADLOCK|BIRD LOCK|DRAWYER LOCK|CUBOARD LOCK|BELLUCCI LOCK|LOCK CYLINDER|LOCK BARREL|LOCK BODY|KEY HOLE|DOOR HAND|HANDLE|DOOR PULL|DOOR CLOSER|DOOR RINGS|BUTT HINGES|T HINGES|PANTRY CUBOARD HINGS|TOWER BOLT|PAD BOLT STEEL|HASP & STAPLES|STAPLES KUNTI PATTM|MAGNETIC CATCHES|FASTNER|CASEMENT|CASTMENT|GATE HOOK|GATE WHEEL|BATHROOM SET|MIRROR|OTHER|PLYWOOD DOOR|IRON'],
+  ['PVC Items', 'PVC ITEMS|PVC PIPE|SLON DRAINAGE|R/T/SOCKET|R/SOCKET|V/SOCKET|F/SOCKET|ELBOW|BEND|END CAP|UNION|PVC C/SADDLE|SWEEP TEE 110MM|MAGIC BENT|MAGIC BENT GREY|MAGIC HOSE|CLIP PVC|GUTTER|GUTTER CLIP|CONNECTOR|GULLY BOX|GULLY COVER|GALLY|SOLVENT CEMENT GUM|THREAD SEAL|NO LEAK TAPE|NOLEAK|BALL VALVE|ANGLE VALVE|STOP VALVE|VALVE|NON RETURN VALVE|FOOT VALUE|CONSEALD VALUE|FLOATER VALVE|SINK TAP|BIB TAP|BIB COCK|BASIN TAP|GARDEN TAP|GURDEN TAP|BARAL TAP|FILTER TAP|TAP|KEVIN|KRONNEX|AQUATEK|TAP CONNECTOR|TAP EQUIPMENTS|TAP WASHER|FLAT WASHER|WATER SEAL|SINK|SINK WAST|BOTTLE TRAP|BIDAY SHOWER|BIDAY HEAD|BIDET SPRAY|BIDED SET|JET SHOWER|BATHROOM SHOWER|HAND SHOWER|TELEPHONE SHOWER|SYSTEM FITTINGS|PUSH TYPE|COMET SEAT COVER|COMMED SCREW SET|WASHING MACHINE HOSE|FLEXIBLE HOSE|RUBBER HOSE|CLEAR HOSE|GREEN HOSE|GARDEN HORSE|HOSE CLIP|HOSE CONNECTOR|GAS HOSE|REGULAOR|ELKATHIN|SPRINKLER|NOZZLE|WATER METER|WATER TANK|TANK|GI CLIP|PIPE CLAMP|RUBBER BUSH|BRASS CUPLEN|CAPLIN|TOWEL BAR|SOAP HOLDER|CP CUP|CUP HOOKS|TILE BEEDING'],
+  ['Construction Items', 'BLACK SCREW NAIL|BLACK SCREW|BLACK SCREWNAIL|CONCRETE NAIL|ROOFING NAIL|WIRE NAIL|UMBRALLA NAILS|JAGUAR NAIL|TINTES NAIL|IRON NAILS|SHOE STACKS|SHOE STACKS 1/2|PANEL PINS|PANAL PIN|NICKEL SCREW|AMANO SCREW|BRASS SCREW|SCREW SET|SELF DRILLING SCREW|POP RIVERTS|WALL FLUG|ROLL PLUG|ANCHOR BOLT|G.I. BOLT|THREAD BAR|NUT|ZINK PLATED WASHER|DIAMOND WOSHER|FAN HOOKS|SELF BRACKET|SHELF BRACKET|BRACKET|L ANGLE|L AYARIN|TV BRACKET|AMANA|AMANO SHEET|CEMENT|CONSTRUCTION GROUT|TILE MOTAR|TILE CROSS|WATER PROOFING|WATER PROOF SEALR|DR. FIXIT|ROOFING FELT|SILICON|SILICON GUN|GUM|MULTIBOND|SUPER GLUE|DOUBLE GUM|EPIFIX|GLUE STICK|CHEMICALS|MESH|MESH 1/2 X 1/2"=3/4"=1"|GARDEN MESH|SOLO FENCE|BARBED WIER [KATTU KAMPE]|KATU KAMBI|BINDER|REGIFORM|REDIFORM MANIS|POLYTHENE|THAPOLIN|CANVES|LINK CHAIN|DOG CHAIN|CABLE|CURTAIN WIRE|CURTAIN HOOKS|CURTAIN BAR|PIN HOOKS|BOX BAR|FIBER DECK|IORN ITEMS|ELEPHANT BOBIN|ROUND BLOCK|FOUNDATION NOOL|DOUBLE TAPE|MASKING TAPE|PACKING TAPE|TAPE|CASTER WHEEL|WHEEL BAROW|WHEEL BAROW TIRE|WHEEL BARROW|PLASTIC PAN|BUCKET|PLASTIC BUCKETS|LAMBA|LABA|PLUMB BRASS|LAHAMBA KETA [BRASS]'],
+  ['Hand Tools', 'TOOLS|SCREW DRIVER|STEEL TAPE|MEASURING TAPE|COMBINATION PLIERS|PILER|PILLER COCK|2K BLOCK|EPICA|CLAW HAMMER|FIBER HUMMER|RUBBER HUMMER|JEL HAMMER|HAND SAW|HACKSAW FRAME|HACKAW BLADE|HALL SAW|PRUNING SAW|SPANNER|SHIFTER|RINCH|T WRENCH|PIPE WRENCH|SOCKET|BOX SOCKET|KEY SET|ALAN KEY SET|ALLEN KEY|SCRAPER|J.K PEERI|DIAMOND PEERI|CHAIN FILE|SHARPEN STONE|RIVET GUN|CUTTER|PAPER CUTTER|PEPAR CUTTER|SNIP|STEEL SCISSOR [L/R]|SCISSOR|GLASS|KNIEF|WIRE STRIPER|WIRE BRUSH|COLD CHESIS|COLE CHESAL|CROW BAR|PULLER|TRY SQUARE|SPIRIT LEVEL|SPEED LEVEL|ALUMINUIM LEVEL|MASON TRAVEL|MASON TROWERS|FINISHING TROWEL|PLASTERING TOWEL|TROWEL TEETH|SCALE|BALANCE|OIL CAN|AWL PAAS|BULDO CLIP|GARDEN TOOL|GARDEN REKA|TREE CUTERS|MAMOOTY|UDALU THALA|SHOVEL|FORK|AXE|ALAVANGU|PIKKAS|KAMBI SIVILING [MAKUNUO DALA]|SAVAL|VISIKATHI|LANDA|MULLU|K.PATTAM|GLOUSE|SAFTY GOOGLES|MASK|BOOTS|SAFETY JACKET|NYLONE TWINE 27|NYLON ROBE|LAGUAGE ROPE'],
+  ['Others', ''],
+].map(([name, list]) => ({ name, cats: new Set(list ? list.split('|') : []) }));
+const DEPT_OF = new Map(DEPTS.flatMap(d => [...d.cats].map(c => [c, d.name])));
+const deptOf = (cat) => DEPT_OF.get(catKey(cat)) || 'Others';
+const isDept = (name) => DEPTS.some(d => d.name === name);
+/* is this product in that department, or in that one category? */
+const inCatOf = (p, cat) => isDept(cat) ? deptOf(p.cat) === cat : p.cat === cat;
+/* the catalogue's categories become the departments; the till's own are kept as the smaller ones in them */
+function groupCatalog(cat) {
+  const subs = cat.subcats || cat.categories || [];
+  const count = {};
+  cat.products.forEach(p => { const d = deptOf(p.cat); count[d] = (count[d] || 0) + 1; });
+  cat.subcats = subs;
+  cat.categories = DEPTS.filter(d => count[d.name]).map(d => ({ name: d.name, count: count[d.name], img: '', dept: true }));
+}
+const subsOf = (dept) => (st.cat.subcats || []).filter(c => deptOf(c.name) === dept);
 
 /* Kevilton's own product photos (from kevilton.lk), for the Kevilton goods the shop sells, by product
    code. Modular White is Kevilton's Ivory range and Modular Black its Chrome; Jet Black and a few others
@@ -2022,7 +2062,26 @@ const PRODUCT_PHOTOS = {
   'PCT-12-007814': 'orange/enigma-1gang-4wire-telephone-outlet-gunmetal.webp',   // ORANGE ENIGMA TELEPHONE SOCKET - GUNMETAL
   'PCT-12-007815': 'orange/enigma-1gang-tv-co-axial-outlet-75ohm-gunmetal.webp',   // ORANGE ENIGMA TV SOCKET - GUNMETAL
 };
-const productPhoto = (p) => { const f = p && PRODUCT_PHOTOS[p.code]; return f ? '/img/products/' + (f.includes('/') ? f : 'kevilton/' + f) : ''; };
+/* S-lon's photos of its uPVC pressure fittings (from s-lon.lk), given to the PVC fittings (in the categories below) by what their
+   name says they are. Drainage, door and 45° fittings, unions, gutters and pipes look different and
+   keep the stand-in. First match wins, so the narrower kinds come first. */
+const PVC_FITTINGS = new Set(['PVC ITEMS', 'R/T/SOCKET', 'R/SOCKET', 'V/SOCKET', 'F/SOCKET', 'ELBOW', 'BEND', 'END CAP', 'PVC C/SADDLE', 'CLIP PVC']);
+const PVC_SKIP = /\bDN\b|DOOR|\bY\b|TRAP|COWL|GUTTER|\bDP\b|UNION|NIPPLE|THREAD|TREAD|PIPE|\b45\b/;
+const PVC_PHOTOS = [
+  [/BRASS.*FAUC?S?ET ELBOW|FAUC?S?ET ELBOW.*BRASS/, 'brass-faucet-elbow'], [/BRASS.*FAUC?S?ET SOCKET|FAUC?S?ET SOCKET.*BRASS/, 'brass-faucet-socket'],
+  [/BRASS.*FAUC?S?ET TEE|FAUC?S?ET TEE.*BRASS/, 'brass-faucet-tee'],
+  [/REDUCING FAUC?S?ET ELBOW/, 'reducing-faucet-elbow'], [/FAUC?S?ET ELBOW/, 'faucet-elbow'], [/FAUC?S?ET SOCKET/, 'faucet-socket'], [/FAUC?S?ET TEE/, 'faucet-tee'],
+  [/VALVE SOCKET/, 'valve-socket'], [/REDUCING TEE|R\/TEE/, 'reducing-tee'], [/REDU[CS]ING SOCKET|\bR\/S(OCKET)?\b/, 'reducing-socket'],
+  [/\bBEN[DT]\b/, 'bend-90'], [/\bELBOW\b/, 'elbow-90'], [/\bTEE\b/, 'equal-tee-90'],
+  [/END ?C[AU]P|\bCAP\b|\bCUP\b/, 'cap'], [/CLIP|SADDLE/, 'saddle-clip'], [/SOCKET/, 'socket']];
+const pvcPhoto = (p) => {
+  if (!p || !PVC_FITTINGS.has(catKey(p.cat))) return '';
+  const n = String(p.name || '').toUpperCase();
+  if (PVC_SKIP.test(n)) return '';
+  const hit = PVC_PHOTOS.find(([re]) => re.test(n));
+  return hit ? '/img/products/slon/' + hit[1] + '.webp' : '';
+};
+const productPhoto = (p) => { const f = p && PRODUCT_PHOTOS[p.code]; return f ? '/img/products/' + (f.includes('/') ? f : 'kevilton/' + f) : pvcPhoto(p); };
 
 /* A product's own picture, or the stand-in. */
 function tile(p, small) {
@@ -2054,7 +2113,9 @@ const isLow = p => !isOut(p) && p.stock !== null && p.stock !== undefined && p.s
 
 /* The card: picture, name and price — and, on hover, the heart and an Add button. */
 function productBox(p) {
-  const d = discPct(p), out = isOut(p), price = priceFor(p, 1);
+  const vs = p.vg ? variantsOf(p) : null, inStock = vs ? vs.filter(v => !isOut(v)) : null;
+  if (vs && inStock.length) p = inStock.reduce((a, b) => priceFor(b, 1) < priceFor(a, 1) ? b : a);   // the card shows the lowest price
+  const d = discPct(p), out = vs ? !inStock.length : isOut(p), price = priceFor(p, 1);
   const badge = out ? '<span class="e-badge">Sold out</span>'
     : d > 0 ? `<span class="e-badge sale">−${d}%</span>`
     : p.featured ? '<span class="e-badge">Featured</span>'
@@ -2066,21 +2127,21 @@ function productBox(p) {
       <a class="mlink" href="${href}" aria-label="${esc(p.name)}">${tile(p)}</a>
       ${badge}
       <button class="e-wish ${st.wish.includes(p.id) ? 'on' : ''}" data-wish="${esc(p.id)}" aria-label="Save to wishlist">${EI.heart}</button>
-      ${out ? '' : `<button class="e-btn light e-quick" data-add="${esc(p.id)}">Add to cart</button>`}
+      ${out ? '' : vs ? `<a class="e-btn light e-quick" href="${href}">Choose ${esc(p.vg.kind.toLowerCase())}</a>` : `<button class="e-btn light e-quick" data-add="${esc(p.id)}">Add to cart</button>`}
     </div>
     <div class="info">
       <span class="cat">${esc(p.cat || '')}</span>
-      <a class="nm" href="${href}">${esc(p.name)}</a>
-      <div class="pr ${d > 0 ? 'off' : ''}"><b>${money(price)}</b>${p.mrp > price ? `<s>${money(p.mrp)}</s>` : ''}</div>
-      <div class="sub">${p.unit ? `<span>per ${esc(p.unit)}</span>` : ''}${out ? '<span class="out">Sold out</span>' : ''}</div>
-      ${out ? '' : `<button class="e-btn sm line add-m" data-add="${esc(p.id)}">Add to cart</button>`}
+      <a class="nm" href="${href}">${esc(vs ? p.vg.name : p.name)}</a>
+      <div class="pr ${d > 0 ? 'off' : ''}">${vs ? '<span class="from">From</span>' : ''}<b>${money(price)}</b>${p.mrp > price ? `<s>${money(p.mrp)}</s>` : ''}</div>
+      <div class="sub">${vs ? `<span class="vars">${vs.length} ${esc({ Size: 'sizes', Colour: 'colours', Finish: 'finishes', Option: 'options' }[p.vg.kind])}</span>` : ''}${p.unit ? `<span>per ${esc(p.unit)}</span>` : ''}${out ? '<span class="out">Sold out</span>' : ''}</div>
+      ${out ? '' : vs ? `<a class="e-btn sm line add-m" href="${href}">Choose ${esc(p.vg.kind.toLowerCase())}</a>` : `<button class="e-btn sm line add-m" data-add="${esc(p.id)}">Add to cart</button>`}
     </div>
   </div>`;
 }
 
 /* ---------------- home ---------------- */
 const shopName = () => (st.cat && st.cat.shop && st.cat.shop.name || 'Regal Hardware').replace(/^REGAL HARDWARE$/, 'Regal Hardware');
-const listed = () => st.cat.products.filter(p => st.cat.settings.showOutOfStock || !isOut(p));
+const listed = () => oneEach(st.cat.products.filter(p => st.cat.settings.showOutOfStock || !isOut(p)));
 const catLink = (re, fallback) => { const c = (st.cat.categories || []).find(c => re.test(c.name)); return c ? url('search', { cat: c.name }) : url('search', { q: fallback }); };
 
 function heroSection() {
@@ -2092,7 +2153,7 @@ function heroSection() {
       ${s.tagline ? `<p style="max-width:560px;margin:18px 0 0;font-size:17px;color:rgba(255,255,255,.88)">${esc(s.tagline)}</p>` : ''}
       <div class="cta">
         <a class="e-btn light" href="#/search">Shop all products</a>
-        <a class="e-btn line" style="color:#fff;border-color:#fff" href="#/categories">Departments</a>
+        <a class="e-btn line" style="color:#fff;border-color:#fff" href="#/categories">Product Categories</a>
       </div>
     </div>`;
   if (slides.length) {
@@ -2245,15 +2306,15 @@ const TPL_SECTIONS = {
   builder: ['hero', 'promise', 'categories', 'best', 'banners', 'deal', 'catwise', 'band', 'newest', 'brands', 'quote'],
 };
 const SEC_TITLE = { categories: 'Shop by department', best: 'Best sellers', featured: 'Featured products', newest: 'New arrivals', deal: 'Deal of the week', brands: 'Brands we stock', catwise: '' };
-const DEFAULT_MENU = [{ label: 'Home', href: '#/' }, { label: 'Shop', href: '#/search' }, { label: 'Departments', href: '#/categories' }, { label: 'Best sellers', href: '#/search?sort=best' }, { label: 'Track order', href: '#/track' }, { label: 'Help', href: '#/contact' }, { label: 'Special offers', href: '#/search?sale=1' }];
+const DEFAULT_MENU = [{ label: 'Home', href: '#/' }, { label: 'Product Categories', href: '#/categories' }, { label: 'Best sellers', href: '#/search?sort=best' }, { label: 'Track order', href: '#/track' }, { label: 'Help', href: '#/contact' }, { label: 'Special offers', href: '#/search?sale=1' }];
 function TH() {
   const t = (st.cat && st.cat.settings && st.cat.settings.theme) || {};
   const tpl = TPL_DEF[t.template] ? t.template : 'ella', d = TPL_DEF[tpl], chosen = !!TPL_DEF[t.template];
   // a theme saved before templates existed only ever held the old defaults — the template's own are used instead
   const pick = (k) => chosen && t[k] ? t[k] : d[k];
   let sections = chosen && Array.isArray(t.sections) && t.sections.length ? t.sections.filter(s => s && s.k) : TPL_SECTIONS[tpl].map(k => ({ k, on: true }));
-  if (!sections.some(s => s.k === 'hero')) sections = [{ k: 'hero', on: true }, ...sections];
-  const menu = chosen && Array.isArray(t.menu) && t.menu.length ? t.menu.filter(m => m && m.label) : DEFAULT_MENU;
+  if (!sections.some(s => s.k === 'hero')) sections = [{ k: 'hero', on: true }, ...sections];  const menu = (chosen && Array.isArray(t.menu) && t.menu.length ? t.menu.filter(m => m && m.label) : DEFAULT_MENU)
+    .filter(m => (m.href || '').replace(/\/$/, '') !== '#/search');   // there is no "all products" page; Product Categories is the way in
   return { tpl, font: pick('font'), color: pick('color'), accent: pick('accent'), hdr: pick('hdr'),
     anim: t.anim !== false, intro: t.intro !== false, heroFx: t.heroFx || 'zoom', rail: t.rail !== false, topbar: t.topbar !== false,
     promoTone: t.promoTone === 'colourful' ? 'colourful' : 'brand',
@@ -2277,9 +2338,10 @@ function applyTheme(T) {
 }
 const navOn = (href) => { const h = String(href || '').replace(/^#\/?/, ''), cur = (st.route.path || '') + (location.hash.includes('?') ? '?' + location.hash.split('?')[1] : ''); return h === '' ? !st.route.path : cur === h || (st.route.path === h.split('?')[0] && !h.includes('?') && h !== ''); };
 const isHot = (m) => /offer|deal|sale|special/i.test(m.label || '');
-const menuLinks = (T, cls) => T.menu.map(m => `<a href="${esc(m.href || '#/')}" class="${navOn(m.href) ? 'on' : ''} ${isHot(m) ? 'hot' : ''}">${esc(m.label)}</a>`).join('');
-const minPrice = (cat) => { const ps = st.cat.products.filter(p => p.cat === cat && p.price > 0); return ps.length ? Math.min(...ps.map(p => p.price)) : 0; };
-const maxOff = (cat) => Math.max(0, ...st.cat.products.filter(p => p.cat === cat).map(discPct));
+const menuLabel = (m) => /^#\/categories\b/.test(m.href || '') ? 'Product Categories' : m.label;   // whatever the theme saved
+const menuLinks = (T, cls) => T.menu.map(m => `<a href="${esc(m.href || '#/')}" class="${navOn(m.href) ? 'on' : ''} ${isHot(m) ? 'hot' : ''}">${esc(menuLabel(m))}</a>`).join('');
+const minPrice = (cat) => { const ps = st.cat.products.filter(p => inCatOf(p, cat) && p.price > 0); return ps.length ? Math.min(...ps.map(p => p.price)) : 0; };
+const maxOff = (cat) => Math.max(0, ...st.cat.products.filter(p => inCatOf(p, cat)).map(discPct));
 /* promo cards: in the shop's own colours (shades of its main, second and header colour), or the
    bright mixed set of the Marketplace demo — Look & layout → Promo card colours */
 const PROMO_COLOURFUL = ['linear-gradient(125deg,#3fb59a,#62c9ae)', 'linear-gradient(125deg,#c88a1f,#e6b24a)', 'linear-gradient(125deg,#f27b35,#dd3a3a)', 'linear-gradient(125deg,#3c4f93,#6079c2)', 'linear-gradient(125deg,#5b2f78,#9b4dbb)', 'linear-gradient(125deg,#1f7a6c,#2fa38f)'];
@@ -2390,8 +2452,8 @@ function heroBd(T) {
       <span class="tag">748, Main Street · Kaduruwela</span>
       <h1>${esc(a)}${rest.length ? `<br><em>${esc(rest.join(' '))}</em>` : ''}</h1>
       <p>${esc(T.hero.text || s.tagline || 'Cement, steel, paint, plumbing, electrical and tools — counter prices, delivered from Kaduruwela.')}</p>
-      <div style="display:flex;gap:12px;flex-wrap:wrap"><a class="e-btn light" href="#/search">${esc(T.hero.button || 'Shop all products')}</a><a class="e-btn line" style="color:#fff;border-color:#fff" href="#/categories">Departments</a></div>
-      <div class="stat"><div><b>${fq(prods)}</b><span>Products</span></div><div><b>${fq(cats)}</b><span>Departments</span></div>${+s.freeOver ? `<div><b>${money(s.freeOver).replace('Rs ', 'Rs ')}</b><span>Free delivery over</span></div>` : ''}</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap"><a class="e-btn light" href="#/search">${esc(T.hero.button || 'Shop all products')}</a><a class="e-btn line" style="color:#fff;border-color:#fff" href="#/categories">Product Categories</a></div>
+      <div class="stat"><div><b>${fq(prods)}</b><span>Products</span></div><div><b>${fq(cats)}</b><span>Categories</span></div>${+s.freeOver ? `<div><b>${money(s.freeOver).replace('Rs ', 'Rs ')}</b><span>Free delivery over</span></div>` : ''}</div>
     </div>
     <div class="pic"><img src="tradesmen_cutout.png" alt="" onerror="this.src='hero_tradesmen.png'"></div>
   </section>`;
@@ -2467,14 +2529,14 @@ function dealSection(T, s) {
 function featuredTz(T, s) {
   const cats = (st.cat.categories || []).slice(0, 5);
   if (!cats.length) return '';
-  const lists = cats.map(c => { const all = listed().filter(p => p.cat === c.name); return [c, all.filter(p => p.featured).concat(all.filter(p => !p.featured)).slice(0, 9)]; }).filter(x => x[1].length);
+  const lists = cats.map(c => { const all = listed().filter(p => inCatOf(p, c.name)); return [c, all.filter(p => p.featured).concat(all.filter(p => !p.featured)).slice(0, 9)]; }).filter(x => x[1].length);
   if (!lists.length) return '';
   return `<section class="t-sec"><div class="t-head"><h2>${esc(s.t || 'Featured products')}</h2><div class="t-tabs small">${lists.map(([c], k) => `<button class="${k ? '' : 'on'}" data-tab="feat:${k}">${esc(c.name.charAt(0) + c.name.slice(1).toLowerCase())}</button>`).join('')}</div></div>
     ${lists.map(([c, ps], k) => `<div class="t-pane ${k ? '' : 'on'}" data-pane="feat:${k}"><div class="tz-feat">${promoCard(c, k + 4)}<div class="t-railwrap"><div class="e-rail" id="feat_${k}">${ps.map(productBox).join('')}</div></div></div></div>`).join('')}</section>`;
 }
 function catwiseSection(T) {
   const cats = (st.cat.categories || []).slice(5, 5 + T.catwise);
-  return cats.map((c, k) => railSection('cw_' + k, c.name.charAt(0) + c.name.slice(1).toLowerCase(), listed().filter(p => p.cat === c.name).slice(0, 12), url('search', { cat: c.name }), k % 2 === 0)).join('');
+  return cats.map((c, k) => railSection('cw_' + k, c.name.charAt(0) + c.name.slice(1).toLowerCase(), listed().filter(p => inCatOf(p, c.name)).slice(0, 12), url('search', { cat: c.name }), k % 2 === 0)).join('');
 }
 function bandT(T) {
   const s = st.cat.settings || {};
@@ -2553,17 +2615,14 @@ function bindTpl(root) {
 /* ---------------- departments ---------------- */
 function categoriesPage() {
   const cats = st.cat.categories || [];
-  return `<div class="e-title"><div class="e-crumb"><a href="#/">Home</a><span>/</span><span>Departments</span></div>
-      <h1 class="e-h1" style="font-size:clamp(30px,4vw,48px)">Departments</h1>
-      <p>${fq(st.cat.products.length)} products in ${cats.length} departments, all on the shelves at 748, Main Street, Kaduruwela.</p></div>
-    <div class="e-grid bordered">${cats.slice(0, 12).map(c => `
+  return `<div class="e-title"><div class="e-crumb"><a href="#/">Home</a><span>/</span><span>Product Categories</span></div>
+      <h1 class="e-h1" style="font-size:clamp(30px,4vw,48px)">Product Categories</h1>
+      <p>${fq(st.cat.products.length)} products in ${cats.length} categories, all on the shelves at 748, Main Street, Kaduruwela.</p></div>
+    <div class="e-grid bordered" style="margin-bottom:90px">${cats.slice(0, 12).map(c => `
       <a class="e-card" href="${url('search', { cat: c.name })}">
         <div class="media">${catImg(c) ? `<div class="tile"><img src="${esc(catImg(c))}" alt="" loading="lazy"></div>` : `<div class="tile ph" style="--h1:${tintOf(c.name)[0]};--h2:${tintOf(c.name)[1]}"><span class="ph-cat">${c.count} item${c.count === 1 ? '' : 's'}</span><span class="ph-ic">${artFor(c.name)}</span><span class="ph-nm">${esc(c.name)}</span></div>`}</div>
         <div class="info"><span class="nm">${esc(c.name)}</span><span class="pr e-muted" style="font-size:13px">${c.count}</span></div>
-      </a>`).join('')}</div>
-    ${cats.length > 12 ? `<div class="e-head" style="padding-top:clamp(48px,6vw,80px)"><h2 class="e-h2">Every department, A – Z</h2></div>
-      <div class="e-az" style="padding-bottom:90px">${(() => { const by = {}; cats.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(c => { const k = /^[a-z]/i.test(c.name) ? c.name[0].toUpperCase() : '#'; (by[k] = by[k] || []).push(c); });
-        return Object.keys(by).sort().map(k => `<h3>${k}</h3>` + by[k].map(c => `<a href="${url('search', { cat: c.name })}"><span>${esc(c.name)}</span><small>${c.count}</small></a>`).join('')).join(''); })()}</div>` : '<div style="height:70px"></div>'}`;
+      </a>`).join('')}</div>`;
 }
 
 /* ---------------- the collection: search, a department, or everything ---------------- */
@@ -2574,33 +2633,91 @@ const BRAND_FILTERS = {
 };
 const brandOf = (p) => {
   if (p.brand) return p.brand;
-  const rules = BRAND_FILTERS[catKey(p.cat)];
+  const rules = BRAND_FILTERS[catKey(p.cat)] || BRAND_FILTERS[catKey(deptOf(p.cat))];
   const hit = rules && rules.find(([, re]) => re.test(p.name || ''));
   return hit ? hit[0] : '';
 };
-/* Kevilton switches in the order the shop sells them: by range, then within a range by what the
-   item is. Anything not named here keeps its place after the named ones of its range. */
-const KEV_RANGES = [
-  [/JET BLACK/, 3], [/MOD(ULAR)? WHITE/, 1], [/MOD(ULAR)? BLACK/, 2],
-  [/MAHOGANY|\bMAHO\b/, 4], [/KUMBUK/, 5], [/TEAK/, 6]];
-const KEV_ITEMS = [
-  [/\b1\s*G\s*1\s*WAY/, 1], [/\b2\s*G\s*1\s*WAY/, 2], [/\b3\s*G\s*1\s*WAY/, 3], [/\b4\s*G\s*1\s*WAY/, 4], [/\b5\s*G\s*1\s*WAY/, 4.5],
-  [/\b1\s*G\s*2\s*WAY/, 5], [/\b2\s*G\s*2\s*WAY/, 6], [/\b3\s*G\s*2\s*WAY/, 7], [/\b4\s*G\s*2\s*WAY/, 8],
-  [/13\s*AMP PLUG BASE NEON/, 9.5], [/13\s*AMP PLUG BASE/, 9],
-  [/HUM ?FREE|FAN CONTROL/, 10], [/20\s*AMP D\/?POLE/, 11], [/TELEPHONE/, 12],
-  [/TV SOCKET/, 13], [/DATA SOCKET/, 14], [/BELL PRESS/, 15], [/LIGHT DIMMER/, 16], [/BLANK PLATE/, 17]];
-function kevOrder(p) {
+/* Kevilton and Orange switches in the order the shop sells them: Kevilton first, then Orange; each
+   by range, then within a range by what the item is. Anything not named here keeps its place after
+   the named ones of its range; other brands follow in the catalogue's own order. */
+const SWITCH_RANGES = {
+  Kevilton: [[/JET BLACK/, 3], [/MOD(ULAR)? WHITE/, 1], [/MOD(ULAR)? BLACK/, 2], [/MAHOGANY|\bMAHO\b/, 4], [/KUMBUK/, 5], [/TEAK/, 6]],
+  Orange: [[/ENIGMA.*GUNMETAL/, 2], [/ENIGMA/, 1], [/KUMBUK/, 3]],   // Casablanca is the plain range
+};
+const SWITCH_ITEMS = [
+  [/\b1\s*G\s*1\s*W(AY)?\b/, 1], [/\b2\s*G\s*1\s*W(AY)?\b/, 2], [/\b3\s*G\s*1\s*W(AY)?\b/, 3], [/\b4\s*G\s*1\s*W(AY)?\b/, 4],
+  [/\b5\s*G\s*1\s*W(AY)?\b/, 4.5], [/\b6\s*G\s*1\s*W(AY)?\b/, 4.6],
+  [/\b1\s*G\s*2\s*W(AY)?\b/, 5], [/\b2\s*G\s*2\s*W(AY)?\b/, 6], [/\b3\s*G\s*2\s*W(AY)?\b/, 7], [/\b4\s*G\s*2\s*W(AY)?\b/, 8],
+  [/13\s*AMP\s+PLUG BASE.*NEON/, 9.5], [/13\s*AMP\s+PLUG BASE/, 9],
+  [/HUM ?FREE|FAN (SPEED )?CONTROL/, 10], [/20\s*AMP D\/?P|D\/POLE/, 11], [/TELEPHONE/, 12],
+  [/TV SOCKET/, 13], [/DATA SOCKET/, 14], [/BELL PRESS/, 15], [/LIGHT DIMM?ER/, 16], [/BLANK PLATE/, 17]];
+const SWITCH_BRANDS = Object.keys(SWITCH_RANGES);
+function switchOrder(p) {
+  const b = SWITCH_BRANDS.indexOf(brandOf(p));
+  if (b < 0 || deptOf(p.cat) !== 'Switches') return -1;
   const n = String(p.name || '').toUpperCase();
-  const r = (KEV_RANGES.find(([re]) => re.test(n)) || [, 0])[1];
-  const i = (KEV_ITEMS.find(([re]) => re.test(n)) || [, 50])[1];
-  return r * 100 + i;
+  const r = (SWITCH_RANGES[brandOf(p)].find(([re]) => re.test(n)) || [, 0])[1];
+  const i = (SWITCH_ITEMS.find(([re]) => re.test(n)) || [, 50])[1];
+  return b * 1000 + r * 100 + i;
 }
+/* One product in many sizes or colours. The till keeps every size as a product of its own; the shop
+   shows them as one, with the sizes (or colours) to pick from. Read from the
+   name: what is left once the sizes and colours are taken out is the product. Each size stays a
+   product of its own underneath, with its own page, price and basket line. */
+const VAR_SIZE = [
+  /\b\d+(?:\s+\d+\/\d+|\/\d+|\.\d+)?\s*"?\s*X\s*\d+(?:\s+\d+\/\d+|\/\d+|\.\d+)?\s*(?:"|MM|M|FT)?/g,      // 4 X 2 1/2, 3/4 X 1/2, 10X12
+  /\b\d+\s+\d+\/\d+\s*"?/g, /\b\d+\/\d+\s*"?/g, /\b\d+(?:\.\d+)?\s*"/g,                                   // 1 1/2", 3/4, 4"
+  /\b\d+(?:\.\d+)?\s*(?:MM|CM|MTR|MTRS|METER|M|FT|FEET|KG|KGS|G|GM|GMS|L|LT|LTR|LITRE|ML|W|WATT|HP|AMP|AMPS|A|V|T|PCS|LBS|LB|OHM|INCH|UF)\b/g,
+  /\bNO\.?\s*\d+\b/g, /#\s*\d+\b/g, /\{[^}]*\}/g, /\[[^\]]*\]/g,
+];
+const VAR_COLOURS = /\b(?:B\/WHITE|BRILLIANT WHITE|WHITE|BLACK|RED|BLUE|GREEN|YELLOW|GREY|GRAY|BROWN|IVORY|CHROME|SILVER|GOLD|PINK|CLEAR|MAROON|MEROON|CREAM|BEIGE|PURPLE|VIOLET|TEAK|MAHOGANY|ROSEWOOD|WALNUT|EBONY|NATURAL|W\/W|C\/W|D\/L|WW|CW|DL|DAY ?LIGHT|WARM ?WHITE|COOL ?WHITE)\b/g;
+const varTidy = (s) => s.replace(/[[{(]\s*[\]})]/g, ' ').replace(/\s*[-–*]\s*(?=[-–*]|$)/g, ' ').replace(/^\s*[-–*]\s*/, '').replace(/\s+/g, ' ').trim();
+function variantOf(p) {
+  const name = String(p.name || '').toUpperCase().replace(/\s+/g, ' ').trim(), dept = deptOf(p.cat);
+  if (dept === 'Switches') return null;   // switches are shown one by one, in the order of their ranges
+  let rest = name; const found = [];
+  for (const re of VAR_SIZE) rest = rest.replace(re, (m) => { if (/[A-Z0-9]/.test(m)) found.push(m.trim()); return ' '; });
+  let colour = false;
+  rest = rest.replace(VAR_COLOURS, (m) => { found.push(m); colour = true; return ' '; });
+  const base = varTidy(rest);
+  if (!found.length || !/[A-Z]{3}/.test(base)) return null;
+  const sized = found.some(x => /\d/.test(x));
+  return { key: dept + '|' + base.replace(/[^A-Z0-9]+/g, ' ').trim(), base, label: varTidy(found.join(' ')), order: 0, kind: sized && colour ? 'Option' : sized ? 'Size' : 'Colour' };
+}
+const varNum = (s) => { const m = String(s).match(/(\d+)(?:\s+(\d+)\/(\d+)|\/(\d+)|\.(\d+))?/); if (!m) return 1e9;
+  return m[3] ? +m[1] + m[2] / m[3] : m[4] ? m[1] / m[4] : parseFloat(m[0]); };
+function groupVariants(cat) {
+  const by = new Map();
+  for (const p of cat.products) {
+    delete p.vg;
+    const v = variantOf(p); if (!v) continue;
+    if (!by.has(v.key)) by.set(v.key, []);
+    by.get(v.key).push({ p, ...v });
+  }
+  for (const items of by.values()) {
+    if (items.length < 2) continue;
+    // the same label twice is the same thing twice in the books: both stay, told apart by price
+    const n = {}; items.forEach(x => { n[x.label] = (n[x.label] || 0) + 1; });
+    items.forEach(x => { if (n[x.label] > 1) x.label += ' · ' + money(x.p.price); });
+    items.sort((a, b) => a.order - b.order || varNum(a.label) - varNum(b.label) || a.label.localeCompare(b.label));
+    const kinds = new Set(items.map(x => x.kind));
+    const g = { name: items[0].base || items[0].p.name, kind: kinds.size === 1 ? items[0].kind : 'Option', items: items.map(x => ({ p: x.p, label: x.label })) };
+    items.forEach(x => { x.p.vg = g; x.p.vlabel = x.label; });
+  }
+}
+/* a list with each product shown once, however many sizes it comes in (the first one met stands for them) */
+function oneEach(list) {
+  const seen = new Set();
+  return list.filter(p => { if (!p.vg) return true; if (seen.has(p.vg)) return false; seen.add(p.vg); return true; });
+}
+const variantsOf = (p) => p && p.vg ? p.vg.items.map(x => x.p) : [p];
 function listing() {
   const q = st.route.q || {};
+  if (!q.cat && !q.q && !q.sale && !q.brand && !q.sort && !q.range && !q.instock) return categoriesPage();
   const kw = (q.q || '').toLowerCase().trim();
   const { cat = '', brand = '', range = '', instock = '', sort = '' } = q;
   let list = st.cat.products.filter(p => {
-    if (cat && p.cat !== cat) return false;
+    if (cat && !inCatOf(p, cat)) return false;
     if (brand && brandOf(p) !== brand) return false;
     if (instock === '1' && isOut(p)) return false;
     if (q.sale === '1' && !(p.mrp > p.price)) return false;
@@ -2611,9 +2728,9 @@ function listing() {
     if (range === 'over20' && p.price <= 20000) return false;
     return true;
   });
-  if (!sort && (catKey(cat) === 'SWITCHES' || brand === 'Kevilton')) {
-    const pos = new Map(list.map((p, k) => [p, k]));
-    const key = (p) => brandOf(p) === 'Kevilton' && catKey(p.cat) === 'SWITCHES' ? kevOrder(p) : 10000 + pos.get(p);
+  if (!sort) {   // department by department, in the order the departments are listed; switches in their own order
+    const pos = new Map(list.map((p, k) => [p, k])), dix = new Map(DEPTS.map((d, k) => [d.name, k]));
+    const key = (p) => { const o = switchOrder(p); return dix.get(deptOf(p.cat)) * 1e7 + (o >= 0 ? o : 100000 + pos.get(p)); };
     list.sort((a, b) => key(a) - key(b) || pos.get(a) - pos.get(b));
   }
   if (sort === 'best') list.sort((a, b) => (b.sold || 0) - (a.sold || 0));
@@ -2621,25 +2738,22 @@ function listing() {
   else if (sort === 'price-desc') list.sort((a, b) => b.price - a.price);
   else if (sort === 'name-asc') list.sort((a, b) => a.name.localeCompare(b.name));
   // a few dozen at a time — a department can hold hundreds
+  list = oneEach(list);
   const key = JSON.stringify(q);
   if (st.listKey !== key) { st.listKey = key; st.limit = 24; }
   const shown = list.slice(0, st.limit);
-  const inCat = cat ? st.cat.products.filter(p => p.cat === cat) : st.cat.products;
+  const inCat = cat ? st.cat.products.filter(p => inCatOf(p, cat)) : st.cat.products;
+  const dept = !cat ? '' : isDept(cat) ? cat : deptOf(cat);
   const brandCount = {}; inCat.forEach(p => { const b = brandOf(p); if (b) brandCount[b] = (brandCount[b] || 0) + 1; });
   const order = (BRAND_FILTERS[catKey(cat)] || []).map(r => r[0]);
   const brands = Object.keys(brandCount).sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99) || a.localeCompare(b));
   const title = cat || (kw ? `“${q.q}”` : q.sale === '1' ? 'On sale' : sort === 'best' ? 'Best sellers' : 'All products');
-  const filtered = cat || brand || range || instock || kw || q.sale;
+  const filtered = brand || range || instock || kw || q.sale;
   return `
   <div class="e-title">
-    <div class="e-crumb"><a href="#/">Home</a><span>/</span>${cat || kw ? '<a href="#/search">Shop</a><span>/</span>' : ''}<span>${esc(cat || (kw ? 'Search' : 'Shop'))}</span></div>
+    ${cat ? `<a class="e-back" href="${cat !== dept ? url('search', { cat: dept }) : '#/categories'}"><span aria-hidden="true">←</span> Back to ${esc(cat !== dept ? dept : 'Product Categories')}</a>` : ''}
+    <div class="e-crumb"><a href="#/">Home</a><span>/</span>${cat ? '<a href="#/categories">Product Categories</a><span>/</span>' : kw ? '<a href="#/search">Shop</a><span>/</span>' : ''}${cat && cat !== dept ? `<a href="${url('search', { cat: dept })}">${esc(dept)}</a><span>/</span>` : ''}<span>${esc(cat || (kw ? 'Search' : 'Shop'))}</span></div>
     <h1 class="e-h1" style="font-size:clamp(30px,4vw,48px)">${esc(title)}</h1>
-  </div>
-  <div class="e-cats">
-    <button class="${!cat ? 'on' : ''}" onclick="go('search',{...st.route.q,cat:''})">All<small>${fq(st.cat.products.length)}</small></button>
-    ${(() => { const all = st.cat.categories || [], top = all.slice(0, 14); if (cat && !top.some(c => c.name === cat)) { const c = all.find(c => c.name === cat); if (c) top.push(c); }
-      return top.map(c => `<button class="${cat === c.name ? 'on' : ''}" onclick="go('search',{...st.route.q,cat:'${esc(c.name).replace(/'/g, "\\'")}'})">${esc(c.name)}<small>${c.count}</small></button>`).join('')
-        + (all.length > top.length ? `<button onclick="go('categories')">More departments<small>${all.length}</small></button>` : ''); })()}
   </div>
   ${cat && BRAND_FILTERS[catKey(cat)] && brands.length ? `<div class="e-cats e-brands" aria-label="Brand">
     <span class="lbl">Brand</span>
@@ -2648,6 +2762,7 @@ function listing() {
   </div>` : ''}
   <div class="e-tools">
     <div class="left">
+      ${dept ? `<label class="e-sel">Category <select onchange="go('search',{...st.route.q,cat:this.value||'${esc(dept).replace(/'/g, "\\'")}',brand:''})"><option value="">All ${esc(dept)}</option>${subsOf(dept).slice().sort((x, y) => x.name.localeCompare(y.name)).map(c => `<option value="${esc(c.name)}" ${cat === c.name ? 'selected' : ''}>${esc(c.name)} (${c.count})</option>`).join('')}</select></label>` : ''}
       <label class="e-sel">Price <select onchange="go('search',{...st.route.q,range:this.value})">
         <option value="">Any</option>
         <option value="under1" ${range === 'under1' ? 'selected' : ''}>Under Rs 1,000</option>
@@ -2657,7 +2772,7 @@ function listing() {
       </select></label>
       ${brands.length ? `<label class="e-sel">Brand <select onchange="go('search',{...st.route.q,brand:this.value})"><option value="">Any</option>${brands.map(b => `<option ${brand === b ? 'selected' : ''}>${esc(b)}</option>`).join('')}</select></label>` : ''}
       <label class="e-chk"><input type="checkbox" ${instock === '1' ? 'checked' : ''} onchange="go('search',{...st.route.q,instock:this.checked?'1':''})"> In stock</label>
-      ${filtered ? `<button class="e-clear" onclick="go('search',{})">Clear all</button>` : ''}
+      ${filtered ? `<button class="e-clear" onclick="go('search',{cat:'${esc(cat).replace(/'/g, "\\'")}'})">Clear all</button>` : ''}
     </div>
     <div class="right">
       <span class="e-count">${fq(list.length)} product${list.length === 1 ? '' : 's'}</span>
@@ -2685,7 +2800,7 @@ function productPage() {
   const qty = st.pdQty || 1, price = priceFor(p, qty), d = discPct(p), out = isOut(p);
   const w = st.cat.settings || {};
   const opt = st.selectedOptions[p.id] || (p.options && p.options[0]) || '';
-  const same = listed().filter(x => x.cat === p.cat && x.id !== p.id).slice(0, 8);
+  const same = listed().filter(x => x.cat === p.cat && x.id !== p.id && (!p.vg || x.vg !== p.vg)).slice(0, 8);
   const waText = encodeURIComponent(`Hello ${shopName()}, I'd like to ask about ${p.name} (${p.code || ''}).`);
   return `
   <div class="e-page">
@@ -2696,6 +2811,7 @@ function productPage() {
         <h1>${esc(p.name)}</h1>
         <div class="meta">${p.code ? `<span>Code ${esc(p.code)}</span>` : ''}<span>${esc(p.cat)}</span>${p.unit ? `<span>Sold per ${esc(p.unit)}</span>` : ''}</div>
         <div class="price"><span>${money(price)}</span>${p.mrp > price ? `<s>${money(p.mrp)}</s><span class="off">Save ${money(p.mrp - price)}</span>` : ''}</div>
+        ${p.vg ? `<span class="lbl">${esc(p.vg.kind)}: <b>${esc(p.vlabel)}</b></span><div class="e-opts">${p.vg.items.map(x => `<a class="${x.p === p ? 'on' : ''}${isOut(x.p) ? ' gone' : ''}" href="${url('product/' + x.p.id)}">${esc(x.label)}</a>`).join('')}</div>` : ''}
         <div class="stock ${out ? 'out' : isLow(p) ? 'low' : ''}"><i></i>${out ? 'Sold out just now — call us, more may be on the way' : isLow(p) ? `Only ${fq(p.stock)} left` : p.stock === null || p.stock === undefined ? 'Available' : 'In stock, ready to go'}</div>
         ${p.options && p.options.length ? `<span class="lbl">Option</span><div class="e-opts">${p.options.map(o => `<button class="${o === opt ? 'on' : ''}" onclick="selectProductOption('${esc(p.id)}','${esc(o).replace(/'/g, "\\'")}',this)">${esc(o)}</button>`).join('')}</div>` : ''}
         ${p.tiers && p.tiers.length ? `<span class="lbl">Buy more, pay less</span><div class="e-tiers">${p.tiers.slice().sort((a, b) => a.min - b.min).map(t => `<div><span>${fq(t.min)}${p.unit ? ' ' + esc(p.unit) : ''} or more${t.label ? ' · ' + esc(t.label) : ''}</span><b>${money(t.price)} each</b></div>`).join('')}</div>` : ''}
@@ -2989,7 +3105,7 @@ function mobNavFill() {
    <div class="mn-head"><b>Menu</b><button class="mn-close" aria-label="Close the menu">&times;</button></div>
    <a href="#/">Home</a>
    <a href="#/search">Shop all</a>
-   <a href="#/categories">Departments</a>
+   <a href="#/categories">Product Categories</a>
    <a href="#/search?sort=best">Best sellers</a>
    <a href="#/account/wishlist">Wishlist (${st.wish.length})</a>
    <a href="#/track">Track an order</a>
@@ -3397,6 +3513,21 @@ const WEB_ONLY = [
   ['PCT-12-007814', 'ORANGE ENIGMA TELEPHONE SOCKET - GUNMETAL', 'SWITCHES', 3000, 2400],
   ['PCT-12-007815', 'ORANGE ENIGMA TV SOCKET - GUNMETAL', 'SWITCHES', 2850, 2290],
 ];
+/* What the shop shows differently from the till, until the till is tidied: names put right, and a
+   product moved to the category it belongs in (product code -> category). */
+const SHOP_RENAME = [[/\bSUN ?BOX\b/g, 'SUNK BOX']];
+const SHOP_MOVE = {
+  'PCT-11-001572': 'MAIN SWITCH',   // the Kevilton Hexa main switch is a wiring item
+  'PCT-11-000504': 'PLUG TOP',      // 2 pin plug top (Polymax), filed under multi sockets
+};
+function tidyCatalog(cat) {
+  const fix = (t) => SHOP_RENAME.reduce((a, [re, to]) => a.replace(re, to), String(t || ''));
+  cat.products.forEach(p => { p.name = fix(p.name); p.cat = SHOP_MOVE[p.code] || fix(p.cat); });
+  const count = {}; cat.products.forEach(p => { count[p.cat] = (count[p.cat] || 0) + 1; });
+  const cats = new Map((cat.categories || []).map(c => [fix(c.name), { ...c, name: fix(c.name) }]));
+  Object.keys(count).forEach(n => { if (!cats.has(n)) cats.set(n, { name: n, count: 0, img: '' }); });
+  cat.categories = [...cats.values()].map(c => ({ ...c, count: count[c.name] || 0 })).filter(c => c.count);
+}
 function addWebOnly(cat) {
   const have = new Set(cat.products.map(p => p.code));
   WEB_ONLY.filter(([code]) => !have.has(code)).forEach(([code, name, dept, mrp, price]) => cat.products.push(
@@ -3407,7 +3538,7 @@ async function loadCatalog() {
   try {
     // once — it is the whole shop (thousands of items), and asking twice made every visit wait twice
     const live = await api('/catalog');
-    if (live && Array.isArray(live.products)) { live.products = live.products.filter(p => !NOT_ONLINE.has(p.code)); if (live.products.length) addWebOnly(live); }
+    if (live && Array.isArray(live.products)) { live.products = live.products.filter(p => !NOT_ONLINE.has(p.code)); if (live.products.length) { addWebOnly(live); tidyCatalog(live); groupCatalog(live); groupVariants(live); } }
     if (live && live.products && live.products.length > 0) { st.cat = live; keepLook(live); }
     else st.cat = live || st.cat;
   } catch (e) {
