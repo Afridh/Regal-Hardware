@@ -4068,9 +4068,13 @@ const MSG_AUD=[['customer','Customers','Dear Customer,'],['supplier','Suppliers'
 const msgGreetKey=(aud)=>'greet'+aud.charAt(0).toUpperCase()+aud.slice(1);
 const escM=(v)=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const phone9=(n)=>String(n||'').replace(/\D/g,'').slice(-9);
+/* Only a guess, for the few messages typed by hand to a number: every message the till writes itself
+   says who it is for. A number on a customer's account is a customer first — a supplier's rep or a
+   member of staff who also buys here was being written to as "Dear Supplier" on their own bills. */
 function msgAudience(to){
   const p=phone9(to); if(p.length<9) return 'customer';
   if(String(CFG.shop.owner||'').split(/[,;\s]+/).some(x=>phone9(x)===p)) return 'owner';
+  if((S.customers||[]).some(c=>c.active!==false&&phone9(c.phone)===p)) return 'customer';
   if((S.suppliers||[]).some(s=>phone9(s.phone)===p)) return 'supplier';
   if((S.employees||[]).some(e=>phone9(e.phone)===p)||(S.users||[]).some(u=>phone9(u.phone)===p)) return 'staff';
   return 'customer';
@@ -4097,6 +4101,8 @@ function supSms(to,body){ const t=supTest(); return t?sms(t,`[TEST · for ${to||
 function supWa(to,body){ const t=supTest(); return t?wa(t,`[TEST · for ${to||'no number'}]\n${letter('supplier',body,/\s$/.test(body))}`,null,null,'raw'):wa(to,body,null,null,'supplier') }
 function sms(to,body,aud){
   const plain=body;
+  // a message from a template is written to whoever that template is for
+  if(!aud&&tpl.last&&tpl.last.body===body) aud=TPL_AUD[tpl.last.key]||'customer';
   body=letter(aud||msgAudience(to),body);
   const m={id:'m'+Math.random().toString(36).slice(2,8),to,body,at:D(today)+' '+new Date().toTimeString().slice(0,5),status:CFG.msg.live?'Sending':'Queued (demo)'};
   S.messages.unshift(m);
@@ -4149,6 +4155,7 @@ function wa(to,body,key,vars,aud){
   // through the Cloud API a customer who has not written in the last 24 h can only get a template — use it when there is one
   if(CFG.msg.waMode==='cloud'&&key&&waTemplateFor(key)) return waTemplate(to,key,{shop:CFG.shop.name.replace(/^REGAL HARDWARE$/,'Regal Hardware'),...(vars||{})});
   // laid out like every other message; one ending in a space is for the counter to finish typing
+  if(!aud&&key) aud=TPL_AUD[key]||'customer';
   body=letter(aud||msgAudience(to),body,!String(body||'').trim()||/\s$/.test(body));
   const m={id:'w'+Math.random().toString(36).slice(2,8),to,body,at:D(today)+' '+new Date().toTimeString().slice(0,5),status:'WhatsApp',via:'wa'};
   S.messages.unshift(m);
@@ -4350,9 +4357,9 @@ function ownerTell(inv,c,{total,credit,by,v}={}){
   if(c&&c.phone&&String(c.phone).replace(/\D/g,'').slice(-9)===own.slice(-9))
     return {send:false,why:'the customer is the owner',kind:w.kind};
   const balancePart=w.kind==='credit'
-    ? `, ${fmt(credit)} on credit — they now owe ${v.outstanding}`
-    : (w.kind==='return'?' — goods back':'');
-  try{ sms(own, tpl('ownerBill',{...v,kind:w.kind.toUpperCase()+' bill',by:by||'—',balancePart})) }
+    ? `\nOn credit: ${fmt(credit)}\nThey now owe: ${v.outstanding}`
+    : (w.kind==='return'?'\nGoods back':'');
+  try{ sms(own, tpl('ownerBill',{...v,kind:w.kind.charAt(0).toUpperCase()+w.kind.slice(1)+' bill',by:by||'—',balancePart}),'owner') }
   catch(e){ return {send:false,why:e.message,kind:w.kind} }
   return {send:true,kind:w.kind};
 }
@@ -4950,35 +4957,35 @@ const CFG={
  shift:{url:'',user:'',autoPull:true},              // where the attendance records live — empty is this server
  tpl:{
   cashSale:{label:'Cash bill',vars:'{shop} {invoice} {total} {link} {customer}',
-    text:'Thank you for your purchase. Your bill {invoice} for {total}: {link}'},
+    text:'Thank you for your purchase.\nBill No: {invoice}\nAmount: {total}\nView your bill: {link}'},
   creditSale:{label:'Credit bill',vars:'{shop} {invoice} {total} {balance} {outstanding} {link}',
-    text:'Your credit bill {invoice} is for {total}. Your total outstanding is now {outstanding}. See it at {link}'},
+    text:'Thank you for your purchase on credit.\nBill No: {invoice}\nAmount: {total}\nTotal outstanding: {outstanding}\nView your bill: {link}'},
   ownerBill:{label:'Your own copy of a bill',vars:'{shop} {kind} {invoice} {total} {customer} {by} {balance} {outstanding} {link}',
-    text:'{kind} {invoice} {total} — {customer}, by {by}{balancePart}. See it at {link}'},
+    text:'{kind}: {invoice}\nAmount: {total}\nCustomer: {customer}\nBilled by: {by}{balancePart}\nView: {link}'},
   billLink:{label:'Resending a bill link',vars:'{shop} {invoice} {total} {balance} {link}',
-    text:'Your bill {invoice} for {total}{balancePart}: {link}'},
+    text:'Here is your bill.\nBill No: {invoice}\nAmount: {total}{balancePart}\nView your bill: {link}'},
   paymentReceived:{label:'Payment received',vars:'{shop} {amount} {receipt} {outstanding} {customer}',
-    text:'We have received your payment of {amount}, receipt {receipt}. Your balance is now {outstanding}.'},
+    text:'Thank you, we have received your payment.\nAmount: {amount}\nReceipt No: {receipt}\nBalance now: {outstanding}'},
   statement:{label:'Customer statement',vars:'{shop} {customer} {count} {outstanding} {link}',
-    text:'Your statement for {customer}: {count} unpaid bill(s), total {outstanding}. See them at {link}.'},
+    text:'Here is your account summary.\nAccount: {customer}\nUnpaid bills: {count}\nTotal outstanding: {outstanding}\nView details: {link}'},
   portalInvite:{label:'Inviting a customer to their page',vars:'{shop} {customer} {link}',
-    text:'You can check what you owe any time at {link}. Sign in with a code we text you.'},
+    text:'You can now check your account with us at any time.\nLink: {link}\nSign in with a code we text you.'},
   portalLogin:{label:'A sign-in given to a customer’s person',vars:'{shop} {customer} {who} {user} {pass} {link}',
-    text:'Your sign-in for {customer} is ready. Open {link}, user name {user}, password {pass}. Please change the password once you are in.'},
+    text:'Your sign-in for {customer} is ready.\nLink: {link}\nUser name: {user}\nPassword: {pass}\nPlease change the password once you are in.'},
   portalPassword:{label:'A new password for a customer’s person',vars:'{shop} {customer} {who} {user} {pass} {link}',
-    text:'Your new password for {user} at {link} is {pass}. Please change it once you are in.'},
+    text:'Your password has been reset.\nLink: {link}\nUser name: {user}\nNew password: {pass}\nPlease change it once you are in.'},
   otp:{label:'Sign-in code',vars:'{shop} {code} — the code itself is never stored',
-    text:'Your sign-in code is {code}. It expires in 10 minutes. Please do not share it.'},
+    text:'Your sign-in code is {code}.\nIt expires in 10 minutes. Please do not share it.'},
   orderAccepted:{label:'Supplier order accepted',vars:'{shop} {supplier} {date}',
-    text:'Your order has been accepted. We will confirm delivery shortly.'},
+    text:'Your order has been accepted.\nWe will confirm the delivery shortly.'},
   orderRejected:{label:'Supplier order rejected',vars:'{shop} {reason}',
-    text:'We could not accept your order: {reason}. Please call the shop.'},
+    text:'We could not accept your order.\nReason: {reason}\nPlease call the shop.'},
   orderAdjusted:{label:'Supplier order needs a change',vars:'{shop} {reason}',
-    text:'We need a change to your order: {reason}.'},
+    text:'We need a change to your order.\nChange: {reason}'},
   orderReceived:{label:'Goods received',vars:'{shop} {grn} {supplier}',
-    text:'Your goods have been received as {grn}.'},
+    text:'Your goods have been received.\nGRN No: {grn}'},
   dailySummary:{label:'Owner summary at close',vars:'{sales} {cash} {credit} {expenses} {outstanding}',
-    text:'Today — sales {sales}, cash {cash}, credit {credit}, expenses {expenses}. Customers owe {outstanding}.'}
+    text:'Today\'s summary:\nSales: {sales}\nCash: {cash}\nCredit: {credit}\nExpenses: {expenses}\nCustomers owe: {outstanding}'}
  }
 };
 window.CFG=CFG; // exposed so settings can be scripted in tests
@@ -5803,6 +5810,22 @@ const TPL_OLD_DEFAULT={cashSale:'{shop}: thank you for your purchase. Bill {invo
   orderAdjusted:'{shop}: we need a change to your order — {reason}.',
   orderReceived:'{shop}: your order has been received as {grn}. Thank you.',
   dailySummary:'{shop} today — sales {sales}, cash {cash}, credit {credit}, expenses {expenses}. Customers owe {outstanding}.'};
+// the one-line wording each message had before it was laid out in lines (14 Oct 2026)
+const TPL_ONELINE={cashSale:'Thank you for your purchase. Your bill {invoice} for {total}: {link}',
+  creditSale:'Your credit bill {invoice} is for {total}. Your total outstanding is now {outstanding}. See it at {link}',
+  ownerBill:'{kind} {invoice} {total} — {customer}, by {by}{balancePart}. See it at {link}',
+  billLink:'Your bill {invoice} for {total}{balancePart}: {link}',
+  paymentReceived:'We have received your payment of {amount}, receipt {receipt}. Your balance is now {outstanding}.',
+  statement:'Your statement for {customer}: {count} unpaid bill(s), total {outstanding}. See them at {link}.',
+  portalInvite:'You can check what you owe any time at {link}. Sign in with a code we text you.',
+  portalLogin:'Your sign-in for {customer} is ready. Open {link}, user name {user}, password {pass}. Please change the password once you are in.',
+  portalPassword:'Your new password for {user} at {link} is {pass}. Please change it once you are in.',
+  otp:'Your sign-in code is {code}. It expires in 10 minutes. Please do not share it.',
+  orderAccepted:'Your order has been accepted. We will confirm delivery shortly.',
+  orderRejected:'We could not accept your order: {reason}. Please call the shop.',
+  orderAdjusted:'We need a change to your order: {reason}.',
+  orderReceived:'Your goods have been received as {grn}.',
+  dailySummary:'Today — sales {sales}, cash {cash}, credit {credit}, expenses {expenses}. Customers owe {outstanding}.'};
 // who each template is written to, for its preview and its test
 const TPL_AUD={orderAccepted:'supplier',orderRejected:'supplier',orderAdjusted:'supplier',orderReceived:'supplier',ownerBill:'owner',dailySummary:'owner'};
 function labelSampleBill(inv){
@@ -5826,7 +5849,7 @@ function labelSampleBill(inv){
    <div class="mini-n">${CFG.bill.footer.replace('{days}',CFG.bill.returnDays).slice(0,80)}…</div></div>`;
 }
 function tplPreview(k){
-  const sample={invoice:'INVM-11-031975',total:fmt(4890),balance:fmt(4890),balancePart:', '+fmt(4890)+' still to pay',
+  const sample={invoice:'INVM-11-031975',total:fmt(4890),balance:fmt(4890),balancePart:'\nStill to pay: '+fmt(4890),
     outstanding:fmt(170750),link:'regalhw.lk/i/8k2p1a',customer:'Milco Pvt Ltd',receipt:'RV-00146',amount:fmt(25000),
     count:3,code:'418302',supplier:'Tokyo Cement',reason:'only 60 bags this week',grn:'GRN-00213',date:D(today),
     sales:fmt(48250),cash:fmt(31400),credit:fmt(16850),expenses:fmt(4800)};
@@ -7232,7 +7255,7 @@ function payRun(mk){
     (S.advances||[]).forEach(a=>{ if(!a.recovered) a.recovered=true });
     rows.forEach(({e,p})=>{ e.advance=0;
       if(m.querySelector('#prSms').checked&&e.phone)
-        sms(e.phone,`Regal Hardware: ${month} pay ${fmt(p.net)} — ${p.t.days} days, ${hrs(p.t.ot).toFixed(1)} hours overtime. Thank you.`) });
+        sms(e.phone,`Your pay for ${month}.\nNet pay: ${fmt(p.net)}\nDays worked: ${p.t.days}\nOvertime: ${hrs(p.t.ot).toFixed(1)} hours`,'staff') });
     S.payruns.push({mk,date:D(today),by:S.user.name,gross:+gross.toFixed(2),adv:+adv.toFixed(2),net:+net.toFixed(2),
       lines:rows.map(({e,p})=>({empId:e.id,name:e.name,net:p.net,days:p.t.days}))});
     m.remove(); render(); toast(`${month} paid · ${fmt(net)} out, posted to the ledger`);
@@ -7378,7 +7401,7 @@ function prTell(r, action){
     const say = PR_SAID[action]; if(!say) return;
     const to = String(s.phone||'').trim();
     if(!to) return;                       // no mobile on the account: their own page still shows it
-    sms(to, say(r));
+    sms(to, say(r), 'supplier');
     toast(`${s.name.split(/[–(]/)[0].trim()} told by text`, 'ok');
   }catch(e){ /* the status stands whether or not the text got out */ }
 }
@@ -8559,6 +8582,12 @@ function applyKept(kept){
       t.text=TPL_OLD_DEFAULT[k]===was?TPL_ORIG[k].text:bare===was?was:bare.charAt(0).toUpperCase()+bare.slice(1); });
     CFG.msg.letter1=true;
   }
+  /* 14 Oct 2026: each message became a few short lines — Bill No:, Amount:, … — one fact to a line.
+     Wording the shop never changed takes the new layout; wording it wrote itself is left alone. */
+  if(CFG.msg&&!CFG.msg.lines1){
+    Object.keys(CFG.tpl||{}).forEach(k=>{ const t=CFG.tpl[k]; if(t&&TPL_ORIG[k]&&TPL_ONELINE[k]===String(t.text||'')) t.text=TPL_ORIG[k].text });
+    CFG.msg.lines1=true;
+  }
   if(CFG.bill&&!CFG.bill.a5Bw1){ CFG.bill.a5Style='bw'; CFG.bill.a5Bw1=true; }   // 13 Oct 2026: the shop chose the black-and-white black-bar design (design 1) for the LBP6030w
   // the barcode of the invoice number is off the receipt (asked for, 5 Oct 2026) — once, so Design the bill can put it back
   if(CFG.bill&&!CFG.bill.barcodeOff1){
@@ -8837,7 +8866,7 @@ function poTell(o,s,status,note){
   try{
     const say=PO_SAID[status]; if(!say) return;
     const to=String((s||{}).phone||'').trim(); if(!to) return;   // no mobile: the page still shows it
-    sms(to,`${CFG.shop.name}: ${say(o)}${note?' — '+note:''}`);
+    sms(to,`${say(o).charAt(0).toUpperCase()+say(o).slice(1)}${note?'\nNote: '+note:''}`,'supplier');
   }catch(e){ /* the decision stands whether or not the text got out */ }
 }
 function poAct(no,status,note){
@@ -9984,7 +10013,7 @@ function webPlace(){
     events:[{by:c.name,at:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),what:'Order placed on the site'}]};
   S.web.orders.push(o); S.web.cart=[]; webView='mine';
   notify('order',`${c.name} ordered ${fmt(o.total)} online`,'weborders');
-  if(c.phone) sms(c.phone,`${w.name}: we have your order ${o.no} for ${fmt(o.total)}. We will confirm shortly.`);
+  if(c.phone) sms(c.phone,`We have received your online order.\nOrder No: ${o.no}\nAmount: ${fmt(o.total)}\nWe will confirm it shortly.`,'customer');
   render(); toast(`${o.no} placed — it is with the shop now`);
 }
 function webShow(no){
@@ -10010,9 +10039,9 @@ function webSet(no,st,note){
   o.status=st; if(note)o.note2=note;
   webEvent(o,({accepted:'Accepted — stock held',ready:'Picked and ready',rejected:'Not accepted — '+(note||''),
     despatched:'Sent out',done:'Delivered',collected:'Collected'})[st]||st);
-  if(c.phone) sms(c.phone,`${S.web.settings.name}: order ${o.no} — ${({accepted:'accepted, we are picking it now',
-    ready:o.deliver?'ready, the lorry will bring it':'ready to collect at the counter',
-    rejected:'we could not take this one'+(note?' — '+note:''),done:'delivered, thank you',collected:'collected, thank you'})[st]||st}.`);
+  if(c.phone) sms(c.phone,`Your online order ${o.no}:\n${({accepted:'Accepted — we are getting it ready now.',
+    ready:o.deliver?'Ready — it is on its way to you.':'Ready to collect at the counter.',
+    rejected:'Sorry, we could not take this order.'+(note?'\nReason: '+note:''),done:'Delivered. Thank you for your order.',collected:'Collected. Thank you for your order.'})[st]||st}`,'customer');
   notify('order',`Online order ${o.no} — ${st}`,'weborders');
   render(); toast(`${o.no} ${st}`);
 }
@@ -16596,7 +16625,7 @@ function askBill(m,pays,change,c,total,override){
       if(S.pos.fromWeb){ const wo=S.web.orders.find(x=>x.no===S.pos.fromWeb);
         if(wo){ wo.invoice=inv.no; wo.status=wo.deliver?'despatched':'collected';
           webEvent(wo,'Billed as '+inv.no);
-          if(C(wo.cid).phone) sms(C(wo.cid).phone,`${S.web.settings.name}: order ${wo.no} billed as ${inv.no} for ${fmt(inv.total)}. ${wo.deliver?'On the way to you.':'Ready at the counter.'}`) } }
+          if(C(wo.cid).phone) sms(C(wo.cid).phone,`Your online order has been billed.\nOrder No: ${wo.no}\nBill No: ${inv.no}\nAmount: ${fmt(inv.total)}\n${wo.deliver?'It is on its way to you.':'It is ready to collect at the counter.'}`,'customer') } }
       if(S.pos.fromDoc){ const dd=S.docs.find(x=>x.no===S.pos.fromDoc);
         if(dd){ dd.status='billed'; dd.invoice=inv.no } }
       clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:how};
@@ -17540,7 +17569,7 @@ function editSaleModal(no){
     inv.customerId=newCust; inv.date=newDate||inv.date; inv.note=newNote.trim();
     inv.edits=(inv.edits||[]).concat([{at:D(today),by:S.user.name,why:why+(custChanged?' · moved to '+C(newCust).name:''),from:oldTotal,to:newTotal}]);
     notify('warn',`${S.user.name} changed bill ${inv.no} — ${fmt(oldTotal)} to ${fmt(newTotal)}`,'bills');
-    if(c.phone&&CFG.msg.autoBill) sms(c.phone,`${CFG.shop.name}: bill ${inv.no} has been corrected to ${fmt(newTotal)}${inv.balance?`, ${fmt(inv.balance)} outstanding`:''}. ${why}`);
+    if(c.phone&&CFG.msg.autoBill) sms(c.phone,`Your bill has been corrected.\nBill No: ${inv.no}\nNew amount: ${fmt(newTotal)}${inv.balance?`\nStill to pay: ${fmt(inv.balance)}`:''}${why?`\nReason: ${why}`:''}`,'customer');
     m.remove(); render(); showInvoice(inv,'r80');
     toast(`${inv.no} changed · ${fmt(oldTotal)} to ${fmt(newTotal)}`);
   };
@@ -17662,7 +17691,7 @@ function finishRemake(r,fresh){
   logTrail('billRemade',`${old.no} — ${fmt(old.total)} became ${fmt(fresh.total)}`,
     {amount:fresh.total-old.total,who:c.name,ref:old.no,why:r.why||'',
      bill:{ref:old.no+' (as it was)',lines:old.lines.map(l=>({...l})),customer:old.customerId,billDisc:old.billDisc||0,date:old.date,user:old.by}});
-  if(c.phone&&CFG.msg.autoBill) sms(c.phone,`${CFG.shop.name}: bill ${old.no} has been re-issued at ${fmt(fresh.total)}${fresh.balance?`, ${fmt(fresh.balance)} outstanding`:''}.`);
+  if(c.phone&&CFG.msg.autoBill) sms(c.phone,`Your bill has been re-issued.\nBill No: ${old.no}\nAmount: ${fmt(fresh.total)}${fresh.balance?`\nStill to pay: ${fmt(fresh.balance)}`:''}`,'customer');
   return fresh;
 }
 /* ================== ONLINE PRODUCTS ==================
@@ -18773,7 +18802,7 @@ async function portalInvite(kind,who,on){
     const j=await r.json().catch(()=>({}));
     if(!r.ok||j.ok===false) throw new Error(j.error||('the server said '+r.status));
     if(j.made){
-      sms(to,tpl('portalLogin',{customer:who.name,who:who.contact||who.name,user:j.username,pass:j.password,link}));
+      sms(to,tpl('portalLogin',{customer:who.name,who:who.contact||who.name,user:j.username,pass:j.password,link}),kind==='S'?'supplier':'customer');
       loadCustLogins(who.id,true,kind).finally(()=>render());
       toast(`Texted ${to} — user name ${j.username}, password ${j.password}`,'ok');
     } else {
@@ -18781,16 +18810,16 @@ async function portalInvite(kind,who,on){
       // as the password is still the one we gave; once they have chosen their own there is none to send.
       const ready=(j.logins||[]).find(l=>l.active&&l.starter);
       if(ready){
-        sms(to,tpl('portalLogin',{customer:who.name,who:ready.name||who.contact||who.name,user:ready.username,pass:ready.starter,link}));
+        sms(to,tpl('portalLogin',{customer:who.name,who:ready.name||who.contact||who.name,user:ready.username,pass:ready.starter,link}),kind==='S'?'supplier':'customer');
         loadCustLogins(who.id,true,kind).finally(()=>render());
         toast(`Texted ${to} — user name ${ready.username}, password ${ready.starter}`,'ok');
       } else {
-        sms(to,tpl('portalInvite',{customer:who.name,link}));
+        sms(to,tpl('portalInvite',{customer:who.name,link}),kind==='S'?'supplier':'customer');
         toast(`Page on · ${to} told. ${j.logins.length} sign-in${j.logins.length===1?'':'s'} here, all on passwords they chose themselves, so only the link went.`,'ok');
       }
     }
   }catch(e){
-    sms(to,tpl('portalInvite',{customer:who.name,link}));      // the link at least goes out
+    sms(to,tpl('portalInvite',{customer:who.name,link}),kind==='S'?'supplier':'customer');      // the link at least goes out
     toast('Page on and the link texted, but the sign-in could not be made — '+e.message,'warn');
   }
 }
@@ -18860,7 +18889,7 @@ function applySaleAdjust(no,v,why,note,by){
   inv.adjustments=(inv.adjustments||[]).concat([{amount:v,why,note,date:D(today),by:by||S.user.name}]);
   post(D(today),`${ADJ_REASONS.find(r=>r[0]===why)[1]} on ${inv.no}${note?' — '+note:''}`,inv.no,
     [{ac:'4110',dr:v},{ac:'1100',cr:v,party:{type:'C',id:c.id}}]);
-  if(c.phone&&CFG.msg.autoReceipt) sms(c.phone,`Regal Hardware: ${fmt(v)} has been taken off bill ${inv.no} (${ADJ_REASONS.find(r=>r[0]===why)[1].toLowerCase()}). You now owe ${fmt(partyBal('C',c.id))}.`);
+  if(c.phone&&CFG.msg.autoReceipt) sms(c.phone,`An amount has been taken off your bill.\nBill No: ${inv.no}\nAmount off: ${fmt(v)}\nReason: ${ADJ_REASONS.find(r=>r[0]===why)[1]}\nYou now owe: ${fmt(partyBal('C',c.id))}`,'customer');
 }
 function applyPurAdjust(no,v,why,note,by){
   const pur=S.purchases.find(x=>x.no===no); if(!pur) throw new Error('Purchase '+no+' not found');
@@ -19302,7 +19331,8 @@ function sendLoginDetails(c,l,key,how,kind){
   const v={customer:c.name,who:l.name||l.username,user:l.username,pass:l.password,
     link:(kind==='S'?'regalhw.lk/supplier':'regalhw.lk/my/'+(c.code||'')).toLowerCase()};
   try{
-    if(how.wa) wa(to,tpl(key,v),key,v); else sms(to,tpl(key,v));
+    const aud=kind==='S'?'supplier':'customer';
+    if(how.wa) wa(to,tpl(key,v),key,v,aud); else sms(to,tpl(key,v),aud);
     return true;
   }catch(e){ toast('Could not send it: '+e.message,'warn'); return false }
 }
@@ -22576,7 +22606,7 @@ function jobMoveModal(no){
   m.querySelector('#jvSms').onclick=()=>{
     const to=j.phone||(j.customerId&&C(j.customerId)?C(j.customerId).phone:'');
     if(!to) return toast('No mobile on the note','warn');
-    sms(to,`${CFG.shop.name}: your ${j.item} is back and ready to collect. Note ${j.no}.`);
+    sms(to,`Your item is back from repair and ready to collect.\nItem: ${j.item}\nJob No: ${j.no}`,'customer');
     toast('Texted '+to,'ok');
   };
 }
@@ -22866,7 +22896,7 @@ function bounceModal(no,dir){
     if(charge>0) addExpense({cat:'6090',amount:charge,method:'BANK',bank:+m.querySelector('#bcBank').value,desc:`Bank charge — cheque ${ch.no} returned`});
     const smsBox=m.querySelector('#bcSms');
     if(dir==='RECEIVED'&&smsBox&&smsBox.checked){ const c=S.customers.find(x=>x.name===ch.party);
-      if(c&&c.phone) sms(c.phone,`${CFG.shop.name.replace(/^REGAL HARDWARE$/,'Regal Hardware')}: cheque ${ch.no} for ${fmt(ch.amount)} has been returned by the bank (${why}). Your balance is now ${fmt(partyBal('C',c.id))}. Please call the shop.`) }
+      if(c&&c.phone) sms(c.phone,`Your cheque has been returned by the bank.\nCheque No: ${ch.no}\nAmount: ${fmt(ch.amount)}\nReason: ${why}\nBalance now: ${fmt(partyBal('C',c.id))}\nPlease call the shop.`,'customer') }
     notify('cheque',`Cheque ${ch.no} for ${fmt(ch.amount)} bounced`,dir==='RECEIVED'?'chequesIn':'chequesOut');
     m.remove(); render(); toast(`${ch.no} marked bounced${charge?' · '+fmt(charge)+' charge posted':''}`);
   };
@@ -25194,7 +25224,7 @@ document.addEventListener('click',e=>{
       const panel=document.querySelector('.cu-panel');
       if(panel){ document.querySelectorAll('.cu-row').forEach(r=>r.classList.toggle('sel',+r.dataset.id===id)); panel.innerHTML='<div class="cu-loading"><i></i>Opening…</div>'; setTimeout(()=>{ custSel=id; render() },160) }
       else { custSel=id; render() } },
-    custPay:()=>custPayModal(+a.dataset.id), stmt:()=>{const c=C(+a.dataset.id);sms(c.phone,`Regal Hardware statement: outstanding ${fmt(partyBal('C',c.id))} across ${S.sales.filter(s=>s.customerId===c.id&&s.balance>0).length} invoices. Please settle by month end.`);toast('Statement SMS queued')},
+    custPay:()=>custPayModal(+a.dataset.id), stmt:()=>{const c=C(+a.dataset.id);sms(c.phone,`Here is your account summary.\nUnpaid bills: ${S.sales.filter(s=>s.customerId===c.id&&s.balance>0).length}\nTotal outstanding: ${fmt(partyBal('C',c.id))}\nPlease settle by the month end.`,'customer');toast('Statement SMS queued')},
     sup:()=>{ const id=+a.dataset.id; if(id===supSel&&S.view==='suppliers') return;
       const panel=document.querySelector('.cu-panel');
       if(panel&&S.view==='suppliers'){ document.querySelectorAll('.cu-row').forEach(r=>r.classList.toggle('sel',+r.dataset.id===id)); panel.innerHTML='<div class="cu-loading"><i></i>Opening…</div>'; setTimeout(()=>{ supSel=id; render() },160) }
@@ -25804,7 +25834,7 @@ document.addEventListener('click',e=>{
       fetch('/api/wa/send',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+(window.regalBridge?regalBridge.token():'')},body:JSON.stringify({to,message:`${CFG.shop.name}: test WhatsApp from the till at ${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}.`,test:true})})
        .then(r=>r.json()).then(j=>{ if(out) out.textContent=(j.ok?'Sent ✓ ':'')+(j.status||j.error||''); toast(j.ok?'Test WhatsApp sent to '+to:(j.status||j.error)) }).catch(e=>{ if(out) out.textContent='Failed — '+e.message }) },
     billWa:()=>{ const inv=S.sales.find(x=>x.no===a.dataset.no), c=C(inv.customerId);
-      const v={invoice:inv.no,no:inv.no,total:fmt(inv.total),balance:fmt(inv.balance),balancePart:inv.balance>0?` (${fmt(inv.balance)} outstanding)`:'',link:inv.link||''};
+      const v={invoice:inv.no,no:inv.no,total:fmt(inv.total),balance:fmt(inv.balance),balancePart:inv.balance>0?`\nStill to pay: ${fmt(inv.balance)}`:'',link:inv.link||''};
       const send=(to)=>{ wa(to,tpl('billLink',v),'billLink',v); render(); toast(CFG.msg.waMode==='cloud'?'Sent on WhatsApp':'WhatsApp opened with the bill') };
       const known=inv.phone||(c&&c.phone); if(known) return send(known);
       askNumber(inv,'whatsapp',send); },
@@ -25813,7 +25843,7 @@ document.addEventListener('click',e=>{
       if(owed>0) wa(c.phone,tpl('statement',v),'statement',v); else wa(c.phone,''); render() },
     orderWa:()=>{ const o=S.web.orders.find(x=>x.no===a.dataset.no); if(!o) return; const c=C(o.cid); if(!c||!c.phone) return toast('No mobile on file');
       const st={placed:'we have it and will confirm shortly',accepted:'accepted — we are picking it now',picking:'being picked now',ready:o.deliver?'ready, the lorry will bring it':'ready to collect at the counter',despatched:'on the way to you',done:'delivered',collected:'collected',invoiced:'billed',rejected:'not accepted'+(o.note?' — '+o.note:''),cancelled:'cancelled'}[o.status]||o.status;
-      wa(c.phone,`${S.web.settings.name}: your order ${o.no} for ${fmt(o.total)} is ${st}.`,'webOrder',{order:o.no,total:fmt(o.total),status:st}); render() },
+      wa(c.phone,`Your online order ${o.no}:\nAmount: ${fmt(o.total)}\nStatus: ${st}`,'webOrder',{order:o.no,total:fmt(o.total),status:st},'customer'); render() },
     waCheck:async()=>{ const out=$('#waCheckOut'); out.textContent='Checking…'; try{ const r=await fetch('/api/wa/status',{headers:{Authorization:'Bearer '+regalBridge.token()}}); const j=await r.json(); if(!j.ok) throw new Error(j.error||j.status||'failed');
       const n=j.number; out.innerHTML=`<span class="tag ok">connected</span> <b>${n.verified_name||'(no name yet)'}</b> · ${n.display_phone_number||''} · name ${n.name_status||'?'} · quality ${n.quality_rating||'?'} · limit ${n.messaging_limit_tier||'?'}`; toast('WhatsApp number is connected') }catch(e){ out.innerHTML=`<span class="tag bad">not connected</span> ${e.message}` } },
     waTemplates:async()=>{ const out=$('#waTplOut'); out.textContent='Fetching…'; try{ const r=await fetch('/api/wa/templates',{headers:{Authorization:'Bearer '+regalBridge.token()}}); const j=await r.json(); if(!j.ok) throw new Error(j.error||'failed');
@@ -25836,7 +25866,7 @@ document.addEventListener('click',e=>{
     waInboxRefresh:()=>{ loadWaInbox(true); toast('Checking WhatsApp…') },
     waInboxRead:()=>{ fetch('/api/wa/inbox/read',{method:'POST',headers:{Authorization:'Bearer '+regalBridge.token()}}).then(()=>{ waInbox.unread=0; waInbox.rows.forEach(r=>r.read_at=r.read_at||1); render() }) },
     waReply:()=>{ const to=a.dataset.to; const body=prompt('Reply on WhatsApp to '+to+(a.dataset.name?' ('+a.dataset.name+')':'')); if(body&&body.trim()) { wa(to.replace(/^94/,'0'),body.trim()); render() } },
-    tplTest:()=>{sms(CFG.shop.owner,tplPreview(a.dataset.k).replace(/<\/?i>/g,'')); render(); toast('Test message queued to '+CFG.shop.owner)},
+    tplTest:()=>{sms(CFG.shop.owner,tplPreview(a.dataset.k).replace(/<\/?i>/g,''),TPL_AUD[a.dataset.k]||'customer'); render(); toast('Test message queued to '+CFG.shop.owner)},
     billEdit:()=>billToTill(a.dataset.no),
     billTill:()=>billToTill(a.dataset.no),
     billAmend:()=>{closeModals();editSaleModal(a.dataset.no)},
@@ -25891,7 +25921,7 @@ document.addEventListener('click',e=>{
       if(!inv.link){ inv.link=billLinkFor(); persist(true) }
       sendBillView(inv);                       // the customer opens the paper the shop printed
       const send=(to)=>{ sms(to,tpl('billLink',{invoice:inv.no,total:fmt(inv.total),balance:fmt(inv.balance),
-          balancePart:inv.balance?', '+fmt(inv.balance)+' still to pay':'',link:inv.link}));
+          balancePart:inv.balance?'\nStill to pay: '+fmt(inv.balance):'',link:inv.link}),'customer');
         render(); toast('Sending the bill link to '+to+'…') };
       const known=inv.phone||c.phone; if(known) return send(known);
       askNumber(inv,'text',send); },
@@ -25926,7 +25956,7 @@ document.addEventListener('click',e=>{
     openPortal:()=>{const s=SU(+a.dataset.id); S.portal.pick=s.id; S.portal.session=s.id; S.portal.tab='new';
       S.phoneOpen=true; document.body.classList.add('withPhone'); s.lastLogin=D(today); drawPhone(); render()},
     payrollApprove:()=>{toast('Payroll approval is wired in the full build (posts Dr Salaries / Cr Salaries payable). Demo keeps the ledger as-is.')},
-    sendSummary:()=>{sms('0777849964','Daily summary sent (see Reports for content)');toast('Daily summary queued to owner')}
+    sendSummary:()=>{sms('0777849964','Daily summary sent (see Reports for content)','owner');toast('Daily summary queued to owner')}
   })[act]?.() });
 document.addEventListener('keydown',e=>{
   if(CFG.privacy&&CFG.privacy.on&&S.user&&privacyKeyMatch(e)){ e.preventDefault(); e.stopPropagation(); privacyToggle(); return }   // the privacy screen, before anything else

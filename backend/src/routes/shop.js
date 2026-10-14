@@ -315,7 +315,7 @@ r.post('/otp', asyncHandler(async (req, res) => {
   const cfg = data?.CFG?.msg;
   const name = data?.S?.web?.settings?.name || 'Regal Hardware';
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
-    try { await sendViaProvider(cfg, phone, letter(data?.CFG, 'customer', `Your sign-in code for ${name} is ${code}. It works for 5 minutes.`)); return res.json({ ok: true, sent: true }); }
+    try { await sendViaProvider(cfg, phone, letter(data?.CFG, 'customer', `Your sign-in code for ${name} is ${code}.\nIt works for 5 minutes. Please do not share it.`)); return res.json({ ok: true, sent: true }); }
     catch (e) { console.error('shop otp sms failed', e.message); }
   }
   // the code only comes back on a shop's own machine with no gateway — never on the live site
@@ -509,7 +509,7 @@ r.post('/order', shopAuth, asyncHandler(async (req, res) => {
         [JSON.stringify({ code: promo.code, no, off: promo.off, at: localDate() })]).catch(() => {}); }
   }
   const cfg = data.CFG?.msg;
-  if (cfg?.live && cfg.apiUrl && cfg.apiKey) sendViaProvider(cfg, phone, letter(data.CFG, 'customer', `We have your order ${no} for ${money(order.total)}. We will confirm shortly.`)).catch(e => console.error('shop order sms failed', e.message));
+  if (cfg?.live && cfg.apiUrl && cfg.apiKey) sendViaProvider(cfg, phone, letter(data.CFG, 'customer', `We have received your online order.\nOrder No: ${no}\nAmount: ${money(order.total)}\nWe will confirm it shortly.`)).catch(e => console.error('shop order sms failed', e.message));
   res.json({ ok: true, no, total: order.total, goods, del: order.del, off: order.off, code: order.code, short });
 }));
 

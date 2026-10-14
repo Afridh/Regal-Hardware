@@ -155,7 +155,7 @@ r.post('/forgot', asyncHandler(async (req, res) => {
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
-    try { await sendViaProvider(cfg, phone, letter(data?.CFG, 'customer', `Your code to set a new password is ${code}. It works for 5 minutes.`));
+    try { await sendViaProvider(cfg, phone, letter(data?.CFG, 'customer', `Your code to set a new password is ${code}.\nIt works for 5 minutes. Please do not share it.`));
       return res.json({ ok: true, sent: true, phone: mask(phone) }); }
     catch (e) { console.error('cust forgot sms failed', e.message); }
   }
@@ -189,7 +189,7 @@ r.post('/otp', asyncHandler(async (req, res) => {
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
-    try { await sendViaProvider(cfg, phone, letter(data?.CFG, 'customer', `Your sign-in code is ${code}. It works for 5 minutes.`)); return res.json({ ok: true, sent: true, name: c.name }); }
+    try { await sendViaProvider(cfg, phone, letter(data?.CFG, 'customer', `Your sign-in code is ${code}.\nIt works for 5 minutes. Please do not share it.`)); return res.json({ ok: true, sent: true, name: c.name }); }
     catch (e) { console.error('cust otp sms failed', e.message); }
   }
   res.json({ ok: true, sent: false, name: c.name, ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });

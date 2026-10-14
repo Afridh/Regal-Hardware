@@ -239,7 +239,7 @@ r.post('/otp', asyncHandler(async (req, res) => {
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
-    try { await supSend(cfg, phone, letter(data?.CFG, 'supplier', `Your supplier sign-in code is ${code}. It works for 5 minutes.`)); return res.json({ ok: true, sent: true, name: sup.name }); }
+    try { await supSend(cfg, phone, letter(data?.CFG, 'supplier', `Your supplier sign-in code is ${code}.\nIt works for 5 minutes. Please do not share it.`)); return res.json({ ok: true, sent: true, name: sup.name }); }
     catch (e) { console.error('sup otp sms failed', e.message); }
   }
   res.json({ ok: true, sent: false, name: sup.name, ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });
@@ -281,7 +281,7 @@ r.post('/forgot', asyncHandler(async (req, res) => {
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
-    try { await supSend(cfg, phone, letter(data?.CFG, 'supplier', `Your code to set a new password is ${code}. It works for 5 minutes.`));
+    try { await supSend(cfg, phone, letter(data?.CFG, 'supplier', `Your code to set a new password is ${code}.\nIt works for 5 minutes. Please do not share it.`));
       return res.json({ ok: true, sent: true, phone: phone.replace(/^(\d{3})\d{4}(\d{3})$/, '$1••••$2') }); }
     catch (e) { console.error('sup forgot sms failed', e.message); }
   }
