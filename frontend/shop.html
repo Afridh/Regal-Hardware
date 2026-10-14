@@ -850,7 +850,7 @@ body[data-tpl="techoze"] .e-tools{border:0}
 .tz-nav a{font-size:16px;font-weight:700;color:#fff;position:relative;padding:4px 0}
 .tz-nav a::after{content:'';position:absolute;left:0;right:100%;bottom:-2px;height:2px;background:var(--brand);transition:right .3s var(--ease)}
 .tz-nav a:hover::after,.tz-nav a.on::after{right:0}
-.tz-nav a.hot{color:var(--brand)}
+.tz-nav a.hot{color:color-mix(in srgb,var(--accent) 75%,#fff)}
 .tz-hdr .e-search{background:var(--hdr);border-top:1px solid rgba(255,255,255,.08)}
 .tz-hdr .e-search-row{border-bottom-color:#fff;color:#fff}
 .tz-hdr .e-search-row input{color:#fff}
@@ -2010,12 +2010,14 @@ function TH() {
   const menu = chosen && Array.isArray(t.menu) && t.menu.length ? t.menu.filter(m => m && m.label) : DEFAULT_MENU;
   return { tpl, font: pick('font'), color: pick('color'), accent: pick('accent'), hdr: pick('hdr'),
     anim: t.anim !== false, intro: t.intro !== false, heroFx: t.heroFx || 'zoom', rail: t.rail !== false, topbar: t.topbar !== false,
+    promoTone: t.promoTone === 'colourful' ? 'colourful' : 'brand',
     sections, menu, hero: t.hero || {}, band: t.band || {}, deal: t.deal || {}, catwise: Math.max(0, Math.min(8, +t.catwise || 3)) };
 }
 /* colours, font and template on the page; the font is fetched once per choice */
 function applyTheme(T) {
   const b = document.body, r = document.documentElement.style;
   b.dataset.tpl = T.tpl;
+  PROMO_G = T.promoTone === 'colourful' ? PROMO_COLOURFUL : PROMO_BRAND;
   b.classList.toggle('no-anim', !T.anim);
   // the welcome is decided before the page loads, so the shop's choice is kept for the next visit
   try { localStorage.setItem('rh_intro', T.intro && T.anim ? 'on' : 'off'); } catch (e) {}
@@ -2032,8 +2034,16 @@ const isHot = (m) => /offer|deal|sale|special/i.test(m.label || '');
 const menuLinks = (T, cls) => T.menu.map(m => `<a href="${esc(m.href || '#/')}" class="${navOn(m.href) ? 'on' : ''} ${isHot(m) ? 'hot' : ''}">${esc(m.label)}</a>`).join('');
 const minPrice = (cat) => { const ps = st.cat.products.filter(p => p.cat === cat && p.price > 0); return ps.length ? Math.min(...ps.map(p => p.price)) : 0; };
 const maxOff = (cat) => Math.max(0, ...st.cat.products.filter(p => p.cat === cat).map(discPct));
-const PROMO_G = ['linear-gradient(125deg,#3fb59a,#62c9ae)', 'linear-gradient(125deg,#c88a1f,#e6b24a)', 'linear-gradient(125deg,#f27b35,#dd3a3a)', 'linear-gradient(125deg,#3c4f93,#6079c2)', 'linear-gradient(125deg,#5b2f78,#9b4dbb)', 'linear-gradient(125deg,#1f7a6c,#2fa38f)'];
-const SLIDE_G = ['linear-gradient(120deg,#0b0a1c 30%,#2b1d63)', 'linear-gradient(120deg,#160b1f 30%,#5a1440)', 'linear-gradient(120deg,#07131f 30%,#0f4c5c)', 'linear-gradient(120deg,#1a1205 30%,#6b4a12)'];
+/* promo cards: in the shop's own colours (shades of its main, second and header colour), or the
+   bright mixed set of the Marketplace demo — Look & layout → Promo card colours */
+const PROMO_COLOURFUL = ['linear-gradient(125deg,#3fb59a,#62c9ae)', 'linear-gradient(125deg,#c88a1f,#e6b24a)', 'linear-gradient(125deg,#f27b35,#dd3a3a)', 'linear-gradient(125deg,#3c4f93,#6079c2)', 'linear-gradient(125deg,#5b2f78,#9b4dbb)', 'linear-gradient(125deg,#1f7a6c,#2fa38f)'];
+const PROMO_BRAND = ['linear-gradient(125deg,var(--brand),var(--accent))', 'linear-gradient(125deg,var(--hdr),color-mix(in srgb,var(--hdr) 45%,var(--brand)))',
+  'linear-gradient(125deg,color-mix(in srgb,var(--brand) 80%,#000),var(--brand))', 'linear-gradient(125deg,#2a2a2e,#4a4a52)',
+  'linear-gradient(125deg,var(--accent),color-mix(in srgb,var(--accent) 60%,#ffb347))', 'linear-gradient(125deg,color-mix(in srgb,var(--hdr) 70%,var(--brand)),var(--brand))'];
+let PROMO_G = PROMO_BRAND;
+/* the hero's own slides: the header colour running into the main colour, so they always belong to the logo */
+const SLIDE_G = ['linear-gradient(120deg,var(--hdr) 30%,color-mix(in srgb,var(--hdr) 55%,var(--brand)))', 'linear-gradient(120deg,var(--hdr) 25%,color-mix(in srgb,var(--hdr) 35%,var(--accent)))',
+  'linear-gradient(120deg,color-mix(in srgb,var(--hdr) 85%,#000) 30%,color-mix(in srgb,var(--hdr) 60%,var(--brand)))', 'linear-gradient(120deg,var(--hdr) 35%,color-mix(in srgb,var(--brand) 70%,#000))'];
 const SERV_IC = {
   truck: '<svg viewBox="0 0 48 48"><path d="M4 12h24v20H4zM28 20h9l7 7v5h-16z"/><circle class="hl" cx="13" cy="35" r="4"/><circle class="hl" cx="36" cy="35" r="4"/></svg>',
   shield: '<svg viewBox="0 0 48 48"><path d="M24 5l16 6v11c0 10-7 18-16 21-9-3-16-11-16-21V11z"/><path class="hl" d="M17 24l5 5 9-10"/></svg>',
