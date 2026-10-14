@@ -20799,7 +20799,7 @@ function bulkCheck(list,update){
     if(r.supplier&&!sup) bad.push(`no supplier called "${r.supplier}"`);
     if(lc) seen.add(lc); if(short) seenShort.add(short);
     const what=bad.length?'bad':old?(update?'update':'skip'):'new';
-    return {...r,code,name,cost,retail,mrp:bulkNum(r.mrp)||retail,wholesale:bulkNum(r.wholesale)||retail,min:r.min===''||r.min==null?10:bulkNum(r.min),
+    return {...r,code,name,cost,retail,mrp:bulkNum(r.mrp)||retail,wholesale:bulkNum(r.wholesale)||retail,min:r.min===''||r.min==null?10:bulkNum(r.min),minGiven:!(r.min===''||r.min==null),
       open:bulkNum(r.open),short,sup,old,bad,what};
   });
 }
@@ -20833,7 +20833,7 @@ function bulkProductModal(){
     <label class="btn ghost sm" style="cursor:pointer">📄 Choose an Excel or CSV file<input type="file" id="bFile" accept=".csv,.txt,.xlsx,.xls" style="display:none"></label>
     <span class="muted" id="bFileName"></span></div>
    <textarea id="bText" rows="6" placeholder="Paste the rows here (Ctrl+V)…" style="width:100%;font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre;border:1px solid var(--line);border-radius:var(--r);padding:8px"></textarea>
-   <label class="chk" style="margin-top:6px;${askApproval?'opacity:.55':''}"><input type="checkbox" id="bUpd" ${askApproval?'disabled':''}> Update the ones already on the system (their prices, category, unit and reorder level)${askApproval?' — price changes need approval here, so they are skipped':''}</label>
+   <label class="chk" style="margin-top:6px"><input type="checkbox" id="bUpd"> Update the ones already on the system — name, category, unit, reorder level and prices; a column left empty is left as it is${askApproval?' — price changes need approval here, so they are skipped':''}</label>
    <div id="bOut" style="margin-top:10px"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
     <button class="btn ghost" data-act="closeModal">Cancel</button>
@@ -20879,8 +20879,8 @@ function bulkProductModal(){
     for(const r of good){
       if(r.what==='update'){ const p=r.old;
         if(r.name) p.name=r.name; if(r.cat) p.cat=r.cat; if(r.unit) p.unit=r.unit;
-        if(r.cost) p.cost=r.cost; if(bulkNum(r.retail)) p.retail=r.retail; if(bulkNum(r.mrp)) p.mrp=r.mrp; if(bulkNum(r.wholesale)) p.wholesale=r.wholesale;
-        if(r.min!==''&&r.min!=null) p.min=r.min; if(r.short) p.short=r.short; if(r.barcode) p.barcode=String(r.barcode).trim(); if(r.sup) p.supplierId=r.sup.id;
+        if(!askApproval){ if(r.cost) p.cost=r.cost; if(bulkNum(r.retail)) p.retail=r.retail; if(bulkNum(r.mrp)) p.mrp=r.mrp; if(bulkNum(r.wholesale)) p.wholesale=r.wholesale; }
+        if(r.minGiven) p.min=r.min; if(r.short) p.short=r.short; if(r.barcode) p.barcode=String(r.barcode).trim(); if(r.sup) p.supplierId=r.sup.id;
         updated++; continue }
       const np={id:++id,stock:0,code:r.code,name:r.name,cat:r.cat||'General',unit:r.unit||'pcs',
         barcode:String(r.barcode||'').trim()||String(8+Math.floor(Math.random()*8.9e11)),
