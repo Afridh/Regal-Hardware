@@ -2570,7 +2570,9 @@ const bestList = () => { const prods = listed(); let best = prods.filter(p => p.
 const newList = () => listed().slice(-12).reverse();
 const saleList = () => listed().filter(p => discPct(p) > 0).sort((a, b) => discPct(b) - discPct(a)).slice(0, 12);
 function tabsSection(T, s) {
-  const tabs = [['new', s.t || 'New arrivals', newList(), '#/search'], ['best', 'Best sellers', bestList(), '#/search?sort=best'], ['sale', 'On sale', saleList(), '#/search?sale=1']].filter(t => t[2].length);
+  // each list in the shop's own order: the newest and best-selling as picked, the sale the first twelve on offer
+  const onSale = shopOrder(listed().filter(p => discPct(p) > 0)).slice(0, 12);
+  const tabs = [['new', s.t || 'New arrivals', shopOrder(newList()), '#/search'], ['best', 'Best sellers', shopOrder(bestList()), '#/search?sort=best'], ['sale', 'On sale', onSale, '#/search?sale=1']].filter(t => t[2].length);
   if (!tabs.length) return '';
   return `<section class="t-sec"><div class="t-head"><div class="t-tabs">${tabs.map((t, k) => `<button class="${k ? '' : 'on'}" data-tab="home:${t[0]}">${esc(t[1])}</button>`).join('')}</div><a class="more" href="#/search">View all</a></div>
     ${tabs.map((t, k) => `<div class="t-pane ${k ? '' : 'on'}" data-pane="home:${t[0]}"><div class="t-railwrap"><div class="e-rail" id="tab_${t[0]}">${t[2].map(productBox).join('')}</div>
@@ -2646,7 +2648,7 @@ function dealSection(T, s) {
   </div></section>`;
 }
 function featuredTz(T, s) {
-  const cats = (st.cat.categories || []).slice(0, 5);
+  const cats = st.cat.categories || [];   // every department, as the switches are
   if (!cats.length) return '';
   const FEAT_N = 10;
   const lists = cats.map(c => { const all = shopOrder(listed().filter(p => inCatOf(p, c.name))); return [c, all.slice(0, FEAT_N), all.length]; }).filter(x => x[1].length);
