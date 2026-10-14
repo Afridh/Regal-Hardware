@@ -402,6 +402,8 @@ body.search-open .e-search{display:block}
 .e-cats button:hover{color:var(--ink)}
 .e-cats button.on{color:var(--ink);border-bottom-color:var(--ink)}
 .e-cats button small{font-size:11px;color:var(--faint);margin-left:4px}
+.e-brands{border-bottom:0;padding-top:6px;padding-bottom:6px;align-items:center;gap:8px}
+.e-brands .lbl{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-right:4px;white-space:nowrap}
 .e-tools{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:18px var(--pad);border-bottom:1px solid var(--line2)}
 .e-tools .left,.e-tools .right{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
 .e-sel{position:relative;display:inline-flex;align-items:center;gap:8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase}
@@ -728,6 +730,7 @@ body.no-anim .rv{opacity:1;transform:none}
 .t-cat .ic{width:100%;aspect-ratio:3/2;border-radius:var(--rad);background:#fff;display:flex;align-items:center;justify-content:center;transition:transform .3s var(--ease),box-shadow .3s}
 .t-cat .ic svg{width:44%;height:auto;fill:none;stroke:var(--brand);stroke-width:1.6}
 .t-cat .ic img{max-width:70%;max-height:70%;object-fit:contain}
+.t-cat .ic img.photo{width:100%;height:100%;max-width:none;max-height:none;object-fit:cover;border-radius:inherit}
 .t-cat b{font-size:15px;font-weight:600;line-height:1.25}
 .t-cat small{font-size:12px;color:var(--muted);margin-top:-8px}
 .t-cat:hover .ic{transform:translateY(-5px);box-shadow:0 12px 26px rgba(0,0,0,.08)}
@@ -1460,6 +1463,7 @@ function saveCart() { ls.set('cart', st.cart.map(({ pid, qty, sel }) => ({ pid, 
 function addToCart(pid, qty = 1, quiet) {
   const p = P(pid);
   if (!p) return;
+  if (p.webOnly) { window.open(askOnWhatsApp(p), '_blank', 'noopener'); return notify('info', 'Order ' + p.name + ' on WhatsApp — it is not in the online basket yet'); }
   qty = +qty || 1;
   if (qty <= 0) return;
   if (p.stock !== null && p.stock <= 0) return notify('warning', p.name + ' is out of stock just now');
@@ -1594,6 +1598,7 @@ const hue = s => {
 };
 function getProductImage(p) {
   if (p && p.img && typeof p.img === 'string' && p.img.trim() !== '' && !p.img.includes('undefined')) return p.img;
+  if (productPhoto(p)) return productPhoto(p);
   const s = ((p?.name || '') + ' ' + (p?.cat || '')).toLowerCase();
   if (s.includes('drill') || s.includes('driver') || s.includes('impact') || s.includes('bore')) return 'products/drill.jpg';
   if (s.includes('saw') || s.includes('circular') || s.includes('cutter') || s.includes('blade')) return 'products/saw.jpg';
@@ -1811,9 +1816,217 @@ const artFor = (s) => { const k = String(s || '').toLowerCase(); const hit = CAT
 const TINTS = [['#f4f4f2', '#e9e8e4'], ['#f3f4f5', '#e6e8ea'], ['#f5f3f1', '#ebe6e1'], ['#f2f3f1', '#e5e8e3'], ['#f4f2f3', '#e9e4e7'], ['#f1f2f4', '#e3e6eb']];
 const tintOf = (s) => TINTS[hue(s) % TINTS.length];
 
+/* Real photos for the departments on the home page (free stock photos, Unsplash licence, kept in
+   img/categories/). A photo the shop uploads for a category in the till always wins; a department
+   not listed here keeps its drawn icon. */
+const CAT_PHOTOS = {
+  'SWITCHES': 'switches', 'BLACK SCREW NAIL': 'screws', 'DOOR LOCK': 'door-lock', 'ASIAN BASE': 'paint-base',
+  'PVC ITEMS': 'pvc-pipe', 'POP RIVERTS': 'pop-rivets', 'PADLOCK': 'padlock', 'SCREW DRIVER': 'screwdriver',
+  'DRILL BIT': 'drill-bit', 'BALL VALVE': 'valve', 'TOOLS': 'tools', 'LED PANEL': 'led-panel',
+  'CONCRETE NAIL': 'nails', 'ABC BOX': 'electrical-box', 'ENAMAL': 'enamel', 'LED BULB N/W': 'led-bulb'
+};
+const catKey = (n) => String(n || '').toUpperCase().replace(/\s+/g, ' ').trim();
+const stockPhoto = (c) => (c && !c.img && CAT_PHOTOS[catKey(c.name)]) ? '/img/categories/' + CAT_PHOTOS[catKey(c.name)] + '.webp' : '';
+const catImg = (c) => (c && c.img) || stockPhoto(c);
+
+/* Kevilton's own product photos (from kevilton.lk), for the Kevilton goods the shop sells, by product
+   code. Modular White is Kevilton's Ivory range and Modular Black its Chrome; Jet Black and a few others
+   are not on kevilton.lk and keep the drawn stand-in. A photo uploaded for the product in the till wins. */
+const PRODUCT_PHOTOS = {
+  'PCT-11-001762': 'chrome-13a-socket.jpg',   // KEVILTON 13AMP PLUG BASE - MODULAR BLACK
+  'PCT-11-001763': 'chrome-light-dimmer.jpg',   // KEVILTON LIGHT DIMMER - MODULAR BLACK
+  'PCT-11-001764': 'chrome-fan-controler.jpg',   // KEVILTON MOD BLACK FAN CONTROLER
+  'PCT-11-001765': 'chrome-telephone-socket.jpg',   // KEVILTON TELEPHONE SOCKET - MODULAR BLACK
+  'PCT-11-001766': 'chrome-tv-socket.jpg',   // KEVILTON TV SOCKET - MODULAR BLACK
+  'PCT-11-001767': 'chrome-20a-double-pole-with-neon.jpg',   // KEVILTON 20AMP D/POLE - MODULAR BLACK
+  'PCT-11-001768': 'chrome-1-gang-2-way.jpg',   // KEVILTON 1G 2WAY - MODULAR BLACK
+  'PCT-11-001769': 'chrome-2-gang-2-way.jpg',   // KEVILTON 2G 2WAY - MODULAR BLACK
+  'PCT-11-001770': 'chrome-3-gang-2-way.jpg',   // KEVILTON 3G 2WAY - MODULAR BLACK
+  'PCT-11-001771': 'chrome-4-gang-2-way.jpg',   // KEVILTON 4G 2WAY - MODULAR BLACK
+  'PCT-11-001780': 'ivory-1-gang-1-way.jpg',   // KEVILTON 1G 1WAY - MODULAR WHITE
+  'PCT-11-001781': 'ivory-2-gang-1-way.jpg',   // KEVILTON 2G 1WAY - MODULAR WHITE
+  'PCT-11-001782': 'ivory-3-gang-1-way.jpg',   // KEVILTON 3G 1WAY - MODULAR WHITE
+  'PCT-11-001783': 'ivory-4-gang-1-way.jpg',   // KEVILTON 4G 1WAY - MODULAR WHITE
+  'PCT-11-001784': 'ivory-bell-press.jpg',   // KEVILTON BELL PRESS - MODULAR WHITE
+  'PCT-11-001785': 'ivory-13a-socket.jpg',   // KEVILTON 13AMP PLUG BASE - MODULAR WHITE
+  'PCT-11-001786': 'ivory-blank-plate.jpg',   // KEVILTON BLANK PLATE - MODULAR WHITE
+  'PCT-11-001787': 'ivory-fan-controler.jpg',   // KEVILTON FAN CONTROLLER MODULAR WHITE
+  'PCT-11-001788': 'ivory-light-dimmer.jpg',   // KEVILTON LIGHT DIMMER - MODULAR WHITE
+  'PCT-11-001789': 'ivory-13a-socket-with-neon.jpg',   // KEVILTON 13AMP PLUG BASE NEON - MODULAR WHITE
+  'PCT-11-001790': 'ivory-telephone-socket.jpg',   // KEVILTON TELEPHONE SOCKET - MODULAR WHITE
+  'PCT-11-001791': 'ivory-20a-double-pole-with-neon.jpg',   // KEVILTON 20AMP D/POLE - MODULAR WHITE
+  'PCT-11-001792': 'ivory-2-gang-2-way.jpg',   // KEVILTON 2G 2WAY - MODULAR WHITE
+  'PCT-11-001793': 'ivory-3-gang-2-way.jpg',   // KEVILTON 3G 2WAY - MODULAR WHITE
+  'PCT-11-001794': 'ivory-4-gang-2-way.jpg',   // KEVILTON 4G 2WAY - MODULAR WHITE
+  'PCT-11-001796': 'mahogany-2-gang-1-way.jpg',   // KEVILTON 2G 1WAY - MAHOGANY
+  'PCT-11-001867': 'sunk-boxes-twin-sunk-box.jpg',   // TWIN SUN BOX KEVILTON
+  'PCT-11-001564': 'sunk-boxes-twin-sunk-box.jpg',   // DOUBLE SUNK BOX - KEVILTON
+  'PCT-11-001872': 'rccbs-rccb-10ka-2-pole.jpg',   // TRIP SWITCH - KEVILTON - PRIME
+  'PCT-11-001511': 'mahogany-1-gang-1-way.jpg',   // KEVILTON 1G 1WAY - MAHOGANY
+  'PCT-11-001513': 'mahogany-3-gang-1-way.jpg',   // KEVILTON 3G 1WAY - MAHOGANY
+  'PCT-11-001514': 'mahogany-4-gang-1-way.jpg',   // KEVILTON 4G 1WAY - MAHOGANY
+  'PCT-11-001515': 'mahogany-13a-socket.jpg',   // KEVILTON 13AMP PLUG BASE - MAHOGANY
+  'PCT-11-001517': 'mahogany-20a-double-pole-with-neon.jpg',   // KEVILTON 20AMP D/POLE - MAHOGANY
+  'PCT-11-001518': 'mahogany-blank-plate.jpg',   // KEVILTON BLANK PLATE - MAHOGANY
+  'PCT-11-001519': 'mahogany-2-gang-2-way.jpg',   // KEVILTON 2G 2WAY - MAHOGANY
+  'PCT-11-001561': 'lamp-holders-straight-batten-holder.jpg',   // BATTEN HOLDER KEVILTON
+  'PCT-11-001562': 'lamp-holders-angle-batten-holder.jpg',   // ANGL HOLDER KEVILTON
+  'PCT-11-001563': 'sunk-boxes-single-sunk-box.jpg',   // SINGLE SUN BOX KEVILTON
+  'PCT-11-001565': 'sunk-boxes-3-way-sunk-box.jpg',   // 3WAY SUN BOX KEVILTON
+  'PCT-11-001566': 'sunk-boxes-4-way-sunk-box.jpg',   // 4 WAY SUN BOX KEVILTON
+  'PCT-11-001567': 'junction-box.jpg',   // JUNCTION BOX KEVILTON
+  'PCT-11-001569': 'busbar.jpg',   // BUS BAR KEVILTON
+  'PCT-11-001570': 'earth-rods-earth-rod-12-mm-x-1500-mm.jpg',   // EARTH ROD - KEVILTON
+  'PCT-11-001572': 'isolators-isolator-10ka-2-pole.jpg',   // MAIN SWITCH KEVILTON HEXA
+  'PCT-11-001573': 'mcbs-mcb-10ka-1-pole.jpg',   // 6AMP BREAKER KEVILTON HEXA
+  'PCT-11-001574': 'mcbs-mcb-10ka-1-pole.jpg',   // 10AMP BREAKER KEVILTON HEXA
+  'PCT-11-001575': 'mcbs-mcb-10ka-1-pole.jpg',   // 16AMP BREAKER KEVILTON HEXA
+  'PCT-11-001576': 'mcbs-mcb-10ka-1-pole.jpg',   // 20AMP BREAKER KEVILTON HEXA
+  'PCT-11-001577': 'mcbs-mcb-10ka-1-pole.jpg',   // 32AMP BREAKER KEVILTON HEXA
+  'PCT-11-001578': 'mcbs-mcb-10ka-1-pole.jpg',   // KEVILTON 6AMP BREAKER - PRIME
+  'PCT-11-001579': 'mcbs-mcb-10ka-1-pole.jpg',   // 10AMP BREAKER KEVILTON PRIME
+  'PCT-11-001580': 'mcbs-mcb-10ka-1-pole.jpg',   // KEVILTON 16AMP BREAKER - PRIME
+  'PCT-11-001581': 'mcbs-mcb-10ka-1-pole.jpg',   // 20AMP BREAKER - KEVILTON - PRIME
+  'PCT-11-001582': 'mcbs-mcb-10ka-1-pole.jpg',   // 32AMP BREAKER - KEVILTON - PRIME
+  'PCT-11-001584': 'isolators-isolator-10ka-2-pole.jpg',   // PRIME MAIN SWITCH KEVILTON
+  'PCT-11-001521': 'mahogany-3-gang-2-way.jpg',   // KEVILTON 3G 2WAY - MAHOGANY
+  'PCT-11-001522': 'mahogany-4-gang-2-way.jpg',   // KEVILTON 4G 2WAY - MAHOGANY
+  'PCT-11-001523': 'mahogany-hum-free-fan-controler.jpg',   // KEVILTON 5 STEP HUM FREE - MAHOGANY
+  'PCT-11-001813': 'mahogany-hum-free-fan-controler.jpg',   // HUMFREE FAN CONTROLLER - KEVILTON - MAHOGANY
+  'PCT-11-001524': 'mahogany-light-dimmer.jpg',   // KEVILTON LIGHT DIMMER - MAHOGANY
+  'PCT-11-001525': 'mahogany-tv-socket.jpg',   // KEVILTON TV SOCKET - MAHOGANY
+  'PCT-11-001745': 'white-light-dimmer-with-1-gang.jpg',   // KEVILTON LIGHT DIMMER
+  'PCT-11-001746': 'white-1-gang-1-way.jpg',   // KEVILTON 1G 1WAY
+  'PCT-11-001747': 'white-2-gang-1-way.jpg',   // KEVILTON 2G 1WAY
+  'PCT-11-001748': 'white-3-gang-1-way.jpg',   // KEVILTON 3G 1WAY
+  'PCT-11-001749': 'white-4-gang-1-way.jpg',   // KEVILTON 4G 1WAY
+  'PCT-11-001750': 'white-5-gang-1-way.jpg',   // KEVILTON 5G 1WAY
+  'PCT-11-001883': 'plug-tops-plug-top-13a.jpg',   // 13AMP PLUG TOP KEVILTON
+  'PCT-11-001751': 'white-13a-socket.jpg',   // KEVILTON 13AMP PLUG BASE
+  'PCT-11-001753': 'white-bell-press.jpg',   // KEVILTON BELL PRESS
+  'PCT-11-001755': 'white-blank-plate.jpg',   // KEVILTON BLANK PLATE
+  'PCT-11-001756': 'white-fan-controller-with-1-gang.jpg',   // KEVILTON FAN CONTROLER
+  'PCT-11-001757': 'chrome-1-gang-1-way.jpg',   // KEVILTON 1G 1WAY - MODULAR BLACK
+  'PCT-11-001758': 'chrome-2-gang-1-way.jpg',   // KEVILTON 2G 1WAY - MODULAR BLACK
+  'PCT-11-001759': 'chrome-3-gang-1-way.jpg',   // KEVILTON 3G 1WAY - MODULAR BLACK
+  'PCT-11-001760': 'chrome-4-gang-1-way.jpg',   // KEVILTON 4G 1WAY - MODULAR BLACK
+  'PCT-11-001761': 'chrome-bell-press.jpg',   // KEVILTON BELL PRESS - MODULAR BLACK
+  'PCT-11-002987': 'mahogany-telephone-socket.jpg',   // KEVILTON TELEPHONE SOCKET - MAHOGANY
+  'PCT-11-003029': 'ivory-tv-socket.jpg',   // KEVILTON TV SOCKET - MODULAR WHITE
+  'PCT-12-003159': 'plastic-enclosures-sunk.jpg',   // KEVILTON ABC BOX 15 WAY SUNK
+  'PCT-12-003164': 'ivory-1-gang-2-way.jpg',   // KEVILTON 1G 2WAY - MODULAR WHITE
+  'PCT-11-003180': 'white-20a-double-pole-with-neon.jpg',   // KEVILTON 20AMP D/POLE
+  'PCT-12-003200': 'mahogany-bell-press.jpg',   // KEVILTON BELL PRESS - MAHOGANY
+  'PCT-12-003307': 'led-indicator.jpg',   // KEVILTON LED INDICATOR-GREEN
+  'PCT-12-003308': 'white-hum-free-fan-controller-5-step.jpg',   // KEVILTON 5 STEP HUM FREE
+  'PCT-12-003309': 'white-tv-socket.jpg',   // KEVILTON TV SOCKET
+  'PCT-11-004709': 'white-13a-socket-with-neon.jpg',   // KEVILTON 13AMP PLUG BASE NEON
+  'PCT-11-004710': 'white-1-gang-2-way.jpg',   // KEVILTON 1G 2WAY
+  'PCT-11-004712': 'white-tumbler-switch.jpg',   // KEVILTON TUMBLER SWITCH
+  'PCT-11-004713': 'ivory-hum-free-fan-controler.jpg',   // KEVILTON 5 STEP HUM FREE - MODULAR WHITE
+  'PCT-11-004720': 'chrome-blank-plate.jpg',   // KEVILTON BLANK PLATE - MODULAR BLACK
+  'PCT-11-004721': 'chrome-13a-socket-with-neon.jpg',   // KEVILTON 13AMP PLUG BASE NEON - MODULAR BLACK
+  'PCT-11-004725': 'chrome-hum-free-fan-controler.jpg',   // KEVILTON 5 STEP HUM FREE - MODULAR BLACK
+  'PCT-11-004736': 'mahogany-13a-socket-with-neon.jpg',   // KEVILTON 13AMP PLUG BASE NEON - MAHOGANY
+  'PCT-13-005064': 'mahogany-1-gang-2-way.jpg',   // KEVILTON 1G 2WAY - MAHOGANY
+  'PCT-11-005065': 'teak-1-gang-1-way.jpg',   // KEVILTON 1G 1WAY - TEAK
+  'PCT-11-005066': 'teak-2-gang-1-way.jpg',   // KEVILTON 2G 1WAY - TEAK
+  'PCT-11-005067': 'teak-3-gang-1-way.jpg',   // KEVILTON 3G 1WAY - TEAK
+  'PCT-11-005068': 'teak-4-gang-1-way.jpg',   // KEVILTON 4G 1WAY - TEAK
+  'PCT-11-005069': 'teak-13a-socket.jpg',   // KEVILTON 13AMP PLUG BASE - TEAK
+  'PCT-11-005071': 'teak-13a-socket-with-neon.jpg',   // KEVILTON 13AMP PLUG BASE NEON - TEAK
+  'PCT-11-005072': 'teak-20a-double-pole-with-neon.jpg',   // KEVILTON 20AMP D/POLE - TEAK
+  'PCT-11-005073': 'teak-1-gang-2-way.jpg',   // KEVILTON 1G 2WAY - TEAK
+  'PCT-11-005074': 'teak-2-gang-2-way.jpg',   // KEVILTON 2G 2WAY - TEAK
+  'PCT-11-005075': 'teak-3-gang-2-way.jpg',   // KEVILTON 3G 2WAY SWITCH - TEAK
+  'PCT-11-005076': 'teak-4-gang-2-way.jpg',   // KEVILTON 4G 2WAY - TEAK
+  'PCT-11-005077': 'teak-light-dimmer.jpg',   // KEVILTON LIGHT DIMMER - TEAK
+  'PCT-11-005078': 'teak-hum-free-fan-controler.jpg',   // KEVILTON 5 STEP HUM FREE - TEAK
+  'PCT-11-005079': 'teak-tv-socket.jpg',   // KEVILTON TV SOCKET - TEAK
+  'PCT-11-005080': 'teak-telephone-socket.jpg',   // KEVILTON TELEPHONE SOCKET - TEAK
+  'PCT-11-005081': 'teak-bell-press.jpg',   // KEVILTON BELL PRESS - TEAK
+  'PCT-11-005099': 'chrome-data-socket.jpg',   // KEVILTON CAT 6 DATA SOCKET - MODULAR BLACK
+  'PCT-13-005115': 'kumbuk-1-gang-1-way.jpg',   // KEVILTON 1G 1WAY - KUMBUK
+  'PCT-13-005116': 'kumbuk-2-gang-1-way.jpg',   // KEVILTON 2G 1WAY - KUMBUK
+  'PCT-13-005117': 'kumbuk-3-gang-1-way.jpg',   // KEVILTON 3G 1WAY - KUMBUK
+  'PCT-13-005118': 'kumbuk-4-gang-1-way.jpg',   // KEVILTON 4G 1WAY - KUMBUK
+  'PCT-13-005119': 'kumbuk-13a-socket.jpg',   // KEVILTON 13AMP PLUG BASE - KUMBUK
+  'PCT-13-005120': 'kumbuk-blank-plate.jpg',   // KEVILTON BLANK PLATE - KUMBUK
+  'PCT-13-005121': 'kumbuk-13a-socket-with-neon.jpg',   // KEVILTON 13AMP PLUG BASE NEON - KUMBUK
+  'PCT-13-005122': 'kumbuk-20a-double-pole-with-neon.jpg',   // KEVILTON 20AMP D/POLE - KUMBUK
+  'PCT-13-005123': 'kumbuk-1-gang-2-way.jpg',   // KEVILTON 1G 2WAY - KUMBUK
+  'PCT-13-005124': 'kumbuk-2-gang-2-way.jpg',   // KEVILTON 2G 2WAY - KUMBUK
+  'PCT-13-005125': 'kumbuk-3-gang-2-way.jpg',   // KEVILTON 3G 2WAY - KUMBUK
+  'PCT-13-005126': 'kumbuk-4-gang-2-way.jpg',   // KEVILTON 4G 2WAY - KUMBUK
+  'PCT-13-005127': 'kumbuk-light-dimmer.jpg',   // KEVILTON LIGHT DIMMER - KUMBUK
+  'PCT-13-005128': 'kumbuk-hum-free-fan-controler.jpg',   // KEVILTON 5 STEP HUM FREE - KUMBUK
+  'PCT-13-005129': 'kumbuk-tv-socket.jpg',   // KEVILTON TV SOCKET - KUMBUK
+  'PCT-13-005130': 'kumbuk-telephone-socket.jpg',   // KEVILTON TELEPHONE SOCKET - KUMBUK
+  'PCT-13-005131': 'kumbuk-bell-press.jpg',   // KEVILTON BELL PRESS - KUMBUK
+  'PCT-11-005288': 'mahogany-data-socket.jpg',   // KEVILTON DATA SOCKET CAT 5 - MAHOGANY
+  'PCT-11-005786': 'ceiling-rose.jpg',   // CEALING ROSE KEVILTON
+  'PCT-11-006781': 'plastic-enclosures-sunk.jpg',   // KEVILTON 12WAY ABC BOX SUNK
+  'PCT-11-006782': 'plastic-enclosures-surface.jpg',   // KEVILTON 12WAY ABC BOX SURFACE
+  'PCT-11-006783': 'plastic-enclosures-sunk.jpg',   // KEVILTON 15WAY ABC BOX SUNK
+  'PCT-11-006784': 'plastic-enclosures-surface.jpg',   // KEVILTON 15WAY ABC BOX SURFACE
+  'PCT-11-006785': 'plastic-enclosures-surface.jpg',   // KEVILTON 18WAY ABC BOX SURFACE
+  'PCT-11-006786': 'plastic-enclosures-sunk.jpg',   // KEVILTON 18WAY ABC BOX SUNK
+  'PCT-11-006787': 'plastic-enclosures-sunk.jpg',   // KEVILTON 24WAY ABC BOX SUNK
+  'PCT-11-006788': 'plastic-enclosures-surface.jpg',   // KEVILTON 24WAY ABC BOX SURFACE
+  // Orange (Orel) — Casablanca range in White, Enigma in Classic White, from catalog.orel.com
+  'PCT-11-001731': 'orange/casablanca-1gang-1way-switch.webp',   // ORANGE 1G 1W SWITCH
+  'PCT-11-001732': 'orange/casablanca-2gang-1way-switch.webp',   // ORANGE 2G 1W SWITCH
+  'PCT-11-001733': 'orange/casablanca-3gang-1way-switch.webp',   // ORANGE 3G 1W SWITCH
+  'PCT-11-001734': 'orange/casablanca-4gang-1way-switch.webp',   // ORANGE 4G 1W SWITCH
+  'PCT-11-001735': 'orange/casablanca-5gang-1way-switch.webp',   // ORANGE 5G 1W SWITCH
+  'PCT-11-001741': 'orange/casablanca-1gang-2way-switch.webp',   // ORANGE 1G 2W SWITCH
+  'PCT-11-001736': 'orange/casablanca-13amp-single-switched-socket-outlet.webp',   // ORANGE 13AMP PLUG BASE
+  'PCT-11-001738': 'orange/casablanca-13amp-single-switched-socket-outlet-with-neon.webp',   // ORANGE 13AMP PLUG BASE -NEON
+  'PCT-11-001737': 'orange/casablanca-1gang-4wire-telephone-outlet.webp',   // ORANGE TELEPHONE SOCKET
+  'PCT-11-002984': 'orange/casablanca-1gang-tv-co-axial-outlet-75-ohm.webp',   // ORANGE TV SOCKET
+  'PCT-11-001740': 'orange/casablanca-1gang-2way-bell-press-switch.webp',   // ORANGE BELL PRESS SWITCH
+  'PCT-11-001742': 'orange/casablanca-90watt-5step-humfree-fan-controller.webp',   // ORANGE HUMFREE FAN CONTROLLER
+  'PCT-11-002982': 'orange/casablanca-400watt-light-dimmer-controller-with-switch.webp',   // ORANGE LIGHT DIMER
+  'PCT-11-001826': 'orange/casablanca-20amp-double-pole-switch.webp',   // ORANGE 20AMP D/P SOCKET
+  'PCT-11-001743': 'orange/casablanca-20amp-double-pole-switch-with-neon.webp',   // ORANGE D/POLE SWITCH WITH NEON
+  'PCT-11-001744': 'orange/casablanca-1gang-blank-plate-with-removable-plug.webp',   // ORANGE BLANK PLATE
+  'PCT-12-002927': 'orange/enigma-1gang-1way-switch.webp',   // ORANGE ENIGMA 1G 1WAY SWITCH
+  'PCT-12-002928': 'orange/enigma-2gang-1way-switch.webp',   // ORANGE ENIGMA 2G 1WAY SWITCH
+  'PCT-12-002929': 'orange/enigma-3gang-1way-switch.webp',   // ORANGE ENIGMA 3G 1WAY SWITCH
+  'PCT-12-002930': 'orange/enigma-4gang-1way-switch.webp',   // ORANGE ENIGMA 4G 1WAY SWITCH
+  'PCT-12-002931': 'orange/enigma-5gang-1way-switch.webp',   // ORANGE ENIGMA 5G 1WAY SWITCH
+  'PCT-12-002932': 'orange/enigma-6gang-1way-switch.webp',   // ORANGE ENIGMA 6G 1WAY SWITCH
+  'PCT-12-002934': 'orange/enigma-1gang-2way-switch.webp',   // ORANGE ENIGMA 1G 2WAY SWITCH
+  'PCT-12-002935': 'orange/enigma-1gang-2way-bell-press-switch.webp',   // ORANGE ENIGMA BELL PRESS SWITCH
+  'PCT-12-002936': 'orange/enigma-20amp-double-pole-switch-with-indicator.webp',   // ORANGE ENIGMA 20AMP D/POLE INDICATOR
+  'PCT-12-002937': 'orange/enigma-400watt-light-dimmer-controller-with-switch.webp',   // ORANGE ENIGMA LIGHT DIMMER
+  'PCT-12-002938': 'orange/enigma-400watt-fan-controller-with-switch.webp',   // ORANGE ENIGMA FAN CONTROLLER
+  'PCT-11-002985': 'orange/enigma-400watt-fan-controller-with-switch.webp',   // ORANGE ENIGMA FAN SPEED CONTROLER
+  'PCT-11-007451': 'orange/enigma-1gang-4wire-telephone-outlet.webp',   // ORANGE ENIGMA TELEPHONE SOCKET
+  'PCT-11-007452': 'orange/enigma-1gang-tv-co-axial-outlet-75ohm.webp',   // ORANGE ENIGMA TV SOCKET
+  // Enigma Gunmetal (added from orange-enigma-gunmetal.csv)
+  'PCT-12-002933': 'orange/enigma-13amp-single-switched-socket-outlet.webp',   // ORANGE ENIGMA 13AMP PLUG BASE
+  'PCT-12-007801': 'orange/enigma-1gang-1way-switch-gunmetal.webp',   // ORANGE ENIGMA 1G 1WAY SWITCH - GUNMETAL
+  'PCT-12-007802': 'orange/enigma-2gang-1way-switch-gunmetal.webp',   // ORANGE ENIGMA 2G 1WAY SWITCH - GUNMETAL
+  'PCT-12-007803': 'orange/enigma-3gang-1way-switch-gunmetal.webp',   // ORANGE ENIGMA 3G 1WAY SWITCH - GUNMETAL
+  'PCT-12-007804': 'orange/enigma-4gang-1way-switch-gunmetal.webp',   // ORANGE ENIGMA 4G 1WAY SWITCH - GUNMETAL
+  'PCT-12-007805': 'orange/enigma-5gang-1way-switch-gunmetal.webp',   // ORANGE ENIGMA 5G 1WAY SWITCH - GUNMETAL
+  'PCT-12-007806': 'orange/enigma-6gang-1way-switch-gunmetal.webp',   // ORANGE ENIGMA 6G 1WAY SWITCH - GUNMETAL
+  'PCT-12-007807': 'orange/enigma-1gang-2way-switch-gunmetal.webp',   // ORANGE ENIGMA 1G 2WAY SWITCH - GUNMETAL
+  'PCT-12-007808': 'orange/enigma-13amp-single-switched-socket-outlet-gunmetal.webp',   // ORANGE ENIGMA 13AMP PLUG BASE - GUNMETAL
+  'PCT-12-007809': 'orange/enigma-1gang-2way-bell-press-switch-gunmetal.webp',   // ORANGE ENIGMA BELL PRESS SWITCH - GUNMETAL
+  'PCT-12-007810': 'orange/enigma-20amp-double-pole-switch-with-indicator-gunmetal.webp',   // ORANGE ENIGMA 20AMP D/POLE INDICATOR - GUNMETAL
+  'PCT-12-007811': 'orange/enigma-400watt-light-dimmer-controller-with-switch-gunmetal.webp',   // ORANGE ENIGMA LIGHT DIMMER - GUNMETAL
+  'PCT-12-007812': 'orange/enigma-400watt-fan-controller-with-switch-gunmetal.webp',   // ORANGE ENIGMA FAN CONTROLLER - GUNMETAL
+  'PCT-12-007813': 'orange/enigma-400watt-fan-controller-with-switch-gunmetal.webp',   // ORANGE ENIGMA FAN SPEED CONTROLER - GUNMETAL
+  'PCT-12-007814': 'orange/enigma-1gang-4wire-telephone-outlet-gunmetal.webp',   // ORANGE ENIGMA TELEPHONE SOCKET - GUNMETAL
+  'PCT-12-007815': 'orange/enigma-1gang-tv-co-axial-outlet-75ohm-gunmetal.webp',   // ORANGE ENIGMA TV SOCKET - GUNMETAL
+};
+const productPhoto = (p) => { const f = p && PRODUCT_PHOTOS[p.code]; return f ? '/img/products/' + (f.includes('/') ? f : 'kevilton/' + f) : ''; };
+
 /* A product's own picture, or the stand-in. */
 function tile(p, small) {
-  const img = p && p.img && typeof p.img === 'string' && p.img.trim() && !p.img.includes('undefined') ? p.img : '';
+  const img = (p && p.img && typeof p.img === 'string' && p.img.trim() && !p.img.includes('undefined') ? p.img : '') || productPhoto(p);
   if (img) return `<div class="tile${small ? ' sm' : ''}"><img src="${esc(img)}" alt="${esc(p.name || '')}" loading="lazy" onerror="this.parentNode.outerHTML=tileArt(P('${esc(p.id)}'),${small ? 1 : 0})"></div>`;
   return tileArt(p, small);
 }
@@ -1907,7 +2120,7 @@ function tilesSection() {
   if (!cats.length) return '';
   return `<section class="e-tiles">${cats.map(c => `
     <a class="e-tilebox" href="${url('search', { cat: c.name })}">
-      ${c.img ? `<img src="${esc(c.img)}" alt="">` : `<div class="art" style="--h1:${tintOf(c.name)[0]};--h2:${tintOf(c.name)[1]}">${artFor(c.name)}<span class="big">${esc(c.name)}</span><span class="cnt">${c.count} item${c.count === 1 ? '' : 's'}</span></div>`}
+      ${catImg(c) ? `<img src="${esc(catImg(c))}" alt="" loading="lazy">` : `<div class="art" style="--h1:${tintOf(c.name)[0]};--h2:${tintOf(c.name)[1]}">${artFor(c.name)}<span class="big">${esc(c.name)}</span><span class="cnt">${c.count} item${c.count === 1 ? '' : 's'}</span></div>`}
       <span class="lbl">Shop ${esc(c.name)}</span>
     </a>`).join('')}</section>`;
 }
@@ -1976,7 +2189,7 @@ function twoTiles() {
   if (cats.length < 2) return '';
   return `<section class="e-tiles two">${cats.map(c => `
     <a class="e-tilebox dark" href="${url('search', { cat: c.name })}">
-      ${c.img ? `<img src="${esc(c.img)}" alt="">` : `<div class="art">${artFor(c.name)}<span class="big">${esc(c.name)}</span></div>`}
+      ${catImg(c) ? `<img src="${esc(catImg(c))}" alt="" loading="lazy">` : `<div class="art">${artFor(c.name)}<span class="big">${esc(c.name)}</span></div>`}
       <span class="lbl">Shop ${esc(c.name)}</span>
     </a>`).join('')}</section>`;
 }
@@ -2188,7 +2401,7 @@ function heroBd(T) {
 function promoCard(c, k) {
   const lo = minPrice(c.name), off = maxOff(c.name);
   return `<a class="t-promo" href="${url('search', { cat: c.name })}" style="--g:${PROMO_G[k % PROMO_G.length]}">
-    ${c.img ? `<img class="full" src="${esc(c.img)}" alt="">` : `<span class="art">${artFor(c.name)}</span>`}
+    ${catImg(c) ? `<img class="full" src="${esc(catImg(c))}" alt="" loading="lazy">` : `<span class="art">${artFor(c.name)}</span>`}
     <h3>${esc(c.name.charAt(0) + c.name.slice(1).toLowerCase())}</h3>
     <p>${off ? `Up to ${off}% off` : lo ? 'Starting at ' + money(lo) : c.count + ' in stock'}</p>
     <span class="go">Shop now</span></a>`;
@@ -2197,7 +2410,7 @@ function catStrip(T, s) {
   const cats = (st.cat.categories || []).slice(0, 16);
   if (!cats.length) return '';
   return `<section class="t-catsec t-railwrap" aria-label="${esc(s.t || 'Departments')}">
-    <div class="t-cats" id="catRail">${cats.map(c => `<a class="t-cat" href="${url('search', { cat: c.name })}"><span class="ic">${c.img ? `<img src="${esc(c.img)}" alt="">` : artFor(c.name)}</span><b>${esc(c.name.charAt(0) + c.name.slice(1).toLowerCase())}</b><small>${c.count} items</small></a>`).join('')}</div>
+    <div class="t-cats" id="catRail">${cats.map(c => `<a class="t-cat" href="${url('search', { cat: c.name })}"><span class="ic">${catImg(c) ? `<img src="${esc(catImg(c))}" alt=""${stockPhoto(c) ? ' class="photo"' : ''} loading="lazy">` : artFor(c.name)}</span><b>${esc(c.name.charAt(0) + c.name.slice(1).toLowerCase())}</b><small>${c.count} items</small></a>`).join('')}</div>
     <button class="t-arrow l" style="top:36%" aria-label="Back" data-rail="catRail" data-d="-1">&#8249;</button><button class="t-arrow r" style="top:36%" aria-label="More" data-rail="catRail" data-d="1">&#8250;</button>
   </section>`;
 }
@@ -2345,7 +2558,7 @@ function categoriesPage() {
       <p>${fq(st.cat.products.length)} products in ${cats.length} departments, all on the shelves at 748, Main Street, Kaduruwela.</p></div>
     <div class="e-grid bordered">${cats.slice(0, 12).map(c => `
       <a class="e-card" href="${url('search', { cat: c.name })}">
-        <div class="media">${c.img ? `<div class="tile"><img src="${esc(c.img)}" alt=""></div>` : `<div class="tile ph" style="--h1:${tintOf(c.name)[0]};--h2:${tintOf(c.name)[1]}"><span class="ph-cat">${c.count} item${c.count === 1 ? '' : 's'}</span><span class="ph-ic">${artFor(c.name)}</span><span class="ph-nm">${esc(c.name)}</span></div>`}</div>
+        <div class="media">${catImg(c) ? `<div class="tile"><img src="${esc(catImg(c))}" alt="" loading="lazy"></div>` : `<div class="tile ph" style="--h1:${tintOf(c.name)[0]};--h2:${tintOf(c.name)[1]}"><span class="ph-cat">${c.count} item${c.count === 1 ? '' : 's'}</span><span class="ph-ic">${artFor(c.name)}</span><span class="ph-nm">${esc(c.name)}</span></div>`}</div>
         <div class="info"><span class="nm">${esc(c.name)}</span><span class="pr e-muted" style="font-size:13px">${c.count}</span></div>
       </a>`).join('')}</div>
     ${cats.length > 12 ? `<div class="e-head" style="padding-top:clamp(48px,6vw,80px)"><h2 class="e-h2">Every department, A – Z</h2></div>
@@ -2354,22 +2567,55 @@ function categoriesPage() {
 }
 
 /* ---------------- the collection: search, a department, or everything ---------------- */
+/* Brands a customer can pick within a department. The books hold no brand, so it is read from the
+   name — and only in the departments listed, so an "orange" paint colour is never taken for the brand. */
+const BRAND_FILTERS = {
+  SWITCHES: [['Kevilton', /\bKEVILTON\b|\bKEVI\b|\bKEV\b/i], ['Orange', /\bORANGE\b/i], ['Wireman', /WIRE ?MAN/i], ['Chint', /\bCHINT\b/i]],
+};
+const brandOf = (p) => {
+  if (p.brand) return p.brand;
+  const rules = BRAND_FILTERS[catKey(p.cat)];
+  const hit = rules && rules.find(([, re]) => re.test(p.name || ''));
+  return hit ? hit[0] : '';
+};
+/* Kevilton switches in the order the shop sells them: by range, then within a range by what the
+   item is. Anything not named here keeps its place after the named ones of its range. */
+const KEV_RANGES = [
+  [/JET BLACK/, 3], [/MOD(ULAR)? WHITE/, 1], [/MOD(ULAR)? BLACK/, 2],
+  [/MAHOGANY|\bMAHO\b/, 4], [/KUMBUK/, 5], [/TEAK/, 6]];
+const KEV_ITEMS = [
+  [/\b1\s*G\s*1\s*WAY/, 1], [/\b2\s*G\s*1\s*WAY/, 2], [/\b3\s*G\s*1\s*WAY/, 3], [/\b4\s*G\s*1\s*WAY/, 4], [/\b5\s*G\s*1\s*WAY/, 4.5],
+  [/\b1\s*G\s*2\s*WAY/, 5], [/\b2\s*G\s*2\s*WAY/, 6], [/\b3\s*G\s*2\s*WAY/, 7], [/\b4\s*G\s*2\s*WAY/, 8],
+  [/13\s*AMP PLUG BASE NEON/, 9.5], [/13\s*AMP PLUG BASE/, 9],
+  [/HUM ?FREE|FAN CONTROL/, 10], [/20\s*AMP D\/?POLE/, 11], [/TELEPHONE/, 12],
+  [/TV SOCKET/, 13], [/DATA SOCKET/, 14], [/BELL PRESS/, 15], [/LIGHT DIMMER/, 16], [/BLANK PLATE/, 17]];
+function kevOrder(p) {
+  const n = String(p.name || '').toUpperCase();
+  const r = (KEV_RANGES.find(([re]) => re.test(n)) || [, 0])[1];
+  const i = (KEV_ITEMS.find(([re]) => re.test(n)) || [, 50])[1];
+  return r * 100 + i;
+}
 function listing() {
   const q = st.route.q || {};
   const kw = (q.q || '').toLowerCase().trim();
   const { cat = '', brand = '', range = '', instock = '', sort = '' } = q;
   let list = st.cat.products.filter(p => {
     if (cat && p.cat !== cat) return false;
-    if (brand && p.brand !== brand) return false;
+    if (brand && brandOf(p) !== brand) return false;
     if (instock === '1' && isOut(p)) return false;
     if (q.sale === '1' && !(p.mrp > p.price)) return false;
-    if (kw && ![p.name, p.code, p.short, p.cat, p.desc, p.brand].some(x => String(x || '').toLowerCase().includes(kw))) return false;
+    if (kw && ![p.name, p.code, p.short, p.cat, p.desc, brandOf(p)].some(x => String(x || '').toLowerCase().includes(kw))) return false;
     if (range === 'under1' && p.price >= 1000) return false;
     if (range === '1to5' && (p.price < 1000 || p.price > 5000)) return false;
     if (range === '5to20' && (p.price < 5000 || p.price > 20000)) return false;
     if (range === 'over20' && p.price <= 20000) return false;
     return true;
   });
+  if (!sort && (catKey(cat) === 'SWITCHES' || brand === 'Kevilton')) {
+    const pos = new Map(list.map((p, k) => [p, k]));
+    const key = (p) => brandOf(p) === 'Kevilton' && catKey(p.cat) === 'SWITCHES' ? kevOrder(p) : 10000 + pos.get(p);
+    list.sort((a, b) => key(a) - key(b) || pos.get(a) - pos.get(b));
+  }
   if (sort === 'best') list.sort((a, b) => (b.sold || 0) - (a.sold || 0));
   else if (sort === 'price-asc') list.sort((a, b) => a.price - b.price);
   else if (sort === 'price-desc') list.sort((a, b) => b.price - a.price);
@@ -2378,7 +2624,10 @@ function listing() {
   const key = JSON.stringify(q);
   if (st.listKey !== key) { st.listKey = key; st.limit = 24; }
   const shown = list.slice(0, st.limit);
-  const brands = Array.from(new Set(st.cat.products.map(p => p.brand).filter(Boolean))).sort();
+  const inCat = cat ? st.cat.products.filter(p => p.cat === cat) : st.cat.products;
+  const brandCount = {}; inCat.forEach(p => { const b = brandOf(p); if (b) brandCount[b] = (brandCount[b] || 0) + 1; });
+  const order = (BRAND_FILTERS[catKey(cat)] || []).map(r => r[0]);
+  const brands = Object.keys(brandCount).sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99) || a.localeCompare(b));
   const title = cat || (kw ? `“${q.q}”` : q.sale === '1' ? 'On sale' : sort === 'best' ? 'Best sellers' : 'All products');
   const filtered = cat || brand || range || instock || kw || q.sale;
   return `
@@ -2392,6 +2641,11 @@ function listing() {
       return top.map(c => `<button class="${cat === c.name ? 'on' : ''}" onclick="go('search',{...st.route.q,cat:'${esc(c.name).replace(/'/g, "\\'")}'})">${esc(c.name)}<small>${c.count}</small></button>`).join('')
         + (all.length > top.length ? `<button onclick="go('categories')">More departments<small>${all.length}</small></button>` : ''); })()}
   </div>
+  ${cat && BRAND_FILTERS[catKey(cat)] && brands.length ? `<div class="e-cats e-brands" aria-label="Brand">
+    <span class="lbl">Brand</span>
+    <button class="${!brand ? 'on' : ''}" onclick="go('search',{...st.route.q,brand:''})">All brands<small>${fq(inCat.length)}</small></button>
+    ${brands.map(b => `<button class="${brand === b ? 'on' : ''}" onclick="go('search',{...st.route.q,brand:'${esc(b).replace(/'/g, "\\'")}'})">${esc(b)}<small>${brandCount[b]}</small></button>`).join('')}
+  </div>` : ''}
   <div class="e-tools">
     <div class="left">
       <label class="e-sel">Price <select onchange="go('search',{...st.route.q,range:this.value})">
@@ -2445,7 +2699,8 @@ function productPage() {
         <div class="stock ${out ? 'out' : isLow(p) ? 'low' : ''}"><i></i>${out ? 'Sold out just now — call us, more may be on the way' : isLow(p) ? `Only ${fq(p.stock)} left` : p.stock === null || p.stock === undefined ? 'Available' : 'In stock, ready to go'}</div>
         ${p.options && p.options.length ? `<span class="lbl">Option</span><div class="e-opts">${p.options.map(o => `<button class="${o === opt ? 'on' : ''}" onclick="selectProductOption('${esc(p.id)}','${esc(o).replace(/'/g, "\\'")}',this)">${esc(o)}</button>`).join('')}</div>` : ''}
         ${p.tiers && p.tiers.length ? `<span class="lbl">Buy more, pay less</span><div class="e-tiers">${p.tiers.slice().sort((a, b) => a.min - b.min).map(t => `<div><span>${fq(t.min)}${p.unit ? ' ' + esc(p.unit) : ''} or more${t.label ? ' · ' + esc(t.label) : ''}</span><b>${money(t.price)} each</b></div>`).join('')}</div>` : ''}
-        ${out ? `<button class="e-btn block" disabled>Sold out</button>` : `
+        ${p.webOnly ? `<a class="e-btn block" href="${askOnWhatsApp(p)}" target="_blank" rel="noopener">Order on WhatsApp</a>
+        <div class="tot">Not in the online basket yet — order it on WhatsApp or call ${esc(shopPhone())}.</div>` : out ? `<button class="e-btn block" disabled>Sold out</button>` : `
         <span class="lbl">Quantity</span>
         <div class="e-buy">
           <div class="e-qty"><button data-qty="-1" aria-label="One less">−</button><input type="number" id="pdQty" value="${qty}" min="1" aria-label="Quantity"><button data-qty="1" aria-label="One more">+</button></div>
@@ -3118,10 +3373,41 @@ function lookFromLastVisit() {
 function keepLook(cat) {
   try { ls.set(LOOK_KEY, { shop: cat.shop, settings: cat.settings, categories: (cat.categories || []).slice(0, 40), slides: cat.slides || [], banners: cat.banners || [] }); } catch (e) {}
 }
+/* Goods the till keeps selling at the counter but the online shop does not offer, by product code. */
+const NOT_ONLINE = new Set([
+  'PCT-11-001772', 'PCT-11-003028', 'PCT-11-003444',   // Kevilton 5A plug bases
+]);
+/* Goods shown on the online shop that the till does not have yet: [code, name, department, MRP, price].
+   They can be looked at and asked about, but not put in the basket — an online order is only taken
+   for what is in the books. Once the till has a product with the same code, the till's one is shown. */
+const WEB_ONLY = [
+  ['PCT-12-007801', 'ORANGE ENIGMA 1G 1WAY SWITCH - GUNMETAL', 'SWITCHES', 890, 715],
+  ['PCT-12-007802', 'ORANGE ENIGMA 2G 1WAY SWITCH - GUNMETAL', 'SWITCHES', 1160, 930],
+  ['PCT-12-007803', 'ORANGE ENIGMA 3G 1WAY SWITCH - GUNMETAL', 'SWITCHES', 1520, 1220],
+  ['PCT-12-007804', 'ORANGE ENIGMA 4G 1WAY SWITCH - GUNMETAL', 'SWITCHES', 1970, 1580],
+  ['PCT-12-007805', 'ORANGE ENIGMA 5G 1WAY SWITCH - GUNMETAL', 'SWITCHES', 2320, 1860],
+  ['PCT-12-007806', 'ORANGE ENIGMA 6G 1WAY SWITCH - GUNMETAL', 'SWITCHES', 2850, 2280],
+  ['PCT-12-007807', 'ORANGE ENIGMA 1G 2WAY SWITCH - GUNMETAL', 'SWITCHES', 1200, 960],
+  ['PCT-12-007808', 'ORANGE ENIGMA 13AMP PLUG BASE - GUNMETAL', 'PLUG BASS', 865, 692],
+  ['PCT-12-007809', 'ORANGE ENIGMA BELL PRESS SWITCH - GUNMETAL', 'SWITCHES', 595, 476],
+  ['PCT-12-007810', 'ORANGE ENIGMA 20AMP D/POLE INDICATOR - GUNMETAL', 'SWITCHES', 2180, 1800],
+  ['PCT-12-007811', 'ORANGE ENIGMA LIGHT DIMMER - GUNMETAL', 'SWITCHES', 3840, 3075],
+  ['PCT-12-007812', 'ORANGE ENIGMA FAN CONTROLLER - GUNMETAL', 'SWITCHES', 3530, 2830],
+  ['PCT-12-007813', 'ORANGE ENIGMA FAN SPEED CONTROLER - GUNMETAL', 'SWITCHES', 1375, 1160],
+  ['PCT-12-007814', 'ORANGE ENIGMA TELEPHONE SOCKET - GUNMETAL', 'SWITCHES', 3000, 2400],
+  ['PCT-12-007815', 'ORANGE ENIGMA TV SOCKET - GUNMETAL', 'SWITCHES', 2850, 2290],
+];
+function addWebOnly(cat) {
+  const have = new Set(cat.products.map(p => p.code));
+  WEB_ONLY.filter(([code]) => !have.has(code)).forEach(([code, name, dept, mrp, price]) => cat.products.push(
+    { id: 'web-' + code, code, name, cat: dept, unit: 'pcs', mrp, price, stock: null, img: '', desc: '', warranty: 0, sold: 0, featured: false, webOnly: true }));
+}
+const askOnWhatsApp = (p) => 'https://wa.me/' + waLinkNo() + '?text=' + encodeURIComponent(`Hello ${shopName()}, I'd like to order ${p.name} (${p.code}).`);
 async function loadCatalog() {
   try {
     // once — it is the whole shop (thousands of items), and asking twice made every visit wait twice
     const live = await api('/catalog');
+    if (live && Array.isArray(live.products)) { live.products = live.products.filter(p => !NOT_ONLINE.has(p.code)); if (live.products.length) addWebOnly(live); }
     if (live && live.products && live.products.length > 0) { st.cat = live; keepLook(live); }
     else st.cat = live || st.cat;
   } catch (e) {
