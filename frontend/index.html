@@ -3953,10 +3953,10 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .cam-x .card{margin:0}.cam-x .chk{display:flex;gap:8px;align-items:flex-start;margin:4px 0;font-size:13.5px}
 .cam-ev{display:grid;gap:6px;max-height:260px;overflow:auto}.cam-ev>div{display:grid;padding:7px 9px;border-radius:8px;background:var(--panel);font-size:13px}
 .cam-ev span{color:var(--muted);font-size:12px}
-.cam-img{position:relative}.cam-img img{display:block;width:100%;min-height:120px;background:#111}
+.cam-img{position:relative}.cam-img img{display:block;width:100%;min-height:120px;background:#111;aspect-ratio:16/9;object-fit:fill}
 .cam-wait{position:absolute;inset:auto 8px 8px auto;background:rgba(0,0,0,.65);color:#fff;font-size:12px;padding:3px 8px;border-radius:6px}
 .cam-bill .box{max-width:900px}.cbv{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
-.cbv a{display:block;border:0;position:relative}.cbv img{width:100%;border-radius:8px;display:block}.cbv span{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:2px 6px;border-radius:5px}
+.cbv a{display:block;border:0;position:relative}.cbv img{width:100%;border-radius:8px;display:block;aspect-ratio:16/9;object-fit:fill}.cbv span{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:2px 6px;border-radius:5px}
 .camgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-top:12px}
 .camcard{border:1px solid var(--line,#d8dedd);border-radius:10px;overflow:hidden;background:var(--white,#fff)}
 .cam-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:8px 12px;font-size:13px}
@@ -5631,12 +5631,14 @@ function settings(){
     const list=camList();
     const row=(c)=>`<tr>
       <td><input data-cam-f="name" data-id="${c.id}" value="${noteEsc(c.name||'')}" placeholder="Counter"></td>
-      <td><input data-cam-f="host" data-id="${c.id}" value="${noteEsc(c.host||'')}" placeholder="192.168.1.64" inputmode="decimal"></td>
+      <td><input data-cam-f="host" data-id="${c.id}" value="${noteEsc(c.host||'')}" placeholder="found by itself" inputmode="decimal"></td>
       <td style="width:88px"><input data-cam-f="port" data-id="${c.id}" type="number" value="${c.port||80}"></td>
       <td style="width:96px"><input data-cam-f="channel" data-id="${c.id}" type="number" value="${c.channel||101}"></td>
       <td style="width:60px"><button class="btn ghost" data-act="camDrop" data-id="${c.id}">Remove</button></td></tr>`;
-    body=`<div class="muted">Where each camera is, and what to call it. <b>The password does not go here</b> —
+    body=`<div class="muted">Each camera, and what to call it. <b>No address is needed</b>: the camera helper finds the
+      recorder by its serial number, wherever the router puts it — leave Address empty. <b>The password does not go here</b> —
       it lives in the camera helper's own file on the shop PC, so it never reaches a browser or the shop's books.</div>
+     <button class="btn ghost" style="margin-top:8px" data-act="camAddAll">Add every camera the recorder has</button>
 
      ${list.length?`<table style="margin-top:10px"><tr><th>Name</th><th>Address</th><th>Port</th><th>Channel</th><th></th></tr>
        ${list.map(row).join('')}</table>`
@@ -12166,11 +12168,12 @@ const CAM_HELPER='http://127.0.0.1:4101';
 let camHelper=null, camTick=0, camErr={};
 
 function camList(){ if(!Array.isArray(S.cameras)) S.cameras=[]; return S.cameras }
-const camUrl=(c)=>`${CAM_HELPER}/snap?host=${encodeURIComponent(c.host)}&port=${c.port||80}&ch=${c.channel||101}&t=${camTick}`;
+/* An empty address means "the recorder": the helper finds it by its serial number wherever the router has put it. */
+const camUrl=(c)=>`${CAM_HELPER}/snap?host=${encodeURIComponent(c.host||'auto')}&port=${c.port||80}&ch=${c.channel||101}&t=${camTick}`;
 /* The moving picture is JPEGs one after another, which an <img> plays on its own — no player, no
    library, nothing added to this file. It is one long-lived request, so it carries no cache-buster:
    the picture keeps coming until the page stops asking. */
-const camLiveUrl=(c)=>`${CAM_HELPER}/live?host=${encodeURIComponent(c.host)}&port=${c.port||80}&ch=${c.channel||101}&rtsp=${c.rtsp||554}&fps=${CAM_FPS}`;
+const camLiveUrl=(c)=>`${CAM_HELPER}/live?host=${encodeURIComponent(c.host||'auto')}&port=${c.port||80}&ch=${c.channel||101}&rtsp=${c.rtsp||554}&fps=${CAM_FPS}`;
 const CAM_FPS=8;
 /* Moving where the shop PC can manage it, stills otherwise. The shop can also say "stills" and be
    left alone, which is the right answer on a machine with other things to do. */
@@ -12333,7 +12336,7 @@ function cameras(){
    <div class="muted">${camMoving()?`Live from the shop’s own recorder.`:`A fresh picture every couple of seconds.`} ${list.length} camera${list.length===1?'':'s'}.</div>
    <div class="camgrid">
     ${list.map(c=>`<div class="camcard">
-      <div class="cam-h"><b>${noteEsc(c.name||'Camera')}</b><span class="muted">${noteEsc(c.host)}${c.channel?' · ch '+c.channel:''}</span></div>
+      <div class="cam-h"><b>${noteEsc(c.name||'Camera')}</b><span class="muted">${noteEsc(c.host||'')}${c.channel?(c.host?' · ':'')+'ch '+c.channel:''}</span></div>
       <div class="cam-img" data-slot="${c.id}">
         ${camErr[c.id]?`<div class="cam-bad">${noteEsc(camErr[c.id])}</div>`:''}
       </div>
@@ -26118,6 +26121,14 @@ document.addEventListener('click',e=>{
     pqAgain:()=>pqDo(a.dataset.id,'again'),
     pqDrop:()=>{ if(confirm('Take this one off the list? The bill itself is not touched.')) pqDo(a.dataset.id,'drop') },
     camAgain:()=>{ camRemote=null; camEvents=null; camCheckHelper(true) },
+    camAddAll:async()=>{ let cams=[];
+      try{ const r=await camApi('status'); const j=r.ok?await r.json():null; cams=(j&&j.cameras)||[] }catch(e){}
+      if(!cams.length) cams=Array.from({length:16},(_,i)=>({ch:String((i+1)*100+1),name:'Camera '+String(i+1).padStart(2,'0')}));
+      const L=camList(); let n=0, id=Math.max(0,...L.map(x=>+x.id||0));
+      cams.forEach(c=>{ if(L.some(x=>String(x.channel||101)===String(c.ch))) return; L.push({id:++id,name:c.name,host:'',port:80,channel:+c.ch}); n++ });
+      // the old written-down address of the recorder is no longer needed: it is found by itself
+      L.forEach(x=>{ if(/^192\.168\./.test(x.host||'')) x.host='' });
+      persist(true); render(); toast(n?`${n} camera${n===1?'':'s'} added — no addresses needed`:'Every camera is already here','ok') },
     camBill:()=>camBillView(a.dataset.no),
     camSeen:()=>{ const n=(S.notif||[]).find(x=>x.id===a.dataset.id); if(n){ n.read=true; render() } },
     camAdd:()=>{ camList().push({id:'c'+Math.random().toString(36).slice(2,7),name:'',host:'',port:80,channel:101}); render() },

@@ -24,6 +24,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { snapshot, deviceInfo } from './hik.mjs';
 import { startLink } from './link.mjs';
+import { makeRecorder } from './recorder.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const readCfg = (f) => { try { return JSON.parse(fs.readFileSync(path.join(here, f), 'utf8').replace(/^﻿/, '')) } catch { return null } };
@@ -55,7 +56,16 @@ log(FFMPEG ? 'moving pictures: using ' + FFMPEG : 'moving pictures: no ffmpeg fo
 
 /* Only the cameras this shop has said are its own. Without this the helper would fetch from
    anything on the network that answered, which is not its business. */
-const allowed = (host) => !cfg.allow.length || cfg.allow.includes(String(host));
+/* The recorder is found by its serial number wherever the router has put it (recorder.mjs), so an
+   address the till still has — the one it had last week — is taken as "the recorder" and sent to where
+   it is now. "auto", or no address at all, means the same. */
+const recorder = makeRecorder({ cfg, here, log });
+const allowed = (host) => !cfg.allow.length || cfg.allow.includes(String(host)) || String(host) === recorder.host;
+const whereIs = (host, port) => {
+  const h = String(host || '');
+  if ((!h || h === 'auto' || cfg.allow.includes(h)) && recorder.host) return { host: recorder.host, port: recorder.port, rec: true };
+  return { host: h, port, rec: false };
+};
 
 /* A still is worth keeping for a moment: four tills watching one camera should be four
    pictures a second off the camera, not four hundred. */
@@ -98,7 +108,8 @@ const srv = http.createServer(async (req, res) => {
     return send(200, 'application/json', JSON.stringify({
       ok: true, helper: 'camera', port: cfg.port,
       ready: !!cfg.pass, cameras: cfg.allow.length || 'any on this network',
-      live: !!FFMPEG && !!cfg.pass, watching: live.size
+      live: !!FFMPEG && !!cfg.pass, watching: live.size,
+      recorder: recorder.host ? { host: recorder.host, serial: recorder.serial() } : null
     }));
   }
 
@@ -112,8 +123,8 @@ const srv = http.createServer(async (req, res) => {
   }
 
   if (u.pathname === '/snap') {
-    const host = u.searchParams.get('host') || '';
-    const port = +u.searchParams.get('port') || 80;
+    const at = whereIs(u.searchParams.get('host'), +u.searchParams.get('port') || 80);
+    const host = at.host, port = at.port;
     const ch = +u.searchParams.get('ch') || 101;
     if (!host) return send(400, 'application/json', JSON.stringify({ error: 'which camera?' }));
     if (!allowed(host)) return send(403, 'application/json', JSON.stringify({ error: `${host} is not one of this shop's cameras` }));
@@ -125,7 +136,8 @@ const srv = http.createServer(async (req, res) => {
 
     const base = (port === 443 ? 'https://' : 'http://') + host + (port === 80 || port === 443 ? '' : ':' + port);
     const s = await snapshot(base, ch, { user: cfg.user, pass: cfg.pass, timeout: 6000 });
-    if (!s.ok) { log('no picture from', key, '—', s.error); return send(502, 'application/json', JSON.stringify({ error: s.error })) }
+    if (!s.ok) { if (at.rec) recorder.missed(); log('no picture from', key, '—', s.error); return send(502, 'application/json', JSON.stringify({ error: s.error })) }
+    if (at.rec) recorder.ok();
     recent.set(key, { at: Date.now(), buf: s.buf, type: s.type || 'image/jpeg' });
     return send(200, s.type || 'image/jpeg', s.buf);
   }
@@ -135,8 +147,8 @@ const srv = http.createServer(async (req, res) => {
      the multipart form a browser plays in a plain <img>. Nothing is stored and nothing is kept:
      when the page goes away the socket closes, and ffmpeg is stopped with it. */
   if (u.pathname === '/live') {
-    const host = u.searchParams.get('host') || '';
-    const port = +u.searchParams.get('port') || 80;
+    const at = whereIs(u.searchParams.get('host'), +u.searchParams.get('port') || 80);
+    const host = at.host, port = at.port;
     const rtsp = +u.searchParams.get('rtsp') || 554;
     const ch = +u.searchParams.get('ch') || 101;
     // enough to watch a shop by, and little enough that two of them are not a burden on this PC
@@ -207,5 +219,5 @@ srv.listen(cfg.port, '127.0.0.1', () => {
   log(`camera helper on http://127.0.0.1:${cfg.port}`);
   log(cfg.allow.length ? `cameras it may reach: ${cfg.allow.join(', ')}` : 'it may reach any camera on this network');
   if (!cfg.pass) log('it will not fetch anything until a password is set');
-  else startLink({ cfg, here, log });             // the line out to regalhw.lk: watching from anywhere, bill pictures, alarms
+  else startLink({ cfg, here, log, recorder });             // the line out to regalhw.lk: watching from anywhere, bill pictures, alarms
 });

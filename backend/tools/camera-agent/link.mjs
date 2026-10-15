@@ -18,15 +18,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { snapshot, channels, deviceInfo, parseChallenge, digestHeader, tag, isapi } from './hik.mjs';
+import { sadpSearch } from './recorder.mjs';
 
-export function startLink({ cfg, here, log }) {
+export function startLink({ cfg, here, log, recorder }) {
   const printCfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(here, '../print-agent/config.local.json'), 'utf8').replace(/^﻿/, '')) } catch { return {} } })();
   const SERVER = String(cfg.server || printCfg.server || '').replace(/\/+$/, '');
   const KEY = cfg.key || printCfg.key || '';
-  const rec = cfg.recorder || (cfg.allow && cfg.allow[0] ? { host: cfg.allow[0], port: 80 } : null);
   if (!SERVER || !KEY) { log('remote: no server or key — the cameras are seen on this PC only'); return; }
-  if (!rec || !rec.host) { log('remote: no recorder set ("recorder": { "host": … } in config.local.json)'); return; }
-  const base = 'http://' + rec.host + (rec.port && +rec.port !== 80 ? ':' + rec.port : '');
+  // where the recorder is right now — found by its serial, never a written-down address
+  const base = () => recorder.base() || 'http://0.0.0.0';
+  const snap = async (ch) => { const s = await snapshot(base(), ch, auth); if (s.ok) recorder.ok(); else recorder.missed(); return s; };
   const auth = { user: cfg.user, pass: cfg.pass, timeout: 8000 };
   const api = (p, q = '') => `${SERVER}/api/cams/${p}?key=${encodeURIComponent(KEY)}${q}`;
   const post = (p, body, q = '', type = 'application/json') => fetch(api(p, q), { method: 'POST', headers: { 'Content-Type': type },
@@ -36,20 +37,21 @@ export function startLink({ cfg, here, log }) {
   let cams = [];
   const status = async () => {
     try {
-      const d = await deviceInfo(base, auth);
+      await recorder.ready();
+      const d = await deviceInfo(base(), auth);
       /* a recorder's video inputs are its cameras — each with the name set on the recorder, and an input
          with nothing plugged in says "NO VIDEO" and is left out. Its list of streams (101, 102, 201 …) is
          not the whole story: it can name two cameras where fourteen are recording. */
-      const vi = await isapi(base, '/ISAPI/System/Video/inputs/channels', auth);
+      const vi = await isapi(base(), '/ISAPI/System/Video/inputs/channels', auth);
       const blocks = vi.status === 200 ? (vi.buf.toString('utf8').match(/<VideoInputChannel[\s>][\s\S]*?<\/VideoInputChannel>/gi) || []) : [];
       cams = blocks.map(b => ({ n: +tag(b, 'id'), name: tag(b, 'name'), res: tag(b, 'resDesc') }))
         .filter(x => x.n > 0 && !/no\s*video/i.test(x.res)).map(x => ({ ch: String(x.n * 100 + 1), name: x.name || ('Camera ' + String(x.n).padStart(2, '0')) }));
       if (!cams.length) {
-        const list = await channels(base, auth);
+        const list = await channels(base(), auth);
         // a camera on its own lists its streams: the main one (101) is the camera
         cams = list.filter(c => c.ch % 100 === 1).map(c => ({ ch: String(c.ch), name: c.name || ('Camera ' + String(Math.floor(c.ch / 100)).padStart(2, '0')) }));
       }
-      await post('status', { recorder: d.ok ? { model: d.model, name: d.name } : null, cameras: cams, terminals: (cfg.terminals || []).map(t => t.host) });
+      await post('status', { recorder: d.ok ? { model: d.model, name: d.name, serial: recorder.serial() } : null, cameras: cams, terminals: terminals.map(t => (t.model ? t.model + ' ' : '') + (t.host || t.serial)) });
     } catch (e) { log('remote: status not sent —', e.message) }
   };
   status(); setInterval(status, 5 * 60 * 1000);
@@ -68,7 +70,7 @@ export function startLink({ cfg, here, log }) {
         const j = await r.json();
         if (j.alerts && !alertsOn) { alertsOn = true; listenAlarms(); }
         for (const ch of j.watch || []) {
-          const s = await snapshot(base, ch, auth);
+          const s = await snap(ch);
           if (s.ok) await fetch(api('frame', '&ch=' + ch), { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: s.buf, signal: AbortSignal.timeout(15000) }).catch(() => {});
         }
         if ((j.watch || []).length) wait = 700;
@@ -76,7 +78,7 @@ export function startLink({ cfg, here, log }) {
           if (taking.has(job.id)) continue; taking.add(job.id);
           (async () => {           // a few stills a moment apart, without holding up the watching
             for (let i = 0; i < job.left; i++) {
-              const s = await snapshot(base, job.ch, auth);
+              const s = await snap(job.ch);
               if (s.ok) await fetch(api('frame', `&ch=${job.ch}&shot=${job.id}`), { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: s.buf, signal: AbortSignal.timeout(15000) }).catch(() => {});
               await new Promise(r => setTimeout(r, 1500));
             }
@@ -88,7 +90,7 @@ export function startLink({ cfg, here, log }) {
     setTimeout(loop, wait);
   };
   loop();
-  log(`remote: linked to ${SERVER}, recorder ${rec.host}`);
+  recorder.ready().then(() => log(`remote: linked to ${SERVER}, recorder ${recorder.host || '(still looking)'}`));
 
   /* ---- the recorder's alarms ---- */
   const lastSaid = new Map();
@@ -96,10 +98,11 @@ export function startLink({ cfg, here, log }) {
     const pathA = '/ISAPI/Event/notification/alertStream';
     for (;;) {
       try {
-        const first = await fetch(base + pathA, { signal: AbortSignal.timeout(8000) });
+        await recorder.ready();
+        const first = await fetch(base() + pathA, { signal: AbortSignal.timeout(8000) });
         const ch = parseChallenge(first.headers.get('www-authenticate'));
         try { first.body?.cancel(); } catch {}
-        const r = await fetch(base + pathA, { headers: ch ? { Authorization: digestHeader({ user: cfg.user, pass: cfg.pass, method: 'GET', uri: pathA, challenge: ch }) } : {} });
+        const r = await fetch(base() + pathA, { headers: ch ? { Authorization: digestHeader({ user: cfg.user, pass: cfg.pass, method: 'GET', uri: pathA, challenge: ch }) } : {} });
         if (!r.ok || !r.body) throw new Error('alert stream ' + r.status);
         log('alarms: listening to the recorder');
         const reader = r.body.getReader(); let buf = '';
@@ -126,8 +129,23 @@ export function startLink({ cfg, here, log }) {
   }
 
   /* ---- a Hikvision attendance terminal ---- */
-  const terminals = Array.isArray(cfg.terminals) ? cfg.terminals.filter(t => t && t.host) : [];
-  if (terminals.length) {
+  /* The terminals are found the way the recorder is: by serial, or — with "terminals": "auto" — every
+     Hikvision access-control terminal (the DS-K… models) that answers the device search. An address in
+     the settings is only a first guess. Looked for again every ten minutes. */
+  const wantTerms = (cfg.terminals === 'auto' || cfg.terminals === undefined) ? 'auto' : (Array.isArray(cfg.terminals) ? cfg.terminals.filter(t => t && (t.host || t.serial)) : []);
+  let terminals = Array.isArray(wantTerms) ? wantTerms.map(t => ({ ...t })) : [];
+  const findTerminals = async () => {
+    if (wantTerms !== 'auto' && !wantTerms.some(t => t.serial)) return;
+    const all = await sadpSearch();
+    if (wantTerms === 'auto') {
+      const found = all.filter(d => /^DS-K/i.test(d.model));
+      const had = terminals.map(t => t.host).join();
+      terminals = found.map(d => ({ host: d.ip, port: d.http || 80, serial: d.sn, model: d.model }));
+      if (terminals.map(t => t.host).join() !== had) log('attendance: terminals', terminals.length ? terminals.map(t => t.model + ' at ' + t.host).join(', ') : 'none found');
+    } else for (const t of terminals) { const d = t.serial && all.find(x => x.sn === t.serial); if (d && d.ip !== t.host) { log(`attendance: ${t.serial} is at ${d.ip}`); t.host = d.ip; t.port = d.http || 80; } }
+  };
+  if (wantTerms === 'auto' || terminals.length) {
+    findTerminals(); setInterval(findTerminals, 10 * 60 * 1000);
     const stateFile = path.join(here, 'link-state.json');
     const state = (() => { try { return JSON.parse(fs.readFileSync(stateFile, 'utf8')) } catch { return {} } })();
     const pad = (n) => String(n).padStart(2, '0');
@@ -166,8 +184,8 @@ export function startLink({ cfg, here, log }) {
       state[t.host] = new Date(Math.max(...fresh.map(x => +x.at))).toISOString();
       fs.writeFileSync(stateFile, JSON.stringify(state));
     };
-    const tick = async () => { for (const t of terminals) { try { await readTerminal(t) } catch (e) { log('attendance', t.host, '—', e.message) } } };
+    const tick = async () => { for (const t of terminals.filter(x => x.host)) { try { await readTerminal(t) } catch (e) { log('attendance', t.host, '—', e.message); findTerminals(); } } };
     tick(); setInterval(tick, 60000);
-    log(`attendance: reading ${terminals.map(t => t.host).join(', ')} every minute`);
+    log(`attendance: reading ${wantTerms === 'auto' ? 'every terminal it finds' : terminals.map(t => t.serial || t.host).join(', ')} every minute`);
   }
 }
