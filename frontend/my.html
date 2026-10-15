@@ -246,8 +246,8 @@ body[data-tab="me"] #account [data-pane]:not([data-pane="me"]){display:none}
     </div>
 
     <div id="stepPhone" class="hide">
-      <label for="phone">Your mobile, as the shop has it</label>
-      <input id="phone" inputmode="tel" autocomplete="tel" placeholder="07XXXXXXXX">
+      <div id="phoneRow"><label for="phone">Your mobile, as the shop has it</label>
+      <input id="phone" inputmode="tel" autocomplete="tel" placeholder="07XXXXXXXX"></div>
       <button class="btn" id="askOtp" style="margin-top:10px">Send me a code</button>
       <button class="btn ghost" id="backUser2" style="margin-top:8px">Sign in with a user name</button>
     </div>
@@ -337,6 +337,7 @@ body[data-tab="me"] #account [data-pane]:not([data-pane="me"]){display:none}
 
 <script>
 const $ = (s) => document.querySelector(s);
+let LINK = false;          // opened from their own link: the code goes to the mobile on file
 const CODE = decodeURIComponent((location.pathname.match(/\/my\/([^/?#]+)/) || [])[1] || '');
 const KEY = 'regal_my_token';
 let token = '';
@@ -400,13 +401,16 @@ async function start() {
     $('#shopName').textContent = w.shop.name || 'Regal Hardware';
     // an old link, or one changed by hand: the plain sign-in, with nothing about any account
     if (w.plain) { $('#siWho').textContent = 'Sign in with your mobile — we will text you a code. Or use the user name the shop gave you.'; step('#stepPhone'); return }
-    $('#siTitle').textContent = w.name;
-    if (w.logins > 0) {
-      $('#siWho').textContent = `${w.logins} ${w.logins === 1 ? 'person signs' : 'people sign'} in for this account. Use your own user name.`;
-      step('#stepUser');
+    $('#siTitle').textContent = 'Hello, ' + w.name;
+    if (w.phone) {
+      LINK = true;
+      $('#siWho').textContent = `We will text a code to ${w.phone} — the mobile we have for you.`;
+      show('#phoneRow', false); $('#askOtp').textContent = 'Send me the code';
+      $('#backUser2').textContent = w.logins > 0 ? 'Sign in with your own user name' : 'Sign in with a user name';
+      step('#stepPhone'); $('#askOtp').focus();
     } else {
-      $('#siWho').textContent = w.phone ? `We will text a code to ${w.phone}.` : 'The shop has no mobile on your account — give them a ring.';
-      step('#stepPhone');
+      $('#siWho').textContent = 'The shop has no mobile on your account — sign in with your user name, or give them a ring.';
+      step('#stepUser');
     }
     if (!w.open) say('The shop has not opened this page for you yet. Give them a ring and they will switch it on.', 'warn');
   } catch (e) { say(e.message, 'bad') }
@@ -454,20 +458,21 @@ $('#doChangePw').onclick = async () => {
 
 $('#askOtp').onclick = async () => {
   const phone = $('#phone').value.replace(/\D/g, '');
-  if (!/^0\d{9}$/.test(phone)) return say('Enter a mobile like 0771234567', 'bad');
+  if (!LINK && !/^0\d{9}$/.test(phone)) return say('Enter a mobile like 0771234567', 'bad');
   $('#askOtp').disabled = true; $('#askOtp').innerHTML = '<span class="spin"></span> Sending…';
   try {
-    const j = await api('/otp', { phone, code: CODE });
-    say(j.sent ? `Code texted to ${phone}.` : (j.code ? `Texting is not set up, so here is the code: ${j.code}` : j.note), j.sent || j.code ? 'ok' : 'bad');
+    const j = await api('/otp', LINK ? { link: CODE } : { phone, code: CODE });
+    const where = LINK ? (j.phone || 'your mobile') : phone;
+    say(j.sent ? `Code texted to ${where}.` : (j.code ? `Texting is not set up, so here is the code: ${j.code}` : j.note), j.sent || j.code ? 'ok' : 'bad');
     step('#stepCode'); $('#otp').focus();
   } catch (e) { say(e.message, 'bad') }
-  $('#askOtp').disabled = false; $('#askOtp').textContent = 'Send me a code';
+  $('#askOtp').disabled = false; $('#askOtp').textContent = LINK ? 'Send me the code' : 'Send me a code';
 };
 $('#backPhone').onclick = () => { step('#stepPhone'); say('') };
 $('#doLogin').onclick = async () => {
   const phone = $('#phone').value.replace(/\D/g, ''), code = $('#otp').value.trim();
   try {
-    const j = await api('/login', { phone, code, acc: CODE });
+    const j = await api('/login', LINK ? { link: CODE, code } : { phone, code, acc: CODE });
     token = j.token; try { localStorage.setItem(KEY, token) } catch (e) {}
     say(''); show('#signin', false); await load();
   } catch (e) { say(e.message, 'bad') }

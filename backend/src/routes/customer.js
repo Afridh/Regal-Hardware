@@ -189,33 +189,41 @@ r.post('/reset', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/* A customer who opened their own link (code and key) is not asked anything: the code goes to the mobile
+   the shop has for them. The key is only in links texted to that mobile, and the code still has to come
+   back from it, so a link passed on does not let anybody else in. */
+const viaLink = (S, link) => { const c = link ? byCode(S, link) : null; return c && keyOk(c, link) && /^0\d{9}$/.test(digits(c.phone)) ? c : null; };
+
 r.post('/otp', asyncHandler(async (req, res) => {
-  const phone = digits(req.body?.phone);
-  if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'Enter a mobile like 0771234567');
   const data = await books();
   const S = data?.S || {};
+  const own = !req.body?.phone ? viaLink(S, req.body?.link) : null;
+  const phone = own ? digits(own.phone) : digits(req.body?.phone);
+  if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'Enter a mobile like 0771234567');
   const list = byPhone(S, phone);
-  const c = req.body?.code ? list.find(x => norm(x.code) === norm(splitLink(req.body.code).code)) || byCode(S, req.body.code) : list[0];
+  const c = own || (req.body?.code ? list.find(x => norm(x.code) === norm(splitLink(req.body.code).code)) || byCode(S, req.body.code) : list[0]);
   if (!c || digits(c.phone) !== phone) throw new HttpError(404, 'That mobile is not the one the shop has for this account');
   if (c.portal === false) throw new HttpError(403, 'The shop has not opened this page for you yet — give them a ring');
   sendingCode(phone, req.ip);
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
-    try { await sendViaProvider(cfg, phone, letter(data?.CFG, 'customer', `Your sign-in code is ${code}.\nIt works for 5 minutes. Please do not share it.`)); return res.json({ ok: true, sent: true }); }
+    try { await sendViaProvider(cfg, phone, letter(data?.CFG, 'customer', `Your sign-in code is ${code}.\nIt works for 5 minutes. Please do not share it.`)); return res.json({ ok: true, sent: true, phone: own ? mask(phone) : undefined }); }
     catch (e) { console.error('cust otp sms failed', e.message); }
   }
-  res.json({ ok: true, sent: false, ...(mayRevealCode(req) ? { code } : { note: NO_TEXT }) });
+  res.json({ ok: true, sent: false, phone: own ? mask(phone) : undefined, ...(mayRevealCode(req) ? { code } : { note: NO_TEXT }) });
 }));
 
 r.post('/login', asyncHandler(async (req, res) => {
-  const phone = digits(req.body?.phone);
-  guardCode(phone, req.ip, () => otpOk(phone, req.body?.code));
   const data = await books();
   const S = data?.S || {};
+  const own = !req.body?.phone ? viaLink(S, req.body?.link) : null;
+  const phone = own ? digits(own.phone) : digits(req.body?.phone);
+  guardCode(phone, req.ip, () => otpOk(phone, req.body?.code));
   const list = byPhone(S, phone);
-  const c = req.body?.acc ? list.find(x => norm(x.code) === norm(splitLink(req.body.acc).code)) || list[0] : list[0];
+  const c = own || (req.body?.acc ? list.find(x => norm(x.code) === norm(splitLink(req.body.acc).code)) || list[0] : list[0]);
   if (!c) throw new HttpError(404, 'That mobile is not on file');
+  if (c.portal === false) throw new HttpError(403, 'The shop has not opened this page for you yet — give them a ring');
   res.json({ ok: true, token: jwt.sign({ kind: 'cust', cid: c.id, phone }, secret(), { expiresIn: '30d' }), name: c.name, code: c.code });
 }));
 
