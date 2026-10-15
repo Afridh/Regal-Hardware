@@ -25049,6 +25049,8 @@ function shopLock(){
   const say=(id,t,bad)=>{ const m=$l(id); m.textContent=t||''; m.classList.toggle('bad',!!bad) };
   const shake=(n)=>{ n.classList.remove('shake'); void n.offsetWidth; n.classList.add('shake') };
   const dots=()=>{ $l('#pinDots').innerHTML=Array.from({length:who.pinLen},(_,i)=>`<i class="${i<pin.length?'on':''}"></i>`).join('') };
+  const noPinServer=(r)=>r&&r.status===404&&/^not found$/i.test(String(r.error||''));
+  const toPassword=(name)=>{ say('#pinMsg1','PIN sign-in is not switched on at the server yet — use your password for now.',true); setTimeout(()=>shopLockPassword(name||''),1600) };
   const local=(c)=>(S.users||[]).find(u=>u.active!==false&&u.canLogin!==false&&String(u.uid||'').toLowerCase()===c.toLowerCase());
   const toStep2=()=>{
     $l('#pinAv').textContent=String(who.uid||who.name).slice(0,3).toUpperCase();
@@ -25063,7 +25065,7 @@ function shopLock(){
     $l('#pinNext').disabled=true; say('#pinMsg1','');
     let w=null, failed='';
     if(window.regalBridge&&regalBridge.pinWho){
-      try{ const r=await regalBridge.pinWho(c); if(r.ok) w=r; else if(r.status) failed=r.error||'There is no one with that user code' }catch(e){}
+      try{ const r=await regalBridge.pinWho(c); if(r.ok) w=r; else if(noPinServer(r)){ const u=local(c); $l('#pinNext').disabled=false; return toPassword(u&&u.name) } else if(r.status) failed=r.error||'There is no one with that user code' }catch(e){}
     }
     if(!w&&!failed){ const u=local(c); if(u) w={name:u.name,role:u.role,uid:u.uid,pinLen:u.pinHash?(+u.pinLen||4):0}; else failed='There is no one with that user code' }
     $l('#pinNext').disabled=false;
@@ -25076,7 +25078,7 @@ function shopLock(){
     if(busy) return; busy=true; s2.classList.add('checking');
     let ok=null, err='';
     if(window.regalBridge&&regalBridge.pinLogin){
-      try{ const r=await regalBridge.pinLogin(who.uid,pin); if(r.ok) ok=(S.users||[]).find(u=>String(u.name).toLowerCase()===String(r.user.name).toLowerCase())||{name:r.user.name,role:r.user.role,perms:r.user.perms||[],uid:who.uid}; else if(r.status) err=r.error||'That PIN is not right' }catch(e){}
+      try{ const r=await regalBridge.pinLogin(who.uid,pin); if(r.ok) ok=(S.users||[]).find(u=>String(u.name).toLowerCase()===String(r.user.name).toLowerCase())||{name:r.user.name,role:r.user.role,perms:r.user.perms||[],uid:who.uid}; else if(noPinServer(r)){ s2.classList.remove('checking'); busy=false; const nm=who&&who.name; back(); return toPassword(nm) } else if(r.status) err=r.error||'That PIN is not right' }catch(e){}
     }
     if(!ok&&!err){ const u=local(who.uid); if(u&&u.pinHash&&u.pinHash===await hashPass('pin:'+pin)) ok=u; else err='That PIN is not right' }
     s2.classList.remove('checking'); busy=false;
