@@ -23,6 +23,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { snapshot, deviceInfo } from './hik.mjs';
+import { startLink } from './link.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const readCfg = (f) => { try { return JSON.parse(fs.readFileSync(path.join(here, f), 'utf8').replace(/^﻿/, '')) } catch { return null } };
@@ -206,4 +207,5 @@ srv.listen(cfg.port, '127.0.0.1', () => {
   log(`camera helper on http://127.0.0.1:${cfg.port}`);
   log(cfg.allow.length ? `cameras it may reach: ${cfg.allow.join(', ')}` : 'it may reach any camera on this network');
   if (!cfg.pass) log('it will not fetch anything until a password is set');
+  else startLink({ cfg, here, log });             // the line out to regalhw.lk: watching from anywhere, bill pictures, alarms
 });

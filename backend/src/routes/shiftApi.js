@@ -148,8 +148,8 @@ r.all('/shift-api.php', asyncHandler(async (req, res) => {
   /* The fingerprint machine on the shop PC: its own key, so that PC never holds a password.
      It may post punches and nothing else — it cannot read wages or settings. */
   if (action === 'punches') {
-    const key = process.env.SHIFT_DEVICE_KEY || '';
-    if (!key || String(body.key || '') !== key) return fail(res, 403, 'Wrong device key');
+    const keys = [process.env.SHIFT_DEVICE_KEY, process.env.PRINT_DEVICE_KEY].filter(Boolean);   // the fingerprint sync's, or the shop PC helpers'
+    if (!keys.length || !keys.includes(String(body.key || ''))) return fail(res, 403, 'Wrong device key');
     const date = String(body.date || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail(res, 400, 'Bad date');
     const events = Array.isArray(body.events) ? body.events : [];

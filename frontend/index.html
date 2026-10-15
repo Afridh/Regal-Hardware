@@ -3949,6 +3949,14 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 }
 
 /* ---- the cameras ---- */
+.cam-x{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:14px}
+.cam-x .card{margin:0}.cam-x .chk{display:flex;gap:8px;align-items:flex-start;margin:4px 0;font-size:13.5px}
+.cam-ev{display:grid;gap:6px;max-height:260px;overflow:auto}.cam-ev>div{display:grid;padding:7px 9px;border-radius:8px;background:var(--panel);font-size:13px}
+.cam-ev span{color:var(--muted);font-size:12px}
+.cam-img{position:relative}.cam-img img{display:block;width:100%;min-height:120px;background:#111}
+.cam-wait{position:absolute;inset:auto 8px 8px auto;background:rgba(0,0,0,.65);color:#fff;font-size:12px;padding:3px 8px;border-radius:6px}
+.cam-bill .box{max-width:900px}.cbv{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+.cbv a{display:block;border:0;position:relative}.cbv img{width:100%;border-radius:8px;display:block}.cbv span{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:2px 6px;border-radius:5px}
 .camgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-top:12px}
 .camcard{border:1px solid var(--line,#d8dedd);border-radius:10px;overflow:hidden;background:var(--white,#fff)}
 .cam-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:8px 12px;font-size:13px}
@@ -4448,6 +4456,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
      know what went out of the shop while they were not standing in it — who bought it, who
      sold it, and what is still owed on it. */
   ownerTell(inv,c,{total,credit,by,v});
+  try{ camBillShot(inv) }catch(e){}
   return inv;
 }
 /* Whether this bill is one the owner asked to hear about, and the text if it is.
@@ -9783,6 +9792,10 @@ function actionItems(){
     const sid=`data-sid="${s.id}" data-id="${esA(p.id)}"`;
     push({cat:'supord',view:'suppliers',pri:4,key:'pl'+p.id,who:s.name,when:p.date,title:`${s.name} sent a new price list`,sub:`${p.name}${p.note?` · “${p.note}”`:''}`,tag:'Price list',
       acts:[actBtn('plView','Open it',sid,'tape'),actBtn('plSeen','Seen',sid)]}); }
+  /* the recorder's alarms not yet looked at */
+  for(const n of (S.notif||[]).filter(x=>x.cam&&!x.read).slice(0,6))
+    push({cat:'work',view:'cameras',pri:2,key:n.id,title:String(n.text).replace(/^📹 /,''),sub:'Camera alarm',when:n.at,tag:'Camera',
+      acts:[actOpen('cameras','Look at the cameras'),actBtn('camSeen','Seen',`data-id="${n.id}"`)]});
   /* texts that did not go */
   const unsent=(S.messages||[]).filter(m=>m.via!=='wa'&&m.via!=='mail'&&/fail|held|not sent/i.test(m.status||''));
   if(unsent.length) push({cat:'msg',view:'messages',pri:3,key:'sms',title:`${unsent.length} text${unsent.length===1?'':'s'} did not go`,sub:unsent.slice(0,3).map(m=>`${m.to}: ${String(m.body||'').replace(/\s+/g,' ').slice(0,50)}`).join(' · '),tag:CFG.msg&&CFG.msg.live?'Not sent':'Sending is off',
@@ -12172,6 +12185,115 @@ async function camCheckHelper(again){
   if(S.view==='cameras') render();
 }
 
+/* ---- the cameras from anywhere ----
+   Away from the shop (a phone, home) there is no camera helper on the machine, but the helper on the
+   shop PC calls out to the server. The page asks the server for each camera's latest still about once
+   a second, and the server asks the helper for it — only while the page is open. */
+const camApi=(p,opts)=>fetch('/api/cams/'+p,{...(opts||{}),headers:{'Authorization':'Bearer '+(window.regalBridge?regalBridge.token():''),...((opts||{}).headers||{})}});
+let camRemote=null, camEvents=null;
+const camCfg=()=>{ CFG.cams=CFG.cams||{}; return CFG.cams };
+const camName=(ch)=>{ const n=(camCfg().names||{})[ch]; if(n) return n; const r=(camRemote&&camRemote.cameras||[]).find(c=>String(c.ch)===String(ch)); return (r&&r.name)||(ch?'Camera '+String(Math.floor(+ch/100)).padStart(2,'0'):'the recorder') };
+async function camRemoteLoad(){
+  if(!(window.regalBridge&&regalBridge.online())){ camRemote={ok:false,why:'not signed in to the shop server'}; return }
+  try{ const r=await camApi('status'); camRemote=r.ok?await r.json():{ok:false,why:'the server said '+r.status} }catch(e){ camRemote={ok:false,why:e.message} }
+  try{ const r=await camApi('events?since=0'); camEvents=r.ok?(await r.json()).events:[] }catch(e){ camEvents=[] }
+  if(S.view==='cameras') render();
+}
+/* the settings and the alarms, below the pictures wherever they are shown */
+function camExtras(){
+  const c=camCfg(), cams=(camRemote&&camRemote.cameras&&camRemote.cameras.length?camRemote.cameras:camList().map(x=>({ch:String(x.channel||101),name:x.name})));
+  const evs=(camEvents||[]).slice(0,12);
+  return `<div class="cam-x">
+   <div class="card"><h2 style="margin-top:0">Pictures with each bill</h2>
+    <div class="muted" style="margin-bottom:8px">When a bill is made, the counter camera takes three pictures a moment apart and keeps them with the bill. Open the bill and press <b>Counter camera</b> to see who was there.</div>
+    <label class="chk"><input type="checkbox" data-camcfg="billShot" ${c.billShot!==false?'checked':''}> Keep pictures with each bill</label>
+    <div class="f" style="margin-top:8px"><label>Counter camera</label><select data-camcfg="counter"><option value="">— choose —</option>${cams.map(x=>`<option value="${x.ch}" ${String(c.counter)===String(x.ch)?'selected':''}>${noteEsc(x.name||camName(x.ch))}</option>`).join('')}</select></div></div>
+   <div class="card"><h2 style="margin-top:0">Alarms</h2>
+    <div class="muted" style="margin-bottom:8px">What the recorder raises — movement, a line crossed, a camera covered, a disk fault — shows in the bell and the Action centre. Movement while the shop is open is customers, so it is only told when the shop is shut.</div>
+    <label class="chk"><input type="checkbox" data-camcfg="alerts" ${c.alerts!==false?'checked':''}> Show the recorder's alarms here</label>
+    <label class="chk"><input type="checkbox" data-camcfg="smsOwner" ${c.smsOwner===true?'checked':''}> Text the owner (${noteEsc(CFG.shop.owner||'no number set')}) when an alarm goes off while the shop is shut</label>
+    <div class="grid2" style="margin-top:8px"><div class="f"><label>The shop opens</label><input type="time" data-camcfg="open" value="${noteEsc(c.open||'07:30')}"></div>
+     <div class="f"><label>and shuts</label><input type="time" data-camcfg="close" value="${noteEsc(c.close||'19:30')}"></div></div>
+    <h3 style="margin:12px 0 6px;font-size:14px">Lately</h3>
+    ${evs.length?`<div class="cam-ev">${evs.map(e=>`<div><b>${noteEsc(e.text)}</b><span>${noteEsc(camName(e.ch))} · ${new Date(e.at).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${e.shut?' · <i>shop shut</i>':''}</span></div>`).join('')}</div>`
+      :`<div class="muted">${camEvents===null?'Looking…':'Nothing yet.'} For movement alarms, the recorder's own motion detection has to be on, with <b>Notify surveillance center</b> ticked for each camera.</div>`}
+   </div>
+   <div class="card"><h2 style="margin-top:0">Attendance terminal</h2>
+    ${camRemote&&camRemote.terminals&&camRemote.terminals.length
+      ?`<div class="muted">The helper reads <b>${camRemote.terminals.map(noteEsc).join(', ')}</b> every minute and puts each check-in on the attendance board, matched by the <b>Device ID</b> on each person's staff card.</div>`
+      :`<div class="muted">No Hikvision face or fingerprint terminal is set up yet. When it is on the shop's network, its address goes in the camera helper's settings on the shop PC, and each person's terminal number goes in <b>Device ID</b> on their staff card — then check-ins arrive on the attendance board by themselves.</div>`}
+   </div></div>`;
+}
+function camRemotePage(){
+  const R=camRemote;
+  if(R===null) return `<h1>Cameras</h1><div class="card"><div class="muted">Asking the shop…</div></div>`;
+  if(!R.ok||!R.alive) return `<h1>Cameras</h1><div class="card"><h2 style="margin-top:0">The shop's camera helper is not answering</h2>
+     <div class="muted">${R.ok?`It last checked in ${R.ago?Math.round(R.ago/60000)+' minutes ago':'never'}.`:noteEsc(R.why||'')} It runs on the shop PC ("Regal camera helper") and needs that PC on and online.</div>
+     <button class="btn" data-act="camAgain" style="margin-top:10px">Look again</button></div>${R.ok?camExtras():''}`;
+  const cams=R.cameras||[];
+  return `<h1>Cameras <span class="muted" style="font-size:14px">· from anywhere · ${cams.length}</span></h1>
+   <div class="muted">${R.recorder?noteEsc(R.recorder.model||'')+' · ':''}a fresh picture about every second, through the shop PC. Nothing is sent when nobody is watching.</div>
+   <div class="camgrid">${cams.map(c=>`<div class="camcard"><div class="cam-h"><b>${noteEsc(camName(c.ch))}</b><span class="muted">ch ${c.ch}</span></div>
+     <div class="cam-img"><img data-rcam="${c.ch}" alt=""><div class="cam-wait" data-rwait="${c.ch}">Waking the camera…</div></div></div>`).join('')}</div>
+   ${camExtras()}`;
+}
+const camBlobs=new Map();
+function camRemoteAfter(){
+  clearInterval(window._camRemote);
+  const tick=async()=>{
+    if(S.view!=='cameras'||!(camRemote&&camRemote.alive)){ clearInterval(window._camRemote); return }
+    const els=[...document.querySelectorAll('img[data-rcam]')];
+    // only the cameras on screen are asked for — on a phone that is the one being looked at
+    const seen=els.filter(im=>{ const b=im.getBoundingClientRect(); return b.bottom>0&&b.top<innerHeight });
+    await Promise.all(seen.map(async im=>{ const ch=im.dataset.rcam;
+      try{ const r=await camApi('live/'+ch); if(r.status!==200) return;
+        const age=+r.headers.get('X-Frame-Age')||0, blob=await r.blob(), url=URL.createObjectURL(blob);
+        const old=camBlobs.get(ch); im.src=url; camBlobs.set(ch,url); if(old) setTimeout(()=>URL.revokeObjectURL(old),2000);
+        const w=document.querySelector(`[data-rwait="${ch}"]`); if(w) w.style.display=age>8000?'':'none'; if(w&&age>8000) w.textContent='Last picture '+Math.round(age/1000)+'s ago';
+      }catch(e){} }));
+  };
+  tick(); window._camRemote=setInterval(tick,1000);
+}
+function camSettingsAfter(){
+  document.querySelectorAll('[data-camcfg]').forEach(el=>el.onchange=()=>{ const k=el.dataset.camcfg, c=camCfg();
+    c[k]=el.type==='checkbox'?el.checked:el.value; persist(true); toast('Saved','ok') });
+}
+/* a bill's pictures: asked for the moment the bill is made */
+function camBillShot(inv){
+  const c=camCfg();
+  if(c.billShot===false||!c.counter||!(inv&&+inv.total>0)) return;
+  if(!(window.regalBridge&&regalBridge.online())) return;
+  inv.cam={ch:String(c.counter),at:Date.now()};
+  camApi('shot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ch:c.counter,ref:inv.no,count:3})}).catch(()=>{});
+}
+async function camBillView(no){
+  const m=modal(`<h2>Counter camera — ${noteEsc(no)}</h2><div id="cbv" class="muted">Fetching the pictures…</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn ghost" data-act="closeModal">Close</button></div>`);
+  m.classList.add('cam-bill');
+  try{ const r=await camApi('shots/'+encodeURIComponent(no)); const j=await r.json();
+    m.querySelector('#cbv').innerHTML=(j.shots||[]).length?`<div class="cbv">${j.shots.map(s=>`<a href="${s.url}" target="_blank" rel="noopener"><img src="${s.url}" alt=""><span>${new Date(s.at).toLocaleTimeString('en-GB')}</span></a>`).join('')}</div>`
+      :'No pictures were kept for this bill — the shop PC may have been off, or no counter camera was chosen.' }
+  catch(e){ m.querySelector('#cbv').textContent='Could not reach the shop server.' }
+}
+/* the recorder's alarms, brought into the bell — each one once, whichever till sees it first */
+async function camAlertPoll(){
+  try{
+    if(!(window.S&&S.user&&S.user.name&&!S.signedOut&&window.regalBridge&&regalBridge.online())) return;
+    if(camCfg().alerts===false||!allowed('cameras')) return;
+    let last=0; try{ last=+localStorage.getItem('cam_ev_last')||0 }catch(e){}
+    const r=await camApi('events?since='+last); if(!r.ok) return;
+    const evs=((await r.json()).events||[]).slice().reverse();
+    for(const e of evs){
+      last=Math.max(last,e.id);
+      if(e.kind==='VMD'&&!e.shut) continue;                         // movement in opening hours: customers
+      if(Date.now()-new Date(e.at).getTime()>6*3600e3) continue;   // a till opened in the morning is not told the whole night
+      const id='cam'+e.id; if((S.notif||[]).some(n=>n.id===id)) continue;
+      notify('warn',`📹 ${e.text} — ${camName(e.ch)}${e.shut?' (shop shut)':''}`,'cameras',{id,cam:true});
+    }
+    try{ localStorage.setItem('cam_ev_last',String(last)) }catch(e){}
+  }catch(e){}
+}
+setInterval(camAlertPoll,30000); setTimeout(camAlertPoll,8000);
 function cameras(){
   const list=camList();
   const h=camHelper;
@@ -12198,7 +12320,7 @@ function cameras(){
    </div>`;
 
   if(h===null) return `<h1>Cameras</h1><div class="card"><div class="muted">Looking for the camera helper…</div></div>`;
-  if(!h.ok) return `<h1>Cameras</h1>${setup}`;
+  if(!h.ok) return camRemotePage()+(camRemote&&camRemote.ok&&camRemote.alive?'':setup);
 
   if(!list.length) return `<h1>Cameras</h1>
     <div class="card"><h2 style="margin-top:0">The helper is running. No cameras added yet.</h2>
@@ -12223,7 +12345,7 @@ function cameras(){
         and stops the moment you leave it. Turn it off under <b>Settings → Cameras</b> if that PC has better
         things to do, and you will get a still every couple of seconds instead.`
      : `These are stills, a second or two apart. Moving pictures need <b>ffmpeg</b> on the shop PC${
-        camHelper&&camHelper.live===false?' — it was not found there':''}.`}</div>`;
+        camHelper&&camHelper.live===false?' — it was not found there':''}.`}</div>${camExtras()}`;
 }
 
 /* Stop the pictures arriving. Emptying the src is what ends the request — and ending the request
@@ -12257,6 +12379,9 @@ function camStop(){
 addEventListener('pagehide',()=>{ try{ camStop() }catch(e){} });
 function camerasAfter(){
   if(camHelper===null){ camCheckHelper(); return }
+  camSettingsAfter();
+  if(!camHelper.ok){ if(camRemote===null) camRemoteLoad(); else camRemoteAfter(); return }
+  if(camEvents===null&&window.regalBridge&&regalBridge.online()) camRemoteLoad();
   if(!camHelper.ok||!camList().length) return;
   // put each kept picture back into the slot this redraw made for it
   camList().forEach(c=>{
@@ -20825,6 +20950,7 @@ function showInvoice(inv,f){
      <div id="pvFmtWrap">${renderButtons()}</div>
      ${(can('cancelBill')||can('adjustInvoice'))&&!inv.proof?`<button class="btn sm" data-act="billEdit" data-no="${inv.no}">Edit in the till</button>
      <button class="btn ghost sm" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}
+     ${inv.cam?`<button class="btn ghost sm" data-act="camBill" data-no="${inv.no}">Counter camera</button>`:''}
      ${inv.total>0.005&&!inv.proof?`<button class="btn ghost sm" data-act="returnGoods" data-no="${inv.no}">Take a return</button>`:''}
      <button class="btn tape sm" id="pvPrintBtn" data-act="printNow" data-no="${inv.no}" data-f="${curF}">Print ↵</button>
      <button class="btn ghost sm" data-act="closeModal">Close Esc</button></div></div>
@@ -25991,7 +26117,9 @@ document.addEventListener('click',e=>{
     pqShow:()=>{ pqShow=a.dataset.k; render() },
     pqAgain:()=>pqDo(a.dataset.id,'again'),
     pqDrop:()=>{ if(confirm('Take this one off the list? The bill itself is not touched.')) pqDo(a.dataset.id,'drop') },
-    camAgain:()=>camCheckHelper(true),
+    camAgain:()=>{ camRemote=null; camEvents=null; camCheckHelper(true) },
+    camBill:()=>camBillView(a.dataset.no),
+    camSeen:()=>{ const n=(S.notif||[]).find(x=>x.id===a.dataset.id); if(n){ n.read=true; render() } },
     camAdd:()=>{ camList().push({id:'c'+Math.random().toString(36).slice(2,7),name:'',host:'',port:80,channel:101}); render() },
     custBulk:()=>{ closeModals(); bulkPeopleModal('cust') },
     clearShop:()=>clearShopFlow(),

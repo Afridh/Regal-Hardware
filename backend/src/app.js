@@ -26,6 +26,7 @@ import shopRoutes from './routes/shop.js';
 import supplierRoutes from './routes/supplier.js';
 import fileRoutes from './routes/files.js';
 import printRoutes from './routes/print.js';
+import camRoutes from './routes/cams.js';
 import custRoutes from './routes/customer.js';
 import aiRoutes from './routes/ai.js';
 import alexaRoutes from './routes/alexa.js';
@@ -66,6 +67,7 @@ app.use('/api/sup', supplierRoutes);
 app.use('/api/files', fileRoutes);
 // the printers are on one PC: a bill made anywhere is left here and that PC's helper takes it
 app.use('/api/print', printRoutes);
+app.use('/api/cams', camRoutes);              // the cameras, seen from anywhere (the camera helper calls out)
 // the Echo in the office: Amazon calls this, and the till reports what the books cannot see
 app.use('/api/alexa', alexaRoutes);
 // the customer's own page: what they owe, bill by bill, and a way to say they have paid
