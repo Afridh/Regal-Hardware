@@ -1,6 +1,7 @@
 // API for the Regal front-end (frontend/index.html): the books document store, sign-in, SMS relay.
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'node:crypto';
 import { query, withTransaction, dbKind } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { matches, demoPassword, sha, fnv } from '../services/regalHash.js';
@@ -8,7 +9,7 @@ import { injectInbox as injectShopInbox, markImported as markShopImported, pendi
 import { injectSupplierInbox, markSupplierImported, pendingSupplierCount } from './supplier.js';
 import { injectCustInbox, markCustImported, pendingCustCount } from './customer.js';
 import { catchUpLogins } from '../services/portalLogins.js';
-import { stopIfTooMany, wrongTry, rightTry, pinLimits } from '../lib/tries.js';
+import { stopIfTooMany, wrongTry, rightTry, pinLimits, sendingCode, guardCode } from '../lib/tries.js';
 // everything that arrived from outside the tills — the website's orders, the suppliers', and what a
 // customer said on their own page — in one go
 // Each one on its own, and none of them allowed to fail the books: if an inbox cannot be read, the till
@@ -32,12 +33,47 @@ const HISTORY_KEEP = 500;
 // up on another, so they travel with the books — this list used to throw them away on every save.
 const LOCAL_KEYS = ['user', 'pos', 'view', 'terminal', 'portal', 'cportal', 'phoneOpen', 'phoneMode', 'notifOpen', 'signedOut', 'drawer', '_fromStore', 'locId', 'isDemo'];
 
-function sign(user) {
-  return jwt.sign({ kind: 'regal', name: user.name, role: user.role, perms: user.perms || [] }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES || '12h' });
+function sign(user, sid) {
+  return jwt.sign({ kind: 'regal', name: user.name, role: user.role, perms: user.perms || [], ...(sid ? { sid } : {}) }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES || '12h' });
 }
 
+/* ---------------------------------------------------------------- one device at a time
+   Every sign-in starts a session of its own, and only a person's newest one is good: signing in on a
+   second till or phone signs the first one out (it is told why, the next time it talks to the server,
+   within seconds). The newest wins rather than the first, so a till left signed in, or a phone that
+   was lost, never locks its owner out. A sign-in from before this existed is let go the same way. */
+let sessReady = null;
+function ensureSessions() {
+  if (!sessReady) sessReady = query(`CREATE TABLE IF NOT EXISTS till_sessions (
+    name varchar(80) PRIMARY KEY, sid varchar(40) NOT NULL, device varchar(200), ip varchar(64), seen_at timestamptz NOT NULL DEFAULT now())`).catch(e => { sessReady = null; throw e; });
+  return sessReady;
+}
+const sessCache = new Map();                         // name -> { sid, t } — read again after a few seconds
+const sessName = (n) => String(n || '').toLowerCase().trim().slice(0, 80);
+async function newSession(name, req) {
+  const n = sessName(name), sid = crypto.randomBytes(12).toString('hex');
+  await ensureSessions();
+  await query(`INSERT INTO till_sessions (name, sid, device, ip, seen_at) VALUES ($1, $2, $3, $4, now())
+     ON CONFLICT (name) DO UPDATE SET sid = EXCLUDED.sid, device = EXCLUDED.device, ip = EXCLUDED.ip, seen_at = EXCLUDED.seen_at`,
+    [n, sid, String(req.headers['user-agent'] || '').slice(0, 200), String(req.ip || '').slice(0, 64)]);
+  sessCache.set(n, { sid, t: Date.now() });
+  return sid;
+}
+async function currentSid(name) {
+  const n = sessName(name), c = sessCache.get(n);
+  if (c && Date.now() - c.t < 5000) return c.sid;
+  await ensureSessions();
+  const { rows: [r] } = await query(`SELECT sid FROM till_sessions WHERE name = $1`, [n]);
+  const sid = r ? r.sid : null;
+  sessCache.set(n, { sid, t: Date.now() });
+  return sid;
+}
+/** A sign-in for this person, which ends any other they have. */
+async function signIn(user, req) { return sign(user, await newSession(user.name, req)); }
+export const SIGNED_ELSEWHERE = 'Signed in on another device — this one has been signed out';
+
 /** Bearer-token guard for the books API. */
-export function regalAuth(req, _res, next) {
+export async function regalAuth(req, _res, next) {
   try {
     const h = req.headers.authorization || '';
     const token = h.startsWith('Bearer ') ? h.slice(7) : null;
@@ -46,6 +82,10 @@ export function regalAuth(req, _res, next) {
     if (p.kind !== 'regal') throw new HttpError(401, 'Wrong kind of token');
     if (p.isDemo && req.method !== 'GET') {
       throw new HttpError(403, 'Demo mode is trial-only and cannot modify live store data');
+    }
+    if (!p.isDemo) {
+      const now = await currentSid(p.name).catch(() => undefined);   // the table not readable: let it through rather than lock the shop
+      if (now && now !== p.sid) throw new HttpError(401, SIGNED_ELSEWHERE);
     }
     req.regalUser = p;
     next();
@@ -171,7 +211,7 @@ async function usersFromBooks() {
 r.post('/books/refresh', regalAuth, asyncHandler(async (req, res) => {
   const p = req.regalUser;
   if (p.isDemo) throw new HttpError(403, 'Demo sign-ins are not renewed');
-  res.json({ ok: true, token: sign({ name: p.name, role: p.role, perms: p.perms || [] }) });
+  res.json({ ok: true, token: sign({ name: p.name, role: p.role, perms: p.perms || [] }, p.sid) });
 }));
 
 r.post('/books/login', asyncHandler(async (req, res) => {
@@ -211,7 +251,7 @@ r.post('/books/login', asyncHandler(async (req, res) => {
     if (matches(u, password) || isDefPass || (fresh && isAdmin && password === adminPass)) {
       if (!u.passHash && defAcc) u.passHash = sha(defAcc.pass);
       rightTry('till:' + String(user).toLowerCase());
-      return res.json({ ok: true, token: sign(u), user: { name: u.name, role: u.role, perms: u.perms || [] } });
+      return res.json({ ok: true, token: await signIn(u, req), user: { name: u.name, role: u.role, perms: u.perms || [] } });
     }
     wrongTry(passLimits);
     throw new HttpError(401, 'That password is not right');
@@ -219,11 +259,11 @@ r.post('/books/login', asyncHandler(async (req, res) => {
 
   if (fresh && isAdmin && password === adminPass) {
     const adminUser = { name: 'admin', role: 'Owner', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] };
-    return res.json({ ok: true, token: sign(adminUser), user: { name: adminUser.name, role: 'Owner', perms: adminUser.perms || [] } });
+    return res.json({ ok: true, token: await signIn(adminUser, req), user: { name: adminUser.name, role: 'Owner', perms: adminUser.perms || [] } });
   }
 
   if (fresh && (password === adminPass || password === demoPassword(user))) {
-    return res.json({ ok: true, token: sign({ name: user, role: 'Owner', perms: [] }), user: { name: user, role: 'Owner', perms: [] }, bootstrap: true });
+    return res.json({ ok: true, token: await signIn({ name: user, role: 'Owner', perms: [] }, req), user: { name: user, role: 'Owner', perms: [] }, bootstrap: true });
   }
   throw new HttpError(401, 'That password is not right');
 }));
@@ -252,7 +292,8 @@ r.post('/books/pin-who', asyncHandler(async (req, res) => {
   stopIfTooMany([['pinwho:' + req.ip, 60]]);
   const u = await pinUser(req.body?.code);
   if (!u) { wrongTry([['pinwho:' + req.ip, 60]]); throw new HttpError(404, 'There is no one with that user code'); }
-  res.json({ ok: true, name: u.name, role: u.role, uid: u.uid, pinLen: u.pinHash ? (+u.pinLen || 4) : 0 });
+  const { phone } = await staffPhone(u);
+  res.json({ ok: true, name: u.name, role: u.role, uid: u.uid, pinLen: u.pinHash ? (+u.pinLen || 4) : 0, phone: phone ? maskPhone(phone) : null });
 }));
 
 r.post('/books/pin-login', asyncHandler(async (req, res) => {
@@ -262,7 +303,51 @@ r.post('/books/pin-login', asyncHandler(async (req, res) => {
   const u = await pinUser(code);
   if (!u || !pinOk(u, pin)) { wrongTry(limits); throw new HttpError(401, u && !u.pinHash ? 'No PIN is set for you yet — sign in with your password' : 'That PIN is not right'); }
   rightTry('pin:' + code.toLowerCase()); rightTry('pinday:' + code.toLowerCase());
-  res.json({ ok: true, token: sign(u), user: { name: u.name, role: u.role, perms: u.perms || [] } });
+  res.json({ ok: true, token: await signIn(u, req), user: { name: u.name, role: u.role, perms: u.perms || [] } });
+}));
+
+/* ---------------------------------------------------------------- user code + a texted code
+   For anyone without a PIN to hand: the code goes to the mobile on their user (or on their staff card),
+   checked like every other texted code — six digits, a few minutes, wrong ones counted. */
+const staffPhone = async (u) => {
+  const row = await loadBooks(), S = row?.data?.S || {};
+  const nm = String(u.name || '').toLowerCase().trim();
+  const e = (S.employees || []).find(x => String(x.userName || '').toLowerCase().trim() === nm || String(x.name || '').toLowerCase().trim() === nm);
+  const ph = String(u.phone || e?.phone || '').replace(/\D/g, '');
+  return { phone: /^0\d{9}$/.test(ph) ? ph : (/^94\d{9}$/.test(ph) ? '0' + ph.slice(2) : ''), CFG: row?.data?.CFG || {} };
+};
+const TILL_OTP_MS = 5 * 60 * 1000;
+function tillOtp(phone, when = Date.now()) {
+  const h = crypto.createHmac('sha256', process.env.JWT_SECRET || 'regal').update('till|' + phone + '|' + Math.floor(when / TILL_OTP_MS)).digest();
+  return String(h.readUInt32BE(0) % 1000000).padStart(6, '0');
+}
+const tillOtpOk = (phone, code) => [0, 1].some(back => tillOtp(phone, Date.now() - back * TILL_OTP_MS) === String(code || '').trim());
+const maskPhone = (p) => String(p).replace(/^(\d{3})\d{4}(\d{3})$/, '$1••••$2');
+
+r.post('/books/otp-send', asyncHandler(async (req, res) => {
+  const u = await pinUser(req.body?.code);
+  if (!u) throw new HttpError(404, 'There is no one with that user code');
+  const { phone, CFG } = await staffPhone(u);
+  if (!phone) throw new HttpError(400, 'There is no mobile on your user — ask the owner to add it, or use your PIN or password');
+  sendingCode(phone, req.ip);
+  const code = tillOtp(phone);
+  const shop = String(CFG.shop?.name || 'Regal Hardware').replace(/^REGAL HARDWARE$/, 'Regal Hardware');
+  let sent = false;
+  if (CFG.msg?.apiUrl && CFG.msg?.apiKey) {
+    try { await sendViaProvider(CFG.msg, phone, `Dear ${String(u.name).split(' ')[0]},\nYour code to sign in to the till is ${code}.\nIt works for 5 minutes. Please do not share it.\n\n${shop}`); sent = true; }
+    catch (e) { console.error('till otp sms failed', e.message); }
+  }
+  res.json({ ok: true, sent, phone: maskPhone(phone), ...(!sent && mayRevealCode(req) ? { code } : {}),
+    ...(sent ? {} : { note: 'The text could not go out — use your PIN or password, or ask the owner to check Settings → Messages' }) });
+}));
+
+r.post('/books/otp-login', asyncHandler(async (req, res) => {
+  const u = await pinUser(req.body?.code);
+  if (!u) throw new HttpError(404, 'There is no one with that user code');
+  const { phone } = await staffPhone(u);
+  if (!phone) throw new HttpError(400, 'There is no mobile on your user');
+  guardCode(phone, req.ip, () => tillOtpOk(phone, req.body?.otp));
+  res.json({ ok: true, token: await signIn(u, req), user: { name: u.name, role: u.role, perms: u.perms || [] } });
 }));
 
 // ---------------------------------------------------------------- books document

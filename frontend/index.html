@@ -911,6 +911,7 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 .pin-code::placeholder{color:#CBD5E1}
 .pin-msg{min-height:20px;margin-top:10px;font-size:13px;color:#64748B;text-align:center}
 .pin-msg.bad{color:#B42318;font-weight:600}
+.pin-links{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 10px;margin-top:6px;font-size:12.5px;color:#94A3B8}.pin-links a{color:#7D1D23;border:0;text-decoration:underline;text-underline-offset:3px}.pin-links i{font-style:normal}
 .pin-alt{display:inline-block;margin-top:12px;font-size:12.5px;color:#64748B;border:0;text-decoration:underline;text-underline-offset:3px}
 .pin-back{position:absolute;left:14px;top:12px;border:0;background:none;color:#64748B;font:inherit;font-size:13px;cursor:pointer;padding:6px}
 .pin-av{position:relative;width:92px;height:92px;margin:14px auto 12px;display:grid;place-items:center}
@@ -24233,6 +24234,8 @@ function userModal(name){
       <div class="muted">Typed first on the lock screen</div></div>
      <div class="f"><label>${u&&(u.pinHash||u.pin)?'New PIN (blank keeps theirs)':'PIN — 4 to 6 digits'}</label><input id="uPin" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password" placeholder="${u&&(u.pinHash||u.pin)?'•••• set':'e.g. 4821'}">
       <div class="muted">Their user code and this PIN open the till</div></div>
+     <div class="f"><label>Mobile</label><input id="uPhone" inputmode="tel" value="${u&&u.phone?escM(u.phone):''}" placeholder="07XXXXXXXX">
+      <div class="muted">Sign-in codes are texted here when they have no PIN to hand</div></div>
     </div>
     <h2 style="margin-top:6px">Fine-grained permissions</h2>
     <div class="permgrid" id="uPerms">${PERMS.map(p=>`<label class="chk"><input type="checkbox" data-perm="${p[0]}" ${perms.has(p[0])?'checked':''}> ${p[1]}</label>`).join('')}</div>
@@ -24310,6 +24313,8 @@ function userModal(name){
     const typedCode=(m.querySelector('#uCode').value||'').trim().toUpperCase();
     if(typedCode&&!/^[A-Z0-9]{1,4}$/.test(typedCode))return fail('A user code is 1 to 4 letters or numbers, like AF or S1');
     if(typedCode&&S.users.some(x=>x!==u&&x.active!==false&&String(x.uid||'').toUpperCase()===typedCode))return fail(`${typedCode} is someone else's user code`);
+    const ph0=(m.querySelector('#uPhone').value||'').replace(/\D/g,'');
+    if(ph0&&!/^0\d{9}$/.test(ph0))return fail('Enter the mobile like 0771234567');
     const pass=canLogin?(m.querySelector('#uPass').value||'').trim():'';
     if(canLogin&&!(u&&u.passHash)&&pass.length<6)return fail('Give them a password of at least six characters, or untick "Can sign in"');
     if(pass&&pass.length<6)return fail('A password needs at least six characters');
@@ -24342,6 +24347,7 @@ function userModal(name){
       }
     }
     if(typedCode) uid = typedCode;          // the code the owner chose stands; the Sales ID is kept on its own
+    const phoneIn=(m.querySelector('#uPhone').value||'').replace(/\D/g,'');
     const no = (u && u.no) ? u.no : (Math.max(0, ...S.users.map(x => +x.no || 0)) + 1);
 
     const oldName = u ? u.name : null;
@@ -24358,6 +24364,7 @@ function userModal(name){
       u.name = nm;
       u.role = role;
       if(pin){ u.pinHash = await hashPass('pin:'+pin); u.pinLen = pin.length; }
+      if(phoneIn) u.phone = phoneIn; else delete u.phone;
       delete u.pin;
       u.uid = uid;
       u.no = no;
@@ -24395,6 +24402,7 @@ function userModal(name){
         name: nm,
         role,
         ...(pin ? { pinHash: await hashPass('pin:'+pin), pinLen: pin.length } : {}),
+        ...(phoneIn ? { phone: phoneIn } : {}),
         uid,
         no,
         ...(pass ? { passHash: await hashPass(pass) } : {}),
@@ -24502,10 +24510,13 @@ window.refreshMe=function(){
 /* The server ended this till's sign-in (it ran out, or was signed out elsewhere). Carrying on would
    look like work but nothing would reach the server, so it goes back to the sign-in screen; the bill
    on the screen is kept, as with any sign-out. */
-window.serverSignedOut=()=>{
+window.serverSignedOut=(why)=>{
   if(window.isDemo||!S||S.signedOut) return;
   signOut();
-  setTimeout(()=>toast('Your sign-in to the server ran out — please sign in again','warn'),400);
+  // one device at a time: signing in somewhere else ends the sign-in here, and says so
+  const elsewhere=/another device/i.test(String(why||''));
+  setTimeout(()=>{ toast(elsewhere?'You signed in on another device, so this one was signed out':'Your sign-in to the server ran out — please sign in again','warn');
+    const m=document.getElementById('pinMsg1'); if(m&&elsewhere){ m.textContent='You signed in on another device — this one was signed out.'; m.classList.add('bad') } },400);
 };
 function signOut(){
   if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){ leaveDemo(); return }
@@ -25039,26 +25050,52 @@ function shopLock(){
      <div class="pin-role" id="pinRole"></div>
      <div class="pin-dots" id="pinDots"></div>
      <div class="pin-msg" id="pinMsg2">Enter your PIN</div>
+     <div class="pin-links" id="pinLinks"></div>
      <div class="pin-pad">${[1,2,3,4,5,6,7,8,9].map(n=>`<button type="button" data-k="${n}">${n}</button>`).join('')}
        <button type="button" data-k="c" class="pk-soft">Clear</button><button type="button" data-k="0">0</button><button type="button" data-k="b" class="pk-soft" aria-label="Back one">⌫</button></div>
     </div>
    </div>`;
   document.body.appendChild(el);
   const $l=(s)=>el.querySelector(s), code=$l('#pinCode'), s1=$l('#pinStep1'), s2=$l('#pinStep2');
-  let who=null, pin='', busy=false;
+  let who=null, pin='', busy=false, mode='pin', resendAt=0;
   const say=(id,t,bad)=>{ const m=$l(id); m.textContent=t||''; m.classList.toggle('bad',!!bad) };
   const shake=(n)=>{ n.classList.remove('shake'); void n.offsetWidth; n.classList.add('shake') };
-  const dots=()=>{ $l('#pinDots').innerHTML=Array.from({length:who.pinLen},(_,i)=>`<i class="${i<pin.length?'on':''}"></i>`).join('') };
+  const need=()=>mode==='otp'?6:who.pinLen;
+  const dots=()=>{ $l('#pinDots').innerHTML=Array.from({length:need()},(_,i)=>`<i class="${i<pin.length?'on':''}"></i>`).join('') };
+  const ask=()=>mode==='otp'?'Enter the code we texted you':'Enter your PIN';
+  /* the ways to switch under the pad: a texted code if there is a mobile, the PIN if there is one, the password */
+  const links=()=>{
+    const L=[];
+    if(mode==='pin'&&who.phone) L.push(`<a href="#" data-l="otp">Text me a code instead</a>`);
+    if(mode==='otp'){ L.push(Date.now()<resendAt?`<span>Send again in ${Math.ceil((resendAt-Date.now())/1000)}s</span>`:`<a href="#" data-l="otp">Send the code again</a>`);
+      if(who.pinLen) L.push(`<a href="#" data-l="pin">Use my PIN</a>`); }
+    L.push(`<a href="#" data-l="pw">Use my password</a>`);
+    $l('#pinLinks').innerHTML=L.join('<i>·</i>');
+    $l('#pinLinks').querySelectorAll('[data-l]').forEach(a=>a.onclick=e=>{ e.preventDefault(); const k=a.dataset.l;
+      if(k==='otp') sendOtp(); else if(k==='pin'){ mode='pin'; pin=''; dots(); say('#pinMsg2',ask()); links() } else { const nm=who.name; back(); shopLockPassword(nm) } });
+  };
+  let tick=null;
+  const sendOtp=async()=>{
+    if(Date.now()<resendAt) return;
+    mode='otp'; pin=''; dots(); say('#pinMsg2','Sending a code…'); resendAt=Date.now()+30000; links();
+    clearInterval(tick); tick=setInterval(()=>{ if(!who||mode!=='otp'){ clearInterval(tick); return } links(); if(Date.now()>=resendAt) clearInterval(tick) },1000);
+    if(!(window.regalBridge&&regalBridge.otpSend)) return say('#pinMsg2','A texted code needs the shop server — use your PIN or password',true);
+    const r=await regalBridge.otpSend(who.uid).catch(e=>({ok:false,error:e.message}));
+    if(!r.ok){ resendAt=0; links(); return say('#pinMsg2',noPinServer(r)?'Texted codes are not switched on at the server yet':r.error,true) }
+    if(r.sent) say('#pinMsg2',`Code sent to ${r.phone} — enter it below`);
+    else if(r.code) say('#pinMsg2',`Texting is off here, so the code is ${r.code}`);
+    else { resendAt=0; links(); say('#pinMsg2',r.note||'The text could not go out',true) }
+  };
   const noPinServer=(r)=>r&&r.status===404&&/^not found$/i.test(String(r.error||''));
   const toPassword=(name)=>{ say('#pinMsg1','PIN sign-in is not switched on at the server yet — use your password for now.',true); setTimeout(()=>shopLockPassword(name||''),1600) };
   const local=(c)=>(S.users||[]).find(u=>u.active!==false&&u.canLogin!==false&&String(u.uid||'').toLowerCase()===c.toLowerCase());
   const toStep2=()=>{
     $l('#pinAv').textContent=String(who.uid||who.name).slice(0,3).toUpperCase();
     $l('#pinName').textContent=who.name; $l('#pinRole').textContent=who.role||'';
-    pin=''; dots(); say('#pinMsg2','Enter your PIN');
+    pin=''; dots(); say('#pinMsg2',ask()); links();
     s1.classList.add('leave'); setTimeout(()=>{ s1.classList.add('hide'); s1.classList.remove('leave'); s2.classList.remove('hide'); s2.classList.add('enter'); el.focus() },260);
   };
-  const back=()=>{ who=null; pin=''; s2.classList.add('hide'); s2.classList.remove('enter'); s1.classList.remove('hide'); say('#pinMsg1',''); code.value=''; code.focus() };
+  const back=()=>{ who=null; pin=''; mode='pin'; resendAt=0; clearInterval(tick); s2.classList.add('hide'); s2.classList.remove('enter'); s1.classList.remove('hide'); say('#pinMsg1',''); code.value=''; code.focus() };
   const next=async()=>{
     const c=code.value.trim(); if(!c) return code.focus();
     if(c.toLowerCase()==='demo'){ location.href='/demo'; return }
@@ -25067,30 +25104,33 @@ function shopLock(){
     if(window.regalBridge&&regalBridge.pinWho){
       try{ const r=await regalBridge.pinWho(c); if(r.ok) w=r; else if(noPinServer(r)){ const u=local(c); $l('#pinNext').disabled=false; return toPassword(u&&u.name) } else if(r.status) failed=r.error||'There is no one with that user code' }catch(e){}
     }
-    if(!w&&!failed){ const u=local(c); if(u) w={name:u.name,role:u.role,uid:u.uid,pinLen:u.pinHash?(+u.pinLen||4):0}; else failed='There is no one with that user code' }
+    if(!w&&!failed){ const u=local(c); if(u) w={name:u.name,role:u.role,uid:u.uid,pinLen:u.pinHash?(+u.pinLen||4):0,phone:null}; else failed='There is no one with that user code' }
     $l('#pinNext').disabled=false;
     if(!w){ say('#pinMsg1',failed,true); shake(code); code.select(); return }
-    if(!w.pinLen){ say('#pinMsg1',`${w.name}, you have no PIN yet — sign in with your password, and ask the owner to set one.`,true);
+    if(!w.pinLen&&!w.phone){ say('#pinMsg1',`${w.name}, you have no PIN yet — sign in with your password, and ask the owner to set one.`,true);
       setTimeout(()=>shopLockPassword(w.name),1400); return }
-    who=w; toStep2();
+    who=w; mode=w.pinLen?'pin':'otp'; toStep2();
+    if(mode==='otp') sendOtp();                       // no PIN yet, but a mobile: the code goes straight away
   };
   const tryPin=async()=>{
     if(busy) return; busy=true; s2.classList.add('checking');
     let ok=null, err='';
-    if(window.regalBridge&&regalBridge.pinLogin){
-      try{ const r=await regalBridge.pinLogin(who.uid,pin); if(r.ok) ok=(S.users||[]).find(u=>String(u.name).toLowerCase()===String(r.user.name).toLowerCase())||{name:r.user.name,role:r.user.role,perms:r.user.perms||[],uid:who.uid}; else if(noPinServer(r)){ s2.classList.remove('checking'); busy=false; const nm=who&&who.name; back(); return toPassword(nm) } else if(r.status) err=r.error||'That PIN is not right' }catch(e){}
+    const call=mode==='otp'?(window.regalBridge&&regalBridge.otpLogin):(window.regalBridge&&regalBridge.pinLogin);
+    if(call){
+      try{ const r=await call(who.uid,pin); if(r.ok) ok=(S.users||[]).find(u=>String(u.name).toLowerCase()===String(r.user.name).toLowerCase())||{name:r.user.name,role:r.user.role,perms:r.user.perms||[],uid:who.uid}; else if(noPinServer(r)){ s2.classList.remove('checking'); busy=false; const nm=who&&who.name; back(); return toPassword(nm) } else if(r.status) err=r.error||(mode==='otp'?'That code is not right':'That PIN is not right') }catch(e){}
     }
-    if(!ok&&!err){ const u=local(who.uid); if(u&&u.pinHash&&u.pinHash===await hashPass('pin:'+pin)) ok=u; else err='That PIN is not right' }
+    if(!ok&&!err){ if(mode==='otp') err='A texted code needs the shop server'; else { const u=local(who.uid); if(u&&u.pinHash&&u.pinHash===await hashPass('pin:'+pin)) ok=u; else err='That PIN is not right' } }
     s2.classList.remove('checking'); busy=false;
     if(!ok){ pin=''; dots(); say('#pinMsg2',err,true); shake($l('#pinDots')); return }
+    clearInterval(tick);
     s2.classList.add('done'); $l('#pinDots').querySelectorAll('i').forEach(i=>i.classList.add('ok'));
     setTimeout(()=>{ pinWelcome(ok); lockFinish(ok) },380);
   };
   const key=(k)=>{
     if(!who||busy) return;
-    if(k==='b') pin=pin.slice(0,-1); else if(k==='c') pin=''; else if(pin.length<who.pinLen) pin+=k;
-    dots(); if(pin.length) say('#pinMsg2','Enter your PIN');
-    if(pin.length===who.pinLen) tryPin();
+    if(k==='b') pin=pin.slice(0,-1); else if(k==='c') pin=''; else if(pin.length<need()) pin+=k;
+    dots(); if(pin.length&&$l('#pinMsg2').classList.contains('bad')) say('#pinMsg2',ask());
+    if(pin.length===need()) tryPin();
   };
   el.querySelectorAll('.pin-pad [data-k]').forEach(b=>b.onclick=()=>{ b.classList.remove('hit'); void b.offsetWidth; b.classList.add('hit'); key(b.dataset.k) });
   $l('#pinNext').onclick=next;
@@ -25098,8 +25138,10 @@ function shopLock(){
   code.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); next() } };
   $l('#pinBack').onclick=back;
   $l('#pinUsePw').onclick=e=>{ e.preventDefault(); shopLockPassword() };
-  el.addEventListener('keydown',e=>{ if(s2.classList.contains('hide')) return;
-    if(/^\d$/.test(e.key)){ e.preventDefault(); key(e.key) } else if(e.key==='Backspace'){ e.preventDefault(); key('b') } else if(e.key==='Escape'){ e.preventDefault(); back() } });
+  // the digits are heard wherever the focus is (a link under the pad, or nothing), while this screen is up
+  const onKey=e=>{ if(!el.isConnected){ document.removeEventListener('keydown',onKey); return } if(s2.classList.contains('hide')||e.target===code) return;
+    if(/^\d$/.test(e.key)){ e.preventDefault(); key(e.key) } else if(e.key==='Backspace'){ e.preventDefault(); key('b') } else if(e.key==='Escape'){ e.preventDefault(); back() } };
+  document.addEventListener('keydown',onKey);
   el.tabIndex=-1;
   code.focus();
 }

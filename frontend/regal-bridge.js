@@ -34,7 +34,7 @@
       var r = await fetch(API + path, { method: method, headers: headers(!!body), body: body ? JSON.stringify(body) : undefined });
       var j = null; try { j = await r.json(); } catch (e) { j = {}; }
       j.__status = r.status;
-      if (r.status === 401 && token) { token = ''; localStorage.removeItem(TOKEN_KEY); onSignedOut(); }
+      if (r.status === 401 && token) { token = ''; localStorage.removeItem(TOKEN_KEY); onSignedOut(j.error || ''); }
       return j;
     } catch (e) {
       return { __status: 0, error: e.message || 'Server unreachable' };
@@ -350,7 +350,20 @@
   /* the lock screen's user code and PIN: who the code is, then the PIN itself */
   async function pinWho(code) {
     var j = await call('POST', '/books/pin-who', { code: code });
-    return j.__status === 200 && j.ok ? { ok: true, name: j.name, role: j.role, uid: j.uid, pinLen: j.pinLen } : { ok: false, status: j.__status, error: j.error || 'Could not check that code' };
+    return j.__status === 200 && j.ok ? { ok: true, name: j.name, role: j.role, uid: j.uid, pinLen: j.pinLen, phone: j.phone || null } : { ok: false, status: j.__status, error: j.error || 'Could not check that code' };
+  }
+  /* a code texted to the mobile on their user, for anyone without their PIN */
+  async function otpSend(code) {
+    var j = await call('POST', '/books/otp-send', { code: code });
+    return j.__status === 200 && j.ok ? { ok: true, sent: j.sent, phone: j.phone, code: j.code, note: j.note } : { ok: false, status: j.__status, error: j.error || 'Could not send a code' };
+  }
+  async function otpLogin(code, otp) {
+    var j = await call('POST', '/books/otp-login', { code: code, otp: otp });
+    if (j.__status !== 200 || !j.ok) return { ok: false, status: j.__status, error: j.error || 'Could not sign in' };
+    token = j.token; localStorage.setItem(TOKEN_KEY, token);
+    await pull(true);
+    startPolling();
+    return { ok: true, user: j.user };
   }
   async function pinLogin(code, pin) {
     var j = await call('POST', '/books/pin-login', { code: code, pin: pin });
@@ -360,11 +373,11 @@
     startPolling();
     return { ok: true, user: j.user };
   }
-  function onSignedOut() {
+  function onSignedOut(why) {
     stopPolling();
     badge('signed out of the server');
     // the till must not go on as if nothing happened: nothing it does would reach the server
-    if (typeof window.serverSignedOut === 'function') { try { window.serverSignedOut(); } catch (e) {} }
+    if (typeof window.serverSignedOut === 'function') { try { window.serverSignedOut(why || ''); } catch (e) {} }
   }
   /* when the sign-in was made: renewed once it is an hour old, so a till in use never runs out */
   function tokenAge() {
@@ -449,7 +462,7 @@
     localKeys: LOCAL_KEYS,
     token: function () { return token; },
     rev: function () { return rev; },
-    login: login, pinWho: pinWho, pinLogin: pinLogin, logout: logout, pull: pull, sms: sms, serverUsers: serverUsers,
+    login: login, pinWho: pinWho, pinLogin: pinLogin, otpSend: otpSend, otpLogin: otpLogin, logout: logout, pull: pull, sms: sms, serverUsers: serverUsers,
     setTerminal: function (t) { localStorage.setItem(TERMINAL_KEY, t); },
     terminal: function () { return localStorage.getItem(TERMINAL_KEY) || ''; }
   };
