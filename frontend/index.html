@@ -4445,8 +4445,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   const v={invoice:inv.no,total:fmt(total),balance:fmt(credit),link:inv.link,
     customer:c?c.name:'Cash customer',outstanding:fmt(partyBal('C',(c||{}).id))};
   if(total<-0.005){ if(c&&c.id!==1&&c.phone&&CFG.msg.autoReturn!==false){
-      const items=inv.lines.filter(l=>l.qty<0).map(l=>`${fq(-l.qty)} × ${lineName(l)}`), shown=items.slice(0,4).join(', ')+(items.length>4?` and ${items.length-4} more`:'');
-      sms(c.phone,tpl('returnReceived',{return:inv.no,fromPart:returnOf?'\nFrom bill: '+returnOf:'',items:shown,amount:fmt(-total),
+      sms(c.phone,tpl('returnReceived',{return:inv.no,fromPart:returnOf?'\nFrom bill: '+returnOf:'',amount:fmt(-total),
         how:acct?'It has been taken off your account.':'It has been refunded to you in cash.',outstanding:fmt(Math.max(0,partyBal('C',c.id)))}),'customer') } }
   else if(c&&c.phone&&CFG.msg.autoBill) sms(c.phone, tpl(credit>0?'creditSale':'cashSale',v));
   // a credit bill goes to a customer who keeps an email with us as the A5 invoice, in a PDF
@@ -5107,8 +5106,8 @@ const CFG={
     text:'We need a change to your order.\nChange: {reason}'},
   orderReceived:{label:'Goods received',vars:'{shop} {grn} {supplier}',
     text:'Your goods have been received.\nGRN No: {grn}'},
-  returnReceived:{label:'Goods returned',vars:'{shop} {return} {fromPart} {items} {amount} {how} {outstanding}',
-    text:'We have received the goods you returned.\nReturn No: {return}{fromPart}\nItems: {items}\nAmount: {amount}\n{how}\nBalance now: {outstanding}'},
+  returnReceived:{label:'Goods returned',vars:'{shop} {return} {fromPart} {amount} {how} {outstanding}',
+    text:'We have received the goods you returned.\nReturn No: {return}{fromPart}\nAmount: {amount}\n{how}\nBalance now: {outstanding}'},
   dailySummary:{label:'Owner summary at close',vars:'{sales} {cash} {credit} {expenses} {outstanding}',
     text:'Today\'s summary:\nSales: {sales}\nCash: {cash}\nCredit: {credit}\nExpenses: {expenses}\nCustomers owe: {outstanding}'}
  }
@@ -8729,6 +8728,7 @@ function applyKept(kept){
   (S.users||[]).forEach(u=>{ const p=String(u.pin||'');
     if(/^\d{4,6}$/.test(p)&&!u.pinHash){ hashPass('pin:'+p).then(h=>{ if(!u.pinHash){ u.pinHash=h; u.pinLen=p.length } delete u.pin; try{ persist(true) }catch(e){} }) }
     else if(u.pin!==undefined&&u.pinHash) delete u.pin });
+  if(CFG.tpl&&CFG.tpl.returnReceived&&/\nItems: \{items\}/.test(CFG.tpl.returnReceived.text||'')) CFG.tpl.returnReceived.text=String(CFG.tpl.returnReceived.text).replace(/\nItems: \{items\}/,'');
   if(CFG.msg&&!CFG.msg.lines3){
     const core=(t)=>String(t||'').replace(/^\s*(?:\{shop\})?\s*(?:statement\s+)?[:\-–—]?\s*/i,'').replace(/\s+/g,' ').trim().toLowerCase();
     Object.keys(CFG.tpl||{}).forEach(k=>{ const t=CFG.tpl[k]; if(!t||!TPL_ORIG[k]) return;
@@ -20857,12 +20857,14 @@ function returnModal(no){
         return `<button type="button" class="rt-bill" data-no="${escM(s.no)}"><span><b>${escM(s.no)}</b> · ${escM(c.name)}<br><small>${escM(s.date)} · ${(s.lines||[]).filter(l=>l.qty>0).length} line(s)${back?' · some already returned':''}${age(s.date)>(+CFG.bill.returnDays||7)?` · <b style="color:var(--chip-rust)">${age(s.date)} days old</b>`:''}</small></span>
           <span class="r">${fmt(s.total)}<br><small>${s.balance>0.005?fmt(s.balance)+' owing':s.type==='CREDIT'?'on account · paid':'cash'}</small></span></button>` }).join('')
         ||'<div class="muted" style="padding:16px">No bill matches that.</div>'}</div>
-      <div class="muted" style="font-size:12.5px;margin-top:10px">Goods back without the bill? Put the item on a new bill with a minus quantity, as before.</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><button type="button" class="btn ghost" id="rtNoBill">Return without a bill</button>
+        <span class="muted" style="font-size:12.5px">No bill to go by — pick the customer and the items.</span></div>
       <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button></div>`;
     const qi=body.querySelector('#rtQ'); qi.focus(); qi.setSelectionRange(qi.value.length,qi.value.length);
     qi.oninput=()=>pick(qi.value);
     qi.onkeydown=e=>{ if(e.key==='Enter'){ const exact=(S.sales||[]).find(s=>String(s.no).toLowerCase()===qi.value.trim().toLowerCase()); const first=body.querySelector('.rt-bill'); if(exact) form(exact); else if(first) first.click() } };
     body.querySelectorAll('.rt-bill').forEach(b=>b.onclick=()=>form(S.sales.find(s=>s.no===b.dataset.no)));
+    body.querySelector('#rtNoBill').onclick=returnNoBill;
   };
   /* ---- what comes back ---- */
   const form=(inv)=>{
@@ -20923,6 +20925,82 @@ function returnModal(no){
     draw();
   };
   if(no) form((S.sales||[]).find(s=>s.no===no)); else pick();
+}
+/* Goods back with no bill to go by — the customer has lost it, or it was long ago. The customer is
+   chosen (a walk-in can only have cash back), the items found by name, code or barcode, and the
+   price each is the customer's own price today, which can be changed. Taken off an account it comes
+   off their oldest bills first, as a payment does. */
+function returnNoBill(){
+  closeModals();
+  const m=modal(`<h2>Return without a bill</h2><div id="rnBody"></div>`); m.classList.add('rt-modal');
+  const body=m.querySelector('#rnBody');
+  let cid=1, cq='', iq='', lines=[], how='cash', why=RET_WHY[0], busy=false;
+  const cust=()=>C(cid)||C(1), named=()=>cid&&cid!==1;
+  const priceOf=(p)=>{ const c=cust(); return +((c&&c.level==='wholesale'?p.wholesale:p.retail)||p.retail||0) };
+  const total=()=>+lines.reduce((a,l)=>a+l.q*l.price,0).toFixed(2);
+  const draw=()=>{
+    const c=cust(), t=total();
+    const cl=cq.trim().toLowerCase(), cs=cl?S.customers.filter(x=>x.id!==1&&x.active!==false&&(String(x.name).toLowerCase().includes(cl)||String(x.phone||'').replace(/\D/g,'').includes(cl.replace(/\D/g,'')||'#'))).slice(0,8):[];
+    const il=iq.trim().toLowerCase(), hits=il?S.products.filter(p=>p.active!==false&&(p.name.toLowerCase().includes(il)||String(p.code||'').toLowerCase()===il||String(p.barcode||'')===iq.trim()||String(p.num||'')===iq.trim()||(p.short||'').toLowerCase()===il)).slice(0,8):[];
+    body.innerHTML=`
+      <div class="rt-head"><span>Customer: <b>${escM(named()?c.name:'Walk-in / cash customer')}</b>${named()?` · owes ${fmt(Math.max(0,partyBal('C',cid)))}`:''}</span>
+        ${named()?'<a href="#" id="rnWalk">walk-in instead</a>':''}</div>
+      ${named()?'':`<input class="rt-find" id="rnCq" value="${escM(cq)}" placeholder="Find the customer — name or mobile (leave empty for a walk-in)" autocomplete="off">
+        ${cs.length?`<div class="rt-list" style="max-height:180px;margin-bottom:10px">${cs.map(x=>`<button type="button" class="rt-bill" data-cid="${x.id}"><span><b>${escM(x.name)}</b><br><small>${escM(x.phone||'')}</small></span><span class="r"><small>owes</small><br>${fmt(Math.max(0,partyBal('C',x.id)))}</span></button>`).join('')}</div>`:''}`}
+      <input class="rt-find" id="rnIq" value="${escM(iq)}" placeholder="Add an item — name, code or scan the barcode" autocomplete="off">
+      ${hits.length?`<div class="rt-list" style="max-height:200px;margin-bottom:10px">${hits.map(p=>`<button type="button" class="rt-bill" data-pid="${p.id}"><span><b>${escM(p.name)}</b><br><small>${escM(p.code||'')} · ${escM(p.unit||'')}</small></span><span class="r">${fmt(priceOf(p))}</span></button>`).join('')}</div>`:''}
+      ${lines.length?`<table class="rt-tbl"><tr><th>Item</th><th class="n">Coming back</th><th class="n">Each</th><th class="n">Amount</th><th></th></tr>
+        ${lines.map((l,i)=>`<tr class="on"><td>${escM(P(l.pid).name)}</td>
+          <td class="n"><span class="rt-step"><button type="button" data-d="-1" data-i="${i}">−</button><input data-q="${i}" value="${fq(l.q)}" inputmode="decimal"><button type="button" data-d="1" data-i="${i}">+</button></span></td>
+          <td class="n"><input data-p="${i}" value="${l.price.toFixed(2)}" inputmode="decimal" style="width:90px;text-align:right"></td>
+          <td class="n"><b>${fmt(l.q*l.price)}</b></td><td><button type="button" class="btn ghost sm" data-x="${i}">×</button></td></tr>`).join('')}</table>`
+        :'<div class="muted" style="padding:6px 0">No items yet — find them above.</div>'}
+      <div style="display:flex;justify-content:flex-end;margin-top:10px"><label style="display:flex;gap:6px;align-items:center;font-size:13px">Why <select id="rnWhy">${RET_WHY.map(w=>`<option ${w===why?'selected':''}>${w}</option>`).join('')}</select></label></div>
+      <div class="rt-how">
+        <label class="${how==='account'?'on':''} ${named()?'':'off'}"><input type="radio" name="rnHow" value="account" ${how==='account'?'checked':''} ${named()?'':'disabled'}>
+          <span><b>Take it off their account</b><small>${named()?'Off what they owe — their oldest bills first':'Only for a named customer'}</small></span></label>
+        <label class="${how==='cash'?'on':''}"><input type="radio" name="rnHow" value="cash" ${how==='cash'?'checked':''}>
+          <span><b>Give the money back</b><small>Cash out of the drawer</small></span></label></div>
+      <div class="rt-foot"><div><div class="muted" style="font-size:12.5px">${lines.length?`${lines.length} item${lines.length===1?'':'s'} coming back`:'Nothing yet'}${named()&&c.phone&&CFG.msg.autoReturn!==false?' · they will be texted':''}</div>
+        <div class="rt-total">${fmt(t)}</div></div>
+        <div style="display:flex;gap:8px"><button class="btn ghost" id="rnBack">Back</button>
+        <button class="btn tape" id="rnGo" ${t>0&&!busy?'':'disabled'}>${how==='account'?'Take it off the account':'Give it back in cash'}</button></div></div>
+      <div id="rnErr" style="color:var(--chip-rust);font-weight:600;min-height:18px;margin-top:6px"></div>`;
+    const keep=(id)=>{ const el=body.querySelector(id); if(el){ el.focus(); el.setSelectionRange(el.value.length,el.value.length) } };
+    const cqi=body.querySelector('#rnCq'); if(cqi) cqi.oninput=()=>{ cq=cqi.value; draw(); keep('#rnCq') };
+    const iqi=body.querySelector('#rnIq'); iqi.oninput=()=>{ iq=iqi.value; draw(); keep('#rnIq') };
+    iqi.onkeydown=e=>{ if(e.key==='Enter'){ const b=body.querySelector('[data-pid]'); if(b) b.click() } };
+    body.querySelectorAll('[data-cid]').forEach(b=>b.onclick=()=>{ cid=+b.dataset.cid; cq=''; how='account';
+      lines.forEach(l=>{ if(!l.typed) l.price=priceOf(P(l.pid)) }); draw(); keep('#rnIq') });
+    const wk=body.querySelector('#rnWalk'); if(wk) wk.onclick=e=>{ e.preventDefault(); cid=1; how='cash'; draw() };
+    body.querySelectorAll('[data-pid]').forEach(b=>b.onclick=()=>{ const p=P(+b.dataset.pid); const had=lines.find(l=>l.pid===p.id);
+      if(had) had.q=+(had.q+1).toFixed(3); else lines.push({pid:p.id,q:1,price:priceOf(p)}); iq=''; draw(); keep('#rnIq') });
+    body.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{ const l=lines[+b.dataset.i]; l.q=Math.max(0,+(l.q+(+b.dataset.d)).toFixed(3)); if(!l.q) lines.splice(+b.dataset.i,1); draw() });
+    body.querySelectorAll('[data-q]').forEach(el=>el.onchange=()=>{ const l=lines[+el.dataset.q]; l.q=Math.max(0,+String(el.value).replace(/[^\d.]/g,'')||0); if(!l.q) lines.splice(+el.dataset.q,1); draw() });
+    body.querySelectorAll('[data-p]').forEach(el=>el.onchange=()=>{ const l=lines[+el.dataset.p]; l.price=Math.max(0,+String(el.value).replace(/[^\d.]/g,'')||0); l.typed=true; draw() });
+    body.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>{ lines.splice(+b.dataset.x,1); draw() });
+    body.querySelector('#rnWhy').onchange=e=>{ why=e.target.value };
+    body.querySelectorAll('input[name="rnHow"]').forEach(r=>r.onchange=()=>{ how=r.value; draw() });
+    body.querySelector('#rnBack').onclick=()=>returnModal();
+    body.querySelector('#rnGo').onclick=go;
+  };
+  const go=()=>{
+    if(busy) return; const t=total(); if(!(t>0)) return;
+    const c=cust();
+    if(!confirm(`${how==='account'?`Take ${fmt(t)} off ${c.name}'s account`:`Give ${fmt(t)} back in cash`} for ${lines.length} item${lines.length===1?'':'s'}, with no bill?`)) return;
+    busy=true;
+    try{
+      const L=lines.map(l=>({pid:l.pid,qty:-l.q,price:+l.price.toFixed(2),disc:0}));
+      const refund=+L.reduce((a,l)=>a+l.qty*l.price,0).toFixed(2);
+      const r=completeSale({lines:L,customerId:cid||1,pays:how==='cash'?[{method:'CASH',amount:refund}]:[],toAccount:how==='account',returnWhy:why+' (no bill)'});
+      try{ persist(true) }catch(e){}
+      m.remove(); render();
+      toast(how==='account'?`${fmt(t)} taken off ${c.name}'s account — return ${r.no}`:`Give ${fmt(t)} back — return ${r.no}`,'ok');
+      notify('info',`${S.user.name} took a return of ${fmt(t)} with no bill${named()?' from '+c.name:''} (${why.toLowerCase()})`,'bills');
+      setTimeout(()=>showInvoice(r),250);
+    }catch(e){ busy=false; const er=body.querySelector('#rnErr'); if(er) er.textContent=e.message||String(e) }
+  };
+  draw(); setTimeout(()=>{ const el=body.querySelector('#rnCq'); if(el) el.focus() },50);
 }
 function showInvoice(inv,f){
   window._shownBill=inv;
