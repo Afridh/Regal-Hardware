@@ -234,8 +234,29 @@ r.get('/me', custAuth, asyncHandler(async (req, res) => {
   const owed = +open.reduce((a, s) => a + s.balance, 0).toFixed(2);
   const band = (lo, hi) => +open.filter(s => s.days > lo && (hi === null || s.days <= hi)).reduce((a, s) => a + s.balance, 0).toFixed(2);
   const pays = (S.payments || []).filter(p => p.dir === 'IN' && p.customerId === c.id)
-    .sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 10)
-    .map(p => ({ no: p.no, date: p.date, amount: p.amount, method: p.method, ref: p.ref || '' }));
+    .sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 300)
+    .map(p => ({ no: p.no, date: p.date, amount: p.amount, method: p.method, ref: p.ref || '', against: p.against || [], advance: +p.advance || 0 }));
+  /* The statement: every entry on their account, as the shop's own ledger has it — bills, payments,
+     returns, anything taken off — with what they owed after each. What they owe is the account and,
+     less, anything they paid ahead (held as their credit). */
+  const stmt = [];
+  for (const j of (S.journal || [])) {
+    let d = 0;
+    for (const l of (j.lines || [])) if (l.party && l.party.type === 'C' && l.party.id === c.id && (l.ac === '1100' || l.ac === '2050')) d += (+l.dr || 0) - (+l.cr || 0);
+    if (Math.abs(d) < 0.005) continue;
+    const desc = String(j.desc || '');
+    const kind = /^Sale |^Owing on bill/i.test(desc) ? 'bill' : /^Return /.test(desc) ? 'return' : /^Receipt /.test(desc) ? 'payment' : /bounced/i.test(desc) ? 'bounced' : 'other';
+    stmt.push({ date: j.date, ref: j.ref || '', kind, what: { bill: 'Bill', return: 'Goods returned', payment: 'Payment received', bounced: 'Cheque returned' }[kind] || desc, amount: +d.toFixed(2) });
+  }
+  stmt.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  let run = 0; for (const x of stmt) { run = +(run + x.amount).toFixed(2); x.balance = run; }
+  // every bill, newest first, and what came back
+  const allBills = mine.filter(s => +s.total > 0).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.no).localeCompare(String(a.no))).slice(0, 500)
+    .map(s => ({ no: s.no, date: s.date, total: s.total, paid: s.paid, balance: s.balance, type: s.type, lines: (s.lines || []).length,
+      returned: mine.some(r => r.returnOf === s.no) }));
+  const returns = mine.filter(s => +s.total < 0).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 200)
+    .map(s => ({ no: s.no, date: s.date, of: s.returnOf || null, amount: +(-s.total).toFixed(2), why: s.returnWhy || '',
+      how: s.toAccount ? 'account' : 'cash', items: (s.lines || []).filter(l => l.qty < 0).map(l => ({ name: l.name || ((S.products || []).find(p => p.id === l.pid) || {}).name || 'Item', qty: -l.qty })) }));
   const recent = mine.sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 10)
     .map(s => ({ no: s.no, date: s.date, total: s.total, balance: s.balance }));
   await ensureCustTables();
@@ -245,7 +266,7 @@ r.get('/me', custAuth, asyncHandler(async (req, res) => {
     customer: { name: c.name, code: c.code, phone: c.phone || '', limit: c.limit || 0, level: c.level || 'retail', points: c.points || 0 },
     owed, limit: c.limit || 0,
     ageing: { d0: band(-1, 30), d30: band(30, 60), d60: band(60, 90), d90: band(90, null) },
-    open, pays, recent,
+    open, pays, recent, statement: stmt, bills: allBills, returns,
     saidPaid: said.map(s => ({ id: Number(s.id), ...s.data, at: s.created_at })),
     shop: { name: CFG.shop?.name || 'Regal Hardware', phone: CFG.shop?.phone || '', land: CFG.shop?.land || '', addr: CFG.shop?.addr || '', hours: CFG.shop?.hours || '' },
     today: localDate() });
