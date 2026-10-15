@@ -3774,6 +3774,14 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .ph-top button small{display:block;font-weight:400;opacity:.6;font-size:11px}
 .ph-top button.on{border-color:#b4791a;background:#fdf6e7}
 #main .ph-find input{width:100%;min-height:54px;font-size:17px;padding:10px 12px;border-radius:12px}
+.cpl-modal .box{max-width:640px}
+.cpl{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
+.cpl-qr{flex:none;width:196px;height:196px;padding:8px;box-sizing:border-box;border:2px solid var(--tape,#AE1E2B);border-radius:14px;display:grid;place-items:center;background:#fff}
+.cpl-side{flex:1 1 260px;display:grid;gap:10px;min-width:0}
+.cpl-link{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.cpl-link b{font-size:17px;overflow-wrap:anywhere}
+.cpl-btns{display:flex;flex-wrap:wrap;gap:8px}.cpl-btns .wa svg{width:16px;height:16px;vertical-align:-3px}
+.cpl-stat{font-size:13px;color:var(--muted)}
 .ph-findrow{display:flex;gap:8px}#main .ph-findrow input{flex:1;min-width:0}
 /* supplier price lists */
 .pl-drop{position:relative;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:16px 18px;margin-bottom:14px;border:2px dashed var(--line);border-radius:14px;background:var(--card,#fff);transition:border-color .15s,background .15s}
@@ -18935,6 +18943,65 @@ function custLoginsMadeModal(kind,made,fresh,of){
     toast(`${n} text${n===1?'':'s'} sent.`,'ok');
   };
 }
+/* ---- the customers' own page, as one link for everybody ----
+   regalhw.lk/my is the same for every customer: they sign in with the mobile the shop has for them and a
+   texted code, and see only their own account. The shop can hand it out any way — say it, text it, send
+   it on WhatsApp, or print the poster with its QR code for the counter. A customer whose page is still
+   switched off is told to ask the shop; opening it for everyone is one press here. */
+const MY_LINK='https://regalhw.lk/my';
+let qrLibP=null;
+const qrLib=()=>qrLibP||(qrLibP=new Promise((ok,no)=>{ if(window.QRCode) return ok(window.QRCode);
+  const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+  s.onload=()=>window.QRCode?ok(window.QRCode):no(new Error('no QR')); s.onerror=()=>{ qrLibP=null; no(new Error('The QR code needs the internet')) }; document.head.appendChild(s) }));
+const qrInto=(el,text,size)=>qrLib().then(Q=>{ el.innerHTML=''; new Q(el,{text,width:size,height:size,colorDark:'#1c1214',colorLight:'#ffffff',correctLevel:Q.CorrectLevel.M}) }).catch(e=>{ el.textContent=e.message });
+function custPageLink(){
+  const all=S.customers.filter(c=>c.id!==1&&c.active!==false);
+  const withPh=all.filter(c=>/^0\d{9}$/.test(String(c.phone||'').replace(/\D/g,'')));
+  const open=all.filter(c=>c.portal!==false), offPh=withPh.filter(c=>c.portal===false);
+  const say=`You can check your account with ${msgShop()} any time — what you owe, your bills and your payments.\n\nOpen: ${MY_LINK}\nSign in with your mobile number; we text you a code.`;
+  const m=modal(`<h2>The customers' page</h2>
+   <div class="muted" style="margin-bottom:12px">One link for every customer. They sign in with the mobile you have for them and a texted code, and see only their own account.</div>
+   <div class="cpl">
+    <div class="cpl-qr" id="cplQr"></div>
+    <div class="cpl-side">
+     <div class="cpl-link"><b>${MY_LINK.replace('https://','')}</b><button class="btn ghost sm" id="cplCopy">Copy</button></div>
+     <div class="cpl-btns"><a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(say)}">${WA_ICON} Share on WhatsApp</a>
+      <button class="btn ghost" id="cplPoster">Print a poster for the counter</button>
+      <a class="btn ghost" href="${MY_LINK}" target="_blank" rel="noopener">Open it</a></div>
+     <div class="cpl-stat"><b>${open.length}</b> of ${all.length} customers can sign in now${offPh.length?` · <b>${offPh.length}</b> with a mobile are still switched off`:''}</div>
+     ${offPh.length?(canApprove()?`<button class="btn tape" id="cplOpenAll">Open the page for all ${offPh.length} with a mobile</button>
+       <div class="muted" style="font-size:12px;margin-top:4px">Nothing is texted — they sign in with their mobile when you give them the link. One customer can still be switched off from their own page.</div>`
+       :`<div class="muted" style="font-size:12.5px">Ask the owner to open the page for everyone.</div>`):''}
+    </div></div>
+   <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn ghost" data-act="closeModal">Close</button></div>`);
+  m.classList.add('cpl-modal');
+  qrInto(m.querySelector('#cplQr'),MY_LINK,180);
+  m.querySelector('#cplCopy').onclick=()=>{ try{ navigator.clipboard.writeText(MY_LINK).then(()=>toast('Link copied','ok'),()=>prompt('Copy the link',MY_LINK)) }catch(e){ prompt('Copy the link',MY_LINK) } };
+  m.querySelector('#cplPoster').onclick=()=>custPagePoster();
+  const oa=m.querySelector('#cplOpenAll');
+  if(oa) oa.onclick=()=>{
+    if(!confirm(`Open the page for ${offPh.length} customers?\n\nThey can then sign in at ${MY_LINK.replace('https://','')} with their mobile. Nothing is texted to them.`)) return;
+    offPh.forEach(c=>{ c.portal=true });
+    persist(true); m.remove(); render(); toast(`${offPh.length} customers can sign in now`,'ok'); custPageLink() };
+}
+/* an A5 sheet for the counter: the shop, the link, and a big QR code */
+function custPagePoster(){
+  const w=window.open('','_blank','width=620,height=860'); if(!w) return toast('Allow pop-ups to print the poster');
+  w.document.write(`<!doctype html><meta charset="utf-8"><title>Your account online</title>
+   <style>@page{size:A5;margin:12mm}body{font-family:Arial,sans-serif;text-align:center;color:#1c1214;margin:0}
+   .t{font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:#AE1E2B;font-weight:700;margin-top:6mm}
+   h1{font-size:30px;margin:6px 0 4px}p{font-size:16px;margin:6px 0;color:#444}
+   #q{display:inline-block;padding:10px;border:3px solid #AE1E2B;border-radius:14px;margin:8mm 0 4mm}
+   .u{font-size:24px;font-weight:800;letter-spacing:.02em}.s{margin-top:8mm;font-size:13px;color:#666}</style>
+   <div class="t">${escM(msgShop())}</div><h1>Check your account online</h1>
+   <p>What you owe, your bills and your payments — any time.</p>
+   <div id="q"></div><div class="u">${MY_LINK.replace('https://','')}</div>
+   <p>Scan the code, then sign in with your mobile number.<br>We text you a code — no password needed.</p>
+   <div class="s">${escM(msgPhone())}</div>`);
+  w.document.close();
+  qrLib().then(Q=>{ new Q(w.document.getElementById('q'),{text:MY_LINK,width:260,height:260,correctLevel:Q.CorrectLevel.M}); setTimeout(()=>{ w.focus(); w.print() },400) })
+    .catch(e=>{ w.document.getElementById('q').textContent=e.message });
+}
 function custPortalSet(c,on){
   c.portal=on;
   if(!on&&S.cportal&&S.cportal.session===c.id){S.cportal.session=null;S.cportal.err='The shop has switched this page off.'}
@@ -19166,7 +19233,7 @@ function customers(){
   const totOwed=all.reduce((a,x)=>a+Math.max(0,partyBal('C',x.id)),0);
   const nOver=all.filter(x=>partyBal('C',x.id)>x.limit).length, nLate=all.filter(x=>custAge(x.id).old>0).length;
   return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Customers
-    <span style="display:flex;gap:6px"><button class="btn ghost" data-act="cuLoginsAll" data-kind="C" title="Every customer gets a user name and a password of their own">Sign-ins for everyone</button>
+    <span style="display:flex;gap:6px"><button class="btn ghost" data-act="custPageLink" title="One link for every customer — copy it, send it on WhatsApp, or print the QR poster">Customer page link</button><button class="btn ghost" data-act="cuLoginsAll" data-kind="C" title="Every customer gets a user name and a password of their own">Sign-ins for everyone</button>
      <button class="btn tape" data-act="custNew">+ New customer <i class="kbd">Ctrl+N</i></button></span></h1>
   <div class="cu-wrap">
    <div class="card cu-list">
@@ -26114,6 +26181,7 @@ document.addEventListener('click',e=>{
       portalInvite(kind,kind==='S'?SU(id):C(id),true) },
     cuLoginsAgain:()=>{ custLogins={cid:0,kind:'C',list:null,busy:false,failed:''}; render() },
     cuLoginsAll:()=>custLoginsAll(a.dataset.kind||'C'),
+    custPageLink:()=>custPageLink(),
     csTick:()=>{ const i=+a.dataset.i, l=S.pos.lines[i]; if(!l) return;
       l.checked=!(l.checked===true); render(); },
     dmgNew:()=>damageModal(), dmgMove:()=>damageMoveModal(a.dataset.no),
