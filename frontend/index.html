@@ -4136,9 +4136,12 @@ function msgAudience(to){
   if((S.employees||[]).some(e=>phone9(e.phone)===p)||(S.users||[]).some(u=>phone9(u.phone)===p)) return 'staff';
   return 'customer';
 }
+/* the shop as messages name it: its name and number from Settings, and never a blank — a text went out
+   as ": your bill …" and "Thank you," with nothing under it when the name had been left empty */
+const msgShop=()=>String((CFG.shop&&CFG.shop.name)||'').trim().replace(/^REGAL HARDWARE$/,'Regal Hardware')||'Regal Hardware';
+const msgPhone=()=>String((CFG.shop&&(CFG.shop.phone||CFG.shop.land))||'').trim();
 function msgSignOff(){
-  const shop=CFG.shop.name.replace(/^REGAL HARDWARE$/,'Regal Hardware');
-  return String(CFG.msg.signOff??'Thank you,\n{shop}\n{phone}').replace(/\{shop\}/g,shop).replace(/\{phone\}/g,CFG.shop.phone||'').trim();
+  return String(CFG.msg.signOff??'Thank you,\n{shop}\n{phone}').replace(/\{shop\}/g,msgShop()).replace(/\{phone\}/g,msgPhone()).replace(/\n{2,}/g,'\n').trim();
 }
 /* open=true is a WhatsApp message left for the person at the counter to finish typing: it gets the
    greeting, and no sign-off under the place they are about to type. */
@@ -4148,6 +4151,7 @@ function letter(aud,body,open){
   const names=[CFG.shop.name,'Regal Hardware',S.web&&S.web.settings&&S.web.settings.name].filter(Boolean)
     .map(n=>String(n).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
   b=b.replace(new RegExp('^\\s*(?:'+names.join('|')+')(\\s+statement)?\\s*:\\s*','i'),(m,st)=>st?'Statement: ':'');
+  b=b.replace(/^\s*(?:\{shop\})?\s*[:\-–—]+\s*/,'');
   b=b.charAt(0).toUpperCase()+b.slice(1);
   const greet=String(CFG.msg[msgGreetKey(aud)]??(MSG_AUD.find(a=>a[0]===aud)||MSG_AUD[0])[2]).trim();
   if(open) return (greet?greet+'\n':'')+b;
@@ -5083,7 +5087,7 @@ function costWordProblem(){
 }
 function tpl(key,vars={}){
   let t=CFG.tpl[key]?CFG.tpl[key].text:'';
-  const all={shop:CFG.shop.name.replace(/^REGAL HARDWARE$/,'Regal Hardware'),phone:CFG.shop.phone,...vars};
+  const all={shop:msgShop(),phone:msgPhone(),...vars};
   const body=t.replace(/\{(\w+)\}/g,(m,k)=>all[k]!==undefined?all[k]:m);
   tpl.last={key,vars:all,body};                 // sms() looks at this to send the matching WhatsApp template too
   return body;
@@ -8659,6 +8663,13 @@ function applyKept(kept){
   (S.users||[]).forEach(u=>{ const p=String(u.pin||'');
     if(/^\d{4,6}$/.test(p)&&!u.pinHash){ hashPass('pin:'+p).then(h=>{ if(!u.pinHash){ u.pinHash=h; u.pinLen=p.length } delete u.pin; try{ persist(true) }catch(e){} }) }
     else if(u.pin!==undefined&&u.pinHash) delete u.pin });
+  if(CFG.msg&&!CFG.msg.lines2){
+    const core=(t)=>String(t||'').replace(/^\s*(?:\{shop\})?\s*(?:statement\s+)?[:\-–—]?\s*/i,'').replace(/\s+/g,' ').trim().toLowerCase();
+    Object.keys(CFG.tpl||{}).forEach(k=>{ const t=CFG.tpl[k]; if(!t||!TPL_ORIG[k]) return;
+      const was=core(t.text);
+      if([TPL_OLD_DEFAULT[k],TPL_ONELINE[k]].filter(Boolean).some(x=>core(x)===was)) t.text=TPL_ORIG[k].text });
+    CFG.msg.lines1=true; CFG.msg.lines2=true;
+  }
   if(CFG.msg&&!CFG.msg.lines1){
     Object.keys(CFG.tpl||{}).forEach(k=>{ const t=CFG.tpl[k]; if(t&&TPL_ORIG[k]&&TPL_ONELINE[k]===String(t.text||'')) t.text=TPL_ORIG[k].text });
     CFG.msg.lines1=true;
@@ -15421,7 +15432,7 @@ function printAnim(inv,k){
        <b>Printing ${k==='a5'?'the A5 bill':'the till receipt'}</b><span>${inv.no} · ${fmt(inv.total)}${inv.balance>0?' · '+fmt(inv.balance)+' on account':''}</span></div>`;
   document.body.appendChild(el);
   const done=()=>{ el.classList.add('out'); setTimeout(()=>el.remove(),260);
-    if(k==='sms'){ if(c.phone){ sms(c.phone,tpl('billLink',{no:inv.no,total:fmt(inv.total),link:inv.link})); toast(`e-bill texted to ${c.name}`) } else printBill(inv,'r80') }
+    if(k==='sms'){ if(c.phone){ sms(c.phone,tpl('billLink',{invoice:inv.no,total:fmt(inv.total),balancePart:inv.balance>0.005?'\nStill to pay: '+fmt(inv.balance):'',link:inv.link})); toast(`e-bill texted to ${c.name}`) } else printBill(inv,'r80') }
     else if(CFG.done.preview) showInvoice(inv,k); else printBill(inv,k) };   // straight to the printer unless a preview is asked for in Settings
   if(!CFG.done.printAnim){ el.remove(); return done() }
   setTimeout(done,(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)?50:(+CFG.done.animMs||1000)+50);
@@ -25893,7 +25904,7 @@ document.addEventListener('click',e=>{
     rcPrint:()=>{const s2=S.sales.find(x=>x.no===(RC.sel||'')); if(s2) showInvoice(s2,'r80')},
     rcSms:()=>{const s2=S.sales.find(x=>x.no===(RC.sel||'')); if(!s2)return; const c2=C(s2.customerId);
       if(!c2.phone)return toast('No mobile on file for them');
-      sms(c2.phone,tpl('billLink',{no:s2.no,total:fmt(s2.total),link:s2.link})); toast(`e-bill texted to ${c2.name}`)},
+      sms(c2.phone,tpl('billLink',{invoice:s2.no,total:fmt(s2.total),balancePart:s2.balance>0.005?'\nStill to pay: '+fmt(s2.balance):'',link:s2.link})); toast(`e-bill texted to ${c2.name}`)},
     csEdit:()=>csLineEdit(+a.dataset.i),        // the pencil opens the quantity and price as boxes in the row
     csRename:()=>csLineRename(+a.dataset.i),
     csEditMore:()=>{ csLineDone(false); csEditLine(+a.dataset.i) },
