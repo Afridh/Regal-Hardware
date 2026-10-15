@@ -58,7 +58,7 @@
   var same = function (a, b) { return a === b || JSON.stringify(a) === JSON.stringify(b); };
   var isObj = function (v) { return v && typeof v === 'object' && !Array.isArray(v); };
   function keyOf(arrs) {
-    var cand = ['id', 'no', 'code'];
+    var cand = ['id', 'no', 'code', 'name'];   // the staff list has no id: by name, or two saves at once kept both copies of a person
     for (var c = 0; c < cand.length; c++) {
       var k = cand[c], ok = true, any = false;
       for (var a = 0; a < arrs.length && ok; a++) {

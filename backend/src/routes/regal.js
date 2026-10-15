@@ -126,6 +126,29 @@ export const DEFAULT_ACCOUNTS = [
   { name: 'Sales4', role: 'Salesman', uid: 'S4', pass: 'Sales423', perms: ['products_view', 'dashboard_view', 'attendance_view'] }
 ];
 
+/* One record per person. Two tills that changed the same person at once could each keep their own copy
+   (the PIN added on one, "last signed in" on the other), and the staff list showed them twice — worse,
+   a sign-in could find the copy without the PIN. The copies are put back together: the one in use most
+   recently stands, and anything only the other one has (PIN, mobile, password, user code) is kept. */
+export function oneEachUser(list) {
+  const groups = new Map();
+  for (const u of list) { const k = String(u?.name || '').toLowerCase().trim(); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(u); }
+  const out = [];
+  for (const [, g] of groups) {
+    if (g.length === 1) { out.push(g[0]); continue; }
+    const rank = (u) => [u.active === false ? 0 : 1, String(u.lastSeen || ''), u.pinHash ? 1 : 0];
+    const best = g.slice().sort((a, b) => { const x = rank(a), y = rank(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] < y[i] ? 1 : -1; return 0; })[0];
+    const one = { ...best };
+    for (const o of g) {
+      if (o === best) continue;
+      if (!one.pinHash && o.pinHash) { one.pinHash = o.pinHash; one.pinLen = o.pinLen; }
+      for (const k of ['phone', 'passHash', 'uid', 'no', 'salesId', 'addedAt']) if ((one[k] === undefined || one[k] === '') && o[k] !== undefined && o[k] !== '') one[k] = o[k];
+    }
+    out.push(one);
+  }
+  return out;
+}
+
 export function sanitizeUsers(users, deletedUsers = []) {
   let list = Array.isArray(users) ? users : [];
   const delList = (Array.isArray(deletedUsers) ? deletedUsers : []).map(x => String(x || '').toLowerCase().trim());
@@ -168,7 +191,7 @@ export function sanitizeUsers(users, deletedUsers = []) {
     }
   }
 
-  return list;
+  return oneEachUser(list);
 }
 
 async function loadBooks(key = BOOKS_KEY) {

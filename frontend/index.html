@@ -8642,6 +8642,20 @@ function applyKept(kept){
   /* 14 Oct 2026: each message became a few short lines — Bill No:, Amount:, … — one fact to a line.
      Wording the shop never changed takes the new layout; wording it wrote itself is left alone. */
   /* 15 Oct 2026: a PIN is kept as a hash like a password (pinHash), never as the digits themselves */
+  /* one record per person (see oneEachUser on the server): copies made by two saves at once are put back together */
+  if(Array.isArray(S.users)){
+    const groups=new Map(); S.users.forEach(u=>{ const k=String((u&&u.name)||'').toLowerCase().trim(); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(u) });
+    if([...groups.values()].some(g=>g.length>1)){
+      const rank=(u)=>[u.active===false?0:1,String(u.lastSeen||''),u.pinHash?1:0];
+      S.users=[...groups.values()].map(g=>{ if(g.length===1) return g[0];
+        const best=g.slice().sort((a,b)=>{ const x=rank(a),y=rank(b); for(let i=0;i<x.length;i++) if(x[i]!==y[i]) return x[i]<y[i]?1:-1; return 0 })[0];
+        const one={...best};
+        g.forEach(o=>{ if(o===best) return; if(!one.pinHash&&o.pinHash){ one.pinHash=o.pinHash; one.pinLen=o.pinLen }
+          ['phone','passHash','uid','no','salesId','addedAt'].forEach(k=>{ if((one[k]===undefined||one[k]==='')&&o[k]!==undefined&&o[k]!=='') one[k]=o[k] }) });
+        return one });
+      try{ setTimeout(()=>persist(true),1500) }catch(e){}
+    }
+  }
   (S.users||[]).forEach(u=>{ const p=String(u.pin||'');
     if(/^\d{4,6}$/.test(p)&&!u.pinHash){ hashPass('pin:'+p).then(h=>{ if(!u.pinHash){ u.pinHash=h; u.pinLen=p.length } delete u.pin; try{ persist(true) }catch(e){} }) }
     else if(u.pin!==undefined&&u.pinHash) delete u.pin });
