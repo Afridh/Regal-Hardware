@@ -8,6 +8,7 @@ import { injectInbox as injectShopInbox, markImported as markShopImported, pendi
 import { injectSupplierInbox, markSupplierImported, pendingSupplierCount } from './supplier.js';
 import { injectCustInbox, markCustImported, pendingCustCount } from './customer.js';
 import { catchUpLogins } from '../services/portalLogins.js';
+import { stopIfTooMany, wrongTry, rightTry, pinLimits } from '../lib/tries.js';
 // everything that arrived from outside the tills — the website's orders, the suppliers', and what a
 // customer said on their own page — in one go
 // Each one on its own, and none of them allowed to fail the books: if an inbox cannot be read, the till
@@ -203,12 +204,16 @@ r.post('/books/login', asyncHandler(async (req, res) => {
 
   if (u) {
     if (u.active === false || u.canLogin === false) throw new HttpError(401, 'That name cannot sign in');
+    const passLimits = [['till:' + String(user).toLowerCase(), 8], ['tillip:' + req.ip, 40]];
+    stopIfTooMany(passLimits);
     const defAcc = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === String(user).toLowerCase());
     const isDefPass = defAcc && (!u.passHash || u.passHash === sha(defAcc.pass) || u.passHash === fnv(defAcc.pass)) && password === defAcc.pass;
     if (matches(u, password) || isDefPass || (fresh && isAdmin && password === adminPass)) {
       if (!u.passHash && defAcc) u.passHash = sha(defAcc.pass);
+      rightTry('till:' + String(user).toLowerCase());
       return res.json({ ok: true, token: sign(u), user: { name: u.name, role: u.role, perms: u.perms || [] } });
     }
+    wrongTry(passLimits);
     throw new HttpError(401, 'That password is not right');
   }
 
@@ -228,7 +233,36 @@ r.get('/books/me', regalAuth, (req, res) => res.json({ ok: true, user: req.regal
 /** Names + roles only, for the lock screen of a browser that has never opened the books. */
 r.get('/books/users', asyncHandler(async (_req, res) => {
   const users = await usersFromBooks();
-  res.json({ users: users.filter(u => u.active !== false && u.canLogin !== false).map(u => ({ name: u.name, role: u.role, uid: u.uid || 'AD', pin: u.pin ? true : false })) });
+  res.json({ users: users.filter(u => u.active !== false && u.canLogin !== false).map(u => ({ name: u.name, role: u.role, uid: u.uid || 'AD', pin: !!(u.pinHash || u.pin) })) });
+}));
+
+/* ---------------------------------------------------------------- user code + PIN (the lock screen)
+   A member of staff types their short user code (AF, S1 …), is welcomed by name, and keys a 4–6 digit
+   PIN. The PIN is kept as a hash in the books (pinHash, the same way as passwords, with "pin:" in
+   front so it never equals a password's), and wrong ones are counted per code and per address. */
+const pinUser = async (code) => {
+  const c = String(code || '').trim().toLowerCase();
+  if (!c || c.length > 12) return null;
+  return (await usersFromBooks()).find(u => u.active !== false && u.canLogin !== false && String(u.uid || '').toLowerCase() === c) || null;
+};
+const pinOk = (u, pin) => !!u?.pinHash && (u.pinHash === sha('pin:' + pin) || u.pinHash === fnv('pin:' + pin));
+
+/** Whose code is this — the name and role for the welcome, and how many digits their PIN has. */
+r.post('/books/pin-who', asyncHandler(async (req, res) => {
+  stopIfTooMany([['pinwho:' + req.ip, 60]]);
+  const u = await pinUser(req.body?.code);
+  if (!u) { wrongTry([['pinwho:' + req.ip, 60]]); throw new HttpError(404, 'There is no one with that user code'); }
+  res.json({ ok: true, name: u.name, role: u.role, uid: u.uid, pinLen: u.pinHash ? (+u.pinLen || 4) : 0 });
+}));
+
+r.post('/books/pin-login', asyncHandler(async (req, res) => {
+  const code = String(req.body?.code || '').trim(), pin = String(req.body?.pin || '').replace(/\D/g, '');
+  const limits = pinLimits(code, req.ip);
+  stopIfTooMany(limits);
+  const u = await pinUser(code);
+  if (!u || !pinOk(u, pin)) { wrongTry(limits); throw new HttpError(401, u && !u.pinHash ? 'No PIN is set for you yet — sign in with your password' : 'That PIN is not right'); }
+  rightTry('pin:' + code.toLowerCase()); rightTry('pinday:' + code.toLowerCase());
+  res.json({ ok: true, token: sign(u), user: { name: u.name, role: u.role, perms: u.perms || [] } });
 }));
 
 // ---------------------------------------------------------------- books document

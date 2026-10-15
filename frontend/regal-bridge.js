@@ -347,6 +347,19 @@
     startPolling();
     return { ok: true, user: j.user, bootstrap: !!j.bootstrap };
   }
+  /* the lock screen's user code and PIN: who the code is, then the PIN itself */
+  async function pinWho(code) {
+    var j = await call('POST', '/books/pin-who', { code: code });
+    return j.__status === 200 && j.ok ? { ok: true, name: j.name, role: j.role, uid: j.uid, pinLen: j.pinLen } : { ok: false, status: j.__status, error: j.error || 'Could not check that code' };
+  }
+  async function pinLogin(code, pin) {
+    var j = await call('POST', '/books/pin-login', { code: code, pin: pin });
+    if (j.__status !== 200 || !j.ok) return { ok: false, status: j.__status, error: j.error || 'Could not sign in' };
+    token = j.token; localStorage.setItem(TOKEN_KEY, token);
+    await pull(true);
+    startPolling();
+    return { ok: true, user: j.user };
+  }
   function onSignedOut() {
     stopPolling();
     badge('signed out of the server');
@@ -436,7 +449,7 @@
     localKeys: LOCAL_KEYS,
     token: function () { return token; },
     rev: function () { return rev; },
-    login: login, logout: logout, pull: pull, sms: sms, serverUsers: serverUsers,
+    login: login, pinWho: pinWho, pinLogin: pinLogin, logout: logout, pull: pull, sms: sms, serverUsers: serverUsers,
     setTerminal: function (t) { localStorage.setItem(TERMINAL_KEY, t); },
     terminal: function () { return localStorage.getItem(TERMINAL_KEY) || ''; }
   };
