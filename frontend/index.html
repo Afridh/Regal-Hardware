@@ -3782,6 +3782,28 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .cpl-link b{font-size:17px;overflow-wrap:anywhere}
 .cpl-btns{display:flex;flex-wrap:wrap;gap:8px}.cpl-btns .wa svg{width:16px;height:16px;vertical-align:-3px}
 .cpl-stat{font-size:13px;color:var(--muted)}
+.till-ret{color:#AE1E2B!important}
+.rt-modal .box{max-width:760px;width:min(760px,96vw)}
+.rt-find{width:100%;box-sizing:border-box;font-size:16px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
+.rt-list{display:grid;gap:6px;max-height:52vh;overflow:auto}
+.rt-bill{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card,#fff);font:inherit;color:inherit;cursor:pointer}
+.rt-bill:hover{border-color:var(--tape,#AE1E2B);background:var(--panel)}
+.rt-bill b{font-size:14.5px}.rt-bill .r{text-align:right;font-weight:700}.rt-bill small{color:var(--muted);font-size:12.5px}
+.rt-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;padding:10px 12px;border-radius:10px;background:var(--panel);margin-bottom:10px}
+.rt-tbl{width:100%;border-collapse:collapse;font-size:14px}.rt-tbl th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:6px 6px;border-bottom:1px solid var(--line)}
+.rt-tbl td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle}.rt-tbl .n{text-align:right;white-space:nowrap}
+.rt-tbl tr.on td{background:color-mix(in srgb,var(--tape,#AE1E2B) 6%,transparent)}
+.rt-step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.rt-step button{width:32px;height:32px;border:0;background:var(--panel);font:700 17px/1 inherit;cursor:pointer}
+.rt-step input{width:52px;height:32px;border:0;text-align:center;font:inherit;font-weight:700}
+.rt-how{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.rt-how label{display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
+.rt-how label.on{border-color:var(--tape,#AE1E2B);box-shadow:0 0 0 2px color-mix(in srgb,var(--tape,#AE1E2B) 18%,transparent)}
+.rt-how input{width:auto!important;flex:none;margin:3px 0 0;min-height:0}.rt-how label span{flex:1;text-align:left}.rt-how label{margin:0;font-weight:400;text-transform:none;letter-spacing:0;font-size:14px;color:inherit}
+.rt-how label.off{opacity:.5;cursor:not-allowed}.rt-how small{display:block;color:var(--muted);font-size:12px}
+.rt-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
+.rt-total{font:800 22px Archivo,sans-serif}
+@media (max-width:600px){.rt-how{grid-template-columns:1fr}.rt-tbl .hide-s{display:none}}
 .ph-findrow{display:flex;gap:8px}#main .ph-findrow input{flex:1;min-width:0}
 /* supplier price lists */
 .pl-drop{position:relative;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:16px 18px;margin-bottom:14px;border:2px dashed var(--line);border-radius:14px;background:var(--card,#fff);transition:border-color .15s,background .15s}
@@ -4314,7 +4336,7 @@ const billLinkFor=()=>{
   const a=new Uint8Array(8); (crypto&&crypto.getRandomValues?crypto:{getRandomValues:x=>x.forEach((_,i)=>x[i]=Math.floor(Math.random()*256))}).getRandomValues(a);
   return (CFG.shop.web||'regalhw.lk')+'/b/'+Array.from(a).map(n=>n.toString(36)).join('').slice(0,12);
 };
-function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.name,salesman=undefined,override=false,no=null}){
+function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.name,salesman=undefined,override=false,no=null,toAccount=false,returnOf=null,returnWhy=''}){
   if(window.privacyOn) throw new Error('Till is busy — try again in a moment');
   if(!lines.length) throw new Error('A bill needs at least one line');
   // a minus quantity is a return: the customer is handing goods back on this same bill
@@ -4356,6 +4378,15 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   const paid=pays.filter(p=>p.method!=='CREDIT').reduce((a,p)=>a+p.amount,0);
   let credit=+(total-paid).toFixed(2);
   if(credit>0.005 && !customerId) throw new Error('Credit sale needs a customer');
+  /* goods back taken off the customer's account (rather than cash handed back): it comes off what they
+     owe — the bill they came from first, then the oldest — and anything over what they owe is held as
+     their credit for the next bill, as an overpayment is */
+  let acct=null;
+  if(total<-0.005&&toAccount){
+    if(!customerId||customerId===1) throw new Error('Taking a return off an account needs the customer — or give the money back in cash');
+    const amt=+(-total).toFixed(2), owed=Math.max(0,partyBal('C',customerId)), onBills=+Math.min(amt,owed).toFixed(2);
+    acct={amt,onBills,adv:+(amt-onBills).toFixed(2)}; credit=0;
+  }
   lines.forEach(l=>{ if(l.qty<0) return;                      // a return goes back at what it was sold for
     const p=P(l.pid), net=(l.qty*l.price-(l.disc||0))/l.qty;
     if(net<p.cost-0.005&&!l.belowCost&&!override&&!(CFG.stock&&CFG.stock.allowBelowCost)) throw new Error(`${p.name} is under cost — an admin has to allow it`) });
@@ -4370,7 +4401,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   let usedCredit=0;
   if(credit>0.005&&customerId!==1){ const held=custCredit(customerId); usedCredit=+Math.min(held,credit).toFixed(2); if(usedCredit>0.005) credit=+(credit-usedCredit).toFixed(2) }
   const assignedSalesman = salesman !== undefined ? salesman : ((S.pos && S.pos.salesman) || null);
-  const inv={no:no||next('INV'),date,type:credit>0?'CREDIT':'CASH',customerId,lines:lines.map(l=>(isOpenLine(l)?{...l,cost:l.price,mrp:l.price,open:true}:{...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,loc:(S.locId||undefined),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}),link:billLinkFor(),serial:(S.serial=(((+S.serial)||((+(CFG.bill&&CFG.bill.serialStart))||0))+1))};
+  const inv={no:no||next('INV'),date,type:(credit>0||acct)?'CREDIT':'CASH',customerId,lines:lines.map(l=>(isOpenLine(l)?{...l,cost:l.price,mrp:l.price,open:true}:{...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,loc:(S.locId||undefined),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}),link:billLinkFor(),serial:(S.serial=(((+S.serial)||((+(CFG.bill&&CFG.bill.serialStart))||0))+1))};
   S.sales.push(inv);
   if(typeof BroadcastChannel !== 'undefined'){
     try { bcSend('sale_completed'); }catch(_){}
@@ -4383,9 +4414,19 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
     else if(p.method==='POINTS')jl.push({ac:'6110',dr:p.amount});          // points spent: the shop bears the cost
     else if(p.method==='VOUCHER')jl.push({ac:'2060',dr:p.amount}); }        // voucher spent: the liability comes down
   if(credit>0.005) jl.push({ac:'1100',dr:credit,party:{type:'C',id:customerId}});
+  if(returnOf) inv.returnOf=returnOf;
+  if(returnWhy) inv.returnWhy=returnWhy;
+  if(acct){ inv.toAccount=acct.amt;
+    if(acct.onBills>0.005) jl.push({ac:'1100',cr:acct.onBills,party:{type:'C',id:customerId}});
+    if(acct.adv>0.005){ jl.push({ac:'2050',cr:acct.adv,party:{type:'C',id:customerId}}); const ca=C(customerId); ca.advance=+((ca.advance||0)+acct.adv).toFixed(2) } }
   if(usedCredit>0.005){ jl.push({ac:'2050',dr:usedCredit,party:{type:'C',id:customerId}}); inv.paid=+(paid+usedCredit).toFixed(2); inv.usedCredit=usedCredit;
     const cc=C(customerId); cc.advance=+Math.max(0,(cc.advance||0)-usedCredit).toFixed(2); }
   post(date,(total<0?'Return ':'Sale ')+inv.no,inv.no,jl);
+  if(acct&&acct.onBills>0.005){ let rem=acct.onBills; inv.appliedTo=[];
+    const first=S.sales.filter(s=>s!==inv&&s.no===returnOf&&s.customerId===customerId&&s.balance>0.005);
+    const rest=S.sales.filter(s=>s!==inv&&s.customerId===customerId&&s.balance>0.005&&s.no!==returnOf).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    for(const s of [...first,...rest]){ const a=+Math.min(rem,s.balance).toFixed(2); if(a<=0) continue;
+      s.balance=+(s.balance-a).toFixed(2); s.paid=+((s.paid||0)+a).toFixed(2); inv.appliedTo.push({no:s.no,amount:a}); rem=+(rem-a).toFixed(2); if(rem<=0.005) break } }
   inv.lines.forEach(l=>{ if(l.serials&&l.serials.length) sellSerials(l.pid,l.serials,inv) });
   post(date,(total<0?'Goods back ':'COGS ')+inv.no,inv.no,[{ac:'5100',dr:+cogs.toFixed(2)},{ac:'1200',cr:+cogs.toFixed(2)}]);
   const c=C(customerId);
@@ -4395,7 +4436,11 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   if(overLimit) notify('warn',`${c.name} was let past their credit limit`,'customers');
   const v={invoice:inv.no,total:fmt(total),balance:fmt(credit),link:inv.link,
     customer:c?c.name:'Cash customer',outstanding:fmt(partyBal('C',(c||{}).id))};
-  if(c&&c.phone&&CFG.msg.autoBill) sms(c.phone, tpl(credit>0?'creditSale':'cashSale',v));
+  if(total<-0.005){ if(c&&c.id!==1&&c.phone&&CFG.msg.autoReturn!==false){
+      const items=inv.lines.filter(l=>l.qty<0).map(l=>`${fq(-l.qty)} × ${lineName(l)}`), shown=items.slice(0,4).join(', ')+(items.length>4?` and ${items.length-4} more`:'');
+      sms(c.phone,tpl('returnReceived',{return:inv.no,fromPart:returnOf?'\nFrom bill: '+returnOf:'',items:shown,amount:fmt(-total),
+        how:acct?'It has been taken off your account.':'It has been refunded to you in cash.',outstanding:fmt(Math.max(0,partyBal('C',c.id)))}),'customer') } }
+  else if(c&&c.phone&&CFG.msg.autoBill) sms(c.phone, tpl(credit>0?'creditSale':'cashSale',v));
   // a credit bill goes to a customer who keeps an email with us as the A5 invoice, in a PDF
   if(c&&c.id!==1&&credit>0.005&&isEmail(c.email)&&autoMailOn('autoInvoice')) setTimeout(()=>mailPaperAuto(invoiceMail(inv)),300);
 
@@ -5053,6 +5098,8 @@ const CFG={
     text:'We need a change to your order.\nChange: {reason}'},
   orderReceived:{label:'Goods received',vars:'{shop} {grn} {supplier}',
     text:'Your goods have been received.\nGRN No: {grn}'},
+  returnReceived:{label:'Goods returned',vars:'{shop} {return} {fromPart} {items} {amount} {how} {outstanding}',
+    text:'We have received the goods you returned.\nReturn No: {return}{fromPart}\nItems: {items}\nAmount: {amount}\n{how}\nBalance now: {outstanding}'},
   dailySummary:{label:'Owner summary at close',vars:'{sales} {cash} {credit} {expenses} {outstanding}',
     text:'Today\'s summary:\nSales: {sales}\nCash: {cash}\nCredit: {credit}\nExpenses: {expenses}\nCustomers owe: {outstanding}'}
  }
@@ -5094,7 +5141,7 @@ function costWordProblem(){
   return '';
 }
 function tpl(key,vars={}){
-  let t=CFG.tpl[key]?CFG.tpl[key].text:'';
+  let t=CFG.tpl[key]?CFG.tpl[key].text:((typeof TPL_ORIG!=='undefined'&&TPL_ORIG[key])?TPL_ORIG[key].text:'');
   const all={shop:msgShop(),phone:msgPhone(),...vars};
   const body=t.replace(/\{(\w+)\}/g,(m,k)=>all[k]!==undefined?all[k]:m);
   tpl.last={key,vars:all,body};                 // sms() looks at this to send the matching WhatsApp template too
@@ -5827,7 +5874,7 @@ function settings(){
 /* Settings → Messages → WhatsApp: the whole set-up on one screen, in the order Meta wants it done */
 function waSetup(fld){
   const m=CFG.msg, hook=location.origin+'/api/wa/webhook', std=WA_STD_TEMPLATES;
-  const tplKeys=[['cashSale','Cash bill after a sale'],['creditSale','Credit bill after a sale'],['ownerBill','Your own copy of a bill'],['billLink','Bill sent again'],['paymentReceived','Payment received'],['statement','Customer statement'],['portalInvite','Invite to their page'],['webOrder','Online order update']];
+  const tplKeys=[['cashSale','Cash bill after a sale'],['creditSale','Credit bill after a sale'],['ownerBill','Your own copy of a bill'],['billLink','Bill sent again'],['returnReceived','Goods returned'],['paymentReceived','Payment received'],['statement','Customer statement'],['portalInvite','Invite to their page'],['webOrder','Online order update']];
   const list=waTplList||[]; const approved=list.filter(t=>t.status==='APPROVED');
   return `<div class="wa-steps">
    <div class="wa-step"><b>1</b><div><b>Make the accounts</b><div class="muted">Business portfolio at <a href="https://business.facebook.com" target="_blank">business.facebook.com</a> → app at <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com</a> (type <i>Business</i>) → add the <b>WhatsApp</b> product. Verify the business under Security Centre (registration document + address).</div></div></div>
@@ -14390,6 +14437,7 @@ function pos(){
     </button>
     <button class="till-held ${heldAll.length?'has-held':''}" data-act="showHeld" title="The bills on hold — see what is on each and bring one back (F4)">HELD<i>F4</i>${heldAll.length?`<b>${heldAll.length}</b>`:''}</button>
     <button class="till-hold" data-act="hold" ${L.length?'':'disabled'} title="Put this bill aside, or make it a quotation (Ctrl+H)">HOLD<i>Ctrl+H</i></button>
+    <button class="till-hold till-ret" data-act="returnGoods" title="Goods coming back from a bill — off their account, or cash back">RETURN<i>bill</i></button>
     <button class="till-clear" data-act="csClear" ${L.length||S.pos.customer?'':'disabled'} title="Throw this bill away (Esc)">CLEAR<i>Esc</i></button>
    </div>
    <div class="card search">${e
@@ -14898,6 +14946,7 @@ function posPhone(){
      <button type="button" class="go" data-act="phPay" ${L.length?'':'disabled'}>Take payment</button>
      <div class="row2">
        <button type="button" data-act="phHold" ${L.length?'':'disabled'}>Hold</button>
+       <button type="button" data-act="returnGoods">Return</button>
        <button type="button" data-act="phQuote" ${L.length?'':'disabled'}>Quotation</button>
        <button type="button" data-act="phClear" ${L.length?'':'disabled'}>Clear</button>
      </div>
@@ -14981,6 +15030,7 @@ function posQuick(){
       <button class="btn ghost" data-act="pay" ${L.length?'':'disabled'}>Cheque / card / split</button>
       <button class="btn ghost" data-act="qDisc" ${L.length?'':'disabled'}>Bill discount</button>
       <button class="btn ghost" data-act="hold">Hold <i>Ctrl+H</i></button>
+      <button class="btn ghost" data-act="returnGoods">Return goods</button>
       <button class="btn ghost" data-act="showHeld">Held (F4)${(S.heldBills&&S.heldBills.length)?` [${S.heldBills.length}]`:''}</button>
       <button class="btn ghost" data-act="clear">Clear</button></div>
     </div>
@@ -15557,6 +15607,7 @@ function posClassic(){
    <div class="till-head">
     <button class="burger cs-burger" data-act="drawer" title="Menu">☰</button>
     <button class="till-hold" data-act="hold" ${L.length?'':'disabled'} title="Put this bill aside, or make it a quotation (F7, Ctrl+H)">HOLD<i>F7</i></button>
+    <button class="till-hold till-ret" data-act="returnGoods" title="Goods coming back from a bill — off their account, or cash back">RETURN<i>bill</i></button>
     <button class="till-clear" data-act="csClear" ${L.length||CS.pid||S.pos.customer?'':'disabled'} title="Throw this bill away (Esc)">CLEAR<i>Esc</i></button>
     <button class="till-held ${S.heldBills&&S.heldBills.length?'has-held':''}" data-act="showHeld" title="The bills on hold — see what is on each and bring one back (F5, Ctrl+R)">HELD<i>F5</i>${(S.heldBills&&S.heldBills.length)?`<b>${S.heldBills.length}</b>`:''}</button>
     <div class="till-who ${c.id===1?'':'named'}" data-act="pickCust" role="button" title="Change customer (F4)">
@@ -20647,6 +20698,104 @@ function browserPrint(inv,f='a5'){
   window.addEventListener('afterprint',()=>setTimeout(arm,300),{once:true});
   setTimeout(()=>{ try{ window.print() }catch(e){ done(); showInvoice(inv,f) } },60);
 }
+/* ==================== RETURNS: goods coming back from a bill ====================
+   Find the bill (its number, the customer, their mobile), tick what has come back and how many, say
+   why, and choose: off their account, or cash back. One press does the rest — the goods go back on the
+   floor at what they cost, the money comes off what they owe (that bill first, then the oldest) or out of
+   the drawer, a return bill is made that prints like any other, and the customer is texted that the
+   return was received. A line can never come back more than was sold on it, counting earlier returns. */
+const RET_WHY=['Damaged or faulty','Wrong item','Not needed','Bought too many','Other'];
+/* what has already come back of each line of a bill */
+function returnedFrom(inv){ const m={};
+  (S.sales||[]).forEach(s=>{ if(s.returnOf!==inv.no) return;
+    (s.lines||[]).forEach(l=>{ if(l.qty<0&&l.fromLine!==undefined) m[l.fromLine]=+((m[l.fromLine]||0)-l.qty).toFixed(3) }) });
+  return m }
+/* each line at what the customer actually paid: its own discount, and its share of the bill's */
+function paidEach(inv,l){ const net=(l.qty*l.price-(l.disc||0))/l.qty, f=(+inv.sub>0.005)?(+inv.total/+inv.sub):1; return +(net*f).toFixed(2) }
+function returnModal(no){
+  closeModals();
+  const m=modal(`<h2>Take a return</h2><div id="rtBody"></div>`); m.classList.add('rt-modal');
+  const body=m.querySelector('#rtBody');
+  const age=(d)=>Math.round((new Date(D(today)+'T00:00:00')-new Date(String(d).slice(0,10)+'T00:00:00'))/864e5);
+  /* ---- which bill ---- */
+  const pick=(q='')=>{
+    const qq=q.trim().toLowerCase();
+    const list=(S.sales||[]).filter(s=>+s.total>0.005).filter(s=>{ if(!qq) return true; const c=C(s.customerId)||{};
+        return String(s.no).toLowerCase().includes(qq)||String(c.name||'').toLowerCase().includes(qq)||String(c.phone||'').replace(/\D/g,'').includes(qq.replace(/\D/g,'')||'#') })
+      .slice(-400).reverse().slice(0,40);
+    body.innerHTML=`<div class="muted" style="margin-bottom:8px">Which bill are the goods from? Type its number, or the customer's name or mobile.</div>
+      <input class="rt-find" id="rtQ" value="${escM(q)}" placeholder="Bill number, customer or mobile…" autocomplete="off">
+      <div class="rt-list">${list.map(s=>{ const c=C(s.customerId)||{name:'Cash customer'}, back=Object.keys(returnedFrom(s)).length;
+        return `<button type="button" class="rt-bill" data-no="${escM(s.no)}"><span><b>${escM(s.no)}</b> · ${escM(c.name)}<br><small>${escM(s.date)} · ${(s.lines||[]).filter(l=>l.qty>0).length} line(s)${back?' · some already returned':''}${age(s.date)>(+CFG.bill.returnDays||7)?` · <b style="color:var(--chip-rust)">${age(s.date)} days old</b>`:''}</small></span>
+          <span class="r">${fmt(s.total)}<br><small>${s.balance>0.005?fmt(s.balance)+' owing':s.type==='CREDIT'?'on account · paid':'cash'}</small></span></button>` }).join('')
+        ||'<div class="muted" style="padding:16px">No bill matches that.</div>'}</div>
+      <div class="muted" style="font-size:12.5px;margin-top:10px">Goods back without the bill? Put the item on a new bill with a minus quantity, as before.</div>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button></div>`;
+    const qi=body.querySelector('#rtQ'); qi.focus(); qi.setSelectionRange(qi.value.length,qi.value.length);
+    qi.oninput=()=>pick(qi.value);
+    qi.onkeydown=e=>{ if(e.key==='Enter'){ const exact=(S.sales||[]).find(s=>String(s.no).toLowerCase()===qi.value.trim().toLowerCase()); const first=body.querySelector('.rt-bill'); if(exact) form(exact); else if(first) first.click() } };
+    body.querySelectorAll('.rt-bill').forEach(b=>b.onclick=()=>form(S.sales.find(s=>s.no===b.dataset.no)));
+  };
+  /* ---- what comes back ---- */
+  const form=(inv)=>{
+    if(!inv) return pick();
+    const c=C(inv.customerId)||C(1), named=c&&c.id!==1, done=returnedFrom(inv);
+    const rows=(inv.lines||[]).map((l,i)=>({l,i,left:+(l.qty-(done[i]||0)).toFixed(3),each:paidEach(inv,l)})).filter(r=>r.l.qty>0);
+    const q={}; rows.forEach(r=>q[r.i]=0);
+    let how=named&&(inv.type==='CREDIT'||partyBal('C',c.id)>0.005)?'account':'cash', why=RET_WHY[0], busy=false;
+    const total=()=>+rows.reduce((a,r)=>a+(q[r.i]||0)*r.each,0).toFixed(2);
+    const old=age(inv.date), win=+CFG.bill.returnDays||7;
+    const draw=()=>{
+      const t=total(), n=rows.filter(r=>q[r.i]>0).length;
+      body.innerHTML=`<div class="rt-head"><span><b>${escM(inv.no)}</b> · ${escM(inv.date)} · ${escM(named?c.name:'Cash customer')}</span>
+          <span class="muted">bill ${fmt(inv.total)}${inv.balance>0.005?' · '+fmt(inv.balance)+' still owing':''} · <a href="#" id="rtOther">another bill</a></span></div>
+        ${old>win?`<div class="card note" style="margin-bottom:10px;border-color:var(--chip-rust)">This bill is <b>${old} days</b> old — the shop takes returns within ${win} days. Go on only if you agree to it.</div>`:''}
+        <table class="rt-tbl"><tr><th>Item</th><th class="n hide-s">Sold</th><th class="n hide-s">Back already</th><th class="n">Coming back</th><th class="n">Each</th><th class="n">Amount</th></tr>
+         ${rows.map(r=>`<tr class="${q[r.i]>0?'on':''}"><td>${escM(lineName(r.l))}</td><td class="n hide-s">${fq(r.l.qty)}</td><td class="n hide-s">${done[r.i]?fq(done[r.i]):'—'}</td>
+           <td class="n">${r.left>0?`<span class="rt-step"><button type="button" data-d="-1" data-i="${r.i}">−</button><input data-q="${r.i}" value="${fq(q[r.i])}" inputmode="decimal"><button type="button" data-d="1" data-i="${r.i}">+</button></span>`:'<span class="muted">all back</span>'}</td>
+           <td class="n">${fmt(r.each)}</td><td class="n"><b>${q[r.i]>0?fmt(q[r.i]*r.each):''}</b></td></tr>`).join('')}</table>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+          <button type="button" class="btn ghost sm" id="rtAll">Everything left on the bill</button>
+          <label style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:13px">Why <select id="rtWhy">${RET_WHY.map(w=>`<option ${w===why?'selected':''}>${w}</option>`).join('')}</select></label></div>
+        <div class="rt-how">
+          <label class="${how==='account'?'on':''} ${named?'':'off'}"><input type="radio" name="rtHow" value="account" ${how==='account'?'checked':''} ${named?'':'disabled'}>
+            <span><b>Take it off their account</b><small>${named?`They owe ${fmt(Math.max(0,partyBal('C',c.id)))} now — this comes off it${inv.balance>0.005?', this bill first':''}`:'Only for a named customer'}</small></span></label>
+          <label class="${how==='cash'?'on':''}"><input type="radio" name="rtHow" value="cash" ${how==='cash'?'checked':''}>
+            <span><b>Give the money back</b><small>Cash out of the drawer</small></span></label></div>
+        <div class="rt-foot"><div><div class="muted" style="font-size:12.5px">${n?`${n} item${n===1?'':'s'} coming back`:'Nothing ticked yet'}${named&&c.phone&&CFG.msg.autoReturn!==false?' · they will be texted':''}</div>
+          <div class="rt-total">${fmt(t)}</div></div>
+          <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button>
+          <button class="btn tape" id="rtGo" ${t>0&&!busy?'':'disabled'}>${how==='account'?'Take it off the account':'Give it back in cash'}</button></div></div>
+        <div id="rtErr" style="color:var(--chip-rust);font-weight:600;min-height:18px;margin-top:6px"></div>`;
+      body.querySelector('#rtOther').onclick=e=>{ e.preventDefault(); pick() };
+      body.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.i, r=rows.find(x=>x.i===i); q[i]=Math.max(0,Math.min(r.left,+((q[i]||0)+(+b.dataset.d)).toFixed(3))); draw() });
+      body.querySelectorAll('[data-q]').forEach(inp=>inp.onchange=()=>{ const i=+inp.dataset.q, r=rows.find(x=>x.i===i); const v=+String(inp.value).replace(/[^\d.]/g,'')||0; q[i]=Math.max(0,Math.min(r.left,v)); draw() });
+      body.querySelector('#rtAll').onclick=()=>{ rows.forEach(r=>q[r.i]=r.left); draw() };
+      body.querySelector('#rtWhy').onchange=e=>{ why=e.target.value };
+      body.querySelectorAll('input[name="rtHow"]').forEach(r=>r.onchange=()=>{ how=r.value; draw() });
+      body.querySelector('#rtGo').onclick=go;
+    };
+    const go=()=>{
+      if(busy) return; const t=total(); if(!(t>0)) return;
+      const lines=rows.filter(r=>q[r.i]>0).map(r=>({pid:r.l.pid,qty:-q[r.i],price:r.each,disc:0,fromLine:r.i,
+        ...(r.l.name?{name:r.l.name}:{}),...(isOpenLine(r.l)?{open:true}:{})}));
+      const refund=+lines.reduce((a,l)=>a+l.qty*l.price,0).toFixed(2);
+      if(!confirm(`${how==='account'?`Take ${fmt(-refund)} off ${c.name}'s account`:`Give ${fmt(-refund)} back in cash`} for ${lines.length} item${lines.length===1?'':'s'} from ${inv.no}?`)) return;
+      busy=true;
+      try{
+        const r=completeSale({lines,customerId:inv.customerId||1,pays:how==='cash'?[{method:'CASH',amount:refund}]:[],
+          toAccount:how==='account',returnOf:inv.no,returnWhy:why,salesman:inv.salesman||null});
+        try{ persist(true) }catch(e){}
+        m.remove(); render();
+        toast(how==='account'?`${fmt(-refund)} taken off ${c.name}'s account — return ${r.no}`:`Give ${fmt(-refund)} back — return ${r.no}`,'ok');
+        notify('info',`${S.user.name} took a return of ${fmt(-refund)} on ${inv.no}${named?' from '+c.name:''} (${why.toLowerCase()})`,'bills');
+        setTimeout(()=>showInvoice(r),250);
+      }catch(e){ busy=false; const er=body.querySelector('#rtErr'); if(er) er.textContent=e.message||String(e) }
+    };
+    draw();
+  };
+  if(no) form((S.sales||[]).find(s=>s.no===no)); else pick();
+}
 function showInvoice(inv,f){
   window._shownBill=inv;
   let curF = f || (CFG.bill && CFG.bill.defaultFormat) || 'r80';
@@ -20676,6 +20825,7 @@ function showInvoice(inv,f){
      <div id="pvFmtWrap">${renderButtons()}</div>
      ${(can('cancelBill')||can('adjustInvoice'))&&!inv.proof?`<button class="btn sm" data-act="billEdit" data-no="${inv.no}">Edit in the till</button>
      <button class="btn ghost sm" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}
+     ${inv.total>0.005&&!inv.proof?`<button class="btn ghost sm" data-act="returnGoods" data-no="${inv.no}">Take a return</button>`:''}
      <button class="btn tape sm" id="pvPrintBtn" data-act="printNow" data-no="${inv.no}" data-f="${curF}">Print ↵</button>
      <button class="btn ghost sm" data-act="closeModal">Close Esc</button></div></div>
    <div id="pvBillBody" style="display:flex;justify-content:center;overflow-x:auto">${billHtml(inv,curF)}</div>
@@ -25806,6 +25956,7 @@ document.addEventListener('click',e=>{
       toast(`${p.name} saved${webHasOwn(p)?` · ${fmt(+p.webPrice)} on the site`:''}`) },
     siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
     phScan:()=>scanOpen(),
+    returnGoods:()=>returnModal(a.dataset.no||null),
     plPick:()=>{ const i=document.getElementById('plFile'); if(i) i.click() },
     plTab:()=>{ supTab='prices'; render() },
     plView:()=>{ const s=SU(+a.dataset.sid), p=plOf(s).find(x=>String(x.id)===a.dataset.id); if(p){ delete p.unread; closeModals(); plView(s,p); render() } },
