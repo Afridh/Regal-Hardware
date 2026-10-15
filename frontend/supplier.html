@@ -281,7 +281,7 @@ const st={token:ls.get('token',''),phone:ls.get('phone',''),rep:ls.get('rep','')
 let toastT; function toast(m){ let t=$('.toast'); if(!t){t=document.createElement('div');t.className='toast';document.body.appendChild(t)} t.textContent=m; clearTimeout(toastT); toastT=setTimeout(()=>t.remove(),3000) }
 async function api(path,opts={}){ const h={'Content-Type':'application/json'}; if(st.token) h.Authorization='Bearer '+st.token;
   const r=await fetch(API+path,{...opts,headers:h,body:opts.body?JSON.stringify(opts.body):undefined}); let j={}; try{ j=await r.json() }catch(e){}
-  if(r.status===401&&st.token&&!/^\/(otp|login)/.test(path)) signOut(false);
+  if(r.status===401&&st.token&&!/^\/(otp|login)/.test(path)){ signOut(false); if(/switched your page off/.test(j.error||'')){ render(); setTimeout(()=>toast(j.error),60) } }
   if(!r.ok) throw new Error(j.error||('Request failed ('+r.status+')')); return j }
 async function askToBePaid(){
   const picked=st.payPick||{}, nos=Object.keys(picked);

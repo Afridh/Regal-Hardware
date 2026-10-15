@@ -71,13 +71,32 @@ const otpOk = (phone, code) => [0, 1].some(back => otpFor(phone, Date.now() - ba
 const photoKey = id => crypto.createHmac('sha256', secret()).update('photo|' + id).digest('hex').slice(0, 20);
 export const photoUrl = id => `/api/sup/photo/${id}?k=${photoKey(id)}`;
 
-function supAuth(req, _res, next) {
+/* A supplier's page is open only while the shop has it switched on (Suppliers → their page → Switch on),
+   exactly as the till shows it: a supplier brought in from the old system starts switched off. It was
+   only the user-name sign-in that looked, and only for a page switched off by hand — a rep could still
+   sign in with their mobile, and stayed in after the shop switched the page off. Now both ways in look,
+   and every request after: within seconds of the switch, they are out. */
+const PAGE_CLOSED = 'The shop has switched your page off — give them a ring';
+const PAGE_NOT_OPEN = 'The shop has not opened this page for you yet — give them a ring';
+export const supPageOpen = (sup) => !!sup && sup.enabled === true && sup.active !== false;
+let openIds = null, openAt = 0, openP = null;
+async function pageOpenNow(sid) {
+  if (!openIds || Date.now() - openAt > 15000) {
+    if (!openP) openP = books().then(d => { openIds = new Set((d?.S?.suppliers || []).filter(supPageOpen).map(s => Number(s.id))); openAt = Date.now(); })
+      .catch(e => console.error('supplier pages not read', e.message)).finally(() => { openP = null; });
+    await openP;
+  }
+  return !openIds || openIds.has(Number(sid));      // the books not readable at all: let them be, rather than shut every supplier out
+}
+
+async function supAuth(req, _res, next) {
   try {
     const h = req.headers.authorization || '';
     const token = h.startsWith('Bearer ') ? h.slice(7) : null;
     if (!token) throw new HttpError(401, 'Sign in with your mobile first');
     const p = jwt.verify(token, secret());
     if (p.kind !== 'sup') throw new HttpError(401, 'Wrong kind of token');
+    if (!(await pageOpenNow(p.sid))) throw new HttpError(401, PAGE_CLOSED);
     req.sup = p; next();
   } catch (e) {
     if (e.name === 'JsonWebTokenError' || e.name === 'TokenExpiredError') return next(new HttpError(401, 'Please sign in again'));
@@ -237,6 +256,7 @@ r.post('/otp', asyncHandler(async (req, res) => {
   const data = await books();
   const sup = supplierByPhone(data?.S || {}, phone);
   if (!sup) throw new HttpError(404, 'That mobile is not on file for any supplier — ask the shop to add it to your account');
+  if (!supPageOpen(sup)) throw new HttpError(403, PAGE_NOT_OPEN);
   sendingCode(phone, req.ip);
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
@@ -253,6 +273,7 @@ r.post('/login', asyncHandler(async (req, res) => {
   const data = await books();
   const sup = supplierByPhone(data?.S || {}, phone);
   if (!sup) throw new HttpError(404, 'That mobile is not on file for any supplier');
+  if (!supPageOpen(sup)) throw new HttpError(403, PAGE_NOT_OPEN);
   // nobody is asked their name any more: it is the person on file for that mobile, else the supplier's contact
   const onFile = (await listLogins(LOGINS, sup.id).catch(() => [])).find(l => digits(l.phone).slice(-9) === phone.slice(-9) && l.name);
   const rep = (String(req.body?.rep || '').trim() || onFile?.name || sup.contact || '').slice(0, 60);
@@ -269,7 +290,7 @@ r.post('/signin', asyncHandler(async (req, res) => {
   const data = await books();
   const sup = (data?.S?.suppliers || []).find(s => s.id === l.owner);
   if (!sup) throw new HttpError(404, 'That supplier is no longer on file');
-  if (sup.enabled === false) throw new HttpError(403, 'The shop has closed this page — give them a ring');
+  if (!supPageOpen(sup)) throw new HttpError(403, sup.enabled === false ? PAGE_CLOSED : PAGE_NOT_OPEN);
   const rep = l.name || l.username;
   res.json({ ok: true, token: jwt.sign({ kind: 'sup', sid: sup.id, lid: Number(l.id), phone: digits(l.phone || sup.phone), rep }, secret(), { expiresIn: '30d' }),
     supplier: sup.name, sid: sup.id, rep });
