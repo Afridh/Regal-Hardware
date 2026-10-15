@@ -567,8 +567,13 @@ import { intlPhone, heldByTestMode } from '../lib/phone.js';   // and used right
    Only on a shop's own machine that has no way to text at all — never on the live site. Anyone can
    type anyone's mobile into the sign-in box, so handing the code straight back there would let a
    stranger read a customer's account. If the text cannot go, nobody gets in and they ring the shop. */
-export function mayRevealCode() {
-  return !(process.env.NODE_ENV === 'production' || process.env.VERCEL);
+/* With no text gateway a sign-in code can be shown on the page — for trying the system out on the
+   shop's own PC only. It needs SHOW_CODES=1 when the server is started, and the request must come
+   from the same machine; the live site never shows one, whatever it is set to. */
+export function mayRevealCode(req) {
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.SHOW_CODES !== '1') return false;
+  const ip = String(req?.socket?.remoteAddress || '');
+  return !req?.headers?.['x-forwarded-for'] && /^(::1|127\.|::ffff:127\.)/.test(ip);
 }
 
 /** Only these numbers get texts while the shop is trying the system out (Settings → Messaging → test mode). */

@@ -13,6 +13,7 @@ import { query, dbKind } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { sendViaProvider, regalAuth, mayRevealCode } from './regal.js';
 import { letter } from '../lib/letter.js';
+import { guardCode, guardPassword, sendingCode } from '../lib/tries.js';
 import { saveFile, ensure as ensureFiles } from './files.js';
 import { listLogins, findLogin, addLogin, setLogin, removeLogin, checkLogin, loginLine, cleanUser, passOk, suggestUser, inviteMany, startersFor, defaultLogin, resetToDefaults,
          askForLogin, myRequests, waitingRequests, waitingCount, acceptRequest, rejectRequest } from '../services/portalLogins.js';
@@ -236,18 +237,19 @@ r.post('/otp', asyncHandler(async (req, res) => {
   const data = await books();
   const sup = supplierByPhone(data?.S || {}, phone);
   if (!sup) throw new HttpError(404, 'That mobile is not on file for any supplier — ask the shop to add it to your account');
+  sendingCode(phone, req.ip);
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
-    try { await supSend(cfg, phone, letter(data?.CFG, 'supplier', `Your supplier sign-in code is ${code}.\nIt works for 5 minutes. Please do not share it.`)); return res.json({ ok: true, sent: true, name: sup.name }); }
+    try { await supSend(cfg, phone, letter(data?.CFG, 'supplier', `Your supplier sign-in code is ${code}.\nIt works for 5 minutes. Please do not share it.`)); return res.json({ ok: true, sent: true }); }
     catch (e) { console.error('sup otp sms failed', e.message); }
   }
-  res.json({ ok: true, sent: false, name: sup.name, ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });
+  res.json({ ok: true, sent: false, ...(mayRevealCode(req) ? { code } : { note: NO_TEXT }) });
 }));
 
 r.post('/login', asyncHandler(async (req, res) => {
   const phone = digits(req.body?.phone);
-  if (!otpOk(phone, req.body?.code)) throw new HttpError(401, 'That code is not right, or it has expired');
+  guardCode(phone, req.ip, () => otpOk(phone, req.body?.code));
   const data = await books();
   const sup = supplierByPhone(data?.S || {}, phone);
   if (!sup) throw new HttpError(404, 'That mobile is not on file for any supplier');
@@ -262,7 +264,7 @@ r.post('/login', asyncHandler(async (req, res) => {
    the one the shop set and the one the person has since chosen. */
 const LOGINS = 'sup_logins';
 r.post('/signin', asyncHandler(async (req, res) => {
-  const l = await checkLogin(LOGINS, req.body?.user, req.body?.password);
+  const l = await guardPassword(req.body?.user, req.ip, () => checkLogin(LOGINS, req.body?.user, req.body?.password));
   if (!l) throw new HttpError(401, 'That name and password do not match');
   const data = await books();
   const sup = (data?.S?.suppliers || []).find(s => s.id === l.owner);
@@ -280,6 +282,7 @@ r.post('/forgot', asyncHandler(async (req, res) => {
   const sup = (data?.S?.suppliers || []).find(s => s.id === l.owner);
   const phone = digits(l.phone || sup?.phone);
   if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'There is no mobile on that sign-in — ring the shop');
+  sendingCode(phone, req.ip);
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
@@ -287,7 +290,7 @@ r.post('/forgot', asyncHandler(async (req, res) => {
       return res.json({ ok: true, sent: true, phone: phone.replace(/^(\d{3})\d{4}(\d{3})$/, '$1••••$2') }); }
     catch (e) { console.error('sup forgot sms failed', e.message); }
   }
-  res.json({ ok: true, sent: false, phone, ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });
+  res.json({ ok: true, sent: false, phone: phone.replace(/^(\d{3})\d{4}(\d{3})$/, '$1••••$2'), ...(mayRevealCode(req) ? { code } : { note: NO_TEXT }) });
 }));
 
 r.post('/reset', asyncHandler(async (req, res) => {
@@ -297,7 +300,7 @@ r.post('/reset', asyncHandler(async (req, res) => {
   if (pass.length < 6) throw new HttpError(400, 'A password needs at least six characters');
   const data = await books();
   const sup = (data?.S?.suppliers || []).find(s => s.id === l.owner);
-  if (!otpOk(digits(l.phone || sup?.phone), req.body?.code)) throw new HttpError(401, 'That code is not right, or it has expired');
+  guardCode(digits(l.phone || sup?.phone), req.ip, () => otpOk(digits(l.phone || sup?.phone), req.body?.code));
   await setLogin(LOGINS, Number(l.id), l.owner, { ownPassword: pass });
   res.json({ ok: true });
 }));

@@ -18761,8 +18761,16 @@ function approvals(){
    Switching it on is the moment the shop hands someone the keys, so the system makes a sign-in for
    them if there is none and texts the address, the user name and the password in one message. Where
    people are already named on the account, their own sign-ins stand and only the address is sent. */
+/* A customer's own page: their account code and a random key of their own (cus-11-000005.k3x9q2ab).
+   The codes run in order, so without the key anybody could change the last digit and see whose page
+   it is; with it, a wrong or old address is just the plain sign-in. Made once, kept on the customer. */
+function myLink(c){
+  if(!c) return 'regalhw.lk/my';
+  if(!c.pkey){ const a=new Uint8Array(8); crypto.getRandomValues(a); c.pkey=[...a].map(x=>'abcdefghjkmnpqrstuvwxyz23456789'[x%31]).join('') }
+  return ('regalhw.lk/my/'+(c.code||'')+'.'+c.pkey).toLowerCase();
+}
 async function portalInvite(kind,who,on){
-  const link=(kind==='C'?'regalhw.lk/my/'+(who.code||''):'regalhw.lk/supplier').toLowerCase();
+  const link=kind==='C'?myLink(who):'regalhw.lk/supplier';
   const to=(who.phone||'').trim();
   if(!on||!to) return;
   const path=kind==='C'?'/api/my/admin/invite/':'/api/sup/admin/invite/';
@@ -19220,7 +19228,7 @@ async function loadCustLogins(cid,force,kind){
 }
 function custLoginsPanel(c,kind){
   kind=kind||'C';
-  const page=kind==='S'?'regalhw.lk/supplier':('regalhw.lk/my/'+(c.code||''));
+  const page=kind==='S'?'regalhw.lk/supplier':myLink(c);
   const on=kind==='S'?!!c.enabled:!!c.portal;
   const mine=(custLogins.cid===c.id&&custLogins.kind===kind&&custLogins.list)?custLogins.list:null;
   return `<div class="card" style="margin-top:12px" id="cuLogins">
@@ -19262,7 +19270,7 @@ function custLoginsPanel(c,kind){
 function custLoginModal(cid,kind){
   kind=kind||'C';
   const c=kind==='S'?SU(cid):C(cid);
-  const page=(kind==='S'?'regalhw.lk/supplier':'regalhw.lk/my/'+(c.code||'')).toLowerCase();
+  const page=(kind==='S'?'regalhw.lk/supplier':myLink(c));
   const m=modal(`<h2>Someone who signs in for ${c.name}</h2>
    <div class="muted" style="margin-bottom:10px">They will use this at ${page}.</div>
    <div class="grid2">
@@ -19299,7 +19307,7 @@ function sendLoginDetails(c,l,key,how,kind){
   const to=(l.phone||c.phone||'').trim();
   if(!to||!(how.sms||how.wa)) return false;
   const v={customer:c.name,who:l.name||l.username,user:l.username,pass:l.password,
-    link:(kind==='S'?'regalhw.lk/supplier':'regalhw.lk/my/'+(c.code||'')).toLowerCase()};
+    link:(kind==='S'?'regalhw.lk/supplier':myLink(c))};
   try{
     const aud=kind==='S'?'supplier':'customer';
     if(how.wa) wa(to,tpl(key,v),key,v,aud); else sms(to,tpl(key,v),aud);
@@ -19342,7 +19350,7 @@ function custLoginSend(cid,lid,kind){
   if(!to) return toast('No mobile for them — put one on the sign-in first','warn');
   const password=l.starter||('reg'+Math.random().toString(36).slice(2,8));
   const m=modal(`<h2>Send the sign-in to ${l.name||l.username}</h2>
-   <div class="hb-ask"><b>${to}</b><span>${(kind==='S'?'regalhw.lk/supplier':'regalhw.lk/my/'+(c.code||'')).toLowerCase()} · user name ${l.username}</span></div>
+   <div class="hb-ask"><b>${to}</b><span>${(kind==='S'?'regalhw.lk/supplier':myLink(c))} · user name ${l.username}</span></div>
    <div class="muted" style="margin:8px 0">${l.starter?'This is the password already on the sign-in — send it as it is, or type another.'
      :'A password they have changed cannot be read back, so this sets a new one and sends that.'} ${l.own?'The one they chose for themselves goes on working.':''}</div>
    <div class="f"><label>Password to send</label><input id="csndPw" value="${password}"></div>
@@ -19716,7 +19724,7 @@ function statement(id,mode){
   const owed=partyBal('C',id);
   if(mode==='sms'){
     if(!c.phone) return toast('No mobile number for '+c.name);
-    sms(c.phone,tpl('statement',{customer:c.name,count:open.length,outstanding:fmt(owed),link:'regalhw.lk/my/'+c.code.toLowerCase()}));
+    sms(c.phone,tpl('statement',{customer:c.name,count:open.length,outstanding:fmt(owed),link:myLink(c)}));
     render(); return toast('Statement texted to '+c.phone);
   }
   // the account over the period chosen on the Statement tab, with a running balance, then the unpaid bills
@@ -25280,7 +25288,7 @@ document.addEventListener('click',e=>{
     recVoucher:()=>{const rv=S.payments.find(x=>x.no===a.dataset.no); receiptVoucher(rv)},
     recRemind:()=>{const c=C(+a.dataset.id); if(!c.phone)return toast('No mobile number for '+c.name);
       sms(c.phone,tpl('statement',{customer:c.name,count:S.sales.filter(s=>s.customerId===c.id&&s.balance>0).length,
-        outstanding:fmt(partyBal('C',c.id)),link:'regalhw.lk/my/'+c.code.toLowerCase()}));
+        outstanding:fmt(partyBal('C',c.id)),link:myLink(c)}));
       render(); toast('Reminder texted to '+c.phone)},
     myProfile:()=>myProfileModal(),
     dashSync:async()=>{
@@ -25809,7 +25817,7 @@ document.addEventListener('click',e=>{
       const known=inv.phone||(c&&c.phone); if(known) return send(known);
       askNumber(inv,'whatsapp',send); },
     custWa:()=>{ const c=C(+a.dataset.id); if(!c||!c.phone) return toast('No mobile on file'); const owed=partyBal('C',c.id);
-      const v={customer:c.name,count:S.sales.filter(s=>s.customerId===c.id&&s.balance>0).length,outstanding:fmt(owed),link:'regalhw.lk/my/'+(c.code||'').toLowerCase()};
+      const v={customer:c.name,count:S.sales.filter(s=>s.customerId===c.id&&s.balance>0).length,outstanding:fmt(owed),link:myLink(c)};
       if(owed>0) wa(c.phone,tpl('statement',v),'statement',v); else wa(c.phone,''); render() },
     orderWa:()=>{ const o=S.web.orders.find(x=>x.no===a.dataset.no); if(!o) return; const c=C(o.cid); if(!c||!c.phone) return toast('No mobile on file');
       const st={placed:'we have it and will confirm shortly',accepted:'accepted — we are picking it now',picking:'being picked now',ready:o.deliver?'ready, the lorry will bring it':'ready to collect at the counter',despatched:'on the way to you',done:'delivered',collected:'collected',invoiced:'billed',rejected:'not accepted'+(o.note?' — '+o.note:''),cancelled:'cancelled'}[o.status]||o.status;

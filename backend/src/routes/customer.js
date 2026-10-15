@@ -10,6 +10,7 @@ import { query } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { sendViaProvider, regalAuth, mayRevealCode } from './regal.js';
 import { letter } from '../lib/letter.js';
+import { guardCode, guardPassword, sendingCode } from '../lib/tries.js';
 import { ensureLogins, inviteMany, startersFor, suggestUser, addLogin, setLogin, removeLogin, listLogins, findLogin, cleanUser, loginLine,
          askForLogin, myRequests, waitingRequests, waitingCount, acceptRequest, rejectRequest } from '../services/portalLogins.js';
 
@@ -54,8 +55,13 @@ async function books() {
   const { rows: [row] } = await query(`SELECT data FROM books WHERE key = 'regal'`);
   return row?.data || null;
 }
-/* who the page is for: the code in the address, and the mobile they type must be the one on file */
-const byCode = (S, code) => (S.customers || []).find(c => c.id !== 1 && norm(c.code) === norm(code) && c.active !== false);
+/* who the page is for: the code in the address, and the mobile they type must be the one on file.
+   The address is the account code and a random key the till keeps on the customer (cus-11-000005.k3x9q2ab):
+   the codes run in order, so the code alone would let anyone count through the accounts. */
+const splitLink = (v) => { const m = /^(.*)\.([a-z0-9]{6,})$/i.exec(String(v || '').trim()); return m ? { code: m[1], key: m[2].toLowerCase() } : { code: String(v || '').trim(), key: '' }; };
+const byCode = (S, code) => { const k = splitLink(code).code; return (S.customers || []).find(c => c.id !== 1 && norm(c.code) === norm(k) && c.active !== false); };
+const keyOk = (c, v) => { const key = splitLink(v).key, want = String(c?.pkey || '').toLowerCase();
+  return !!(key && want && key.length === want.length && crypto.timingSafeEqual(Buffer.from(key), Buffer.from(want))); };
 const byPhone = (S, phone) => (S.customers || []).filter(c => c.id !== 1 && digits(c.phone) === phone && c.active !== false);
 
 function otpFor(phone, when = Date.now()) {
@@ -111,11 +117,14 @@ export async function markCustImported(data) {
 }
 
 // ---------------------------------------------------------------- the page opens
-/** Who this page is for, before anyone signs in: just the name and a masked mobile. */
+/** Who this page is for, before anyone signs in: just the name and a masked mobile — and only when the
+    address carries that customer's key. Without it (an old link, or a number changed by hand) the page
+    is the plain sign-in, and says nothing about whether such an account exists. */
 r.get('/who/:code', asyncHandler(async (req, res) => {
   const data = await books();
   const c = byCode(data?.S || {}, req.params.code);
-  if (!c) throw new HttpError(404, 'That page does not belong to anyone');
+  if (!c || !keyOk(c, req.params.code)) return res.json({ ok: true, plain: true, name: null, phone: null, logins: 0, open: true,
+    shop: { name: data?.CFG?.shop?.name || 'Regal Hardware', phone: data?.CFG?.shop?.phone || '', addr: data?.CFG?.shop?.addr || '' } });
   await ensureCustTables();
   const { rows: [{ n }] } = await query(`SELECT count(*)::int AS n FROM cust_logins WHERE owner = $1 AND active`, [c.id]);
   res.json({ ok: true, name: c.name, phone: c.phone ? mask(c.phone) : null, logins: n,
@@ -129,10 +138,12 @@ r.post('/signin', asyncHandler(async (req, res) => {
   const user = cleanUser(req.body?.user), pass = String(req.body?.password || '');
   if (!user || !pass) throw new HttpError(400, 'Your user name and password, please');
   await ensureCustTables();
-  const { rows: [l] } = await query(`SELECT * FROM cust_logins WHERE lower(username) = $1`, [user]);
-  await new Promise(r2 => setTimeout(r2, 250));                       // slow down guessing
-  if (!l || !l.active) throw new HttpError(401, 'That name and password do not match');
-  if (!(await hashOk(pass, l.own_hash)) && !(await hashOk(pass, l.admin_hash))) throw new HttpError(401, 'That name and password do not match');
+  const l = await guardPassword(user, req.ip, async () => {
+    const { rows: [x] } = await query(`SELECT * FROM cust_logins WHERE lower(username) = $1`, [user]);
+    await new Promise(r2 => setTimeout(r2, 250));                     // slow down guessing
+    return x && x.active && ((await hashOk(pass, x.own_hash)) || (await hashOk(pass, x.admin_hash))) ? x : null;
+  });
+  if (!l) throw new HttpError(401, 'That name and password do not match');
   const data = await books();
   const c = (data?.S?.customers || []).find(x => x.id === l.owner);
   if (!c) throw new HttpError(404, 'That account is no longer on file');
@@ -152,6 +163,7 @@ r.post('/forgot', asyncHandler(async (req, res) => {
   const c = (data?.S?.customers || []).find(x => x.id === l.owner);
   const phone = digits(l.phone || c?.phone);
   if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'There is no mobile on that sign-in — ring the shop and they will set it');
+  sendingCode(phone, req.ip);
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
@@ -159,7 +171,7 @@ r.post('/forgot', asyncHandler(async (req, res) => {
       return res.json({ ok: true, sent: true, phone: mask(phone) }); }
     catch (e) { console.error('cust forgot sms failed', e.message); }
   }
-  res.json({ ok: true, sent: false, phone: mask(phone), ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });
+  res.json({ ok: true, sent: false, phone: mask(phone), ...(mayRevealCode(req) ? { code } : { note: NO_TEXT }) });
 }));
 
 /** The code from that text, and the password they want from now on. The shop's one still works. */
@@ -172,7 +184,7 @@ r.post('/reset', asyncHandler(async (req, res) => {
   const data = await books();
   const c = (data?.S?.customers || []).find(x => x.id === l.owner);
   const phone = digits(l.phone || c?.phone);
-  if (!otpOk(phone, req.body?.code)) throw new HttpError(401, 'That code is not right, or it has expired');
+  guardCode(phone, req.ip, () => otpOk(phone, req.body?.code));
   await query(`UPDATE cust_logins SET own_hash = $2, starter = NULL WHERE id = $1`, [l.id, await hash(pass)]);
   res.json({ ok: true });
 }));
@@ -183,25 +195,26 @@ r.post('/otp', asyncHandler(async (req, res) => {
   const data = await books();
   const S = data?.S || {};
   const list = byPhone(S, phone);
-  const c = req.body?.code ? list.find(x => norm(x.code) === norm(req.body.code)) || byCode(S, req.body.code) : list[0];
+  const c = req.body?.code ? list.find(x => norm(x.code) === norm(splitLink(req.body.code).code)) || byCode(S, req.body.code) : list[0];
   if (!c || digits(c.phone) !== phone) throw new HttpError(404, 'That mobile is not the one the shop has for this account');
   if (c.portal === false) throw new HttpError(403, 'The shop has not opened this page for you yet — give them a ring');
+  sendingCode(phone, req.ip);
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
   if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
-    try { await sendViaProvider(cfg, phone, letter(data?.CFG, 'customer', `Your sign-in code is ${code}.\nIt works for 5 minutes. Please do not share it.`)); return res.json({ ok: true, sent: true, name: c.name }); }
+    try { await sendViaProvider(cfg, phone, letter(data?.CFG, 'customer', `Your sign-in code is ${code}.\nIt works for 5 minutes. Please do not share it.`)); return res.json({ ok: true, sent: true }); }
     catch (e) { console.error('cust otp sms failed', e.message); }
   }
-  res.json({ ok: true, sent: false, name: c.name, ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });
+  res.json({ ok: true, sent: false, ...(mayRevealCode(req) ? { code } : { note: NO_TEXT }) });
 }));
 
 r.post('/login', asyncHandler(async (req, res) => {
   const phone = digits(req.body?.phone);
-  if (!otpOk(phone, req.body?.code)) throw new HttpError(401, 'That code is not right, or it has expired');
+  guardCode(phone, req.ip, () => otpOk(phone, req.body?.code));
   const data = await books();
   const S = data?.S || {};
   const list = byPhone(S, phone);
-  const c = req.body?.acc ? list.find(x => norm(x.code) === norm(req.body.acc)) || list[0] : list[0];
+  const c = req.body?.acc ? list.find(x => norm(x.code) === norm(splitLink(req.body.acc).code)) || list[0] : list[0];
   if (!c) throw new HttpError(404, 'That mobile is not on file');
   res.json({ ok: true, token: jwt.sign({ kind: 'cust', cid: c.id, phone }, secret(), { expiresIn: '30d' }), name: c.name, code: c.code });
 }));
@@ -351,10 +364,10 @@ r.post('/admin/team/:id/accept', regalAuth, asyncHandler(async (req, res) => {
     const data = await books();
     const shop = data?.CFG?.shop?.name || 'Regal Hardware';
     const c = (data?.S?.customers || []).find(x => x.id === made.request.owner);
-    const link = 'regalhw.lk/my/' + String(c?.code || '').toLowerCase();
+    const link = ('regalhw.lk/my/' + String(c?.code || '') + (c?.pkey ? '.' + c.pkey : '')).toLowerCase();
     try {
-      sent = await sendViaProvider(data?.CFG?.msg,  made.request.phone,
-        `${shop}: your sign-in for ${link} — user ${made.username}, password ${made.password}`);
+      sent = await sendViaProvider(data?.CFG?.msg,  made.request.phone, letter(data?.CFG, 'customer',
+        `Your sign-in for ${c?.name || shop} is ready.\nLink: ${link}\nUser name: ${made.username}\nPassword: ${made.password}\nPlease change the password once you are in.`));
     } catch (e) { sent = { ok: false, status: e.message } }
   }
   res.json({ ok: true, login: loginLine(made.login), username: made.username, password: made.password, sent });

@@ -13,6 +13,7 @@ import crypto from 'node:crypto';
 import { query } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { letter } from '../lib/letter.js';
+import { guardCode, guardPassword, sendingCode } from '../lib/tries.js';
 import { sendViaProvider, regalAuth, mayRevealCode } from './regal.js';
 
 const r = Router();
@@ -310,6 +311,7 @@ r.post('/otp', asyncHandler(async (req, res) => {
   const phone = digits(req.body?.phone);
   if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'Enter a mobile like 0771234567');
   if (await isBlocked(phone)) throw new HttpError(403, PAUSED);
+  sendingCode(phone, req.ip);
   const code = otpFor(phone);
   const data = await books();
   const cfg = data?.CFG?.msg;
@@ -319,13 +321,13 @@ r.post('/otp', asyncHandler(async (req, res) => {
     catch (e) { console.error('shop otp sms failed', e.message); }
   }
   // the code only comes back on a shop's own machine with no gateway — never on the live site
-  res.json({ ok: true, sent: false, ...(mayRevealCode() ? { code } : { note: NO_TEXT }) });
+  res.json({ ok: true, sent: false, ...(mayRevealCode(req) ? { code } : { note: NO_TEXT }) });
 }));
 
 /** Step 2: the code, plus a name if we have not met this customer before. */
 r.post('/login', asyncHandler(async (req, res) => {
   const phone = digits(req.body?.phone);
-  if (!otpOk(phone, req.body?.code)) throw new HttpError(401, 'That code is not right, or it has expired');
+  guardCode(phone, req.ip, () => otpOk(phone, req.body?.code));
   if (await isBlocked(phone)) throw new HttpError(403, PAUSED);
   const data = await books();
   const known = (data?.S?.customers || []).find(x => digits(x.phone) === phone);
