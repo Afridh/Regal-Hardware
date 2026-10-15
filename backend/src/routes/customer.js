@@ -367,7 +367,7 @@ r.post('/admin/team/:id/accept', regalAuth, asyncHandler(async (req, res) => {
     const link = ('regalhw.lk/my/' + String(c?.code || '') + (c?.pkey ? '.' + c.pkey : '')).toLowerCase();
     try {
       sent = await sendViaProvider(data?.CFG?.msg,  made.request.phone, letter(data?.CFG, 'customer',
-        `Your sign-in for ${c?.name || shop} is ready.\nLink: ${link}\nUser name: ${made.username}\nPassword: ${made.password}\nPlease change the password once you are in.`));
+        `Your sign-in for ${c?.name || shop} is ready.\n\nLink: ${link}\nUser name: ${made.username}\nPassword: ${made.password}\n\nPlease change the password once you are in.`));
     } catch (e) { sent = { ok: false, status: e.message } }
   }
   res.json({ ok: true, login: loginLine(made.login), username: made.username, password: made.password, sent });

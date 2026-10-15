@@ -357,8 +357,8 @@ r.post('/admin/team/:id/accept', regalAuth, asyncHandler(async (req, res) => {
     const data = await books();
     const shop = data?.CFG?.shop?.name || 'Regal Hardware';
     try {
-      sent = await supSend(data?.CFG?.msg, made.request.phone,
-        `${shop}: your sign-in for regalhw.lk/supplier — user ${made.username}, password ${made.password}`);
+      sent = await supSend(data?.CFG?.msg, made.request.phone, letter(data?.CFG, 'supplier',
+        `Your sign-in for ${shop} is ready.\n\nLink: regalhw.lk/supplier\nUser name: ${made.username}\nPassword: ${made.password}\n\nPlease change the password once you are in.`));
     } catch (e) { sent = { ok: false, status: e.message } }
   }
   res.json({ ok: true, login: loginLine(made.login), username: made.username, password: made.password, sent });
