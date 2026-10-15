@@ -251,7 +251,9 @@ r.post('/login', asyncHandler(async (req, res) => {
   const data = await books();
   const sup = supplierByPhone(data?.S || {}, phone);
   if (!sup) throw new HttpError(404, 'That mobile is not on file for any supplier');
-  const rep = String(req.body?.rep || '').trim().slice(0, 60);
+  // nobody is asked their name any more: it is the person on file for that mobile, else the supplier's contact
+  const onFile = (await listLogins(LOGINS, sup.id).catch(() => [])).find(l => digits(l.phone).slice(-9) === phone.slice(-9) && l.name);
+  const rep = (String(req.body?.rep || '').trim() || onFile?.name || sup.contact || '').slice(0, 60);
   res.json({ ok: true, token: jwt.sign({ kind: 'sup', sid: sup.id, phone, rep }, secret(), { expiresIn: '30d' }), supplier: sup.name, sid: sup.id, rep });
 }));
 
