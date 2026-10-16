@@ -3783,6 +3783,7 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .cpl-btns{display:flex;flex-wrap:wrap;gap:8px}.cpl-btns .wa svg{width:16px;height:16px;vertical-align:-3px}
 .cpl-stat{font-size:13px;color:var(--muted)}
 .till-ret{color:#AE1E2B!important}
+.bk-list{display:grid;gap:10px}.bk-list .card{margin:0}.bk-card{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .cb-accts{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:12px}.cb-accts .card{margin:0}
 .cb-acct-h{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
 .cb-big{font:800 30px Archivo,sans-serif;margin:6px 0 2px}.cb-big small{font:600 13px 'IBM Plex Sans',sans-serif;color:var(--muted)}
@@ -5504,7 +5505,7 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
 function settingsTabs(){
-  return [['screen','My screen'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messages'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  return [['screen','My screen'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messages'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['banks','Bank accounts'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
 }
 function settings(){
   const tabs=settingsTabs();
@@ -5897,6 +5898,7 @@ function settings(){
        published, and nobody else can add it. Copy the skill id into the box above. The four things it
        understands are: how many of something, what something costs, the money questions, and what is
        waiting.</div></div>` }
+  if(setTab==='banks') body=bankSettings();
   if(setTab==='buying'){ const bc=CFG.buying||{};
     body=`<div class="card note" style="margin-bottom:10px"><b>How goods are allowed in</b>
       <div class="muted">There are three ways a lorry can be taken in. Entering it item by item is always
@@ -5953,7 +5955,7 @@ function settings(){
     shop:['Name, address and phones as printed','M3 9l2-5h14l2 5M4 9h16v11H4zM9 20v-6h6v6'],bill:['Numbering, formats and the return window',ICONS.bills],layout:['Logo, lines and text size on the bill',ICONS.docs],
     cost:['The code that hides cost on labels',ICONS.labels],msg:['How texts read, their wording, and who gets them',ICONS.messages],
     shift:['The Shift Board, the fingerprint machine and pay','M12 7v5l3 2M12 3a9 9 0 110 18 9 9 0 010-18z'],
-    approvals:['What needs the owner’s nod',ICONS.approvals],buying:['How goods are allowed in',ICONS.purchases],alexa:['What the Echo may say out loud',ICONS.messages],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
+    approvals:['What needs the owner’s nod',ICONS.approvals],buying:['How goods are allowed in',ICONS.purchases],banks:['Accounts, cheque numbers, balances',ICONS.chequesOut],alexa:['What the Echo may say out loud',ICONS.messages],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
   if(!_setIndexing){
     const searching=setSearch.trim().length>=2;
     body=settingsSearchBox()+(searching?'':body);
@@ -11506,6 +11508,7 @@ function motionAfter(moved){
 
 let _rendering=false, _lastRenderView=null;
 function render(){
+  syncBankNames();
   if(_rendering) return;
   const wasView=_lastRenderView;                    // renderNow moves it on, so it is taken first
   _rendering=true;
@@ -23858,6 +23861,55 @@ function depositSlip(list,bankId,date){
     thirdSign:'BANK STAMP'});
 }
 
+/* ---- the shop's bank accounts ----
+   Each account has a ledger line of its own (1020 onwards), so its balance, the cheques written on
+   it and the money banked into it all stay apart. The ledger line carries the account's own name. */
+function syncBankNames(){ for(const b of (S.banks||[])) if(b.ac&&b.name) GL[b.ac]=b.name }
+function bankFreeAc(){ const used=new Set(S.banks.map(b=>b.ac)); for(let n=1020;n<1100;n++){ const k=String(n); if(k==='1030') continue; if(!used.has(k)&&!(S.journal||[]).some(j=>j.lines.some(l=>l.ac===k))) return k } throw new Error('No ledger number left for another account') }
+const bankUsed=(b)=>(S.journal||[]).some(j=>j.lines.some(l=>l.ac===b.ac))||(S.cheques||[]).some(c=>c.bankId===b.id||c.depositTo===b.id)||(typeof chqBooks==='function'&&chqBooks().some(k=>k.bankId===b.id));
+function bankSettings(){
+  syncBankNames();
+  return `<div class="muted" style="margin-bottom:12px">The accounts the shop banks into and writes cheques on. Each one keeps its own balance in the books, its own cheques and its own cheque books.</div>
+   <div class="bk-list">${S.banks.map(b=>{ const books=typeof cbBooksOf==='function'?cbBooksOf(b.id).length:0;
+     return `<div class="card bk-card"><div><b>${esA(b.name)}</b><div class="muted">${esA(b.no||'no account number')}${b.holder?' · '+esA(b.holder):''}</div>
+       <div class="muted" style="margin-top:4px">Balance in the books <b>${fmt(bal(b.ac))}</b> · next cheque ${typeof chqNextLabel==='function'?chqNextLabel(b):String(b.nextChq||1).padStart(6,'0')}${books?` · ${books} cheque book${books===1?'':'s'}`:''}</div></div>
+       <div class="rowacts"><button class="btn ghost sm" data-act="bkEdit" data-id="${b.id}">Change</button>${bankUsed(b)?'':`<button class="btn ghost sm" data-act="bkDel" data-id="${b.id}">Remove</button>`}</div></div>` }).join('')
+     ||'<div class="muted" style="padding:10px 0">No bank accounts yet.</div>'}</div>
+   <button class="btn tape" data-act="bkEdit" style="margin-top:10px">Add a bank account</button>`;
+}
+function bankModal(id){
+  const b=id?B(id):null;
+  const m=modal(`<h2>${b?'Change '+esA(b.name):'A new bank account'}</h2>
+   <div class="grid2" style="margin-top:6px">
+    <div class="f"><label>Bank and branch</label><input id="bkName" value="${esA(b?b.name:'')}" placeholder="e.g. Commercial Bank Polonnaruwa"></div>
+    <div class="f"><label>Account number</label><input id="bkNo" value="${esA(b?b.no:'')}" placeholder="e.g. 8012345678"></div>
+    <div class="f"><label>Account name (optional)</label><input id="bkHolder" value="${esA(b?b.holder||'':'')}" placeholder="e.g. Regal Hardware"></div>
+    <div class="f"><label>Next cheque number</label><input id="bkChq" inputmode="numeric" value="${b?String(b.nextChq||'').padStart(6,'0'):''}" placeholder="from the cheque book"><div class="muted">Once a cheque book is entered for it, the book decides.</div></div>
+    ${b?'':`<div class="f"><label>Money in the account today (optional)</label><input id="bkOpen" type="number" step="any" placeholder="0.00"><div class="muted">Goes into the books as the opening balance.</div></div>`}</div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="bkOk">${b?'Save':'Add the account'}</button></div>`);
+  const q=(s)=>m.querySelector(s);
+  q('#bkOk').onclick=()=>{
+    const name=q('#bkName').value.trim().replace(/\s+/g,' '), no=q('#bkNo').value.trim(), holder=q('#bkHolder').value.trim(), chq=q('#bkChq').value.replace(/\D/g,'');
+    if(name.length<3) return toast('Which bank and branch?');
+    if(S.banks.some(x=>x!==b&&x.name.toLowerCase()===name.toLowerCase())) return toast('There is already an account called '+name);
+    if(no&&S.banks.some(x=>x!==b&&String(x.no).replace(/\D/g,'')===no.replace(/\D/g,'')&&no.replace(/\D/g,''))) return toast('That account number is already on the list');
+    if(b){ const old=b.name; b.name=name; b.no=no; b.holder=holder; if(chq) b.nextChq=+chq;
+      if(old!==name) (S.cheques||[]).forEach(c=>{ if(c.bankId===b.id&&c.bank===old) c.bank=name });
+      syncBankNames(); m.remove(); persist(true); render(); return toast('Saved') }
+    let ac; try{ ac=bankFreeAc() }catch(e){ return toast(e.message) }
+    const nb={id:Math.max(0,...S.banks.map(x=>+x.id||0))+1,name,ac,no,holder,nextChq:+chq||1};
+    S.banks.push(nb); syncBankNames();
+    const open=+(q('#bkOpen')||{}).value||0;
+    if(open) post(D(today),`Opening balance — ${name}`,'OPEN-'+ac,open>0?[{ac,dr:open},{ac:'3100',cr:open}]:[{ac:'3100',dr:-open},{ac,cr:-open}]);
+    m.remove(); persist(true); render(); toast(`${name} added`,'ok');
+  };
+}
+function bankDelete(id){ const b=B(id); if(!b) return;
+  if(bankUsed(b)) return toast(`${b.name} has money or cheques on it, so it stays — you can change its name and number`);
+  if(!confirm(`Remove ${b.name}?`)) return;
+  S.banks=S.banks.filter(x=>x!==b); persist(true); render(); toast('Removed') }
+
 /* ---- cheque books ----
    Each book the bank hands over is entered once: the account and its first and last leaf. Every leaf
    then has a story — still blank, written (to whom, how much, and whether it cleared), spoilt, voided
@@ -23900,7 +23952,7 @@ function chqTake(b){
 const chqNextLabel=(b)=>{ const nx=cbNextN(b.id,1)[0]; return nx?nx:cbBooksOf(b.id).length?'none left':String(b.nextChq).padStart(6,'0') };
 
 function cbNewModal(){
-  if(!S.banks.length) return toast('Add the bank accounts first, in Settings');
+  if(!S.banks.length) return toast('Add the bank accounts first, in Settings → Bank accounts');
   const m=modal(`<h2>A new cheque book</h2>
    <div class="muted">The first and last cheque numbers are printed on the book's cover and on the first and last leaf.</div>
    <div class="grid2" style="margin-top:10px">
@@ -23935,7 +23987,7 @@ function cbNewModal(){
 const CB_FOR=()=>[['1010','Cash for the shop (self)'],['1300','Advance to a staff member'],['2200','Salaries'],['3100','Taken by the owner'],
   ...Object.keys(GL).filter(k=>k.startsWith('6')&&k!=='6095').map(k=>[k,GL[k]])];
 function cbWriteModal(bankId,no){
-  const b0=B(bankId||(S.banks[0]||{}).id); if(!b0) return toast('Add the bank accounts first, in Settings');
+  const b0=B(bankId||(S.banks[0]||{}).id); if(!b0) return toast('Add the bank accounts first, in Settings → Bank accounts');
   const m=modal(`<h2>Write a cheque</h2>
    <div class="muted">For anything other than paying a supplier — those go through the supplier's Pay button, which takes the next leaf itself.</div>
    <div class="grid2" style="margin-top:10px">
@@ -24069,9 +24121,10 @@ function chqBooksPage(){
    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
     <button class="btn tape" data-act="cbNew">Receive a cheque book</button>
     <button class="btn ghost" data-act="cbWrite">Write a cheque</button>
+    <button class="btn ghost" data-act="bkGo">Bank accounts</button>
     <div class="f" style="margin:0 0 0 auto;min-width:240px"><input id="cbQ" value="${esA(CB.q)}" inputmode="numeric" placeholder="Find a cheque number — what happened to it?"></div></div>
    ${found}
-   <div class="cb-accts">${accts||'<div class="muted">No bank accounts yet — add them in Settings.</div>'}</div>
+   <div class="cb-accts">${accts||'<div class="muted">No bank accounts yet. <button class="btn ghost sm" data-act="bkGo">Add one</button></div>'}</div>
    ${warn}
    <div class="card"><h2>Books</h2>${list?`<div style="overflow-x:auto"><table style="min-width:620px"><tr><th>Account</th><th>Leaves</th><th>Used</th><th></th></tr>${list}</table></div>`
      :'<div class="muted" style="padding:14px 0">No cheque books entered yet. Each time the bank gives you a book, press <b>Receive a cheque book</b> and type its first and last number.</div>'}</div>
@@ -24176,7 +24229,7 @@ function accounting(){ const tabs=[['tb','Trial balance'],['pl','Profit & loss']
   if(accTab==='pl'){ const inc=-bal('4100')-bal('4110'), cogs=bal('5100')+bal('5200'); const ex=Object.keys(GL).filter(k=>k.startsWith('6')).map(k=>[GL[k],bal(k)]).filter(r=>r[1]); const te=ex.reduce((a,r)=>a+r[1],0);
     body=`<table><tr><td>Sales (net of returns)</td><td class="n">${fmt(inc)}</td></tr><tr><td>Cost of goods sold + damage</td><td class="n">(${fmt(cogs)})</td></tr><tr><td><b>Gross profit</b></td><td class="n"><b>${fmt(inc-cogs)}</b> <span class="muted">${inc?((inc-cogs)/inc*100).toFixed(1):0}%</span></td></tr>${ex.map(r=>`<tr><td style="padding-left:24px">${r[0]}</td><td class="n">(${fmt(r[1])})</td></tr>`).join('')}<tr><td><b>Net profit</b></td><td class="n"><b>${fmt(inc-cogs-te)}</b></td></tr></table><div class="muted" style="margin-top:6px">Salaries post when the month's payroll run is approved (see Employees & salary).</div>` }
   if(accTab==='je') body=`<table><tr><th>Entry</th><th>Date</th><th>Description</th><th>Account</th><th class="n">Debit</th><th class="n">Credit</th></tr>${S.journal.slice().reverse().slice(0,40).map(j=>j.lines.map((l,i)=>`<tr><td>${i?'':j.no}</td><td>${i?'':j.date}</td><td>${i?'':j.desc}</td><td>${l.ac} ${GL[l.ac]}${l.party?' <span class="muted">('+(l.party.type==='C'?C(l.party.id)?.name:SU(l.party.id)?.name)+')</span>':''}</td><td class="n">${l.dr?fmt(l.dr):''}</td><td class="n">${l.cr?fmt(l.cr):''}</td></tr>`).join('')).join('')}</table><div class="muted">Showing last 40 of ${S.journal.length} entries.</div>`;
-  if(accTab==='bank') body=`<div class="row">${S.banks.map(b=>stat(b.name,fmt(bal(b.ac)),b.no+' · next cheque '+chqNextLabel(b))).join('')}</div><h2 style="margin-top:12px">Bank transactions</h2><table><tr><th>Date</th><th>Account</th><th>Description</th><th class="n">In</th><th class="n">Out</th></tr>${S.journal.flatMap(j=>j.lines.filter(l=>['1020','1021','1022'].includes(l.ac)).map(l=>({j,l}))).reverse().map(({j,l})=>`<tr><td>${j.date}</td><td>${GL[l.ac]}</td><td>${j.desc}</td><td class="n">${l.dr?fmt(l.dr):''}</td><td class="n">${l.cr?fmt(l.cr):''}</td></tr>`).join('')}</table>`;
+  if(accTab==='bank') body=`<div class="row">${S.banks.map(b=>stat(b.name,fmt(bal(b.ac)),b.no+' · next cheque '+chqNextLabel(b))).join('')}</div><h2 style="margin-top:12px">Bank transactions</h2><table><tr><th>Date</th><th>Account</th><th>Description</th><th class="n">In</th><th class="n">Out</th></tr>${S.journal.flatMap(j=>j.lines.filter(l=>S.banks.some(b=>b.ac===l.ac)).map(l=>({j,l}))).reverse().map(({j,l})=>`<tr><td>${j.date}</td><td>${GL[l.ac]}</td><td>${j.desc}</td><td class="n">${l.dr?fmt(l.dr):''}</td><td class="n">${l.cr?fmt(l.cr):''}</td></tr>`).join('')}</table>`;
   return `<h1>Accounting</h1><div class="tabs">${tabs.map(t=>`<button class="${accTab===t[0]?'on':''}" data-acc="${t[0]}">${t[1]}</button>`).join('')}</div><div class="card">${body}</div>` }
 
 /* ---- messages ---- */
@@ -27067,6 +27120,7 @@ document.addEventListener('click',e=>{
     chqSet:()=>{const c=S.cheques.find(x=>x.no===a.dataset.no&&x.dir===a.dataset.dir);
       closeModals(); try{chequeStatus(c,a.dataset.st)}catch(e){return toast(e.message)} render(); toast(`Cheque ${c.no} · ${a.dataset.st.toLowerCase()}`)},
     chqClear:()=>{chqQ='';chqStatus='all';render()},
+    bkEdit:()=>bankModal(a.dataset.id?+a.dataset.id:null), bkDel:()=>bankDelete(+a.dataset.id), bkGo:()=>{ setTab='banks'; go('settings') },
     cbNew:()=>cbNewModal(), cbWrite:()=>cbWriteModal(), cbDel:()=>cbDelete(a.dataset.id),
     cbOpen:()=>{ CB.book=CB.book===a.dataset.id?null:a.dataset.id; render() },
     cbLeaf:()=>{ closeModals(); cbLeafModal(a.dataset.id,a.dataset.no) },
