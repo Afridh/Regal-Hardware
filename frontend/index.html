@@ -18975,7 +18975,8 @@ const APPROVAL_KINDS=[
   ['prodPrice','Product prices or cost changed'],
   ['supStock','Supplier let in to see their stock in the shop'],
   ['leave','Leave asked for'],
-  ['custNew','Someone asked for a customer account on the site']];
+  ['custNew','Someone asked for a customer account on the site'],
+  ['salaryAsk','Salary or an advance asked for at the shift clock']];
 const APKIND=Object.fromEntries(APPROVAL_KINDS);
 const canApprove=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||can('approve')));
 const needsApproval=(kind)=>{ const cfg=CFG.approvals||{}; return cfg[kind]!==false&&!canApprove() };
@@ -18998,6 +18999,14 @@ function applyApproval(a){
     case 'supPortal':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supPortalSet(s,d.field,!!d.value); break }
     case 'supStock':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supStockOpen(s); break }
     case 'leave':{ lvApprove(d.id); break }
+    case 'salaryAsk':{ const e=(S.employees||[]).find(x=>String(x.id)===String(d.empId))||(S.employees||[]).find(x=>x.name===d.who);
+      if(!e) throw new Error('That person is no longer on the staff list');
+      salTell(d,true);
+      // an advance is paid the till's own way — the amount and reason already in — so it is posted against them
+      if(d.type==='advance') setTimeout(()=>{ try{ advanceModal(e.id); const m=document.querySelector('.modal:last-child');
+        if(m){ const am=m.querySelector('#avAmt'), nt=m.querySelector('#avNote'); if(am) am.value=d.amount; if(nt) nt.value=(d.note?d.note+' · ':'')+'asked at the shift clock' } }catch(err){} },60);
+      else notify('people',`Pay ${e.name} their salary (${fmt(d.amount)}) — approved by ${S.user.name}`,'payroll',{forApprovers:true});
+      break }
     case 'custNew':{ /* asked for on the site: made with no credit (the owner sets a limit if they want one), the page open, and texted the way in */
       const ph=String(d.phone||'').replace(/\D/g,'');
       let c=S.customers.find(x=>x.active!==false&&String(x.phone||'').replace(/\D/g,'')===ph);
@@ -19016,11 +19025,22 @@ function applyApproval(a){
     default: throw new Error('Unknown kind of request');
   }
 }
+/* the answer to a salary ask goes to the person: in the bell, and by text */
+function salTell(d,ok,note){
+  const what=d.type==='advance'?'advance':'salary', amt=fmt(d.amount);
+  const txt=ok?`Your ${what} request of ${amt} has been approved.${d.type==='advance'?'\nPlease collect it from the office.':''}`
+    :`Your ${what} request of ${amt} was not approved.${note?'\nReason: '+note:''}`;
+  notify(ok?'info':'warn',txt.split('\n')[0],'payroll',{forUser:d.who});
+  const e=(S.employees||[]).find(x=>String(x.id)===String(d.empId)), u=(S.users||[]).find(x=>x.name===d.who);
+  const ph=String((u&&u.phone)||(e&&e.phone)||'').replace(/\D/g,'');
+  if(/^0\d{9}$/.test(ph)) try{ sms(ph,txt,'staff') }catch(err){}
+}
 function decideApproval(id,ok,note){
   const a=(S.approvals||[]).find(x=>x.id===id); if(!a||a.status!=='pending') return;
   if(!canApprove()) return toast('Only the owner can decide this');
   a.status=ok?'approved':'rejected'; a.decidedBy=S.user.name; a.decidedAt=apStamp(); a.note=(note||'').trim();
   if(ok){ try{ applyApproval(a) }catch(e){ a.status='failed'; a.note=(a.note?a.note+' · ':'')+e.message } }
+  if(a.kind==='salaryAsk'&&a.status!=='approved') salTell(a.data||{},false,a.note);
   if(a.kind==='leave'&&a.status!=='approved'){ const l=lvList().find(x=>x.id===(a.data||{}).id); if(l&&l.status==='pending'){ l.status='rejected'; l.note=a.note; l.decidedBy=S.user.name; lvTell(l,false,a.note) } }
   notify('approval',`${a.status==='approved'?'Approved':a.status==='failed'?'Could not apply':'Turned down'}: ${a.title}${a.note?' — '+a.note:''}`,'approvals',{forUser:a.by});
   render(); toast(a.status==='approved'?'Approved and applied':a.status==='failed'?'Approved but could not be applied — '+a.note:'Turned down');

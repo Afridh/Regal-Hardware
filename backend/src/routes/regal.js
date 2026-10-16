@@ -10,6 +10,7 @@ import { injectSupplierInbox, markSupplierImported, pendingSupplierCount } from 
 import { injectCustInbox, markCustImported, pendingCustCount } from './customer.js';
 import { catchUpLogins } from '../services/portalLogins.js';
 import { stopIfTooMany, wrongTry, rightTry, pinLimits, sendingCode, guardCode } from '../lib/tries.js';
+import { leaveCfg, refuse as leaveRefuse, group as leaveGroup, used as leaveUsed, allow as leaveAllow, LEAVE_TYPES } from '../lib/leaveRules.js';
 // everything that arrived from outside the tills — the website's orders, the suppliers', and what a
 // customer said on their own page — in one go
 // Each one on its own, and none of them allowed to fail the books: if an inbox cannot be read, the till
@@ -483,8 +484,11 @@ export function staffForUsers(users, employees, deleted, days) {
   const gone = (Array.isArray(deleted) ? deleted : []).map(x => String(x || '').toLowerCase().trim());
   const low = x => String(x || '').toLowerCase().trim();
   const us = sanitizeUsers(Array.isArray(users) ? users.map(u => ({ ...u })) : [], gone).filter(u => u && u.name);
+  // as the till's syncUsersAndStaff: everyone on the staff list stays — having no till login is not a reason
+  // to drop somebody — except a removed person, the demo, and the old sample names nobody added in Users
   const staff = (Array.isArray(employees) ? employees : [])
-    .filter(e => e && e.name && !gone.includes(low(e.name)) && us.some(u => low(u.name) === low(e.name)))
+    .filter(e => e && e.name && !gone.includes(low(e.name)) && !['demo', 'demo user'].includes(low(e.name))
+      && !(LEGACY_USERS.includes(low(e.name)) && !us.some(u => low(u.name) === low(e.name))))
     .map(e => ({ ...e }));
   const today = new Date().toISOString().slice(0, 10);
   us.forEach((u, i) => {
@@ -508,15 +512,34 @@ export function staffForUsers(users, employees, deleted, days) {
   return staff;
 }
 
-/** What the shift page is shown: the shop's users as staff, without wages or PINs, and only the recent days. */
-function shiftView(rev, employees, shift, deleted, users) {
+/** What the shift page is shown: the staff as the till keeps them — their details, but not wages or PINs —
+ *  how each one can prove it is them (a PIN, a mobile), the recent days, the leave on the calendar with its
+ *  rules, and the salary asks still waiting. */
+const lowName = x => String(x || '').toLowerCase().trim();
+const maskTail = p => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 9 ? d.slice(0, 3) + '•••' + d.slice(-3) : ''; };
+const userOf = (users, e) => (Array.isArray(users) ? users : []).find(u => u && lowName(u.name) === lowName(e.userName || e.name)) || null;
+const empPhone = (u, e) => { const p = String((u && u.phone) || (e && e.phone) || '').replace(/\D/g, ''); return /^0\d{9}$/.test(p) ? p : /^94\d{9}$/.test(p) ? '0' + p.slice(2) : ''; };
+const slToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
+function shiftView(rev, employees, shift, deleted, users, leaves, lcfg, approvals) {
+  const c = leaveCfg({ leave: lcfg || {} });
   const staff = staffForUsers(users, employees, deleted, (shift || {}).days)
-    .map(({ rate, payType, otMult, pin, advance, basis, days, ot, phone, ...rest }) => rest);
+    .map(({ rate, payType, otMult, pin, advance, basis, days, ot, phone, ...rest }) => {
+      const u = userOf(users, rest), ph = empPhone(u, { phone });
+      return { ...rest, phoneMasked: maskTail(ph), hasPhone: !!ph, pinLen: u && u.pinHash ? (+u.pinLen || 4) : 0, group: leaveGroup(c, rest.name), uid: u ? u.uid || '' : '' };
+    });
   const s = shift || {};
   // a punch clock shows today and the days just gone; the full history stays in the books
   const since = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
   const recent = Object.fromEntries(Object.entries(s.days || {}).filter(([d]) => d >= since));
-  return { ok: true, rev: Number(rev), employees: staff, shift: { settings: s.settings || {}, holidays: s.holidays || [], openDays: s.openDays || [], days: recent } };
+  const from = new Date(Date.now() - 40 * 864e5).toISOString().slice(0, 10);
+  const lv = (Array.isArray(leaves) ? leaves : []).filter(l => l && l.to >= from && l.status !== 'cancelled')
+    .map(({ id, who, from, to, type, half, status, reason, by }) => ({ id, who, from, to, type, half, status, reason, by }));
+  const asks = (Array.isArray(approvals) ? approvals : []).filter(a => a && a.kind === 'salaryAsk').slice(0, 60)
+    .map(a => ({ id: a.id, status: a.status, at: a.at, note: a.note || '', ...(a.data || {}) }));
+  return { ok: true, rev: Number(rev), employees: staff, today: slToday(),
+    shift: { settings: s.settings || {}, holidays: s.holidays || [], openDays: s.openDays || [], days: recent },
+    leave: { list: lv, cfg: { perEmp: c.perEmp, perDir: c.perDir, poya: c.poya, dayAsk: c.dayAsk, sepGroups: c.sepGroups, groups: c.groups, poyaDays: c.poyaDays } },
+    salaryAsks: asks };
 }
 
 r.get('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
@@ -525,14 +548,14 @@ r.get('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
   if (dbKind === 'mysql') {
     // MySQL has no #> path reach-in: the document is read and the parts taken out here
     const { rows: [row] } = await query('SELECT rev, data FROM books WHERE `key` = ?', [req.params.key]);
-    const S = asJson(row?.data)?.S;
-    return res.json(row ? shiftView(row.rev, S?.employees, S?.shift, S?.deletedUsers, S?.users) : empty);
+    const all = asJson(row?.data), S = all?.S;
+    return res.json(row ? shiftView(row.rev, S?.employees, S?.shift, S?.deletedUsers, S?.users, S?.leaves, all?.CFG?.leave, S?.approvals) : empty);
   }
   const { rows: [row] } = await query(
     `SELECT rev, data#>'{S,employees}' AS employees, data#>'{S,shift}' AS shift, data#>'{S,deletedUsers}' AS deleted,
-            data#>'{S,users}' AS users
+            data#>'{S,users}' AS users, data#>'{S,leaves}' AS leaves, data#>'{CFG,leave}' AS lcfg, data#>'{S,approvals}' AS approvals
        FROM books WHERE key = $1`, [req.params.key]);
-  res.json(row ? shiftView(row.rev, row.employees, row.shift, row.deleted, row.users) : empty);
+  res.json(row ? shiftView(row.rev, row.employees, row.shift, row.deleted, row.users, row.leaves, row.lcfg, row.approvals) : empty);
 }));
 
 const isSuperRole = r => ['super admin', 'superadmin', 'owner'].includes(String(r || '').toLowerCase());
@@ -591,6 +614,108 @@ r.post('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
   });
   if (out.stale) return res.status(409).json({ error: 'A newer punch is already on the server', rev: out.rev, rec: out.rec });
   res.json({ ok: true, rev: out.rev });
+}));
+
+/* ---------------------------------------------------------------- asking, at the shift clock
+   A member of staff asks for leave, or for their salary or an advance, at the shift clock. They prove it is
+   them with their own PIN, or a code texted to the mobile on their user or staff card — the admin signed in
+   on the device is not enough, or anyone at the door could ask in someone else's name. A leave is checked
+   against the same rules as at the till; then the ask goes into the books as the till would make it — on
+   the calendar, in Approvals, and on the approvers' bell — and the owner says yes or no at the till. */
+async function booksEdit(key, by, fn) {
+  return withTransaction(async client => {
+    const { rows: [cur] } = await client.query(dbKind === 'mysql' ? 'SELECT rev, data FROM books WHERE `key` = ? FOR UPDATE' : 'SELECT rev, data FROM books WHERE key = $1 FOR UPDATE', [key]);
+    if (!cur) throw new HttpError(404, 'The books are not on the server yet — open the shop system once first');
+    const data = asJson(cur.data) || {};
+    data.S = data.S || {};
+    const out = await fn(data);
+    const next = Number(cur.rev) + 1;
+    await client.query(dbKind === 'mysql' ? 'UPDATE books SET data = ?, rev = ?, updated_at = NOW(), updated_by = ? WHERE `key` = ?' : 'UPDATE books SET data = $1, rev = $2, updated_at = now(), updated_by = $3 WHERE key = $4',
+      [JSON.stringify(data), next, by, key]);
+    return { rev: next, out };
+  });
+}
+async function staffAndUser(key, empId) {
+  const row = await loadBooks(key), data = asJson(row?.data) || {}, S = data.S || {};
+  const e = (S.employees || []).find(x => String(x.id) === String(empId));
+  if (!e) throw new HttpError(404, 'That person is not on the staff list');
+  const u = userOf(S.users, e);
+  return { e, u, phone: empPhone(u, e), CFG: data.CFG || {}, S };
+}
+const stamp = () => { const d = new Date(); return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Colombo' }); };
+const rid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+
+/** A code to the person's own mobile, to send an ask. */
+r.post('/books/:key/shift-code', shiftAuth, asyncHandler(async (req, res) => {
+  const { e, phone, CFG } = await staffAndUser(req.params.key, req.body?.empId);
+  if (!phone) throw new HttpError(400, `There is no mobile on ${e.name}'s card — use their PIN, or add the mobile at the till`);
+  sendingCode(phone, req.ip);
+  const code = tillOtp(phone);
+  let sent = false;
+  if (CFG.msg?.apiUrl && CFG.msg?.apiKey) {
+    try { await sendViaProvider(CFG.msg, phone, `Dear ${String(e.name).split(' ')[0]},\nYour code to send your request to the shop is ${code}.\nIt works for 5 minutes. Please do not share it.`); sent = true; }
+    catch (err) { console.error('shift ask sms failed', err.message); }
+  }
+  res.json({ ok: true, sent, phone: maskPhone(phone), ...(!sent && mayRevealCode(req) ? { code } : {}), ...(sent ? {} : { note: 'The text could not go out — use the PIN instead' }) });
+}));
+
+r.post('/books/:key/shift-ask', shiftAuth, asyncHandler(async (req, res) => {
+  const b = req.body || {}, key = req.params.key;
+  const { e, u, phone } = await staffAndUser(key, b.empId);
+  // it has to be them
+  let how = '';
+  if (b.pin) {
+    const code = 'ask:' + String(e.id);
+    const limits = pinLimits(code, req.ip); stopIfTooMany(limits);
+    if (!u || !pinOk(u, String(b.pin).replace(/\D/g, ''))) { wrongTry(limits); throw new HttpError(400, 'That PIN is not right'); }   // 400: the device stays signed in
+    rightTry('pin:' + code); how = 'PIN';
+  } else if (b.otp) {
+    if (!phone) throw new HttpError(400, 'There is no mobile on their card');
+    guardCode(phone, req.ip, () => tillOtpOk(phone, b.otp)); how = 'texted code';
+  } else if (!(u && u.pinHash) && !phone) {
+    how = 'no PIN or mobile on file — asked with ' + req.shiftUser.name + ' signed in';
+  } else throw new HttpError(400, 'Their PIN, or the code we texted them, please');
+
+  const who = e.name, at = stamp(), today = slToday();
+  if (b.kind === 'leave') {
+    const from = String(b.from || ''), to = String(b.to || b.from || ''), half = !!b.half && from === to;
+    const type = LEAVE_TYPES.some(t => t[0] === b.type) ? b.type : 'annual', reason = String(b.reason || '').trim().slice(0, 160);
+    const out = await booksEdit(key, req.shiftUser.name, (data) => {
+      const S = data.S, c = leaveCfg(data.CFG);
+      S.leaves = Array.isArray(S.leaves) ? S.leaves : [];
+      const no = leaveRefuse(c, S.leaves, who, from, to, half, today);
+      if (no) throw new HttpError(400, no);
+      const g = leaveGroup(c, who);
+      const l = { id: rid('lv'), who, from, to, type, half, reason, status: 'pending', by: who + ' (shift clock)', at, group: g, src: 'shift', how };
+      const label = `${who}: ${(LEAVE_TYPES.find(t => t[0] === type) || [0, ''])[1].toLowerCase()} leave ${from === to ? 'on ' + from : from + ' to ' + to}${half ? ' (half day)' : ''}`;
+      const a = { id: rid('ap'), kind: 'leave', title: label, detail: [reason, g === 'director' ? 'Director' : 'Employee', 'asked at the shift clock (' + how + ')'].filter(Boolean).join(' · '), data: { id: l.id }, by: who, at, status: 'pending' };
+      l.apId = a.id;
+      S.leaves.push(l);
+      S.approvals = [a].concat(Array.isArray(S.approvals) ? S.approvals : []).slice(0, 300);
+      S.notif = [{ id: rid('n'), kind: 'approval', text: `${who} asks: ${label}`, view: 'approvals', at: at.slice(11), read: false, forApprovers: true }].concat(Array.isArray(S.notif) ? S.notif : []).slice(0, 60);
+      const cap = leaveAllow(c, who);
+      return { leave: l, left: cap ? Math.max(0, cap - leaveUsed(c, S.leaves, who, from.slice(0, 7))) : null };
+    });
+    return res.json({ ok: true, rev: out.rev, ...out.out });
+  }
+  if (b.kind === 'salary') {
+    const amount = Math.round((+b.amount || 0) * 100) / 100, type = b.type === 'salary' ? 'salary' : 'advance', note = String(b.note || '').trim().slice(0, 160);
+    if (!(amount > 0) || amount > 10000000) throw new HttpError(400, 'How much?');
+    const out = await booksEdit(key, req.shiftUser.name, (data) => {
+      const S = data.S;
+      if ((S.approvals || []).some(a => a && a.kind === 'salaryAsk' && a.status === 'pending' && String((a.data || {}).empId) === String(e.id)))
+        throw new HttpError(400, 'There is already a request waiting for the owner — one at a time');
+      const money = 'Rs ' + amount.toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const title = `${who} asks for ${type === 'advance' ? 'an advance' : 'their salary'} of ${money}`;
+      const a = { id: rid('ap'), kind: 'salaryAsk', title, detail: [note, 'asked at the shift clock (' + how + ')'].filter(Boolean).join(' · '),
+        data: { empId: e.id, who, amount, type, note, how }, by: who, at, status: 'pending' };
+      S.approvals = [a].concat(Array.isArray(S.approvals) ? S.approvals : []).slice(0, 300);
+      S.notif = [{ id: rid('n'), kind: 'approval', text: `${title}`, view: 'approvals', at: at.slice(11), read: false, forApprovers: true }].concat(Array.isArray(S.notif) ? S.notif : []).slice(0, 60);
+      return { ask: { id: a.id, status: 'pending', at, ...a.data } };
+    });
+    return res.json({ ok: true, rev: out.rev, ...out.out });
+  }
+  throw new HttpError(400, 'Leave or salary?');
 }));
 
 /** Punches the shift page wrote after revision `since` (each carries the revision it made, _srv) are laid
