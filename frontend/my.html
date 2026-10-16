@@ -198,6 +198,7 @@ body[data-tab="me"] #account [data-pane]:not([data-pane="me"]){display:none}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 <script src="/welcome.js" data-sub="Your account"></script>
+<script src="/otp-ui.js"></script>
 </head>
 <body>
 <header><div class="wrap">
@@ -237,7 +238,7 @@ body[data-tab="me"] #account [data-pane]:not([data-pane="me"]){display:none}
       <button class="btn" id="askReset" style="margin-top:10px">Text me a code</button>
       <div id="resetBox" class="hide" style="margin-top:10px">
         <label for="fOtp">The six figures we texted you</label>
-        <input id="fOtp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
+        <input id="fOtp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" data-otp data-otp-next="#fPass">
         <div style="margin-top:8px"><label for="fPass">The password you want from now on</label>
           <input id="fPass" type="password" autocomplete="new-password" placeholder="at least six characters"></div>
         <button class="btn" id="doReset" style="margin-top:10px">Set it</button>
@@ -247,13 +248,13 @@ body[data-tab="me"] #account [data-pane]:not([data-pane="me"]){display:none}
 
     <div id="stepPhone" class="hide">
       <div id="phoneRow"><label for="phone">Your mobile, as the shop has it</label>
-      <input id="phone" inputmode="tel" autocomplete="tel" placeholder="07XXXXXXXX"></div>
+      <input id="phone" inputmode="tel" autocomplete="tel" placeholder="07XXXXXXXX" data-phone></div>
       <button class="btn" id="askOtp" style="margin-top:10px">Send me a code</button>
       <button class="btn ghost" id="backUser2" style="margin-top:8px">Sign in with a user name</button>
     </div>
     <div id="stepCode" class="hide">
       <label for="otp">The six figures we texted you</label>
-      <input id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
+      <input id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" data-otp data-otp-go="#doLogin">
       <div class="row" style="margin-top:10px">
         <button class="btn ghost" id="backPhone">Back</button>
         <button class="btn" id="doLogin">Sign in</button>
@@ -474,8 +475,9 @@ $('#doLogin').onclick = async () => {
   try {
     const j = await api('/login', LINK ? { link: CODE, code } : { phone, code, acc: CODE });
     token = j.token; try { localStorage.setItem(KEY, token) } catch (e) {}
+    if (window.RegalOTP) { RegalOTP.ok('#otp'); await new Promise(r => setTimeout(r, 650)) }      // the boxes go green, then in
     say(''); show('#signin', false); await load();
-  } catch (e) { say(e.message, 'bad') }
+  } catch (e) { say(e.message, 'bad'); if (window.RegalOTP) RegalOTP.fail('#otp') }
 };
 $('#otp').addEventListener('keydown', e => { if (e.key === 'Enter') $('#doLogin').click() });
 $('#phone').addEventListener('keydown', e => { if (e.key === 'Enter') $('#askOtp').click() });
