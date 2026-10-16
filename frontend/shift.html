@@ -583,9 +583,10 @@ function draw() {
     return;
   }
   const q = document.getElementById('q').value.trim().toLowerCase(), f = FILTERS.find(x => x[0] === filter)[2];
-  const order = { working: 0, late: 0, break: 1, leave_pending: 1, out: 2, done: 3, leave_early: 3, leave: 4, absent: 4 };
+  // every card keeps its place, A to Z: a check-in or a break never moves a card from under the finger
+  // (who is in, on break or late is what the figures and the chips above are for)
   const list = rows.filter(f).filter(x => !q || [x.e.name, x.e.position, x.e.code, x.e.card].some(v => String(v || '').toLowerCase().includes(q)))
-    .sort((p, n) => (order[p.key] - order[n.key]) || String(p.e.name).localeCompare(n.e.name));
+    .sort((p, n) => first(p.e.name).localeCompare(first(n.e.name)) || String(p.e.name).localeCompare(n.e.name));
   grid.innerHTML = list.length ? list.map((x, i) => card(x, i)).join('') : `<div class="empty"><h3>No one here</h3>${q ? `Nobody matches “${esc(q)}”.` : 'Nobody in this group right now.'}</div>`;
   rows.forEach(x => { lastState[x.e.id] = x.key; });
   firstDraw = false;
