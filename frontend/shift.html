@@ -4,8 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Shift Clock — Regal Hardware</title>
-<!-- the board was the one page without one, so every browser that opened it asked for a
-     favicon.ico that is not there and logged a 404 -->
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png"><link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="theme-color" content="#101E22">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,187 +11,310 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="sl-holidays.js"></script>
 <style>
-/* the till's own look (index.html): the same tokens, buttons and attendance cards, so the board here
-   and the Attendance screen at the till are one thing on two screens */
 :root{
  --ink:#101E22; --ink2:#1B2E33; --steel:#5A6E72; --faint:#8C9CA0;
  --page:#EEF1F0; --panel:#F7F9F8; --white:#fff; --line:#D8DEDD; --line2:#EAEEED;
- --chip-yellow:#F0A81E; --chip-rust:#C0442C; --chip-blue:#16799B; --chip-green:#1E8A5A;
- --accent:#F0A81E; --r:6px;
+ --brand:#9E2A31; --brand2:#C33A42; --gold:#F0A81E;
+ --work:#10B981; --late:#F59E0B; --brk:#6366F1; --done:#64748B; --abs:#EF4444; --ot:#0EA5A4; --pend:#EAB308;
+ --r:10px; --ease:cubic-bezier(.2,.8,.2,1);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;min-height:100%;color:var(--ink);
- background:var(--page);
- background-image:radial-gradient(1200px 600px at 15% -10%, #FFFDF7 0%, transparent 60%),
-                  radial-gradient(900px 500px at 100% 0%, #E6F1F3 0%, transparent 55%);
- background-attachment:fixed;
- font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.5;
+html,body{margin:0;min-height:100%;color:var(--ink);background:var(--page);
+ background-image:radial-gradient(1100px 520px at 10% -10%,#FFFDF7 0%,transparent 60%),radial-gradient(900px 480px at 100% 0%,#E6F1F3 0%,transparent 55%);
+ background-attachment:fixed;font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.5;
  font-variant-numeric:tabular-nums;-webkit-text-size-adjust:100%}
 button{font:inherit}
+.hide{display:none!important}
 .mono{font-family:'IBM Plex Mono',monospace}
 .muted{color:var(--steel);font-size:12.5px}
+.btn{border:1px solid var(--ink);background:var(--ink);color:#fff;padding:9px 14px;border-radius:9px;cursor:pointer;font-weight:600;font-size:13.5px;
+ display:inline-flex;align-items:center;gap:6px;justify-content:center;transition:transform .14s var(--ease),box-shadow .14s,filter .14s}
+.btn:hover{transform:translateY(-1px);box-shadow:0 6px 14px rgba(16,30,34,.14)}
+.btn:active{transform:translateY(0) scale(.97)}
+.btn.go{background:linear-gradient(180deg,#14C08A,#0E9F72);border-color:#0E9F72}
+.btn.stop{background:linear-gradient(180deg,#C33A42,#9E2A31);border-color:#9E2A31}
+.btn.tape{background:linear-gradient(180deg,#F7BB3C,#EFA412);border-color:#D08F09;color:#2A2103}
+.btn.ghost{background:#fff;border-color:var(--line);color:var(--ink)}
+.btn.sm{padding:6px 10px;font-size:12px;border-radius:8px}
+.btn:disabled{opacity:.42;cursor:default;transform:none;box-shadow:none}
 
-.btn{border:1px solid var(--ink);background:var(--ink);color:#fff;padding:8px 13px;border-radius:var(--r);
- cursor:pointer;font-weight:500;font-size:13.5px;display:inline-flex;align-items:center;gap:6px;justify-content:center;
- box-shadow:0 1px 1px rgba(16,30,34,.10);transition:transform .12s ease,box-shadow .12s ease,background .12s ease,filter .12s ease}
-.btn:hover{transform:translateY(-1px)}
-.btn:active{transform:translateY(0) scale(.98)}
-.btn.tape{background:linear-gradient(180deg,#F7BB3C,#EFA412);border-color:#D08F09;color:#2A2103;font-weight:600;
- box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 2px 6px rgba(240,168,30,.35)}
-.btn.tape:hover{filter:brightness(1.04)}
-.btn.ghost{background:var(--white);border-color:var(--line);color:var(--ink)}
-.btn.ghost:hover{background:var(--panel);border-color:var(--steel)}
-.btn.sm{padding:4px 9px;font-size:12px}
-.btn:disabled{opacity:.42;cursor:default;transform:none}
-
-main{max-width:1180px;margin:0 auto;padding:12px 16px 60px}
-
-/* ---- the Attendance board, as the till draws it ---- */
-.att-banner{background:#101E22;color:#fff;border-radius:10px;padding:12px 16px;margin-bottom:12px;border:1px solid rgba(240,168,30,.25);box-shadow:0 2px 8px rgba(16,30,34,.12)}
-.att-banner-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.att-banner-title{font-family:Archivo,sans-serif;font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px;color:#fff}
-.att-banner-title img{width:26px;height:26px;border-radius:6px;background:#fff;object-fit:contain;padding:2px}
-.att-banner-rules{display:flex;gap:6px;font-size:11.5px;flex-wrap:wrap;color:#94A3B8;margin-top:3px}
-.att-banner-rules span{display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.07);padding:2px 7px;border-radius:6px;border:1px solid rgba(255,255,255,.08)}
-.att-header-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.att-summary-chips{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
-.att-chip{font-size:11px;font-weight:600;padding:2px 7px;border-radius:6px;background:rgba(255,255,255,.08);color:#E2E8F0}
-.att-chip.green{background:rgba(16,185,129,.15);color:#34D399;border:1px solid rgba(16,185,129,.25)}
-.att-chip.purple{background:rgba(99,102,241,.15);color:#A5B4FC;border:1px solid rgba(99,102,241,.25)}
-.att-chip.amber{background:rgba(245,158,11,.15);color:#FBBF24;border:1px solid rgba(245,158,11,.25)}
-.att-chip.red{background:rgba(239,68,68,.15);color:#F87171;border:1px solid rgba(239,68,68,.25)}
-.att-chip.slate{background:rgba(148,163,184,.15);color:#CBD5E1;border:1px solid rgba(148,163,184,.25)}
-.att-clock{font-family:"IBM Plex Mono",monospace;font-size:13px;font-weight:600;letter-spacing:0.5px;background:#162A30;color:var(--accent);padding:3px 9px;border-radius:6px;white-space:nowrap;border:1px solid rgba(240,168,30,.25)}
-.att-who{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:9px;border-top:1px solid rgba(255,255,255,.08);font-size:11.5px;color:#CBD5E1}
-.att-who .btn.sm{color:#fff;background:transparent;border-color:rgba(255,255,255,.2);font-size:11px;padding:3px 8px}
-.sync{display:inline-flex;align-items:center;gap:6px}
-.sync i{width:7px;height:7px;border-radius:50%;background:#94A3B8}
-.sync.live i{background:#34D399;box-shadow:0 0 6px #34D399}
+/* ---- the top bar ---- */
+.top{position:sticky;top:0;z-index:50;background:linear-gradient(120deg,#0C171A,#14262B 55%,#1B3238);color:#fff;box-shadow:0 6px 24px rgba(16,30,34,.25)}
+.top-in{max-width:1240px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand img{width:38px;height:38px;border-radius:10px;background:#fff;padding:3px;object-fit:contain;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+.brand b{display:block;font:800 16px Archivo,sans-serif;letter-spacing:.02em}
+.brand span{display:block;font-size:11.5px;color:#9FB3B8}
+.clock{margin-left:auto;text-align:right}
+.clock .t{font:700 26px 'IBM Plex Mono',monospace;letter-spacing:.02em;color:var(--gold);line-height:1}
+.clock .t i{font-style:normal;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:.25}}
+.clock .d{font-size:11.5px;color:#9FB3B8;margin-top:3px}
+.who{display:flex;align-items:center;gap:8px;padding-left:14px;border-left:1px solid rgba(255,255,255,.1)}
+.who .av{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--brand2),var(--brand));display:grid;place-items:center;font:800 12px Archivo,sans-serif}
+.who small{display:block;font-size:10.5px;color:#9FB3B8}.who b{font-size:13px}
+.who button{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#fff;border-radius:8px;padding:5px 9px;font-size:11.5px;cursor:pointer}
+.sync{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:#CBD5E1}
+.sync i{width:8px;height:8px;border-radius:50%;background:#94A3B8}
+.sync.live i{background:#34D399;box-shadow:0 0 0 0 rgba(52,211,153,.6);animation:ping 2s infinite}
 .sync.bad i{background:#F87171}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(52,211,153,.55)}80%,100%{box-shadow:0 0 0 8px rgba(52,211,153,0)}}
 
-.card.note{background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:13px}
-.card.note.bad{background:#FEE2E2;border-color:#FECACA;color:#B91C1C}
-.att-search-bar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
-.att-search-box{position:relative;flex:1;max-width:380px;min-width:0}
-.att-search-box input{width:100%;font-size:16px;padding:7px 11px;border:1px solid var(--line);border-radius:7px;background:#fff;outline:none;font-family:inherit}
-.att-search-box input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(240,168,30,.15)}
+main{max-width:1240px;margin:0 auto;padding:16px 16px 70px}
 
-.bgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
-.bcard{position:relative;background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px;box-shadow:0 1px 3px rgba(0,0,0,.04);display:flex;flex-direction:column;gap:9px;overflow:hidden;transition:box-shadow .15s,border-color .15s}
-.bcard:hover{box-shadow:0 4px 12px rgba(0,0,0,.07);border-color:#CBD5E1}
-.bcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:#CBD5E1}
-.bcard.working::before{background:#10B981}
-.bcard.late::before{background:#F59E0B}
-.bcard.break::before{background:#6366F1}
-.bcard.leave_pending::before{background:#F59E0B}
-.bcard.leave_early::before{background:#3B82F6}
-.bcard.done::before{background:#64748B}
-.bcard.absent::before{background:#EF4444}
-.bc-top{display:flex;align-items:flex-start;gap:9px}
-.bc-avatar{width:34px;height:34px;border-radius:8px;background:#101E22;color:#F0A81E;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13.5px;flex:0 0 34px}
-.bc-meta{flex:1;min-width:0}
-.bc-meta .bc-name{font-family:Archivo,sans-serif;font-weight:700;font-size:14px;color:var(--ink);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bc-meta .bc-role{font-size:11px;color:var(--steel);margin-top:2px}
-.bc-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
-.bc-badge.working{background:#DCFCE7;color:#15803D}
-.bc-badge.late{background:#FEF3C7;color:#B45309}
-.bc-badge.break{background:#EEF2FF;color:#4F46E5}
-.bc-badge.pending{background:#FEF9C3;color:#A16207;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
-.bc-badge.leave_early{background:#DBEAFE;color:#1D4ED8}
-.bc-badge.done{background:#F1F5F9;color:#475569}
-.bc-badge.absent{background:#FEE2E2;color:#B91C1C}
-.bc-badge.extra-break{background:#FEF3C7;color:#92400E;border:1px solid #FCD34D}
-.bc-badge.ot-badge{background:#ECFDF5;color:#047857;border:1px solid #6EE7B7}
-.bc-live-badge{display:inline-flex;align-items:center;gap:6px;font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;padding:4px 9px;border-radius:6px;width:fit-content;letter-spacing:0.2px;background:#F8FAFC;color:#94A3B8;border:1px solid #E2E8F0}
-.bc-live-badge.working{background:rgba(16,185,129,.12);color:#059669;border:1px solid rgba(16,185,129,.3)}
-.bc-live-badge.working .live-dot{width:6px;height:6px;border-radius:50%;background:#10B981;display:inline-block;animation:pulseDot 1.5s infinite}
-@keyframes pulseDot{0%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(0.8)}100%{opacity:1;transform:scale(1)}}
-.bc-live-badge.break{background:rgba(99,102,241,.12);color:#4F46E5;border:1px solid rgba(99,102,241,.25)}
-.bc-live-badge.done,.bc-live-badge.leave_early{background:#F1F5F9;color:#475569;border:1px solid #E2E8F0}
-.bc-live-badge.out{font-size:11px}
-.bc-live-badge.absent{background:#FEE2E2;color:#DC2626;border:1px solid #FECACA}
-.bc-meal-row{display:flex;flex-direction:column;gap:4px}
-.bc-meal-title{font-size:10.5px;font-weight:700;color:var(--steel);text-transform:uppercase;letter-spacing:.05em}
-.bc-meals{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
-.bc-meal-btn{border:1px solid var(--line);background:#F8FAFC;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600;color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all .12s;font-family:inherit}
-.bc-meal-btn:hover{border-color:var(--accent);background:#FFFBEB;color:#92400E}
-.bc-meal-btn.taken{background:#F0FDF4;color:#166534;border-color:#BBF7D0;opacity:.8}
-.bc-notice{background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;padding:6px 9px;border-radius:6px;font-size:11.5px;line-height:1.35}
-.bc-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;padding-top:2px}
-.bc-acts .btn{flex:1;min-width:78px}
-.bc-acts .btn.sm{padding:5px 8px;font-size:11.5px}
-.bc-bottom-row{display:flex;justify-content:center;padding-top:4px;border-top:1px solid #F1F5F9}
-.bc-toggle-btn{background:none;border:none;color:var(--steel);font-size:11px;font-weight:600;cursor:pointer;padding:2px 8px;border-radius:4px;display:inline-flex;align-items:center;gap:3px;font-family:inherit;transition:color .12s}
-.bc-toggle-btn:hover{color:var(--ink);background:#F8FAFC}
-.bc-metrics{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;background:#F8FAFC;padding:8px 10px;border-radius:6px;font-size:11.5px;border:1px solid #E2E8F0}
-.bc-metric{display:flex;flex-direction:column}
-.bc-metric .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--steel);font-weight:700}
-.bc-metric .val{font-size:12.5px;font-weight:600;color:var(--ink);margin-top:1px}
-.bc-metric .val.late-val{color:#B45309}
-.bc-metric .val.ot-val{color:#15803D;font-weight:700}
-.bc-breaks{margin-top:6px;font-size:10.5px;color:var(--steel);background:#F8FAFC;padding:5px 8px;border-radius:6px;border:1px solid #E2E8F0}
-.empty{grid-column:1/-1;text-align:center;background:#fff;border:1px dashed var(--line);border-radius:10px;padding:40px 16px;color:var(--steel)}
+/* ---- the day ---- */
+.day{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-bottom:14px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px}
+.stat{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;overflow:hidden;cursor:pointer;
+ transition:transform .16s var(--ease),box-shadow .16s,border-color .16s;animation:rise .45s var(--ease) both}
+.stat:hover{transform:translateY(-2px);box-shadow:0 10px 22px rgba(16,30,34,.08)}
+.stat.on{border-color:var(--c);box-shadow:0 0 0 2px color-mix(in srgb,var(--c) 25%,transparent)}
+.stat::after{content:"";position:absolute;right:-18px;top:-18px;width:70px;height:70px;border-radius:50%;background:var(--c);opacity:.09}
+.stat .l{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--steel);display:flex;align-items:center;gap:6px}
+.stat .l i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.stat .v{font:800 28px Archivo,sans-serif;line-height:1.1;margin-top:4px}
+.stat .s{font-size:11.5px;color:var(--steel)}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}}
+.dayline{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;animation:rise .45s var(--ease) both .1s}
+.dl-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--steel);margin-bottom:8px}
+.dl-head b{color:var(--ink)}
+.dl-bar{position:relative;height:14px;border-radius:99px;background:var(--line2);overflow:hidden}
+.dl-fill{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:linear-gradient(90deg,#0E9F72,#14C08A);transition:width 1s var(--ease)}
+.dl-brk{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(45deg,rgba(99,102,241,.55) 0 4px,rgba(99,102,241,.3) 4px 8px)}
+.dl-now{position:absolute;top:-4px;bottom:-4px;width:3px;border-radius:3px;background:var(--brand);box-shadow:0 0 0 3px rgba(158,42,49,.18)}
+.dl-ticks{position:relative;height:18px;margin-top:4px;font-size:10.5px;color:var(--faint)}
+.dl-ticks span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.note{background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:13px;animation:rise .4s var(--ease) both}
+.note.bad{background:#FEE2E2;border-color:#FECACA;color:#B91C1C}
+
+/* ---- filters ---- */
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:#fff;border-radius:99px;padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;gap:6px;align-items:center;transition:all .14s}
+.chip b{font-family:Archivo,sans-serif}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.search{position:relative;margin-left:auto;flex:0 1 300px;min-width:180px}
+.search input{width:100%;font:inherit;font-size:15px;padding:9px 12px 9px 34px;border:1px solid var(--line);border-radius:10px;background:#fff;outline:none}
+.search input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(240,168,30,.15)}
+.search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:16px;height:16px;stroke:var(--faint)}
+
+/* ---- the people ---- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}
+.card{position:relative;background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px;overflow:hidden;
+ box-shadow:0 1px 3px rgba(0,0,0,.04);transition:box-shadow .18s,border-color .18s,transform .18s var(--ease)}
+.card:hover{box-shadow:0 12px 26px rgba(16,30,34,.09);transform:translateY(-2px)}
+.card.enter{animation:rise .5s var(--ease) both;animation-delay:calc(var(--i,0)*40ms)}
+.card.flash{animation:flash 1.1s ease}
+@keyframes flash{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--c) 60%,transparent)}100%{box-shadow:0 0 0 14px color-mix(in srgb,var(--c) 0%,transparent)}}
+.card::before{content:"";position:absolute;left:0;top:0;right:0;height:4px;background:var(--c)}
+.c-top{display:flex;gap:11px;align-items:center}
+.ring{position:relative;width:48px;height:48px;flex:0 0 48px;border-radius:50%;padding:3px;background:conic-gradient(var(--c) calc(var(--p,0)*1%),var(--line2) 0)}
+.ring span{width:100%;height:100%;border-radius:50%;background:var(--ink);color:var(--gold);display:grid;place-items:center;font:800 15px Archivo,sans-serif;border:2px solid #fff}
+.ring.live::after{content:"";position:absolute;right:0;bottom:0;width:12px;height:12px;border-radius:50%;background:var(--c);border:2px solid #fff;animation:ping2 1.6s infinite}
+@keyframes ping2{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--c) 60%,transparent)}80%,100%{box-shadow:0 0 0 7px transparent}}
+.c-meta{flex:1;min-width:0}
+.c-name{font:800 15.5px Archivo,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c-role{font-size:11.5px;color:var(--steel)}
+.pill{font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:4px 9px;border-radius:99px;background:color-mix(in srgb,var(--c) 14%,#fff);color:color-mix(in srgb,var(--c) 75%,#000);white-space:nowrap}
+.tags{display:flex;gap:5px;flex-wrap:wrap}
+.tag{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--panel);color:var(--steel);border:1px solid var(--line2)}
+.tag.late{background:#FEF3C7;color:#92400E;border-color:#FCD34D}.tag.ot{background:#CCFBF1;color:#0F766E;border-color:#5EEAD4}.tag.xb{background:#EEF2FF;color:#4338CA;border-color:#C7D2FE}
+.big{display:flex;align-items:baseline;gap:8px}
+.big b{font:800 30px 'IBM Plex Mono',monospace;letter-spacing:-.02em;line-height:1}
+.big span{font-size:12px;color:var(--steel)}
+.tl{position:relative;height:10px;border-radius:99px;background:var(--line2);overflow:hidden}
+.tl i{position:absolute;top:0;bottom:0}
+.tl .w{background:var(--work)}.tl .b{background:var(--brk)}.tl .lt{background:repeating-linear-gradient(45deg,#FCD34D 0 3px,#FDE68A 3px 6px)}.tl .o{background:var(--ot)}
+.tl .n{width:2px;background:var(--brand);top:-2px;bottom:-2px}
+.tl-key{display:flex;justify-content:space-between;font-size:10.5px;color:var(--faint);margin-top:-6px}
+.breaks{display:flex;gap:6px;flex-wrap:wrap}
+.bk{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;gap:6px;align-items:center;transition:all .14s}
+.bk:hover{border-color:var(--brk);background:#EEF2FF;color:#3730A3}
+.bk.done{background:#F0FDF4;border-color:#BBF7D0;color:#166534;cursor:default}
+.onbreak{background:linear-gradient(135deg,#EEF2FF,#F5F3FF);border:1px solid #C7D2FE;border-radius:12px;padding:10px;display:flex;align-items:center;gap:10px}
+.onbreak .cup{font-size:24px;animation:steam 2s ease-in-out infinite}
+@keyframes steam{50%{transform:translateY(-3px) rotate(-4deg)}}
+.onbreak b{display:block;font-size:13px}.onbreak small{color:var(--steel)}
+.onbreak .btn{margin-left:auto}
+.ask{background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:10px;font-size:12.5px;color:#92400E}
+.acts{display:flex;gap:8px;margin-top:auto}
+.acts .btn{flex:1;padding:11px 12px;font-size:13.5px}
+.more{border:0;background:none;color:var(--steel);font-size:12px;font-weight:600;cursor:pointer;padding:4px;display:flex;gap:4px;align-items:center;justify-content:center;border-top:1px dashed var(--line2);padding-top:8px}
+.more:hover{color:var(--ink)}
+.det{display:grid;gap:10px;animation:rise .3s var(--ease) both}
+.mx{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.mx div{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:7px 9px}
+.mx span{display:block;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--steel)}
+.mx b{font-size:13px}.mx b.late{color:#B45309}.mx b.ot{color:#0F766E}
+.log{font-size:12px;display:grid;gap:4px}
+.log div{display:flex;gap:8px;align-items:center}.log i{width:8px;height:8px;border-radius:50%;flex:none;background:var(--c,#94A3B8)}
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;align-items:end;height:74px;padding-top:4px}
+.week div{display:flex;flex-direction:column;align-items:center;gap:3px;height:100%;justify-content:flex-end}
+.week u{text-decoration:none;display:block;width:100%;max-width:26px;border-radius:6px 6px 3px 3px;background:linear-gradient(180deg,#14C08A,#0E9F72);min-height:3px;transform-origin:bottom;animation:grow .6s var(--ease) both}
+.week u.off{background:var(--line)}.week u.abs{background:var(--abs)}
+.week small{font-size:10px;color:var(--steel)}.week em{font-style:normal;font-size:9.5px;color:var(--faint)}
+@keyframes grow{from{transform:scaleY(0)}}
+.empty{grid-column:1/-1;text-align:center;background:#fff;border:1px dashed var(--line);border-radius:16px;padding:44px 16px;color:var(--steel)}
 .empty h3{margin:0 0 4px;color:var(--ink);font-family:Archivo,sans-serif}
-@media (max-width:520px){ .bgrid{grid-template-columns:1fr} .att-search-box{max-width:none} }
+.skel{height:220px;border-radius:16px;background:linear-gradient(90deg,#fff 0%,#F4F7F6 40%,#fff 80%);background-size:200% 100%;animation:sh 1.2s linear infinite;border:1px solid var(--line)}
+@keyframes sh{to{background-position:-200% 0}}
 
-/* dialogs: the till's modal, and its lock screen for signing in */
-.veil{position:fixed;inset:0;z-index:200;background:rgba(16,30,34,.72);display:flex;align-items:center;justify-content:center;padding:16px}
-.dlg{background:#fff;border-radius:10px;padding:20px;width:100%;max-width:380px;box-shadow:0 24px 60px rgba(0,0,0,.35)}
-.dlg img{width:54px;height:54px;display:block;margin:0 auto 10px;object-fit:contain}
-.dlg h2,.dlg h3{margin:0 0 6px;font-family:Archivo,sans-serif;font-size:17px}
-.dlg h3{text-align:center}
-.dlg p{margin:0 0 14px;color:var(--steel);font-size:13px;line-height:1.5}
-.dlg p.c{text-align:center}
-.dlg label{display:block;font-size:12px;font-weight:600;color:var(--steel);margin-bottom:4px}
-.dlg input{width:100%;font:inherit;font-size:16px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--r);margin-bottom:10px;background:#fff;outline:none}
-.dlg input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(240,168,30,.15)}
-.dlg .err{color:var(--chip-rust);font-size:13px;min-height:18px;margin-bottom:6px;text-align:center}
+/* ---- the moment a punch lands ---- */
+.burst{position:fixed;inset:0;z-index:400;display:grid;place-items:center;pointer-events:none}
+.burst .in{background:#fff;border-radius:22px;padding:22px 30px;text-align:center;box-shadow:0 30px 80px rgba(16,30,34,.3);animation:pop .5s cubic-bezier(.2,1.5,.4,1) both}
+.burst.out .in{animation:fade .35s ease forwards}
+.burst .tick{width:64px;height:64px;margin:0 auto 10px;border-radius:50%;background:var(--c);display:grid;place-items:center;color:#fff;font-size:32px;box-shadow:0 0 0 0 var(--c);animation:ring 1s ease .2s}
+.burst b{display:block;font:800 22px Archivo,sans-serif}.burst span{color:var(--steel);font-size:13.5px}
+@keyframes pop{from{opacity:0;transform:scale(.6)}}
+@keyframes fade{to{opacity:0;transform:scale(.95)}}
+@keyframes ring{to{box-shadow:0 0 0 22px transparent}}
+
+/* dialogs */
+.veil{position:fixed;inset:0;z-index:300;background:rgba(16,30,34,.6);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:16px;animation:fade2 .2s ease both}
+@keyframes fade2{from{opacity:0}}
+.dlg{background:#fff;border-radius:16px;padding:20px;width:100%;max-width:400px;box-shadow:0 24px 60px rgba(0,0,0,.35);animation:pop .35s var(--ease) both}
+.dlg h2{margin:0 0 6px;font-family:Archivo,sans-serif;font-size:18px}
+.dlg p{margin:0 0 14px;color:var(--steel);font-size:13.5px}
 .dlg .row{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
-.dlg .wide{width:100%;padding:10px 13px}
-
-#toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,20px);opacity:0;z-index:300;background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;font-size:13.5px;max-width:calc(100vw - 32px);transition:.22s;pointer-events:none}
+.dlg label{display:block;font-size:12px;font-weight:600;color:var(--steel);margin-bottom:4px}
+.dlg input{width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;outline:none}
+.dlg input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(158,42,49,.12)}
+.dlg .err{color:#B42318;font-size:13px;min-height:18px;text-align:center}
+#toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,20px);opacity:0;z-index:500;background:var(--ink);color:#fff;padding:11px 18px;border-radius:12px;font-size:13.5px;max-width:calc(100vw - 32px);transition:.25s var(--ease);pointer-events:none;box-shadow:0 12px 30px rgba(0,0,0,.25)}
 #toast.show{opacity:1;transform:translate(-50%,0)}
+
+@media (max-width:640px){
+ .top-in{gap:10px}.clock .t{font-size:21px}.brand span{display:none}
+ .who{border-left:0;padding-left:0;width:100%;justify-content:space-between}
+ .grid{grid-template-columns:1fr}.search{flex:1 1 100%;margin-left:0}
+ .stat .v{font-size:24px}.mx{grid-template-columns:repeat(2,1fr)}
+}
+
+/* ---- the sign-in: the till's lock screen ---- */
+.lock{position:fixed;inset:0;background:#FAFBFD;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;overflow:hidden}
+.lock-ambient{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.lock-mesh{position:absolute;inset:0;opacity:.35;background-image:radial-gradient(rgba(148,163,184,.28) 1.2px,transparent 1.2px);background-size:28px 28px}
+.lock-glow{position:absolute;border-radius:50%;filter:blur(85px);opacity:.75;will-change:transform;pointer-events:none}
+.lock-glow-1{width:640px;height:640px;top:-100px;left:-100px;background:radial-gradient(circle,rgba(224,80,92,.18) 0%,rgba(224,80,92,0) 70%);animation:calmFloat1 24s ease-in-out infinite alternate}
+.lock-glow-2{width:720px;height:720px;bottom:-120px;right:-100px;background:radial-gradient(circle,rgba(139,35,41,.12) 0%,rgba(139,35,41,0) 70%);animation:calmFloat2 28s ease-in-out infinite alternate}
+.lock-glow-3{width:580px;height:580px;bottom:12%;left:18%;background:radial-gradient(circle,rgba(240,140,150,.10) 0%,rgba(240,140,150,0) 70%);animation:calmFloat3 22s ease-in-out infinite alternate}
+@keyframes calmFloat1{0%{transform:translate(0,0) scale(1)}50%{transform:translate(50px,35px) scale(1.08)}100%{transform:translate(-30px,60px) scale(.96)}}
+@keyframes calmFloat2{0%{transform:translate(0,0) scale(1)}50%{transform:translate(-45px,-35px) scale(1.06)}100%{transform:translate(30px,-55px) scale(.95)}}
+@keyframes calmFloat3{0%{transform:translate(0,0) scale(.96)}50%{transform:translate(40px,-30px) scale(1.1)}100%{transform:translate(-25px,25px) scale(1)}}
+.lockbox{position:relative;z-index:2;background:#FFFFFF;border:1px solid rgba(226,232,240,.9);border-top:4px solid #8B2329;border-radius:18px;padding:36px 32px;max-width:420px;width:100%;text-align:center;box-shadow:0 24px 50px -12px rgba(15,23,42,.08),0 8px 24px -6px rgba(15,23,42,.04),0 0 0 1px rgba(255,255,255,.8) inset;animation:lockboxIn .45s cubic-bezier(.16,1,.3,1) both}
+@keyframes lockboxIn{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+.lockmark{display:flex;justify-content:center;align-items:center;margin-bottom:10px}
+.locklogo{height:68px;width:auto;object-fit:contain;filter:drop-shadow(0 4px 10px rgba(139,35,41,.12));transition:transform .3s ease}
+.locklogo:hover{transform:scale(1.03)}
+.lockname{font-family:Archivo,sans-serif;font-weight:800;font-size:25px;letter-spacing:.02em;color:#0F172A;line-height:1.1;margin-bottom:4px}
+.locksub{color:#64748B;font-size:12px;margin-bottom:22px;display:flex;align-items:center;justify-content:center;gap:6px 12px;flex-wrap:wrap;line-height:1.4}
+.locksub-item{display:inline-flex;align-items:center;gap:6px}
+.lockdot{width:7px;height:7px;border-radius:50%;background:#10B981;box-shadow:0 0 0 3px rgba(16,185,129,.18);display:inline-block;flex-shrink:0}
+.lock-input{width:100%;font-size:14.5px;padding:10.5px 13px;border:1px solid #CBD5E1;border-radius:9px;box-sizing:border-box;background:#F8FAFC;color:#0F172A;transition:border-color .2s,box-shadow .2s,background-color .2s;font-family:inherit}
+.lock-input:focus{outline:none;border-color:#8B2329;background:#FFFFFF;box-shadow:0 0 0 3.5px rgba(139,35,41,.12)}
+/* the user code + PIN lock screen */
+.pinlock .pin-stage{position:relative;z-index:2;width:100%;max-width:400px}
+.pinbox.hide{display:none}
+.pinbox.leave{animation:pin-out .26s ease forwards}
+.pinbox.enter{animation:pin-in .45s cubic-bezier(.2,.9,.25,1.15) both}
+@keyframes pin-out{to{opacity:0;transform:translateX(-40px) scale(.96)}}
+@keyframes pin-in{from{opacity:0;transform:translateX(40px) scale(.96)}}
+.pin-ask{font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.08em;margin:18px 0 8px}
+.pin-code{width:100%;box-sizing:border-box;text-align:center;font:800 34px/1 Archivo,sans-serif;letter-spacing:.35em;padding:14px 0 14px .35em;border:2px solid #CBD5E1;border-radius:14px;background:#F8FAFC;color:#0F172A;outline:none;margin-bottom:14px;transition:border-color .2s,box-shadow .2s}
+.pin-code:focus{border-color:#9E2A31;box-shadow:0 0 0 4px rgba(158,42,49,.12);background:#fff}
+.pin-code::placeholder{color:#CBD5E1}
+.pin-msg{min-height:20px;margin-top:10px;font-size:13px;color:#64748B;text-align:center}
+.pin-msg.bad{color:#B42318;font-weight:600}
+.pin-links{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 10px;margin-top:6px;font-size:12.5px;color:#94A3B8}.pin-links a{color:#7D1D23;border:0;text-decoration:underline;text-underline-offset:3px}.pin-links i{font-style:normal}
+.pin-alt{display:inline-block;margin-top:12px;font-size:12.5px;color:#64748B;border:0;text-decoration:underline;text-underline-offset:3px}
+.pin-back{position:absolute;left:14px;top:12px;border:0;background:none;color:#64748B;font:inherit;font-size:13px;cursor:pointer;padding:6px}
+.pin-av{position:relative;width:92px;height:92px;margin:14px auto 12px;display:grid;place-items:center}
+.pin-av span{position:relative;z-index:1;width:78px;height:78px;border-radius:50%;display:grid;place-items:center;font:800 26px Archivo,sans-serif;color:#fff;letter-spacing:.04em;
+  background:linear-gradient(135deg,#C2343D,#7D1D23);box-shadow:0 10px 24px rgba(125,29,35,.35);animation:pin-pop .6s cubic-bezier(.2,.9,.25,1.4) both .1s}
+.pin-av i{position:absolute;inset:0;border-radius:50%;border:3px solid transparent;border-top-color:#C2343D;border-right-color:rgba(194,52,61,.35);animation:pin-spin 1.4s linear infinite}
+.pinbox.checking .pin-av i{animation-duration:.5s}
+.pinbox.done .pin-av i{border-color:#1e8a5a;animation:none}
+@keyframes pin-pop{from{opacity:0;transform:scale(.3)}}
+@keyframes pin-spin{to{transform:rotate(360deg)}}
+.pin-hello{font-size:14px;color:#64748B;animation:pin-up .5s ease both .2s}
+.pin-name{font:800 26px/1.15 Archivo,sans-serif;color:#0F172A;animation:pin-up .5s ease both .3s}
+.pin-role{display:inline-block;margin-top:6px;font-size:11.5px;font-weight:700;color:#7D1D23;background:#FBE9EA;padding:3px 10px;border-radius:999px;animation:pin-up .5s ease both .4s}
+.pin-role:empty{display:none}
+@keyframes pin-up{from{opacity:0;transform:translateY(10px)}}
+.pin-dots{display:flex;justify-content:center;gap:14px;margin:22px 0 2px;animation:pin-up .5s ease both .45s}
+.pin-dots i{width:16px;height:16px;border-radius:50%;border:2px solid #CBD5E1;background:#fff;transition:background .15s,border-color .15s,transform .15s}
+.pin-dots i.on{background:#9E2A31;border-color:#9E2A31;transform:scale(1.15)}
+.pin-dots i.ok{background:#1e8a5a;border-color:#1e8a5a}
+.shake{animation:pin-shake .42s ease}
+@keyframes pin-shake{20%,60%{transform:translateX(-9px)}40%,80%{transform:translateX(9px)}}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px;animation:pin-up .5s ease both .5s}
+.pin-pad button{height:58px;border-radius:16px;border:1px solid #E2E8F0;background:#F8FAFC;font:700 22px Archivo,sans-serif;color:#0F172A;cursor:pointer;transition:background .15s,transform .1s}
+.pin-pad button:hover{background:#F1F5F9}
+.pin-pad button.hit{animation:pin-tap .25s ease}
+.pin-pad .pk-soft{font-size:14px;color:#64748B;background:transparent}
+@keyframes pin-tap{50%{transform:scale(.9);background:#FBE9EA}}
+/* the welcome as the till opens */
+.pin-welcome{position:fixed;inset:0;z-index:10050;display:grid;place-items:center;overflow:hidden;color:#fff;
+  background:radial-gradient(circle at 50% 40%,#B52A33 0%,#7D1D23 55%,#3E0E12 100%);animation:pw-in .35s ease both}
+.pin-welcome.out{animation:pw-out .6s ease forwards}
+.pw-rays{position:absolute;inset:-50%;background:conic-gradient(from 0deg,transparent 0 10deg,rgba(255,255,255,.06) 10deg 20deg);animation:pin-spin 18s linear infinite}
+.pw-in{position:relative;text-align:center}
+.pw-av{width:96px;height:96px;margin:0 auto 18px;border-radius:50%;display:grid;place-items:center;font:800 32px Archivo,sans-serif;background:rgba(255,255,255,.14);border:3px solid rgba(255,255,255,.6);animation:pin-pop .6s cubic-bezier(.2,.9,.25,1.4) both}
+.pw-hi{font-size:18px;opacity:.85;animation:pin-up .5s ease both .15s}
+.pw-name{font:800 clamp(38px,7vw,64px)/1.05 Archivo,sans-serif;letter-spacing:-.01em;animation:pin-up .55s ease both .25s}
+.pw-sub{margin-top:8px;font-size:14px;opacity:.75;animation:pin-up .5s ease both .35s}
+.pw-bar{width:180px;height:4px;margin:26px auto 0;border-radius:4px;background:rgba(255,255,255,.2);overflow:hidden}
+.pw-bar i{display:block;height:100%;width:0;background:#fff;border-radius:4px;animation:pw-fill 1.4s ease forwards .1s}
+@keyframes pw-in{from{opacity:0}}
+@keyframes pw-out{to{opacity:0;transform:scale(1.04)}}
+@keyframes pw-fill{to{width:100%}}
+@media (prefers-reduced-motion:reduce){.pinbox,.pin-av span,.pin-av i,.pin-hello,.pin-name,.pin-role,.pin-dots,.pin-pad,.pin-welcome,.pw-rays,.pw-av,.pw-name,.pw-hi,.pw-sub{animation:none!important}}
+.lock-btn{width:100%;padding:11.5px 0;font-size:14.5px;font-weight:700;font-family:inherit;background:linear-gradient(135deg,#9E2A31 0%,#7D1D23 100%);color:#FFFFFF;border:none;border-radius:9px;cursor:pointer;box-shadow:0 4px 14px rgba(139,35,41,.25);transition:all .2s cubic-bezier(.16,1,.3,1)}
+.lock-btn:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 6px 18px rgba(139,35,41,.32)}
+.lock-btn:active{transform:translateY(0);box-shadow:0 2px 8px rgba(139,35,41,.22)}
+
+.pinlock .pin-stage{max-width:400px}
+.lock .hide{display:none!important}
+.shift-tag{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:#9E2A31;background:#FBE9EA;border-radius:99px;padding:3px 10px;margin-bottom:14px}
 </style>
 </head>
 <body>
 
-<main>
-  <div class="att-banner">
-    <div class="att-banner-row">
-      <div>
-        <div class="att-banner-title"><img src="regal-logo.png" alt=""> Regal Hardware · Attendance &amp; Shifts</div>
-        <div class="att-banner-rules" id="rules"></div>
-      </div>
-      <div class="att-header-right">
-        <div class="att-summary-chips" id="chips"></div>
-        <div class="att-clock" id="clk">🕒 --:--</div>
-      </div>
-    </div>
-    <div class="att-who">
-      <span class="sync" id="sync"><i></i><span id="syncTxt">Connecting…</span></span>
-      <span id="whoBox" style="display:none">Signed in: <b id="whoName"></b> <button class="btn sm" onclick="signOut()">Sign out</button></span>
-    </div>
+<header class="top hide" id="top">
+  <div class="top-in">
+    <div class="brand"><img src="regal-logo.png" alt=""><div><b>Shift Clock</b><span>Regal Hardware · attendance &amp; breaks</span></div></div>
+    <div class="clock"><div class="t" id="clk">--<i>:</i>--</div><div class="d" id="clkD"></div></div>
+    <div class="who"><div class="av" id="whoAv">··</div><div><small><span class="sync" id="sync"><i></i><span id="syncTxt">Connecting…</span></span></small><b id="whoName"></b></div>
+      <button onclick="signOut()" title="Sign this device out">Sign out</button></div>
   </div>
+</header>
+
+<main id="app" class="hide">
   <div id="notice"></div>
-  <div class="att-search-bar">
-    <div class="att-search-box"><input id="q" type="search" placeholder="🔍 Search staff name / code…" autocomplete="off" oninput="draw()"></div>
+  <section class="day">
+    <div class="stats" id="stats"></div>
+    <div class="dayline" id="dayline"></div>
+  </section>
+  <div class="bar">
+    <div class="chips" id="chips"></div>
+    <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Find someone — name or code" autocomplete="off"></label>
   </div>
-  <div class="bgrid" id="grid"><div class="empty"><h3>Loading…</h3>Getting the staff list from the shop system</div></div>
+  <div class="grid" id="grid"></div>
 </main>
 <div id="toast"></div>
 
 <script>
 /* The shift clock. It shows the same staff and the same attendance as the Attendance screen in the
-   shop system (/pos) — one set of records on the server, drawn with the till's own cards. A punch here
-   is saved as that one record and the till picks it up within a couple of seconds; anything done at the
-   till, or on another phone, shows here the same way. Only an admin can open it: they sign in once on
-   the device. */
+   shop system (/pos) — one set of records on the server. A punch here is saved as that one record and
+   the till picks it up within a couple of seconds; anything done at the till, or on another phone, shows
+   here the same way. The owner or an admin signs in once on the device, the till's way: their user code,
+   then their PIN or a texted code (or name and password). The sign-in is the shift page's own and lasts
+   30 days, so it never signs them out of their till. */
 const API = '/api';
-const TOKEN_KEY = 'regal_shift_token';          // this page's own sign-in, apart from the till's
-const CACHE_KEY = 'regal_shift_cache';          // this page's own copy — never the till's
+const TOKEN_KEY = 'regal_shift_token';
+const CACHE_KEY = 'regal_shift_cache';
 const POLL_MS = 2000;
-
 const DEFAULTS = {
   startTime: '08:00', closeTime: '19:30', graceMin: 0, weeklyOff: [],
   breaks: [
@@ -202,35 +323,35 @@ const DEFAULTS = {
     { id: 'b3', name: 'Evening Tea', start: '15:30', end: '15:40', mins: 10, extra: 0, paid: true }
   ]
 };
+const COL = { working: 'var(--work)', late: 'var(--late)', break: 'var(--brk)', leave_pending: 'var(--pend)', leave_early: '#3B82F6', done: 'var(--done)', absent: 'var(--abs)', leave: '#3B82F6', out: '#94A3B8' };
 
 let token = ''; try { token = localStorage.getItem(TOKEN_KEY) || ''; } catch (e) {}
-let me = null;                                   // { name, role } of the admin signed in here
+let me = null;
 let S = { employees: [], shift: { days: {}, settings: {}, holidays: [] } };
-let rev = 0, pollT = null, loading = false, online = null;
-const openDetails = new Set();                   // cards with "See details" open survive a redraw
+let rev = 0, pollT = null, loading = false, online = null, filter = 'all', firstDraw = true;
+const openDetails = new Set(), lastState = {};
 
 /* ---------------- time, the way the till counts it ---------------- */
 const pad = n => String(n).padStart(2, '0');
-const D = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;   // local date, never UTC
+const D = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 const toMin = t => { const [h, m] = String(t || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
 const hhmm = m => pad(Math.floor(m / 60)) + ':' + pad(Math.round(m % 60));
 const hrs = m => (m || 0) / 60;
-const dur = m => { m = Math.max(0, Math.round(m || 0)); return `${Math.floor(m / 60)}h ${m % 60}m`; };
+const dur = m => { m = Math.max(0, Math.round(m || 0)); return `${Math.floor(m / 60)}h ${pad(m % 60)}m`; };
 const fmtMin = m => { m = Math.max(0, Math.round(m || 0)); const h = Math.floor(m / 60), r = m % 60; return h && r ? `${h}h ${r}m` : h ? `${h}h` : `${r}m`; };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const ampm = t => { const m = toMin(t), h = Math.floor(m / 60) % 24; return `${h % 12 || 12}:${pad(m % 60)} ${h < 12 ? 'AM' : 'PM'}`; };
 
 function set() {
   const s = { ...DEFAULTS, ...(S.shift.settings || {}) };
-  if (!(S.shift.settings || {}).slCalendar) s.weeklyOff = [];      // as the till: Sundays open until a weekly off is chosen
+  if (!(S.shift.settings || {}).slCalendar) s.weeklyOff = [];
   if (!s.breaks || !s.breaks.length) s.breaks = DEFAULTS.breaks;
   return s;
 }
 const stdMin = () => Math.max(60, toMin(set().closeTime) - toMin(set().startTime)
   - set().breaks.filter(b => !b.paid).reduce((a, b) => a + (toMin(b.end) - toMin(b.start)), 0));
 const recOf = (ds, id) => ((S.shift.days || {})[ds] || {})[id];
-// index.html isOff: Sri Lankan public holidays and Poya days, the shop's own, a weekly off — unless opened
 const holidayOf = ds => window.slHoliday ? window.slHoliday(S.shift, ds) : null;
 const isOff = ds => !(S.shift.openDays || []).includes(ds)
   && ((set().weeklyOff || []).includes(new Date(ds + 'T00:00').getDay()) || !!holidayOf(ds));
@@ -257,7 +378,6 @@ function figures(ds, id) {
   const close = toMin(set().closeTime || '19:30');
   const sessions = Array.isArray(r.sessions) && r.sessions.length ? r.sessions : [{ in: r.in, out: r.out }];
   f.late = Math.max(0, toMin(sessions[0].in || r.in) - (toMin(set().startTime || '08:00') + (+set().graceMin || 0)));
-  // 15m breakfast, 30m lunch, 10m evening tea: anything past the allowance is extra break
   const intervals = (r.breaks || []).map(b => {
     const def = set().breaks.find(x => x.id === b.id);
     const bid = String(b.id || '').toLowerCase(), bname = String(b.name || '').toLowerCase();
@@ -278,7 +398,7 @@ function figures(ds, id) {
     const gross = Math.max(0, sOut - sIn);
     f.gross += gross;
     f.worked += Math.max(0, gross - inBreak(sIn, sOut));
-    if (sOut > close) { const a = Math.max(sIn, close); f.ot += Math.max(0, sOut - a - inBreak(a, sOut)); }   // past 7:30 PM is OT
+    if (sOut > close) { const a = Math.max(sIn, close); f.ot += Math.max(0, sOut - a - inBreak(a, sOut)); }
   });
   if (f.worked > stdMin()) f.ot = Math.max(f.ot, f.worked - stdMin());
   f.reg = Math.max(0, f.worked - f.ot);
@@ -294,21 +414,21 @@ function put(ds, id, patch) {
   save(ds, id);
 }
 const emp = id => S.employees.find(e => e.id === id) || { name: 'Staff' };
+const first = n => String(n || '').split(' ')[0];
 
 function punchIn(id) {
   const ds = D(), t = hhmm(nowMin()), r = recOf(ds, id) || {};
   let sessions = Array.isArray(r.sessions) ? r.sessions.map(s => ({ ...s })) : [];
   if (r.in && (r.out || sessions.length)) {
-    // back again the same day: the hours carry on from the last check-out
     if (!sessions.length) sessions = [{ in: r.in, out: r.out || t }];
     if (!sessions[sessions.length - 1].out) sessions[sessions.length - 1].out = t;
     sessions.push({ in: t, out: null });
     put(ds, id, { status: 'work', in: r.in, out: null, sessions, breaks: r.breaks || [], leaveEarly: null });
-    toast(`${emp(id).name} checked in again at ${t}`);
+    burst('var(--work)', '↻', `${first(emp(id).name)} is back`, `Checked in again at ${ampm(t)}`);
   } else {
     put(ds, id, { status: 'work', in: t, out: null, sessions: [{ in: t, out: null }], breaks: r.breaks || [], leaveEarly: null });
-    const late = Math.max(0, nowMin() - toMin(set().startTime));
-    toast(late ? `${emp(id).name} checked in at ${t} (${fmtMin(late)} Late)` : `${emp(id).name} checked in on time at ${t}`);
+    const late = Math.max(0, nowMin() - toMin(set().startTime) - (+set().graceMin || 0));
+    burst(late ? 'var(--late)' : 'var(--work)', '✓', `Welcome, ${first(emp(id).name)}`, late ? `Checked in at ${ampm(t)} · ${fmtMin(late)} late` : `Checked in at ${ampm(t)} · on time`);
   }
 }
 function punchOut(id) {
@@ -318,38 +438,30 @@ function punchOut(id) {
   if (sessions.length) sessions[sessions.length - 1].out = t;
   put(ds, id, { out: t, breaks, sessions });
   const f = figures(ds, id);
-  toast(`${emp(id).name} checked out at ${t} · ${dur(f.worked)} worked${f.ot ? ` · ${dur(f.ot)} OT` : ''}`);
+  burst('var(--done)', '👋', `Goodbye, ${first(emp(id).name)}`, `${dur(f.worked)} worked today${f.ot ? ` · ${fmtMin(f.ot)} overtime` : ''}`);
 }
 function mealStart(id, bid) {
   const ds = D(), r = recOf(ds, id), t = hhmm(nowMin());
-  if (!r || r.status !== 'work' || !r.in) return toast('Check in required before starting break');
+  if (!r || r.status !== 'work' || !r.in) return toast('Check in first');
   const def = set().breaks.find(b => b.id === bid) || { name: bid };
   const breaks = (r.breaks || []).map(b => b.end ? b : { ...b, end: t }).concat([{ id: bid, name: def.name, start: t, end: null }]);
   put(ds, id, { breaks });
-  toast(`${emp(id).name} started ${def.name}`);
+  toast(`${first(emp(id).name)} is on ${def.name}`);
 }
 function mealEnd(id) {
   const ds = D(), r = recOf(ds, id), t = hhmm(nowMin());
   if (!r || !r.breaks) return;
   const open = r.breaks.find(b => !b.end);
   put(ds, id, { breaks: r.breaks.map(b => b.end ? b : { ...b, end: t }) });
-  toast(`${emp(id).name} back from ${open ? open.name || 'break' : 'break'}`);
+  toast(`${first(emp(id).name)} is back from ${open ? open.name || 'break' : 'break'}`);
 }
 function confirmAbsent(id) {
   const e = emp(id);
-  const v = veil(`<div class="dlg">
-      <h2>⚠️ Verify Absence · ${esc(e.name)}</h2>
-      <p>Are you sure you want to mark <b>${esc(e.name)}</b>${e.position ? ` (${esc(e.position)}${e.code ? ' · ' + esc(e.code) : ''})` : ''} as <b style="color:var(--chip-rust)">Absent</b> for today (<b>${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</b>)?</p>
-      <p class="muted" style="margin-top:-6px">This will record them as not present for today and deduct their day's attendance/wage.</p>
-      <div class="row"><button class="btn ghost" id="abNo">Cancel</button>
-        <button class="btn" style="background:var(--chip-rust);border-color:var(--chip-rust)" id="abOk">Confirm Absent</button></div>
-    </div>`);
+  const v = veil(`<div class="dlg"><h2>Mark ${esc(e.name)} absent?</h2>
+      <p>For today, <b>${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</b>. It counts against their day's attendance and pay. Only the Super Admin can undo it, at the till.</p>
+      <div class="row"><button class="btn ghost" id="abNo">Cancel</button><button class="btn stop" id="abOk">Mark absent</button></div></div>`);
   v.querySelector('#abNo').onclick = () => v.remove();
-  v.querySelector('#abOk').onclick = () => {
-    v.remove();
-    put(D(), id, { status: 'absent', at: hhmm(nowMin()), in: null, out: null, breaks: [], sessions: [] });
-    toast(`${e.name} marked absent for today`);
-  };
+  v.querySelector('#abOk').onclick = () => { v.remove(); put(D(), id, { status: 'absent', at: hhmm(nowMin()), in: null, out: null, breaks: [], sessions: [] }); toast(`${e.name} marked absent for today`); };
 }
 function approveLeave(id, yes) {
   const ds = D(), r = recOf(ds, id), t = hhmm(nowMin());
@@ -360,160 +472,156 @@ function approveLeave(id, yes) {
     put(ds, id, { out: t, sessions, breaks: (r.breaks || []).map(b => b.end ? b : { ...b, end: t }),
       leaveEarly: { ...r.leaveEarly, approved: true, pending: false, approvedBy: me ? me.name : 'Admin', at: t } });
     toast(`Early leave approved for ${emp(id).name}`);
-  } else {
-    put(ds, id, { leaveEarly: null });
-    toast(`Early leave request rejected for ${emp(id).name}`);
-  }
+  } else { put(ds, id, { leaveEarly: null }); toast(`Early leave turned down for ${emp(id).name}`); }
 }
-function toggleDetails(id, btn) {
-  const box = document.getElementById('details-' + id);
-  if (!box) return;
-  const open = box.style.display !== 'none';
-  box.style.display = open ? 'none' : 'block';
-  btn.innerHTML = open ? 'See details ▾' : 'Hide details ▴';
-  if (open) openDetails.delete(id); else openDetails.add(id);
-}
+function toggleDetails(id) { if (openDetails.has(id)) openDetails.delete(id); else openDetails.add(id); draw(); }
 
-/* ---------------- drawing: index.html boardToday + renderStaffCard ---------------- */
-function draw() {
+/* ---------------- drawing ---------------- */
+const LABEL = { working: 'Working', late: 'Working · late', break: 'On break', leave_pending: 'Asking to leave', leave_early: 'Left early', done: 'Gone home', absent: 'Absent', leave: 'On leave', out: 'Not in yet' };
+function rowsToday() {
   const ds = D();
-  const rows = (S.employees || []).filter(e => {
-    if (!e || e.active === false || !e.name) return false;
-    const n = String(e.name).toLowerCase().trim();
-    return n !== 'demo' && n !== 'demo user';
-  }).map(e => ({ e, st: state(ds, e.id), f: figures(ds, e.id), r: recOf(ds, e.id) || {} }));
+  return (S.employees || []).filter(e => { if (!e || e.active === false || !e.name) return false; const n = String(e.name).toLowerCase().trim(); return n !== 'demo' && n !== 'demo user'; })
+    .map(e => { const st = state(ds, e.id), f = figures(ds, e.id); return { e, st, f, r: recOf(ds, e.id) || {}, key: st === 'working' && f.late > 0 ? 'late' : st }; });
+}
+const FILTERS = [['all', 'Everyone', () => true], ['in', 'In the shop', x => x.st === 'working' || x.st === 'break' || x.st === 'leave_pending'], ['break', 'On break', x => x.st === 'break'],
+  ['late', 'Late', x => x.f.late > 0], ['out', 'Not in yet', x => x.st === 'out'], ['done', 'Gone home', x => x.st === 'done' || x.st === 'leave_early'], ['absent', 'Absent / leave', x => x.st === 'absent' || x.st === 'leave']];
 
-  const c = st => rows.filter(x => x.st === st).length, late = rows.filter(x => x.f.late > 0).length;
-  document.getElementById('chips').innerHTML =
-    `<span class="att-chip green"><b>${c('working') + c('break')}</b> In Shop</span>
-     <span class="att-chip purple"><b>${c('break')}</b> On Break</span>
-     ${late ? `<span class="att-chip amber"><b>${late}</b> Late</span>` : ''}
-     <span class="att-chip slate"><b>${c('out')}</b> Not In</span>
-     ${c('absent') ? `<span class="att-chip red"><b>${c('absent')}</b> Absent</span>` : ''}`;
-  document.getElementById('rules').innerHTML =
-    `<span>⏰ ${ampm(set().startTime)} – ${ampm(set().closeTime)}</span><span>⚡ Late past ${ampm(set().startTime)}</span><span>🌙 OT past ${ampm(set().closeTime)}</span>`;
-  if (online !== false) {
-    document.getElementById('notice').innerHTML = isOff(ds) ? `<div class="card note"><b>The shop is closed today</b>
-      <div class="muted">${esc(holidayOf(ds) || 'Weekly off')} — check-ins and overtime still track normally if staff report to duty.</div></div>` : '';
-  }
+function draw() {
+  const ds = D(), rows = rowsToday(), cfg = set();
+  const cnt = k => rows.filter(FILTERS.find(f => f[0] === k)[2]).length;
+  const workedAll = rows.reduce((a, x) => a + x.f.worked, 0), otAll = rows.reduce((a, x) => a + x.f.ot, 0);
+  const stat = (k, label, v, sub, c) => `<div class="stat ${filter === k ? 'on' : ''}" style="--c:${c}" onclick="setFilter('${k}')"><div class="l"><i></i>${label}</div><div class="v" data-n="${v}">${v}</div><div class="s">${sub}</div></div>`;
+  document.getElementById('stats').innerHTML =
+    stat('in', 'In the shop', cnt('in'), `of ${rows.length} staff`, 'var(--work)') +
+    stat('break', 'On break', cnt('break'), 'right now', 'var(--brk)') +
+    stat('late', 'Late today', cnt('late'), `after ${ampm(cfg.startTime)}`, 'var(--late)') +
+    stat('out', 'Not in yet', cnt('out'), 'no check-in', '#94A3B8') +
+    stat('done', 'Gone home', cnt('done'), 'checked out', 'var(--done)') +
+    `<div class="stat" style="--c:var(--ot);cursor:default"><div class="l"><i></i>Hours today</div><div class="v">${Math.floor(workedAll / 60)}<small style="font-size:15px">h ${pad(workedAll % 60)}m</small></div><div class="s">${otAll ? fmtMin(otAll) + ' overtime' : 'no overtime yet'}</div></div>`;
+  if (firstDraw) document.querySelectorAll('.stat').forEach((s, i) => s.style.animationDelay = (i * 50) + 'ms'); else document.querySelectorAll('.stat').forEach(s => s.style.animation = 'none');
+
+  // the shop's day: open to close, the breaks, and where we are in it
+  const a = toMin(cfg.startTime), z = toMin(cfg.closeTime), now = nowMin(), span = Math.max(60, z - a), pct = m => Math.max(0, Math.min(100, (m - a) / span * 100));
+  const ticks = []; for (let h = Math.ceil(a / 60); h * 60 <= z; h += 2) ticks.push(h * 60);
+  const left = z - now;
+  document.getElementById('dayline').innerHTML = `<div class="dl-head"><span><b>${isOff(ds) ? 'Closed today' : 'Open'}</b> ${ampm(cfg.startTime)} – ${ampm(cfg.closeTime)} · late after ${ampm(hhmm(a + (+cfg.graceMin || 0)))} · overtime after ${ampm(cfg.closeTime)}</span>
+     <span>${now < a ? `opens in ${fmtMin(a - now)}` : left > 0 ? `<b>${Math.round(pct(now))}%</b> of the day gone · ${fmtMin(left)} to closing` : `closed ${fmtMin(-left)} ago`}</span></div>
+    <div class="dl-bar"><div class="dl-fill" style="width:${pct(now)}%"></div>${cfg.breaks.map(b => `<div class="dl-brk" title="${esc(b.name)} ${esc(b.start)}–${esc(b.end)}" style="left:${pct(toMin(b.start))}%;width:${Math.max(.6, pct(toMin(b.end)) - pct(toMin(b.start)))}%"></div>`).join('')}
+      ${now >= a && now <= z ? `<div class="dl-now" style="left:calc(${pct(now)}% - 1px)"></div>` : ''}</div>
+    <div class="dl-ticks">${ticks.map(m => `<span style="left:${pct(m)}%">${ampm(hhmm(m)).replace(':00', '')}</span>`).join('')}</div>`;
+
+  document.getElementById('chips').innerHTML = FILTERS.map(([k, l]) => `<button class="chip ${filter === k ? 'on' : ''}" onclick="setFilter('${k}')">${l} <b>${cnt(k)}</b></button>`).join('');
+  if (online !== false) document.getElementById('notice').innerHTML = isOff(ds) ? `<div class="note"><b>The shop is closed today</b> — ${esc(holidayOf(ds) || 'weekly off')}. Check-ins and overtime still count if anyone comes in.</div>` : '';
 
   const grid = document.getElementById('grid');
   if (!rows.length) {
-    grid.innerHTML = `<div class="empty"><h3>${online === false ? 'Cannot reach the shop system' : 'No staff yet'}</h3>${online === false
-      ? 'The server is not answering. The cards come back by themselves when it does.'
-      : 'Staff are added in the shop system under Users — they show here straight away.'}</div>`;
+    grid.innerHTML = loading && online === null ? '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'
+      : `<div class="empty"><h3>${online === false ? 'Cannot reach the shop system' : 'No staff yet'}</h3>${online === false ? 'The server is not answering. The cards come back by themselves when it does.' : 'Staff are added in the shop system under Users — they show here straight away.'}</div>`;
     return;
   }
-  const q = document.getElementById('q').value.trim().toLowerCase();
-  const list = q ? rows.filter(x => [x.e.name, x.e.position, x.e.code, x.e.card].some(v => String(v || '').toLowerCase().includes(q))) : rows;
-  grid.innerHTML = list.length ? list.map(card).join('') : `<div class="empty"><h3>No one here</h3>Nobody matches “${esc(q)}”.</div>`;
+  const q = document.getElementById('q').value.trim().toLowerCase(), f = FILTERS.find(x => x[0] === filter)[2];
+  const order = { working: 0, late: 0, break: 1, leave_pending: 1, out: 2, done: 3, leave_early: 3, leave: 4, absent: 4 };
+  const list = rows.filter(f).filter(x => !q || [x.e.name, x.e.position, x.e.code, x.e.card].some(v => String(v || '').toLowerCase().includes(q)))
+    .sort((p, n) => (order[p.key] - order[n.key]) || String(p.e.name).localeCompare(n.e.name));
+  grid.innerHTML = list.length ? list.map((x, i) => card(x, i)).join('') : `<div class="empty"><h3>No one here</h3>${q ? `Nobody matches “${esc(q)}”.` : 'Nobody in this group right now.'}</div>`;
+  rows.forEach(x => { lastState[x.e.id] = x.key; });
+  firstDraw = false;
 }
+function setFilter(k) { filter = filter === k ? 'all' : k; draw(); }
 
-function card({ e, st, f, r }) {
-  const id = e.id, brs = r.breaks || [], open = brs.find(b => !b.end), isLate = f.late > 0;
-  let bc = 'out', bl = '';
-  if (st === 'working') {
-    if (f.ot > 0) { bc = 'working'; bl = isLate ? `WORKING · LATE ${fmtMin(f.late).toUpperCase()} · OT` : 'WORKING · OT'; }
-    else if (isLate) { bc = 'late'; bl = `WORKING · LATE ${fmtMin(f.late).toUpperCase()}`; }
-    else { bc = 'working'; bl = 'WORKING'; }
-  } else if (st === 'break') { bc = 'break'; bl = `ON BREAK · ${(open ? open.name || 'Meal' : 'Meal').toUpperCase()}`; }
-  else if (st === 'leave_pending') { bc = 'pending'; bl = 'LEAVE REQUESTED'; }
-  else if (st === 'leave_early') { bc = 'leave_early'; bl = 'LEFT EARLY'; }
-  else if (st === 'done') { bc = 'done'; bl = 'GONE HOME'; }
-  else if (st === 'absent') { bc = 'absent'; bl = 'ABSENT'; }
-  else if (st === 'leave') { bc = 'leave_early'; bl = 'ON LEAVE'; }
+/* one person's day on a bar: late gap, sessions, breaks, overtime, and now */
+function timeline(r, f) {
+  const cfg = set(), a = toMin(cfg.startTime), z = toMin(cfg.closeTime), now = nowMin();
+  const sessions = (Array.isArray(r.sessions) && r.sessions.length ? r.sessions : (r.in ? [{ in: r.in, out: r.out }] : []));
+  const lo = Math.min(a, ...sessions.map(s => toMin(s.in))), hi = Math.max(z, now <= z + 240 ? now : z, ...sessions.map(s => s.out ? toMin(s.out) : 0));
+  const span = Math.max(60, hi - lo), x = m => (m - lo) / span * 100;
+  let h = '';
+  if (f.late > 0 && sessions[0]) h += `<i class="lt" style="left:${x(a)}%;width:${x(toMin(sessions[0].in)) - x(a)}%"></i>`;
+  sessions.forEach(s => { const i = toMin(s.in), o = s.out ? toMin(s.out) : now; const w1 = Math.min(o, z);
+    if (w1 > i) h += `<i class="w" style="left:${x(i)}%;width:${x(w1) - x(i)}%"></i>`;
+    if (o > z) h += `<i class="o" style="left:${x(Math.max(i, z))}%;width:${x(o) - x(Math.max(i, z))}%"></i>`; });
+  (r.breaks || []).forEach(b => { const s = toMin(b.start), e = b.end ? toMin(b.end) : now; if (e > s) h += `<i class="b" style="left:${x(s)}%;width:${x(e) - x(s)}%"></i>`; });
+  if (now >= lo && now <= hi) h += `<i class="n" style="left:${x(now)}%"></i>`;
+  return `<div class="tl">${h}</div><div class="tl-key"><span>${ampm(hhmm(lo))}</span><span>${ampm(hhmm(hi))}</span></div>`;
+}
+/* the last seven days, as bars */
+function week(id) {
+  const out = [], max = Math.max(stdMin(), 60);
+  for (let k = 6; k >= 0; k--) { const d = new Date(); d.setDate(d.getDate() - k); const ds = D(d), f = figures(ds, id), st = state(ds, id), off = isOff(ds) && !f.worked;
+    out.push(`<div title="${ds}: ${st === 'absent' ? 'absent' : f.worked ? dur(f.worked) + ' worked' : off ? 'closed' : 'no record'}"><em>${f.worked ? (f.worked / 60).toFixed(1) : st === 'absent' ? '✕' : ''}</em>
+      <u class="${st === 'absent' ? 'abs' : !f.worked ? 'off' : ''}" style="height:${st === 'absent' ? 100 : Math.max(4, Math.min(100, f.worked / max * 100))}%;animation-delay:${(6 - k) * 50}ms"></u>
+      <small>${k === 0 ? 'Today' : d.toLocaleDateString('en-GB', { weekday: 'short' })}</small></div>`); }
+  return `<div class="week">${out.join('')}</div>`;
+}
+function card({ e, st, f, r, key }, i) {
+  const id = e.id, brs = r.breaks || [], open = brs.find(b => !b.end), c = COL[key] || COL.out;
+  const changed = lastState[id] !== undefined && lastState[id] !== key;
+  const live = st === 'working' || st === 'break' || st === 'leave_pending';
+  const p = Math.min(100, Math.round(f.worked / stdMin() * 100));
   const taken = bid => brs.some(b => b.id === bid && b.end);
-  const meal = (bid, icon, name, mins) => `<button class="bc-meal-btn ${taken(bid) ? 'taken' : ''}" onclick="mealStart(${id},'${bid}')">${taken(bid) ? '✓ ' + name : `${icon} ${name} (${mins}m)`}</button>`;
+  const brk = (b, icon) => `<button class="bk ${taken(b.id) ? 'done' : ''}" ${taken(b.id) ? 'disabled' : `onclick="mealStart(${id},'${b.id}')"`}>${taken(b.id) ? '✓' : icon} ${esc(b.name)} <span class="muted">${taken(b.id) ? '' : (b.mins || '') + 'm'}</span></button>`;
+  const icons = { b1: '☕', b2: '🍲', b3: '🫖' };
+  const big = st === 'out' ? `<b style="color:var(--faint);font:800 20px Archivo,sans-serif">Not in yet</b><span>${toMin(set().startTime) < nowMin() ? `expected at ${ampm(set().startTime)}` : `starts ${ampm(set().startTime)}`}</span>`
+    : st === 'absent' ? `<b style="color:var(--abs);font-size:22px">Absent</b><span>marked today${r.at ? ' at ' + esc(r.at) : ''}</span>`
+    : st === 'leave' ? `<b style="color:#3B82F6;font-size:22px">On leave</b><span>${esc(r.note || '')}</span>`
+    : `<b>${dur(f.worked)}</b><span>${st === 'done' || st === 'leave_early' ? 'worked today' : 'on the floor'}${f.ot ? ` · <b style="font-size:12px;color:var(--ot)">${fmtMin(f.ot)} OT</b>` : ''}</span>`;
   const shown = openDetails.has(id);
-  const live = st === 'working' || st === 'leave_pending' ? `<span class="live-dot"></span>⏱️ ${dur(f.worked)} working${f.ot > 0 ? ` · ${fmtMin(f.ot)} OT` : ''}`
-    : st === 'break' ? `☕ ${esc(open && open.name ? open.name.charAt(0).toUpperCase() + open.name.slice(1).toLowerCase() : 'Break')} · ${dur(f.worked)} floor time`
-    : st === 'done' || st === 'leave_early' ? `✓ ${dur(f.worked)} worked today${f.ot > 0 ? ` · ${fmtMin(f.ot)} OT` : ''}`
-    : st === 'absent' ? '✕ Absent today'
-    : st === 'leave' ? `On leave${r.note ? ' · ' + esc(r.note) : ''}` : '⏱️ 0h 0m · Not in yet';
-  return `<div class="bcard ${st === 'working' && isLate ? 'late' : st}">
-      <div class="bc-top">
-        <div class="bc-avatar">${esc((String(e.name || '?').trim()[0] || '?').toUpperCase())}</div>
-        <div class="bc-meta">
-          <div class="bc-name" title="${esc(e.name)}">${esc(e.name)}</div>
-          <div class="bc-role">${esc(e.position || 'Staff')}${e.code ? ` · <span class="mono">${esc(e.code)}</span>` : ''}</div>
-        </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-          ${st !== 'out' && bl ? `<div class="bc-badge ${bc}">${bl}</div>` : ''}
-          ${f.over > 0 ? `<div class="bc-badge extra-break">EXTRA BREAK · ${fmtMin(f.over).toUpperCase()}</div>` : ''}
-          ${f.ot > 0 ? `<div class="bc-badge ot-badge">🌙 OT · ${fmtMin(f.ot).toUpperCase()}</div>` : ''}
-        </div>
-      </div>
-      <div class="bc-live-badge ${st === 'leave_pending' ? 'working' : st}">${live}</div>
-      ${st === 'leave_pending' ? `<div class="bc-notice"><b>⚠️ Early Leave Request:</b> ${esc(r.leaveEarly.reason || 'Personal')}${r.leaveEarly.requestedAt ? ` (${esc(r.leaveEarly.requestedAt)})` : ''}
-          <div style="display:flex;gap:6px;margin-top:6px">
-            <button class="btn sm tape" onclick="approveLeave(${id},true)">✓ Approve</button>
-            <button class="btn sm ghost" onclick="approveLeave(${id},false)">✕ Reject</button>
-          </div></div>` : ''}
-      ${st === 'leave_early' ? `<div class="bc-notice" style="background:#EFF6FF;border-color:#BFDBFE;color:#1E40AF">
-          🚪 Left early at <b>${esc(r.out)}</b> (${esc(r.leaveEarly.approvedBy || r.leaveEarly.by || 'Admin')}: "${esc(r.leaveEarly.reason || 'Personal')}")</div>` : ''}
-      ${st === 'working' ? `<div class="bc-meal-row"><div class="bc-meal-title">BREAK OPTIONS:</div>
-          <div class="bc-meals">${meal('b1', '☕', 'Breakfast', 15)}${meal('b2', '🍲', 'Lunch', 30)}${meal('b3', '🫖', 'Evening Tea', 10)}</div></div>` : ''}
-      ${st === 'break' ? `<div style="margin:2px 0">
-          <button class="btn tape sm" style="width:100%;padding:8px 12px;font-size:12.5px" onclick="mealEnd(${id})">✓ Back from ${esc(open ? open.name || 'Break' : 'Break')}</button>
-          <div class="muted" style="font-size:10.5px;text-align:center;margin-top:3px">Break started at ${esc(open ? open.start : 'now')}</div></div>` : ''}
-      <div class="bc-acts">
-        ${st === 'out' ? `<button class="btn tape sm" onclick="punchIn(${id})">⚡ Check In</button>` : ''}
-        ${st === 'working' ? `<button class="btn tape sm" onclick="punchOut(${id})">Check Out</button>` : ''}
-        ${st === 'break' ? `<button class="btn ghost sm" onclick="punchOut(${id})">Check Out</button>` : ''}
-        ${st === 'done' || st === 'leave_early' ? `<button class="btn tape sm" onclick="punchIn(${id})">⚡ Check In Again</button>` : ''}
-        ${st === 'absent' ? `<span class="muted" style="font-size:12px;align-self:center">Marked absent today · only the Super Admin can undo it, at the till</span>` : ''}
-      </div>
-      <div class="bc-bottom-row"><button class="bc-toggle-btn" onclick="toggleDetails(${id},this)">${shown ? 'Hide details ▴' : 'See details ▾'}</button></div>
-      <div id="details-${id}" style="display:${shown ? 'block' : 'none'}">
-        <div class="bc-metrics">
-          <div class="bc-metric"><span class="lbl">Check-In</span><span class="val ${isLate ? 'late-val' : ''}">${esc(f.in || '—')}${isLate ? ` <small style="font-size:10px">(${fmtMin(f.late)} late)</small>` : ''}</span></div>
-          <div class="bc-metric"><span class="lbl">Check-Out</span><span class="val">${esc(f.out || '—')}</span></div>
-          <div class="bc-metric"><span class="lbl">Floor Time</span><span class="val">${f.worked ? `${hrs(f.worked).toFixed(2)}h (${Math.floor(f.worked / 60)}h ${f.worked % 60}m)` : '—'}</span></div>
-          <div class="bc-metric"><span class="lbl">OT Past ${ampm(set().closeTime)}</span><span class="val ${f.ot ? 'ot-val' : ''}">${f.ot ? `${hrs(f.ot).toFixed(2)}h (${Math.floor(f.ot / 60)}h ${f.ot % 60}m)` : '0.00h'}</span></div>
-        </div>
-        ${brs.length ? `<div class="bc-breaks"><b>Breaks:</b> ${brs.map(b => `${esc(b.name || 'Break')}: ${esc(b.start)}–${esc(b.end || 'now')}`).join(' · ')}</div>` : ''}
-      </div>
-    </div>`;
+  const log = [];
+  (Array.isArray(r.sessions) && r.sessions.length ? r.sessions : (r.in ? [{ in: r.in, out: r.out }] : [])).forEach((s, k) => {
+    log.push([toMin(s.in), `<div style="--c:var(--work)"><i></i><b>${ampm(s.in)}</b> ${k ? 'checked in again' : 'checked in'}${!k && f.late ? ` <span class="tag late">${fmtMin(f.late)} late</span>` : ''}</div>`]);
+    if (s.out) log.push([toMin(s.out), `<div style="--c:var(--done)"><i></i><b>${ampm(s.out)}</b> checked out</div>`]); });
+  brs.forEach(b => log.push([toMin(b.start), `<div style="--c:var(--brk)"><i></i><b>${ampm(b.start)}</b> ${esc(b.name || 'Break')} ${b.end ? `until ${ampm(b.end)} (${fmtMin(toMin(b.end) - toMin(b.start))})` : '— still on it'}</div>`]));
+  return `<div class="card ${firstDraw ? 'enter' : ''} ${changed ? 'flash' : ''}" style="--c:${c};--i:${i}">
+    <div class="c-top">
+      <div class="ring ${live ? 'live' : ''}" style="--p:${st === 'out' || st === 'absent' ? 0 : p}"><span>${esc((String(e.name || '?').trim()[0] || '?').toUpperCase())}</span></div>
+      <div class="c-meta"><div class="c-name" title="${esc(e.name)}">${esc(e.name)}</div><div class="c-role">${esc(e.position || 'Staff')}${e.code ? ` · <span class="mono">${esc(e.code)}</span>` : ''}</div></div>
+      <span class="pill">${st === 'break' && open ? 'On ' + esc(open.name || 'break') : LABEL[key]}</span>
+    </div>
+    <div class="big">${big}</div>
+    ${f.late || f.over || f.ot ? `<div class="tags">${f.late ? `<span class="tag late">Late ${fmtMin(f.late)}</span>` : ''}${f.over ? `<span class="tag xb">Extra break ${fmtMin(f.over)}</span>` : ''}${f.ot ? `<span class="tag ot">🌙 Overtime ${fmtMin(f.ot)}</span>` : ''}</div>` : ''}
+    ${r.in ? timeline(r, f) : ''}
+    ${st === 'leave_pending' ? `<div class="ask"><b>Asking to leave early</b> — ${esc(r.leaveEarly.reason || 'personal')}${r.leaveEarly.requestedAt ? ` (${esc(r.leaveEarly.requestedAt)})` : ''}
+        <div style="display:flex;gap:6px;margin-top:8px"><button class="btn sm go" onclick="approveLeave(${id},true)">✓ Let them go</button><button class="btn sm ghost" onclick="approveLeave(${id},false)">✕ No</button></div></div>` : ''}
+    ${st === 'leave_early' ? `<div class="ask" style="background:#EFF6FF;border-color:#BFDBFE;color:#1E40AF">Left early at <b>${esc(r.out)}</b> — ${esc(r.leaveEarly.reason || 'personal')} (${esc(r.leaveEarly.approvedBy || 'Admin')})</div>` : ''}
+    ${st === 'working' ? `<div class="breaks">${set().breaks.map(b => brk(b, icons[b.id] || '⏸')).join('')}</div>` : ''}
+    ${st === 'break' ? `<div class="onbreak"><span class="cup">☕</span><div><b>${esc(open ? open.name || 'Break' : 'Break')}</b><small>since ${ampm(open ? open.start : hhmm(nowMin()))} · ${fmtMin(nowMin() - toMin(open ? open.start : hhmm(nowMin())))}</small></div><button class="btn sm tape" onclick="mealEnd(${id})">Back to work</button></div>` : ''}
+    <div class="acts">
+      ${st === 'out' ? `<button class="btn go" onclick="punchIn(${id})">⚡ Check in</button><button class="btn ghost" style="flex:0 0 auto" onclick="confirmAbsent(${id})" title="Mark absent today">Absent</button>` : ''}
+      ${st === 'working' || st === 'break' ? `<button class="btn stop" onclick="punchOut(${id})">Check out</button>` : ''}
+      ${st === 'done' || st === 'leave_early' ? `<button class="btn go" onclick="punchIn(${id})">⚡ Check in again</button>` : ''}
+    </div>
+    <button class="more" onclick="toggleDetails(${id})">${shown ? 'Less ▴' : 'Today in detail · last 7 days ▾'}</button>
+    ${shown ? `<div class="det">
+      <div class="mx"><div><span>Checked in</span><b class="${f.late ? 'late' : ''}">${f.in ? ampm(f.in) : '—'}</b></div><div><span>Checked out</span><b>${f.out ? ampm(f.out) : '—'}</b></div>
+        <div><span>On the floor</span><b>${f.worked ? hrs(f.worked).toFixed(2) + 'h' : '—'}</b></div><div><span>Breaks</span><b>${fmtMin(f.breakMin)}</b></div>
+        <div><span>Late</span><b class="${f.late ? 'late' : ''}">${f.late ? fmtMin(f.late) : 'on time'}</b></div><div><span>Overtime</span><b class="${f.ot ? 'ot' : ''}">${f.ot ? hrs(f.ot).toFixed(2) + 'h' : '0'}</b></div></div>
+      ${log.length ? `<div class="log">${log.sort((p, n) => p[0] - n[0]).map(x => x[1]).join('')}</div>` : ''}
+      <div><div class="muted" style="font-weight:700;margin-bottom:2px">Last 7 days · hours</div>${week(id)}</div>
+    </div>` : ''}
+  </div>`;
 }
 
 /* ---------------- the server ---------------- */
-function status(txt, kind) {
-  document.getElementById('syncTxt').textContent = txt;
-  document.getElementById('sync').className = 'sync ' + (kind || '');
-}
+function status(txt, kind) { document.getElementById('syncTxt').textContent = txt; document.getElementById('sync').className = 'sync ' + (kind || ''); }
+const OPEN_PATHS = ['/books/shift-login', '/books/shift-pin', '/books/shift-otp', '/books/pin-who', '/books/otp-send'];
 async function call(method, path, body) {
   try {
-    const r = await fetch(API + path, {
-      method,
-      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) },
-      body: body ? JSON.stringify(body) : undefined
-    });
+    const r = await fetch(API + path, { method, headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: body ? JSON.stringify(body) : undefined });
     let j = {}; try { j = await r.json(); } catch (e) {}
     j.__status = r.status;
-    if ((r.status === 401 || r.status === 403) && path !== '/books/shift-login') { dropToken(); askSignIn(j.error); }
+    if ((r.status === 401 || r.status === 403) && !OPEN_PATHS.includes(path)) { dropToken(); lockScreen(j.error); }
     return j;
   } catch (e) { return { __status: 0, error: 'The server cannot be reached' }; }
 }
 function cache() { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ rev, S })); } catch (e) {} }
 function dropToken() { token = ''; me = null; try { localStorage.removeItem(TOKEN_KEY); } catch (e) {} }
-
 async function save(ds, id) {
-  const rec = recOf(ds, id) || null;
-  cache();
+  const rec = recOf(ds, id) || null; cache();
   const j = await call('POST', '/books/regal/shift', { date: ds, empId: id, rec });
   if (j.__status === 200) { rev = j.rev; cache(); status('Live', 'live'); return; }
-  if (j.__status === 409 && j.rec) {
-    // punched on another device a moment later: that one stands
-    S.shift.days[ds][id] = j.rec; draw(); toast('Changed on another device just now — showing the latest');
-    return;
-  }
-  if (j.__status !== 401 && j.__status !== 403) {
-    status('Not saved', 'bad');
-    toast('Not saved — ' + (j.error || 'the server did not answer') + '. Try that punch again.');
-    load(true);
-  }
+  if (j.__status === 409 && j.rec) { S.shift.days[ds][id] = j.rec; draw(); toast('Changed on another device just now — showing the latest'); return; }
+  if (j.__status !== 401 && j.__status !== 403) { status('Not saved', 'bad'); toast('Not saved — ' + (j.error || 'the server did not answer') + '. Try that again.'); load(true); }
 }
-
 async function load(quiet) {
   if (!token || loading) return;
   loading = true;
@@ -522,91 +630,188 @@ async function load(quiet) {
     if (j.__status !== 200) {
       if (j.__status === 401 || j.__status === 403) return;
       online = false; status('Offline', 'bad');
-      document.getElementById('notice').innerHTML = `<div class="card note bad">The shop system is not answering${j.error ? ' (' + esc(j.error) + ')' : ''}. Punches cannot be saved until it does.</div>`;
+      document.getElementById('notice').innerHTML = `<div class="note bad">The shop system is not answering${j.error ? ' (' + esc(j.error) + ')' : ''}. Punches cannot be saved until it does.</div>`;
       if (!quiet || !S.employees.length) draw();
       return;
     }
-    online = true;
-    rev = j.rev || 0;
-    S = {
-      employees: (j.employees || []).filter(e => {
-        const n = String(e?.name || '').toLowerCase().trim();
-        return n !== 'demo' && n !== 'demo user';
-      }),
-      shift: j.shift || { days: {}, settings: {}, holidays: [] }
-    };
+    online = true; rev = j.rev || 0;
+    S = { employees: (j.employees || []).filter(e => { const n = String(e?.name || '').toLowerCase().trim(); return n !== 'demo' && n !== 'demo user'; }), shift: j.shift || { days: {}, settings: {}, holidays: [] } };
     cache(); status('Live', 'live');
     if (!document.querySelector('.veil')) draw();
   } finally { loading = false; }
 }
-
 async function poll() {
   if (!token || document.hidden) return;
   const j = await call('GET', '/books/regal/rev');
   if (j.__status !== 200) { online = false; status('Offline', 'bad'); return; }
-  if (Number(j.rev) !== rev || online === false) await load(true);
-  else status('Live', 'live');
+  if (Number(j.rev) !== rev || online === false) await load(true); else status('Live', 'live');
 }
 function startPolling() { clearInterval(pollT); pollT = setInterval(poll, POLL_MS); }
 
-/* ---------------- sign in: admins only ---------------- */
-function askSignIn(why) {
+/* ---------------- signing in: the till's lock screen ---------------- */
+function lockScreen(why) {
   clearInterval(pollT);
-  document.getElementById('whoBox').style.display = 'none';
-  status('Signed out');
-  if (document.getElementById('signin')) { if (why) document.getElementById('siErr').textContent = why; return; }
-  const v = veil(`<form class="dlg" id="signin" autocomplete="on">
-      <img src="regal-logo.png" alt="">
-      <h3>Shift clock</h3>
-      <p class="c">An admin signs in once on this device with their shop system login. Staff then check in and out here.</p>
-      <label for="siU">Username</label><input id="siU" name="username" autocomplete="username" required>
-      <label for="siP">Password</label><input id="siP" name="password" type="password" autocomplete="current-password" required>
-      <div class="err" id="siErr">${esc(why && why !== 'An admin has to sign in on this device' ? why : '')}</div>
-      <button class="btn tape wide" id="siGo" type="submit">Sign In</button>
-    </form>`);
-  const f = v.querySelector('form');
-  f.onsubmit = async ev => {
-    ev.preventDefault();
-    const b = f.querySelector('#siGo'), err = f.querySelector('#siErr');
-    b.disabled = true; b.textContent = 'Signing in…'; err.textContent = '';
-    const j = await call('POST', '/books/shift-login', { user: f.querySelector('#siU').value.trim(), password: f.querySelector('#siP').value });
-    b.disabled = false; b.textContent = 'Sign In';
-    if (j.__status !== 200 || !j.token) { err.textContent = j.__status === 0 ? 'The server cannot be reached.' : (j.error || 'Could not sign in'); return; }
-    token = j.token; me = j.user;
-    try { localStorage.setItem(TOKEN_KEY, token); } catch (e) {}
-    v.remove();
-    signedIn();
+  document.getElementById('top').classList.add('hide'); document.getElementById('app').classList.add('hide');
+  if (document.getElementById('lockScreen')) { if (why) say('#pinMsg1', why, true); return; }
+  const el = document.createElement('div'); el.className = 'lock pinlock'; el.id = 'lockScreen'; el.tabIndex = -1;
+  el.innerHTML = `
+   <div class="lock-ambient" aria-hidden="true"><div class="lock-mesh"></div><div class="lock-glow lock-glow-1"></div><div class="lock-glow-2"></div><div class="lock-glow-3"></div></div>
+   <div class="pin-stage">
+    <div class="lockbox pinbox" id="pinStep1">
+     <div class="lockmark"><img src="regal-logo.png" alt="Regal Hardware" class="locklogo"></div>
+     <div class="lockname">REGAL <span>HARDWARE</span></div>
+     <div class="shift-tag">⏱ Shift Clock</div>
+     <div class="pin-ask">Your user code</div>
+     <input id="pinCode" class="pin-code" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="· ·" aria-label="User code">
+     <button class="lock-btn" id="pinNext">Next</button>
+     <div class="pin-msg" id="pinMsg1">The owner or an admin signs in once on this device.</div>
+     <a href="#" class="pin-alt" id="pinUsePw">Sign in with name and password instead</a>
+    </div>
+    <div class="lockbox pinbox hide" id="pinStep2">
+     <button type="button" class="pin-back" id="pinBack">← Not you?</button>
+     <div class="pin-av"><span id="pinAv"></span><i></i></div>
+     <div class="pin-hello">Welcome back,</div>
+     <div class="pin-name" id="pinName"></div>
+     <div class="pin-role" id="pinRole"></div>
+     <div class="pin-dots" id="pinDots"></div>
+     <div class="pin-msg" id="pinMsg2">Enter your PIN</div>
+     <div class="pin-links" id="pinLinks"></div>
+     <div class="pin-pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button type="button" data-k="${n}">${n}</button>`).join('')}
+       <button type="button" data-k="c" class="pk-soft">Clear</button><button type="button" data-k="0">0</button><button type="button" data-k="b" class="pk-soft" aria-label="Back one">⌫</button></div>
+    </div>
+    <form class="lockbox pinbox hide" id="pinStep3" autocomplete="on">
+     <button type="button" class="pin-back" id="pwBack">← User code</button>
+     <div class="lockmark" style="margin-top:10px"><img src="regal-logo.png" alt="" class="locklogo" style="height:54px"></div>
+     <div class="pin-ask" style="margin-top:6px">Name and password</div>
+     <input id="pwUser" class="pin-code" style="font-size:18px;letter-spacing:0;text-align:left;padding:12px 14px" placeholder="Your name" autocomplete="username">
+     <input id="pwPass" class="pin-code" type="password" style="font-size:18px;letter-spacing:0;text-align:left;padding:12px 14px;margin-top:10px" placeholder="Password" autocomplete="current-password">
+     <button class="lock-btn" id="pwGo" type="submit" style="margin-top:12px">Sign in</button>
+     <div class="pin-msg" id="pinMsg3"></div>
+    </form>
+   </div>`;
+  document.body.appendChild(el);
+  const $l = s => el.querySelector(s), code = $l('#pinCode'), s1 = $l('#pinStep1'), s2 = $l('#pinStep2'), s3 = $l('#pinStep3');
+  let who = null, pin = '', busy = false, mode = 'pin', resendAt = 0, tick = null;
+  const need = () => mode === 'otp' ? 6 : (who.pinLen || 4);
+  const dots = () => { $l('#pinDots').innerHTML = Array.from({ length: need() }, (_, i) => `<i class="${i < pin.length ? 'on' : ''}"></i>`).join(''); };
+  const ask = () => mode === 'otp' ? 'Enter the code we texted you' : 'Enter your PIN';
+  const shake = n => { n.classList.remove('shake'); void n.offsetWidth; n.classList.add('shake'); };
+  const swap = (from, to) => { from.classList.add('leave'); setTimeout(() => { from.classList.add('hide'); from.classList.remove('leave'); to.classList.remove('hide', 'enter'); void to.offsetWidth; to.classList.add('enter'); }, 260); };
+  const links = () => {
+    const L = [];
+    if (mode === 'pin' && who.phone) L.push(`<a href="#" data-l="otp">Text me a code instead</a>`);
+    if (mode === 'otp') { L.push(Date.now() < resendAt ? `<span>Send again in ${Math.ceil((resendAt - Date.now()) / 1000)}s</span>` : `<a href="#" data-l="otp">Send the code again</a>`); if (who.pinLen) L.push(`<a href="#" data-l="pin">Use my PIN</a>`); }
+    L.push(`<a href="#" data-l="pw">Use my password</a>`);
+    $l('#pinLinks').innerHTML = L.join('<i>·</i>');
+    $l('#pinLinks').querySelectorAll('[data-l]').forEach(a => a.onclick = e => { e.preventDefault(); const k = a.dataset.l;
+      if (k === 'otp') sendOtp(); else if (k === 'pin') { mode = 'pin'; pin = ''; dots(); say('#pinMsg2', ask()); links(); } else toPassword(who.name, s2); });
   };
-  setTimeout(() => f.querySelector('#siU').focus(), 50);
+  const sendOtp = async () => {
+    if (Date.now() < resendAt) return;
+    mode = 'otp'; pin = ''; dots(); say('#pinMsg2', 'Sending a code…'); resendAt = Date.now() + 30000; links();
+    clearInterval(tick); tick = setInterval(() => { if (!who || mode !== 'otp') { clearInterval(tick); return; } links(); if (Date.now() >= resendAt) clearInterval(tick); }, 1000);
+    const r = await call('POST', '/books/otp-send', { code: who.uid, for: 'shift' });
+    if (r.__status !== 200) { resendAt = 0; links(); return say('#pinMsg2', r.error || 'The code could not be sent', true); }
+    if (r.sent) say('#pinMsg2', `Code sent to ${r.phone} — enter it below`);
+    else if (r.code) say('#pinMsg2', `Texting is off here, so the code is ${r.code}`);
+    else { resendAt = 0; links(); say('#pinMsg2', r.note || 'The text could not go out', true); }
+  };
+  const toPassword = (name, from) => { $l('#pwUser').value = name || ''; say('#pinMsg3', ''); swap(from, s3); setTimeout(() => (name ? $l('#pwPass') : $l('#pwUser')).focus(), 320); };
+  const back = () => { who = null; pin = ''; mode = 'pin'; resendAt = 0; clearInterval(tick); [s2, s3].forEach(s => s.classList.add('hide')); s1.classList.remove('hide'); say('#pinMsg1', ''); code.value = ''; code.focus(); };
+  const next = async () => {
+    const c = code.value.trim(); if (!c) return code.focus();
+    $l('#pinNext').disabled = true; say('#pinMsg1', '');
+    const r = await call('POST', '/books/pin-who', { code: c });
+    $l('#pinNext').disabled = false;
+    if (r.__status !== 200) { shake(s1); return say('#pinMsg1', r.__status === 0 ? 'The server cannot be reached' : (r.error || 'That code is not known'), true); }
+    if (!/^(super ?admin|admin|owner)$/i.test(String(r.role || '').trim())) { shake(s1); return say('#pinMsg1', `${first(r.name)}, only the owner or an admin can open the shift clock.`, true); }
+    who = r; mode = r.pinLen ? 'pin' : 'otp';
+    $l('#pinAv').textContent = String(r.uid || r.name).slice(0, 3).toUpperCase();
+    $l('#pinName').textContent = r.name; $l('#pinRole').textContent = r.role || '';
+    pin = ''; dots(); say('#pinMsg2', ask()); links(); swap(s1, s2); setTimeout(() => el.focus(), 300);
+    if (!r.pinLen) { if (r.phone) sendOtp(); else say('#pinMsg2', 'No PIN or mobile on your user — use your password', true); }
+  };
+  const done = (j) => {
+    token = j.token; me = j.user; try { localStorage.setItem(TOKEN_KEY, token); } catch (e) {}
+    $l('#pinDots').querySelectorAll('i').forEach(i => i.classList.add('ok'));
+    setTimeout(() => { el.remove(); welcome(me); signedIn(); }, 350);
+  };
+  const tryPin = async () => {
+    busy = true; say('#pinMsg2', 'Checking…');
+    const j = mode === 'otp' ? await call('POST', '/books/shift-otp', { code: who.uid, otp: pin }) : await call('POST', '/books/shift-pin', { code: who.uid, pin });
+    busy = false;
+    if (j.__status === 200 && j.token) return done(j);
+    pin = ''; dots(); shake($l('#pinDots')); say('#pinMsg2', j.__status === 0 ? 'The server cannot be reached' : (j.error || 'That is not right'), true);
+  };
+  const key = k => {
+    if (busy || !who || s2.classList.contains('hide')) return;
+    if (k === 'c') pin = ''; else if (k === 'b') pin = pin.slice(0, -1); else if (pin.length < need()) pin += k;
+    dots(); if (pin.length === need()) tryPin(); else say('#pinMsg2', ask());
+  };
+  $l('.pin-pad').querySelectorAll('button').forEach(b => b.onclick = () => { b.classList.remove('hit'); void b.offsetWidth; b.classList.add('hit'); key(b.dataset.k); });
+  el.addEventListener('keydown', e => { if (s2.classList.contains('hide')) return; if (/^\d$/.test(e.key)) key(e.key); else if (e.key === 'Backspace') key('b'); else if (e.key === 'Escape') back(); });
+  $l('#pinNext').onclick = next;
+  code.addEventListener('keydown', e => { if (e.key === 'Enter') next(); });
+  code.addEventListener('input', () => { code.value = code.value.toUpperCase(); });
+  $l('#pinBack').onclick = back; $l('#pwBack').onclick = back;
+  $l('#pinUsePw').onclick = e => { e.preventDefault(); toPassword('', s1); };
+  s3.onsubmit = async ev => {
+    ev.preventDefault();
+    const b = $l('#pwGo'); b.disabled = true; b.textContent = 'Signing in…'; say('#pinMsg3', '');
+    const j = await call('POST', '/books/shift-login', { user: $l('#pwUser').value.trim(), password: $l('#pwPass').value });
+    b.disabled = false; b.textContent = 'Sign in';
+    if (j.__status !== 200 || !j.token) { shake(s3); return say('#pinMsg3', j.__status === 0 ? 'The server cannot be reached' : (j.error || 'Could not sign in'), true); }
+    token = j.token; me = j.user; try { localStorage.setItem(TOKEN_KEY, token); } catch (e) {}
+    el.remove(); welcome(me); signedIn();
+  };
+  if (why && why !== 'An admin has to sign in on this device') say('#pinMsg1', why, true);
+  setTimeout(() => code.focus(), 60);
+}
+function say(sel, t, bad) { const m = document.querySelector(sel); if (!m) return; m.textContent = t || ''; m.classList.toggle('bad', !!bad); }
+function welcome(u) {
+  const h = new Date().getHours(), hi = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  const w = document.createElement('div'); w.className = 'pin-welcome';
+  w.innerHTML = `<div class="pw-rays"></div><div class="pw-in"><div class="pw-av">${esc(String(u.uid || u.name || '?').slice(0, 3).toUpperCase())}</div>
+     <div class="pw-hi">${hi},</div><div class="pw-name">${esc(first(u.name))}</div><div class="pw-sub">${esc(u.role || '')} · Shift Clock</div><div class="pw-bar"><i></i></div></div>`;
+  document.body.appendChild(w);
+  setTimeout(() => w.classList.add('out'), 1500); setTimeout(() => w.remove(), 2100);
 }
 function signedIn() {
   if (!me) { try { const p = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); me = { name: p.name, role: p.role }; } catch (e) { me = { name: 'Admin' }; } }
   document.getElementById('whoName').textContent = me.name;
-  document.getElementById('whoBox').style.display = '';
-  load();
-  startPolling();
+  document.getElementById('whoAv').textContent = String(me.uid || me.name || '?').slice(0, 2).toUpperCase();
+  document.getElementById('top').classList.remove('hide'); document.getElementById('app').classList.remove('hide');
+  firstDraw = true; draw(); load(); startPolling();
 }
 function signOut() {
-  if (!confirm('Sign this device out of the shift clock? An admin will have to sign in again.')) return;
-  dropToken(); S = { employees: [], shift: { days: {}, settings: {}, holidays: [] } };
-  try { localStorage.removeItem(CACHE_KEY); } catch (e) {}
-  draw(); askSignIn();
+  const v = veil(`<div class="dlg"><h2>Sign this device out?</h2><p>The shift clock closes on this device until the owner or an admin signs in again.</p>
+    <div class="row"><button class="btn ghost" id="soNo">Stay signed in</button><button class="btn stop" id="soOk">Sign out</button></div></div>`);
+  v.querySelector('#soNo').onclick = () => v.remove();
+  v.querySelector('#soOk').onclick = () => { v.remove(); dropToken(); S = { employees: [], shift: { days: {}, settings: {}, holidays: [] } }; try { localStorage.removeItem(CACHE_KEY); } catch (e) {} lockScreen(); };
 }
 
 /* ---------------- bits ---------------- */
-function veil(html) { const v = document.createElement('div'); v.className = 'veil'; v.innerHTML = html; document.body.appendChild(v); return v; }
+function veil(html) { const v = document.createElement('div'); v.className = 'veil'; v.innerHTML = html; v.onclick = e => { if (e.target === v) v.remove(); }; document.body.appendChild(v); return v; }
 function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 3000); }
-function tick() { document.getElementById('clk').textContent = '🕒 ' + hhmm(nowMin()); }
+function burst(c, icon, title, sub) {
+  document.querySelectorAll('.burst').forEach(b => b.remove());
+  const b = document.createElement('div'); b.className = 'burst'; b.style.setProperty('--c', c);
+  b.innerHTML = `<div class="in"><div class="tick">${icon}</div><b>${esc(title)}</b><span>${esc(sub)}</span></div>`;
+  document.body.appendChild(b); setTimeout(() => b.classList.add('out'), 1500); setTimeout(() => b.remove(), 1900);
+}
+function tick() {
+  const d = new Date();
+  document.getElementById('clk').innerHTML = `${pad(d.getHours() % 12 || 12)}<i>:</i>${pad(d.getMinutes())} <small style="font-size:13px">${d.getHours() < 12 ? 'AM' : 'PM'}</small>`;
+  document.getElementById('clkD').textContent = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
 setInterval(tick, 1000); tick();
 // the minutes on the cards move on their own, as the till's do; a new day starts clean at midnight
-setInterval(() => { if (document.querySelector('.veil')) return; draw(); }, 20000);
+setInterval(() => { if (document.querySelector('.veil') || !token) return; draw(); }, 20000);
+document.getElementById('q').addEventListener('input', () => draw());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
-// the till open in another tab of this browser: its saves show here at once
 try { new BroadcastChannel('regal_books_sync').onmessage = e => { if (e.data === 'attendance_updated' || e.data === 'books_updated') load(true); }; } catch (e) {}
-
 try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); if (c && c.S && Array.isArray(c.S.employees)) { S = c.S; rev = c.rev || 0; } } catch (e) {}
-draw();
-if (token) signedIn(); else askSignIn();
+if (token) signedIn(); else lockScreen();
 </script>
 </body>
 </html>

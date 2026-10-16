@@ -357,7 +357,8 @@ r.post('/books/otp-send', asyncHandler(async (req, res) => {
   const shop = String(CFG.shop?.name || 'Regal Hardware').replace(/^REGAL HARDWARE$/, 'Regal Hardware');
   let sent = false;
   if (CFG.msg?.apiUrl && CFG.msg?.apiKey) {
-    try { await sendViaProvider(CFG.msg, phone, `Dear ${String(u.name).split(' ')[0]},\nYour code to sign in to the till is ${code}.\nIt works for 5 minutes. Please do not share it.\n\n${shop}`); sent = true; }
+    const where = req.body?.for === 'shift' ? 'open the shift clock' : 'sign in to the till';
+    try { await sendViaProvider(CFG.msg, phone, `Dear ${String(u.name).split(' ')[0]},\nYour code to ${where} is ${code}.\nIt works for 5 minutes. Please do not share it.\n\n${shop}`); sent = true; }
     catch (e) { console.error('till otp sms failed', e.message); }
   }
   res.json({ ok: true, sent, phone: maskPhone(phone), ...(!sent && mayRevealCode(req) ? { code } : {}),
@@ -442,6 +443,33 @@ r.post('/books/shift-login', asyncHandler(async (req, res) => {
   if (!isShiftAdmin(u.role)) throw new HttpError(403, 'Only a Super Admin or Admin can open the shift page');
   const token = jwt.sign({ kind: 'shift-admin', name: u.name, role: u.role }, process.env.JWT_SECRET, { expiresIn: process.env.SHIFT_JWT_EXPIRES || '30d' });
   res.json({ ok: true, token, user: { name: u.name, role: u.role } });
+}));
+
+/* The shift page signs in the till's way too: the user code, then the PIN or a code texted to the mobile on
+   their user. It is the shift page's own 30-day sign-in, not a till one, so an admin opening the shift clock
+   on the door phone is not signed out of their till (one device at a time is for the till). Admins only. */
+const shiftToken = (u) => jwt.sign({ kind: 'shift-admin', name: u.name, role: u.role }, process.env.JWT_SECRET, { expiresIn: process.env.SHIFT_JWT_EXPIRES || '30d' });
+const SHIFT_ONLY = 'Only the owner or an admin can open the shift clock';
+
+r.post('/books/shift-pin', asyncHandler(async (req, res) => {
+  const code = String(req.body?.code || '').trim(), pin = String(req.body?.pin || '').replace(/\D/g, '');
+  const limits = pinLimits(code, req.ip);
+  stopIfTooMany(limits);
+  const u = await pinUser(code);
+  if (!u || !pinOk(u, pin)) { wrongTry(limits); throw new HttpError(401, u && !u.pinHash ? 'No PIN is set for you yet — use a texted code or your password' : 'That PIN is not right'); }
+  rightTry('pin:' + code.toLowerCase()); rightTry('pinday:' + code.toLowerCase());
+  if (!isShiftAdmin(u.role)) throw new HttpError(403, SHIFT_ONLY);
+  res.json({ ok: true, token: shiftToken(u), user: { name: u.name, role: u.role, uid: u.uid } });
+}));
+
+r.post('/books/shift-otp', asyncHandler(async (req, res) => {
+  const u = await pinUser(req.body?.code);
+  if (!u) throw new HttpError(404, 'There is no one with that user code');
+  const { phone } = await staffPhone(u);
+  if (!phone) throw new HttpError(400, 'There is no mobile on your user');
+  guardCode(phone, req.ip, () => tillOtpOk(phone, req.body?.otp));
+  if (!isShiftAdmin(u.role)) throw new HttpError(403, SHIFT_ONLY);
+  res.json({ ok: true, token: shiftToken(u), user: { name: u.name, role: u.role, uid: u.uid } });
 }));
 
 // PostgreSQL gives JSON back as objects; MySQL may give it back as text (MariaDB always does, its
