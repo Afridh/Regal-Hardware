@@ -3783,6 +3783,26 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .cpl-btns{display:flex;flex-wrap:wrap;gap:8px}.cpl-btns .wa svg{width:16px;height:16px;vertical-align:-3px}
 .cpl-stat{font-size:13px;color:var(--muted)}
 .till-ret{color:#AE1E2B!important}
+.cb-accts{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:12px}.cb-accts .card{margin:0}
+.cb-acct-h{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
+.cb-big{font:800 30px Archivo,sans-serif;margin:6px 0 2px}.cb-big small{font:600 13px 'IBM Plex Sans',sans-serif;color:var(--muted)}
+.cb-bar{height:8px;border-radius:9px;background:var(--panel);overflow:hidden;min-width:120px}.cb-bar i{display:block;height:100%;background:var(--ink);border-radius:9px;transition:width .5s}
+tr.cb-on td{background:#FBE4E6}
+.cb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:6px}
+.cb-leaf{display:flex;flex-direction:column;gap:1px;text-align:left;border:1px solid var(--line);border-radius:10px;background:#fff;padding:7px 8px;font:inherit;color:inherit;cursor:pointer;min-height:62px;transition:transform .12s,box-shadow .12s;animation:act-in .3s ease both}
+.cb-leaf:hover{transform:translateY(-2px);box-shadow:0 6px 14px rgba(0,0,0,.08)}
+.cb-leaf b{font:700 13px Archivo,sans-serif;letter-spacing:.04em}.cb-leaf span{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cb-leaf em{font-style:normal;font-size:11.5px;font-weight:700}
+.cb-leaf.blank{background:#fff;color:var(--muted)}.cb-leaf.blank b{color:var(--ink)}
+.cb-leaf.out{background:#FFF4DC;border-color:#F0D08A}
+.cb-leaf.ok{background:#E9F7F0;border-color:#9FD8BC}
+.cb-leaf.void{background:var(--panel);color:var(--muted);text-decoration:line-through}
+.cb-leaf.bad{background:#fdecea;border-color:#f2b8b1;color:#a1302a}
+.cb-leaf.skip{background:#fff;border:1.5px dashed #a1302a;color:#a1302a}
+.cb-key{display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted)}.cb-key i{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid var(--line);margin-right:-6px}
+.cb-key i.blank{background:#fff}.cb-key i.out{background:#FFF4DC}.cb-key i.ok{background:#E9F7F0}.cb-key i.void{background:var(--panel)}.cb-key i.bad{background:#fdecea}.cb-key i.skip{border:1.5px dashed #a1302a}
+.cb-found{border-left:3px solid var(--ink)}.cb-hit{display:flex;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}.cb-hit>div:first-child{min-width:170px}.cb-hit>div:nth-child(2){flex:1;min-width:200px}
+.cb-story{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.cb-story>div{background:var(--panel);border-radius:8px;padding:6px 9px}.cb-story span{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.cb-hist{margin-top:8px;font-size:12.5px;color:var(--muted);display:grid;gap:2px}
 .lv{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:14px;align-items:start}
 .lv-side{display:grid;gap:12px}.lv-side .card{margin:0}
 .lv-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}.lv-head b{font:800 18px Archivo,sans-serif;min-width:150px;text-align:center}
@@ -4932,7 +4952,7 @@ function paySupplier({supplierId,date=D(today),lines,notes='',against=[]}){
   const pv={no:next('PAY'),date,supplierId,total,lines,notes,voucher:next('VCH')};
   S.payments.push(pv);
   const jl=[{ac:'2100',dr:total,party:{type:'S',id:supplierId}}];
-  for(const l of lines){ if(l.method==='CASH')jl.push({ac:'1010',cr:l.amount}); else if(l.method==='BANK')jl.push({ac:B(l.bank).ac,cr:l.amount}); else if(l.method==='CHEQUE'){ const b=B(l.bank); const no=l.no||String(b.nextChq++).padStart(6,'0'); if(S.cheques.some(c=>c.dir==='ISSUED'&&c.bankId===b.id&&c.no===no&&!['CANCELLED','BOUNCED'].includes(c.status))) throw new Error(`Cheque ${no} on ${b.name} has already been written`);
+  for(const l of lines){ if(l.method==='CASH')jl.push({ac:'1010',cr:l.amount}); else if(l.method==='BANK')jl.push({ac:B(l.bank).ac,cr:l.amount}); else if(l.method==='CHEQUE'){ const b=B(l.bank); const no=l.no||chqTake(b); if(S.cheques.some(c=>c.dir==='ISSUED'&&c.bankId===b.id&&c.no===no&&!['CANCELLED','BOUNCED'].includes(c.status))) throw new Error(`Cheque ${no} on ${b.name} has already been written`);
       S.cheques.push({dir:'ISSUED',no,bankId:b.id,bank:b.name,date:l.date||date,payee:SU(supplierId).name,amount:l.amount,status:'ISSUED',party:SU(supplierId).name,supplierId,ref:pv.no}); l.no=no; jl.push({ac:'2110',cr:l.amount}) } }
   post(date,'Supplier payment '+pv.no,pv.no,jl);
   pv.against=against;
@@ -4977,7 +4997,9 @@ function chequeStatus(ch,st,date=D(today)){
   ch.status=st; ch.changed=date; ch.history=(ch.history||[]).concat([{from,to:st,at:date,by:S.user.name}]);
   if(ch.dir==='ISSUED'){ const ac=B(ch.bankId).ac;
     if(st==='CLEARED') post(date,`Cheque ${ch.no} cleared`,ch.no,[{ac:'2110',dr:ch.amount},{ac,cr:ch.amount}]);
-    if(st==='BOUNCED'||st==='CANCELLED'){ const sid=ch.supplierId||S.suppliers.find(s=>s.name===ch.party)?.id; post(date,`Cheque ${ch.no} ${st.toLowerCase()}`,ch.no,[{ac:'2110',dr:ch.amount},{ac:'2100',cr:ch.amount,party:{type:'S',id:sid}}]) }
+    if((st==='BOUNCED'||st==='CANCELLED')&&ch.drAc&&!ch.supplierId){ post(date,`Cheque ${ch.no} ${st.toLowerCase()}`,ch.no,[{ac:'2110',dr:ch.amount},{ac:ch.drAc,cr:ch.amount}]);
+      const e=ch.ref&&S.expenses.find(x=>x.no===ch.ref); if(e) e.desc+=` (cheque ${st.toLowerCase()})` }
+    else if(st==='BOUNCED'||st==='CANCELLED'){ const sid=ch.supplierId||S.suppliers.find(s=>s.name===ch.party)?.id; post(date,`Cheque ${ch.no} ${st.toLowerCase()}`,ch.no,[{ac:'2110',dr:ch.amount},{ac:'2100',cr:ch.amount,party:{type:'S',id:sid}}]) }
   } else {
     if(st==='DEPOSITED'){ const b=B(ch.depositTo); post(date,`Cheque ${ch.no} deposited`,ch.no,[{ac:b.ac,dr:ch.amount},{ac:'1030',cr:ch.amount}]) }
     if(st==='BOUNCED'){ const cid=ch.customerId||S.customers.find(c=>c.name===ch.party)?.id;
@@ -11029,7 +11051,7 @@ const views=[
  ['cameras','Cameras'],
  ['printq','Printing'],
  ['grp','Online'],['site','Online store'],['weborders','Online orders'],['webproducts','Online products'],['social','Social'],
- ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['expenses','Expenses'],['accounting','Accounting'],
+ ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['chqbooks','Cheque books'],['expenses','Expenses'],['accounting','Accounting'],
  ['grp','People'],['leave','Leave'],['approvals','Approvals'],['payroll','Attendance & pay'],['users','Users & permissions'],
  ['grp','Out'],['trail','The trail'],['messages','Messages'],['reports','Reports'],
  ['grp','System'],['settings','Settings']];
@@ -11042,7 +11064,7 @@ const SECTIONS = {
   Suppliers: ['suppliers', 'orders', 'payreqs', 'purchases', 'purchasing'],
   Stock: ['products', 'stock', 'ledger', 'inventory', 'stocktake', 'labels', 'cameras'],
   Online: ['weborders', 'webproducts', 'shopmanage', 'site', 'social'],
-  Money: ['chequesIn', 'chequesOut', 'expenses', 'accounting'],
+  Money: ['chequesIn', 'chequesOut', 'chqbooks', 'expenses', 'accounting'],
   People: ['leave', 'approvals', 'payroll', 'users'],
   Out: ['trail', 'messages', 'reports', 'printq'],
   System: ['settings']
@@ -11184,6 +11206,7 @@ const ICONS={
   purchases:'M3 4h3l2.5 11h9L20 7H7M9 20a1 1 0 100-2 1 1 0 000 2zM17 20a1 1 0 100-2 1 1 0 000 2z',
   chequesIn:'M3 6h18v12H3zM7 14h5M16 10l2 2 3-4',
   chequesOut:'M3 6h18v12H3zM7 14h5M15 10h4M17 8v4',
+  chqbooks:'M5 4h12a2 2 0 012 2v14H7a2 2 0 01-2-2zM5 18a2 2 0 012-2h12M9 8h6M9 11h4',
   expenses:'M12 3v18M8 7h6a3 3 0 010 6H9a3 3 0 000 6h6',
   accounting:'M4 4h16v16H4zM8 8h8M8 12h8M8 16h4',
   payroll:'M12 3a4 4 0 100 8 4 4 0 000-8zM4 21a8 8 0 0116 0M12 13v3M10.5 14.5h3',
@@ -11496,7 +11519,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
@@ -11517,6 +11540,7 @@ function renderNow(){
   if(S.view==='actions') actionsAfter();
   if(S.view==='returns') returnsAfter();
   if(S.view==='leave') leaveAfter();
+  if(S.view==='chqbooks') chqBooksAfter();
   if(S.view==='printq') printqAfter();
   if(S.view==='cameras') camerasAfter();
   /* the camera rows are not CFG settings, so they are kept as they are typed */
@@ -22956,7 +22980,9 @@ function supPayModal(id){
     $('#spLines').innerHTML=`<tr><th>Method</th><th>Account</th><th>Dated</th><th class="n">Amount</th><th></th></tr>`+
      lines.map((l,i)=>`<tr>
       <td><select data-k="method" data-i="${i}">${['CHEQUE','BANK','CASH'].map(x=>`<option ${l.method===x?'selected':''}>${x}</option>`).join('')}</select></td>
-      <td><select data-k="bank" data-i="${i}" ${l.method==='CASH'?'disabled':''}>${S.banks.map(b=>`<option value="${b.id}" ${b.id===l.bank?'selected':''}>${b.name}</option>`).join('')}</select></td>
+      <td><select data-k="bank" data-i="${i}" ${l.method==='CASH'?'disabled':''}>${S.banks.map(b=>`<option value="${b.id}" ${b.id===l.bank?'selected':''}>${b.name}</option>`).join('')}</select>
+        ${l.method==='CHEQUE'?(()=>{ const k=lines.slice(0,i+1).filter(x=>x.method==='CHEQUE'&&x.bank===l.bank).length, nx=cbBooksOf(l.bank).length?cbNextN(l.bank,k)[k-1]:String((+B(l.bank).nextChq||0)+k-1).padStart(6,'0');
+          return `<div class="muted" style="font-size:12px;margin-top:2px">${nx?'cheque '+nx:'<b style="color:#a1302a">no blank cheque left</b>'}</div>` })():''}</td>
       <td>${l.method==='CHEQUE'?`<button type="button" class="btn ghost sm sp-day" data-day="${i}">${l.date} ▾</button>
         <div style="margin-top:3px">${diarySays(l.date,l.amount)}</div>`:'<span class="muted">—</span>'}</td>
       <td class="n"><input type="number" step="any" data-k="amount" data-i="${i}" value="${l.amount}" style="width:120px;text-align:right"></td>
@@ -23657,7 +23683,7 @@ function depositModal(no){
 function bounceModal(no,dir){
   const ch=S.cheques.find(c=>c.dir===dir&&c.no===no);
   const m=modal(`<h2>Cheque ${ch.no} bounced</h2>
-   <div class="muted">${dir==='RECEIVED'?`${ch.party} · ${fmt(ch.amount)} goes back onto their account.`:`${ch.payee} · ${fmt(ch.amount)} goes back onto what you owe them.`}</div>
+   <div class="muted">${dir==='RECEIVED'?`${ch.party} · ${fmt(ch.amount)} goes back onto their account.`:ch.drAc&&!ch.supplierId?`${ch.payee} · ${fmt(ch.amount)} — the entry it made is reversed.`:`${ch.payee} · ${fmt(ch.amount)} goes back onto what you owe them.`}</div>
    <div class="grid2" style="margin-top:10px">
     <div class="f"><label>Bank charge, if any</label><input id="bcAmt" type="number" value="0"></div>
     <div class="f"><label>Charged to</label><select id="bcBank">${S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select></div></div>
@@ -23832,6 +23858,230 @@ function depositSlip(list,bankId,date){
     thirdSign:'BANK STAMP'});
 }
 
+/* ---- cheque books ----
+   Each book the bank hands over is entered once: the account and its first and last leaf. Every leaf
+   then has a story — still blank, written (to whom, how much, and whether it cleared), spoilt, voided
+   or missing. A written leaf is simply a cheque on that account with that number, so cheques written
+   before the books were entered fall into place on their own. Supplier payments take the next blank
+   leaf of the account's current book, and any other cheque (rent, salary, cash for the shop) is
+   written straight from a leaf. */
+let CB={book:null,q:''};
+const chqBooks=()=>S.chqBooks||(S.chqBooks=[]);
+const CB_MARK={OLD:['Used before','void','written by hand before the book was on the system'],SPOILT:['Spoilt','bad','written wrong or damaged, not given to anyone'],VOID:['Voided','bad','cancelled before it was written'],MISSING:['Missing','bad','not in the book, and not on the system']};
+const cbPad=(n,w)=>String(n).padStart(w,'0');
+const cbBooksOf=(bankId)=>chqBooks().filter(k=>k.bankId===bankId).sort((a,b)=>(+a.from)-(+b.from));
+/* every cheque we wrote, by account and leaf number (the latest one wins if a number was used twice) */
+function cbWritten(){ const m=new Map(), dup=new Map();
+  for(const c of (S.cheques||[])){ if(c.dir!=='ISSUED') continue; const bid=c.bankId||(S.banks.find(b=>b.name===c.bank)||{}).id; if(!bid) continue;
+    const k=bid+'|'+(+String(c.no).replace(/\D/g,'')); if(m.has(k)&&!['CANCELLED'].includes(m.get(k).status)&&!['CANCELLED'].includes(c.status)) dup.set(k,(dup.get(k)||[m.get(k)]).concat([c])); m.set(k,c) }
+  return {m,dup} }
+/* the leaves of a book, each with what happened to it */
+function cbLeaves(bk,W){ W=W||cbWritten().m; const w=bk.from.length, out=[];
+  for(let n=+bk.from;n<=+bk.to;n++){ const no=cbPad(n,w), chq=W.get(bk.bankId+'|'+n), mark=(bk.marks||{})[no];
+    out.push({no,n,chq,mark,state:chq?chq.status:mark?mark.state:'BLANK'}) }
+  // a blank leaf behind one already used: torn out or written by hand and never entered
+  let last=-1; out.forEach((l,i)=>{ if(l.state!=='BLANK') last=i });
+  out.forEach((l,i)=>{ if(l.state==='BLANK'&&i<last) l.skipped=true });
+  return out }
+/* the next k blank leaves on an account, in book order, never behind a used leaf */
+function cbNextN(bankId,k=1,W){ W=W||cbWritten().m; const got=[];
+  for(const bk of cbBooksOf(bankId)){ for(const l of cbLeaves(bk,W)){ if(got.length>=k) return got; if(l.state==='BLANK'&&!l.skipped) got.push(l.no) } }
+  return got }
+const cbLeft=(bankId,W)=>cbBooksOf(bankId).reduce((a,bk)=>a+cbLeaves(bk,W).filter(l=>l.state==='BLANK'&&!l.skipped).length,0);
+const cbBookOf=(bankId,no)=>cbBooksOf(bankId).find(bk=>+no>=+bk.from&&+no<=+bk.to);
+/* the number a new cheque on this account gets */
+function chqTake(b){
+  const nx=cbNextN(b.id,1)[0];
+  if(nx){ b.nextChq=+nx+1; const left=cbLeft(b.id)-1;
+    if(left===5||left===0) notify('cheque',left?`Only ${left} blank cheques left on ${b.name} — ask the bank for the next book`:`That was the last blank cheque on ${b.name} — enter the next book`,'chqbooks');
+    return nx }
+  if(cbBooksOf(b.id).length) throw new Error(`No blank cheques left on ${b.name} — enter the new cheque book in Money → Cheque books`);
+  return String(b.nextChq++).padStart(6,'0') }
+const chqNextLabel=(b)=>{ const nx=cbNextN(b.id,1)[0]; return nx?nx:cbBooksOf(b.id).length?'none left':String(b.nextChq).padStart(6,'0') };
+
+function cbNewModal(){
+  if(!S.banks.length) return toast('Add the bank accounts first, in Settings');
+  const m=modal(`<h2>A new cheque book</h2>
+   <div class="muted">The first and last cheque numbers are printed on the book's cover and on the first and last leaf.</div>
+   <div class="grid2" style="margin-top:10px">
+    <div class="f"><label>Account</label><select id="cbBank">${S.banks.map(b=>`<option value="${b.id}">${esA(b.name)} · ${esA(b.no)}</option>`).join('')}</select></div>
+    <div class="f"><label>Received on</label><input id="cbGot" type="date" value="${D(today)}"></div>
+    <div class="f"><label>First cheque number</label><input id="cbFrom" inputmode="numeric" placeholder="e.g. 100101"></div>
+    <div class="f"><label>Last cheque number</label><input id="cbTo" inputmode="numeric" placeholder="e.g. 100150"></div></div>
+   <div class="f"><label>Already used up to (only for a book you have been writing from)</label><input id="cbUsed" inputmode="numeric" placeholder="leave empty for a new book"></div>
+   <div class="f"><label>Note (optional)</label><input id="cbNote" placeholder="e.g. collected by Rizwan from the branch"></div>
+   <div id="cbSay" class="muted" style="min-height:20px;margin:6px 0"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="cbOk">Add the book</button></div>`);
+  const q=(s)=>m.querySelector(s);
+  const check=()=>{ const from=q('#cbFrom').value.replace(/\D/g,''), to=q('#cbTo').value.replace(/\D/g,''), bid=+q('#cbBank').value;
+    if(!from||!to) return {err:''};
+    if(+to<+from) return {err:'The last number is before the first'};
+    const n=+to-+from+1; if(n>500) return {err:`That is ${n} leaves — a book is usually 25 to 100`};
+    const clash=cbBooksOf(bid).find(bk=>!(+to<+bk.from||+from>+bk.to)); if(clash) return {err:`Those numbers overlap the book ${clash.from}–${clash.to} already entered`};
+    const W=cbWritten().m; let used=0; for(let i=+from;i<=+to;i++) if(W.has(bid+'|'+i)) used++;
+    const upto=q('#cbUsed').value.replace(/\D/g,'');
+    if(upto&&(+upto<+from||+upto>+to)) return {err:'"Already used up to" is not a number in this book'};
+    return {from,to:cbPad(to,from.length),bid,n,used,upto} };
+  const say=()=>{ const c=check(); q('#cbSay').innerHTML=c.err?`<span style="color:var(--chip-rust,#a1302a)">${c.err}</span>`:c.n?`${c.n} leaves${c.used?` · ${c.used} already written from this book on the system, they will show in it`:''}${c.upto?` · the leaves up to ${c.upto} not on the system are marked "used before"`:''}`:'' };
+  ['#cbFrom','#cbTo','#cbBank','#cbUsed'].forEach(s=>q(s).oninput=q(s).onchange=say);
+  q('#cbOk').onclick=()=>{ const c=check(); if(c.err||!c.n) return toast(c.err||'The first and last cheque numbers, please');
+    const bk={id:'cb'+Date.now().toString(36),bankId:c.bid,from:c.from,to:c.to,got:q('#cbGot').value||D(today),note:q('#cbNote').value.trim(),by:S.user.name,marks:{}};
+    if(c.upto){ const W=cbWritten().m; for(let i=+c.from;i<=+c.upto;i++) if(!W.has(c.bid+'|'+i)) bk.marks[cbPad(i,c.from.length)]={state:'OLD',at:D(today),by:S.user.name} }
+    chqBooks().push(bk); CB.book=bk.id; m.remove(); persist(true); render(); toast(`Book ${bk.from}–${bk.to} added to ${B(bk.bankId).name}`,'ok') };
+}
+
+/* a cheque that is not a supplier payment: rent, salaries, cash for the shop, anything else */
+const CB_FOR=()=>[['1010','Cash for the shop (self)'],['1300','Advance to a staff member'],['2200','Salaries'],['3100','Taken by the owner'],
+  ...Object.keys(GL).filter(k=>k.startsWith('6')&&k!=='6095').map(k=>[k,GL[k]])];
+function cbWriteModal(bankId,no){
+  const b0=B(bankId||(S.banks[0]||{}).id); if(!b0) return toast('Add the bank accounts first, in Settings');
+  const m=modal(`<h2>Write a cheque</h2>
+   <div class="muted">For anything other than paying a supplier — those go through the supplier's Pay button, which takes the next leaf itself.</div>
+   <div class="grid2" style="margin-top:10px">
+    <div class="f"><label>Account</label><select id="cwBank">${S.banks.map(b=>`<option value="${b.id}" ${b.id===b0.id?'selected':''}>${esA(b.name)}</option>`).join('')}</select></div>
+    <div class="f"><label>Cheque number</label><input id="cwNo" inputmode="numeric" value="${esA(no||cbNextN(b0.id,1)[0]||'')}"></div>
+    <div class="f"><label>Pay to</label><input id="cwTo" placeholder="e.g. Ceylon Electricity Board, or Self"></div>
+    <div class="f"><label>Amount</label><input id="cwAmt" type="number" step="any" placeholder="0.00"></div>
+    <div class="f"><label>Date on the cheque</label><input id="cwDate" type="date" value="${D(today)}"></div>
+    <div class="f"><label>What it is for</label><select id="cwFor">${CB_FOR().map(([k,t])=>`<option value="${k}">${esA(t)}</option>`).join('')}</select></div></div>
+   <div class="f"><label>Note (optional)</label><input id="cwNote" placeholder="e.g. October rent"></div>
+   <div id="cwSay" class="muted" style="min-height:20px;margin:6px 0"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="cwOk">Save and print</button></div>`);
+  const q=(s)=>m.querySelector(s);
+  const say=()=>{ const bid=+q('#cwBank').value, no=q('#cwNo').value.replace(/\D/g,''); let t='';
+    if(no){ const bk=cbBookOf(bid,no), W=cbWritten().m, c=W.get(bid+'|'+(+no));
+      if(c&&c.status!=='CANCELLED') t=`<span style="color:#a1302a">Cheque ${esA(no)} on this account was already written — to ${esA(c.payee)}, ${fmt(c.amount)}</span>`;
+      else if(bk&&(bk.marks||{})[cbPad(+no,bk.from.length)]) t=`<span style="color:#a1302a">That leaf is marked ${CB_MARK[bk.marks[cbPad(+no,bk.from.length)].state][0].toLowerCase()}</span>`;
+      else if(cbBooksOf(bid).length&&!bk) t=`<span style="color:#8a5d06">That number is not in any book entered for this account</span>`;
+      else if(bk) t=`From the book ${bk.from}–${bk.to}`; }
+    q('#cwSay').innerHTML=t };
+  q('#cwBank').onchange=()=>{ q('#cwNo').value=cbNextN(+q('#cwBank').value,1)[0]||''; say() };
+  q('#cwNo').oninput=say; q('#cwFor').onchange=()=>{ if(q('#cwFor').value==='1010'&&!q('#cwTo').value) q('#cwTo').value='Self' }; say();
+  q('#cwOk').onclick=()=>{
+    const bid=+q('#cwBank').value, b=B(bid), raw=q('#cwNo').value.replace(/\D/g,''), amount=+q('#cwAmt').value, payee=q('#cwTo').value.trim(), date=q('#cwDate').value||D(today), ac=q('#cwFor').value, note=q('#cwNote').value.trim();
+    if(!raw) return toast('Which cheque number?'); if(!payee) return toast('Who is it paid to?'); if(!(amount>0)) return toast('How much?');
+    const bk=cbBookOf(bid,raw), no=bk?cbPad(+raw,bk.from.length):raw;
+    const was=cbWritten().m.get(bid+'|'+(+raw)); if(was&&was.status!=='CANCELLED') return toast(`Cheque ${no} on ${b.name} was already written`);
+    if(bk&&(bk.marks||{})[no]) return toast(`Cheque ${no} is marked ${CB_MARK[bk.marks[no].state][0].toLowerCase()} — undo that first`);
+    const ch={dir:'ISSUED',no,bankId:bid,bank:b.name,date,payee,amount,status:'ISSUED',party:payee,drAc:ac,purpose:(CB_FOR().find(x=>x[0]===ac)||[])[1],note,by:S.user.name,written:D(today)};
+    if(ac.startsWith('6')){ const e={no:next('EXP'),date,cat:ac,amount,method:'CHEQUE',bank:bid,chq:no,desc:`${note||GL[ac]} — cheque ${no} to ${payee}`,voucher:next('VCH'),by:S.user.name}; S.expenses.push(e); ch.ref=e.no }
+    else ch.ref='CHQ '+no;
+    post(date,`Cheque ${no} to ${payee}${note?' — '+note:''}`,no,[{ac,dr:amount},{ac:'2110',cr:amount}]);
+    S.cheques.push(ch); if(+no>=(+b.nextChq||0)) b.nextChq=+no+1;
+    m.remove(); persist(true); render(); toast(`Cheque ${no} to ${payee} · ${fmt(amount)}`,'ok'); printChq(no);
+  };
+}
+
+/* one leaf: what happened to it, and what can still be done with it */
+function cbLeafModal(id,no){
+  const bk=chqBooks().find(k=>k.id===id); if(!bk) return; const l=cbLeaves(bk).find(x=>x.no===no); if(!l) return; const c=l.chq, b=B(bk.bankId);
+  const story=c?`<div class="cb-story">
+      <div><span>Paid to</span><b>${esA(c.payee)}</b></div><div><span>Amount</span><b>${fmt(c.amount)}</b></div>
+      <div><span>Dated</span><b>${c.date}</b></div><div><span>State</span>${tagFor(c.status)}</div>
+      <div><span>For</span><b>${c.supplierId?'Supplier payment '+esA(c.ref||''):esA(c.purpose||c.ref||'—')}</b></div>
+      ${c.by?`<div><span>Written by</span><b>${esA(c.by)}</b></div>`:''}</div>
+      ${c.note?`<div class="muted" style="margin-top:6px">${esA(c.note)}</div>`:''}
+      ${(c.history||[]).length?`<div class="cb-hist">${c.history.map(h=>`<div>${h.at} · ${h.from.toLowerCase()} → <b>${h.to.toLowerCase()}</b>${h.by?' · '+esA(h.by):''}</div>`).join('')}</div>`:''}`
+    :l.mark?`<div class="cb-story"><div><span>Marked</span><b>${CB_MARK[l.mark.state][0]}</b></div><div><span>When</span><b>${l.mark.at}</b></div><div><span>By</span><b>${esA(l.mark.by||'')}</b></div></div>${l.mark.note?`<div class="muted" style="margin-top:6px">${esA(l.mark.note)}</div>`:''}`
+    :`<div class="muted">Blank — not written yet.${l.skipped?' <b style="color:#a1302a">A later leaf has been used, so check the book: is this one still there?</b>':''}</div>`;
+  const acts=c?(c.status==='ISSUED'?`<button class="btn sm" data-act="printChq" data-no="${c.no}">Print</button> <button class="btn ghost sm" id="clCancel">Cancel this cheque</button>`
+      :c.status==='PRINTED'?`<button class="btn tape sm" id="clClear">Cleared</button> <button class="btn ghost sm" data-act="chqBounce" data-no="${c.no}" data-dir="ISSUED">Bounced</button> <button class="btn ghost sm" id="clCancel">Cancel</button> <button class="btn ghost sm" data-act="printChq" data-no="${c.no}">Reprint</button>`:'')
+    :l.mark?`<button class="btn ghost sm" id="clUndo">Undo — it is blank after all</button>`
+    :`<button class="btn tape sm" id="clWrite">Write this cheque</button>
+      ${Object.entries(CB_MARK).map(([k,v])=>`<button class="btn ghost sm" data-mark="${k}" title="${v[2]}">${v[0]}</button>`).join(' ')}`;
+  const m=modal(`<h2>Cheque ${no}</h2><div class="muted" style="margin-bottom:10px">${esA(b.name)} · book ${bk.from}–${bk.to}, received ${bk.got}</div>
+    ${story}
+    ${!c&&!l.mark?`<div class="f" style="margin-top:10px"><label>Note, if you mark it</label><input id="clNote" placeholder="e.g. torn while writing"></div>`:''}
+    <div class="rowacts" style="margin-top:12px;flex-wrap:wrap;gap:6px">${acts}</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn ghost" data-act="closeModal">Close</button></div>`);
+  const q=(s)=>m.querySelector(s);
+  m.querySelectorAll('[data-mark]').forEach(x=>x.onclick=()=>{ bk.marks=bk.marks||{};
+    bk.marks[no]={state:x.dataset.mark,note:(q('#clNote')||{}).value||'',at:D(today),by:S.user.name};
+    if(x.dataset.mark==='MISSING') notify('cheque',`Cheque ${no} on ${b.name} is missing from the book`,'chqbooks');
+    m.remove(); persist(true); render(); toast(`Cheque ${no} marked ${CB_MARK[x.dataset.mark][0].toLowerCase()}`) });
+  const un=q('#clUndo'); if(un) un.onclick=()=>{ delete bk.marks[no]; m.remove(); persist(true); render(); toast(`Cheque ${no} is blank again`) };
+  const wr=q('#clWrite'); if(wr) wr.onclick=()=>{ m.remove(); cbWriteModal(bk.bankId,no) };
+  const cl=q('#clClear'); if(cl) cl.onclick=()=>{ try{ chequeStatus(c,'CLEARED') }catch(e){ return toast(e.message) } m.remove(); persist(true); render(); toast(`Cheque ${no} cleared`) };
+  const cc=q('#clCancel'); if(cc) cc.onclick=()=>{ if(!confirm(`Cancel cheque ${no} to ${c.payee} for ${fmt(c.amount)}? ${c.supplierId?'It goes back onto what you owe them.':'The entry it made is reversed.'}`)) return;
+    try{ chequeStatus(c,'CANCELLED') }catch(e){ return toast(e.message) } m.remove(); persist(true); render(); toast(`Cheque ${no} cancelled`) };
+}
+
+function cbDelete(id){ const bk=chqBooks().find(k=>k.id===id); if(!bk) return;
+  const used=cbLeaves(bk).filter(l=>l.chq).length;
+  if(!confirm(used?`Take the book ${bk.from}–${bk.to} off? The ${used} cheque${used===1?'':'s'} written from it stay on the system; only the book goes.`:`Take the book ${bk.from}–${bk.to} off? Use this only if it was entered by mistake.`)) return;
+  S.chqBooks=chqBooks().filter(k=>k.id!==id); if(CB.book===id) CB.book=null; persist(true); render(); toast('Book taken off') }
+
+function chqBooksPage(){
+  const {m:W,dup}=cbWritten(), books=chqBooks();
+  const cls=(l)=>l.chq?({CLEARED:'ok',BOUNCED:'bad',CANCELLED:'void',PRINTED:'out',ISSUED:'out'})[l.chq.status]||'out':l.mark?(CB_MARK[l.mark.state]||[])[1]||'bad':l.skipped?'skip':'blank';
+  // the accounts: the book in use, how many blank leaves are left, the next number
+  const accts=S.banks.map(b=>{ const bks=cbBooksOf(b.id), left=cbLeft(b.id,W), nx=cbNextN(b.id,1,W)[0];
+    const cur=nx?cbBookOf(b.id,nx):null;
+    const skipped=bks.reduce((a,bk)=>a+cbLeaves(bk,W).filter(l=>l.skipped).length,0);
+    return `<div class="card cb-acct"><div class="cb-acct-h"><b>${esA(b.name)}</b><span class="muted">${esA(b.no)}</span></div>
+      ${bks.length?`<div class="cb-big">${left}<small> blank cheque${left===1?'':'s'} left</small></div>
+        <div class="muted">${cur?`Next cheque <b>${nx}</b> · book ${cur.from}–${cur.to}`:'<b style="color:#a1302a">No blank cheques — enter the next book</b>'}</div>
+        <div style="margin-top:6px">${left===0?'<span class="tag bad">book finished</span>':left<=5?'<span class="tag warn">nearly finished — ask the bank</span>':'<span class="tag ok">fine</span>'}
+          ${skipped?` <span class="tag bad">${skipped} skipped</span>`:''}</div>`
+       :`<div class="muted" style="margin:6px 0">No book entered yet. Cheques go on from number ${String(b.nextChq).padStart(6,'0')}.</div>
+         <button class="btn ghost sm" data-act="cbNew">Enter its book</button>`}</div>` }).join('');
+
+  // a cheque number looked up: every account and book it could be in
+  const q=CB.q.replace(/\D/g,''); let found='';
+  if(q){ const hits=[];
+    for(const b of S.banks){ const c=W.get(b.id+'|'+(+q)), bk=cbBookOf(b.id,q); if(c||bk) hits.push({b,c,bk}) }
+    // a cheque from a customer with that number, so a number that is not ours still says what it is
+    const rec=(S.cheques||[]).filter(c=>c.dir==='RECEIVED'&&String(c.no).replace(/\D/g,'')===q);
+    found=`<div class="card cb-found"><h2>Cheque ${esA(q)}</h2>${hits.map(({b,c,bk})=>{
+      const no=bk?cbPad(+q,bk.from.length):q, l=bk?cbLeaves(bk,W).find(x=>x.no===no):null;
+      return `<div class="cb-hit"><div><b>${esA(b.name)}</b><div class="muted">${bk?`book ${bk.from}–${bk.to} · received ${bk.got}${bk.note?' · '+esA(bk.note):''}`:'not in any book entered'}</div></div>
+        <div>${c?`Paid to <b>${esA(c.payee)}</b> · ${fmt(c.amount)} · dated ${c.date} ${tagFor(c.status)}<div class="muted">${c.supplierId?'supplier payment '+esA(c.ref||''):esA(c.purpose||c.ref||'')}${c.by?' · written by '+esA(c.by):''}${c.changed&&c.status!=='ISSUED'?' · '+c.status.toLowerCase()+' '+c.changed:''}</div>`
+          :l&&l.mark?`<span class="tag bad">${CB_MARK[l.mark.state][0]}</span> ${l.mark.at} · ${esA(l.mark.by||'')}${l.mark.note?' · '+esA(l.mark.note):''}`
+          :`<span class="tag">blank</span>${l&&l.skipped?' <span class="tag bad">skipped — check the book</span>':''}`}</div>
+        ${bk?`<button class="btn ghost sm" data-act="cbLeaf" data-id="${bk.id}" data-no="${no}">Open</button>`:''}</div>` }).join('')}
+      ${rec.map(c=>`<div class="cb-hit"><div><b>From a customer</b><div class="muted">${esA(c.bank||'')}</div></div><div>${esA(c.party||'')} · ${fmt(c.amount)} · ${tagFor(c.status)}</div></div>`).join('')}
+      ${!hits.length&&!rec.length?'<div class="muted">No cheque with that number — not written, not in any book entered, and not received from a customer.</div>':''}</div>` }
+
+  // a number used twice on the same account
+  const dups=[...dup.values()];
+  const warn=dups.length?`<div class="card note" style="border-left:3px solid #a1302a"><b>The same cheque number used twice</b>${dups.map(cs=>`<div>${esA(cs[0].bank)} · <b>${esA(cs[0].no)}</b> — ${cs.map(c=>esA(c.payee)+' '+fmt(c.amount)).join(' and ')}</div>`).join('')}</div>`:'';
+
+  const open=books.find(k=>k.id===CB.book);
+  const list=S.banks.flatMap(b=>cbBooksOf(b.id)).map(bk=>{ const ls=cbLeaves(bk,W), used=ls.filter(l=>l.chq).length, marked=ls.filter(l=>l.mark).length, blank=ls.length-used-marked;
+    const pct=Math.round((used+marked)/ls.length*100);
+    return `<tr class="${CB.book===bk.id?'cb-on':''}"><td><b>${esA(B(bk.bankId).name)}</b><div class="muted">received ${bk.got}${bk.by?' · '+esA(bk.by):''}</div></td>
+      <td><b>${bk.from} – ${bk.to}</b><div class="muted">${ls.length} leaves${bk.note?' · '+esA(bk.note):''}</div></td>
+      <td><div class="cb-bar"><i style="width:${pct}%"></i></div><div class="muted">${used} written · ${marked?marked+' marked · ':''}${blank} blank</div></td>
+      <td><div class="rowacts"><button class="btn ${CB.book===bk.id?'':'ghost'} sm" data-act="cbOpen" data-id="${bk.id}">${CB.book===bk.id?'Showing':'Open'}</button>
+        <button class="btn ghost sm" data-act="cbDel" data-id="${bk.id}" title="Take the book off">✕</button></div></td></tr>` }).join('');
+
+  const grid=open?(()=>{ const ls=cbLeaves(open,W);
+    return `<div class="card"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <h2 style="margin:0">${esA(B(open.bankId).name)} · ${open.from} – ${open.to}</h2>
+      <div class="cb-key"><i class="blank"></i>blank <i class="out"></i>written <i class="ok"></i>cleared <i class="void"></i>cancelled / used before <i class="bad"></i>spoilt / void / missing / bounced <i class="skip"></i>skipped</div></div>
+      <div class="cb-grid">${ls.map(l=>`<button class="cb-leaf ${cls(l)}" data-act="cbLeaf" data-id="${open.id}" data-no="${l.no}">
+        <b>${l.no}</b>${l.chq?`<span>${esA(String(l.chq.payee).split(' ').slice(0,3).join(' '))}</span><em>${fmt(l.chq.amount)}</em>`
+          :l.mark?`<span>${CB_MARK[l.mark.state][0]}</span>`:l.skipped?'<span>skipped?</span>':'<span>blank</span>'}</button>`).join('')}</div></div>` })():'';
+
+  return `<h1>Cheque books</h1>
+   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <button class="btn tape" data-act="cbNew">Receive a cheque book</button>
+    <button class="btn ghost" data-act="cbWrite">Write a cheque</button>
+    <div class="f" style="margin:0 0 0 auto;min-width:240px"><input id="cbQ" value="${esA(CB.q)}" inputmode="numeric" placeholder="Find a cheque number — what happened to it?"></div></div>
+   ${found}
+   <div class="cb-accts">${accts||'<div class="muted">No bank accounts yet — add them in Settings.</div>'}</div>
+   ${warn}
+   <div class="card"><h2>Books</h2>${list?`<div style="overflow-x:auto"><table style="min-width:620px"><tr><th>Account</th><th>Leaves</th><th>Used</th><th></th></tr>${list}</table></div>`
+     :'<div class="muted" style="padding:14px 0">No cheque books entered yet. Each time the bank gives you a book, press <b>Receive a cheque book</b> and type its first and last number.</div>'}</div>
+   ${grid}`;
+}
+function chqBooksAfter(){
+  const q=$('#cbQ'); if(q){ q.oninput=e=>{ CB.q=e.target.value; render(); const n=$('#cbQ'); n.focus(); n.setSelectionRange(n.value.length,n.value.length) };
+    if(document.activeElement===document.body&&CB.q) q.focus() }
+}
+
 /* ---- our own cheques ---- */
 function chequesOut(){
   const iss=S.cheques.filter(c=>c.dir==='ISSUED');
@@ -23870,7 +24120,7 @@ function chequesOut(){
       <td>${tagFor(c.status)}${c.note?`<div class="muted">${c.note}</div>`:''}</td>
       <td><div class="rowacts">${acts||'<span class="muted">done</span>'}</div></td></tr>`};
 
-  return `<h1>Cheques we have written</h1>
+  return `<h1>Cheques we have written <button class="btn ghost sm" data-view="chqbooks" style="float:right">Cheque books</button></h1>
   <div class="row" style="margin-bottom:12px">
    ${stat('Out there, not cleared',fmt(sum(out)),`${out.length} cheque${out.length===1?'':'s'}`,'r')}
    ${stat('Falling due this week',fmt(sum(dueSoon)),`${dueSoon.length} to cover`,'y')}
@@ -23882,7 +24132,7 @@ function chequesOut(){
    <div class="card flex1">
     <h2>What each account can cover</h2>
     ${perBank.map(x=>`<div class="prow">
-      <div><b>${x.b.name}</b><div class="muted">${x.b.no} · next cheque ${String(x.b.nextChq).padStart(6,'0')}</div></div>
+      <div><b>${x.b.name}</b><div class="muted">${x.b.no} · next cheque ${chqNextLabel(x.b)}</div></div>
       <div style="text-align:right"><div>${fmt(x.held)} held</div>
        <div class="muted">${x.count} cheque${x.count===1?'':'s'} out, ${fmt(x.owed)}
         ${x.owed>x.held?'<span class="tag bad">short</span>':'<span class="tag ok">covered</span>'}</div></div></div>`).join('')}
@@ -23909,7 +24159,7 @@ function chequesOut(){
   </div>`;
 }
 
-function printChq(no){ const c=S.cheques.find(x=>x.no===no&&x.dir==='ISSUED'); const d=c.date.split('-').reverse().join('  ');
+function printChq(no){ const c=S.cheques.filter(x=>x.no===no&&x.dir==='ISSUED').at(-1); const d=c.date.split('-').reverse().join('  ');
   modal(`<h2>Cheque print — ${c.bank}</h2><div class="muted" style="margin-bottom:8px">Positions come from Settings → Cheque layout (per bank). Nudge with the offsets below, then Print.</div><div class="chq"><div class="d" style="right:14px;top:10px;letter-spacing:6px">${d}</div><div class="d" style="left:80px;top:60px;width:400px;border-bottom:1px dotted #000">${c.payee}</div><div class="d" style="left:60px;top:95px;width:440px;border-bottom:1px dotted #000">${words(c.amount)} rupees only</div><div class="d" style="right:14px;top:125px;border:1px solid #000;padding:4px 10px;font-weight:700">Rs ${c.amount.toLocaleString('en-LK',{minimumFractionDigits:2})}/=</div><div class="d" style="left:14px;bottom:10px" class="muted">A/C payee only · ${c.no}</div></div><div class="grid3" style="margin-top:10px"><div class="f"><label>Shift right (mm)</label><input type="number" value="0"></div><div class="f"><label>Shift down (mm)</label><input type="number" value="0"></div><div class="f"><label>Cheque size</label><select><option>Standard LK 178×76mm</option></select></div></div><div style="text-align:right"><button class="btn ghost" data-act="closeModal">Close</button> <button class="btn tape" data-act="chqSet" data-no="${c.no}" data-dir="ISSUED" data-st="PRINTED">Print & mark printed</button></div>`) }
 
 /* ---- expenses ---- */
@@ -23926,7 +24176,7 @@ function accounting(){ const tabs=[['tb','Trial balance'],['pl','Profit & loss']
   if(accTab==='pl'){ const inc=-bal('4100')-bal('4110'), cogs=bal('5100')+bal('5200'); const ex=Object.keys(GL).filter(k=>k.startsWith('6')).map(k=>[GL[k],bal(k)]).filter(r=>r[1]); const te=ex.reduce((a,r)=>a+r[1],0);
     body=`<table><tr><td>Sales (net of returns)</td><td class="n">${fmt(inc)}</td></tr><tr><td>Cost of goods sold + damage</td><td class="n">(${fmt(cogs)})</td></tr><tr><td><b>Gross profit</b></td><td class="n"><b>${fmt(inc-cogs)}</b> <span class="muted">${inc?((inc-cogs)/inc*100).toFixed(1):0}%</span></td></tr>${ex.map(r=>`<tr><td style="padding-left:24px">${r[0]}</td><td class="n">(${fmt(r[1])})</td></tr>`).join('')}<tr><td><b>Net profit</b></td><td class="n"><b>${fmt(inc-cogs-te)}</b></td></tr></table><div class="muted" style="margin-top:6px">Salaries post when the month's payroll run is approved (see Employees & salary).</div>` }
   if(accTab==='je') body=`<table><tr><th>Entry</th><th>Date</th><th>Description</th><th>Account</th><th class="n">Debit</th><th class="n">Credit</th></tr>${S.journal.slice().reverse().slice(0,40).map(j=>j.lines.map((l,i)=>`<tr><td>${i?'':j.no}</td><td>${i?'':j.date}</td><td>${i?'':j.desc}</td><td>${l.ac} ${GL[l.ac]}${l.party?' <span class="muted">('+(l.party.type==='C'?C(l.party.id)?.name:SU(l.party.id)?.name)+')</span>':''}</td><td class="n">${l.dr?fmt(l.dr):''}</td><td class="n">${l.cr?fmt(l.cr):''}</td></tr>`).join('')).join('')}</table><div class="muted">Showing last 40 of ${S.journal.length} entries.</div>`;
-  if(accTab==='bank') body=`<div class="row">${S.banks.map(b=>stat(b.name,fmt(bal(b.ac)),b.no+' · next cheque '+String(b.nextChq).padStart(6,'0'))).join('')}</div><h2 style="margin-top:12px">Bank transactions</h2><table><tr><th>Date</th><th>Account</th><th>Description</th><th class="n">In</th><th class="n">Out</th></tr>${S.journal.flatMap(j=>j.lines.filter(l=>['1020','1021','1022'].includes(l.ac)).map(l=>({j,l}))).reverse().map(({j,l})=>`<tr><td>${j.date}</td><td>${GL[l.ac]}</td><td>${j.desc}</td><td class="n">${l.dr?fmt(l.dr):''}</td><td class="n">${l.cr?fmt(l.cr):''}</td></tr>`).join('')}</table>`;
+  if(accTab==='bank') body=`<div class="row">${S.banks.map(b=>stat(b.name,fmt(bal(b.ac)),b.no+' · next cheque '+chqNextLabel(b))).join('')}</div><h2 style="margin-top:12px">Bank transactions</h2><table><tr><th>Date</th><th>Account</th><th>Description</th><th class="n">In</th><th class="n">Out</th></tr>${S.journal.flatMap(j=>j.lines.filter(l=>['1020','1021','1022'].includes(l.ac)).map(l=>({j,l}))).reverse().map(({j,l})=>`<tr><td>${j.date}</td><td>${GL[l.ac]}</td><td>${j.desc}</td><td class="n">${l.dr?fmt(l.dr):''}</td><td class="n">${l.cr?fmt(l.cr):''}</td></tr>`).join('')}</table>`;
   return `<h1>Accounting</h1><div class="tabs">${tabs.map(t=>`<button class="${accTab===t[0]?'on':''}" data-acc="${t[0]}">${t[1]}</button>`).join('')}</div><div class="card">${body}</div>` }
 
 /* ---- messages ---- */
@@ -26817,6 +27067,9 @@ document.addEventListener('click',e=>{
     chqSet:()=>{const c=S.cheques.find(x=>x.no===a.dataset.no&&x.dir===a.dataset.dir);
       closeModals(); try{chequeStatus(c,a.dataset.st)}catch(e){return toast(e.message)} render(); toast(`Cheque ${c.no} · ${a.dataset.st.toLowerCase()}`)},
     chqClear:()=>{chqQ='';chqStatus='all';render()},
+    cbNew:()=>cbNewModal(), cbWrite:()=>cbWriteModal(), cbDel:()=>cbDelete(a.dataset.id),
+    cbOpen:()=>{ CB.book=CB.book===a.dataset.id?null:a.dataset.id; render() },
+    cbLeaf:()=>{ closeModals(); cbLeafModal(a.dataset.id,a.dataset.no) },
     payslip:()=>{const e=S.employees.find(x=>x.id===+a.dataset.id);
       const mk=payMonth||D(today).slice(0,7); salaryVoucher(e,payFor(e,mk),mk)},
     settab:()=>{}, tplReset:()=>{CFG.tpl[a.dataset.k].text=TPL_ORIG[a.dataset.k].text; render(); toast('Original wording restored')},
