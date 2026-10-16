@@ -914,6 +914,22 @@ async function poll() {
   if (Number(j.rev) !== rev || online === false) await load(true); else status('Live', 'live');
 }
 function startPolling() { clearInterval(pollT); pollT = setInterval(poll, POLL_MS); }
+/* a phone left at the door keeps this tab open for days: when a newer shift page is put on the server
+   it reloads itself — once nobody is in the middle of something — so the new buttons simply appear */
+let pageTag = '';
+async function checkNewPage() {
+  try {
+    const r = await fetch('/shift', { method: 'HEAD', cache: 'no-store' });
+    const tag = r.headers.get('etag') || r.headers.get('last-modified') || '';
+    if (!tag) return;
+    if (!pageTag) { pageTag = tag; return; }
+    if (tag !== pageTag && !document.querySelector('.veil') && !document.querySelector('#lockScreen .pin-dots i.on')) {
+      toast('A newer shift clock is here — opening it…'); setTimeout(() => location.reload(), 1200);
+    }
+  } catch (e) {}
+}
+checkNewPage(); setInterval(checkNewPage, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkNewPage(); });
 
 /* ---------------- signing in: the till's lock screen ---------------- */
 function lockScreen(why) {
