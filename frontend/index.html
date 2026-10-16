@@ -3830,6 +3830,13 @@ tr.cb-on td{background:#FBE4E6}
 .lv-dot{width:10px;height:10px;border-radius:50%;background:var(--c);flex:none}
 .lv-st{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--panel)}.lv-st.approved{background:#E9F7F0;color:#12613D}.lv-st.pending{background:#FFF4DC;color:#8A5D06}.lv-st.rejected,.lv-st.cancelled{background:#fdecea;color:#a1302a}
 .lv-acts{display:flex;gap:6px}
+.lv-cell.poya{background:linear-gradient(180deg,#FFF9E6,#fff)}.lv-cell.poya:disabled{cursor:default;opacity:.9}
+.lv-poya{font-style:normal;font-size:10.5px;font-weight:700;color:#8A5D06;margin-left:2px}
+.lv-grp{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--panel);color:var(--muted);vertical-align:1px}.lv-grp.director{background:#EDE7FB;color:#5b3aa8}
+.lv-quota{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;border-radius:10px;background:var(--panel);margin-bottom:8px;font-size:13px}.lv-quota b{font:800 18px Archivo,sans-serif}
+.lv-row small.lv-over{color:#a1302a;font-weight:600}
+.lv-seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}.lv-seg button{border:0;background:#fff;padding:6px 12px;font:inherit;font-size:12.5px;cursor:pointer}.lv-seg button.on{background:var(--ink);color:#fff}
+.lv-ppl .lv-row:last-child{border-bottom:0}.lv-row>.lv-seg{flex:0 0 auto}
 @media (max-width:900px){.lv{grid-template-columns:1fr}.lv-cell{min-height:62px;padding:4px}.lv-chip{font-size:10px;padding:1px 4px}}
 .rt2{display:flex;gap:0;min-height:calc(100vh - 120px);background:#DCE3E2;border-radius:var(--r);overflow:hidden;border:1px solid var(--line)}
 .rt2-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;background:#fff}
@@ -5139,6 +5146,7 @@ const CFG={
     shop ends up owing money for goods nobody ever counted, so whether it is on at all is the
     owner's decision and not the person at the counter's. */
  buying:{amountOnly:true,amountOnlyWho:'any',dnFirst:true},
+ leave:{},
  done:{askSize:true,cashDefault:'r80',creditDefault:'r80',rememberPick:true,notice:true,noticeMs:3200,
    askCustomer:true,askSalesman:true,                  // the two questions once the money is taken
    printAnim:true,animMs:1000,creditStamp:true,creditWord:'CREDIT BILL',cashWord:'PAID',sound:false},
@@ -5505,7 +5513,7 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
 function settingsTabs(){
-  return [['screen','My screen'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messages'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['banks','Bank accounts'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  return [['screen','My screen'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messages'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['banks','Bank accounts'],['leave','Leave'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
 }
 function settings(){
   const tabs=settingsTabs();
@@ -5899,6 +5907,7 @@ function settings(){
        understands are: how many of something, what something costs, the money questions, and what is
        waiting.</div></div>` }
   if(setTab==='banks') body=bankSettings();
+  if(setTab==='leave') body=leaveSettings();
   if(setTab==='buying'){ const bc=CFG.buying||{};
     body=`<div class="card note" style="margin-bottom:10px"><b>How goods are allowed in</b>
       <div class="muted">There are three ways a lorry can be taken in. Entering it item by item is always
@@ -5955,7 +5964,7 @@ function settings(){
     shop:['Name, address and phones as printed','M3 9l2-5h14l2 5M4 9h16v11H4zM9 20v-6h6v6'],bill:['Numbering, formats and the return window',ICONS.bills],layout:['Logo, lines and text size on the bill',ICONS.docs],
     cost:['The code that hides cost on labels',ICONS.labels],msg:['How texts read, their wording, and who gets them',ICONS.messages],
     shift:['The Shift Board, the fingerprint machine and pay','M12 7v5l3 2M12 3a9 9 0 110 18 9 9 0 010-18z'],
-    approvals:['What needs the owner’s nod',ICONS.approvals],buying:['How goods are allowed in',ICONS.purchases],banks:['Accounts, cheque numbers, balances',ICONS.chequesOut],alexa:['What the Echo may say out loud',ICONS.messages],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
+    approvals:['What needs the owner’s nod',ICONS.approvals],buying:['How goods are allowed in',ICONS.purchases],banks:['Accounts, cheque numbers, balances',ICONS.chequesOut],leave:['Days a month, Poya, who may be off together',ICONS.leave],alexa:['What the Echo may say out loud',ICONS.messages],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
   if(!_setIndexing){
     const searching=setSearch.trim().length>=2;
     body=settingsSearchBox()+(searching?'':body);
@@ -11543,6 +11552,7 @@ function renderNow(){
   if(S.view==='actions') actionsAfter();
   if(S.view==='returns') returnsAfter();
   if(S.view==='leave') leaveAfter();
+  if(S.view==='settings'&&setTab==='leave') leaveSettingsAfter();
   if(S.view==='chqbooks') chqBooksAfter();
   if(S.view==='printq') printqAfter();
   if(S.view==='cameras') camerasAfter();
@@ -19017,89 +19027,177 @@ function decideApproval(id,ok,note){
 }
 /* ==================== LEAVE: a calendar of who is off ====================
    Anybody signed in asks for their own days off on the calendar; the owner or an admin says yes or no
-   (it goes through Approvals, so it is in the bell and the Action centre with everything else). One
-   person off on any day: a day somebody has asked for, or has off, cannot be asked for by anybody else
-   — and that is checked again at the moment of approval, in case two asks crossed. An approver adding
-   leave for someone can approve it there and then. Each person is told the answer, in the bell and by
-   text if their mobile is on their user. */
+   (it goes through Approvals, so it is in the bell and the Action centre with everything else). Each
+   person is a director or an employee, and each group has its days a month — the Poya day counted in
+   them, on top of them, or a working day. Staff may not ask for a day that already has as many off as
+   allowed (one); the owner or an admin may approve up to their own number (two). The person and the
+   owner are told the answer, and on the last day of leave the person is reminded when they are back.
+   All of it is set in Settings → Leave. */
 const LEAVE_TYPES=[['annual','Annual'],['casual','Casual'],['sick','Sick'],['other','Other']];
 const LEAVE_COLS=['#AE1E2B','#1f6fb2','#1e8a5a','#7a4bc4','#b7791f','#0f7b8a','#c0392b','#5b6b73'];
+const LV_GROUPS=[['employee','Employee'],['director','Director']];
 let LV={y:null,m:null,from:null,to:null,who:'',type:'annual',half:false,reason:'',now:true};
+/* the rules, all in Settings → Leave: days a month for each group, what the Poya day is, how many may be
+   off on one day (staff asking, and the owner or an admin putting it on), the reminder, the owner's text */
+const LV_DEF={perEmp:4,perDir:0,poya:'within',dayAsk:1,dayApprove:2,sepGroups:true,remind:true,remindAt:'17:00',tellOwner:true,groups:{},poyaDays:{}};
+const LVC=()=>{ const c=CFG.leave||(CFG.leave={}); for(const k in LV_DEF) if(c[k]===undefined) c[k]=JSON.parse(JSON.stringify(LV_DEF[k])); return c };
+const lvGroup=(name)=>LVC().groups[String(name||'').toLowerCase().trim()]==='director'?'director':'employee';
+const lvGroupName=(g)=>(LV_GROUPS.find(x=>x[0]===g)||LV_GROUPS[0])[1];
+const lvAllow=(who)=>Math.max(0,+(lvGroup(who)==='director'?LVC().perDir:LVC().perEmp)||0);   // 0: no limit
 const lvList=()=>{ if(!Array.isArray(S.leaves)) S.leaves=[]; return S.leaves };
 const lvLive=()=>lvList().filter(l=>l.status==='pending'||l.status==='approved');
 const lvDays=(from,to)=>{ const out=[]; let d=new Date(from+'T00:00:00'); const e=new Date(to+'T00:00:00'); while(d<=e&&out.length<62){ out.push(D(d)); d.setDate(d.getDate()+1) } return out };
 const lvOn=(day)=>lvLive().filter(l=>l.from<=day&&l.to>=day);
 const lvColor=(name)=>{ let h=0; for(const ch of String(name||'')) h=(h*31+ch.charCodeAt(0))>>>0; return LEAVE_COLS[h%LEAVE_COLS.length] };
 const lvStaff=()=>(S.users||[]).filter(u=>u.active!==false).map(u=>u.name);
-/* the rule: nobody else may be off on any of these days */
-function lvClash(from,to,except){
-  for(const day of lvDays(from,to)){ const o=lvOn(day).find(l=>l.id!==except); if(o) return {day,l:o} }
-  return null;
-}
+const lvNice=(d)=>new Date(d+'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+const lvMonthName=(ym)=>new Date(ym+'-01T00:00:00').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+
+/* ---- Poya: the full moon, worked out (Meeus), in Sri Lanka time. The owner can correct any date. ---- */
+const _fm={};
+function fullMoons(year){
+  if(_fm[year]) return _fm[year];
+  const r=Math.PI/180, out=[]; let k=Math.floor((year-2000)*12.3685)-2;
+  for(let i=0;i<16;i++,k++){ const kk=k+0.5, T=kk/1236.85;
+    let jde=2451550.09766+29.530588861*kk+0.00015437*T*T-0.00000015*T*T*T;
+    const E=1-0.002516*T-0.0000074*T*T, M=(2.5534+29.1053567*kk)*r, Mp=(201.5643+385.81693528*kk+0.0107582*T*T)*r,
+      F=(160.7108+390.67050284*kk-0.0016118*T*T)*r, Om=(124.7746-1.56375588*kk+0.0020672*T*T)*r, sn=Math.sin;
+    jde+=-0.40614*sn(Mp)+0.17302*E*sn(M)+0.01614*sn(2*Mp)+0.01043*sn(2*F)+0.00734*E*sn(Mp-M)-0.00515*E*sn(Mp+M)+0.00209*E*E*sn(2*M)
+      -0.00111*sn(Mp-2*F)-0.00057*sn(Mp+2*F)+0.00056*E*sn(2*Mp+M)-0.00042*sn(3*Mp)+0.00042*E*sn(M+2*F)+0.00038*E*sn(M-2*F)-0.00024*E*sn(2*Mp-M)-0.00017*sn(Om);
+    const s=new Date((jde-2440587.5)*864e5+5.5*36e5).toISOString().slice(0,10);
+    if(s.startsWith(String(year))&&!out.includes(s)) out.push(s) }
+  return _fm[year]=out.sort() }
+const lvPoyas=(year)=>{ const own=LVC().poyaDays[String(year)]; return Array.isArray(own)&&own.length?own:fullMoons(+year) };
+const lvIsPoya=(day)=>lvPoyas(day.slice(0,4)).includes(day);
+const lvPoyaOff=(day)=>LVC().poya!=='working'&&lvIsPoya(day);       // everyone is off: not a leave day
+
+/* how many days of leave a person has in a month, counting the Poya day when it is one of them */
+function lvUsed(who,ym,except){ let n=0;
+  for(const l of lvLive()){ if(l.who!==who||l.id===except) continue;
+    for(const d of lvDays(l.from,l.to)) if(d.startsWith(ym)&&!lvPoyaOff(d)) n+=l.half?0.5:1 }
+  if(LVC().poya==='within') n+=lvPoyas(ym.slice(0,4)).filter(d=>d.startsWith(ym)).length;
+  return n }
+function lvOver(who,from,to,half,except){ const cap=lvAllow(who); if(!cap) return null; const add={};
+  for(const d of lvDays(from,to)) if(!lvPoyaOff(d)) add[d.slice(0,7)]=(add[d.slice(0,7)]||0)+(half?0.5:1);
+  for(const [ym,n] of Object.entries(add)){ const u=lvUsed(who,ym,except); if(u+n>cap) return {ym,used:u,want:n,cap} }
+  return null }
+const lvOverText=(o,who)=>`${who?who+' — ':''}${lvMonthName(o.ym)}: ${o.used} of ${o.cap} day${o.cap===1?'':'s'} already used${LVC().poya==='within'?' (the Poya day counts as one)':''}; this would make ${o.used+o.want}`;
+const lvDayCount=(l)=>l.half?0.5:lvDays(l.from,l.to).filter(d=>!lvPoyaOff(d)).length;
+
+/* the rule for a day: staff asking may not take a day that already has as many off as Settings allows
+   (one, out of the box); the owner or an admin may put on or approve up to their own number (two).
+   Directors and employees are counted apart unless Settings says otherwise. */
+const lvLimit=(approver)=>Math.max(1,+(approver?LVC().dayApprove:LVC().dayAsk)||1);
+function lvClash(from,to,except,who,limit){
+  who=who||S.user.name; limit=limit||lvLimit(false); const g=lvGroup(who), sep=LVC().sepGroups!==false;
+  for(const day of lvDays(from,to)){ if(lvPoyaOff(day)) continue;
+    const others=lvOn(day).filter(l=>l.id!==except&&l.who!==who&&(!sep||lvGroup(l.who)===g));
+    if(others.length>=limit) return {day,l:others[0],all:others,limit} }
+  return null }
+const lvClashText=(c)=>`${c.all.map(l=>l.who).join(' and ')} ${c.all.length===1?'is':'are'} already ${c.all.every(l=>l.status==='approved')?'off':'on'} ${lvNice(c.day)} — ${c.limit===1?'one person':c.limit+' people'} a day${LVC().sepGroups!==false?' ('+lvGroupName(lvGroup(c.all[0].who)).toLowerCase()+'s)':''}`;
+
+/* the answer goes to the person, and to the owner: in the bell, and by text */
 function lvTell(l,ok,note){
-  const txt=ok?`Your leave ${l.from===l.to?'on '+l.from:'from '+l.from+' to '+l.to} has been approved.`:`Your leave ${l.from===l.to?'on '+l.from:'from '+l.from+' to '+l.to} was not approved${note?': '+note:'.'}`;
-  notify(ok?'info':'warn',txt,'leave',{forUser:l.who});
+  const when=l.from===l.to?lvNice(l.from):lvNice(l.from)+' to '+lvNice(l.to), n=lvDayCount(l), days=n===0.5?'half a day':n+' day'+(n===1?'':'s');
+  const type=(LEAVE_TYPES.find(t=>t[0]===l.type)||[0,'Other'])[1], cap=lvAllow(l.who), ym=l.from.slice(0,7);
+  const left=cap?Math.max(0,cap-lvUsed(l.who,ym)):null;
+  const txt=ok?`Your leave has been approved.\nDates: ${when}\nDays: ${days}\nType: ${type}${left!==null?`\nLeave left for ${lvMonthName(ym)}: ${left}`:''}`
+    :`Your leave request was not approved.\nDates: ${when}${note?`\nReason: ${note}`:''}`;
+  notify(ok?'info':'warn',ok?`Your leave ${when} has been approved`:`Your leave ${when} was not approved${note?' — '+note:''}`,'leave',{forUser:l.who});
   const u=(S.users||[]).find(x=>x.name===l.who); const ph=u&&(u.phone||((S.employees||[]).find(e=>String(e.userName||e.name)===l.who)||{}).phone);
-  if(ph) try{ sms(ph,txt.replace(/^Your/,'Your')+(ok?'\nEnjoy the time off.':''),'staff') }catch(e){}
+  if(ph) try{ sms(ph,txt,'staff') }catch(e){}
+  notify('people',`${l.who}'s leave ${when} ${ok?'approved':'turned down'} by ${S.user.name}`,'leave',{forApprovers:true});
+  if(LVC().tellOwner&&CFG.shop.owner){
+    const own=`Leave ${ok?'approved':'turned down'}.\nName: ${l.who} (${lvGroupName(lvGroup(l.who)).toLowerCase()})\nDates: ${when}\nDays: ${days}\nType: ${type}\n${ok?'Approved':'Turned down'} by: ${S.user.name}${!ok&&note?`\nReason: ${note}`:''}`;
+    String(CFG.shop.owner).split(/[,;]+/).map(x=>x.trim()).filter(x=>x&&x.replace(/\D/g,'')!==String(ph||'').replace(/\D/g,'')).forEach(p=>{ try{ sms(p,own) }catch(e){} }) }
 }
 function lvApprove(id){
   const l=lvList().find(x=>x.id===id); if(!l) throw new Error('That leave is no longer there');
-  const c=lvClash(l.from,l.to,l.id); if(c) throw new Error(`${c.l.who} is already off on ${c.day} — only one person a day`);
+  const c=lvClash(l.from,l.to,l.id,l.who,lvLimit(true)); if(c) throw new Error(lvClashText(c));
   l.status='approved'; l.decidedBy=S.user.name; l.decidedAt=apStamp(); lvTell(l,true);
 }
+/* approving over the month's days is the owner's call: asked once, then it goes ahead */
+function lvOverOk(l){ const o=lvOver(l.who,l.from,l.to,l.half,l.id); return !o||confirm(lvOverText(o,l.who)+'.\n\nApprove it anyway?') }
+
+/* the day it ends, the person is reminded they are back the next working day */
+function lvRemindTick(){
+  if(!S.user||!S.user.name||!Array.isArray(S.leaves)||!LVC().remind) return;
+  const t=D(today), hm=new Date().toTimeString().slice(0,5); if(hm<(LVC().remindAt||'17:00')) return;
+  let any=false;
+  for(const l of S.leaves){ if(l.status!=='approved'||l.to!==t||l.endTold) continue;
+    let back=new Date(t+'T00:00:00'); do{ back.setDate(back.getDate()+1) }while(lvPoyaOff(D(back)));
+    const bs=lvNice(D(back)), msg=`Your leave ends today.\nWe look forward to seeing you back at work on ${bs}.`;
+    l.endTold=apStamp(); any=true;
+    notify('info',`Your leave ends today — back on ${bs}`,'leave',{forUser:l.who});
+    const u=(S.users||[]).find(x=>x.name===l.who); const ph=u&&(u.phone||((S.employees||[]).find(e=>String(e.userName||e.name)===l.who)||{}).phone);
+    if(ph) try{ sms(ph,msg,'staff') }catch(e){} }
+  if(any) try{ persist(true) }catch(e){}
+}
+setInterval(()=>{ try{ lvRemindTick() }catch(e){} },60000);
+
 function leavePage(){
   const now=new Date(D(today)+'T00:00:00');
   if(LV.y===null){ LV.y=now.getFullYear(); LV.m=now.getMonth() }
   // a new person at the till starts from themselves — and only an approver may pick somebody else
   if(LV.user!==S.user.name||!canApprove()){ if(LV.user!==S.user.name){ LV.from=null; LV.to=null; LV.half=false; LV.reason='' } LV.user=S.user.name; LV.who=S.user.name }
-  const may=canApprove(), first=new Date(LV.y,LV.m,1), lead=(first.getDay()+6)%7, dim=new Date(LV.y,LV.m+1,0).getDate();
+  const may=canApprove(), cfg=LVC(), lim=lvLimit(may), g=lvGroup(LV.who), sep=cfg.sepGroups!==false;
+  const first=new Date(LV.y,LV.m,1), lead=(first.getDay()+6)%7, dim=new Date(LV.y,LV.m+1,0).getDate();
   const todayS=D(today), selDays=LV.from?lvDays(LV.from,LV.to||LV.from):[];
   const cells=[]; for(let i=0;i<lead;i++) cells.push('<div class="lv-cell blank"></div>');
   for(let d=1;d<=dim;d++){
-    const day=D(new Date(LV.y,LV.m,d)), on=lvOn(day), past=day<todayS, sel=selDays.includes(day);
-    const mine=on.find(l=>l.who===LV.who), other=on.find(l=>l.who!==LV.who);
-    cells.push(`<button type="button" class="lv-cell ${past?'past':''} ${day===todayS?'today':''} ${sel?'sel':''} ${other?'taken':''}" data-act="lvDay" data-d="${day}" ${past||other?'disabled':''} title="${on.map(l=>`${l.who} · ${l.status}`).join(', ')}">
-      <span class="lv-n">${d}</span>
+    const day=D(new Date(LV.y,LV.m,d)), on=lvOn(day), past=day<todayS, sel=selDays.includes(day), poya=lvIsPoya(day), off=lvPoyaOff(day);
+    const others=on.filter(l=>l.who!==LV.who&&(!sep||lvGroup(l.who)===g)), full=others.length>=lim;
+    cells.push(`<button type="button" class="lv-cell ${past?'past':''} ${day===todayS?'today':''} ${sel?'sel':''} ${full?'taken':''} ${poya?'poya':''}" data-act="lvDay" data-d="${day}" ${past||full||off?'disabled':''} title="${poya?'Poya'+(off?' — everyone is off':'')+'. ':''}${on.map(l=>`${l.who} · ${l.status}`).join(', ')}">
+      <span class="lv-n">${d}${poya?' <em class="lv-poya">🌕 Poya</em>':''}</span>
       ${on.map(l=>`<i class="lv-chip ${l.status}" style="--c:${lvColor(l.who)}">${escM(String(l.who).split(' ')[0])}${l.half?' ½':''}</i>`).join('')}
     </button>`);
   }
-  const monthName=first.toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+  const monthName=first.toLocaleDateString('en-GB',{month:'long',year:'numeric'}), ym=`${LV.y}-${String(LV.m+1).padStart(2,'0')}`;
   const mine=lvList().filter(l=>l.who===S.user.name).slice().sort((a,b)=>b.from.localeCompare(a.from)).slice(0,10);
   const waiting=lvList().filter(l=>l.status==='pending').sort((a,b)=>a.from.localeCompare(b.from));
   const coming=lvList().filter(l=>l.status==='approved'&&l.to>=todayS).sort((a,b)=>a.from.localeCompare(b.from)).slice(0,10);
-  const yr=String(now.getFullYear()), taken={};
-  lvList().filter(l=>l.status==='approved'&&l.from.startsWith(yr)).forEach(l=>{ taken[l.who]=(taken[l.who]||0)+(l.half?0.5:lvDays(l.from,l.to).length) });
-  const n=selDays.length, clash=LV.from?lvClash(LV.from,LV.to||LV.from,null):null;
-  const range=LV.from?(LV.from===(LV.to||LV.from)?new Date(LV.from).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}):`${new Date(LV.from).toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${new Date(LV.to).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`):'';
-  const row=(l,acts)=>`<div class="lv-row"><span class="lv-dot" style="--c:${lvColor(l.who)}"></span><div><b>${escM(l.who)}</b> · ${escM((LEAVE_TYPES.find(t=>t[0]===l.type)||[0,l.type])[1])}${l.half?' · half day':''}
-      <small>${l.from===l.to?escM(l.from):escM(l.from)+' → '+escM(l.to)} · ${l.half?'½':lvDays(l.from,l.to).length} day${!l.half&&lvDays(l.from,l.to).length===1?'':'s'}${l.reason?' · '+escM(l.reason):''}</small></div>
-      <span class="lv-st ${l.status}">${({pending:'waiting',approved:'approved',rejected:'turned down',cancelled:'cancelled'})[l.status]||l.status}</span>${acts||''}</div>`;
-  return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Leave <span class="muted" style="font-size:14px;font-weight:400">one person off a day · every day off needs the owner's yes</span></h1>
+  const n=selDays.filter(d=>!lvPoyaOff(d)).length, clash=LV.from?lvClash(LV.from,LV.to||LV.from,null,LV.who,lim):null;
+  const over=LV.from?lvOver(LV.who,LV.from,LV.to||LV.from,LV.half&&n===1,null):null;
+  const cap=lvAllow(LV.who), used=lvUsed(LV.who,ym);
+  const range=LV.from?(LV.from===(LV.to||LV.from)?lvNice(LV.from):`${new Date(LV.from).toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${new Date(LV.to).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`):'';
+  const row=(l,acts)=>{ const o=l.status==='pending'&&may?lvOver(l.who,l.from,l.to,l.half,l.id):null, c=l.status==='pending'&&may?lvClash(l.from,l.to,l.id,l.who,lvLimit(true)):null;
+    return `<div class="lv-row"><span class="lv-dot" style="--c:${lvColor(l.who)}"></span><div><b>${escM(l.who)}</b> <span class="lv-grp ${lvGroup(l.who)}">${lvGroupName(lvGroup(l.who))}</span> · ${escM((LEAVE_TYPES.find(t=>t[0]===l.type)||[0,l.type])[1])}${l.half?' · half day':''}
+      <small>${l.from===l.to?escM(l.from):escM(l.from)+' → '+escM(l.to)} · ${l.half?'½':lvDayCount(l)} day${!l.half&&lvDayCount(l)===1?'':'s'}${l.reason?' · '+escM(l.reason):''}</small>
+      ${o?`<small class="lv-over">over the month: ${escM(lvOverText(o))}</small>`:''}${c?`<small class="lv-over">${escM(lvClashText(c))}</small>`:''}</div>
+      <span class="lv-st ${l.status}">${({pending:'waiting',approved:'approved',rejected:'turned down',cancelled:'cancelled'})[l.status]||l.status}</span>${acts||''}</div>` };
+  // what each person has left this month
+  const people=lvStaff().map(w=>({w,cap:lvAllow(w),used:lvUsed(w,ym)})).filter(x=>may||x.w===S.user.name);
+  const rule=`${cfg.dayAsk==1?'one person':cfg.dayAsk+' people'} off a day${may&&+cfg.dayApprove>+cfg.dayAsk?` (you may approve ${cfg.dayApprove})`:''} · every day off needs the owner's yes`;
+  return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Leave <span class="muted" style="font-size:14px;font-weight:400">${rule}${may?' · <a href="#" data-act="lvRules">rules</a>':''}</span></h1>
    <div class="lv">
     <div class="card lv-cal">
      <div class="lv-head"><button class="btn ghost sm" data-act="lvMonth" data-d="-1">‹</button><b>${monthName}</b><button class="btn ghost sm" data-act="lvMonth" data-d="1">›</button>
       <button class="btn ghost sm" data-act="lvMonth" data-d="0" style="margin-left:auto">This month</button></div>
      <div class="lv-grid">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(x=>`<div class="lv-dow">${x}</div>`).join('')}${cells.join('')}</div>
-     <div class="lv-key"><span><i class="lv-chip approved" style="--c:#1e8a5a">Name</i> off</span><span><i class="lv-chip pending" style="--c:#b7791f">Name</i> waiting for a yes</span><span class="muted">A day with somebody on it cannot be taken.</span></div>
+     <div class="lv-key"><span><i class="lv-chip approved" style="--c:#1e8a5a">Name</i> off</span><span><i class="lv-chip pending" style="--c:#b7791f">Name</i> waiting for a yes</span><span>🌕 Poya${cfg.poya==='working'?' (a working day)':cfg.poya==='within'?' — everyone off, counts as one of the month\'s days':' — everyone off, on top of the month\'s days'}</span></div>
     </div>
     <div class="lv-side">
      <div class="card lv-ask"><h2 style="margin-top:0">Ask for leave</h2>
+      ${may?`<div class="f"><label>For</label><select id="lvWho">${lvStaff().map(w=>`<option ${w===LV.who?'selected':''}>${escM(w)}</option>`).join('')}</select></div>`:''}
+      <div class="lv-quota"><span class="lv-grp ${g}">${lvGroupName(g)}</span>${cap?`<b>${Math.max(0,cap-used)}</b> of ${cap} day${cap===1?'':'s'} left in ${monthName}${cfg.poya==='within'?' <span class="muted">(Poya counted)</span>':''}`:'<span class="muted">no monthly limit</span>'}</div>
       ${LV.from?`<div class="lv-range"><b>${range}</b><span>${LV.half&&n===1?'half a day':n+' day'+(n===1?'':'s')}</span><a href="#" data-act="lvClear">clear</a></div>`
         :`<div class="muted">Tap a day on the calendar — or a first and a last day for longer.</div>`}
-      ${may?`<div class="f"><label>For</label><select id="lvWho">${lvStaff().map(w=>`<option ${w===LV.who?'selected':''}>${escM(w)}</option>`).join('')}</select></div>`:''}
       <div class="lv-types">${LEAVE_TYPES.map(t=>`<button type="button" class="${LV.type===t[0]?'on':''}" data-act="lvType" data-t="${t[0]}">${t[1]}</button>`).join('')}</div>
       ${n===1?`<label class="chk"><input type="checkbox" id="lvHalf" ${LV.half?'checked':''}> Half a day</label>`:''}
       <div class="f"><label>Why (optional)</label><input id="lvWhy" value="${escM(LV.reason)}" placeholder="e.g. a family wedding"></div>
       ${may&&LV.who!==S.user.name?`<label class="chk"><input type="checkbox" id="lvNow" ${LV.now?'checked':''}> Approve it now</label>`:''}
-      ${clash?`<div class="lv-warn">${escM(clash.l.who)} is already ${clash.l.status==='approved'?'off':'asking'} on ${escM(clash.day)} — one person a day.</div>`:''}
-      <button class="btn tape" data-act="lvAsk" ${LV.from&&!clash?'':'disabled'} style="width:100%;margin-top:8px">${may&&LV.who!==S.user.name&&LV.now?'Put the leave on':'Ask for leave'}</button>
+      ${clash?`<div class="lv-warn">${escM(lvClashText(clash))}.</div>`:''}
+      ${over?`<div class="lv-warn">${escM(lvOverText(over))}.${may?' You can still put it on.':''}</div>`:''}
+      ${LV.from&&!n?'<div class="lv-warn">That is a Poya day — everyone is off already.</div>':''}
+      <button class="btn tape" data-act="lvAsk" ${LV.from&&n&&!clash&&(!over||may)?'':'disabled'} style="width:100%;margin-top:8px">${may&&LV.who!==S.user.name&&LV.now?'Put the leave on':'Ask for leave'}</button>
      </div>
      ${waiting.length?`<div class="card"><h2 style="margin-top:0">Waiting for a yes <i class="nbadge" style="position:static">${waiting.length}</i></h2>
        ${waiting.map(l=>row(l,may?`<span class="lv-acts"><button class="btn tape sm" data-act="lvYes" data-id="${l.id}">Approve</button><button class="btn ghost sm" data-act="lvNo" data-id="${l.id}">Turn down</button></span>`
          :l.who===S.user.name?`<span class="lv-acts"><button class="btn ghost sm" data-act="lvCancel" data-id="${l.id}">Cancel</button></span>`:'')).join('')}</div>`:''}
      <div class="card"><h2 style="margin-top:0">Coming up</h2>${coming.length?coming.map(l=>row(l,(may||l.who===S.user.name)?`<span class="lv-acts"><button class="btn ghost sm" data-act="lvCancel" data-id="${l.id}">Cancel</button></span>`:'')).join(''):'<div class="muted">Nobody is off.</div>'}</div>
      <div class="card"><h2 style="margin-top:0">Your leave</h2>${mine.length?mine.map(l=>row(l)).join(''):'<div class="muted">You have not asked for any.</div>'}</div>
-     ${Object.keys(taken).length?`<div class="card"><h2 style="margin-top:0">Days off in ${yr}</h2>${Object.entries(taken).sort((a,b)=>b[1]-a[1]).map(([w,d])=>`<div class="lv-row"><span class="lv-dot" style="--c:${lvColor(w)}"></span><div><b>${escM(w)}</b></div><b>${d}</b></div>`).join('')}</div>`:''}
+     ${people.length?`<div class="card"><h2 style="margin-top:0">${monthName}</h2>${people.map(x=>`<div class="lv-row"><span class="lv-dot" style="--c:${lvColor(x.w)}"></span><div><b>${escM(x.w)}</b> <span class="lv-grp ${lvGroup(x.w)}">${lvGroupName(lvGroup(x.w))}</span></div>
+        <span>${x.cap?`<b>${x.used}</b> / ${x.cap}`:`<b>${x.used}</b> <span class="muted">no limit</span>`}</span></div>`).join('')}</div>`:''}
     </div></div>`;
 }
 function leaveAfter(){
@@ -19110,18 +19208,63 @@ function leaveAfter(){
 }
 function lvAsk(){
   if(!LV.from) return;
-  const from=LV.from, to=LV.to||LV.from, who=canApprove()?LV.who:S.user.name;
+  const may=canApprove(), from=LV.from, to=LV.to||LV.from, who=may?LV.who:S.user.name, half=LV.half&&from===to;
   if(from<D(today)) return toast('That day has gone');
-  const c=lvClash(from,to,null); if(c) return toast(`${c.l.who} is already off on ${c.day} — only one person a day`,'bad');
-  const l={id:'lv'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),who,from,to,type:LV.type,half:LV.half&&from===to,reason:LV.reason.trim(),
-    status:'pending',by:S.user.name,at:apStamp()};
+  if(!lvDays(from,to).some(d=>!lvPoyaOff(d))) return toast('That is a Poya day — everyone is off already');
+  const c=lvClash(from,to,null,who,lvLimit(may)); if(c) return toast(lvClashText(c),'bad');
+  const o=lvOver(who,from,to,half,null);
+  if(o&&!may) return toast(lvOverText(o)+' — ask the owner','bad');
+  if(o&&!confirm(lvOverText(o,who)+'.\n\nPut it on anyway?')) return;
+  const l={id:'lv'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),who,from,to,type:LV.type,half,reason:LV.reason.trim(),
+    status:'pending',by:S.user.name,at:apStamp(),group:lvGroup(who)};
   lvList().push(l);
   const label=`${who}: ${(LEAVE_TYPES.find(t=>t[0]===l.type)||[0,''])[1].toLowerCase()} leave ${from===to?'on '+from:from+' to '+to}${l.half?' (half day)':''}`;
-  if(canApprove()&&(who===S.user.name?false:LV.now)){ lvApprove(l.id); toast('Leave put on the calendar','ok') }
-  else { const a=requestApproval('leave',label,l.reason||'',{id:l.id}); l.apId=a.id }
+  if(may&&(who===S.user.name?false:LV.now)){ lvApprove(l.id); toast('Leave put on the calendar','ok') }
+  else { const a=requestApproval('leave',label,[l.reason,lvGroupName(l.group)].filter(Boolean).join(' · '),{id:l.id}); l.apId=a.id; toast('Asked — you will be told the answer','ok') }
   LV={...LV,from:null,to:null,half:false,reason:''};
   persist(true); render();
 }
+
+/* Settings → Leave */
+function leaveSettings(){
+  const c=LVC(), yr=new Date(D(today)+'T00:00:00').getFullYear(), years=[yr,yr+1];
+  const sel=(k,opts)=>`<select data-lvset="${k}">${opts.map(([v,t])=>`<option value="${v}" ${String(c[k])===String(v)?'selected':''}>${t}</option>`).join('')}</select>`;
+  const num=(k)=>`<input type="number" min="0" step="1" data-lvset="${k}" value="${escM(c[k])}">`;
+  return `<div class="muted" style="margin-bottom:12px">How leave works for everyone. The calendar is under People → Leave.</div>
+   <div class="card"><h2 style="margin-top:0">Days a month</h2>
+    <div class="grid3"><div class="f"><label>Employees</label>${num('perEmp')}<div class="muted">0 means no limit</div></div>
+     <div class="f"><label>Directors</label>${num('perDir')}<div class="muted">0 means no limit</div></div>
+     <div class="f"><label>The Poya day</label>${sel('poya',[['within','Everyone off, counts in the month'],['extra','Everyone off, on top'],['working','A working day']])}</div></div></div>
+   <div class="card"><h2 style="margin-top:0">People off on the same day</h2>
+    <div class="grid3"><div class="f"><label>Staff may ask for a day with up to</label>${num('dayAsk')}<div class="muted">already off — 1 means nobody else may be</div></div>
+     <div class="f"><label>The owner or an admin may approve up to</label>${num('dayApprove')}<div class="muted">people off on one day</div></div>
+     <div class="f"><label>Directors and employees counted</label>${sel('sepGroups',[['true','Separately'],['false','Together']])}</div></div></div>
+   <div class="card"><h2 style="margin-top:0">Messages</h2>
+    <label class="chk"><input type="checkbox" data-lvset="tellOwner" ${c.tellOwner?'checked':''}> Text the owner (${escM(CFG.shop.owner||'no number in Shop details')}) when leave is approved or turned down — the person always hears</label>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px"><label class="chk" style="margin:0"><input type="checkbox" data-lvset="remind" ${c.remind?'checked':''}> On the last day of leave, remind them they are back the next working day, from</label>
+     <input type="time" data-lvset="remindAt" value="${escM(c.remindAt||'17:00')}" style="width:auto"></div></div>
+   <div class="card"><h2 style="margin-top:0">Directors and employees</h2>
+    <div class="muted" style="margin-bottom:8px">Everyone is an employee unless marked a director here (or on their user).</div>
+    <div class="lv-ppl">${(S.users||[]).filter(u=>u.active!==false).map(u=>`<div class="lv-row"><span class="lv-dot" style="--c:${lvColor(u.name)}"></span><div><b>${escM(u.name)}</b><small>${escM(u.role||'')}</small></div>
+      <div class="lv-seg">${LV_GROUPS.map(([v,t])=>`<button type="button" class="${lvGroup(u.name)===v?'on':''}" data-act="lvGrp" data-n="${escM(u.name)}" data-g="${v}">${t}</button>`).join('')}</div></div>`).join('')}</div></div>
+   <div class="card"><h2 style="margin-top:0">Poya days</h2>
+    <div class="muted" style="margin-bottom:8px">Worked out from the full moon in Sri Lanka time. Check them against the calendar and change any that differ — one date a line.</div>
+    <div class="grid2">${years.map(y=>`<div class="f"><label>${y}${Array.isArray(c.poyaDays[y])&&c.poyaDays[y].length?' · changed by hand':''}</label>
+      <textarea rows="7" data-lvpoya="${y}" style="font-family:monospace">${lvPoyas(y).join('\n')}</textarea>
+      ${Array.isArray(c.poyaDays[y])&&c.poyaDays[y].length?`<button class="btn ghost sm" data-act="lvPoyaReset" data-y="${y}" style="margin-top:4px">Back to the full moons</button>`:''}</div>`).join('')}</div></div>`;
+}
+function leaveSettingsAfter(){
+  document.querySelectorAll('[data-lvset]').forEach(el=>el.onchange=()=>{ const k=el.dataset.lvset, c=LVC();
+    c[k]=el.type==='checkbox'?el.checked:el.type==='number'?Math.max(0,Math.round(+el.value||0)):k==='sepGroups'?el.value==='true':el.value;
+    if(k==='dayApprove'&&+c.dayApprove<+c.dayAsk) c.dayApprove=c.dayAsk;
+    persist(true); render(); toast('Saved') });
+  document.querySelectorAll('[data-lvpoya]').forEach(el=>el.onchange=()=>{ const y=el.dataset.lvpoya;
+    const list=[...new Set(el.value.split(/[\s,]+/).map(x=>x.trim()).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)&&x.startsWith(y)))].sort();
+    const bad=el.value.split(/[\s,]+/).filter(x=>x.trim()&&!list.includes(x.trim()));
+    if(JSON.stringify(list)===JSON.stringify(fullMoons(+y))) delete LVC().poyaDays[y]; else LVC().poyaDays[y]=list;
+    persist(true); render(); toast(bad.length?`Saved — left out ${bad.join(', ')} (write dates as ${y}-05-12)`:'Poya days saved') });
+}
+function lvSetGroup(name,g){ const c=LVC(), k=String(name).toLowerCase().trim(); if(g==='director') c.groups[k]='director'; else delete c.groups[k]; persist(true) }
 let apTab='pending';
 /* ================== THE TRAIL — the owner's page ==================
    Everything thrown away or changed after it was entered, in one list: held bills discarded,
@@ -25256,6 +25399,8 @@ function userModal(name){
   const m=modal(`<h2>${u?'Edit '+u.name:'Add someone'}</h2>
    <div class="grid3">
     <div class="f"><label>Name</label><input id="uName" value="${u?u.name:''}" ${u&&u.name==='Afridh'&&!isSuperAdmin?'readonly':''}></div>
+    <div class="f"><label>Leave group</label><select id="uGrp">${LV_GROUPS.map(([v,t])=>`<option value="${v}" ${u&&lvGroup(u.name)===v?'selected':''}>${t}</option>`).join('')}</select>
+     <div class="muted">Sets their days off a month</div></div>
     <div class="f"><label>Role</label><select id="uRole">${availableRoles.map(r=>`<option ${(u&&u.role===r)||(!u&&r===initRole)?'selected':''}>${r}</option>`).join('')}</select>
      <div class="muted">Changing the role ticks that role's usual boxes</div></div>
     <div class="f" id="uSalesIdBox" style="${isSalesman?'':'display:none'}">
@@ -25456,6 +25601,8 @@ function userModal(name){
       if(role === 'Salesman') nu.salesId = salesId;
       S.users.push(nu);
     }
+    if(oldName && oldName.toLowerCase().trim() !== lowerNm) delete LVC().groups[oldName.toLowerCase().trim()];
+    lvSetGroup(nm, m.querySelector('#uGrp').value);
     syncUsersAndStaff();
     try { localStorage.setItem(STORE_KEY, snapshotTxt()); } catch(_){}
     persist(true);
@@ -26774,7 +26921,10 @@ document.addEventListener('click',e=>{
     lvClear:()=>{ LV.from=null; LV.to=null; LV.half=false; render() },
     lvType:()=>{ LV.type=a.dataset.t; render() },
     lvAsk:()=>lvAsk(),
-    lvYes:()=>{ const l=lvList().find(x=>x.id===a.dataset.id); if(!l) return;
+    lvGrp:()=>{ lvSetGroup(a.dataset.n,a.dataset.g); render(); toast(`${a.dataset.n} is ${a.dataset.g==='director'?'a director':'an employee'}`) },
+    lvPoyaReset:()=>{ delete LVC().poyaDays[a.dataset.y]; persist(true); render(); toast('Back to the full moons') },
+    lvRules:()=>{ setTab='leave'; go('settings') },
+    lvYes:()=>{ const l=lvList().find(x=>x.id===a.dataset.id); if(!l) return; if(!lvOverOk(l)) return;
       const ap=l.apId&&(S.approvals||[]).find(x=>x.id===l.apId&&x.status==='pending');
       if(ap) decideApproval(ap.id,true,''); else { try{ lvApprove(l.id); toast('Approved','ok') }catch(e){ toast(e.message,'bad') } }
       persist(true); render() },
