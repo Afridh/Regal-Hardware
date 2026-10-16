@@ -78,6 +78,8 @@ input:focus,textarea:focus{outline:none;border-color:var(--yellow);box-shadow:0 
 @media (min-width:600px){.sheet{align-items:center;padding:16px}.sheet .box{border-radius:14px}}
 .code input{letter-spacing:.35em;font-family:Archivo,sans-serif;font-size:24px;text-align:center}
 .demo{background:var(--tint-yellow);border:1px dashed var(--yellow);border-radius:var(--r);padding:8px 10px;font-size:13px;margin:8px 0}
+.ask-offer{display:grid;gap:4px;padding:12px;border-radius:12px;background:#FFF4DC;border:1px solid #F0D08A;margin:0 0 12px;animation:sheetUp .35s var(--ease,ease) both}.ask-offer span{font-size:13px;color:var(--muted)}.ask-offer .btn{margin-top:6px}
+.ask-done{display:grid;justify-items:center;text-align:center;gap:6px;padding:14px 6px}.ask-done .tick{width:54px;height:54px;border-radius:50%;background:#12613D;color:#fff;display:grid;place-items:center;font-size:28px;animation:sheetUp .4s var(--ease,ease) both}.ask-done span{color:var(--muted);font-size:13.5px}
 .hero{background:linear-gradient(135deg,var(--ink),#16323A);color:#fff;border-radius:var(--r);padding:18px;margin-bottom:12px}
 .hero b{font-family:Archivo,sans-serif;font-size:22px;display:block}.hero .muted{color:#B9C8C6}
 .kv{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:14px}
@@ -911,16 +913,21 @@ function shrink(file){ return new Promise((res,rej)=>{ const img=new Image(); im
    texted code. Forgotten sends a code to the number kept against that sign-in. */
 function signIn(then){
   const el=document.createElement('div'); el.className='sheet';
-  let phone=st.phone||'', stage=ls.get('user')?'user':'user', hint='', name='', user=ls.get('user')||'';
+  let phone=st.phone||'', stage='user', hint='', name='', user=ls.get('user')||'';
+  /* asking the shop to open the page: a code to the mobile on file, then the ask */
+  let offer=false, askCoded=false, askName='', askNote='';
+  const closed=(m)=>/not opened|switched your page off|closed this page/i.test(String(m||''));
   const draw=()=>{
-    const titles={user:'Sign in',phone:'Your mobile',code:'The code we sent',forgot:'Forgotten your password',reset:'A new password'};
+    const titles={user:'Sign in',phone:'Your mobile',code:'The code we sent',forgot:'Forgotten your password',reset:'A new password',ask:'Ask the shop to open your page',asked:'Asked'};
     el.innerHTML=`<div class="box"><h2 style="margin-bottom:2px">${titles[stage]}</h2>
     <div class="muted" style="margin-bottom:12px">${
       stage==='user'?'The user name the shop gave you.'
       :stage==='phone'?'The number the shop has on file for your company.'
       :stage==='forgot'?'We will text a code to the number on that sign-in.'
       :stage==='reset'?'The code we texted you, and the password you want from now on.'
-      :'Sent to '+esc(phone)+(name?' — '+esc(name):'')+'. It works for 5 minutes.'}</div>
+      :stage==='ask'?(askCoded?'The code we texted to '+esc(phone)+' — then the shop is asked.':'Your page is not open yet. We text a code to the mobile the shop has for you, then ask the shop to open it. You are texted when it is.')
+      :stage==='asked'?'':'Sent to '+esc(phone)+(name?' — '+esc(name):'')+'. It works for 5 minutes.'}</div>
+    ${offer&&(stage==='user'||stage==='phone')?`<div class="ask-offer"><b>Your page is not open yet</b><span>The shop has not switched it on for you.</span><button class="btn tape" id="sAsk">Ask the shop to open it</button></div>`:''}
     ${stage==='user'?`<div class="f"><label>User name</label><input id="sUser" value="${esc(user)}" autocapitalize="off" spellcheck="false" autocomplete="username"></div>
        <div class="f"><label>Password</label><input id="sPass" type="password" autocomplete="current-password" placeholder="••••••••"></div>`
      :stage==='phone'?`<div class="f"><label>Mobile</label><input id="sPh" inputmode="tel" value="${esc(phone)}" placeholder="07XXXXXXXX" autocomplete="tel" data-phone></div>`
@@ -928,26 +935,45 @@ function signIn(then){
      :stage==='reset'?`${hint?`<div class="demo">Text messages are not switched on at the shop yet — your code is <b>${hint}</b>.</div>`:''}
        <div class="f code"><label>Code</label><input id="sFCode" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="one-time-code" data-otp data-otp-next="#sFPass"></div>
        <div class="f"><label>New password</label><input id="sFPass" type="password" autocomplete="new-password" placeholder="at least six characters"></div>`
+     :stage==='ask'?(askCoded
+       ?`${hint?`<div class="demo">Text messages are not switched on at the shop yet — your code is <b>${hint}</b>.</div>`:''}<div class="f code"><label>Code</label><input id="sACode" data-otp data-otp-go="#sGo" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>`
+       :`<div class="f"><label>Mobile</label><input id="sPh" inputmode="tel" value="${esc(phone)}" placeholder="07XXXXXXXX" autocomplete="tel" data-phone></div>
+         <div class="f"><label>Your name (optional)</label><input id="sAName" value="${esc(askName)}" placeholder="e.g. Nimal, sales rep"></div>
+         <div class="f"><label>A note for the shop (optional)</label><input id="sANote" value="${esc(askNote)}" placeholder="e.g. we supply your paints"></div>`)
+     :stage==='asked'?`<div class="ask-done"><span class="tick">✓</span><b>The shop has your request</b><span>When they open your page you will get a text with the way in. Nothing more to do now.</span></div>`
      :`${hint?`<div class="demo">Text messages are not switched on at the shop yet — your code is <b>${hint}</b>.</div>`:''}<div class="f code"><label>Code</label><input id="sCode" data-otp data-otp-go="#sGo" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="one-time-code"></div>`}
-    <div style="display:flex;gap:8px;margin-top:6px"><button class="btn" id="sX">Cancel</button>
-     <button class="btn tape" id="sGo" style="flex:1">${stage==='user'?'Sign in':stage==='phone'?'Text me a code':stage==='forgot'?'Text me a code':stage==='reset'?'Set it':'Sign in'}</button></div>
+    <div style="display:flex;gap:8px;margin-top:6px">${stage==='asked'?'':'<button class="btn" id="sX">Cancel</button>'}
+     <button class="btn tape" id="sGo" style="flex:1">${stage==='user'?'Sign in':stage==='phone'?'Text me a code':stage==='forgot'?'Text me a code':stage==='reset'?'Set it':stage==='ask'?(askCoded?'Send to the shop':'Text me a code'):stage==='asked'?'Close':'Sign in'}</button></div>
     <div class="muted" style="margin-top:10px">${
       stage==='user'?'<a href="#" id="sForgot">Forgotten your password?</a> · <a href="#" id="sPhoneWay">use my mobile instead</a>'
       :stage==='phone'?'<a href="#" id="sUserWay">sign in with a user name</a>'
       :stage==='code'?'<a href="#" id="sBack">Wrong number?</a>'
-      :'<a href="#" id="sUserWay">back</a>'}</div></div>`;
-    $('#sX',el).onclick=()=>el.remove();
+      :stage==='asked'?'':'<a href="#" id="sUserWay">back</a>'}</div></div>`;
+    const x=$('#sX',el); if(x) x.onclick=()=>el.remove();
     const go=(s)=>e=>{ e.preventDefault(); stage=s; draw() };
     const bk=$('#sBack',el); if(bk) bk.onclick=go('phone');
     const fw=$('#sForgot',el); if(fw) fw.onclick=go('forgot');
     const pw=$('#sPhoneWay',el); if(pw) pw.onclick=go('phone');
-    const uw=$('#sUserWay',el); if(uw) uw.onclick=go('user');
+    const uw=$('#sUserWay',el); if(uw) uw.onclick=e=>{ e.preventDefault(); stage='user'; askCoded=false; draw() };
+    const ak=$('#sAsk',el); if(ak) ak.onclick=()=>{ stage='ask'; askCoded=false; hint=''; draw() };
+    const an=$('#sAName',el); if(an) an.oninput=()=>{ askName=an.value };
+    const ao=$('#sANote',el); if(ao) ao.oninput=()=>{ askNote=ao.value };
     $('#sGo',el).onclick=step; const inp=$('input',el); if(inp) inp.focus();
     $$('input',el).forEach(i=>i.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();step()} });
     // the mobile and the code, dressed (otp-ui.js): spaced number and network, six code boxes
     if(window.RegalOTP){ RegalOTP.auto(el); const first=$('.ro-code input',el)||$('.ro-phone input',el); if(first) first.focus() } };
   const step=async()=>{ const go=$('#sGo',el); go.disabled=true;
     try{
+      if(stage==='asked'){ el.remove(); return }
+      if(stage==='ask'){
+        if(!askCoded){ phone=$('#sPh',el).value.replace(/\D/g,''); if(!/^0\d{9}$/.test(phone)) throw new Error('Enter a mobile like 0771234567');
+          const j=await api('/ask-code',{method:'POST',body:{phone}}); hint=j.sent?'':(j.code||''); if(!j.sent&&!j.code) throw new Error(j.note||'Could not text you — please ring the shop');
+          askCoded=true; return draw() }
+        const code=$('#sACode',el).value.trim(); if(code.length<6) throw new Error('Enter the 6-digit code');
+        await api('/ask',{method:'POST',body:{phone,code,name:askName,note:askNote}});
+        if(window.RegalOTP){ RegalOTP.ok('#sACode'); await new Promise(r=>setTimeout(r,600)) }
+        stage='asked'; offer=false; return draw();
+      }
       if(stage==='user'){
         user=$('#sUser',el).value.trim(); const password=$('#sPass',el).value;
         if(!user||!password) throw new Error('Your user name and password, please');
@@ -967,7 +993,10 @@ function signIn(then){
         const j=await api('/otp',{method:'POST',body:{phone}}); hint=j.sent?'':(j.code||''); if(!j.sent&&!j.code) throw new Error(j.note||'Could not text you — please ring the shop'); name=j.name||''; stage='code'; return draw() }
       const code=$('#sCode',el).value.trim(); if(code.length<6) throw new Error('Enter the 6-digit code');
       const j=await api('/login',{method:'POST',body:{phone,code}}); if(window.RegalOTP){ RegalOTP.ok('#sCode'); await new Promise(r=>setTimeout(r,650)) } st.token=j.token; st.rep=j.rep||''; ls.set('rep',st.rep); st.phone=phone; ls.set('token',j.token); ls.set('phone',phone); el.remove(); toast('Welcome, '+(st.rep||j.supplier)); if(then) then() }
-    catch(e){ toast(e.message); go.disabled=false; if(window.RegalOTP){ if(stage==='code') RegalOTP.fail('#sCode'); else if(stage==='reset') RegalOTP.fail('#sFCode') } } };
+    catch(e){
+      // a page not switched on: offer to ask, rather than leave them at a closed door
+      if(closed(e.message)&&(stage==='phone'||stage==='user'||stage==='code')){ offer=true; if(stage==='code') stage='phone'; draw(); toast(e.message); return }
+      toast(e.message); go.disabled=false; if(window.RegalOTP){ if(stage==='code') RegalOTP.fail('#sCode'); else if(stage==='reset') RegalOTP.fail('#sFCode'); else if(stage==='ask'&&askCoded) RegalOTP.fail('#sACode') } } };
   document.body.appendChild(el); draw();
 }
 async function load(){ if(!st.token) return render(); try{ st.me=await api('/me') }catch(e){ if(st.token) toast(e.message); st.me=null } render() }

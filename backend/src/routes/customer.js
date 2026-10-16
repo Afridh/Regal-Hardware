@@ -99,7 +99,20 @@ export async function injectCustInbox(data) {
   if (!rows.length) return 0;
   S.notices = S.notices || [];
   let added = 0;
+  S.approvals = S.approvals || []; S.notif = S.notif || [];
   for (const row of rows) {
+    if (row.kind === 'askopen' || row.kind === 'asknew') {
+      // asked from their own page: to open it, or for an account — the owner says yes or no in Approvals
+      if (S.approvals.some(a => a.custInbox === Number(row.id))) continue;
+      const d = row.data || {}, c = row.kind === 'askopen' ? (S.customers || []).find(x => x.id === row.cid) : null;
+      const who = (c && c.name) || d.name || 'A customer';
+      S.approvals.unshift({ id: 'apc' + row.id, custInbox: Number(row.id), kind: row.kind === 'askopen' ? 'custPortal' : 'custNew',
+        title: row.kind === 'askopen' ? `${who} asks to open their page on the site` : `${d.name} asks for an account on the site`,
+        detail: [d.phone, d.note].filter(Boolean).join(' · '), data: row.kind === 'askopen' ? { cid: row.cid, on: true } : { name: d.name, phone: d.phone, note: d.note || '' },
+        by: who + ' (from the site)', at: new Date(row.created_at).toLocaleString('en-CA', { timeZone: TZ, hour12: false }).slice(0, 16).replace(',', ''), status: 'pending' });
+      S.notif.unshift({ id: 'nca' + row.id, kind: 'approval', text: row.kind === 'askopen' ? `${who} asks to open their page on the site` : `${d.name} (${d.phone}) asks for an account on the site`, view: 'approvals', at: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: TZ }), read: false, forApprovers: true });
+      added++; continue;
+    }
     if (S.notices.some(n => n.inboxId === Number(row.id))) continue;
     S.notices.push({ id: 'n' + row.id, inboxId: Number(row.id), kind: 'customer', cid: row.cid, status: 'open',
       date: new Date(row.created_at).toLocaleDateString('en-CA', { timeZone: TZ }), ...row.data });
@@ -109,7 +122,8 @@ export async function injectCustInbox(data) {
 }
 export async function markCustImported(data) {
   const S = data?.S; if (!S) return 0;
-  const ids = (S.notices || []).map(n => n.inboxId).filter(Boolean);
+  const ids = (S.notices || []).map(n => n.inboxId).filter(Boolean)
+    .concat((S.approvals || []).map(a => a.custInbox).filter(Boolean));
   if (!ids.length) return 0;
   await ensureCustTables();
   const { rowCount } = await query(`UPDATE cust_inbox SET imported_at = now() WHERE imported_at IS NULL AND id = ANY($1::bigint[])`, [ids]);
@@ -466,6 +480,39 @@ r.post('/admin/invite/:cid', regalAuth, asyncHandler(async (req, res) => {
 }));
 
 /* ---------------------------------------------------------------- "I have paid this" */
+/* ---------------------------------------------------------------- asking the shop
+   Someone whose page is not open yet, or who has no account at all, asks from the page. A code goes to
+   the mobile first, so an ask is always from the person who has that phone; then the ask waits for the
+   owner in Approvals. Saying yes opens the page — or makes the customer — and texts them how to sign in. */
+r.post('/ask-code', asyncHandler(async (req, res) => {
+  const phone = digits(req.body?.phone);
+  if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'Enter a mobile like 0771234567');
+  sendingCode(phone, req.ip);
+  const data = await books();
+  const code = otpFor(phone), cfg = data?.CFG?.msg;
+  if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
+    try { await sendViaProvider(cfg, phone, letter(data?.CFG, 'customer', `Your code to send your request to the shop is ${code}.\nIt works for 5 minutes. Please do not share it.`)); return res.json({ ok: true, sent: true }); }
+    catch (e) { console.error('cust ask sms failed', e.message); }
+  }
+  res.json({ ok: true, sent: false, ...(mayRevealCode(req) ? { code } : { note: NO_TEXT }) });
+}));
+r.post('/ask', asyncHandler(async (req, res) => {
+  const phone = digits(req.body?.phone);
+  guardCode(phone, req.ip, () => otpOk(phone, req.body?.code));
+  const data = await books(), S = data?.S || {};
+  const c = byPhone(S, phone)[0];
+  const name = String(req.body?.name || '').trim().replace(/\s+/g, ' ').slice(0, 80), note = String(req.body?.note || '').trim().slice(0, 200);
+  if (c && c.portal !== false) throw new HttpError(400, 'Your page is already open — sign in with your mobile');
+  if (!c && name.length < 2) throw new HttpError(400, 'Your name, or your business name, please');
+  await ensureCustTables();
+  const kind = c ? 'askopen' : 'asknew';
+  // one ask at a time from a mobile
+  const { rows: open } = await query(`SELECT id, data FROM cust_inbox WHERE imported_at IS NULL AND kind IN ('askopen','asknew')`);
+  if (open.some(r => digits((typeof r.data === 'string' ? JSON.parse(r.data) : r.data).phone) === phone)) return res.json({ ok: true, already: true });
+  await query(`INSERT INTO cust_inbox (cid, kind, data) VALUES ($1, $2, $3)`, [c ? c.id : 0, kind, JSON.stringify({ phone, name: name || (c && c.name) || '', note })]);
+  res.json({ ok: true, kind, name: c ? c.name : name });
+}));
+
 r.post('/paid', custAuth, asyncHandler(async (req, res) => {
   const amount = +req.body?.amount || 0;
   if (!(amount > 0)) throw new HttpError(400, 'How much was paid?');

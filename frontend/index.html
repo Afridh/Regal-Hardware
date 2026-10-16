@@ -18937,7 +18937,8 @@ const APPROVAL_KINDS=[
   ['purAdjust','Amount taken off a supplier bill'],
   ['prodPrice','Product prices or cost changed'],
   ['supStock','Supplier let in to see their stock in the shop'],
-  ['leave','Leave asked for']];
+  ['leave','Leave asked for'],
+  ['custNew','Someone asked for a customer account on the site']];
 const APKIND=Object.fromEntries(APPROVAL_KINDS);
 const canApprove=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||can('approve')));
 const needsApproval=(kind)=>{ const cfg=CFG.approvals||{}; return cfg[kind]!==false&&!canApprove() };
@@ -18960,6 +18961,12 @@ function applyApproval(a){
     case 'supPortal':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supPortalSet(s,d.field,!!d.value); break }
     case 'supStock':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supStockOpen(s); break }
     case 'leave':{ lvApprove(d.id); break }
+    case 'custNew':{ /* asked for on the site: made with no credit (the owner sets a limit if they want one), the page open, and texted the way in */
+      const ph=String(d.phone||'').replace(/\D/g,'');
+      let c=S.customers.find(x=>x.active!==false&&String(x.phone||'').replace(/\D/g,'')===ph);
+      if(!c){ c={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),name:d.name||'Customer',phone:ph,address:'',level:'retail',limit:0,
+        notes:'Asked for an account on the site'+(d.note?': '+d.note:''),portal:false,lastLogin:null,points:0}; S.customers.push(c) }
+      custPortalSet(c,true); break }
     case 'custEdit':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists');
       if(d.fields&&d.fields.phone){ const dup=S.customers.find(x=>x.phone===d.fields.phone&&x.id!==c.id&&x.active!==false);
         if(dup) throw new Error(`${dup.name} already has that number`) }

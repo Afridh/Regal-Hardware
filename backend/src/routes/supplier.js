@@ -164,6 +164,16 @@ export async function injectSupplierInbox(data) {
         text: `${name} is asking to be paid — ${(d.lines || []).length} bill${(d.lines || []).length === 1 ? '' : 's'}`,
         view: 'payreqs', at: localTime(), read: false, forApprovers: true });
       added++;
+    } else if (row.kind === 'askopen') {
+      // a supplier whose page is not open asks for it: the owner says yes or no in Approvals
+      S.approvals = S.approvals || [];
+      if (S.approvals.some(a => a.supInbox === row.id)) continue;
+      const d = row.data || {};
+      S.approvals.unshift({ id: 'aps' + row.id, supInbox: row.id, kind: 'supPortal', title: `${name} asks to open their supplier page`,
+        detail: [d.name && d.name !== name ? d.name : '', d.phone, d.note].filter(Boolean).join(' · '), data: { sid: row.sid, field: 'enabled', value: true },
+        by: (d.name || name) + ' (from the supplier page)', at: new Date(row.created_at).toLocaleString('en-CA', { timeZone: TZ, hour12: false }).slice(0, 16).replace(',', ''), status: 'pending' });
+      S.notif.unshift({ id: 'n' + row.id.toString(36) + 'o', kind: 'approval', text: `${name} asks to open their supplier page`, view: 'approvals', at: localTime(), read: false, forApprovers: true });
+      added++;
     } else if (row.kind === 'pricelist' || row.kind === 'pricedrop') {
       // a price list the supplier put up from their page — or took down again (only one of their own)
       const d = row.data;
@@ -229,6 +239,7 @@ export async function markSupplierImported(data) {
   for (const p of (S.payReqs || [])) if (p.inboxId) ids.add(p.inboxId);
   for (const x of (S.supStockLog || [])) if (x.inboxId) ids.add(x.inboxId);     // who read the shelves
   for (const s of (S.suppliers || [])) for (const p of (s.priceLists || [])) { if (p.inboxId) ids.add(p.inboxId); if (p.dropInbox) ids.add(p.dropInbox); }
+  for (const a of (S.approvals || [])) if (a.supInbox) ids.add(a.supInbox);
   if (!ids.size) return 0;
   await ensureSupplierTables();
   const { rowCount } = await query(`UPDATE sup_inbox SET imported_at = now() WHERE imported_at IS NULL AND id = ANY($1::bigint[])`, [[...ids]]);
@@ -692,6 +703,35 @@ r.post('/po/:no/respond', supAuth, asyncHandler(async (req, res) => {
   await ensureSupplierTables();
   const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'reply', $2) RETURNING id`, [req.sup.sid, JSON.stringify({ no: po.no, action, note, invoice, eta, lines, rep: req.sup.rep || '' })]);
   res.json({ ok: true, id });
+}));
+
+/* A supplier whose page is not switched on asks for it. A code goes to the mobile on file first, so the
+   ask comes from the supplier; the owner then says yes or no in Approvals, and a yes texts them the way in. */
+r.post('/ask-code', asyncHandler(async (req, res) => {
+  const phone = digits(req.body?.phone);
+  if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'Enter a mobile like 0771234567');
+  const data = await books(), sup = supplierByPhone(data?.S || {}, phone);
+  if (!sup) throw new HttpError(404, 'That mobile is not on file for any supplier — ring the shop and they will add it');
+  if (supPageOpen(sup)) throw new HttpError(400, 'Your page is already open — sign in with your mobile');
+  sendingCode(phone, req.ip);
+  const code = otpFor(phone), cfg = data?.CFG?.msg;
+  if (cfg?.live && cfg.apiUrl && cfg.apiKey) {
+    try { await supSend(cfg, phone, letter(data?.CFG, 'supplier', `Your code to send your request to the shop is ${code}.\nIt works for 5 minutes. Please do not share it.`)); return res.json({ ok: true, sent: true, name: sup.name }); }
+    catch (e) { console.error('sup ask sms failed', e.message); }
+  }
+  res.json({ ok: true, sent: false, name: sup.name, ...(mayRevealCode(req) ? { code } : { note: NO_TEXT }) });
+}));
+r.post('/ask', asyncHandler(async (req, res) => {
+  const phone = digits(req.body?.phone);
+  guardCode(phone, req.ip, () => otpOk(phone, req.body?.code));
+  const data = await books(), sup = supplierByPhone(data?.S || {}, phone);
+  if (!sup) throw new HttpError(404, 'That mobile is not on file for any supplier');
+  if (supPageOpen(sup)) throw new HttpError(400, 'Your page is already open — sign in with your mobile');
+  await ensureSupplierTables();
+  const waiting = (await inboxRows(sup.id)).some(p => p.kind === 'askopen');
+  if (waiting) return res.json({ ok: true, already: true, name: sup.name });
+  await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'askopen', $2)`, [sup.id, JSON.stringify({ phone, name: String(req.body?.name || '').trim().slice(0, 80), note: String(req.body?.note || '').trim().slice(0, 200) })]);
+  res.json({ ok: true, name: sup.name });
 }));
 
 /** A price list from the supplier — a photo or a PDF. It is kept with the shop's other files and waits
