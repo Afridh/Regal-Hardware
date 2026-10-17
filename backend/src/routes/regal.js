@@ -330,6 +330,30 @@ r.post('/books/pin-login', asyncHandler(async (req, res) => {
   res.json({ ok: true, token: await signIn(u, req), user: { name: u.name, role: u.role, perms: u.perms || [] } });
 }));
 
+/* ---------------------------------------------------------------- an admin says yes, at someone else's till
+   A line under cost, a second person going on a break: an admin puts in their PIN or password at the till
+   (or the shift clock) in front of them. This only checks it — no sign-in is made, so the admin's own
+   till stays signed in and the till they typed it on stays the cashier's. Asked from a signed-in till or
+   shift clock only; wrong tries are counted as at the lock screen. */
+r.post('/books/verify', asyncHandler(async (req, res) => {
+  const h = req.headers.authorization || '', t = h.startsWith('Bearer ') ? h.slice(7) : '';
+  let p = null; try { p = jwt.verify(t, process.env.JWT_SECRET) } catch { p = null }
+  if (!p || !['regal', 'shift-admin'].includes(p.kind)) throw new HttpError(401, 'Sign in first');
+  const who = String(req.body?.user || req.body?.code || '').trim(), secret = String(req.body?.secret ?? '');
+  if (!who || !secret) throw new HttpError(400, 'Which admin, and their PIN or password?');
+  const limits = [['verify:' + who.toLowerCase(), 8], ['verifyip:' + req.ip, 40]];
+  stopIfTooMany(limits);
+  const users = await usersFromBooks();
+  const u = users.find(x => x.active !== false && x.canLogin !== false && (String(x.name).toLowerCase() === who.toLowerCase() || String(x.uid || '').toLowerCase() === who.toLowerCase()));
+  const defAcc = u && DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === String(u.name).toLowerCase());
+  const good = !!u && ((/^\d{4,6}$/.test(secret) && pinOk(u, secret)) || matches(u, secret)
+    || (defAcc && (!u.passHash || u.passHash === sha(defAcc.pass) || u.passHash === fnv(defAcc.pass)) && secret === defAcc.pass));
+  // 400, not 401: a wrong PIN is the admin's, and must not sign the till it was typed on out
+  if (!good) { wrongTry(limits); throw new HttpError(400, 'That PIN or password is not right'); }
+  rightTry('verify:' + who.toLowerCase());
+  res.json({ ok: true, name: u.name, role: u.role, perms: u.perms || [], admin: isShiftAdmin(u.role) || (u.perms || []).includes('approve') });
+}));
+
 /* ---------------------------------------------------------------- user code + a texted code
    For anyone without a PIN to hand: the code goes to the mobile on their user (or on their staff card),
    checked like every other texted code — six digits, a few minutes, wrong ones counted. */

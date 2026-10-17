@@ -457,8 +457,16 @@
     return j;
   }
 
+  /* an admin's PIN or password checked for a yes at this till — no sign-in is made, this till stays whoever's it is */
+  async function verify(user, secret) {
+    var j = await call('POST', '/books/verify', { user: user, secret: secret });
+    if (j.__status === 200 && j.ok) return { ok: true, name: j.name, role: j.role, perms: j.perms || [], admin: !!j.admin };
+    return { ok: false, status: j.__status, error: j.error || 'Could not check it' };
+  }
+
   window.regalBridge = {
     online: function () { return !!token; },
+    verify: verify,
     localKeys: LOCAL_KEYS,
     token: function () { return token; },
     rev: function () { return rev; },

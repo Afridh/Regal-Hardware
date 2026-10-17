@@ -6828,14 +6828,44 @@ function punchOut(id,ds=D(today)){
   toast(`${e?e.name:'Staff'} checked out at ${outTime} · ${dur(f.worked)} worked${f.ot?` · ${dur(f.ot)} OT`:''}`);
 }
 
-function startMeal(id, mealId){
+/* Breaks, one at a time: the counter is never left short. With somebody already on a break, the next
+   one goes only with an admin's PIN or password — and the admin is told. Settings → Attendance → Rules
+   says how many may be on a break at once (1 out of the box; 0 for no limit). */
+const breakMax=()=>{ const v=(S.shift&&S.shift.settings||{}).breakMax; return v===undefined||v===null||v===''?1:Math.max(0,Math.round(+v)||0) };
+function onBreakNow(except){ const ds=D(today), day=((S.shift||{}).days||{})[ds]||{}, out=[];
+  for(const e of (S.employees||[])){ if(e.id===except||e.active===false) continue; const r=day[e.id]; const b=r&&(r.breaks||[]).find(x=>!x.end); if(b&&r.in&&!r.out) out.push({e,b}) }
+  return out }
+function breakAdminAsk(id,mealId,on){
+  const e=S.employees.find(x=>x.id===id)||{name:'Staff'}, def=(shiftSet().breaks||[]).find(x=>x.id===mealId)||{name:'a break'};
+  const admins=(S.users||[]).filter(u=>u.active!==false&&u.canLogin!==false&&(['Super Admin','Owner','Admin'].includes(u.role)||(u.perms||[]).includes('approve')));
+  const m=modal(`<h2>Someone is already on a break</h2>
+   <div class="card note" style="margin:6px 0 10px">${on.map(x=>`<div><b>${noteEsc(x.e.name)}</b> — ${noteEsc(x.b.name||'break')} since ${x.b.start} (${fmtMin(nowMin()-toMin(x.b.start))})</div>`).join('')}</div>
+   <div class="muted">Only ${breakMax()===1?'one person':breakMax()+' people'} may be on a break at a time. For <b>${noteEsc(e.name)}</b> to go on ${noteEsc(def.name)} as well, an admin puts in their PIN or password — they are told it was done.</div>
+   <div class="grid2" style="margin-top:10px">
+    <div class="f"><label>Which admin</label><select id="baWho">${admins.map(u=>`<option value="${noteEsc(u.name)}">${noteEsc(u.name)} · ${noteEsc(u.role)}</option>`).join('')}</select></div>
+    <div class="f"><label>Their PIN or password</label><input id="baPin" type="password" autocomplete="off" placeholder="••••"></div></div>
+   <div class="muted" id="baMsg" style="min-height:18px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+    <button class="btn ghost" data-act="closeModal">Wait for them</button>
+    <button class="btn tape" id="baOk">Let ${noteEsc(String(e.name).split(' ')[0])} go too</button></div>`);
+  const pin=m.querySelector('#baPin'); pin.focus(); let tries=0;
+  const ok=async()=>{ const u=admins.find(x=>x.name===m.querySelector('#baWho').value), msg=m.querySelector('#baMsg');
+    if(!u) return; msg.textContent='Checking…'; msg.style.color='';
+    if(!(await adminOk(u,pin.value))){ tries++; msg.textContent=tries>=3?'Three wrong — ask the admin to come over.':'That PIN or password is not right.'; msg.style.color='var(--chip-rust)'; pin.value=''; if(tries>=3) pin.disabled=true; return }
+    m.remove(); startMeal(id,mealId,u.name);
+    notify('people',`${u.name} let ${e.name} go on ${def.name} while ${on.map(x=>x.e.name).join(' and ')} ${on.length===1?'was':'were'} on a break`,'payroll',{forUser:u.name});
+    try{ logTrail('other',`${e.name} went on ${def.name} with ${on.map(x=>x.e.name).join(', ')} already on a break — allowed by ${u.name}`,{ref:'BREAK'}) }catch(err){} };
+  m.querySelector('#baOk').onclick=ok; pin.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); ok() } };
+}
+function startMeal(id, mealId, allowedBy){
   const ds=D(today);
   const r=recFor(ds,id);
   if(!r||r.status!=='work'||!r.in) return toast('Check in required before starting break');
+  if(!allowedBy){ const on=onBreakNow(id), mx=breakMax(); if(mx&&on.length>=mx) return breakAdminAsk(id,mealId,on) }
   const e=S.employees.find(x=>x.id===id);
   const def=(shiftSet().breaks||[]).find(x=>x.id===mealId)||{name:mealId};
   (r.breaks||[]).forEach(b=>{ if(!b.end) b.end=hhmm(nowMin()) });
-  const brs=(r.breaks||[]).concat([{id:mealId,name:def.name,start:hhmm(nowMin()),end:null}]);
+  const brs=(r.breaks||[]).concat([{id:mealId,name:def.name,start:hhmm(nowMin()),end:null,...(allowedBy?{allowedBy}:{})}]);
   setRec(ds,id,{breaks:brs});
   refreshAttendanceBoard();
   toast(`${e?e.name:'Staff'} started ${def.name}`);
@@ -8354,6 +8384,9 @@ function rulesTab(){
     <div class="f"><label>Shop opens</label><input data-sh="startTime" type="time" value="${st.startTime}"></div>
     <div class="f"><label>Shop closes</label><input data-sh="closeTime" type="time" value="${st.closeTime}"></div>
     <div class="f"><label>Grace, in minutes</label><input data-sh="graceMin" type="number" value="${st.graceMin}"></div></div>
+   <div class="grid3">
+    <div class="f"><label>People on a break at once</label><input data-sh="breakMax" type="number" min="0" step="1" value="${st.breakMax??1}">
+     <div class="muted">Anyone more needs an admin's PIN or password. 0 means no limit.</div></div></div>
    <div class="grid3">
     <div class="f"><label>Overtime multiplier</label><input data-sh="otMultiplier" type="number" step="0.1" value="${st.otMultiplier}"></div>
     <div class="f"><label>Working days a month</label><input data-sh="workDaysPerMonth" type="number" value="${st.workDaysPerMonth}"></div>
@@ -15901,7 +15934,7 @@ function belowCostAsk(p,net,then){
   const ok=async()=>{
     const u=S.users.find(x=>x.name===m.querySelector('#bcWho').value);
     const got=pin.value;
-    if(!u||!(got&&((u.pinHash&&/^\d{4,6}$/.test(got)&&u.pinHash===await hashPass('pin:'+got))||(await checkPass(u,got))))){ tries++;
+    if(!u||!(await adminOk(u,got))){ tries++;
       m.querySelector('#bcMsg').textContent=tries>=3?'Three wrong. Put the price back and ask them to come over.':'That PIN is not right.';
       m.querySelector('#bcMsg').style.color='var(--chip-rust)'; if(tries>=3){pin.disabled=true} return }
     notify('warn',`${u.name} allowed ${S.user.name} to sell ${p.name} at ${money2(net)} — cost ${money2(p.cost)}`,'bills');
@@ -25862,6 +25895,19 @@ async function hashPass(str){
   try{ if(window.crypto&&crypto.subtle){ const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('regal|'+str));
     return 's'+[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('') } }catch(e){}
   return hashSync(str);
+}
+/* An admin's PIN or password, typed at someone else's till to allow one thing. Checked by the server
+   without signing anybody in — so the admin's own till stays signed in, and this till stays the
+   cashier's. With no server (or none reachable) the hashes in the books are checked instead. */
+async function adminOk(u,given){
+  if(!u||!given) return false;
+  if(window.regalBridge&&regalBridge.verify&&regalBridge.online()){
+    try{ const r=await regalBridge.verify(u.name,given); if(r.ok) return true; if(r.status===400||r.status===429) return false }catch(e){}
+  }
+  if(u.pinHash&&/^\d{4,6}$/.test(given)&&u.pinHash===await hashPass('pin:'+given)) return true;
+  if(u.passHash) return (await hashPass(given))===u.passHash||hashSync(given)===u.passHash;
+  const defAcc=DEFAULT_ACCOUNTS.find(a=>a.name.toLowerCase()===String(u.name).toLowerCase());
+  return !!(defAcc&&given===defAcc.pass);
 }
 async function checkPass(u,given){
   if(!u || u.active === false || u.canLogin === false) return false;
