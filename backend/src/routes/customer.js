@@ -17,6 +17,10 @@ import { ensureLogins, inviteMany, startersFor, suggestUser, addLogin, setLogin,
 const LOGINS = 'cust_logins';
 
 const r = Router();
+// a number in the address that is not a number is a page that is not there, not a server fault
+// (the bill link /b/:id is a text key, so only the admin routes' ids are checked)
+const numOnly = (req, _res, next, v) => (!req.path.startsWith('/admin/') || /^\d+$/.test(String(v)) ? next() : next(new HttpError(404, 'Not found')));
+r.param('id', numOnly); r.param('cid', numOnly);
 const NO_TEXT = 'Sorry — we could not text you just now. Please ring the shop.';
 const TZ = process.env.SHOP_TZ || 'Asia/Colombo';
 const OTP_WINDOW_MS = 5 * 60 * 1000;

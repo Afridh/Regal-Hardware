@@ -10969,6 +10969,12 @@ function togglePhone(){
 function closePhone(){ S.phoneOpen=false; document.body.classList.remove('withPhone'); drawPhone(); }
 function phoneBtnLabel(){ document.querySelectorAll('[data-act="phoneToggle"]').forEach(b=>{
   b.textContent=(S.phoneOpen&&S.phoneMode==='supplier'?'Hide':'Show')+" the rep's phone" }) }
+/* the Website tab of the phone preview shows the real shop site — the same pages a customer's phone opens */
+function storeScreen(){
+  const at=/^https?:/.test(location.origin)?location.origin:'https://'+((CFG.web&&CFG.web.domain)||'regalhw.lk');
+  return `<iframe src="${at}/" title="The shop's website" style="width:100%;height:100%;border:0;background:#fff" loading="lazy"></iframe>`;
+}
+function bindStore(){}
 function drawPhone(){
   const w=$('#phoneWrap'); if(!w) return;
   w.style.display=S.phoneOpen?'block':'none'; phoneBtnLabel(); if(!S.phoneOpen) return;
@@ -10980,7 +10986,7 @@ function drawPhone(){
      <button class="${cm?'on':''}" data-pm="customer">Customer</button>
      <button class="${sm?'on':''}" data-pm="store">Website</button></div>
     <div class="phone"><div class="pscreen">${sm?storeScreen():cm?(S.cportal.session?custPortalHome():custPortalSignIn()):(P.session?portalHome():portalSignIn())}</div></div>
-    <div class="pcap">${sm?CFG.web.domain+' · the shop online':cm?'Customer\'s phone · regalhw.lk/c/…':'Rep\'s phone · regalhw.lk/rep'}</div>`;
+    <div class="pcap">${sm?((CFG.web&&CFG.web.domain)||'regalhw.lk')+' · the shop online':cm?'Customer\'s phone · regalhw.lk/c/…':'Rep\'s phone · regalhw.lk/rep'}</div>`;
   w.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>{ if(b.dataset.pm==='close') return closePhone(); S.phoneMode=b.dataset.pm;drawPhone()});
   phoneBtnLabel();
   sm?bindStore():cm?bindCustPhone():bindPhone();
@@ -16497,7 +16503,7 @@ function recallAsk(which){
     <button class="btn tape" id="rcYes">Yes, bring it back <i class="kbd">Enter</i></button></div>`);
   m.classList.add('hb-ask-wrap');
   const yes = () => { m.remove(); recallHeldBill(b.id) };   // by then the list may have moved
-  const no = () => { m.remove(); showHeldBillsModal(idx) };
+  const no = () => { m.remove(); showHeldBillsModal(Math.max(0, heldAt(which))) };
   m.querySelector('#rcYes').onclick = yes; m.querySelector('#rcNo').onclick = no;
   const key = (e) => { if(!document.body.contains(m)){ window.removeEventListener('keydown', key, true); return } e.stopPropagation(); if(e.key === 'Enter'){ e.preventDefault(); yes() } if(e.key === 'Escape'){ e.preventDefault(); no() } };
   window.addEventListener('keydown', key, true);

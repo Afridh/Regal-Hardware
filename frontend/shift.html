@@ -920,7 +920,8 @@ function startPolling() { clearInterval(pollT); pollT = setInterval(poll, POLL_M
 let pageTag = '';
 async function checkNewPage() {
   try {
-    const r = await fetch('/shift', { method: 'HEAD', cache: 'no-store' });
+    // one byte of the page is enough for its stamp (a HEAD request is cut off by the browser)
+    const r = await fetch('/shift', { headers: { Range: 'bytes=0-0' }, cache: 'no-store' });
     const tag = r.headers.get('etag') || r.headers.get('last-modified') || '';
     if (!tag) return;
     if (!pageTag) { pageTag = tag; return; }
