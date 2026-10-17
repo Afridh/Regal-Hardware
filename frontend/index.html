@@ -4570,6 +4570,52 @@ function ownerTell(inv,c,{total,credit,by,v}={}){
   catch(e){ return {send:false,why:e.message,kind:w.kind} }
   return {send:true,kind:w.kind};
 }
+/* ==================== KEEPING THE BOOKS IN STEP ====================
+   Two rules everything below keeps to.
+   1. The Inventory account is always what the stock on hand is worth at its average cost. Whenever an
+      item's cost is set again — changed by hand, an invoice that came in dearer, a supplier's credit —
+      the books move by exactly what the stock on the floor is now worth more or less; the part that
+      belonged to goods already sold goes to cost of sales.
+   2. A supplier's or a customer's bills say what their account says. A credit off their account (goods
+      sent back, damaged goods claimed) settles their oldest open bills, as a payment would; a payment that
+      did not happen after all (a cheque cancelled or bounced) opens the newest bills it had settled. */
+const sl=(ac,v,party)=>{ v=+(+v).toFixed(2); return v>=0?{ac,dr:v,...(party?{party}:{})}:{ac,cr:-v,...(party?{party}:{})} };   // + is a debit
+const slines=(...ls)=>ls.filter(l=>l&&((+l.dr||0)>0.004||(+l.cr||0)>0.004));
+function stockValue(pids){ return [...new Set(pids)].reduce((a,id)=>{ const p=P(id); return a+(p?(+p.stock||0)*(+p.cost||0):0) },0) }
+/* goods in: the new average, and — when the floor was below nothing — what the oversold goods really cost */
+function avgIn(p,qty,cost){
+  const st=+p.stock||0, c=+p.cost||0; cost=+cost||0;
+  if(st<=0){ p.cost=+cost.toFixed(4); return +(st*(cost-c)).toFixed(2) }       // goods sold before they came in, at the wrong cost
+  p.cost=+((st*c+qty*cost)/(st+qty)).toFixed(4); return 0;
+}
+function postCostGap(date,desc,ref,v){ if(Math.abs(v)>=0.005) post(date,desc,ref,slines(sl('1200',v),sl('5100',-v))) }
+function costChanged(p,oldCost,why){
+  const v=+((+p.stock||0)*((+p.cost||0)-(+oldCost||0))).toFixed(2); if(Math.abs(v)<0.005) return;
+  post(D(today),`Stock value — ${p.name}, cost ${money2(oldCost)} → ${money2(p.cost)}${why?' ('+why+')':''}`,p.code||String(p.id),slines(sl('1200',v),sl('5300',-v)));
+}
+const supBillsOpen=(sid)=>S.purchases.filter(p=>p.supplierId===sid&&!(p.onNote&&!p.invoiced));
+function supSettle(sid,amount){ let rem=+amount;
+  for(const p of supBillsOpen(sid).filter(p=>p.total-p.paid>0.005).sort((a,b)=>String(a.date).localeCompare(String(b.date)))){
+    const a=Math.min(rem,p.total-p.paid); p.paid=+(p.paid+a).toFixed(2); rem=+(rem-a).toFixed(2); if(rem<=0.005) break } }
+function supReopen(sid,amount){ let rem=+amount;
+  for(const p of supBillsOpen(sid).filter(p=>p.paid>0.005).sort((a,b)=>String(b.date).localeCompare(String(a.date)))){
+    const a=Math.min(rem,p.paid); p.paid=+(p.paid-a).toFixed(2); rem=+(rem-a).toFixed(2); if(rem<=0.005) break } }
+function custSettle(cid,amount){ let rem=+amount;
+  for(const s of S.sales.filter(s=>s.customerId===cid&&s.balance>0.005).sort((a,b)=>String(a.date).localeCompare(String(b.date)))){
+    const a=Math.min(rem,s.balance); s.balance=+(s.balance-a).toFixed(2); s.paid=+((s.paid||0)+a).toFixed(2); rem=+(rem-a).toFixed(2); if(rem<=0.005) break } }
+function custReopen(cid,amount,prefer){ let rem=+amount;
+  const list=S.sales.filter(s=>s.customerId===cid&&s.total>0&&s.total-s.balance>0.005)
+    .sort((a,b)=>((b.no===prefer)-(a.no===prefer))||String(b.date).localeCompare(String(a.date)));
+  for(const s of list){ const a=Math.min(rem,s.total-s.balance); s.balance=+(s.balance+a).toFixed(2); s.paid=+Math.max(0,(s.paid||0)-a).toFixed(2); rem=+(rem-a).toFixed(2); if(rem<=0.005) break } }
+/* a supplier's credit on a bill: it lowers the cost of what is still on the floor; the rest was sold */
+function purCostDown(pur,v){
+  const ls=(pur.lines||[]).filter(l=>P(l.pid)); if(!ls.length) return {inv:v,cogs:0};
+  const T=ls.reduce((a,l)=>a+l.qty*(l.landed||l.cost),0); if(!(T>0)) return {inv:v,cogs:0};
+  let inv=0;
+  for(const l of ls){ const p=P(l.pid), share=v*l.qty*(l.landed||l.cost)/T, on=Math.max(0,Math.min(+p.stock||0,l.qty));
+    const part=share*on/l.qty; if(p.stock>0&&part>0){ p.cost=+Math.max(0,p.cost-part/p.stock).toFixed(4); inv+=part } }
+  inv=+inv.toFixed(2); return {inv,cogs:+(v-inv).toFixed(2)};
+}
 function receivePurchase({supplierId,supInv,lines,other=0,date=D(today),pay,files=[],dn=null,disc=0}){
   const sub=lines.reduce((a,l)=>a+l.qty*l.cost,0), total=+(sub+other-(+disc||0)).toFixed(2);
   lines.forEach(l=>{ if(!(l.qty>0)) throw new Error('Quantity must be above zero'); if(!(l.cost>=0)) throw new Error('Cost cannot be negative') });
@@ -4578,10 +4624,12 @@ function receivePurchase({supplierId,supInv,lines,other=0,date=D(today),pay,file
   S.purchases.push(pur);
   // transport and other charges are part of what the goods cost: spread across the lines by value
   const share=sub>0?(other-(+disc||0))/sub:0;
+  let gapC=0;
   for(const l of lines){ const p=P(l.pid); const landed=+(l.cost*(1+share)).toFixed(4); l.landed=landed;
-    const nv=p.stock*p.cost+l.qty*landed; p.cost=+(nv/(p.stock+l.qty)).toFixed(4); move(l.pid,l.qty,'PURCHASE',pur.no,landed,date);
+    gapC+=avgIn(p,l.qty,landed); move(l.pid,l.qty,'PURCHASE',pur.no,landed,date);
     if(p.serialised&&l.serials) addSerials(l.pid,l.serials,pur.no,landed) }
   post(date,'Purchase '+pur.no,pur.no,[{ac:'1200',dr:total},{ac:'2100',cr:total,party:{type:'S',id:supplierId}}]);
+  postCostGap(date,'Cost of goods sold before '+pur.no+' came in',pur.no,gapC);
   if(pay&&pay.amount>0) paySupplier({supplierId,date,lines:[pay]});
   return pur;
 }
@@ -4614,12 +4662,14 @@ function receiveOnNote({supplierId,dnNo,lines,date=D(today),note='',files=[]}){
     onNote:true,                         // the goods are here, the invoice is not
     invoiced:false,note:String(note||'').trim()};
   S.purchases.push(pur);
+  let gapC=0;
   for(const l of lines){ const p=P(l.pid); l.landed=l.cost;
-    const nv=p.stock*p.cost+l.qty*l.cost; p.cost=+(nv/(p.stock+l.qty)).toFixed(4);
+    gapC+=avgIn(p,l.qty,l.cost);
     move(l.pid,l.qty,'PURCHASE',pur.no,l.cost,date,l.loc);
     if(p.serialised&&l.serials) addSerials(l.pid,l.serials,pur.no,l.cost) }
   post(date,`Goods in on ${s.name}'s note ${pur.dnNo}`,pur.no,
     [{ac:'1200',dr:total},{ac:GRNI_AC,cr:total}]);
+  postCostGap(date,'Cost of goods sold before '+pur.no+' came in',pur.no,gapC);
   notify('stock',`${s.name} delivered on note ${pur.dnNo} — ${fmt(total)} of goods, invoice still to come`,'purchases');
   try{ logTrail('purNote',`Goods in on ${s.name}'s note ${pur.dnNo} — ${fmt(total)}, invoice to come`,
     {amount:total,ref:pur.no}) }catch(e){}
@@ -4648,6 +4698,7 @@ function matchNoteInvoice({no,supInv,costs={},other=0,disc=0,date=D(today),files
   const total=+(sub+other-disc).toFixed(2);
   // transport less any discount rides on the goods, the same way a straight purchase does
   const share=sub>0?(other-disc)/sub:0;
+  const v0=stockValue(pur.lines.map(l=>l.pid));
   for(const l of pur.lines){
     l.landed=+(l.cost*(1+share)).toFixed(4);
     for(const m of S.movements) if(m.ref===pur.no&&m.pid===l.pid&&m.type==='PURCHASE') m.cost=l.landed;
@@ -4660,7 +4711,9 @@ function matchNoteInvoice({no,supInv,costs={},other=0,disc=0,date=D(today),files
   // what was waiting moves onto their account; any difference is what the goods really cost
   const lines=[{ac:GRNI_AC,dr:was},{ac:'2100',cr:total,party:{type:'S',id:pur.supplierId}}];
   const gap=+(total-was).toFixed(2);
-  if(Math.abs(gap)>=0.005) lines.push(gap>0?{ac:'1200',dr:gap}:{ac:'1200',cr:-gap});
+  // the stock on the floor is revalued; what is gone was sold at the note's cost, so that part is cost of sales
+  const dv=+(stockValue(pur.lines.map(l=>l.pid))-v0).toFixed(2);
+  if(Math.abs(gap)>=0.005) lines.push(...slines(sl('1200',dv),sl('5100',gap-dv)));
   post(date,`Invoice ${pur.supInv} against note ${pur.dnNo}`,pur.no,lines);
   try{ logTrail('purNote',`Invoice ${pur.supInv} matched to ${s.name}'s note ${pur.dnNo} — ${fmt(total)}${Math.abs(gap)>=0.005?` (${fmt(Math.abs(gap))} ${gap>0?'more':'less'} than the note said)`:''}`,
     {amount:total,ref:pur.no}) }catch(e){}
@@ -5007,7 +5060,7 @@ function chequeStatus(ch,st,date=D(today)){
     if(st==='CLEARED') post(date,`Cheque ${ch.no} cleared`,ch.no,[{ac:'2110',dr:ch.amount},{ac,cr:ch.amount}]);
     if((st==='BOUNCED'||st==='CANCELLED')&&ch.drAc&&!ch.supplierId){ post(date,`Cheque ${ch.no} ${st.toLowerCase()}`,ch.no,[{ac:'2110',dr:ch.amount},{ac:ch.drAc,cr:ch.amount}]);
       const e=ch.ref&&S.expenses.find(x=>x.no===ch.ref); if(e) e.desc+=` (cheque ${st.toLowerCase()})` }
-    else if(st==='BOUNCED'||st==='CANCELLED'){ const sid=ch.supplierId||S.suppliers.find(s=>s.name===ch.party)?.id; post(date,`Cheque ${ch.no} ${st.toLowerCase()}`,ch.no,[{ac:'2110',dr:ch.amount},{ac:'2100',cr:ch.amount,party:{type:'S',id:sid}}]) }
+    else if(st==='BOUNCED'||st==='CANCELLED'){ const sid=ch.supplierId||S.suppliers.find(s=>s.name===ch.party)?.id; post(date,`Cheque ${ch.no} ${st.toLowerCase()}`,ch.no,[{ac:'2110',dr:ch.amount},{ac:'2100',cr:ch.amount,party:{type:'S',id:sid}}]); if(sid) supReopen(sid,ch.amount) }
   } else {
     if(st==='DEPOSITED'){ const b=B(ch.depositTo); post(date,`Cheque ${ch.no} deposited`,ch.no,[{ac:b.ac,dr:ch.amount},{ac:'1030',cr:ch.amount}]) }
     if(st==='BOUNCED'){ const cid=ch.customerId||S.customers.find(c=>c.name===ch.party)?.id;
@@ -5016,7 +5069,8 @@ function chequeStatus(ch,st,date=D(today)){
       const backOut=ch.depositTo?B(ch.depositTo).ac:'1030';
       post(date,`Cheque ${ch.no} bounced`,ch.no, cid
         ? [{ac:'1100',dr:ch.amount,party:{type:'C',id:cid}},{ac:backOut,cr:ch.amount}]
-        : [{ac:'4900',dr:ch.amount},{ac:backOut,cr:ch.amount}]) }
+        : [{ac:'4900',dr:ch.amount},{ac:backOut,cr:ch.amount}]);
+      if(cid) custReopen(cid,ch.amount,ch.ref) }
     if(st==='CLEARED'&&ch.depositTo){ /* already banked when it was deposited */ }
   }
 }
@@ -5047,6 +5101,7 @@ function addSupplierDamage({pid,sid,qty,reason,note,date=D(today)}){
   move(pid,-qty,'DAMAGE',d.no,p.cost,date);
   // it comes off what we owe them: the goods were never ours to keep
   post(date,'Damaged back to '+s.name+' '+d.no,d.no,[{ac:'2100',dr:v,party:{type:'S',id:sid}},{ac:'1200',cr:v}]);
+  supSettle(sid,v);
   notify('stock',`${fq(qty)} ${p.unit} of ${p.name} put aside to go back to ${s.name}`,'damages');
   return d;
 }
@@ -5058,12 +5113,16 @@ function damageSet(no,status,note){
   if(status==='refused'&&was!=='refused'){
     // they will not take it, so it becomes ours to lose: put the claim back and expense it
     post(D(today),'Damage turned down '+d.no,d.no,[{ac:'5200',dr:d.value},{ac:'2100',cr:d.value,party:{type:'S',id:d.sid}}]);
+    supReopen(d.sid,d.value);
   }
   if(was==='refused'&&status!=='refused'){
     post(D(today),'Damage claim back on '+d.no,d.no,[{ac:'2100',dr:d.value,party:{type:'S',id:d.sid}},{ac:'5200',cr:d.value}]);
+    supSettle(d.sid,d.value);
   }
-  if(status==='replaced'){ const p=P(d.pid); move(d.pid,d.qty,'DAMAGE-REPLACED',d.no,d.cost,D(today));
-    post(D(today),'Replacement for '+d.no,d.no,[{ac:'1200',dr:d.value},{ac:'2100',cr:d.value,party:{type:'S',id:d.sid}}]); }
+  if(status==='replaced'){ const p=P(d.pid); const gapC=avgIn(p,d.qty,d.cost); move(d.pid,d.qty,'DAMAGE-REPLACED',d.no,d.cost,D(today));
+    post(D(today),'Replacement for '+d.no,d.no,[{ac:'1200',dr:d.value},{ac:'2100',cr:d.value,party:{type:'S',id:d.sid}}]);
+    postCostGap(D(today),'Cost of goods sold before '+d.no+' was replaced',d.no,gapC);
+    supReopen(d.sid,d.value); }
   return d;
 }
 /** What a supplier is holding of ours, in damaged goods not yet settled. */
@@ -17975,12 +18034,13 @@ function editPurchaseModal(no){
   if(!can('adjustInvoice')) return toast('Changing a supplier bill is not open to '+S.user.name);
   const pur=S.purchases.find(x=>x.no===no); if(!pur) return;
   const sp=SU(pur.supplierId);
-  let lines=pur.lines.map(l=>({...l}));
-  const m=modal(`<h2>Change ${sp.name.split(/[–(]/)[0].trim()}'s bill ${pur.supInv}</h2>
+  let lines=pur.lines.map(l=>({...l})), whyNow='';
+  const counting=pur.amountOnly&&!pur.lines.length;            // an invoice-total bill being given its goods
+  const m=modal(`<h2>${counting?'Count in the goods on':'Change'} ${sp.name.split(/[–(]/)[0].trim()}'s bill ${pur.supInv}</h2>
    <div class="muted">Received ${pur.date} as ${pur.no} · billed ${fmt(pur.total)}, ${fmt(pur.paid)} paid</div>
    <div id="epBody"></div>`);
   const draw=()=>{
-    const sub=lines.reduce((a,l)=>a+l.qty*l.cost,0), tot=+(sub+pur.other).toFixed(2);
+    const sub=lines.reduce((a,l)=>a+l.qty*l.cost,0), tot=+(sub+(pur.other||0)-(pur.disc||0)).toFixed(2);
     m.querySelector('#epBody').innerHTML=`
      <table style="margin-top:10px"><tr><th>Item</th><th class="n">Qty</th><th class="n">Unit cost</th><th class="n">Amount</th><th class="n">Was</th><th></th></tr>
       ${lines.map((l,i)=>{const p=P(l.pid), o=pur.lines.find(x=>x.pid===l.pid);return `<tr>
@@ -17989,19 +18049,29 @@ function editPurchaseModal(no){
         <td class="n"><input type="number" step="any" data-pc="${i}" value="${l.cost}" style="width:100px;text-align:right"></td>
         <td class="n">${fmt(l.qty*l.cost)}</td><td class="n muted">${o?fmt(o.qty*o.cost):'new line'}</td>
         <td><button class="btn ghost sm" data-prm="${i}">✕</button></td></tr>`}).join('')}</table>
+     <div class="f" style="margin-top:8px"><label>Add an item that came on this bill</label>
+      <input id="epQ" placeholder="name, code, short code or number" autocomplete="off"><div id="epHits"></div></div>
+     ${counting?`<div class="card note" style="margin-top:8px">The invoice came to <b>${fmt(pur.total)}</b>. Enter what came at what it cost, so the goods are on the floor and the bill still comes to the invoice${Math.abs(tot-pur.total)>0.005&&lines.length?` — <b class="rust">${fmt(Math.abs(tot-pur.total))} ${tot>pur.total?'over':'short of'} it</b>`:''}.</div>`:''}
      <div class="paybar" style="margin-top:10px">
       <div><span class="muted">Was</span><b>${fmt(pur.total)}</b></div>
       <div><span class="muted">Becomes</span><b>${fmt(tot)}</b></div>
       <div class="${tot<pur.total?'done':'due'}"><span class="muted">Difference</span><b>${fmt(tot-pur.total)}</b></div>
       ${pur.paid?`<div><span class="muted">Already paid them</span><b>${fmt(pur.paid)}</b></div>`:''}</div>
      <div class="f" style="margin-top:10px"><label>Why is it being changed?</label>
-      <input id="epWhy" placeholder="e.g. five bags short on the lorry, price on their invoice differs"></div>
+      <input id="epWhy" placeholder="e.g. five bags short on the lorry, price on their invoice differs" value="${counting&&!whyNow?'goods counted in':noteEsc(whyNow)}"></div>
      <div style="display:flex;justify-content:flex-end;gap:8px">
       <button class="btn ghost" data-act="closeModal">Cancel</button>
       <button class="btn tape" id="epOk">Save the change</button></div>`;
     m.querySelectorAll('[data-pq]').forEach(el=>el.onchange=()=>{lines[+el.dataset.pq].qty=+el.value||0;draw()});
     m.querySelectorAll('[data-pc]').forEach(el=>el.onchange=()=>{lines[+el.dataset.pc].cost=+el.value||0;draw()});
     m.querySelectorAll('[data-prm]').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.prm,1);draw()});
+    m.querySelector('#epWhy').oninput=e=>{ whyNow=e.target.value };
+    const q=m.querySelector('#epQ');
+    q.oninput=()=>{ const v=q.value.trim().toLowerCase();
+      const hits=v?S.products.filter(p=>p.name.toLowerCase().includes(v)||String(p.code||'').toLowerCase().includes(v)||(p.short||'').toLowerCase()===v||String(p.num||'')===v).slice(0,6):[];
+      m.querySelector('#epHits').innerHTML=hits.map(p=>`<button class="btn ghost sm" data-epad="${p.id}" style="margin:3px 3px 0 0">${noteEsc(p.name)} · ${money2(p.cost)}</button>`).join('');
+      m.querySelectorAll('[data-epad]').forEach(b=>b.onclick=()=>{ const p=P(+b.dataset.epad);
+        if(!lines.some(l=>l.pid===p.id)) lines.push({pid:p.id,qty:1,cost:+p.cost||0}); draw(); const n=m.querySelector('#epQ'); if(n) n.focus() }) };
     m.querySelector('#epOk').onclick=save;
   };
   const save=()=>{
@@ -18015,16 +18085,16 @@ function editPurchaseModal(no){
     // the correction cannot take the floor below zero: what is left plus the change must stay above nothing
     pur.lines.forEach(l=>{ const k=keep.find(x=>x.pid===l.pid); const after=P(l.pid).stock-l.qty+(k?k.qty:0);
       if(after<-1e-9&&!CFG.stock.allowNegative) throw new Error(`${P(l.pid).name}: only ${fq(P(l.pid).stock)} are left, so the received quantity cannot go below ${fq(l.qty-P(l.pid).stock)} — some have already been sold`) });
+    const v0=stockValue([...pur.lines,...keep].map(l=>l.pid)), unc=(pur.amountOnly&&!(pur.lines||[]).length)?oldTotal:0;
     pur.lines.forEach(l=>{ move(l.pid,-l.qty,'PURCHASE_VOID',pur.no+' (before change)',l.landed||l.cost); touched.add(l.pid) });
-    const sub=keep.reduce((a,l)=>a+l.qty*l.cost,0), share=sub>0?pur.other/sub:0;
+    const sub=keep.reduce((a,l)=>a+l.qty*l.cost,0), share=sub>0?((pur.other||0)-(pur.disc||0))/sub:0;
     keep.forEach(l=>{ l.landed=+(l.cost*(1+share)).toFixed(4); move(l.pid,l.qty,'PURCHASE',pur.no,l.landed); touched.add(l.pid) });
     touched.forEach(recost);
-    const newTotal=+(sub+pur.other).toFixed(2), d=+(newTotal-oldTotal).toFixed(2);
-    if(Math.abs(d)>0.005){
-      post(D(today),`Purchase ${pur.no} changed — ${why}`,pur.no, d>0
-        ? [{ac:'1200',dr:d},{ac:'2100',cr:d,party:{type:'S',id:sp.id}}]
-        : [{ac:'2100',dr:-d,party:{type:'S',id:sp.id}},{ac:'1200',cr:-d}]);
-    }
+    const newTotal=+(sub+(pur.other||0)-(pur.disc||0)).toFixed(2), d=+(newTotal-oldTotal).toFixed(2);
+    // what the floor is now worth (less what an invoice-total bill had already put in); the rest was sold
+    const inv=+(stockValue([...touched])-v0-unc).toFixed(2), cogs=+(d-inv).toFixed(2);
+    if(Math.abs(d)>0.005||Math.abs(inv)>0.005)
+      post(D(today),`Purchase ${pur.no} changed — ${why}`,pur.no,slines(sl('1200',inv),sl('5100',cogs),sl('2100',-d,{type:'S',id:sp.id})));
     pur.lines=keep; pur.total=newTotal;
     pur.edits=(pur.edits||[]).concat([{at:D(today),by:S.user.name,why,from:oldTotal,to:newTotal}]);
     notify('warn',`${S.user.name} changed ${sp.name.split(/[–(]/)[0].trim()}'s bill ${pur.supInv}`,'suppliers');
@@ -18336,10 +18406,13 @@ function prnModal(supplierId){
     for(const l of keep){ const p=P(l.pid);
       if(l.qty>p.stock+1e-9&&!CFG.stock.allowNegative) return toast(`Only ${fq(p.stock)} ${p.unit} of ${p.name} on the floor`) }
     const total=+keep.reduce((a,l)=>a+l.qty*l.cost,0).toFixed(2);
+    // the goods leave the floor at what they stand at; what the supplier credits over or under that is cost of sales
+    const atCost=+keep.reduce((a,l)=>a+l.qty*(+P(l.pid).cost||0),0).toFixed(2);
     const no=next('PRN');
-    keep.forEach(l=>move(l.pid,-l.qty,'PURCHASE_RETURN',no,l.cost,date));
+    keep.forEach(l=>move(l.pid,-l.qty,'PURCHASE_RETURN',no,P(l.pid).cost,date));
     post(date,`Goods returned to ${SU(sid).name}${why?' — '+why:''}`,no,
-      [{ac:'2100',dr:total,party:{type:'S',id:sid}},{ac:'1200',cr:total}]);
+      slines({ac:'2100',dr:total,party:{type:'S',id:sid}},sl('1200',-atCost),sl('5100',atCost-total)));
+    supSettle(sid,total);
     const prn={no,date,supplierId:sid,ref:(m.querySelector('#prRef').value||'').trim(),lines:keep.map(l=>({...l})),total,why,by:S.user.name};
     S.prns.push(prn);
     notify('order',`${fmt(total)} of goods went back to ${SU(sid).name.split(/[–(]/)[0].trim()}`,'suppliers');
@@ -19056,7 +19129,7 @@ function applyApproval(a){
       if(!e) throw new Error('That person is no longer on the staff list');
       salTell(d,true);
       // an advance is paid the till's own way — the amount and reason already in — so it is posted against them
-      if(d.type==='advance') setTimeout(()=>{ try{ advanceModal(e.id,a.id); const m=document.querySelector('.modal:last-child');
+      if(d.type==='advance') setTimeout(()=>{ try{ advanceModal(e.id,a.id); const m=[...document.querySelectorAll('.modal')].pop();
         if(m){ const am=m.querySelector('#avAmt'), nt=m.querySelector('#avNote'); if(am) am.value=d.amount; if(nt) nt.value=(d.note?d.note+' · ':'')+'asked at the shift clock' } }catch(err){} },60);
       else notify('people',`Pay ${e.name} their salary (${fmt(d.amount)}) — approved by ${S.user.name}`,'payroll',{forApprovers:true});
       break }
@@ -19074,7 +19147,7 @@ function applyApproval(a){
     case 'custRemove':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); if(partyBal('C',c.id)>0.005) throw new Error('They still owe money'); c.active=false; break }
     case 'billAdjust': applySaleAdjust(d.no,+d.amount,d.why,d.note,a.by); break;
     case 'purAdjust': applyPurAdjust(d.no,+d.amount,d.why,d.note,a.by); break;
-    case 'prodPrice':{ const p=P(d.pid); if(!p) throw new Error('Product no longer exists'); Object.assign(p,d.prices); break }
+    case 'prodPrice':{ const p=P(d.pid); if(!p) throw new Error('Product no longer exists'); const oc=p.cost; Object.assign(p,d.prices); costChanged(p,oc,'price change approved'); break }
     default: throw new Error('Unknown kind of request');
   }
 }
@@ -19632,8 +19705,9 @@ function applyPurAdjust(no,v,why,note,by){
   if(v>owing+0.005) throw new Error('More than is owing on '+pur.supInv);
   pur.total=+(pur.total-v).toFixed(2);
   pur.adjustments=(pur.adjustments||[]).concat([{amount:v,why,note,date:D(today),by:by||S.user.name}]);
+  const part=purCostDown(pur,v);
   post(D(today),`${ADJ_REASONS.find(r=>r[0]===why)[1]} on ${pur.supInv}${note?' — '+note:''}`,pur.no,
-    [{ac:'2100',dr:v,party:{type:'S',id:sp.id}},{ac:'1200',cr:v}]);
+    slines({ac:'2100',dr:v,party:{type:'S',id:sp.id}},sl('1200',-part.inv),sl('5100',-part.cogs)));
 }
 
 /* ================== NOTES ON A CUSTOMER OR A SUPPLIER ==================
@@ -21748,7 +21822,7 @@ function productModal(pid){
         const webPart=webWas===webNow?'' :
           `, on the site ${webWas>0?money2(webWas):'counter price'} → ${webNow>0?money2(webNow):'counter price'}`;
         return requestApproval('prodPrice',`Change prices of ${p.name}: MRP ${money2(p.mrp)} → ${money2(prices.mrp)}, cost ${money2(p.cost)} → ${money2(prices.cost)}, price ${money2(p.retail)} → ${money2(prices.retail)}, wholesale ${money2(p.wholesale)} → ${money2(prices.wholesale)}${webPart}`,`${p.code} · ${fq(p.stock)} ${p.unit} in stock`,{pid:p.id,prices}) }
-      Object.assign(p,data); m.remove(); render(); toast(`${p.name} updated`) }
+      const oc=p.cost; Object.assign(p,data); costChanged(p,oc,'changed on the product'); m.remove(); render(); toast(`${p.name} updated`) }
     else{ const np={id:Math.max(0,...S.products.map(x=>x.id))+1,stock:0,...data}; S.products.push(np); sendPhoto(np.id);
       const op=g('popen'); if(op>0){ move(np.id,op,'OPENING','New item',np.cost);
         post(D(today),'Opening stock '+np.code,np.code,[{ac:'1200',dr:+(op*np.cost).toFixed(2)},{ac:'3100',cr:+(op*np.cost).toFixed(2)}]) }
@@ -21899,7 +21973,7 @@ function bulkProductModal(){
     for(const r of good){
       if(r.what==='update'){ const p=r.old;
         if(r.name) p.name=r.name; if(r.cat) p.cat=r.cat; if(r.unit) p.unit=r.unit;
-        if(!askApproval){ if(r.cost) p.cost=r.cost; if(bulkNum(r.retail)) p.retail=r.retail; if(bulkNum(r.mrp)) p.mrp=r.mrp; if(bulkNum(r.wholesale)) p.wholesale=r.wholesale; }
+        if(!askApproval){ if(r.cost){ const oc=p.cost; p.cost=r.cost; costChanged(p,oc,'from the import') } if(bulkNum(r.retail)) p.retail=r.retail; if(bulkNum(r.mrp)) p.mrp=r.mrp; if(bulkNum(r.wholesale)) p.wholesale=r.wholesale; }
         if(r.minGiven) p.min=r.min; if(r.short) p.short=r.short; if(r.barcode) p.barcode=String(r.barcode).trim(); if(r.sup) p.supplierId=r.sup.id;
         updated++; continue }
       const np={id:++id,stock:0,code:r.code,name:r.name,cat:r.cat||'General',unit:r.unit||'pcs',
@@ -24441,11 +24515,52 @@ function voucher(no){ const e=S.expenses.find(x=>x.no===no); if(!e) return toast
 
 /* ---- accounting ---- */
 let accTab='tb';
-function accounting(){ const tabs=[['tb','Trial balance'],['pl','Profit & loss'],['je','Journal'],['bank','Bank accounts']]; let body='';
+/* The books checked against themselves: every figure that is kept twice must say the same both times. */
+function acctHealth(){
+  const r2=n=>Math.round(n*100)/100, out=[];
+  const add=(key,label,a,b,fix,detail)=>out.push({key,label,a:r2(a),b:r2(b),gap:r2(a-b),ok:Math.abs(r2(a-b))<0.02+Math.abs(b)*1e-7,fix,detail:detail||''});
+  const unb=S.journal.filter(j=>Math.abs(j.lines.reduce((x,l)=>x+(+l.dr||0)-(+l.cr||0),0))>0.005);
+  out.push({key:'bal',label:'Every entry balances',ok:!unb.length,detail:unb.length?unb.length+' do not: '+unb.slice(0,3).map(j=>j.desc).join(', '):'',a:unb.length,b:0,gap:unb.length});
+  const acs=new Set(); S.journal.forEach(j=>j.lines.forEach(l=>acs.add(l.ac)));
+  add('tb','Trial balance comes to nothing',[...acs].reduce((a,k)=>a+bal(k),0),0);
+  const unc=(S.purchases||[]).filter(p=>p.amountOnly&&!(p.lines||[]).length).reduce((a,p)=>a+p.total,0);
+  add('stock','Stock on the floor at cost = Inventory account',S.products.reduce((a,p)=>a+(+p.stock||0)*(+p.cost||0),0)+unc,bal('1200'),'stock',unc?`includes ${money2(unc)} of invoices booked by total, goods still to count in`:'');
+  add('ar','What customers owe = Accounts receivable',S.customers.reduce((a,c)=>a+partyBal('C',c.id),0),bal('1100'));
+  add('ap','What we owe suppliers = Accounts payable',S.suppliers.reduce((a,x)=>a+partyBal('S',x.id),0),-bal('2100'));
+  const cb=S.customers.filter(c=>c.id!==1).map(c=>({c,open:S.sales.filter(x=>x.customerId===c.id).reduce((a,x)=>a+(+x.balance||0),0),led:Math.max(0,partyBal('C',c.id))})).filter(x=>Math.abs(x.open-x.led)>0.02);
+  add('custBills','Customers\' open bills = their accounts',cb.reduce((a,x)=>a+x.open,0),cb.reduce((a,x)=>a+x.led,0),'custBills',cb.slice(0,4).map(x=>`${x.c.name}: bills ${money2(x.open)}, account ${money2(x.led)}`).join(' · '));
+  const sb=S.suppliers.map(x=>({x,open:supBillsOpen(x.id).reduce((a,p)=>a+(p.total-p.paid),0),led:partyBal('S',x.id)})).filter(y=>Math.abs(y.open-y.led)>0.02);
+  add('supBills','Suppliers\' open bills = their accounts',sb.reduce((a,y)=>a+y.open,0),sb.reduce((a,y)=>a+y.led,0),'supBills',sb.slice(0,4).map(y=>`${y.x.name}: bills ${money2(y.open)}, account ${money2(y.led)}`).join(' · '));
+  add('chqIn','Cheques in the drawer = Cheques received',S.cheques.filter(c=>c.dir==='RECEIVED'&&c.status==='RECEIVED').reduce((a,c)=>a+c.amount,0),bal('1030'));
+  add('chqOut','Our cheques not cleared = Cheques issued',S.cheques.filter(c=>c.dir==='ISSUED'&&['ISSUED','PRINTED'].includes(c.status)).reduce((a,c)=>a+c.amount,0),-bal('2110'));
+  add('adv','Staff advances out = Employee advances',(S.employees||[]).reduce((a,e)=>a+(+e.advance||0),0),bal('1300'));
+  add('grni','Goods on notes, invoice to come = that account',(S.purchases||[]).filter(p=>p.onNote&&!p.invoiced).reduce((a,p)=>a+p.total,0),-bal(GRNI_AC));
+  add('custAdv','Customers\' credit held = Customer advances',S.customers.reduce((a,c)=>a+custCredit(c.id),0),-bal('2050'));
+  const nan=S.products.filter(p=>!isFinite(+p.cost)||!isFinite(+p.stock));
+  out.push({key:'nan',label:'Every item has a real cost and quantity',ok:!nan.length,detail:nan.slice(0,5).map(p=>p.name).join(', '),a:nan.length,b:0,gap:nan.length});
+  return out;
+}
+function acctFix(key){
+  const h=acctHealth().find(x=>x.key===key); if(!h||h.ok) return;
+  if(key==='stock'){ if(!confirm(`Bring the Inventory account into line with the stock on the floor? ${money2(Math.abs(h.gap))} goes to Stock adjustments, dated today.`)) return;
+    post(D(today),'Inventory brought into line with the stock on the floor','CHECK',slines(sl('1200',h.gap),sl('5300',-h.gap))) }
+  if(key==='supBills') S.suppliers.forEach(x=>{ const g=+(supBillsOpen(x.id).reduce((a,p)=>a+(p.total-p.paid),0)-partyBal('S',x.id)).toFixed(2); if(g>0.005) supSettle(x.id,g); else if(g<-0.005) supReopen(x.id,-g) });
+  if(key==='custBills') S.customers.filter(c=>c.id!==1).forEach(c=>{ const g=+(S.sales.filter(x=>x.customerId===c.id).reduce((a,x)=>a+(+x.balance||0),0)-Math.max(0,partyBal('C',c.id))).toFixed(2); if(g>0.005) custSettle(c.id,g); else if(g<-0.005) custReopen(c.id,-g) });
+  try{ logTrail('other',`Accounts check: ${h.label} put right (${money2(h.gap)})`,{amount:h.gap,ref:'CHECK'}) }catch(e){}
+  persist(true); render(); toast('Put right','ok');
+}
+function accounting(){ const tabs=[['tb','Trial balance'],['pl','Profit & loss'],['je','Journal'],['bank','Bank accounts'],['check','Health check']]; let body='';
+  if(accTab==='check'){ const h=acctHealth(), bad=h.filter(x=>!x.ok);
+    body=`<div class="card note" style="margin-bottom:10px;${bad.length?'border-left:3px solid var(--chip-rust)':''}"><b>${bad.length?bad.length+' thing'+(bad.length===1?' does':'s do')+' not agree':'Everything agrees'}</b>
+      <div class="muted">Every figure the books keep twice is checked against the other copy. Each line should say it agrees.</div></div>
+      <table><tr><th>Check</th><th class="n">One side</th><th class="n">The other</th><th></th></tr>${h.map(x=>`<tr><td>${x.ok?'<span class="tag ok">agrees</span>':'<span class="tag bad">off</span>'} ${x.label}${x.detail?`<div class="muted" style="font-size:12px">${noteEsc(x.detail)}</div>`:''}</td>
+        <td class="n">${['bal','nan'].includes(x.key)?x.a:money2(x.a)}</td><td class="n">${['bal','nan'].includes(x.key)?'':money2(x.b)}</td>
+        <td>${!x.ok&&x.fix&&canApprove()?`<button class="btn sm" data-act="acctFix" data-k="${x.key}">Put it right</button>`:!x.ok?`<span class="rust">${money2(x.gap)}</span>`:''}</td></tr>`).join('')}</table>` }
   if(accTab==='tb'){ const rows=Object.keys(GL).map(k=>[k,GL[k],bal(k)]).filter(r=>Math.abs(r[2])>0.005); const dr=rows.reduce((a,r)=>a+Math.max(r[2],0),0),cr=rows.reduce((a,r)=>a+Math.max(-r[2],0),0);
     body=`<table><tr><th>Code</th><th>Account</th><th class="n">Debit</th><th class="n">Credit</th></tr>${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td class="n">${r[2]>0?fmt(r[2]):''}</td><td class="n">${r[2]<0?fmt(-r[2]):''}</td></tr>`).join('')}<tr><td></td><td><b>Total</b></td><td class="n"><b>${fmt(dr)}</b></td><td class="n"><b>${fmt(cr)}</b></td></tr></table><div class="muted" style="margin-top:6px">${Math.abs(dr-cr)<0.01?'✔ Balanced — every transaction in this demo posted double-entry':'✘ Out of balance'} · Inventory GL ${fmt(bal('1200'))} vs stock valuation ${fmt(S.products.reduce((a,p)=>a+p.stock*p.cost,0))}</div>` }
-  if(accTab==='pl'){ const inc=-bal('4100')-bal('4110'), cogs=bal('5100')+bal('5200'); const ex=Object.keys(GL).filter(k=>k.startsWith('6')).map(k=>[GL[k],bal(k)]).filter(r=>r[1]); const te=ex.reduce((a,r)=>a+r[1],0);
-    body=`<table><tr><td>Sales (net of returns)</td><td class="n">${fmt(inc)}</td></tr><tr><td>Cost of goods sold + damage</td><td class="n">(${fmt(cogs)})</td></tr><tr><td><b>Gross profit</b></td><td class="n"><b>${fmt(inc-cogs)}</b> <span class="muted">${inc?((inc-cogs)/inc*100).toFixed(1):0}%</span></td></tr>${ex.map(r=>`<tr><td style="padding-left:24px">${r[0]}</td><td class="n">(${fmt(r[1])})</td></tr>`).join('')}<tr><td><b>Net profit</b></td><td class="n"><b>${fmt(inc-cogs-te)}</b></td></tr></table><div class="muted" style="margin-top:6px">Salaries post when the month's payroll run is approved (see Employees & salary).</div>` }
+  if(accTab==='pl'){ const k4=Object.keys(GL).filter(k=>k.startsWith('4')), k5=Object.keys(GL).filter(k=>k.startsWith('5'));
+    const inc=-k4.reduce((a,k)=>a+bal(k),0), cogs=k5.reduce((a,k)=>a+bal(k),0); const ex=Object.keys(GL).filter(k=>k.startsWith('6')).map(k=>[GL[k],bal(k)]).filter(r=>r[1]); const te=ex.reduce((a,r)=>a+r[1],0);
+    body=`<table><tr><td>Sales (net of returns)</td><td class="n">${fmt(inc)}</td></tr><tr><td>Cost of goods sold, damage and stock differences</td><td class="n">(${fmt(cogs)})</td></tr><tr><td><b>Gross profit</b></td><td class="n"><b>${fmt(inc-cogs)}</b> <span class="muted">${inc?((inc-cogs)/inc*100).toFixed(1):0}%</span></td></tr>${ex.map(r=>`<tr><td style="padding-left:24px">${r[0]}</td><td class="n">(${fmt(r[1])})</td></tr>`).join('')}<tr><td><b>Net profit</b></td><td class="n"><b>${fmt(inc-cogs-te)}</b></td></tr></table><div class="muted" style="margin-top:6px">Salaries post when the month's payroll run is approved (see Employees & salary).</div>` }
   if(accTab==='je') body=`<table><tr><th>Entry</th><th>Date</th><th>Description</th><th>Account</th><th class="n">Debit</th><th class="n">Credit</th></tr>${S.journal.slice().reverse().slice(0,40).map(j=>j.lines.map((l,i)=>`<tr><td>${i?'':j.no}</td><td>${i?'':j.date}</td><td>${i?'':j.desc}</td><td>${l.ac} ${GL[l.ac]}${l.party?' <span class="muted">('+(l.party.type==='C'?C(l.party.id)?.name:SU(l.party.id)?.name)+')</span>':''}</td><td class="n">${l.dr?fmt(l.dr):''}</td><td class="n">${l.cr?fmt(l.cr):''}</td></tr>`).join('')).join('')}</table><div class="muted">Showing last 40 of ${S.journal.length} entries.</div>`;
   if(accTab==='bank') body=`<div class="row">${S.banks.map(b=>stat(b.name,fmt(bal(b.ac)),b.no+' · next cheque '+chqNextLabel(b))).join('')}</div><h2 style="margin-top:12px">Bank transactions</h2><table><tr><th>Date</th><th>Account</th><th>Description</th><th class="n">In</th><th class="n">Out</th></tr>${S.journal.flatMap(j=>j.lines.filter(l=>S.banks.some(b=>b.ac===l.ac)).map(l=>({j,l}))).reverse().map(({j,l})=>`<tr><td>${j.date}</td><td>${GL[l.ac]}</td><td>${j.desc}</td><td class="n">${l.dr?fmt(l.dr):''}</td><td class="n">${l.cr?fmt(l.cr):''}</td></tr>`).join('')}</table>`;
   return `<h1>Accounting</h1><div class="tabs">${tabs.map(t=>`<button class="${accTab===t[0]?'on':''}" data-acc="${t[0]}">${t[1]}</button>`).join('')}</div><div class="card">${body}</div>` }
@@ -27348,8 +27463,9 @@ document.addEventListener('click',e=>{
     bkEdit:()=>bankModal(a.dataset.id?+a.dataset.id:null), bkDel:()=>bankDelete(+a.dataset.id), bkGo:()=>{ setTab='banks'; go('settings') },
     apPayAdv:()=>{ const ap=(S.approvals||[]).find(x=>x.id===a.dataset.id); if(!ap) return; const d=ap.data||{};
       const e=(S.employees||[]).find(x=>String(x.id)===String(d.empId))||(S.employees||[]).find(x=>x.name===d.who); if(!e) return toast('That person is no longer on the staff list');
-      advanceModal(e.id,ap.id); const m=document.querySelector('.modal:last-child');
+      advanceModal(e.id,ap.id); const m=[...document.querySelectorAll('.modal')].pop();
       if(m){ const am=m.querySelector('#avAmt'), nt=m.querySelector('#avNote'); if(am) am.value=d.amount; if(nt) nt.value=(d.note?d.note+' · ':'')+'asked at the shift clock' } },
+    acctFix:()=>acctFix(a.dataset.k),
     cbNew:()=>cbNewModal(), cbWrite:()=>cbWriteModal(), cbDel:()=>cbDelete(a.dataset.id),
     cbOpen:()=>{ CB.book=CB.book===a.dataset.id?null:a.dataset.id; render() },
     cbLeaf:()=>{ closeModals(); cbLeafModal(a.dataset.id,a.dataset.no) },
