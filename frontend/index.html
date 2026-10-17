@@ -124,6 +124,23 @@ nav .navlist::-webkit-scrollbar{width:6px}nav .navlist::-webkit-scrollbar-thumb{
 nav .grp{display:flex;align-items:center;gap:8px;font-family:Archivo,sans-serif;font-size:10px;font-weight:700;
  color:#6F8580;padding:14px 8px 5px;letter-spacing:.12em;text-transform:uppercase}
 nav .grp i{display:none}
+nav .grp[data-act]{cursor:pointer;user-select:none;border-radius:8px;transition:color .15s}
+nav .grp[data-act]:hover{color:#C9D3CF}
+nav .grp .gch{order:5;font-style:normal;font-size:10px;opacity:.55;transition:transform .2s ease;margin-left:2px}
+nav .grp.fold .gch{transform:rotate(-90deg)}
+nav .grp .gn{order:4;font-style:normal;font-size:9.5px;font-weight:700;letter-spacing:0;padding:1px 6px;border-radius:99px;background:rgba(255,255,255,.08);color:#9FB0AB;display:none}
+nav .grp.fold .gn{display:inline-block}
+nav .grp::after{order:3}
+nav button[data-view].hid{display:none}
+nav .navfind{position:relative;margin:4px 2px 6px;display:flex;align-items:center}
+nav .navfind svg{position:absolute;left:10px;width:14px;height:14px;color:#6F8580;pointer-events:none}
+nav .navfind input{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);color:#E5ECEA;border-radius:9px;padding:7px 28px 7px 30px;font:inherit;font-size:12.5px;outline:none;transition:border-color .15s,background .15s}
+nav .navfind input::placeholder{color:#6F8580}
+nav .navfind input:focus{border-color:var(--chip-yellow);background:rgba(255,255,255,.1)}
+nav .navfind kbd{position:absolute;right:8px;font:600 10px 'IBM Plex Mono',monospace;color:#6F8580;border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:0 5px}
+body.navmini nav .navfind,body.pos-narrow nav .navfind{opacity:0;transition:opacity .2s}
+body.navmini nav:hover .navfind,body.pos-narrow nav:hover .navfind{opacity:1}
+body.navmini nav .grp .gch,body.navmini nav .grp .gn{opacity:0}body.navmini nav:hover .grp .gch{opacity:.55}
 nav .grp::before{content:'';width:10px;height:2px;border-radius:2px;background:var(--chip-yellow);opacity:.7}
 nav .grp::after{content:'';flex:1;height:1px;background:rgba(255,255,255,.07)}
 nav button[data-view]{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;background:none;
@@ -11113,20 +11130,21 @@ function bindPhone(){
 
 /* ============================ UI ============================ */
 const $=(s)=>document.querySelector(s);
+/* The menu, in the order the shop's day runs: what needs doing, the counter, the people we sell to and
+   buy from, the goods, the money, the staff, the website, then the figures and the setting up. Each page
+   is in one place only, under the heading anybody would look for it under. (Who may open what is the
+   role's sections — SECTIONS below — and does not depend on these headings.) */
 const views=[
- ['updates','What is new'],
- ['grp','Counter'],['actions','Action centre'],['everything','Everything'],['dashboard','Dashboard','F2'],['ai','AI support'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills','F9'],['billdesign','Design the bill'],['cashup','Day book'],['docs','Quotes & delivery notes'],
- ['grp','Customers'],['customers','Customers'],['receipts','Take a payment','F7'],['tenders','Quotations & tenders'],
- ['grp','Suppliers'],['suppliers','Suppliers'],['orders','Supplier orders'],['payreqs','Payment requests'],['purchases','Purchases'],['purchasing','Purchasing & cash plan'],['supstock','Who is reading the stock'],
+ ['updates','What is new'],['actions','Action centre'],
+ ['grp','Sell'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills','F9'],['receipts','Take a payment','F7'],['docs','Quotes & delivery notes'],['cashup','Day book'],
+ ['grp','Customers'],['customers','Customers'],['tenders','Quotations & tenders'],['jobs','Repair job notes'],
+ ['grp','Buying'],['suppliers','Suppliers'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Payment requests'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
- ['damages','Damage returns'],['jobs','Repair job notes'],
- ['cameras','Cameras'],
- ['printq','Printing'],
- ['grp','Online'],['site','Online store'],['weborders','Online orders'],['webproducts','Online products'],['social','Social'],
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['chqbooks','Cheque books'],['expenses','Expenses'],['accounting','Accounting'],
- ['grp','People'],['leave','Leave'],['approvals','Approvals'],['payroll','Attendance & pay'],['users','Users & permissions'],
- ['grp','Out'],['trail','The trail'],['messages','Messages'],['reports','Reports'],
- ['grp','System'],['settings','Settings']];
+ ['grp','People'],['payroll','Attendance & pay'],['leave','Leave'],['approvals','Approvals'],['users','Users & permissions'],
+ ['grp','Online'],['site','Online store'],['weborders','Online orders'],['webproducts','Online products'],['social','Social'],
+ ['grp','Reports'],['dashboard','Dashboard','F2'],['everything','Everything'],['reports','Reports'],['ai','AI support'],['trail','The trail'],
+ ['grp','Shop setup'],['messages','Messages'],['printq','Printing'],['cameras','Cameras'],['billdesign','Design the bill'],['settings','Settings']];
 
 const ownerOnly=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||S.user.role==='Demo Admin'||window.isDemo||(S&&S.isDemo)));
 
@@ -11301,18 +11319,21 @@ ICONS.weborders='M8 4h9l3 4v12H8zM8 4H4v16h4M12 11h5M12 15h5';
 ICONS.trail='M4 19h4l3-7 3 12 3-9h3M2 5h20';
 const GROUP_ICON={Shop:'M3 9l2-5h14l2 5M4 9h16v11H4z',Stock:ICONS.inventory,Money:ICONS.expenses,People:ICONS.users,Out:ICONS.messages,System:ICONS.settings,Online:ICONS.site};
 
+let navQ='';
+const navFolded=()=>{ const p=prefs(); return Array.isArray(p.navFold)?p.navFold:[] };
 function renderNav(){
   const side=pref('nav')==='side';
-  const items=[];
-  let curGrp=null;
+  const items=[], grpOf={}, grpCount={}, grpHasOn={};
+  let curGrp=null, g='';
   for(const v of views){
     if(v[0]==='grp'){
-      curGrp=v;
+      curGrp=v; g=v[1];
     } else if(allowed(v[0])){
       if(curGrp){ items.push(curGrp); curGrp=null; }
-      items.push(v);
+      items.push(v); grpOf[v[0]]=g; if(g){ grpCount[g]=(grpCount[g]||0)+1; if(S.view===v[0]) grpHasOn[g]=true }
     }
   }
+  const folded=new Set(navFolded().filter(x=>!grpHasOn[x]));
   const initial=(S.user.name||'?').trim()[0].toUpperCase();
   const oldList=$('#nav .navlist'), keepScroll=oldList?oldList.scrollTop:0;   // the menu is rebuilt on every render: keep where it was scrolled to
   $('#nav').innerHTML= side
@@ -11324,9 +11345,10 @@ function renderNav(){
         <span class="bname"><b>${(CFG.shop&&CFG.shop.name||'REGAL HARDWARE').replace(/ hardware$/i,'')} <span>${/hardware/i.test(CFG.shop&&CFG.shop.name||'')?'HARDWARE':''}</span></b><small>till ${S.terminal}${(typeof extMulti==='function'&&extMulti())?' · '+extLocName(S.locId):''} · ${S.user.role}</small></span>
        </div>
        <div class="navlist">` +
+      `<div class="navfind"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="navFind" placeholder="Find a page" autocomplete="off" spellcheck="false" value="${escM(navQ)}"><kbd>/</kbd></div>`+
       items.map(v=>v[0]==='grp'
-        ? `<div class="grp"><span>${v[1]}</span><i>${v[1]}</i></div>`
-        : `<button class="${S.view===v[0]?'on':''}" data-view="${v[0]}" title="${v[1]}">
+        ? `<div class="grp ${folded.has(v[1])?'fold':''}" data-act="navFold" data-g="${escM(v[1])}" title="${folded.has(v[1])?'Open':'Fold away'} ${escM(v[1])}"><span>${v[1]}</span><i>${v[1]}</i><em class="gn">${grpCount[v[1]]||''}</em><b class="gch">▾</b></div>`
+        : `<button class="${S.view===v[0]?'on':''} ${folded.has(grpOf[v[0]])?'hid':''}" data-view="${v[0]}" data-g="${escM(grpOf[v[0]]||'')}" title="${v[1]}">
             <i class="ic">${icon(v[0])}</i><span>${v[1]}</span>${v[2]?`<em class="k">${v[2]}</em>`:''}${v[0]==='actions'&&actionCount()?`<i class="nbadge">${actionCount()}</i>`:''}${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}${v[0]==='issues'&&typeof storeToIssue==='function'&&storeToIssue()?`<i class="nbadge">${storeToIssue()}</i>`:''}${v[0]==='updates'&&updatesUnseen()?`<i class="nbadge">${updatesUnseen()}</i>`:''}<i class="tip">${v[1]}${v[2]?' · '+v[2]:''}</i></button>`).join('')
       +`</div>
        <div class="navfooter">
@@ -11346,10 +11368,29 @@ function renderNav(){
   $('#hdr').innerHTML=`${S.user.name}, ${S.user.role.toLowerCase()} &nbsp;|&nbsp; till ${S.terminal}, drawer open since ${S.drawer.opened}<br>${today.toDateString()}`;
   drawBell();
   const list=$('#nav .navlist');
+  // finding a page by typing: the list narrows as you type, Enter opens the first one left
+  const nf=$('#navFind');
+  if(nf){ nf.oninput=()=>{ navQ=nf.value; navFilter() };
+    nf.onkeydown=e=>{ if(e.key==='Enter'){ const b=[...document.querySelectorAll('#nav .navlist button[data-view]')].find(x=>x.style.display!=='none'); if(b){ navQ=''; b.click() } }
+      else if(e.key==='Escape'){ navQ=''; nf.value=''; navFilter(); nf.blur() } };
+    if(navQ) navFilter() }
   if(list){ list.scrollTop=keepScroll;
     const on=list.querySelector('button.on');           // only nudge if the current page's button is actually out of sight
     if(on&&(on.offsetTop<list.scrollTop||on.offsetTop+on.offsetHeight>list.scrollTop+list.clientHeight)) on.scrollIntoView({block:'nearest'}) }
 }
+
+function navFilter(){
+  const q=String(navQ||'').trim().toLowerCase(), list=$('#nav .navlist'); if(!list) return;
+  const btns=[...list.querySelectorAll('button[data-view]')];
+  btns.forEach(b=>{ const hit=!q||b.title.toLowerCase().includes(q)||String(b.dataset.view).toLowerCase().includes(q);
+    b.style.display=q?(hit?'':'none'):'' ; if(q&&hit) b.classList.remove('hid') });
+  list.querySelectorAll('.grp').forEach(g=>{ g.style.display=q&&!btns.some(b=>b.dataset.g===g.dataset.g&&b.style.display!=='none')?'none':'' });
+  if(!q) renderNavFolds();
+}
+function renderNavFolds(){ const f=new Set(navFolded()); document.querySelectorAll('#nav .navlist button[data-view]').forEach(b=>b.classList.toggle('hid',f.has(b.dataset.g)&&!b.classList.contains('on')&&!document.querySelector(`#nav .navlist button.on[data-g="${b.dataset.g}"]`))) }
+// "/" anywhere outside a box puts the cursor in Find a page
+document.addEventListener('keydown',e=>{ if(e.key!=='/'||e.ctrlKey||e.metaKey||e.altKey) return; const t=e.target;
+  if(t&&(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||t.isContentEditable)) return; const nf=document.getElementById('navFind'); if(nf&&nf.offsetParent){ e.preventDefault(); nf.focus(); nf.select() } });
 
 /* Five taps on Dashboard, inside two seconds, turn the quiet screen on or off. Nothing is shown
    while they are being counted and the page goes to the dashboard as it always would, so from
@@ -27466,6 +27507,8 @@ document.addEventListener('click',e=>{
       advanceModal(e.id,ap.id); const m=[...document.querySelectorAll('.modal')].pop();
       if(m){ const am=m.querySelector('#avAmt'), nt=m.querySelector('#avNote'); if(am) am.value=d.amount; if(nt) nt.value=(d.note?d.note+' · ':'')+'asked at the shift clock' } },
     acctFix:()=>acctFix(a.dataset.k),
+    navFold:()=>{ const p=prefs(), gname=a.dataset.g, list=new Set(Array.isArray(p.navFold)?p.navFold:[]);
+      if(list.has(gname)) list.delete(gname); else list.add(gname); p.navFold=[...list]; try{ persist(true) }catch(e){} renderNav() },
     cbNew:()=>cbNewModal(), cbWrite:()=>cbWriteModal(), cbDel:()=>cbDelete(a.dataset.id),
     cbOpen:()=>{ CB.book=CB.book===a.dataset.id?null:a.dataset.id; render() },
     cbLeaf:()=>{ closeModals(); cbLeafModal(a.dataset.id,a.dataset.no) },
