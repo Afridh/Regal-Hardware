@@ -7341,7 +7341,7 @@ function dayEditModal(id,ds){
   draw();
 }
 /* ---- advances: cash out of the drawer, so the ledger has to know ---- */
-function advanceModal(id){
+function advanceModal(id,askId){
   const e=S.employees.find(x=>x.id===id);
   const owing=(S.advances||[]).filter(a=>a.empId===id&&!a.recovered).reduce((a,x)=>a+x.amount,0);
   const m=modal(`<h2>Advance to ${e.name}</h2>
@@ -7362,6 +7362,8 @@ function advanceModal(id){
     const adv={id:'A'+Math.random().toString(36).slice(2,7),empId:id,date:D(today),amount:amt,note,by:S.user.name,recovered:false};
     S.advances=(S.advances||[]).concat([adv]);
     e.advance=(+e.advance||0)+amt;
+    // paid against a request from the shift clock: that request is now settled
+    const ask=askId&&(S.approvals||[]).find(x=>x.id===askId); if(ask){ ask.paid={adv:adv.id,amount:amt,at:apStamp(),by:S.user.name}; adv.ask=askId }
     post(D(today),`Advance to ${e.name}${note?' — '+note:''}`,adv.id,
       [{ac:'1300',dr:amt},from==='cash'?{ac:'1010',cr:amt}:{ac:B(+from).ac,cr:amt}]);
     m.remove(); render();
@@ -12543,7 +12545,7 @@ const cashTotal=(counts)=>CASH_DENOMS.reduce((a,d)=>a+d*(+(counts||{})[d]||0),0)
 function cashMoves(d){
   const kinds=[['Cash sales',/^Sale /],['Returns paid out',/^Return /],['Customer payments in',/^Receipt/],
                ['Paid to suppliers',/^Supplier payment/],['Bought for cash',/^Purchase/],['Expenses',/^Expense/],
-               ['Wages',/^Wages|^Payroll/]];
+               ['Wages',/^Wages|^Payroll/],['Staff advances',/^Advance to/]];
   const out=kinds.map(([label])=>({label,v:0})); let other=0, net=0;
   for(const j of S.journal){
     if(j.date!==d) continue;
@@ -12676,6 +12678,7 @@ function cashup(){
       `<div class="muted">Save the closing count to see whether it is short or over.</div>`}
    </div>
 
+   ${dePaidOutSection(d)}
    ${deChequeSection(d,loc)}
    ${deCardSection(d,loc)}
    <div class="row" style="align-items:flex-start;gap:12px;flex-wrap:wrap;margin-top:12px">
@@ -13030,6 +13033,9 @@ function deTodo(d){
   add(dn.length,`delivery note${dn.length===1?'':'s'} not turned into a bill`,'docs',
       dn.slice(0,6).map(x=>x.no).join(', '));
 
+  const unpaid=(S.approvals||[]).filter(x=>x.kind==='salaryAsk'&&x.status==='approved'&&(x.data||{}).type==='advance'&&!x.paid);
+  add(unpaid.length,`advance${unpaid.length===1?'':'s'} approved but not paid in the books`,'approvals',
+      unpaid.slice(0,4).map(x=>`${(x.data||{}).who} ${money2((x.data||{}).amount)}`).join(' · ')+' — Approvals → Decided → Pay it now');
   const ap=(typeof apPending==='function'?apPending():[]);
   add(ap.length,`thing${ap.length===1?'':'s'} waiting for the owner to say yes`,'approvals',
       ap.slice(0,4).map(x=>x.title).join(' · '));
@@ -13114,7 +13120,7 @@ function deCloseDay(){
     by:S.user.name, at:new Date().toTimeString().slice(0,5),
     cash:{ counted:close?close.total:0, expected:close?close.expected:0, diff },
     tenders:st.tn.t, sales:st.tn.sales, bills:st.tn.bills, credit:st.tn.credit,
-    returns:st.tn.returns, returned:st.tn.returned, expenses:st.tn.expenses,
+    returns:st.tn.returns, returned:st.tn.returned, expenses:st.tn.expenses, paidOut:dePaidOut(d).total, paidBy:dePaidOut(d).by,
     cheques:{ inToday:st.chq.inToday.length, inValue:st.chq.total,
               left:st.chq.bankable.length, leftValue:st.chq.sum(st.chq.bankable),
               written:st.chq.outToday.length, writtenValue:st.chq.outTotal },
@@ -13140,7 +13146,8 @@ function deTellOwner(rec){
     const body=tpl('dailySummary',{ sales:money2(rec.sales), cash:money2(rec.tenders.CASH||0),
       credit:money2(rec.credit), expenses:money2(rec.expenses),
       outstanding:money2((S.customers||[]).reduce((a,c)=>a+Math.max(0,partyBal('C',c.id)),0)) });
-    sms(to,body);
+    const by=Object.entries(rec.paidBy||{}).filter(([k])=>k!=='Expenses').map(([k,v])=>`${k}: ${money2(v)}`);
+    sms(to,body+(rec.paidOut?`\n${by.join('\n')}${by.length?'\n':''}All money paid out: ${money2(rec.paidOut)}`:''));
   }catch(e){ /* the day is closed whether or not the text got out */ }
 }
 
@@ -13156,7 +13163,9 @@ function dePrintSheet(d,loc){
     ...(rec.tenders.BANK?[['Bank transfer',money(rec.tenders.BANK)]]:[]),
     ...(rec.tenders.CHEQUE?[['Cheque',money(rec.tenders.CHEQUE)]]:[]),
     ...(rec.credit?[['Given on credit',money(rec.credit)]]:[]),
-    ...(rec.expenses?[['Paid out',money(rec.expenses)]]:[]),
+    ...(rec.expenses?[['Expenses',money(rec.expenses)]]:[]),
+    ...Object.entries(rec.paidBy||{}).filter(([k])=>k!=='Expenses').map(([k,v])=>[k,money(v)]),
+    ...(rec.paidOut?[['All money paid out',money(rec.paidOut)]]:[]),
     ['Drawer ought to hold',money(rec.cash.expected)],
     ['Drawer counted',money(rec.cash.counted)],
     ['Difference',Math.abs(rec.cash.diff)<0.005?'it agrees':money(Math.abs(rec.cash.diff))+(rec.cash.diff>0?' over':' short')],
@@ -13589,6 +13598,49 @@ function deCardSection(d,loc){
 
 /* What the day came to, by the way it was paid. This is the figure the owner asks for on
    the phone, so it is one table and not a hunt through the reports. */
+/* Everything paid out on a day — from the drawer, from a bank account, or on a cheque we wrote — read off
+   the journal, so nothing paid can be left out of the day book: supplier payments, expenses, staff
+   advances, wages, refunds, cheques for rent or anything else. Money only moving between our own
+   places (cash banked, a cheque of ours clearing) is not paid out and is left off. */
+const DE_OUT_KINDS=[['Suppliers',/^Supplier payment|^Cheque .* passed to/],['Expenses',/^Expense/],['Staff advances',/^Advance to/],
+  ['Wages',/^Wages|^Payroll|^Salar/],['Refunds',/^Return/],['Bought for cash',/^Purchase/],['Cheques written',/^Cheque \S+ to /]];
+function dePaidOut(d){
+  const money=new Set(['1010','2110',...(S.banks||[]).map(b=>b.ac)]), mine=new Set(['1010','1030',...(S.banks||[]).map(b=>b.ac)]);
+  const rows=[];
+  for(const j of (S.journal||[])){
+    if(j.date!==d) continue;
+    // not a payment: a correction, a drawer short or over, a cheque that bounced or was cancelled, an opening figure
+    if(/^(Undo|Reversal of|Drawer count|Opening balance|Bill \S+ (changed|moved))|bounced|cancelled/i.test(j.desc||'')) continue;
+    const out=j.lines.filter(l=>money.has(l.ac)&&(+l.cr||0)>0);
+    if(!out.length) continue;
+    const dr=j.lines.filter(l=>(+l.dr||0)>0);
+    if(dr.length&&dr.every(l=>mine.has(l.ac)||l.ac==='2110')) continue;      // banked, moved, or our cheque clearing
+    const k=DE_OUT_KINDS.find(([,re])=>re.test(j.desc||''));
+    // who it went to: the supplier on a payment, what an expense was for
+    let what=j.desc||'';
+    const pv=(S.payments||[]).find(p=>p.no===j.ref&&p.supplierId); if(pv&&SU(pv.supplierId)) what+=' — '+SU(pv.supplierId).name;
+    const ex=(S.expenses||[]).find(x=>x.no===j.ref); if(ex&&ex.desc&&!what.includes(ex.desc)) what+=' — '+ex.desc;
+    for(const l of out){
+      const b=(S.banks||[]).find(x=>x.ac===l.ac);
+      rows.push({kind:k?k[0]:'Other',what,ref:j.ref||'',how:l.ac==='1010'?'Cash':l.ac==='2110'?'Cheque':(b?b.name:GL[l.ac]),amount:+l.cr});
+    }
+  }
+  const total=+rows.reduce((a,r)=>a+r.amount,0).toFixed(2);
+  const by={}; rows.forEach(r=>{ by[r.kind]=(by[r.kind]||0)+r.amount });
+  return {rows,total,by};
+}
+function dePaidOutSection(d){
+  const p=dePaidOut(d);
+  if(!p.rows.length) return `<div class="card" style="margin-top:12px"><h2 style="margin-top:0">Money paid out</h2><div class="muted">Nothing was paid out on this day.</div></div>`;
+  const kinds=[...DE_OUT_KINDS.map(k=>k[0]),'Other'].filter(k=>p.by[k]);
+  return `<div class="card" style="margin-top:12px">
+    <h2 style="margin-top:0;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">Money paid out <span class="rust">${money2(p.total)}</span></h2>
+    <div class="muted" style="margin-bottom:8px">Every payment made on this day — from the drawer, a bank account, or on a cheque.</div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">${kinds.map(k=>`<span class="tag">${k} · ${money2(p.by[k])}</span>`).join('')}</div>
+    <table><tr><th>What</th><th>Kind</th><th>Paid from</th><th class="n">Amount</th></tr>
+     ${kinds.flatMap(k=>p.rows.filter(r=>r.kind===k)).map(r=>`<tr><td>${noteEsc(r.what)}${r.ref&&!String(r.what).includes(r.ref)?` <span class="muted">${noteEsc(r.ref)}</span>`:''}</td><td>${r.kind}</td><td>${noteEsc(r.how)}</td><td class="n rust">${money2(r.amount)}</td></tr>`).join('')}
+     <tr><td colspan="3"><b>Paid out</b></td><td class="n"><b>${money2(p.total)}</b></td></tr></table></div>`;
+}
 function deTotalsSection(d,loc){
   const tn=deTenders(d,loc);
   const line=(label,v,cls)=>`<tr><td>${label}</td><td class="n ${cls||''}">${money2(v)}</td></tr>`;
@@ -13605,6 +13657,7 @@ function deTotalsSection(d,loc){
        ||'<tr><td colspan="2" class="muted" style="padding-left:14px">Nothing was taken in.</td></tr>'}
      ${tn.credit?line('Given on credit',tn.credit):''}
      ${tn.expenses?line('Paid out in expenses',tn.expenses,'rust'):''}
+     ${(()=>{ const p=dePaidOut(d); return p.total?line('<b>All money paid out</b> <span class="muted">(listed above)</span>',p.total,'rust'):'' })()}
     </table></div>`;
 }
 
@@ -19003,7 +19056,7 @@ function applyApproval(a){
       if(!e) throw new Error('That person is no longer on the staff list');
       salTell(d,true);
       // an advance is paid the till's own way — the amount and reason already in — so it is posted against them
-      if(d.type==='advance') setTimeout(()=>{ try{ advanceModal(e.id); const m=document.querySelector('.modal:last-child');
+      if(d.type==='advance') setTimeout(()=>{ try{ advanceModal(e.id,a.id); const m=document.querySelector('.modal:last-child');
         if(m){ const am=m.querySelector('#avAmt'), nt=m.querySelector('#avNote'); if(am) am.value=d.amount; if(nt) nt.value=(d.note?d.note+' · ':'')+'asked at the shift clock' } }catch(err){} },60);
       else notify('people',`Pay ${e.name} their salary (${fmt(d.amount)}) — approved by ${S.user.name}`,'payroll',{forApprovers:true});
       break }
@@ -19395,7 +19448,9 @@ function approvals(){
      ${a.status==='pending'?(mine?'<div class="muted" style="margin-top:8px">Waiting for the owner.</div>'
        :`<div class="ap-acts"><input id="apn-${a.id}" placeholder="A note back to ${a.by.split(' ')[0]} (optional)">
          <button class="btn tape" data-act="apOk" data-id="${a.id}">Approve</button><button class="btn ghost" data-act="apNo" data-id="${a.id}">Turn down</button></div>`)
-       :`<div class="muted" style="margin-top:8px">${a.status==='approved'?'Approved':a.status==='failed'?'Approved, but it could not be applied':'Turned down'} by ${a.decidedBy} · ${a.decidedAt}${a.note?` · “${a.note}”`:''}</div>`}
+       :`<div class="muted" style="margin-top:8px">${a.status==='approved'?'Approved':a.status==='failed'?'Approved, but it could not be applied':'Turned down'} by ${a.decidedBy} · ${a.decidedAt}${a.note?` · “${a.note}”`:''}</div>
+        ${a.kind==='salaryAsk'&&a.status==='approved'&&(a.data||{}).type==='advance'?(a.paid?`<div style="margin-top:6px"><span class="tag ok">Paid ${money2(a.paid.amount)} · ${a.paid.at} · ${noteEsc(a.paid.by)}</span></div>`
+          :`<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="tag warn">Not paid in the books yet</span><button class="btn tape sm" data-act="apPayAdv" data-id="${a.id}">Pay it now</button></div>`):''}`}
     </div>`).join('')
     :`<div class="card muted">${apTab==='pending'?(mine?'You have nothing waiting.':'Nothing is waiting on you.'):'Nothing decided yet.'}</div>`}`;
 }
@@ -27291,6 +27346,10 @@ document.addEventListener('click',e=>{
       closeModals(); try{chequeStatus(c,a.dataset.st)}catch(e){return toast(e.message)} render(); toast(`Cheque ${c.no} · ${a.dataset.st.toLowerCase()}`)},
     chqClear:()=>{chqQ='';chqStatus='all';render()},
     bkEdit:()=>bankModal(a.dataset.id?+a.dataset.id:null), bkDel:()=>bankDelete(+a.dataset.id), bkGo:()=>{ setTab='banks'; go('settings') },
+    apPayAdv:()=>{ const ap=(S.approvals||[]).find(x=>x.id===a.dataset.id); if(!ap) return; const d=ap.data||{};
+      const e=(S.employees||[]).find(x=>String(x.id)===String(d.empId))||(S.employees||[]).find(x=>x.name===d.who); if(!e) return toast('That person is no longer on the staff list');
+      advanceModal(e.id,ap.id); const m=document.querySelector('.modal:last-child');
+      if(m){ const am=m.querySelector('#avAmt'), nt=m.querySelector('#avNote'); if(am) am.value=d.amount; if(nt) nt.value=(d.note?d.note+' · ':'')+'asked at the shift clock' } },
     cbNew:()=>cbNewModal(), cbWrite:()=>cbWriteModal(), cbDel:()=>cbDelete(a.dataset.id),
     cbOpen:()=>{ CB.book=CB.book===a.dataset.id?null:a.dataset.id; render() },
     cbLeaf:()=>{ closeModals(); cbLeafModal(a.dataset.id,a.dataset.no) },
