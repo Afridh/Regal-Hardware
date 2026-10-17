@@ -21612,6 +21612,7 @@ function rtLoad(inv){
   const done=returnedFrom(inv);
   RT.mode='bill'; RT.inv=inv; RT.cid=inv.customerId||1; RT.q=''; RT.err='';
   RT.lines=(inv.lines||[]).map((l,i)=>({i,l,pid:l.pid,left:+(l.qty-(done[i]||0)).toFixed(3),back:done[i]||0,q:0,price:paidEach(inv,l)})).filter(x=>x.l.qty>0);
+  const k0=RT.lines.findIndex(x=>x.left>0); if(k0>=0) rtFocus('q',k0);          // straight to the first quantity
 }
 const rtTotal=()=>+RT.lines.reduce((a,x)=>a+(x.q||0)*x.price,0).toFixed(2);
 const rtNamed=()=>RT.cid&&RT.cid!==1;
@@ -21636,7 +21637,7 @@ function returnsPage(){
     // items only: the customer is chosen on the right
     const exact=S.products.filter(p=>p.active!==false&&(String(p.barcode||'')===raw||String(p.code||'').toLowerCase()===q||(p.short||'').toLowerCase()===q));
     const items=[...exact,...S.products.filter(p=>p.active!==false&&!exact.includes(p)&&rtItemHit(p,q,raw))].slice(0,12);
-    hits=items.map((p,i)=>`<button type="button" class="rt2-hit ${i===Math.min(RT.hi,items.length-1)?'hi':''}" data-act="rtAddItem" data-id="${p.id}"><span><b>${escM(p.name)}</b><small>${escM(p.code||'')}${p.short?' · '+escM(p.short):''} · ${escM(p.unit||'')}</small></span><span class="r">${fmt(rtPriceOf(p))}</span></button>`).join('')
+    hits=items.map((p,i)=>`<button type="button" class="rt2-hit ${i===Math.min(RT.hi,items.length-1)?'hi':''}" data-act="rtAddItem" data-id="${p.id}"><span><b>${escM(p.name)}</b><small>${escM(p.code||'')}${p.short?' · '+escM(p.short):''} · ${escM(p.unit||'')}${+p.mrp?' · MRP '+fmt(p.mrp):''}</small></span><span class="r">${fmt(rtPriceOf(p))}</span></button>`).join('')
       ||'<div class="rt2-none">No item matches that — try part of its name or code, or scan it.</div>';
   }
   const recent=(S.sales||[]).filter(s=>+s.total<-0.005).slice(-12).reverse();
@@ -21648,10 +21649,11 @@ function returnsPage(){
       ${hits?`<div class="rt2-hits">${hits}</div>`:''}</div>
     </div>
     <div class="rt2-lines">
-     ${RT.lines.length?`<table><tr><th>#</th><th>Item</th>${RT.mode==='bill'?'<th class="n">Sold</th><th class="n">Back already</th>':''}<th class="n">Coming back</th><th class="n">Each</th><th class="n">Amount</th>${RT.mode==='free'?'<th></th>':''}</tr>
+     ${RT.lines.length?`<table><tr><th>#</th><th>Item</th>${RT.mode==='bill'?'<th class="n">Sold</th><th class="n">Back already</th>':''}<th class="n">Coming back</th><th class="n">MRP</th><th class="n">Each</th><th class="n">Amount</th>${RT.mode==='free'?'<th></th>':''}</tr>
       ${RT.lines.map((x,k)=>`<tr class="${x.q>0?'on':''}"><td>${k+1}</td><td><b>${escM(RT.mode==='bill'?lineName(x.l):P(x.pid).name)}</b></td>
         ${RT.mode==='bill'?`<td class="n">${fq(x.l.qty)}</td><td class="n">${x.back?fq(x.back):'—'}</td>`:''}
         <td class="n">${RT.mode==='bill'&&x.left<=0?'<span class="muted">all back</span>':`<span class="rt-step"><button type="button" data-act="rtQty" data-k="${k}" data-d="-1">−</button><input data-rtq="${k}" value="${fq(x.q)}" inputmode="decimal"><button type="button" data-act="rtQty" data-k="${k}" data-d="1">+</button></span>`}</td>
+        <td class="n muted">${(()=>{ const m=+((RT.mode==='bill'&&x.l&&x.l.mrp)||(P(x.pid||(x.l&&x.l.pid))||{}).mrp||0); return m?fmt(m):'—' })()}</td>
         <td class="n">${RT.mode==='free'?`<input class="rt2-price" data-rtp="${k}" value="${x.price.toFixed(2)}" inputmode="decimal">`:fmt(x.price)}</td>
         <td class="n"><b>${x.q>0?fmt(x.q*x.price):''}</b></td>${RT.mode==='free'?`<td><button type="button" class="btn ghost sm" data-act="rtDrop" data-k="${k}">×</button></td>`:''}</tr>`).join('')}</table>
       ${RT.mode==='bill'?`<div class="rt2-tools"><button class="btn ghost sm" data-act="rtAll">Everything left on the bill</button><button class="btn ghost sm" data-act="rtClear">Another bill</button></div>`:''}`
@@ -21678,8 +21680,13 @@ function returnsPage(){
     </div>
    </div></div>`;
 }
+function rtFocus(t,k){ RT.next={t,k} }
 function returnsAfter(){
   const q=document.getElementById('rtQ');
+  // where the cursor goes after a redraw: the quantity just added, the price, or the next line
+  const nx=RT.next; RT.next=null;
+  if(nx){ const el=nx.t==='q'?document.querySelector(`[data-rtq="${nx.k}"]`):nx.t==='p'?document.querySelector(`[data-rtp="${nx.k}"]`):q;
+    if(el){ setTimeout(()=>{ el.focus(); if(el.select) el.select() },0) } }
   if(q){ q.oninput=()=>{ const pos=q.selectionStart; RT.q=q.value; RT.hi=0; render(); const n=document.getElementById('rtQ'); if(n){ n.focus(); n.setSelectionRange(pos,pos) } };
     q.onkeydown=e=>{
       if(e.key==='ArrowDown'||e.key==='ArrowUp'){ const all=document.querySelectorAll('.rt2-hits .rt2-hit'); if(!all.length) return; e.preventDefault();
@@ -21692,10 +21699,18 @@ function returnsAfter(){
       if(RT.mode==='bill'){ const exact=(S.sales||[]).find(s=>String(s.no).toLowerCase()===v.toLowerCase()); const first=document.querySelector('.rt2-hit[data-act="rtPickBill"]');
         if(exact) { rtLoad(exact); render() } else if(first) first.click() }
       else { const first=document.querySelector('.rt2-hit[data-act="rtAddItem"]')||document.querySelector('.rt2-hit'); if(first) first.click() } };
-    if(!RT.lines.length||RT.q) q.focus() }
-  document.querySelectorAll('[data-rtq]').forEach(el=>el.onchange=()=>{ const x=RT.lines[+el.dataset.rtq]; let v=+String(el.value).replace(/[^\d.]/g,'')||0;
-    if(RT.mode==='bill') v=Math.min(v,x.left); x.q=Math.max(0,v); if(RT.mode==='free'&&!x.q) RT.lines.splice(+el.dataset.rtq,1); render() });
-  document.querySelectorAll('[data-rtp]').forEach(el=>el.onchange=()=>{ const x=RT.lines[+el.dataset.rtp]; x.price=Math.max(0,+String(el.value).replace(/[^\d.]/g,'')||0); x.typed=true; render() });
+    if(!nx&&(!RT.lines.length||RT.q)) q.focus() }
+  const setQ=(el)=>{ const k=+el.dataset.rtq, x=RT.lines[k]; if(!x) return; let v=+String(el.value).replace(/[^\d.]/g,'')||0;
+    if(RT.mode==='bill') v=Math.min(v,x.left); x.q=Math.max(0,v); if(RT.mode==='free'&&!x.q) RT.lines.splice(k,1) };
+  const setP=(el)=>{ const x=RT.lines[+el.dataset.rtp]; if(!x) return; x.price=Math.max(0,+String(el.value).replace(/[^\d.]/g,'')||0); x.typed=true };
+  document.querySelectorAll('[data-rtq]').forEach(el=>{ el.onchange=()=>{ setQ(el); render() };
+    el.onkeydown=e=>{ if(e.key!=='Enter') return; e.preventDefault(); el.onchange=null; const k=+el.dataset.rtq, gone=RT.mode==='free'&&!(+String(el.value).replace(/[^\d.]/g,'')>0);
+      setQ(el);
+      if(RT.mode==='free') rtFocus(gone?'s':'p',k);                                     // quantity → its price
+      else { const nextK=RT.lines.findIndex((x,i)=>i>k&&x.left>0); rtFocus(nextK>=0?'q':'s',nextK) }   // down the bill
+      render() } });
+  document.querySelectorAll('[data-rtp]').forEach(el=>{ el.onchange=()=>{ setP(el); render() };
+    el.onkeydown=e=>{ if(e.key!=='Enter') return; e.preventDefault(); el.onchange=null; setP(el); rtFocus('s'); render() } });   // price → the search, for the next item
   const w=document.getElementById('rtWhy'); if(w) w.onchange=()=>{ RT.why=w.value };
 }
 function rtGo(how){
@@ -27216,7 +27231,7 @@ document.addEventListener('click',e=>{
     rtMode:()=>{ RT.mode=a.dataset.m; RT.inv=null; RT.lines=[]; RT.q=''; RT.err=''; if(RT.mode==='bill') RT.cid=1; render() },
     rtPickBill:()=>{ rtLoad((S.sales||[]).find(x=>x.no===a.dataset.no)); render() },
     rtPickCust:()=>{ RT.cid=+a.dataset.id; RT.q=''; RT.lines.forEach(x=>{ if(!x.typed) x.price=rtPriceOf(P(x.pid)) }); render() },
-    rtAddItem:()=>{ const p=P(+a.dataset.id); if(!p) return; const had=RT.lines.find(x=>x.pid===p.id); if(had) had.q=+(had.q+1).toFixed(3); else RT.lines.push({pid:p.id,q:1,price:rtPriceOf(p)}); RT.q=''; render() },
+    rtAddItem:()=>{ const p=P(+a.dataset.id); if(!p) return; const had=RT.lines.find(x=>x.pid===p.id); if(had) had.q=+(had.q+1).toFixed(3); else RT.lines.push({pid:p.id,q:1,price:rtPriceOf(p)}); RT.q=''; RT.hi=0; rtFocus('q',RT.lines.findIndex(x=>x.pid===p.id)); render() },
     rtQty:()=>{ const k=+a.dataset.k, x=RT.lines[k]; if(!x) return; let v=+((x.q||0)+(+a.dataset.d)).toFixed(3); if(RT.mode==='bill') v=Math.min(v,x.left); x.q=Math.max(0,v); if(RT.mode==='free'&&!x.q) RT.lines.splice(k,1); render() },
     rtDrop:()=>{ RT.lines.splice(+a.dataset.k,1); render() },
     rtAll:()=>{ RT.lines.forEach(x=>{ if(x.left>0) x.q=x.left }); render() },
