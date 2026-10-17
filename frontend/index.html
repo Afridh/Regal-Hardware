@@ -3868,6 +3868,7 @@ tr.cb-on td{background:#FBE4E6}
 .rt2-hit{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:8px;font:inherit;cursor:pointer}
 .rt2-hit:hover{background:var(--panel)}.rt2-hit small{display:block;color:var(--muted);font-size:12px}.rt2-hit .r{font-weight:700;white-space:nowrap}
 .rt2-hit.cust b{color:#1f6fb2}
+.rt2-hit.hi{background:var(--panel);box-shadow:inset 3px 0 0 var(--chip-yellow)}
 .rt2-none{padding:12px;color:var(--muted)}
 .rt2-lines{flex:1 1 auto;overflow:auto}
 .rt2-lines table{width:100%;border-collapse:collapse;font-size:14px}
@@ -14857,7 +14858,6 @@ function pos(){
     </button>
     <button class="till-held ${heldAll.length?'has-held':''}" data-act="showHeld" title="The bills on hold — see what is on each and bring one back (F4)">HELD<i>F4</i>${heldAll.length?`<b>${heldAll.length}</b>`:''}</button>
     <button class="till-hold" data-act="hold" ${L.length?'':'disabled'} title="Put this bill aside, or make it a quotation (Ctrl+H)">HOLD<i>Ctrl+H</i></button>
-    <button class="till-hold till-ret" data-act="returnGoods" title="Goods coming back from a bill — off their account, or cash back">RETURN<i>bill</i></button>
     <button class="till-clear" data-act="csClear" ${L.length||S.pos.customer?'':'disabled'} title="Throw this bill away (Esc)">CLEAR<i>Esc</i></button>
    </div>
    <div class="card search">${e
@@ -16027,7 +16027,6 @@ function posClassic(){
    <div class="till-head">
     <button class="burger cs-burger" data-act="drawer" title="Menu">☰</button>
     <button class="till-hold" data-act="hold" ${L.length?'':'disabled'} title="Put this bill aside, or make it a quotation (F7, Ctrl+H)">HOLD<i>F7</i></button>
-    <button class="till-hold till-ret" data-act="returnGoods" title="Goods coming back from a bill — off their account, or cash back">RETURN<i>bill</i></button>
     <button class="till-clear" data-act="csClear" ${L.length||CS.pid||S.pos.customer?'':'disabled'} title="Throw this bill away (Esc)">CLEAR<i>Esc</i></button>
     <button class="till-held ${S.heldBills&&S.heldBills.length?'has-held':''}" data-act="showHeld" title="The bills on hold — see what is on each and bring one back (F5, Ctrl+R)">HELD<i>F5</i>${(S.heldBills&&S.heldBills.length)?`<b>${S.heldBills.length}</b>`:''}</button>
     <div class="till-who ${c.id===1?'':'named'}" data-act="pickCust" role="button" title="Change customer (F4)">
@@ -21588,8 +21587,26 @@ function returnNoBill(){
    sit — OFF THEIR ACCOUNT and CASH BACK. Under it, the returns already taken. The work underneath is the
    same as before (returnedFrom, paidEach, completeSale with toAccount/returnOf): stock back, the account
    or the drawer, a return bill, and the text to the customer. */
-let RT={mode:'bill',inv:null,cid:1,lines:[],q:'',why:RET_WHY[0],busy:false,err:''};
-function rtReset(no){ RT={mode:'bill',inv:null,cid:1,lines:[],q:'',why:RET_WHY[0],busy:false,err:''}; if(no) rtLoad((S.sales||[]).find(s=>s.no===no)) }
+let RT={mode:'bill',inv:null,cid:1,lines:[],q:'',why:RET_WHY[0],busy:false,err:'',hi:0};
+function rtReset(no){ RT={mode:'bill',inv:null,cid:1,lines:[],q:'',why:RET_WHY[0],busy:false,err:'',hi:0}; if(no) rtLoad((S.sales||[]).find(s=>s.no===no)) }
+/* an item matches by any part of its name or code, its short code, its barcode or its number */
+const rtItemHit=(p,q,raw)=>{ const lo=x=>String(x||'').toLowerCase();
+  return lo(p.name).includes(q)||lo(p.code).includes(q)||(p.short&&lo(p.short).startsWith(q))||(raw&&String(p.barcode||'').includes(raw))||(raw&&String(p.num||'')===raw) };
+/* choosing who the goods come back from, on its own — never mixed in with the items */
+function rtCustModal(){
+  const m=modal(`<h2>Who is bringing the goods back?</h2>
+   <input id="rcq" placeholder="Name or mobile" autocomplete="off"><div id="rcl" style="margin-top:8px"></div>
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:10px"><button class="btn ghost" id="rcw">Walk-in — cash back only</button><button class="btn ghost" data-act="closeModal">Cancel</button></div>`);
+  const q=m.querySelector('#rcq'), list=m.querySelector('#rcl');
+  const pick=(id)=>{ RT.cid=id; RT.lines.forEach(x=>{ if(!x.typed) x.price=rtPriceOf(P(x.pid)) }); m.remove(); render() };
+  const draw=()=>{ const v=q.value.trim().toLowerCase(), d=v.replace(/\D/g,'');
+    const hits=(S.customers||[]).filter(c=>c.id!==1&&c.active!==false&&(!v||String(c.name).toLowerCase().includes(v)||(d&&String(c.phone||'').replace(/\D/g,'').includes(d)))).slice(0,10);
+    list.innerHTML=hits.map((c,i)=>`<button type="button" class="rt2-hit ${i===0&&v?'hi':''}" data-cid="${c.id}"><span><b>${escM(c.name)}</b><small>${escM(c.phone||'no mobile')}</small></span><span class="r">owes ${fmt(Math.max(0,partyBal('C',c.id)))}</span></button>`).join('')||'<div class="rt2-none">Nobody by that name or mobile.</div>';
+    list.querySelectorAll('[data-cid]').forEach(b=>b.onclick=()=>pick(+b.dataset.cid)) };
+  q.oninput=draw; q.onkeydown=e=>{ if(e.key==='Enter'){ const b=list.querySelector('[data-cid]'); if(b) b.click() } };
+  m.querySelector('#rcw').onclick=()=>pick(1);
+  draw(); q.focus();
+}
 function rtLoad(inv){
   if(!inv) return;
   const done=returnedFrom(inv);
@@ -21605,24 +21622,29 @@ function returnsPage(){
   const q=RT.q.trim().toLowerCase();
   /* what the search box finds: bills in "from a bill", items (and customers) in "without a bill" */
   let hits='';
+  const raw=RT.q.trim();
   if(q&&RT.mode==='bill'){
-    const list=(S.sales||[]).filter(s=>+s.total>0.005).filter(s=>{ const cc=C(s.customerId)||{};
-      return String(s.no).toLowerCase().includes(q)||String(cc.name||'').toLowerCase().includes(q)||String(cc.phone||'').replace(/\D/g,'').includes(q.replace(/\D/g,'')||'#') }).slice(-300).reverse().slice(0,12);
-    hits=list.map(s=>{ const cc=C(s.customerId)||{name:'Cash customer'}; return `<button type="button" class="rt2-hit" data-act="rtPickBill" data-no="${escM(s.no)}">
-      <span><b>${escM(s.no)}</b> · ${escM(cc.name)}<small>${escM(s.date)} · ${(s.lines||[]).filter(l=>l.qty>0).length} line(s)${age(s.date)>(+CFG.bill.returnDays||7)?` · ${age(s.date)} days old`:''}</small></span><span class="r">${fmt(s.total)}</span></button>` }).join('')||'<div class="rt2-none">No bill matches that.</div>';
+    // a bill by its number, the customer's name or mobile — or by an item that was on it
+    const items=S.products.filter(p=>rtItemHit(p,q,raw)).map(p=>p.id), itemSet=new Set(items);
+    const list=(S.sales||[]).filter(s=>+s.total>0.005).map(s=>{ const cc=C(s.customerId)||{};
+      const byBill=String(s.no).toLowerCase().includes(q)||String(cc.name||'').toLowerCase().includes(q)||String(cc.phone||'').replace(/\D/g,'').includes(q.replace(/\D/g,'')||'#');
+      const line=byBill?null:(s.lines||[]).find(l=>l.qty>0&&(itemSet.has(l.pid)||lineName(l).toLowerCase().includes(q)));
+      return (byBill||line)?{s,line}:null }).filter(Boolean).slice(-300).reverse().slice(0,12);
+    hits=list.map(({s,line},i)=>{ const cc=C(s.customerId)||{name:'Cash customer'}; return `<button type="button" class="rt2-hit ${i===Math.min(RT.hi,list.length-1)?'hi':''}" data-act="rtPickBill" data-no="${escM(s.no)}">
+      <span><b>${escM(s.no)}</b> · ${escM(cc.name)}<small>${escM(s.date)} · ${line?`<b style="color:var(--ink)">${escM(lineName(line))} × ${fq(line.qty)}</b>`:`${(s.lines||[]).filter(l=>l.qty>0).length} line(s)`}${age(s.date)>(+CFG.bill.returnDays||7)?` · ${age(s.date)} days old`:''}</small></span><span class="r">${fmt(s.total)}</span></button>` }).join('')||'<div class="rt2-none">No bill matches that — try the bill number, the customer, or an item on it.</div>';
   } else if(q&&RT.mode==='free'){
-    const items=S.products.filter(p=>p.active!==false&&(p.name.toLowerCase().includes(q)||String(p.code||'').toLowerCase()===q||String(p.barcode||'')===RT.q.trim()||String(p.num||'')===RT.q.trim()||(p.short||'').toLowerCase()===q)).slice(0,10);
-    const custs=named?[]:S.customers.filter(x=>x.id!==1&&x.active!==false&&(String(x.name).toLowerCase().includes(q)||String(x.phone||'').replace(/\D/g,'').includes(q.replace(/\D/g,'')||'#'))).slice(0,4);
-    hits=custs.map(x=>`<button type="button" class="rt2-hit cust" data-act="rtPickCust" data-id="${x.id}"><span><b>👤 ${escM(x.name)}</b><small>${escM(x.phone||'')} · customer</small></span><span class="r">owes ${fmt(Math.max(0,partyBal('C',x.id)))}</span></button>`).join('')
-      +items.map(p=>`<button type="button" class="rt2-hit" data-act="rtAddItem" data-id="${p.id}"><span><b>${escM(p.name)}</b><small>${escM(p.code||'')} · ${escM(p.unit||'')}</small></span><span class="r">${fmt(rtPriceOf(p))}</span></button>`).join('')
-      ||'<div class="rt2-none">Nothing matches that.</div>';
+    // items only: the customer is chosen on the right
+    const exact=S.products.filter(p=>p.active!==false&&(String(p.barcode||'')===raw||String(p.code||'').toLowerCase()===q||(p.short||'').toLowerCase()===q));
+    const items=[...exact,...S.products.filter(p=>p.active!==false&&!exact.includes(p)&&rtItemHit(p,q,raw))].slice(0,12);
+    hits=items.map((p,i)=>`<button type="button" class="rt2-hit ${i===Math.min(RT.hi,items.length-1)?'hi':''}" data-act="rtAddItem" data-id="${p.id}"><span><b>${escM(p.name)}</b><small>${escM(p.code||'')}${p.short?' · '+escM(p.short):''} · ${escM(p.unit||'')}</small></span><span class="r">${fmt(rtPriceOf(p))}</span></button>`).join('')
+      ||'<div class="rt2-none">No item matches that — try part of its name or code, or scan it.</div>';
   }
   const recent=(S.sales||[]).filter(s=>+s.total<-0.005).slice(-12).reverse();
   return `<div class="rt2">
    <div class="rt2-main">
     <div class="rt2-bar">
      <div class="rt2-modes"><button class="${RT.mode==='bill'?'on':''}" data-act="rtMode" data-m="bill">From a bill</button><button class="${RT.mode==='free'?'on':''}" data-act="rtMode" data-m="free">Without a bill</button></div>
-     <div class="rt2-find"><input id="rtQ" value="${escM(RT.q)}" autocomplete="off" placeholder="${RT.mode==='bill'?'Bill number, customer or mobile — Enter takes the first':'Scan or type an item — or a customer\'s name or mobile'}">
+     <div class="rt2-find"><input id="rtQ" value="${escM(RT.q)}" autocomplete="off" placeholder="${RT.mode==='bill'?'Bill number, customer, mobile — or an item that was on it':'Scan or type an item — name, code or barcode · ↑↓ to choose'}">
       ${hits?`<div class="rt2-hits">${hits}</div>`:''}</div>
     </div>
     <div class="rt2-lines">
@@ -21633,7 +21655,7 @@ function returnsPage(){
         <td class="n">${RT.mode==='free'?`<input class="rt2-price" data-rtp="${k}" value="${x.price.toFixed(2)}" inputmode="decimal">`:fmt(x.price)}</td>
         <td class="n"><b>${x.q>0?fmt(x.q*x.price):''}</b></td>${RT.mode==='free'?`<td><button type="button" class="btn ghost sm" data-act="rtDrop" data-k="${k}">×</button></td>`:''}</tr>`).join('')}</table>
       ${RT.mode==='bill'?`<div class="rt2-tools"><button class="btn ghost sm" data-act="rtAll">Everything left on the bill</button><button class="btn ghost sm" data-act="rtClear">Another bill</button></div>`:''}`
-     :`<div class="rt2-empty">${RT.mode==='bill'?'<b>Which bill are the goods from?</b><span>Type its number above, or the customer’s name or mobile.</span>':'<b>No bill to go by</b><span>Find the customer (or leave it as a walk-in, cash back only), then scan or type each item.</span>'}</div>`}
+     :`<div class="rt2-empty">${RT.mode==='bill'?'<b>Which bill are the goods from?</b><span>Type its number above, or the customer’s name or mobile.</span>':'<b>No bill to go by</b><span>Choose the customer on the right (or leave it as a walk-in, cash back only), then scan or type each item above.</span>'}</div>`}
     </div>
     <div class="rt2-recent"><h3>Returns taken lately</h3>${recent.length?recent.map(s=>{ const cc=C(s.customerId)||{name:'Cash customer'}; return `<button type="button" data-act="invoice" data-no="${escM(s.no)}"><b>${escM(s.no)}</b><span>${escM(s.date)} · ${escM(cc.name)}${s.returnOf?' · from '+escM(s.returnOf):' · no bill'}</span><i>${fmt(-s.total)}${s.toAccount?' off account':' cash'}</i></button>` }).join(''):'<div class="muted">None yet.</div>'}</div>
    </div>
@@ -21642,7 +21664,7 @@ function returnsPage(){
     <div class="sum-block">
      <div class="sum-line"><span>Customer</span><b>${escM(named?c.name:'Walk-in')}</b></div>
      ${named?`<div class="sum-line faint"><span>Owes now</span><b>${fmt(Math.max(0,partyBal('C',RT.cid)))}</b></div>`:''}
-     ${RT.mode==='free'&&named?`<div class="sum-line"><span></span><a href="#" data-act="rtWalk" style="font-size:11.5px">walk-in instead</a></div>`:''}
+     ${RT.mode==='free'?`<div class="sum-line"><span></span><span><a href="#" data-act="rtCustPick" style="font-size:11.5px">${named?'someone else':'choose the customer'}</a>${named?` · <a href="#" data-act="rtWalk" style="font-size:11.5px">walk-in</a>`:''}</span></div>`:''}
      <div class="sum-line ${RT.inv?'':'faint'}"><span>Bill</span><b>${RT.inv?escM(RT.inv.no):(RT.mode==='free'?'no bill':'—')}</b></div>
      ${RT.inv?`<div class="sum-line faint"><span>${escM(RT.inv.date)}</span><b>${fmt(RT.inv.total)}</b></div>`:''}
      ${RT.inv&&age(RT.inv.date)>(+CFG.bill.returnDays||7)?`<div class="sum-over">${age(RT.inv.date)} days old — the window is ${+CFG.bill.returnDays||7} days</div>`:''}
@@ -21658,8 +21680,14 @@ function returnsPage(){
 }
 function returnsAfter(){
   const q=document.getElementById('rtQ');
-  if(q){ q.oninput=()=>{ const pos=q.selectionStart; RT.q=q.value; render(); const n=document.getElementById('rtQ'); if(n){ n.focus(); n.setSelectionRange(pos,pos) } };
-    q.onkeydown=e=>{ if(e.key!=='Enter') return; e.preventDefault();
+  if(q){ q.oninput=()=>{ const pos=q.selectionStart; RT.q=q.value; RT.hi=0; render(); const n=document.getElementById('rtQ'); if(n){ n.focus(); n.setSelectionRange(pos,pos) } };
+    q.onkeydown=e=>{
+      if(e.key==='ArrowDown'||e.key==='ArrowUp'){ const all=document.querySelectorAll('.rt2-hits .rt2-hit'); if(!all.length) return; e.preventDefault();
+        RT.hi=Math.max(0,Math.min(all.length-1,(RT.hi||0)+(e.key==='ArrowDown'?1:-1))); const pos=q.selectionStart; render(); const n=document.getElementById('rtQ'); if(n){ n.focus(); n.setSelectionRange(pos,pos) }
+        const h=document.querySelector('.rt2-hits .rt2-hit.hi'); if(h) h.scrollIntoView({block:'nearest'}); return }
+      if(e.key==='Escape'){ RT.q=''; render(); return }
+      if(e.key!=='Enter') return; e.preventDefault();
+      const marked=document.querySelector('.rt2-hits .rt2-hit.hi'); if(marked&&RT.hi>0){ marked.click(); return }
       const v=RT.q.trim(); if(!v) return;
       if(RT.mode==='bill'){ const exact=(S.sales||[]).find(s=>String(s.no).toLowerCase()===v.toLowerCase()); const first=document.querySelector('.rt2-hit[data-act="rtPickBill"]');
         if(exact) { rtLoad(exact); render() } else if(first) first.click() }
@@ -27194,6 +27222,7 @@ document.addEventListener('click',e=>{
     rtAll:()=>{ RT.lines.forEach(x=>{ if(x.left>0) x.q=x.left }); render() },
     rtClear:()=>{ rtReset(); render() },
     rtWalk:()=>{ RT.cid=1; render() },
+    rtCustPick:()=>rtCustModal(),
     rtGo:()=>rtGo(a.dataset.how),
     lvMonth:()=>{ const d=+a.dataset.d; if(!d){ const n=new Date(D(today)+'T00:00:00'); LV.y=n.getFullYear(); LV.m=n.getMonth() } else { const n=new Date(LV.y,LV.m+d,1); LV.y=n.getFullYear(); LV.m=n.getMonth() } render() },
     lvDay:()=>{ const d=a.dataset.d;
