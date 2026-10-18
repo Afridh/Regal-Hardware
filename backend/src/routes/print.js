@@ -3,6 +3,7 @@
 // prints it. The helper only ever calls out, so nothing has to be opened to it from outside.
 //
 //   POST /api/print            { format, no, html, copies? }   the till leaves a job      (till sign-in)
+//                             format 'label': html is ZPL for the label printer (Zebra) on that PC
 //   GET  /api/print/next?key=  …                               the helper takes the next  (device key)
 //                             the question is held open for up to 25s and answered the moment a
 //                             job appears, so a bill does not sit waiting for the next ask.
@@ -64,7 +65,9 @@ const deviceOk = (req) => {
 /* ---------------------------------------------------------------- the till leaves a job */
 r.post('/', regalAuth, asyncHandler(async (req, res) => {
   const { format, no, html, copies } = req.body || {};
-  if (!['r80', 'a5'].includes(String(format))) throw new HttpError(400, 'format must be r80 or a5');
+  if (!['r80', 'a5', 'label'].includes(String(format))) throw new HttpError(400, 'format must be r80, a5 or label');
+  // a label job carries the Zebra's own language (ZPL) where a bill carries its page
+  if (format === 'label' && !String(html || '').includes('^XA')) throw new HttpError(400, 'no labels in that job');
   if (!html || typeof html !== 'string') throw new HttpError(400, 'nothing to print');
   if (html.length > 8e6) throw new HttpError(413, 'that bill is too big to send');
   await ensureTable();

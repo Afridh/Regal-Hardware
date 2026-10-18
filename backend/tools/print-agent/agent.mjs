@@ -154,7 +154,7 @@ let queueSaid = '';
 async function takeJobs() {
   if (!KEY) return;                                        // no key set: the helper only serves this PC
   try {
-    const printers = encodeURIComponent(JSON.stringify({ r80: cfg.r80.printer, a5: cfg.a5.printer }));
+    const printers = encodeURIComponent(JSON.stringify({ r80: cfg.r80.printer, a5: cfg.a5.printer, label: (cfg.label && cfg.label.printer) || null }));
     const r = await fetch(`${SERVER}/api/print/next?key=${encodeURIComponent(KEY)}&printers=${printers}`);
     if (!r.ok) { const why = r.status === 403 ? 'the server does not know this key' : 'the server said ' + r.status;
       if (queueSaid !== why) { queueSaid = why; log('queue:', why) } return }
@@ -163,6 +163,16 @@ async function takeJobs() {
     const job = j && j.job; if (!job) return false;
     log('queue job', job.id, job.format, job.no || '', 'from', job.by || '?', job.till ? '· till ' + job.till : '');
     try {
+      // labels from another PC: the Zebra's own language, straight to the label printer
+      if (job.format === 'label') {
+        const printer = (cfg.label && cfg.label.printer) || '';
+        if (!printer) throw new Error('no label printer set on this PC (config.json: "label")');
+        const run = busy.then(() => printRaw(printer, job.html, 'Labels ' + (job.no || '')));
+        busy = run.catch(() => {}); await run;
+        await say(job.id, { ok: true, printer });
+        log('queue job', job.id, '→ labels on', printer);
+        return true;
+      }
       const t0 = Date.now(); let tDraw = 0;
       const run = busy.then(async () => {
         const file = await render(job.format, job.html);

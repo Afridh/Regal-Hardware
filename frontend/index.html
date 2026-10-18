@@ -538,6 +538,10 @@ body.privacy nav .navuser{position:relative}
 .dlbl .dl-code{font-size:11px;letter-spacing:.14em;margin-top:1px}
 .dlbl .dl-l{font-size:12px;line-height:1.25;margin-bottom:4px}
 .dlbl .dl-r{display:flex;justify-content:space-between;font-size:9.5px;gap:8px}
+.jobsheet .js-no{text-align:center;font-weight:800;font-size:15px;letter-spacing:.06em;margin:6px 0 4px}
+.jobsheet .js-bc{text-align:center;margin:2px 0 6px}
+.jobsheet .js-bc svg{width:92%;height:56px}
+.jobsheet .js-bc div{font-weight:700;letter-spacing:.18em;font-size:13px;margin-top:2px}
 .dlbl .dl-w{margin-top:5px;padding-top:4px;border-top:1px dashed #666;font-size:9px}
 .prn{background:#fff;padding:10px;border-radius:8px}
 @media print{
@@ -12214,7 +12218,7 @@ function renderNow(){
             ? `<span class="tag ok">the shop printer is listening</span> ${s2.printers?`80mm → <b>${s2.printers.r80}</b> · A5 → <b>${s2.printers.a5}</b>`:''} ${s2.waiting?`· <b>${s2.waiting}</b> waiting`:'· nothing waiting'}`
             : `<span class="tag bad">the shop printer is not listening</span> ${s2.seenSecondsAgo!=null?`last seen ${Math.round(s2.seenSecondsAgo/60)} minutes ago`:'it has never asked for work'} — start the “Regal print helper” on that PC${s2.waiting?`. <b>${s2.waiting}</b> bill${s2.waiting===1?'':'s'} waiting`:''}`}</div>
            ${jobs.length?`<table class="tbl"><tr><th>Bill</th><th>Size</th><th>From</th><th>By</th><th>What happened</th></tr>
-             ${jobs.map(j2=>`<tr><td>${j2.no||'—'}</td><td>${j2.format==='a5'?'A5':'80mm'}</td><td>${j2.from_till||'—'}</td><td>${j2.by_user||'—'}</td>
+             ${jobs.map(j2=>`<tr><td>${j2.no||'—'}</td><td>${j2.format==='a5'?'A5':j2.format==='label'?'Labels':'80mm'}</td><td>${j2.from_till||'—'}</td><td>${j2.by_user||'—'}</td>
                <td>${j2.status==='printed'?`<span class="tag ok">printed</span> ${j2.printer||''}`:j2.status==='failed'?`<span class="tag bad">failed</span> ${j2.error||''}`:`<span class="tag warn">${j2.status}</span>`}</td></tr>`).join('')}</table>`
             :'<div class="muted">Nothing has been sent to the shop printer yet.</div>'}`;
         }).catch(()=>{ pq.textContent='The shop server did not answer about its printers.' });
@@ -12664,7 +12668,7 @@ function printq(){
      <tr><th>Bill</th><th>Paper</th><th>Made by</th><th>When</th><th>What happened</th><th></th></tr>
      ${jobs.map(j=>`<tr>
        <td><b>${noteEsc(j.no||'—')}</b>${j.copies>1?` <span class="muted">×${j.copies}</span>`:''}</td>
-       <td>${j.format==='r80'?'receipt':'A5'}</td>
+       <td>${j.format==='r80'?'receipt':j.format==='label'?'labels':'A5'}</td>
        <td>${noteEsc(j.by_user||'—')}${j.from_till?` <span class="muted">· ${noteEsc(j.from_till)}</span>`:''}</td>
        <td class="muted">${when(j.created_at)}</td>
        <td>${tagOf(j.status)}${j.error?`<div class="muted" style="font-size:12px">${noteEsc(String(j.error).slice(0,120))}</div>`
@@ -24240,8 +24244,8 @@ function jobModal(){
       const j=addJob({customerId:+m.querySelector('#jbCust').value||null,phone:g('jbPh'),who:g('jbWho'),
         item:g('jbItem'),serial:g('jbSer'),fault:g('jbFault'),sid:+m.querySelector('#jbSup').value||null,est:g('jbEst')});
       m.remove(); persist(true); render();
-      toast(`${j.no} taken in · tag ${j.tag}`,'ok');
-      jobLabel(j.no);
+      toast(`${j.no} taken in · tag ${j.tag} · printing the job sheet`,'ok');
+      jobSheetPrint(j.no); jobTagPrint(j.no,1);
     }catch(e){ m.querySelector('#jbMsg').textContent=e.message }
   };
   m.querySelector('#jbItem').focus();
@@ -24338,7 +24342,8 @@ function jobs(){
       <td>${s?s.name:'<span class="muted">not sent</span>'}</td>
       <td><span class="tag ${JOB_STATUS[j.status][1]}">${JOB_STATUS[j.status][0]}</span>${j.sentDate&&j.status==='sent'?`<div class="muted">since ${j.sentDate}</div>`:''}</td>
       <td class="n" style="white-space:nowrap">
-        <button class="btn ghost sm" data-act="jobLabel" data-no="${j.no}">Label</button>
+        <button class="btn ghost sm" data-act="jobSheet" data-no="${j.no}">Job sheet</button>
+        <button class="btn ghost sm" data-act="jobLabel" data-no="${j.no}">Tag</button>
         <button class="btn ghost sm" data-act="jobMove" data-no="${j.no}">Move on</button></td></tr>`}).join('')}</table>`
    :'<div class="muted">Nothing in for repair.</div>'}
   </div>`;
@@ -24640,13 +24645,7 @@ async function rollTagsSend(make,copies){
   const r=rollCfg(), dpm=(+r.dpi||203)/25.4, d=(mm)=>Math.round(mm*dpm), all=Array.from({length:n},(_,i)=>mk(i+1,n)), rows=[], tag=all[0];
   for(let i=0;i<all.length;i+=r.across){ const c=rollTagCanvas(all.slice(i,i+r.across),r), g=canvasZpl(c);
     rows.push(`^XA^PW${c.width}^LL${c.height}^LH${d(+r.dx||0)},${d(+r.dy||0)}^FO0,0^GFA,${g.total},${g.total},${g.bpr},${g.hex}^FS^PQ1^XZ`) }
-  const url=printAgentUrl();
-  if(url){ try{
-    const res=await fetch(url+'/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({zpl:rows.join('\n'),count:all.length,name:tag.head})});
-    const j=await res.json().catch(()=>({}));
-    if(res.ok&&j.ok){ toast(`${all.length} tag${all.length===1?'':'s'} sent to ${j.printer}`,'ok'); return true }
-    toast('Label printer: '+(j.error||res.status)+' — using the print window instead','warn');
-  }catch(e){ toast('The print helper is not running on this PC — using the print window instead','warn') } }
+  if(await zplToPaper(rows.join('\n'),all.length,tag.head)) return true;
   const pageW=+(r.side*2+r.across*r.w+(r.across-1)*r.gap).toFixed(2), imgs=all.map(t=>rollTagCanvas([t],r,true).toDataURL('image/png'));
   const w=window.open('','_blank','width=520,height=640'); if(!w) return toast('Allow pop-ups to print the tags');
   const cells=[]; for(let i=0;i<all.length;i+=r.across) cells.push(`<div class="row">${imgs.slice(i,i+r.across).map(src=>`<img src="${src}">`).join('')}</div>`);
@@ -24676,15 +24675,70 @@ function rollTagModal(make,title,bigHtml,copies){
   n.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); go() } };
   m.querySelector('#tagBig').onclick=()=>{ m.querySelector('.tagbig').style.display=''; m.querySelector('.tagprev').style.display='none'; window.print() };
 }
+/* Labels reach the Zebra the way bills reach their printer: the helper on this PC if it has the label
+   printer, else the shop's print queue — taken by the helper on the main PC, so a tag printed on a
+   phone or a second till comes out of the main PC's Zebra — and only failing both, the fallback. */
+async function zplToPaper(zpl,count,name,fallback){
+  const toMain=(CFG.bill&&CFG.bill.printTo)==='main';
+  const here=async()=>{ const url=printAgentUrl(); if(!url) return false;
+    try{ const r=await fetch(url+'/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({zpl,count,name})});
+      const j=await r.json().catch(()=>({})); if(r.ok&&j.ok){ toast(`${count} ${count===1?'label':'labels'} sent to ${j.printer}`,'ok'); return true }
+      return {ok:false,why:j.error||('the print helper said '+r.status)} }catch(e){ return false } };
+  const main=async()=>{ if(!window.regalBridge||!regalBridge.token()) return false;
+    try{ const r=await fetch('/api/print',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},
+        body:JSON.stringify({format:'label',no:String(name||'').slice(0,40),html:zpl,till:S.terminal||''})});
+      const j=await r.json().catch(()=>({})); if(r.ok&&j.ok){ toast(`${count} ${count===1?'label':'labels'} sent to the shop's label printer`,'ok'); return true }
+      return {ok:false,why:j.error||('the shop server said '+r.status)} }catch(e){ return {ok:false,why:'the shop server could not be reached'} } };
+  const done=(v)=>v===true||!!(v&&v.ok===true);
+  const a=await (toMain?main:here)(); if(done(a)) return true;
+  const b=await (toMain?here:main)(); if(done(b)) return true;
+  const why=(b&&b.why)||(a&&a.why)||'';
+  if(why) toast('Label printer: '+why+' — using the print window instead','warn');
+  if(typeof fallback==='function') fallback(); return false;
+}
+
+/* The job sheet: the customer's slip for something left for repair, on the receipt printer like a bill —
+   shop, job number and date, the tag's barcode to find it again, who and what, the fault, and where it
+   stands. Printed by itself when an item is taken in; Job sheet on the note prints it again. */
+function jobSheetHtml(j){
+  const SH=CFG.shop, B=CFG.bill, s=j.sid?SU(j.sid):null, c=j.customerId?C(j.customerId):null;
+  const sc=Math.max(0.6,Math.min(2,(+B.r80Scale||100)/100)), e=(v)=>escM(String(v==null?'':v));
+  const row=(k,v)=>v?`<div class="sb-kv"><span>${k} :</span><b>${e(v)}</b><span></span></div>`:'';
+  return `<div class="print r80 sb80 jobsheet" data-scale="${sc}" style="zoom:${sc};width:calc(302px / ${sc});font-family:${billFontCss(B.r80Font)}">
+   <div class="sb-top"><span>JOB SHEET</span><span>${e(j.date)}</span></div>
+   ${B.t80Logo!==false?`<div class="sb-logo">${SH.logo?`<img src="${SH.logo}" style="height:50px;object-fit:contain;filter:grayscale(1) brightness(0)">`:mark(50)}</div>`:''}
+   <div class="sb-name">${e(SH.name||'REGAL HARDWARE')}</div>
+   <div class="sb-addr">${e((SH.addr||'').toUpperCase())}</div>
+   <div class="sb-phone">${e(SH.phone||'')}</div>
+   <div class="sb-rule"></div>
+   <div class="js-no">REPAIR JOB · ${e(j.no)}</div>
+   <div class="js-bc">${barcode128(j.tag||j.no,56)}<div>${e(j.tag||j.no)}</div></div>
+   <div class="sb-rule"></div>
+   ${row('Customer',(c&&c.name)||j.who||'')}${row('Mobile',j.phone||(c&&c.phone)||'')}
+   <div class="sb-rule"></div>
+   ${row('Item',String(j.item||'').toUpperCase())}${row('Serial',j.theirSerial)}${row('Fault',j.fault)}
+   ${+j.est>0?row('Estimate Rs.',money2(j.est)):''}${s?row('Sent to',s.name):''}
+   ${row('Taken in by',String(j.by||'').toUpperCase())}${row('Date',j.date)}
+   <div class="sb-rule"></div>
+   <div class="sb-foot">Bring this sheet when you collect the item. We will call you when it is ready.</div>
+   <div class="sb-sign"><span>Received by</span><span>Customer</span></div>
+   ${SH.web?`<div class="sb-web">${e(SH.web)}</div>`:''}
+  </div>`;
+}
+function jobSheetPrint(no){
+  const j=S.jobs.find(x=>x.no===no); if(!j) return;
+  const inner=jobSheetHtml(j);
+  printPaper(printDocument(inner,'r80'),'r80',j.no,()=>paperFallback(inner,'r80'));
+}
+// the tag for the item itself, straight to the label printer: one, numbered -1
+function jobTagPrint(no,copies=1){
+  const j=S.jobs.find(x=>x.no===no); if(!j) return;
+  const base=String(j.tag||j.no), short='J'+(+String(j.no).replace(/\D/g,'')||0);
+  rollTagsSend((i,n)=>({head:'REPAIR JOB',code:short+'-'+i,l1:base+'-'+i,l2:String(j.item||'').toUpperCase(),l3:[n>1?i+' of '+n:'',jobName(j),j.phone].filter(Boolean).join(' · ')}),copies);
+}
 async function labelRollSend(list,test){
-  const url=printAgentUrl(), z=labelZpl(list);
-  if(url){ try{
-    const r=await fetch(url+'/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({zpl:z.zpl,count:z.count,name:test?'Test labels':'Regal labels'})});
-    const j=await r.json().catch(()=>({}));
-    if(r.ok&&j.ok){ toast(`${z.count} label${z.count===1?'':'s'} sent to ${j.printer}`,'ok'); return true }
-    toast('Label printer: '+(j.error||r.status)+' — using the print window instead','warn');
-  }catch(e){ toast('The print helper is not running on this PC — using the print window instead','warn') } }
-  labelRollPrint(list); return false;
+  const z=labelZpl(list);
+  return zplToPaper(z.zpl,z.count,test?'Test labels':'Regal labels',()=>labelRollPrint(list));
 }
 function labelRollPrint(list){
   const r=rollCfg(), pageW=+(r.side*2+r.across*r.w+(r.across-1)*r.gap).toFixed(2);
@@ -28553,6 +28607,7 @@ document.addEventListener('click',e=>{
     dmgLabel:()=>damageLabel(a.dataset.no), dmgScan:()=>damageScanModal(),
     jobNew:()=>jobModal(), jobMove:()=>jobMoveModal(a.dataset.no),
     jobLabel:()=>jobLabel(a.dataset.no),
+    jobSheet:()=>jobSheetPrint(a.dataset.no),
     cuLoginPw:()=>custLoginPwModal(+a.dataset.id,+a.dataset.lid,a.dataset.kind||'C'),
     cuLoginSend:()=>custLoginSend(+a.dataset.id,+a.dataset.lid,a.dataset.kind||'C'),
     cuLoginOff:()=>custLoginToggle(+a.dataset.id,+a.dataset.lid,a.dataset.on==='1',a.dataset.kind||'C'),
