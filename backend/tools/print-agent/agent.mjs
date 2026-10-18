@@ -73,6 +73,8 @@ async function render(format, html) {
        already drawn a bill they are there, and it comes back at once. */
     await page.evaluate(() => document.fonts && document.fonts.ready).catch(() => {});
     await new Promise(r => setTimeout(r, fresh ? 60 : 16));
+    // Windows clears its temp folder now and then while the helper keeps running: make it again each time
+    fs.mkdirSync(tmp, { recursive: true });
     const file = path.join(tmp, `bill-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.png`);
     const target = await page.$('#printArea .print') || await page.$('body');
     const shot = await target.screenshot({ encoding: 'base64', omitBackground: false });
