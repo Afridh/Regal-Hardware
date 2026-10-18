@@ -2269,14 +2269,15 @@ tr.rowlink button{cursor:pointer}
 .lbl-shelf{width:80mm;height:40mm}
 .lbl-offer{width:50mm;height:40mm;text-align:center}
 /* the Zebra roll: no border (the label's own edge is the edge), barcode, code, price, name */
-.lbl-roll{width:var(--lw,32mm);height:var(--lh,25mm);border:0;padding:1.2mm 1.4mm 1mm;text-align:center;justify-content:flex-start;gap:0;overflow:hidden;box-sizing:border-box}
-.lbl.lbl-roll .lbc{display:block;width:100%;height:calc(var(--lh,25mm) * .34)}
-.lbl.lbl-roll .lcode{display:flex;justify-content:space-between;font-size:7pt;letter-spacing:.03em;line-height:1.15;margin-top:.3mm}
-.lbl.lbl-roll .lcode b{font-weight:700;letter-spacing:.1em}
-.lbl.lbl-roll .lprice{font-size:10.5pt;font-weight:700;line-height:1.15;padding-bottom:.4mm;border-bottom:.25mm solid #000}
-.lbl.lbl-roll .lprice small{font-size:6.5pt;font-weight:700}
-.lbl.lbl-roll .lname{font-size:6pt;font-weight:400;line-height:1.15;max-height:2.35em;overflow:hidden;margin-top:.4mm}
+.lbl-roll{width:var(--lw,32mm);height:var(--lh,25mm);border:0;padding:.6mm .9mm .4mm;text-align:center;justify-content:flex-start;gap:0;overflow:hidden;box-sizing:border-box}
+.lbl.lbl-roll .lbc{display:block;width:100%;height:calc(var(--lh,25mm) * .32);flex:none}
+.lbl.lbl-roll .lcode{display:flex;justify-content:space-between;font-size:calc(var(--lh,25mm) * .1);line-height:1.1;margin-top:.4mm}
+.lbl.lbl-roll .lcode b{font-weight:700;letter-spacing:.08em}
+.lbl.lbl-roll .lprice{display:flex;justify-content:space-between;align-items:baseline;font-size:calc(var(--lh,25mm) * .19);font-weight:700;line-height:1.05;padding-bottom:.3mm;border-bottom:.25mm solid #000}
+.lbl.lbl-roll .lprice small{font-size:calc(var(--lh,25mm) * .09);font-weight:700}
+.lbl.lbl-roll .lname{flex:1;display:flex;align-items:center;justify-content:center;font-size:calc(var(--lh,25mm) * .088);font-weight:400;line-height:1.1;overflow:hidden;margin-top:.3mm}
 .lbl.lbl-roll .lname b{font-weight:700}
+.lbl.lbl-roll .lname span,.lbl-roll .lname span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .labprev .lbl-roll{outline:1px dashed #9a9a9a;outline-offset:0}
 .labroll{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
 .labroll .f{margin:0}
@@ -23992,8 +23993,8 @@ function labelHtml(p,type,o={}){
   if(type==='roll'){ const r=rollCfg(), x=rollFacts(p,o);
     return `<div class="lbl lbl-roll" style="--lw:${r.w}mm;--lh:${r.h}mm">${code128Svg(x.bc)}
       <div class="lcode"><span>${escM(x.bc)}</span><b>${escM(x.cc)}</b></div>
-      <div class="lprice"><small>${x.priceWord}</small> ${money2(x.price)}</div>
-      <div class="lname">${x.co?`<b>${escM(x.co)}</b> · `:''}${escM(x.name)}</div></div>` }
+      <div class="lprice"><small>${x.priceWord}</small><span>${money2(x.price)}</span></div>
+      <div class="lname"><span>${x.co?`<b>${escM(x.co)}</b> - `:''}${escM(x.name)}</span></div></div>` }
   if(type==='s2') return `<div class="lbl lbl-s2"><div class="lname">${p.name}</div>${ean13Svg(code,150,44)}
     <div class="lfoot"><span>${cc||p.code}</span><b>${fmt(price)}</b></div></div>`;
   if(type==='s3') return `<div class="lbl lbl-s1"><div class="lshop">${shop}</div><div class="lname">${p.name}</div>
@@ -24412,24 +24413,29 @@ function zplCode128(text){
     return {data:'>;'+ev+(odd?'>6'+t.slice(-1):''),modules:(1+ev.length/2+(odd?2:0)+1)*11+13} }
   return {data:'>:'+t.replace(/>/g,'><'),modules:(1+t.length+1)*11+13};
 }
+/* The whole label is used, top to bottom: barcode 0.6–8.6 mm, its number and the cost code, the MRP
+   (the word small, the amount large), a rule, then the company number and the name on two lines down to
+   the bottom edge. Sizes follow the label's height, so a different roll still fills. */
 function labelZplRow(items,r){
   const dpm=(+r.dpi||203)/25.4, d=(mm)=>Math.round(mm*dpm);
-  const W=d(r.w), H=d(r.h), pageW=d(r.side*2+r.across*r.w+(r.across-1)*r.gap), pad=d(1.2), inner=W-pad*2;
+  const W=d(r.w), H=d(r.h), pageW=d(r.side*2+r.across*r.w+(r.across-1)*r.gap), pad=d(.9), inner=W-pad*2;
   let z=`^XA^CI28^PW${pageW}^LL${H}^LH${d(+r.dx||0)},${d(+r.dy||0)}`;
   items.forEach((it,i)=>{
     const p=P(it.pid), x0=d(r.side+i*(r.w+r.gap)), x=rollFacts(p,it), b=zplCode128(x.bc);
     const m=[3,2,1].find(k=>b.modules*k<=inner)||1, bw=b.modules*m;
     const f=(k)=>Math.round(H*k);
-    const yB=f(.05), bh=f(.29), yC=yB+bh+f(.025), yP=yC+f(.105), yL=yP+f(.155), yN=yL+f(.03);
+    const yB=f(.025), bh=f(.32), yC=yB+bh+f(.02), hC=f(.105), yP=yC+hC+f(.005), hP=f(.19), yL=yP+hP+f(.01), yN=yL+f(.025), hN=f(.11);
+    const amount=money2(x.price), word=x.priceWord;
     z+=`^FO${x0+Math.max(0,Math.round((W-bw)/2))},${yB}^BY${m},3,${bh}^BCN,${bh},N,N,N^FH_^FD${zplText(b.data)}^FS`
       // barcode number on the left, cost code on the right
-      +`^FO${x0+pad},${yC}^A0N,${f(.09)},${f(.08)}^FH_^FD${zplText(x.bc)}^FS`
-      +(x.cc?`^FO${x0+pad},${yC}^FB${inner},1,0,R^A0N,${f(.09)},${f(.085)}^FH_^FD${zplText(x.cc)}^FS`:'')
-      // the MRP, big
-      +`^FO${x0+pad},${yP}^FB${inner},1,0,C^A0N,${f(.145)},${f(.135)}^FH_^FD${zplText(x.priceWord+' '+money2(x.price))}^FS`
+      +`^FO${x0+pad},${yC}^A0N,${hC},${f(.09)}^FH_^FD${zplText(x.bc)}^FS`
+      +(x.cc?`^FO${x0+pad},${yC}^FB${inner},1,0,R^A0N,${hC},${f(.1)}^FH_^FD${zplText(x.cc)}^FS`:'')
+      // the word small at the left, the amount as large as it will go at the right
+      +`^FO${x0+pad},${yP+hP-f(.095)}^A0N,${f(.095)},${f(.08)}^FH_^FD${zplText(word)}^FS`
+      +`^FO${x0+pad},${yP}^FB${inner},1,0,R^A0N,${hP},${Math.round(hP*(amount.length>9?.8:.92))}^FH_^FD${zplText(amount)}^FS`
       +`^FO${x0+pad},${yL}^GB${inner},2,2^FS`
-      // company id and the name, two lines
-      +`^FO${x0+pad},${yN}^FB${inner},2,1,C^A0N,${f(.082)},${f(.072)}^FH_^FD${zplText((x.co?x.co+' - ':'')+x.name)}^FS`;
+      // company number and the name, two lines to the bottom
+      +`^FO${x0+pad},${yN}^FB${inner},2,2,C^A0N,${hN},${f(.095)}^FH_^FD${zplText((x.co?x.co+' - ':'')+x.name)}^FS`;
   });
   return z+'^PQ1^XZ';
 }
@@ -24456,9 +24462,9 @@ function labelRollPrint(list){
   // the print window carries its own rules for the label, whole, rather than lifting lines out of the page's
   const css='.lbl{background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column}'
     +'.lbl-roll{width:var(--lw,32mm);height:var(--lh,25mm);border:0;padding:1.2mm 1.4mm 1mm;text-align:center;justify-content:flex-start;gap:0;overflow:hidden;box-sizing:border-box;flex:none}'
-    +'.lbl-roll .lbc{display:block;width:100%;height:calc(var(--lh,25mm) * .34)}.lbl-roll .lcode{display:flex;justify-content:space-between;font-size:7pt;line-height:1.15;margin-top:.3mm}.lbl-roll .lcode b{letter-spacing:.1em}'
-    +'.lbl-roll .lprice{font-size:10.5pt;font-weight:700;line-height:1.15;padding-bottom:.4mm;border-bottom:.25mm solid #000}.lbl-roll .lprice small{font-size:6.5pt}'
-    +'.lbl-roll .lname{font-size:6pt;line-height:1.15;max-height:2.35em;overflow:hidden;margin-top:.4mm}';
+    +'.lbl-roll{padding:.6mm .9mm .4mm}.lbl-roll .lbc{display:block;width:100%;height:calc(var(--lh,25mm) * .32);flex:none}.lbl-roll .lcode{display:flex;justify-content:space-between;font-size:calc(var(--lh,25mm) * .1);line-height:1.1;margin-top:.4mm}.lbl-roll .lcode b{letter-spacing:.08em}'
+    +'.lbl-roll .lprice{display:flex;justify-content:space-between;align-items:baseline;font-size:calc(var(--lh,25mm) * .19);font-weight:700;line-height:1.05;padding-bottom:.3mm;border-bottom:.25mm solid #000}.lbl-roll .lprice small{font-size:calc(var(--lh,25mm) * .09)}'
+    +'.lbl-roll .lname{flex:1;display:flex;align-items:center;justify-content:center;font-size:calc(var(--lh,25mm) * .088);line-height:1.1;overflow:hidden;margin-top:.3mm}.lbl-roll .lname b{font-weight:700}.lbl-roll .lname span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}';
   const w=window.open('','_blank','width=520,height=640'); if(!w) return toast('Allow pop-ups to print the labels');
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${labels.length} labels</title><style>
     @page{size:${pageW}mm ${r.h}mm;margin:0}
