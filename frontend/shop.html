@@ -265,6 +265,17 @@ body.search-open .e-search{display:block}
 .e-card .sub .out{color:var(--red)}
 .e-card .sub .pro{color:var(--red)}
 .e-card .add-m{display:none}
+/* a card whose goods are in the cart: a green tag on the photo, a green edge, and − / + in place of Add */
+.e-card.in-cart::after{content:"";position:absolute;inset:0;border:2px solid var(--ok);pointer-events:none;z-index:3;animation:incartIn .3s ease}
+.e-incart{position:absolute;right:12px;bottom:12px;z-index:2;display:inline-flex;align-items:center;gap:5px;background:var(--ok);color:#fff;font-size:11px;letter-spacing:.07em;text-transform:uppercase;padding:5px 10px;animation:incartIn .3s ease}
+.e-incart svg{width:12px;height:12px;fill:none;stroke:#fff;stroke-width:3}
+.e-step{grid-column:1/-1;display:flex;height:38px;margin-top:8px;border:1px solid var(--ok);animation:incartIn .3s ease}
+.e-step button{width:42px;flex:none;font-size:18px;line-height:1;color:var(--ok);background:#fff;transition:background .15s,color .15s}
+.e-step button:hover{background:var(--ok);color:#fff}
+.e-step a{flex:1;display:flex;align-items:center;justify-content:center;background:var(--ok);color:#fff;font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+@keyframes incartIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+#cartN.bump{animation:cartBump .45s ease}
+@keyframes cartBump{0%{transform:scale(1)}40%{transform:scale(1.45)}100%{transform:scale(1)}}
 
 /* grids */
 .e-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0}
@@ -1526,7 +1537,8 @@ function addToCart(pid, qty = 1, quiet) {
   if (ex) { ex.qty += qty; ex.sel = true; } else st.cart.push({ pid, qty, sel: true });
   saveCart();
   if (!quiet) notify('success', `${p.name} added to cart`);
-  drawHeaderBits();
+  drawHeaderBits(); refreshCards(pid);
+  $$('#cartN').forEach(c => { c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); });
   const box = $('#cartModalContainer');
   if (box) box.innerHTML = cartModalInnerHtml();
 }
@@ -1540,7 +1552,7 @@ function updateCartQty(pid, delta) {
     notify('danger', 'Item removed');
   }
   saveCart();
-  drawHeaderBits();
+  drawHeaderBits(); refreshCards(pid);
   const box = $('#cartModalContainer');
   if (box) {
     box.innerHTML = cartModalInnerHtml();
@@ -1552,7 +1564,7 @@ function updateCartQty(pid, delta) {
 function removeFromCart(pid) {
   st.cart = st.cart.filter(l => String(l.pid) !== String(pid));
   saveCart();
-  drawHeaderBits();
+  drawHeaderBits(); refreshCards(pid);
   notify('danger', 'Item removed');
   const box = $('#cartModalContainer');
   if (box) {
@@ -2192,8 +2204,10 @@ const lowAt = () => +((st.cat && st.cat.settings && st.cat.settings.lowAt) || 5)
 const isLow = p => !isOut(p) && p.stock !== null && p.stock !== undefined && p.stock <= lowAt();
 
 /* The card: picture, name and price — and, on hover, the heart and an Add button. */
+const inCartQty = (ids) => st.cart.filter(l => ids.includes(String(l.pid))).reduce((a, l) => a + (+l.qty || 0), 0);
 function productBox(p) {
-  const vs = p.vg ? variantsOf(p) : null, inStock = vs ? vs.filter(v => !isOut(v)) : null;
+  const src = p, vs = p.vg ? variantsOf(p) : null, inStock = vs ? vs.filter(v => !isOut(v)) : null;
+  const ids = vs ? vs.map(v => String(v.id)) : [String(p.id)], n = inCartQty(ids);
   if (vs && inStock.length) p = inStock.reduce((a, b) => priceFor(b, 1) < priceFor(a, 1) ? b : a);   // the card shows the lowest price
   const d = discPct(p), out = vs ? !inStock.length : isOut(p), price = priceFor(p, 1);
   const badge = out ? '<span class="e-badge">Sold out</span>'
@@ -2201,23 +2215,41 @@ function productBox(p) {
     : p.featured ? '<span class="e-badge">Featured</span>'
     : isLow(p) ? `<span class="e-badge low">Only ${fq(p.stock)} left</span>` : '';
   const href = url('product/' + p.id);
+  const step = n && !vs ? `<div class="e-step"><button data-cq="${esc(p.id)}" data-d="-1" aria-label="One less">−</button><a href="#" data-opencart>${fq(n)} in cart</a><button data-cq="${esc(p.id)}" data-d="1" aria-label="One more">+</button></div>` : '';
   return `
-  <div class="e-card">
+  <div class="e-card${n ? ' in-cart' : ''}" data-card="${esc(src.id)}" data-ids="${esc(ids.join(' '))}">
     <div class="media">
       <a class="mlink" href="${href}" aria-label="${esc(p.name)}">${tile(p)}</a>
-      ${badge}
+      ${badge}${n ? `<span class="e-incart"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>In cart · ${fq(n)}</span>` : ''}
       <button class="e-wish ${st.wish.includes(p.id) ? 'on' : ''}" data-wish="${esc(p.id)}" aria-label="Save to wishlist">${EI.heart}</button>
-      ${out ? '' : vs ? `<a class="e-btn light e-quick" href="${href}">Choose ${esc(p.vg.kind.toLowerCase())}</a>` : `<button class="e-btn light e-quick" data-add="${esc(p.id)}">Add to cart</button>`}
+      ${out || step ? '' : vs ? `<a class="e-btn light e-quick" href="${href}">Choose ${esc(p.vg.kind.toLowerCase())}</a>` : `<button class="e-btn light e-quick" data-cadd="${esc(p.id)}">Add to cart</button>`}
     </div>
     <div class="info">
       <span class="cat">${esc(p.cat || '')}</span>
       <a class="nm" href="${href}">${esc(vs ? p.vg.name : p.name)}</a>
       <div class="pr ${d > 0 ? 'off' : ''}">${vs ? '<span class="from">From</span>' : ''}<b>${money(price)}</b>${p.mrp > price ? `<s>${money(p.mrp)}</s>` : ''}</div>
       <div class="sub">${vs ? `<span class="vars">${vs.length} ${esc({ Size: 'sizes', Colour: 'colours', Finish: 'finishes', Option: 'options' }[p.vg.kind])}</span>` : ''}${p.unit ? `<span>per ${esc(p.unit)}</span>` : ''}${out ? '<span class="out">Sold out</span>' : ''}</div>
-      ${out ? '' : vs ? `<a class="e-btn sm line add-m" href="${href}">Choose ${esc(p.vg.kind.toLowerCase())}</a>` : `<button class="e-btn sm line add-m" data-add="${esc(p.id)}">Add to cart</button>`}
+      ${step || (out ? '' : vs ? `<a class="e-btn sm line add-m" href="${href}">Choose ${esc(p.vg.kind.toLowerCase())}</a>` : `<button class="e-btn sm line add-m" data-cadd="${esc(p.id)}">Add to cart</button>`)}
     </div>
   </div>`;
 }
+/* Redraw, where they stand, the cards that show a product whose amount in the cart just changed. */
+function refreshCards(pid) {
+  $$('.e-card[data-ids]').forEach(c => {
+    if (!c.dataset.ids.split(' ').includes(String(pid))) return;
+    const p = P(c.dataset.card); if (!p) return;
+    c.insertAdjacentHTML('afterend', productBox(p)); const nw = c.nextElementSibling; c.remove();
+    $$('[data-wish]', nw).forEach(a => a.onclick = e => { e.preventDefault(); toggleWish(a.dataset.wish); });
+  });
+}
+// the card's own buttons work by delegation, so a redrawn card needs nothing bound to it
+document.addEventListener('click', e => {
+  const t = e.target.closest('.e-card [data-cadd], .e-card [data-cq], .e-card [data-opencart]'); if (!t) return;
+  e.preventDefault();
+  if (t.dataset.cadd) addToCart(t.dataset.cadd);
+  else if (t.dataset.cq) updateCartQty(t.dataset.cq, +t.dataset.d);
+  else openCartModal();
+});
 
 /* ---------------- home ---------------- */
 const shopName = () => (st.cat && st.cat.shop && st.cat.shop.name || 'Regal Hardware').replace(/^REGAL HARDWARE$/, 'Regal Hardware');
