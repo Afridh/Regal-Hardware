@@ -879,6 +879,8 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 .od-prog em{font-style:normal;white-space:nowrap}
 @keyframes od-fill{from{transform:scaleX(0)}to{transform:none}}
 .od-x{color:#c0392b!important}
+.jb-next{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.jb-msg{padding:10px 12px}
 .od-mact{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .od-mact svg,.st-chips button svg{width:15px;height:15px;vertical-align:-3px}
 .st-bar .st-chips{align-items:center}
@@ -5273,34 +5275,79 @@ const damageOpen=(sid)=>S.damages.filter(d=>d.sid===sid&&['held','sent'].include
    A customer leaves a machine on the counter. It is not stock and it is not a sale — it is theirs and
    the shop is holding it. Most go on to the maker and come back. The note carries a tag of its own so
    a label can go on the item, because by the time it comes back nobody remembers whose it was. */
-const JOB_STATUS={in:['With us','warn'],sent:['Away at the maker','blue'],back:['Back, ready','ok'],
-  given:['Given back','ok'],scrapped:['Beyond repair','bad']};
+/* Where a repair stands. The road: taken in → checked → (the price told, waiting for their OK) → at the
+   maker or being repaired here → ready to collect → collected. "Cannot be repaired" is the end of the
+   road for the repair, not for the item — the customer still has to come for it. */
+const JOB_STATUS={in:['Taken in','warn'],check:['Checking','blue'],quote:['Waiting for their OK','warn'],sent:['At the maker','blue'],
+  fixing:['Repairing here','blue'],back:['Ready to collect','ok'],scrapped:['Cannot be repaired','bad'],given:['Collected','ok']};
+const JOB_OPEN=['in','check','quote','sent','fixing','back','scrapped'];
 const jobTagFor=(no)=>'JOB'+String(no).replace(/[^0-9]/g,'').padStart(6,'0');
-function addJob({customerId,phone,who,item,pid,serial,fault,sid,est,date=D(today)}){
+const jobPhone=(j)=>j.phone||(j.customerId&&C(j.customerId)?C(j.customerId).phone||'':'');
+const jobDays=(d)=>{ if(!d) return 0; const t=new Date(d); return isNaN(t)?0:Math.max(0,Math.floor((new Date(D(today))-t)/864e5)) };
+/* A customer who is not on the books yet is put on them from the take-in: a name and a mobile is enough.
+   A mobile that is already someone's finds that someone. */
+function jobCustomer({customerId,who,phone}){
+  if(customerId) return +customerId;
+  const ph=String(phone||'').replace(/\s+/g,'').trim(), nm=String(who||'').trim();
+  if(ph){ const had=S.customers.find(c=>c.id!==1&&String(c.phone||'').replace(/\s+/g,'')===ph); if(had) return had.id }
+  if(!ph||!nm) return null;
+  const c={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),
+    name:nm,phone:ph,level:'retail',limit:0,address:'',portal:false,lastLogin:null,note:'Added from a repair job'};
+  S.customers.push(c); return c.id;
+}
+function addJob({customerId,phone,who,item,pid,serial,fault,sid,est,accessories,save=true,date=D(today)}){
   if(!String(item||'').trim()) throw new Error('What was left in?');
   if(!customerId&&!String(phone||'').trim()&&!String(who||'').trim())
     throw new Error('A name or a mobile, so it can be given back to the right person');
-  const j={no:next('JOB'),date,customerId:customerId||null,phone:String(phone||'').trim(),
-    who:String(who||'').trim(),item:String(item).trim(),pid:pid||null,
-    theirSerial:String(serial||'').trim(),fault:String(fault||'').trim(),
-    sid:sid||null,est:+est||0,charge:0,status:'in',by:S.user.name,
+  const cid=save?jobCustomer({customerId,who,phone}):(customerId||null), c=cid?C(cid):null;
+  const j={no:next('JOB'),date,customerId:cid||null,phone:String(phone||(c&&c.phone)||'').trim(),
+    who:String(who||(c&&c.name)||'').trim(),item:String(item).trim(),pid:pid||null,
+    theirSerial:String(serial||'').trim(),fault:String(fault||'').trim(),accessories:String(accessories||'').trim(),
+    sid:sid||null,est:+est||0,charge:0,makerCost:0,status:'in',by:S.user.name,
     events:[{at:Date.now(),what:'Taken in',by:S.user.name}]};
   j.tag=jobTagFor(j.no);
   S.jobs.push(j);
   notify('job',j.item+' taken in for repair — '+j.tag,'jobs');
+  jobTell(j,'repairIn');
   return j;
 }
-function jobSet(no,status,note,charge){
+/* Telling the customer. Each step has its own wording (Settings → Messages → Repair …); a step can be
+   sent quietly by passing silent, and the whole lot turned off with Repairs → Text the customer. */
+const jobAutoText=()=>!(CFG.repair&&CFG.repair.autoText===false);
+function jobTell(j,key,force){
+  const to=jobPhone(j); if(!to||(!force&&!jobAutoText())) return null;
+  const s=j.sid?SU(j.sid):null, amt=+j.charge||+j.est||0;
+  const body=tpl(key,{job:j.no,item:j.item,customer:jobName(j),tag:j.tag||'',maker:s?s.name:'the maker',
+    charge:amt?fmt(amt):'',chargePart:amt?'\nCharge: '+fmt(amt):'',days:String(jobDays(j.backDate||j.date))});
+  const m=sms(to,body,'customer');
+  (j.events=j.events||[]).push({at:Date.now(),what:'Texted: '+(CFG.tpl[key]||TPL_ORIG[key]||{label:key}).label,by:S.user.name});
+  return m;
+}
+const JOB_TELL={in:'repairIn',quote:'repairQuote',sent:'repairSent',back:'repairReady',scrapped:'repairNoFix',given:'repairGiven'};
+/* One step on the road: the status, the date it happened, what was said, and the customer told. */
+function jobStep(no,status,{note,charge,makerCost,est,silent}={}){
   const j=S.jobs.find(x=>x.no===no); if(!j) throw new Error('No such job note');
-  if(status==='sent'&&!j.sid) throw new Error('Which maker is it going to? Put that on the note first');
-  j.status=status;
-  if(status==='sent') j.sentDate=D(today);
-  if(status==='back') j.backDate=D(today);
-  if(status==='given'){ j.givenDate=D(today); if(charge!==undefined) j.charge=+charge||0 }
-  j.events=(j.events||[]).concat([{at:Date.now(),what:JOB_STATUS[status][0],by:S.user.name,note:note||''}]);
+  if(!JOB_STATUS[status]) throw new Error('Unknown step '+status);
+  if(status==='sent'&&!j.sid) throw new Error('Which maker is it going to? Choose the maker first');
+  const was=j.status; j.status=status;
+  const day=D(today);
+  if(status==='check') j.checkDate=j.checkDate||day;
+  if(status==='quote') j.quoteDate=day;
+  if(status==='sent') j.sentDate=day;
+  if(status==='fixing') j.fixDate=day;
+  if(status==='back'||status==='scrapped') j.backDate=day;
+  if(status==='given') j.givenDate=day;
+  if(est!==undefined&&est!=='') j.est=+est||0;
+  if(charge!==undefined&&charge!=='') j.charge=+charge||0;
+  if(makerCost!==undefined&&makerCost!=='') j.makerCost=+makerCost||0;
+  j.events=(j.events||[]).concat([{at:Date.now(),what:JOB_STATUS[status][0]+(was&&was!==status?'':' (again)'),by:S.user.name,note:note||''}]);
+  if(!silent&&JOB_TELL[status]&&was!==status) jobTell(j,JOB_TELL[status]);
+  if(status==='back') notify('job',`${j.item} (${j.no}) is ready to collect — ${jobName(j)}`,'jobs');
   return j;
 }
-const jobsOpen=()=>S.jobs.filter(j=>['in','sent','back'].includes(j.status));
+// the old name, as other parts of the till call it
+function jobSet(no,status,note,charge){ return jobStep(no,status,{note,charge}) }
+const jobsOpen=()=>S.jobs.filter(j=>JOB_OPEN.includes(j.status));
 const jobName=(j)=>j.customerId?(C(j.customerId)||{}).name:(j.who||j.phone||'Walk-in');
 
 function addDamage({pid,qty,reason,date=D(today)}){
@@ -5368,6 +5415,20 @@ const CFG={
     text:'Thank you for your purchase.\nBill No: {invoice}\nAmount: {total}\nView your bill: {link}'},
   creditSale:{label:'Credit bill',vars:'{shop} {invoice} {total} {balance} {outstanding} {link}',
     text:'Thank you for your purchase on credit.\nBill No: {invoice}\nAmount: {total}\nTotal outstanding: {outstanding}\nView your bill: {link}'},
+  repairIn:{label:'Repair — taken in',vars:'{shop} {job} {item} {customer} {tag}',
+    text:'We have received your {item} for repair.\nJob No: {job}\nPlease keep your job sheet. We will keep you informed.'},
+  repairQuote:{label:'Repair — price to approve',vars:'{shop} {job} {item} {charge}',
+    text:'Your {item} has been checked.\nJob No: {job}\nRepair cost: {charge}\nPlease call or reply to tell us to go ahead.'},
+  repairSent:{label:'Repair — sent to the maker',vars:'{shop} {job} {item} {maker}',
+    text:'Your {item} has been sent to {maker} for repair.\nJob No: {job}\nWe will tell you when it is back.'},
+  repairReady:{label:'Repair — ready to collect',vars:'{shop} {job} {item} {charge} {chargePart}',
+    text:'Your {item} is repaired and ready to collect.\nJob No: {job}{chargePart}\nPlease bring your job sheet.'},
+  repairNoFix:{label:'Repair — cannot be repaired',vars:'{shop} {job} {item}',
+    text:'Sorry, your {item} cannot be repaired.\nJob No: {job}\nPlease collect it from the shop.'},
+  repairGiven:{label:'Repair — collected',vars:'{shop} {job} {item}',
+    text:'Thank you for collecting your {item}.\nJob No: {job}'},
+  repairRemind:{label:'Repair — reminder to collect',vars:'{shop} {job} {item} {days}',
+    text:'Your {item} has been ready for {days} days.\nJob No: {job}\nPlease collect it from the shop.'},
   ownerBill:{label:'Your own copy of a bill',vars:'{shop} {kind} {invoice} {total} {customer} {by} {balance} {outstanding} {link}',
     text:'{kind}: {invoice}\nAmount: {total}\nCustomer: {customer}\nBilled by: {by}{balancePart}\nView: {link}'},
   billLink:{label:'Resending a bill link',vars:'{shop} {invoice} {total} {balance} {link}',
@@ -10698,6 +10759,7 @@ function webSet(no,st,note){
 /* A web order billed at the till: the order takes the bill's number and moves to Billed. Cash on
    delivery that was not taken at the till is what the rider has to collect. */
 function webBilled(inv){
+  jobBilled(inv);   // a repair charge on this bill closes its job
   const wo=S.pos.fromWeb&&S.web.orders.find(x=>x.no===S.pos.fromWeb); if(!wo) return;
   wo.invoice=inv.no; wo.status='invoiced'; webEvent(wo,'Billed as '+inv.no);
   if(wo.deliver&&wo.pay==='cod') wo.cod={state:(+inv.balance||0)>0?'due':'paid',amount:+(+inv.balance||0).toFixed(2)};
@@ -11478,7 +11540,7 @@ const $=(s)=>document.querySelector(s);
 const views=[
  ['updates','What is new'],['actions','Action centre'],
  ['grp','Sell'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills','F9'],['receipts','Take a payment','F7'],['docs','Quotes & delivery notes'],['cashup','Day book'],
- ['grp','Customers'],['customers','Customers'],['tenders','Quotations & tenders'],['jobs','Repair job notes'],
+ ['grp','Customers'],['customers','Customers'],['tenders','Quotations & tenders'],['jobs','Repair jobs'],
  ['grp','Buying'],['suppliers','Suppliers'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Payment requests'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['chqbooks','Cheque books'],['petty','Petty cash'],['expenses','Expenses'],['accounting','Accounting'],
@@ -12044,7 +12106,10 @@ function renderNow(){
     if(dq) dq.oninput=()=>{ docQ=dq.value; docSel=null; const at=dq.selectionStart; render();
       const again=document.getElementById('docQ'); if(again){ again.focus(); try{ again.setSelectionRange(at,at) }catch(e){} } };
   }
-  document.querySelectorAll('[data-jobtab]').forEach(b=>b.onclick=()=>{jobTab=b.dataset.jobtab;render()});
+  document.querySelectorAll('[data-jobtab]').forEach(b=>b.onclick=()=>{jobTab=b.dataset.jobtab;jobQ='';render()});
+  { const jq=document.getElementById('jobQ'); if(jq){
+    jq.oninput=()=>{ const pos=jq.selectionStart; jobQ=jq.value; render(); const n=document.getElementById('jobQ'); if(n){ n.focus(); n.setSelectionRange(pos,pos) } };
+    jq.onkeydown=e=>{ if(e.key==='Enter'){ const j=jobFindTag(jq.value); if(j){ e.preventDefault(); jobQ=''; render(); jobView(j.no) } } } } }
   document.querySelectorAll('[data-custsort]').forEach(b=>b.onclick=()=>{custSort=b.dataset.custsort;render()});
   document.querySelectorAll('[data-custtab]').forEach(b=>b.onclick=()=>{custTab=b.dataset.custtab;render()});
   document.querySelectorAll('[data-custbills]').forEach(b=>b.onclick=()=>{custBillsF=b.dataset.custbills;render()});
@@ -14692,7 +14757,7 @@ function dashboard(){
      const reqs=(typeof payReqs==='function')?payReqs().filter(r=>['sent','accepted','ready'].includes(r.status)):[];
      const iss=(typeof storeToIssue==='function')?storeToIssue():0;
      const hold=(S.heldBills||[]).length;
-     const jobs=(S.jobs||[]).filter(j=>['in','sent','back'].includes(j.status));
+     const jobs=(S.jobs||[]).filter(j=>JOB_OPEN.includes(j.status));
      const notes=(typeof dnOpen==='function')?dnOpen():[];
      const rows=[
        reqs.length?['payreqs',reqs.length,reqs.length===1?'supplier asking to be paid':'suppliers asking to be paid',
@@ -24216,70 +24281,163 @@ function damages(){
 }
 
 /* ---- taking something in, sending it to the maker, and the tag that goes on it ---- */
+/* Taking something in. The customer is found by name or mobile as it is typed; someone new is put on the
+   books from the same two boxes. The job sheet and the item's tag print by themselves when it is saved. */
 function jobModal(){
-  const m=modal(`<h2>Something left in for repair</h2>
-   <div class="muted" style="margin-bottom:10px">It is theirs, not ours — this is a note, not a sale.</div>
+  const m=modal(`<h2>Take something in for repair</h2>
+   <div class="muted" style="margin-bottom:10px">It is theirs, not ours — a note, not a sale. The job sheet and the tag print when you save.</div>
+   <div class="grid2">
+    <div class="f" style="position:relative"><label>Customer — name or mobile</label><input id="jbFind" placeholder="type a name or 07…" autocomplete="off"><div id="jbHits" class="hits"></div></div>
+    <div class="f"><label>Who it is</label><div id="jbWhoBox" class="muted" style="padding:9px 0">nobody chosen — type above, or fill in a new customer below</div></div></div>
+   <div class="grid3" id="jbNew">
+    <div class="f"><label>Name</label><input id="jbWho" placeholder="new customer's name"></div>
+    <div class="f"><label>Mobile</label><input id="jbPh" inputmode="tel" placeholder="07XXXXXXXX"></div>
+    <div class="f"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="jbSave" checked> <span>Save as a customer</span></label></div></div>
    <div class="grid2">
     <div class="f"><label>What is it</label><input id="jbItem" placeholder="e.g. Makita grinder GA5030"></div>
     <div class="f"><label>Their serial, if it has one</label><input id="jbSer" placeholder="off the plate"></div></div>
-   <div class="grid3">
-    <div class="f"><label>Customer</label><select id="jbCust"><option value="">walk-in — type a name</option>
-      ${S.customers.filter(c=>c.id!==1&&c.active!==false).map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
-    <div class="f"><label>Name</label><input id="jbWho" placeholder="if they have no account"></div>
-    <div class="f"><label>Mobile</label><input id="jbPh" inputmode="tel" placeholder="07XXXXXXXX"></div></div>
    <div class="grid2">
     <div class="f"><label>What is wrong</label><input id="jbFault" placeholder="what the customer says it does"></div>
-    <div class="f"><label>Send it to</label><select id="jbSup"><option value="">decide later</option>
-      ${S.suppliers.filter(s=>s.active!==false).map(s=>`<option value="${s.id}">${s.name}</option>`).join('')}</select></div></div>
-   <div class="f" style="max-width:220px"><label>Rough charge, if quoted</label><input id="jbEst" type="number" step="any" value="0"></div>
+    <div class="f"><label>Left with it</label><input id="jbAcc" placeholder="box, charger, battery, remote…"></div></div>
+   <div class="grid2">
+    <div class="f"><label>Send it to</label><select id="jbSup"><option value="">decide later / repair here</option>
+      ${S.suppliers.filter(s=>s.active!==false).map(s=>`<option value="${s.id}">${escM(s.name)}</option>`).join('')}</select></div>
+    <div class="f"><label>Rough charge, if told (Rs.)</label><input id="jbEst" type="number" step="any" min="0" placeholder="0"></div></div>
    <div class="muted" id="jbMsg" style="margin-top:6px"></div>
-   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
-    <button class="btn ghost" data-act="closeModal">Cancel</button>
-    <button class="btn tape" id="jbOk">Take it in</button></div>`);
-  m.querySelector('#jbCust').onchange=()=>{ const c=C(+m.querySelector('#jbCust').value);
-    if(c){ m.querySelector('#jbWho').value=c.name; m.querySelector('#jbPh').value=c.phone||'' } };
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;align-items:center">
+    <span class="muted" style="font-size:12.5px">${jobAutoText()?'The customer gets a text that it is in.':'Texts to customers are off (Repairs → Text the customer).'}</span>
+    <span><button class="btn ghost" data-act="closeModal">Cancel</button> <button class="btn tape" id="jbOk">Take it in &amp; print</button></span></div>`);
+  let cid=null;
+  const find=m.querySelector('#jbFind'), hits=m.querySelector('#jbHits'), box=m.querySelector('#jbWhoBox'), nw=m.querySelector('#jbNew');
+  const choose=(id)=>{ cid=id; const c=C(id); hits.innerHTML=''; find.value=c.name;
+    box.innerHTML=`<b>${escM(c.name)}</b> ${c.phone?'· '+escM(c.phone):''} <button class="btn ghost sm" id="jbClr">change</button>`;
+    nw.style.display='none'; box.querySelector('#jbClr').onclick=()=>{ cid=null; find.value=''; box.textContent='nobody chosen — type above, or fill in a new customer below'; nw.style.display=''; find.focus() };
+    m.querySelector('#jbItem').focus() };
+  let idx=0, found=[];
+  const draw=()=>{ hits.innerHTML=found.map((c,i)=>`<button type="button" class="${i===idx?'on':''}" data-cid="${c.id}">${escM(c.name)} <span class="muted">${escM(c.phone||'')}</span></button>`).join('')
+      +(find.value.trim()?`<button type="button" data-new="1"><b>+ New customer</b> <span class="muted">“${escM(find.value.trim())}”</span></button>`:'');
+    hits.querySelectorAll('[data-cid]').forEach(b=>b.onmousedown=e=>{ e.preventDefault(); choose(+b.dataset.cid) });
+    const nb=hits.querySelector('[data-new]'); if(nb) nb.onmousedown=e=>{ e.preventDefault(); newOne() } };
+  const newOne=()=>{ const v=find.value.trim(); hits.innerHTML='';
+    if(/^[\d +]{7,}$/.test(v)) m.querySelector('#jbPh').value=v.replace(/\s+/g,''); else m.querySelector('#jbWho').value=v;
+    (m.querySelector('#jbWho').value?m.querySelector('#jbPh'):m.querySelector('#jbWho')).focus() };
+  find.oninput=()=>{ cid=null; const q=find.value.trim().toLowerCase(), qd=q.replace(/\D/g,'');
+    found=q?S.customers.filter(c=>c.id!==1&&c.active!==false&&(String(c.name||'').toLowerCase().includes(q)||(qd.length>=3&&String(c.phone||'').replace(/\D/g,'').includes(qd)))).slice(0,8):[];
+    idx=0; draw() };
+  find.onkeydown=e=>{ const n=found.length+(find.value.trim()?1:0);
+    if(e.key==='ArrowDown'){ e.preventDefault(); idx=Math.min(idx+1,n-1); draw() }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); idx=Math.max(idx-1,0); draw() }
+    else if(e.key==='Enter'){ e.preventDefault(); if(idx<found.length&&found[idx]) choose(found[idx].id); else if(find.value.trim()) newOne() } };
+  // a mobile typed for a new customer that someone already has picks them
+  m.querySelector('#jbPh').onchange=()=>{ const v=m.querySelector('#jbPh').value.replace(/\s+/g,''); const had=v&&S.customers.find(c=>c.id!==1&&String(c.phone||'').replace(/\s+/g,'')===v);
+    if(had){ toast(`${had.name} already has ${v} — picked them`,'ok'); choose(had.id) } };
+  find.focus();
   m.querySelector('#jbOk').onclick=()=>{
     const g=id=>m.querySelector('#'+id).value.trim();
     try{
-      const j=addJob({customerId:+m.querySelector('#jbCust').value||null,phone:g('jbPh'),who:g('jbWho'),
-        item:g('jbItem'),serial:g('jbSer'),fault:g('jbFault'),sid:+m.querySelector('#jbSup').value||null,est:g('jbEst')});
+      if(!cid&&g('jbPh')&&!/^0\d{9}$/.test(g('jbPh').replace(/\s+/g,''))) throw new Error('A mobile like 0771234567, so the texts reach them');
+      const j=addJob({customerId:cid,phone:cid?'':g('jbPh'),who:cid?'':g('jbWho'),save:m.querySelector('#jbSave').checked,
+        item:g('jbItem'),serial:g('jbSer'),fault:g('jbFault'),accessories:g('jbAcc'),sid:+m.querySelector('#jbSup').value||null,est:g('jbEst')});
       m.remove(); persist(true); render();
       toast(`${j.no} taken in · tag ${j.tag} · printing the job sheet`,'ok');
       jobSheetPrint(j.no); jobTagPrint(j.no,1);
     }catch(e){ m.querySelector('#jbMsg').textContent=e.message }
   };
-  m.querySelector('#jbItem').focus();
 }
-function jobMoveModal(no){
-  const j=S.jobs.find(x=>x.no===no); if(!j) return;
-  const opts=[['in','On the shelf here'],['sent','Sent to the maker'],['back','Back from the maker'],['given','Given back to the customer'],['scrapped','Beyond repair']];
-  const m=modal(`<h2>${j.no} — ${j.item}</h2>
-   <div class="muted" style="margin-bottom:10px">${jobName(j)}${j.phone?' · '+j.phone:''} · tag ${j.tag}</div>
-   <div class="grid2">
-    <div class="f"><label>Where is it now</label><select id="jvTo">${opts.map(([k,l])=>`<option value="${k}" ${j.status===k?'selected':''}>${l}</option>`).join('')}</select></div>
-    <div class="f"><label>Maker</label><select id="jvSup"><option value="">—</option>
-      ${S.suppliers.filter(s=>s.active!==false).map(s=>`<option value="${s.id}" ${j.sid===s.id?'selected':''}>${s.name}</option>`).join('')}</select></div></div>
-   <div class="grid2">
-    <div class="f"><label>Note</label><input id="jvNote" placeholder="what they said, docket number…"></div>
-    <div class="f"><label>Charge to the customer</label><input id="jvChg" type="number" step="any" value="${j.charge||0}"></div></div>
+/* The whole job in one window: where it stands, the next steps as buttons, the details to change, the
+   money, a message to the customer, and everything that has happened to it. */
+function jobView(no){
+  const j=S.jobs.find(x=>x.no===no); if(!j) return; closeModals();
+  const s=j.sid?SU(j.sid):null, ph=jobPhone(j), [st,col]=JOB_STATUS[j.status]||[j.status,''];
+  const next=jobNextSteps(j);
+  const m=modal(`<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
+     <div><h2 style="margin:0">${escM(j.no)} — ${escM(j.item)}</h2>
+      <div class="muted">${escM(jobName(j))}${ph?' · '+escM(ph):''} · tag ${escM(j.tag||'')} · in ${jobDays(j.date)} day${jobDays(j.date)===1?'':'s'}</div></div>
+     <span class="tag ${col}">${st}</span></div>
+   ${jobRoad(j)}
+   ${next.length?`<div class="jb-next">${next.map(([k,l,cls])=>`<button class="btn ${cls||'ghost'}" data-jstep="${k}">${l}</button>`).join('')}</div>`:''}
+   <div class="grid3" style="margin-top:12px">
+    <div class="f"><label>What is it</label><input id="jvItem" value="${escM(j.item)}"></div>
+    <div class="f"><label>Serial</label><input id="jvSer" value="${escM(j.theirSerial||'')}"></div>
+    <div class="f"><label>Left with it</label><input id="jvAcc" value="${escM(j.accessories||'')}"></div></div>
+   <div class="grid3">
+    <div class="f"><label>Fault</label><input id="jvFault" value="${escM(j.fault||'')}"></div>
+    <div class="f"><label>Maker</label><select id="jvSup"><option value="">— repair here —</option>
+      ${S.suppliers.filter(x=>x.active!==false).map(x=>`<option value="${x.id}" ${j.sid===x.id?'selected':''}>${escM(x.name)}</option>`).join('')}</select></div>
+    <div class="f"><label>Maker's docket / note</label><input id="jvDocket" value="${escM(j.docket||'')}" placeholder="their job number"></div></div>
+   <div class="grid3">
+    <div class="f"><label>Price told to the customer (Rs.)</label><input id="jvEst" type="number" step="any" min="0" value="${+j.est||''}"></div>
+    <div class="f"><label>What the maker charged us (Rs.)</label><input id="jvCost" type="number" step="any" min="0" value="${+j.makerCost||''}"></div>
+    <div class="f"><label>Note for this step</label><input id="jvNote" placeholder="what they said…"></div></div>
+   <div class="card jb-msg" style="margin-top:6px"><b>Message ${escM(jobName(j))}</b>${ph?'':' <span class="muted">— no mobile on this job</span>'}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+     ${[['repairIn','It is in'],['repairQuote','Price to approve'],['repairSent','Sent to the maker'],['repairReady','Ready to collect'],['repairNoFix','Cannot be repaired'],['repairRemind','Reminder to collect']]
+       .map(([k,l])=>`<button class="btn ghost sm" data-jtell="${k}" ${ph?'':'disabled'}>${l}</button>`).join('')}
+     ${ph?`<button class="btn ghost sm wa" data-act="jobWa" data-no="${escM(j.no)}">${WA_ICON} WhatsApp</button><a class="btn ghost sm" href="tel:${escM(ph)}">Call</a>`:''}</div></div>
+   <div class="thread" style="margin-top:10px">${(j.events||[]).slice().reverse().map(e=>`<div class="ev"><b>${escM(e.by||'')}</b> <span class="muted">· ${escM(typeof e.at==='number'?new Date(e.at).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):e.at||'')}</span><div>${escM(e.what||'')}${e.note?' — '+escM(e.note):''}</div></div>`).join('')}</div>
    <div class="muted" id="jvMsg" style="margin-top:6px"></div>
-   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px">
-    <button class="btn ghost" id="jvSms" ${j.phone||(j.customerId&&C(j.customerId)&&C(j.customerId).phone)?'':'disabled'}>Text them it is ready</button>
-    <span><button class="btn ghost" data-act="closeModal">Cancel</button>
-    <button class="btn tape" id="jvOk">Save</button></span></div>`);
-  m.querySelector('#jvOk').onclick=()=>{
-    try{
-      j.sid=+m.querySelector('#jvSup').value||null;
-      jobSet(no,m.querySelector('#jvTo').value,m.querySelector('#jvNote').value,m.querySelector('#jvChg').value);
-      m.remove(); persist(true); render(); toast(j.no+' updated','ok');
-    }catch(e){ m.querySelector('#jvMsg').textContent=e.message }
-  };
-  m.querySelector('#jvSms').onclick=()=>{
-    const to=j.phone||(j.customerId&&C(j.customerId)?C(j.customerId).phone:'');
-    if(!to) return toast('No mobile on the note','warn');
-    sms(to,`Your item is back from repair and ready to collect.\nItem: ${j.item}\nJob No: ${j.no}`,'customer');
-    toast('Texted '+to,'ok');
-  };
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-wrap:wrap">
+    <span><button class="btn ghost" data-act="jobSheet" data-no="${escM(j.no)}">Job sheet</button> <button class="btn ghost" data-act="jobLabel" data-no="${escM(j.no)}">Tag</button></span>
+    <span><button class="btn ghost" data-act="closeModal">Close</button> <button class="btn tape" id="jvSave">Save changes</button></span></div>`);
+  const keep=()=>{ const g=id=>m.querySelector('#'+id).value.trim();
+    if(!g('jvItem')) throw new Error('What is it?');
+    j.item=g('jvItem'); j.theirSerial=g('jvSer'); j.accessories=g('jvAcc'); j.fault=g('jvFault'); j.docket=g('jvDocket');
+    j.sid=+m.querySelector('#jvSup').value||null; j.est=+g('jvEst')||0; j.makerCost=+g('jvCost')||0 };
+  m.querySelector('#jvSave').onclick=()=>{ try{ keep(); const n=m.querySelector('#jvNote').value.trim(); if(n) j.events.push({at:Date.now(),what:'Note',by:S.user.name,note:n});
+    persist(true); m.remove(); render(); toast(j.no+' saved','ok') }catch(e){ m.querySelector('#jvMsg').textContent=e.message } };
+  m.querySelectorAll('[data-jstep]').forEach(b=>b.onclick=()=>{ try{ keep();
+    const k=b.dataset.jstep, note=m.querySelector('#jvNote').value.trim();
+    if(k==='collect'){ persist(true); m.remove(); return jobCollect(j.no) }
+    if(k==='quote'&&!(+j.est>0)) throw new Error('Put the price told to the customer first');
+    jobStep(j.no,k,{note}); persist(true); m.remove(); render(); toast(`${j.no} — ${JOB_STATUS[k][0]}`,'ok');
+  }catch(e){ m.querySelector('#jvMsg').textContent=e.message } });
+  m.querySelectorAll('[data-jtell]').forEach(b=>b.onclick=()=>{ try{ keep(); jobTell(j,b.dataset.jtell,true); persist(true); toast('Texted '+ph,'ok'); m.remove(); jobView(j.no) }catch(e){ m.querySelector('#jvMsg').textContent=e.message } });
+}
+const jobMoveModal=(no)=>jobView(no);
+// what can happen next, from where it is now
+function jobNextSteps(j){
+  const viaMaker=!!j.sid, done=[['back','Repaired — ready to collect','tape'],['scrapped','Cannot be repaired']];
+  return ({in:[['check','Start checking','tape'],...(viaMaker?[['sent','Send to the maker']]:[['fixing','Repair it here']]),['quote','Tell them the price']],
+    check:[['quote','Tell them the price','tape'],...(viaMaker?[['sent','Send to the maker']]:[['fixing','Repair it here']]),['scrapped','Cannot be repaired']],
+    quote:[[viaMaker?'sent':'fixing','They said OK — go ahead','tape'],['scrapped','They said no — give it back as it is']],
+    sent:[['back','Back from the maker — ready','tape'],['scrapped','Maker cannot repair it']],
+    fixing:done, back:[['collect','Collected — take the charge','tape']], scrapped:[['collect','Collected','tape']], given:[]})[j.status]||[];
+}
+function jobRoad(j){
+  const road=['Taken in','Checked',j.sid?'At the maker':'Repairing','Ready','Collected'];
+  const at=({in:0,check:1,quote:1,sent:2,fixing:2,back:3,scrapped:3,given:4})[j.status]; if(at===undefined) return '';
+  const col=j.status==='scrapped'?'#c0392b':'#1e8a5a';
+  return `<div class="od-prog" style="--n:5;--c:${col};max-width:none;margin:12px 0 4px">${road.map((x,i)=>`<span class="${i<at?'past':i===at?'now':''}"><i></i><em>${i===at&&j.status==='quote'?'Waiting for OK':i===at&&j.status==='scrapped'?'Not repairable':x}</em></span>`).join('')}</div>`;
+}
+/* Collected: what it costs them, billed at the till like any sale (the job closes when the bill is paid),
+   or given back with nothing to pay. */
+function jobCollect(no){
+  const j=S.jobs.find(x=>x.no===no); if(!j) return;
+  const amt=+j.charge||+j.est||0;
+  const m=modal(`<h2>${escM(j.no)} — ${escM(j.item)} collected</h2>
+   <div class="muted" style="margin-bottom:10px">${escM(jobName(j))}${jobPhone(j)?' · '+escM(jobPhone(j)):''}${+j.makerCost?` · the maker charged us ${fmt(j.makerCost)}`:''}</div>
+   <div class="f" style="max-width:240px"><label>Repair charge (Rs.)</label><input id="jcAmt" type="number" step="any" min="0" value="${amt||''}" placeholder="0"></div>
+   <div class="muted" id="jcMsg" style="margin-top:6px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;flex-wrap:wrap">
+    <button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn ghost" id="jcFree">No charge — hand it over</button>
+    <button class="btn tape" id="jcBill">Bill the charge at the till</button></div>`);
+  const a=m.querySelector('#jcAmt'); a.focus(); a.select();
+  m.querySelector('#jcFree').onclick=()=>{ jobStep(j.no,'given',{charge:0,note:'No charge'}); persist(true); m.remove(); render(); toast(j.no+' collected','ok') };
+  m.querySelector('#jcBill').onclick=()=>{ const v=+a.value||0; if(!(v>0)) return m.querySelector('#jcMsg').textContent='Put the charge, or choose No charge';
+    j.charge=v; jobBill(j.no) };
+  a.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); m.querySelector('#jcBill').click() } };
+}
+// the charge onto the till as one line; when that bill is paid, the job is collected and carries the bill number
+function jobBill(no){
+  const j=S.jobs.find(x=>x.no===no); if(!j) return;
+  S.pos={lines:[{pid:OPEN_PID,name:`Repair · ${j.item} (${j.no})`,qty:1,price:+j.charge||0,disc:0,open:true,auto:false}],
+    customer:j.customerId||null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill,fromJob:j.no};
+  closeModals(); go('pos'); toast(`${j.no} on the bill — take the payment and the job closes`);
+}
+function jobBilled(inv){
+  const no=S.pos&&S.pos.fromJob; if(!no) return; const j=S.jobs.find(x=>x.no===no); if(!j) return;
+  j.invoice=inv.no; jobStep(no,'given',{charge:inv.total,note:'Billed as '+inv.no});
 }
 function jobLabel(no){
   const j=S.jobs.find(x=>x.no===no); if(!j) return;
@@ -24316,39 +24474,52 @@ function jobLabelOld(no){
    </div>`);
 }
 
-/* ================== REPAIR JOB NOTES ================== */
-let jobTab='open';
-function jobs(){
-  const all=S.jobs||[];
-  const by=(k)=>all.filter(j=>j.status===k);
-  const shown=jobTab==='open'?all.filter(j=>['in','sent','back'].includes(j.status))
-             :jobTab==='all'?all:by(jobTab);
-  const tabs=[['open','Still with us'],['in','On the shelf'],['sent','At the maker'],['back','Back, ready'],['given','Given back'],['all','Everything']];
-  return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Repair job notes
-    <span style="display:flex;gap:6px"><button class="btn tape" data-act="jobNew">+ Take something in</button></span></h1>
-  <div class="row" style="gap:12px;flex-wrap:wrap;margin-bottom:12px">
-    ${stat('On the shelf',by('in').length,'waiting to go')}
-    ${stat('At the maker',by('sent').length,'away being repaired')}
-    ${stat('Back, ready',by('back').length,'tell the customer','ok')}
-  </div>
-  <div class="chips">${tabs.map(([k,l])=>`<button class="${jobTab===k?'on':''}" data-jobtab="${k}">${l} ${k==='all'?all.length:k==='open'?all.filter(j=>['in','sent','back'].includes(j.status)).length:by(k).length}</button>`).join('')}</div>
-  <div class="card" style="margin-top:10px">
-  ${shown.length?`<table class="tbl"><tr><th>Note</th><th>What it is</th><th>Whose</th><th>Fault</th><th>Maker</th><th>Where it is</th><th></th></tr>
-    ${shown.slice().reverse().map(j=>{const s=j.sid?SU(j.sid):null;return `<tr>
-      <td><b>${j.no}</b><div class="muted">${j.date} · <code>${j.tag||''}</code></div></td>
-      <td>${j.item}${j.theirSerial?`<div class="muted">serial ${j.theirSerial}</div>`:''}</td>
-      <td>${jobName(j)}${j.phone?`<div class="muted">${j.phone}</div>`:''}</td>
-      <td>${j.fault||''}</td>
-      <td>${s?s.name:'<span class="muted">not sent</span>'}</td>
-      <td><span class="tag ${JOB_STATUS[j.status][1]}">${JOB_STATUS[j.status][0]}</span>${j.sentDate&&j.status==='sent'?`<div class="muted">since ${j.sentDate}</div>`:''}</td>
-      <td class="n" style="white-space:nowrap">
-        <button class="btn ghost sm" data-act="jobSheet" data-no="${j.no}">Job sheet</button>
-        <button class="btn ghost sm" data-act="jobLabel" data-no="${j.no}">Tag</button>
-        <button class="btn ghost sm" data-act="jobMove" data-no="${j.no}">Move on</button></td></tr>`}).join('')}</table>`
-   :'<div class="muted">Nothing in for repair.</div>'}
-  </div>`;
+/* ================== REPAIR JOB NOTES — the repair desk ==================
+   The road along the top with how many stand at each step; a card for each job with how far it has come,
+   how long it has waited, and its next step as a button. Search finds a job by number, tag, name, mobile
+   or item — and a scanned tag (J7-1 or JOB000007-1) opens it. */
+let jobTab='open', jobQ='';
+const JOB_TABS=[['open','Still with us',j=>JOB_OPEN.includes(j.status)],['in','Taken in',j=>['in','check'].includes(j.status)],['quote','Waiting for OK',j=>j.status==='quote'],
+  ['work','Being repaired',j=>['sent','fixing'].includes(j.status)],['back','Ready to collect',j=>['back','scrapped'].includes(j.status)],['given','Collected',j=>j.status==='given'],['all','Everything',()=>true],['late','Waiting too long',j=>JOB_OPEN.includes(j.status)&&jobLate(j)]];
+const jobLate=(j)=>j.status==='back'||j.status==='scrapped'?jobDays(j.backDate)>=5:j.status==='sent'?jobDays(j.sentDate)>=14:['in','check'].includes(j.status)?jobDays(j.date)>=3:j.status==='quote'?jobDays(j.quoteDate)>=3:false;
+function jobFindTag(v){
+  const t=String(v||'').trim().toUpperCase(); let m=/^J(\d+)(?:-\d+)?$/.exec(t)||/^JOB0*(\d+)(?:-\d+)?$/.exec(t);
+  if(m) return S.jobs.find(j=>+String(j.no).replace(/\D/g,'')===+m[1]);
+  return S.jobs.find(j=>String(j.no).toUpperCase()===t||String(j.tag||'').toUpperCase()===t.replace(/-\d+$/,''));
 }
-
+function jobs(){
+  const all=S.jobs||[], q=jobQ.trim().toLowerCase();
+  const tab=JOB_TABS.find(t=>t[0]===jobTab)||JOB_TABS[0];
+  const hit=j=>!q||[j.no,j.tag,j.item,j.theirSerial,j.fault,jobName(j),jobPhone(j),j.docket].some(x=>String(x||'').toLowerCase().includes(q));
+  const list=(q?all:all.filter(tab[2])).filter(hit).slice().reverse();
+  const late=all.filter(j=>JOB_OPEN.includes(j.status)&&jobLate(j)).length;
+  const pipe=[['in','Taken in','M4 7l8-4 8 4v10l-8 4-8-4zM4 7l8 4 8-4M12 11v10'],['quote','Waiting for OK','M12 7v5l3 2M12 21a9 9 0 110-18 9 9 0 010 18z'],
+    ['work','Being repaired','M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z'],['back','Ready to collect','M5 12l5 5 9-11'],['given','Collected','M3 21h18M5 21V8l7-5 7 5v13']];
+  const card=(j,i)=>{ const [st,c]=JOB_STATUS[j.status]||[j.status,''], ph=jobPhone(j), s=j.sid?SU(j.sid):null, nx=jobNextSteps(j)[0];
+    const col={warn:'#d68a00',blue:'#1f6fb2',ok:'#1e8a5a',bad:'#c0392b'}[c]||'#999';
+    const wait=j.status==='back'||j.status==='scrapped'?`ready ${jobDays(j.backDate)} d`:j.status==='sent'?`at the maker ${jobDays(j.sentDate)} d`:`in ${jobDays(j.date)} d`;
+    return `<div class="st-order od-card${jobLate(j)?' late':''}" style="--c:${col};animation-delay:${Math.min(i,10)*0.03}s">
+     <span class="st-av" style="--h:${hueOf(jobName(j))}">${escM(initialsOf(jobName(j)))}</span>
+     <div class="who"><b>${escM(jobName(j))}</b> <span class="muted">${escM(ph)}</span>
+      <div class="muted">${escM(j.no)} · ${escM(j.tag||'')} · ${escM(j.date||'')} · ${jobLate(j)?`<b class="od-late">${wait}</b>`:wait}</div>
+      <div class="od-ship">${storeIc('M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z')}<span><b>${escM(j.item)}</b><small>${escM([j.fault,j.theirSerial?'serial '+j.theirSerial:'',s?'maker: '+s.name:''].filter(Boolean).join(' · '))}</small></span></div>
+      ${jobRoad(j)}</div>
+     <div class="money"><b>${+j.charge?fmt(j.charge):+j.est?fmt(j.est):'—'}</b><small>${+j.charge?'charged':+j.est?'price told':'no price yet'}</small><span class="st-tag" style="--c:${col}">${st}</span>${j.invoice?`<small>bill ${escM(j.invoice)}</small>`:''}</div>
+     <div class="acts">${nx?`<button class="btn tape sm" data-act="jobQuick" data-no="${escM(j.no)}" data-s="${nx[0]}">${nx[1]}</button>`:''}
+      <button class="btn ghost sm" data-act="jobMove" data-no="${escM(j.no)}">Open</button>
+      ${ph?`<button class="btn ghost sm wa" data-act="jobWa" data-no="${escM(j.no)}" title="WhatsApp">${WA_ICON}</button><a class="btn ghost sm" href="tel:${escM(ph)}" title="Call">${storeIc('M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2')}</a>`:''}
+      <button class="btn ghost sm" data-act="jobSheet" data-no="${escM(j.no)}">Job sheet</button>
+      <button class="btn ghost sm" data-act="jobLabel" data-no="${escM(j.no)}">Tag</button></div></div>` };
+  return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Repair jobs
+    <span style="display:flex;gap:8px;align-items:center"><label class="chk" style="font-size:13px;font-weight:400"><input type="checkbox" data-act="jobAuto" ${jobAutoText()?'checked':''}> <span>Text the customer at each step</span></label>
+     <button class="btn tape" data-act="jobNew">+ Take something in</button></span></h1>
+   <div class="od-pipe" style="grid-template-columns:repeat(5,minmax(0,1fr))">${pipe.map(([k,l,ic],i)=>{ const t=JOB_TABS.find(x=>x[0]===k), n=all.filter(t[2]).length;
+     return `<button class="od-stage ${jobTab===k?'on':''} ${k==='back'&&n?'hot':''}" data-jobtab="${k}" style="animation-delay:${i*.05}s"><span class="ic">${storeIc(ic)}</span><span class="t"><small>${l}</small>${storeCount(n)}<em>${k==='back'&&n?'call them':k==='quote'&&n?'waiting on them':'&nbsp;'}</em></span></button>` }).join('')}</div>
+   <div class="st-bar"><div class="st-chips">${[['open','Still with us'],['all','Everything']].map(([k,l])=>`<button class="${jobTab===k?'on':''}" data-jobtab="${k}">${l}<i>${all.filter(JOB_TABS.find(x=>x[0]===k)[2]).length}</i></button>`).join('')}
+     ${late?`<button class="${jobTab==='late'?'on':''}" data-jobtab="late" title="waiting too long" style="border-color:#c0392b;color:#c0392b">${late} waiting too long</button>`:''}</div>
+    <input id="jobQ" class="st-search" placeholder="Search job, tag, name, mobile, item — or scan the tag" value="${escM(jobQ)}" autocomplete="off"></div>
+   <div class="st-orders">${list.map(card).join('')||`<div class="st-empty">${storeIc('M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z')}<b>${q?'Nothing matches':'Nothing here'}</b><span class="muted">${q?'Try another word, or scan the tag.':'Press + Take something in when a customer leaves something for repair.'}</span></div>`}</div>`;
+}
 /* The line at the top works as the old system's barcode generator did: scan or type the item, check the
    MRP and the selling price (changed here they are the label's own — the product keeps its prices), type
    how many, F12 prints them at once. "+ Add to list" gathers several items for one run instead. */
@@ -28608,6 +28779,14 @@ document.addEventListener('click',e=>{
     jobNew:()=>jobModal(), jobMove:()=>jobMoveModal(a.dataset.no),
     jobLabel:()=>jobLabel(a.dataset.no),
     jobSheet:()=>jobSheetPrint(a.dataset.no),
+    jobQuick:()=>{ const j=S.jobs.find(x=>x.no===a.dataset.no); if(!j) return; const st=a.dataset.s;
+      if(st==='collect') return jobCollect(j.no);
+      if(st==='quote'&&!(+j.est>0)) return jobView(j.no);
+      try{ jobStep(j.no,st); persist(true); render(); toast(`${j.no} — ${JOB_STATUS[st][0]}`,'ok') }catch(e){ toast(e.message,'bad'); jobView(j.no) } },
+    jobWa:()=>{ const j=S.jobs.find(x=>x.no===a.dataset.no); if(!j) return; const ph=jobPhone(j); if(!ph) return toast('No mobile on this job');
+      const amt=+j.charge||+j.est||0;
+      wa(ph,`Your ${j.item}:\nJob No: ${j.no}\nStatus: ${(JOB_STATUS[j.status]||[j.status])[0]}${amt?'\nCharge: '+fmt(amt):''}\n`,null,null,'customer'); render() },
+    jobAuto:()=>{ CFG.repair={...(CFG.repair||{}),autoText:!!a.checked}; persist(true); toast(a.checked?'Customers get a text at each step':'No texts to customers from repairs','ok') },
     cuLoginPw:()=>custLoginPwModal(+a.dataset.id,+a.dataset.lid,a.dataset.kind||'C'),
     cuLoginSend:()=>custLoginSend(+a.dataset.id,+a.dataset.lid,a.dataset.kind||'C'),
     cuLoginOff:()=>custLoginToggle(+a.dataset.id,+a.dataset.lid,a.dataset.on==='1',a.dataset.kind||'C'),
@@ -28845,7 +29024,7 @@ function savePosDraft(){
     if(!p.lines||!p.lines.length) return;
     localStorage.setItem(posDraftKey(), JSON.stringify({
       at:Date.now(), lines:p.lines, customer:p.customer||null, salesman:p.salesman||null,
-      billDisc:p.billDisc||0, editing:p.editing||null, fromWeb:p.fromWeb||null, fromDoc:p.fromDoc||null }));
+      billDisc:p.billDisc||0, editing:p.editing||null, fromWeb:p.fromWeb||null, fromDoc:p.fromDoc||null, fromJob:p.fromJob||null }));
   }catch(e){ /* a full or blocked store must never stop a sale */ }
 }
 function clearPosDraft(){ try{ localStorage.removeItem(posDraftKey()) }catch(e){} }
@@ -28860,7 +29039,7 @@ function restorePosDraft(){
     if(!lines.length){ clearPosDraft(); return false }
     S.pos={...S.pos, lines, customer:d.customer||null, salesman:d.salesman||null,
       billDisc:+d.billDisc||0, sel:-1, entry:null,
-      ...(d.editing?{editing:d.editing}:{}), ...(d.fromWeb?{fromWeb:d.fromWeb}:{}), ...(d.fromDoc?{fromDoc:d.fromDoc}:{})};
+      ...(d.editing?{editing:d.editing}:{}), ...(d.fromWeb?{fromWeb:d.fromWeb}:{}), ...(d.fromDoc?{fromDoc:d.fromDoc}:{}), ...(d.fromJob?{fromJob:d.fromJob}:{})};
     const n=lines.length, gone=d.lines.length-n;
     setTimeout(()=>toast('The bill you were keying is back — '+n+' line'+(n===1?'':'s')+(gone?', '+gone+' no longer on file':''),'ok'),700);
     return true;
