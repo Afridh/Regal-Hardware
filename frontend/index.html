@@ -938,6 +938,28 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 .chips button.on{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:500}
 
 .labpos .items table input{width:78px}
+/* the one line, as the old barcode generator */
+.qlab{padding:12px 14px 10px}
+.qlab-row{display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(170px,2fr) 110px 120px 100px auto auto;gap:8px;align-items:end;position:relative}
+.qlab-row .f{margin:0;position:relative}
+.qlab-row label{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--steel)}
+.qlab-row label i,.qlab-types i,.qprint i{font-style:normal;font-family:Archivo,sans-serif;font-size:10px;background:var(--ink);color:#fff;border-radius:2px;padding:0 5px;margin-left:4px;text-transform:none;letter-spacing:0}
+.qlab-row input{height:42px;font-size:16px;width:100%}
+.qlab-row .qbc input{background:#eef1ff;font-weight:700}
+.qlab-row .qn input,.qlab-row .qc input{text-align:right;font-family:Archivo,sans-serif;font-weight:800}
+.qlab-nm{height:42px;border:1px solid var(--line);border-radius:var(--r);padding:3px 10px;display:flex;flex-direction:column;justify-content:center;background:var(--panel);overflow:hidden;line-height:1.2}
+.qlab-nm b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13.5px}
+.qlab-nm .muted{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qprint{height:42px;padding:0 18px;font-weight:800;letter-spacing:.04em}
+.qprint i{background:rgba(255,255,255,.25)}
+.qadd{height:42px;white-space:nowrap}
+.qlab #labSug{position:absolute;left:0;top:100%;z-index:20;width:min(560px,90vw)}
+.qlab-types{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line2)}
+.qlab-types label{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--steel)}
+.qlab-types label.on{color:var(--ink);font-weight:700}
+.qlab .qlab-types input[type=radio]{width:16px!important;height:16px!important;min-width:0;padding:0!important;margin:0;border:0;box-shadow:none;flex:none;accent-color:var(--ink);font-size:inherit}
+.qlab-types label{white-space:nowrap}
+@media (max-width:1200px){.qlab-row{grid-template-columns:1fr 1fr 1fr}.qlab-row .qnm{grid-column:span 2}}
 .labpos .side .tot{font-family:Archivo,sans-serif;font-weight:800;font-size:30px;text-align:right;line-height:1}
 .labpos details summary{cursor:pointer;font-size:12px}
 .labpos .labprev{background:var(--panel);border:1px dashed var(--line);display:flex;justify-content:center;overflow:auto}
@@ -23949,7 +23971,7 @@ window.LAB=null; // set below, exposed so the label page can be scripted in test
 let LAB={q:'',pid:null,entry:null,copies:1,priceUsing:'retail',type:'roll',mf:'',exp:'',batch:'',d1:'',d2:'',d3:'',queue:[]};
 window.LAB=LAB;
 const LABTYPES=[
-  ['roll','Zebra roll · 3 across','F7','32 × 25 mm on the label printer · like the old labels'],
+  ['roll','Zebra roll · 3 across','F7','33 × 25 mm on the label printer · like the old labels'],
   ['s1','Standard label','F4','50 × 30 mm · name, barcode, price'],
   ['s2','Small label','F5','38 × 25 mm · for small items and hooks'],
   ['s3','With MRP','F6','50 × 30 mm · shows the printed price and yours'],
@@ -23979,11 +24001,12 @@ function code128Svg(text){
 function rollFacts(p,o={}){
   const bc=String(p.barcode||p.code||('2'+String(p.id).padStart(11,'0'))).trim();
   const cc=CFG.cost.onLabel?costCode(p.cost):'';
-  const mrp=+p.mrp>0?+p.mrp:0, price=mrp||(o.price!==undefined?+o.price:+p[LAB.priceUsing]||0);
+  const m0=o.mrp!==undefined&&o.mrp!==''&&o.mrp!==null?+o.mrp:+p.mrp, mrp=m0>0?m0:0, price=mrp||(o.price!==undefined?+o.price:+p[LAB.priceUsing]||0);
   const co=p.supplierId!=null&&p.supplierId!==''?String(p.supplierId):'';   // the supplier's number, as on the old labels
   return {bc,cc,price,priceWord:mrp?'MRP Rs.':'Rs.',co,name:String(p.name||'').toUpperCase()};
 }
 function labelHtml(p,type,o={}){
+  if(o.mrp!==undefined&&o.mrp!==''&&o.mrp!==null&&+o.mrp!==+p.mrp) p={...p,mrp:+o.mrp};   // the MRP typed for this label
   const price=o.price!==undefined?o.price:p[LAB.priceUsing];
   const cc=CFG.cost.onLabel?costCode(p.cost):'';
   const code=p.barcode||('2'+String(p.id).padStart(11,'0'));
@@ -24269,22 +24292,25 @@ function jobs(){
   </div>`;
 }
 
+/* The line at the top works as the old system's barcode generator did: scan or type the item, check the
+   MRP and the selling price (changed here they are the label's own — the product keeps its prices), type
+   how many, F12 prints them at once. "+ Add to list" gathers several items for one run instead. */
 function labels(){
-  const e=LAB.entry, p=e?P(e.pid):(LAB.queue.length?P(LAB.queue.at(-1).pid):null);
+  const ql=LAB.ql&&P(LAB.ql.pid)?LAB.ql:null, qp=ql?P(ql.pid):null;
+  const p=qp||(LAB.queue.length?P(LAB.queue.at(-1).pid):null);
   const total=labelTotal();
-  const style=LABTYPES.find(t=>t[0]===LAB.type);
   return `<div class="pos labpos">
-   <div class="card search">${e
-     ? `<div class="entry">
-         <div class="ename">${P(e.pid).name} <span class="muted">${P(e.pid).code} · ${P(e.pid).barcode||'a barcode will be made'} · ${fq(P(e.pid).stock)} ${P(e.pid).unit} in stock</span></div>
-         <div class="esteps">
-           <div class="estep on"><label>How many labels?</label><input id="labQty" type="number" min="1" step="1" value="${e.qty}"></div>
-           <div class="estep"><label>Style</label><div class="eval">${style[1]}</div></div>
-           <div class="estep"><label>Price on the label</label><div class="eval">${fmt(P(e.pid)[LAB.priceUsing])}</div></div>
-         </div>
-         <div class="ehint">Enter to add · Esc to cancel · the style and price come from the panel on the right</div>
-        </div>`
-     : `<input id="labQ" placeholder="Scan a barcode, or type the item name or code…  (F1)" autocomplete="off"><div id="labSug"></div>`}
+   <div class="card search qlab">
+    <div class="qlab-row">
+     <div class="f qbc"><label>Barcode / name <i>F1</i></label><input id="labQ" placeholder="Scan, or type the name or code…" autocomplete="off" value="${qp?escM(String(qp.barcode||qp.code||'')):''}"><div id="labSug"></div></div>
+     <div class="f qnm"><label>Item</label><div class="qlab-nm">${qp?`<b>${escM(qp.name)}</b><span class="muted">${escM(qp.code||'')} · ${fq(qp.stock)} ${escM(qp.unit||'')} in stock${+qp.mrp>0?'':' · no MRP on file'}</span>`:'<span class="muted">—</span>'}</div></div>
+     <div class="f qn"><label>MRP Rs.</label><input id="qlMrp" type="number" step="any" min="0" value="${ql&&+ql.mrp>0?ql.mrp:''}" placeholder="none" ${ql?'':'disabled'}></div>
+     <div class="f qn"><label>Selling price</label><input id="qlPrice" type="number" step="any" min="0" value="${ql?ql.price:''}" ${ql?'':'disabled'}></div>
+     <div class="f qc"><label>No. of copies</label><input id="qlCopies" type="number" min="1" step="1" value="${ql?ql.copies:1}" ${ql?'':'disabled'}></div>
+     <button class="btn tape qprint" data-act="qlPrint" ${ql?'':'disabled'}>PRINT <i>F12</i></button>
+     <button class="btn ghost qadd" data-act="qlAdd" ${ql?'':'disabled'} title="Gather several items, then print them together">+ Add to list</button>
+    </div>
+    <div class="qlab-types">${LABTYPES.map(t=>`<label class="${LAB.type===t[0]?'on':''}"><input type="radio" name="qlType" value="${t[0]}" ${LAB.type===t[0]?'checked':''}> ${t[1]}${t[2]?` <i>${t[2]}</i>`:''}</label>`).join('')}</div>
    </div>
 
    <div class="card items">
@@ -24296,7 +24322,7 @@ function labels(){
       <td class="n">${fmt(x.price)}</td>
       <td class="n"><input type="number" min="1" value="${x.copies}" data-labedit="${i}"></td>
       <td><button class="btn ghost sm" data-act="labDel" data-i="${i}">✕</button></td></tr>`}).join('')
-      :'<tr><td colspan="6" class="muted" style="padding:34px;text-align:center">Scan or search for an item, type how many labels you want, press Enter. Add as many items as you like, then print the whole sheet in one go.</td></tr>'}
+      :'<tr><td colspan="6" class="muted" style="padding:34px;text-align:center">For one item: scan it on the line above, type how many, press <b>F12</b> — it prints at once.<br>For many: press <b>+ Add to list</b> for each, then <b>Print all labels (F10)</b>.</td></tr>'}
     </table>
    </div>
 
@@ -24326,7 +24352,7 @@ function labels(){
     </div>
 
     <div class="card"><div class="muted">Preview</div>
-     <div class="labprev" style="padding:9px">${p?labelHtml(p,LAB.type,{price:p[LAB.priceUsing],mf:LAB.mf,exp:LAB.exp,batch:LAB.batch,d1:LAB.d1,d2:LAB.d2,d3:LAB.d3}):'<div class="muted">Nothing chosen yet.</div>'}</div>
+     <div class="labprev" style="padding:9px">${p?labelHtml(p,LAB.type,{price:ql?ql.price:p[LAB.priceUsing],mrp:ql?ql.mrp:undefined,mf:LAB.mf,exp:LAB.exp,batch:LAB.batch,d1:LAB.d1,d2:LAB.d2,d3:LAB.d3}):'<div class="muted">Nothing chosen yet.</div>'}</div>
      <div class="muted" style="margin-top:6px">${LAB.type==='roll'?`Code 128 — scans back as ${p?escM(String(p.barcode||p.code||'')):'the code'}`:'Real EAN-13 — the till will read it.'}</div></div>
 
     <div class="card"><div class="muted" style="text-align:right">Labels on the sheet</div>
@@ -24341,30 +24367,31 @@ function labels(){
     </div>
    </div>
 
-   <div class="keys"><span><b>F1</b>item</span><span><b>Enter</b>add</span><span><b>F7</b>Zebra roll</span><span><b>F4</b>standard</span><span><b>F5</b>small</span><span><b>F6</b>with MRP</span><span><b>F10</b>print the sheet</span><span><b>Esc</b>back</span></div>
+   <div class="keys"><span><b>F1</b>item</span><span><b>Enter</b>next box</span><span><b>F12</b>print now</span><span><b>F7</b>Zebra roll</span><span><b>F4</b>standard</span><span><b>F5</b>small</span><span><b>F6</b>with MRP</span><span><b>F10</b>print the list</span><span><b>Esc</b>back</span></div>
   </div>`;
 }
 let labSug=[], labIdx=0;
 function labelsAfter(){
-  if(LAB.entry){
-    const f=$('#labQty'); if(!f)return;
-    f.focus(); f.select();
-    f.onkeydown=ev=>{
-      if(ev.key==='Enter'){ ev.preventDefault();
-        const n=Math.floor(+f.value||0);
-        if(!(n>0)){toast('How many labels?');return}
-        labelAdd(LAB.entry.pid,n,LAB.type); LAB.entry=null; render();
-        toast(`${n} label${n===1?'':'s'} added · ${labelTotal()} on the sheet`) }
-      if(ev.key==='Escape'){ ev.preventDefault(); LAB.entry=null; render() }
-    };
-    return;
-  }
   const q=$('#labQ'); if(!q)return;
-  labSug=[]; labIdx=0; drawLabSug(); q.value=''; q.focus();
+  labSug=[]; labIdx=0; drawLabSug();
+  // the line: Enter steps on — MRP, selling price, copies — and Enter on copies prints
+  const ql=LAB.ql, mrp=$('#qlMrp'), pr=$('#qlPrice'), cp=$('#qlCopies');
+  if(ql&&mrp){
+    const keep=()=>{ ql.mrp=mrp.value===''?0:+mrp.value; ql.price=+pr.value||0; ql.copies=Math.max(1,Math.floor(+cp.value||1)) };
+    [mrp,pr,cp].forEach(el=>{ el.oninput=keep; el.onfocus=()=>el.select() });
+    mrp.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); pr.focus() } };
+    pr.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); cp.focus() } };
+    cp.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); keep(); labelQuickPrint() } };
+    // only the preview is redrawn as the prices change, so the cursor stays where it is
+    const prev=()=>{ const box=document.querySelector('.labprev'), p=P(ql.pid); if(box&&p) box.innerHTML=labelHtml(p,LAB.type,{price:ql.price,mrp:ql.mrp,mf:LAB.mf,exp:LAB.exp,batch:LAB.batch,d1:LAB.d1,d2:LAB.d2,d3:LAB.d3}) };
+    [mrp,pr].forEach(el=>el.onchange=()=>{ keep(); prev() });
+    cp.focus(); cp.select();
+  } else { q.value=''; q.focus() }
+  q.addEventListener('focus',()=>q.select());
   q.addEventListener('input',()=>{
     const v=q.value.trim().toLowerCase();
     const exact=S.products.find(x=>x.barcode===v);
-    if(exact){ q.value=''; labSug=[]; startLabel(exact.id); return }
+    if(exact){ labSug=[]; startLabel(exact.id); return }
     labSug=v?S.products.filter(x=>x.name.toLowerCase().includes(v)||x.code.toLowerCase().includes(v)).slice(0,8):[];
     labIdx=0; drawLabSug();
   });
@@ -24373,15 +24400,18 @@ function labelsAfter(){
     else if(ev.key==='ArrowUp'){labIdx=Math.max(labIdx-1,0);drawLabSug();ev.preventDefault()}
     else if(ev.key==='Enter'){ ev.preventDefault();
       const typed=q.value.trim();
+      if(LAB.ql&&q.value===String(P(LAB.ql.pid).barcode||P(LAB.ql.pid).code||'')){ $('#qlCopies')&&$('#qlCopies').focus(); return }
       if(typed&&labSug.length) startLabel(labSug[labIdx].id);
       else if(typed) toast('No item matches “'+typed+'”');
       else if(LAB.queue.length) labelSheet() }
+    else if(ev.key==='Escape'&&LAB.ql){ ev.preventDefault(); LAB.ql=null; render() }
   });
   document.querySelectorAll('[data-labedit]').forEach(inp=>inp.onchange=()=>{
     const n=Math.floor(+inp.value||0), i=+inp.dataset.labedit;
     if(n>0) LAB.queue[i].copies=n; else LAB.queue.splice(i,1);
     render()});
   const sel=$('#labType'); if(sel) sel.onchange=e=>{LAB.type=e.target.value;render()};
+  document.querySelectorAll('input[name="qlType"]').forEach(r=>r.onchange=()=>{ LAB.type=r.value; render() });
   document.querySelectorAll('[data-roll]').forEach(inp=>inp.onchange=()=>{ const v=+inp.value; if(!(v>=0)) return;
     CFG.labelRoll={...rollCfg(),[inp.dataset.roll]:inp.dataset.roll==='across'?Math.max(1,Math.round(v)):v}; persist(true); render() });
   const bind=(id,k)=>{const el=$('#'+id); if(el)el.onchange=ev=>{LAB[k]=ev.target.value;render()}};
@@ -24395,7 +24425,19 @@ function drawLabSug(){
     <span>${fmt(x[LAB.priceUsing])} · ${x.barcode?'has a barcode':'<b>no barcode</b>'}</span></div>`).join('')}</div>`:'';
   document.querySelectorAll('#labSug [data-labpid]').forEach(el=>el.addEventListener('mousedown',()=>startLabel(+el.dataset.labpid)));
 }
-function startLabel(pid){ LAB.entry={pid,qty:1}; render() }
+function startLabel(pid){ const p=P(pid); LAB.entry=null; LAB.ql={pid,mrp:+p.mrp>0?+p.mrp:0,price:+p[LAB.priceUsing]||+p.retail||0,copies:1}; render() }
+const labQuickItem=()=>{ const ql=LAB.ql, p=P(ql.pid); if(!p.barcode) p.barcode=normaliseBarcode('2'+String(p.id).padStart(11,'0'));
+  return {pid:ql.pid,copies:Math.max(1,Math.floor(+ql.copies||1)),type:LAB.type,price:+ql.price||0,mrp:+ql.mrp||0,mf:LAB.mf,exp:LAB.exp,batch:LAB.batch,d1:LAB.d1,d2:LAB.d2,d3:LAB.d3} };
+// F12: this item, this many, now — then the line is clear for the next
+function labelQuickPrint(){
+  if(!LAB.ql) return LAB.queue.length?labelSheet():toast('Scan or type an item first');
+  const it=labQuickItem(); LAB.ql=null; render(); labelSheet([it]);
+}
+function labelQuickAdd(){
+  if(!LAB.ql) return toast('Scan or type an item first');
+  const it=labQuickItem(); LAB.queue.push(it); LAB.ql=null; render();
+  toast(`${it.copies} label${it.copies===1?'':'s'} added · ${labelTotal()} on the list`);
+}
 
 function labelAdd(pid,copies,type){
   const p=P(pid);
@@ -24515,9 +24557,9 @@ function labelRollPrint(list){
   w.document.close();
   toast(`${labels.length} label${labels.length===1?'':'s'} · ${rows.length} row${rows.length===1?'':'s'} of ${r.across} · paper ${pageW} × ${r.h} mm`);
 }
-function labelSheet(){
-  if(!LAB.queue.length) return toast('Add something to the sheet first');
-  const roll=LAB.queue.filter(x=>x.type==='roll'), rest=LAB.queue.filter(x=>x.type!=='roll');
+function labelSheet(list=LAB.queue){
+  if(!list.length) return toast('Add something to the sheet first');
+  const roll=list.filter(x=>x.type==='roll'), rest=list.filter(x=>x.type!=='roll');
   if(roll.length) labelRollSend(roll);
   if(!rest.length) return;
   const all=[];
@@ -28265,7 +28307,9 @@ document.addEventListener('click',e=>{
     labDel:()=>{LAB.queue.splice(+a.dataset.i,1);render()},
     labClear:()=>{LAB.queue=[];render()},
     labPrint:()=>labelSheet(),
-    labTest:()=>{ const pid=(LAB.queue[0]&&LAB.queue[0].pid)||(LAB.entry&&LAB.entry.pid)||(S.products.find(p=>p.active!==false)||{}).id; if(!pid) return toast('Add an item first');
+    qlPrint:()=>labelQuickPrint(),
+    qlAdd:()=>labelQuickAdd(),
+    labTest:()=>{ const pid=(LAB.ql&&LAB.ql.pid)||(LAB.queue[0]&&LAB.queue[0].pid)||(S.products.find(p=>p.active!==false)||{}).id; if(!pid) return toast('Add an item first');
       labelRollSend([{pid,copies:rollCfg().across,type:'roll',price:P(pid)[LAB.priceUsing]}],true) },
     labLow:()=>{S.products.filter(x=>x.stock<=x.min).forEach(x=>labelAdd(x.id,1,LAB.type));render();toast(labelTotal()+' labels on the sheet')},
     labGrn:()=>{const last=S.purchases.at(-1); if(!last)return toast('No deliveries yet');
@@ -28479,14 +28523,15 @@ document.addEventListener('keydown',e=>{
     if(e.key==='F1'){ e.preventDefault();
       CS={...CS,pid:null,q:'',qty:1,price:0,disc:0,focus:'',editLine:null}; render();   // F1 from the bill brings you back to the item row
       const f=$('#csQ'); if(f){f.focus();f.select()} return }
-  } if(e.key==='F7'&&S.view!=='pos'){e.preventDefault();go('receipts')}
+  } if(e.key==='F7'&&S.view!=='pos'&&S.view!=='labels'){e.preventDefault();go('receipts')}   // on Labels, F7 is the Zebra roll
   if(S.view==='labels'&&!document.querySelector('.modal')){
     if(e.key==='F1'){e.preventDefault();$('#labQ')&&$('#labQ').focus()}
     if(e.key==='F4'){e.preventDefault();LAB.type='s1';render()}
     if(e.key==='F5'){e.preventDefault();LAB.type='s2';render()}
     if(e.key==='F6'){e.preventDefault();LAB.type='s3';render()}
     if(e.key==='F7'){e.preventDefault();LAB.type='roll';render()}
-    if(e.key==='F12'||e.key==='F10'){e.preventDefault();labelSheet()}
+    if(e.key==='F12'){e.preventDefault();labelQuickPrint()}
+    if(e.key==='F10'){e.preventDefault();labelSheet()}
   }
   if(S.view!=='pos'||document.querySelector('.modal'))return;
   if(e.key==='F1'){e.preventDefault();$('#q').focus()}
