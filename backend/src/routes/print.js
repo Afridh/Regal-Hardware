@@ -39,7 +39,9 @@ function ensureTable() {
       done_at timestamptz);
     CREATE INDEX IF NOT EXISTS idx_print_jobs_status ON print_jobs (status, id);
     CREATE TABLE IF NOT EXISTS print_helper (
-      one boolean PRIMARY KEY DEFAULT true, seen_at timestamptz, printers jsonb)`)
+      one boolean PRIMARY KEY DEFAULT true, seen_at timestamptz, printers jsonb);
+    CREATE TABLE IF NOT EXISTS print_knock (
+      one boolean PRIMARY KEY DEFAULT true, seen_at timestamptz)`)
     .catch(e => { ready = null; throw e; });
   return ready;
 }
@@ -53,7 +55,17 @@ async function helperSeen(printers) {
 }
 async function helperState() {
   const { rows: [h] } = await query(`SELECT seen_at, printers, EXTRACT(EPOCH FROM (now() - seen_at))::int AS ago FROM print_helper WHERE one`);
-  return { alive: !!h && h.ago <= HELPER_ALIVE_S, ago: h ? h.ago : null, printers: h ? h.printers : null };
+  // a helper that is asking, but with a key this server does not have, is a different trouble from one that is off
+  const { rows: [k] } = await query(`SELECT EXTRACT(EPOCH FROM (now() - seen_at))::int AS ago FROM print_knock WHERE one`).catch(() => ({ rows: [] }));
+  const wrongKey = !!k && k.ago <= HELPER_ALIVE_S && !(h && h.ago <= k.ago);
+  return { alive: !!h && h.ago <= HELPER_ALIVE_S, ago: h ? h.ago : null, printers: h ? h.printers : null, wrongKey };
+}
+/* Someone asked for work with the wrong key (or this server has none set). Kept so the till can say
+   "the printer is there, but the server does not know its key" rather than "not heard from in days". */
+async function wrongKeyKnock() {
+  try { await ensureTable();
+    await query(`INSERT INTO print_knock (one, seen_at) VALUES (true, now()) ON CONFLICT (one) DO UPDATE SET seen_at = now()`);
+  } catch { /* only for the message */ }
 }
 
 const deviceOk = (req) => {
@@ -73,7 +85,9 @@ r.post('/', regalAuth, asyncHandler(async (req, res) => {
   await ensureTable();
   // a queue nobody collects is worse than no queue: if that PC is not listening, say so and let the till print here
   const h = await helperState();
-  if (!h.alive && req.body.force !== true) throw new HttpError(503, h.ago == null
+  if (!h.alive && req.body.force !== true) throw new HttpError(503, h.wrongKey
+    ? 'The shop printer PC is asking for bills, but this server does not know its key. In cPanel set PRINT_DEVICE_KEY to the "key" in the print helper\'s config.local.json, then restart the app.'
+    : h.ago == null
     ? 'The shop printer has never asked for work — start the print helper on the PC the printers are on'
     : `The shop printer was last heard from ${Math.round(h.ago / 60)} minutes ago`);
   const { rows: [row] } = await query(
@@ -90,7 +104,7 @@ const HOLD_MS = 25000, LOOK_EVERY = 200;
 const nap = (ms) => new Promise(r => setTimeout(r, ms));
 
 r.get('/next', asyncHandler(async (req, res) => {
-  if (!deviceOk(req)) throw new HttpError(403, 'Wrong device key');
+  if (!deviceOk(req)) { await wrongKeyKnock(); throw new HttpError(403, 'Wrong device key'); }
   await ensureTable();
   // every ask is the helper saying it is there, and what it can print on
   let printers = null; if (req.query.printers) { try { printers = JSON.parse(String(req.query.printers)) } catch { /* only for the screen */ } }
@@ -178,7 +192,7 @@ r.get('/status', regalAuth, asyncHandler(async (_req, res) => {
   await ensureTable();
   const { rows: [w] } = await query(`SELECT count(*)::int AS waiting FROM print_jobs WHERE status IN ('waiting','taken')`);
   const h = await helperState();
-  res.json({ ok: true, helper: h.alive, seenSecondsAgo: h.ago, printers: h.printers, waiting: w.waiting });
+  res.json({ ok: true, helper: h.alive, seenSecondsAgo: h.ago, printers: h.printers, waiting: w.waiting, wrongKey: h.wrongKey });
 }));
 
 export default r;
