@@ -100,6 +100,8 @@ function catalogOf(data, pending = [], media = {}) {
   const listed = p => w.listMode === 'selected' ? p.web === true : p.web !== false;
   const products = (S.products || []).filter(p => p.active !== false && !p.hidden && listed(p)).map(p => ({
     id: p.id, code: p.code, num: p.num || '', short: p.short || '', name: p.name, cat: p.cat || 'Other', unit: p.unit || '',
+    // the department the till keeps the category in (Products → Categories), and the code it had before
+    dept: p.dept || (CFG.catalog && CFG.catalog.deptOf && CFG.catalog.deptOf[p.cat]) || '', oldCode: p.oldCode || undefined,
     // a product may carry a price of its own for the site; where it does, that is the price
     mrp: +p.mrp || 0, price: +(+p.webPrice > 0 ? p.webPrice : (w.level === 'wholesale' ? p.wholesale : p.retail)) || 0,
     ownPrice: +p.webPrice > 0 || undefined,
@@ -115,7 +117,7 @@ function catalogOf(data, pending = [], media = {}) {
   const strip = prefix => Object.keys(media).filter(k => k.startsWith(prefix)).sort().map(k => ({ src: pic(k), link: media[k].link || '' }));
   return {
     shop: { name: CFG.shop?.name || 'Regal Hardware', addr: CFG.shop?.addr || '', phone: CFG.shop?.phone || '', land: CFG.shop?.land || '', tags: CFG.shop?.tags || '', hours: CFG.shop?.hours || '', logo: pic('logo') || CFG.shop?.logo || '' },
-    settings: { open: !!w.open, name: w.name, domain: w.domain, staffPath: w.staffPath || '/pos', hours: w.hours, delivery: +w.delivery || 0, freeOver: +w.freeOver || 0, minOrder: +w.minOrder || 0, payNote: w.payNote, showOutOfStock: !!w.showOutOfStock || !tracked, tracked,
+    settings: { depts: (CFG.catalog && Array.isArray(CFG.catalog.depts)) ? CFG.catalog.depts : [], open: !!w.open, name: w.name, domain: w.domain, staffPath: w.staffPath || '/pos', hours: w.hours, delivery: +w.delivery || 0, freeOver: +w.freeOver || 0, minOrder: +w.minOrder || 0, payNote: w.payNote, showOutOfStock: !!w.showOutOfStock || !tracked, tracked,
       /* Only what a customer may see: a zone's name and what it costs, never the shop's notes.
          Codes are never listed — a code has to be typed to be worth anything. */
       zones: (Array.isArray(w.zones) ? w.zones : []).filter(z => z && z.name)

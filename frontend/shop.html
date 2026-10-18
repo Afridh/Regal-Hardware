@@ -1881,7 +1881,12 @@ const CAT_PHOTOS = {
   'CONCRETE NAIL': 'nails', 'ABC BOX': 'electrical-box', 'ENAMAL': 'enamel', 'LED BULB N/W': 'led-bulb',
   // the departments
   'LIGHTING': 'dept-lighting', 'WIRING ITEMS': 'dept-wiring', 'TOOLS, MACHINES & ACCESSORIES': 'dept-machineries', 'PAINTS & COATINGS': 'dept-paints',
-  'DOOR LOCKS': 'door-lock', 'CONSTRUCTION ITEMS': 'dept-construction', 'NUT & BOLTS': 'dept-nuts-bolts', 'HAND TOOLS': 'dept-hand-tools'
+  'DOOR LOCKS': 'door-lock', 'CONSTRUCTION ITEMS': 'dept-construction', 'NUT & BOLTS': 'dept-nuts-bolts', 'HAND TOOLS': 'dept-hand-tools',
+  // the tidied departments and categories (Products → Categories at the till)
+  'PVC PIPES & FITTINGS': 'dept-pvc', 'LOCKS & DOOR HARDWARE': 'door-lock', 'BUILDING & CONSTRUCTION': 'dept-construction', 'SCREWS, NAILS & FASTENERS': 'dept-nuts-bolts',
+  'SWITCHES & SOCKETS': 'switches', 'BLACK SCREW NAILS': 'screws', 'ASIAN PAINTS BASE': 'paint-base', 'PVC FITTINGS': 'dept-pvc', 'POP RIVETS': 'pop-rivets', 'PADLOCKS': 'padlock',
+  'SCREWDRIVERS': 'screwdriver', 'DRILL BITS': 'drill-bit', 'BALL VALVES': 'valve', 'TOOL KITS': 'tools', 'LED PANELS': 'led-panel', 'CONCRETE NAILS': 'nails', 'ABC BOXES': 'electrical-box',
+  'ENAMEL PAINT': 'enamel', 'LED BULBS': 'led-bulb'
 };
 const catKey = (n) => String(n || '').toUpperCase().replace(/\s+/g, ' ').trim();
 const stockPhoto = (c) => (c && !c.img && CAT_PHOTOS[catKey(c.name)]) ? '/img/categories/' + CAT_PHOTOS[catKey(c.name)] + '.webp' : '';
@@ -1902,12 +1907,18 @@ const DEPTS = [
   ['Others', ''],
 ].map(([name, list]) => ({ name, cats: new Set(list ? list.split('|') : []) }));
 const DEPT_OF = new Map(DEPTS.flatMap(d => [...d.cats].map(c => [c, d.name])));
-const deptOf = (cat) => DEPT_OF.get(catKey(cat)) || 'Others';
+let CAT_DEPT = new Map();          // category -> department, as the till keeps them (Products → Categories)
+const deptOf = (cat) => CAT_DEPT.get(cat) || DEPT_OF.get(catKey(cat)) || 'Others';
 const isDept = (name) => DEPTS.some(d => d.name === name);
 /* is this product in that department, or in that one category? */
 const inCatOf = (p, cat) => isDept(cat) ? deptOf(p.cat) === cat : p.cat === cat;
 /* the catalogue's categories become the departments; the till's own are kept as the smaller ones in them */
 function groupCatalog(cat) {
+  // a till that has tidied its categories says which department each is in, and in what order they go
+  CAT_DEPT = new Map(cat.products.filter(p => p.dept).map(p => [p.cat, p.dept]));
+  const order = (cat.settings && Array.isArray(cat.settings.depts)) ? cat.settings.depts : [];
+  if (order.length) { const had = new Map(DEPTS.map(d => [d.name, d]));
+    DEPTS.length = 0; [...order, ...(order.includes('Others') ? [] : ['Others'])].forEach(n => DEPTS.push(had.get(n) || { name: n, cats: new Set() })); }
   const subs = cat.subcats || cat.categories || [];
   const count = {};
   cat.products.forEach(p => { const d = deptOf(p.cat); count[d] = (count[d] || 0) + 1; });
@@ -2128,7 +2139,7 @@ const pvcPhoto = (p) => {
   const hit = PVC_PHOTOS.find(([re]) => re.test(n));
   return hit ? '/img/products/slon/' + hit[1] + '.webp' : '';
 };
-const productPhoto = (p) => { const f = p && PRODUCT_PHOTOS[p.code]; return f ? '/img/products/' + (f.includes('/') ? f : 'kevilton/' + f) : pvcPhoto(p); };
+const productPhoto = (p) => { const f = p && (PRODUCT_PHOTOS[p.oldCode] || PRODUCT_PHOTOS[p.code]); return f ? '/img/products/' + (f.includes('/') ? f : 'kevilton/' + f) : pvcPhoto(p); };
 
 /* A product's own picture, or the stand-in. */
 function tile(p, small) {
@@ -2636,7 +2647,7 @@ setInterval(() => {
 function dealSection(T, s) {
   const d = T.deal || {};
   if (!d.code && DEAL_FEATURES.length) { const html = dealFeature(); if (html) return html; }
-  let p = d.code ? st.cat.products.find(x => String(x.code).toLowerCase() === String(d.code).toLowerCase().trim()) : null;
+  let p = d.code ? st.cat.products.find(x => [x.code, x.oldCode].some(c => c && String(c).toLowerCase() === String(d.code).toLowerCase().trim())) : null;
   if (!p) p = saleList()[0];
   if (!p) return '';
   const ends = d.ends ? new Date(d.ends) : null, live = ends && ends > new Date();
@@ -3699,23 +3710,25 @@ const SHOP_MOVE = {
 };
 function tidyCatalog(cat) {
   const fix = (t) => SHOP_RENAME.reduce((a, [re, to]) => a.replace(re, to), String(t || ''));
-  cat.products.forEach(p => { p.name = fix(p.name); p.cat = SHOP_MOVE[p.code] || fix(p.cat); });
+  cat.products.forEach(p => { p.name = fix(p.name); if (!p.dept) p.cat = SHOP_MOVE[p.oldCode || p.code] || fix(p.cat); });   // a tidied till's own category stands
   const count = {}; cat.products.forEach(p => { count[p.cat] = (count[p.cat] || 0) + 1; });
   const cats = new Map((cat.categories || []).map(c => [fix(c.name), { ...c, name: fix(c.name) }]));
   Object.keys(count).forEach(n => { if (!cats.has(n)) cats.set(n, { name: n, count: 0, img: '' }); });
   cat.categories = [...cats.values()].map(c => ({ ...c, count: count[c.name] || 0 })).filter(c => c.count);
 }
 function addWebOnly(cat) {
-  const have = new Set(cat.products.map(p => p.code));
+  const have = new Set(cat.products.flatMap(p => [p.code, p.oldCode].filter(Boolean)));
+  // a tidied till names these categories differently: theirs is used, so the goods sit with the rest
+  const tidied = cat.products.some(p => p.dept), CAT_NOW = { SWITCHES: 'Switches & Sockets', 'PLUG BASS': 'Plug Bases' };
   WEB_ONLY.filter(([code]) => !have.has(code)).forEach(([code, name, dept, mrp, price]) => cat.products.push(
-    { id: 'web-' + code, code, name, cat: dept, unit: 'pcs', mrp, price, stock: null, img: '', desc: '', warranty: 0, sold: 0, featured: false, webOnly: true }));
+    { id: 'web-' + code, code, name, cat: tidied ? (CAT_NOW[dept] || dept) : dept, ...(tidied ? { dept: 'Switches' } : {}), unit: 'pcs', mrp, price, stock: null, img: '', desc: '', warranty: 0, sold: 0, featured: false, webOnly: true }));
 }
 const askOnWhatsApp = (p) => 'https://wa.me/' + waLinkNo() + '?text=' + encodeURIComponent(`Hello ${shopName()}, I'd like to order ${p.name} (${p.code}).`);
 async function loadCatalog() {
   try {
     // once — it is the whole shop (thousands of items), and asking twice made every visit wait twice
     const live = await api('/catalog');
-    if (live && Array.isArray(live.products)) { live.products = live.products.filter(p => !NOT_ONLINE.has(p.code)); if (live.products.length) { addWebOnly(live); tidyCatalog(live); groupCatalog(live); groupVariants(live); } }
+    if (live && Array.isArray(live.products)) { live.products = live.products.filter(p => !NOT_ONLINE.has(p.code) && !NOT_ONLINE.has(p.oldCode)); if (live.products.length) { addWebOnly(live); tidyCatalog(live); groupCatalog(live); groupVariants(live); } }
     if (live && live.products && live.products.length > 0) { st.cat = live; keepLook(live); }
     else st.cat = live || st.cat;
   } catch (e) {
