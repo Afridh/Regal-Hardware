@@ -11039,6 +11039,17 @@ function ordPopsSync(){
     if(!b.querySelector('[id^="ob-"] input')) popDraw(b,ordDetail(o)) }
   else if(om||ordOpen) ordClose();
 }
+/* F1 belongs to the till, never to the browser: anywhere in it — any page, a popup open — the browser's
+   help page must not open. On a page without its own F1, it goes to that page's search box. */
+window.addEventListener('keydown',e=>{
+  if(e.key!=='F1') return;
+  e.preventDefault();
+  if(S.view==='pos'||S.view==='labels') return;   // their own F1 is further on
+  const box=document.querySelector('.modal input:not([type=hidden]):not([disabled])')
+    ||[...document.querySelectorAll('#main input[type=search],#main input[placeholder*="earch"],#main input[placeholder*="search"]')].find(el=>el.offsetParent);
+  if(box){ box.focus(); if(box.select) box.select() }
+},true);
+window.onhelp=()=>false;   // the older Edge's own help key
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape'||e.defaultPrevented) return;
   if(document.querySelector('.modal.askbox')) return;          // the writing window closes itself
