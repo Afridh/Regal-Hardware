@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 
@@ -20,7 +21,24 @@ const chrome = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Pro
   'C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
 if (!chrome) { console.error('No Chrome, Brave or Edge found to render bills with'); process.exit(1); }
 const tmp = path.join(os.tmpdir(), 'regal-print'); fs.mkdirSync(tmp, { recursive: true });
-const log = (...a) => console.log(new Date().toLocaleTimeString('en-GB'), ...a);
+// what was printed, when and from where — on the screen and in helper.log beside this file (kept to the last ~2MB)
+const LOG = path.join(here, 'helper.log');
+const log = (...a) => {
+  const line = new Date().toLocaleString('en-GB') + ' ' + a.join(' ');
+  console.log(line);
+  try { if (fs.existsSync(LOG) && fs.statSync(LOG).size > 2e6) fs.renameSync(LOG, LOG + '.old'); fs.appendFileSync(LOG, line + '\r\n'); } catch { /* the screen still has it */ }
+};
+/* The same bill arriving twice within a few seconds — sent here and to the shop's queue, or sent again
+   while the first was still on its way — is printed once. A reprint asked for later still prints. */
+const SAME_WITHIN_MS = 30 * 1000;
+const lately = new Map();
+function seenJustNow(format, html) {
+  const now = Date.now();
+  for (const [k, t] of lately) if (now - t > SAME_WITHIN_MS) lately.delete(k);
+  const k = format + ':' + createHash('sha1').update(String(html)).digest('hex');
+  if (lately.has(k)) return true;
+  lately.set(k, now); return false;
+}
 
 let browser = null;
 /* One page per format, kept open between bills, with what was in it last time. */
@@ -173,6 +191,11 @@ async function takeJobs() {
         log('queue job', job.id, '→ labels on', printer);
         return true;
       }
+      if (seenJustNow(job.format, job.html)) {
+        await say(job.id, { ok: true, printer: cfg[job.format].printer });
+        log('queue job', job.id, job.no || '', 'NOT printed again — the same bill was printed seconds ago');
+        return true;
+      }
       const t0 = Date.now(); let tDraw = 0;
       const run = busy.then(async () => {
         const file = await render(job.format, job.html);
@@ -230,6 +253,8 @@ http.createServer(async (req, res) => {
     req.on('end', async () => {
       let job; try { job = JSON.parse(body); } catch { return send(res, 400, { ok: false, error: 'bad request' }); }
       if (!job.html || !cfg[job.format]) return send(res, 400, { ok: false, error: 'format and html needed' });
+      if (seenJustNow(job.format, job.html)) { log(job.format, job.no || '', 'NOT printed again — the same bill was printed seconds ago');
+        return send(res, 200, { ok: true, printer: cfg[job.format].printer, again: false }); }
       // one at a time, in order — two bills never fight over the printer
       const t0 = Date.now(); let tDraw = 0;
       const run = busy.then(async () => {
