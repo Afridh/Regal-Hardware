@@ -954,7 +954,16 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 .qprint i{background:rgba(255,255,255,.25)}
 .qadd{height:42px;white-space:nowrap}
 .qadd i{font-style:normal;font-family:Archivo,sans-serif;font-size:10px;background:var(--ink);color:#fff;border-radius:2px;padding:0 5px;margin-left:4px}
-.qlab #labSug{position:absolute;left:0;top:100%;z-index:20;width:min(560px,90vw)}
+.qlab #labSug{position:absolute;left:0;top:100%;z-index:20;width:min(680px,92vw)}
+.qlab .labsug{position:static;max-height:360px;overflow:auto;margin-top:3px;border-radius:var(--r)}
+.labsug>div[data-labpid]{display:grid;grid-template-columns:70px minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 10px;cursor:pointer;border-bottom:1px solid var(--line2)}
+.labsug>div.on{background:var(--ink);color:#fff}
+.labsug>div.on .muted{color:rgba(255,255,255,.7)}
+.labsug .lsb{font-family:Archivo,sans-serif;font-size:15px}
+.labsug .lsn{min-width:0;display:flex;flex-direction:column;font-size:13.5px}
+.labsug .lsn small,.labsug .lsp small{font-size:11.5px}
+.labsug .lsp{text-align:right;display:flex;flex-direction:column;font-weight:700;font-size:13px;white-space:nowrap}
+.labsug .lsk{position:sticky;bottom:0;background:var(--panel);padding:5px 10px;font-size:11.5px;text-align:right}
 .qlab-types{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line2)}
 .qlab-types label{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--steel)}
 .qlab-types label.on{color:var(--ink);font-weight:700}
@@ -24398,24 +24407,23 @@ function labelsAfter(){
     cp.focus(); cp.select();
   } else { q.value=''; q.focus() }
   q.addEventListener('focus',()=>q.select());
-  q.addEventListener('input',()=>{
-    const v=q.value.trim().toLowerCase();
-    const exact=S.products.find(x=>x.barcode===v);
-    if(exact){ labSug=[]; startLabel(exact.id); return }
-    labSug=v?S.products.filter(x=>x.name.toLowerCase().includes(v)||x.code.toLowerCase().includes(v)).slice(0,8):[];
-    labIdx=0; drawLabSug();
-  });
+  // typing only fills the list below; nothing is picked until Enter (a scanner sends its own Enter)
+  q.addEventListener('input',()=>{ labSug=labFind(q.value); labIdx=0; drawLabSug() });
   q.addEventListener('keydown',ev=>{
-    if(ev.key==='ArrowDown'){labIdx=Math.min(labIdx+1,labSug.length-1);drawLabSug();ev.preventDefault()}
-    else if(ev.key==='ArrowUp'){labIdx=Math.max(labIdx-1,0);drawLabSug();ev.preventDefault()}
+    if(ev.key==='ArrowDown'){ ev.preventDefault(); if(!labSug.length){ labSug=labFind(q.value); labIdx=0 } else labIdx=Math.min(labIdx+1,labSug.length-1); drawLabSug() }
+    else if(ev.key==='ArrowUp'){ ev.preventDefault(); labIdx=Math.max(labIdx-1,0); drawLabSug() }
+    else if(ev.key==='PageDown'){ ev.preventDefault(); labIdx=Math.min(labIdx+5,labSug.length-1); drawLabSug() }
+    else if(ev.key==='PageUp'){ ev.preventDefault(); labIdx=Math.max(labIdx-5,0); drawLabSug() }
     else if(ev.key==='Enter'){ ev.preventDefault();
       const typed=q.value.trim();
-      if(LAB.ql&&q.value===String(P(LAB.ql.pid).barcode||P(LAB.ql.pid).code||'')){ $('#qlCopies')&&$('#qlCopies').focus(); return }
-      if(typed&&labSug.length) startLabel(labSug[labIdx].id);
-      else if(typed) toast('No item matches “'+typed+'”');
-      else if(LAB.queue.length) labelSheet() }
-    else if(ev.key==='Escape'&&LAB.ql){ ev.preventDefault(); LAB.ql=null; render() }
+      if(!labSug.length&&LAB.ql&&typed===String(P(LAB.ql.pid).barcode||P(LAB.ql.pid).code||'')){ $('#qlCopies')&&$('#qlCopies').focus(); return }
+      if(typed&&!labSug.length) labSug=labFind(typed);
+      if(typed&&labSug.length){ const pick=labSug[labIdx]||labSug[0]; labSug=[]; startLabel(pick.id) }
+      else if(typed) toast('No item matches "'+typed+'"');
+      else if(LAB.queue.length) labelQuickPrint() }
+    else if(ev.key==='Escape'){ ev.preventDefault(); if(labSug.length){ labSug=[]; drawLabSug() } else if(LAB.ql){ LAB.ql=null; render() } }
   });
+  q.addEventListener('blur',()=>setTimeout(()=>{ if(document.activeElement!==q){ labSug=[]; drawLabSug() } },150));
   document.querySelectorAll('[data-labedit]').forEach(inp=>inp.onchange=()=>{
     const n=Math.floor(+inp.value||0), i=+inp.dataset.labedit;
     if(n>0) LAB.queue[i].copies=n; else LAB.queue.splice(i,1);
@@ -24428,12 +24436,32 @@ function labelsAfter(){
   bind('labMf','mf'); bind('labExp','exp'); bind('labBatch','batch'); bind('labD1','d1'); bind('labD2','d2');
   document.querySelectorAll('[data-labprice]').forEach(b=>b.onclick=()=>{LAB.priceUsing=b.dataset.labprice;render()});
 }
+/* What the barcode box finds, best first: the exact barcode (or item number, or code), then barcodes that
+   begin with what was typed, then names holding every word typed. */
+function labFind(raw){
+  const v=String(raw||'').trim().toLowerCase(); if(!v) return [];
+  const words=v.split(/\s+/), live=S.products.filter(x=>x.active!==false);
+  const scored=[];
+  for(const x of live){
+    const bc=String(x.barcode||'').toLowerCase(), num=String(x.num||'').toLowerCase(), code=String(x.code||'').toLowerCase(), nm=String(x.name||'').toLowerCase(), sh=String(x.short||'').toLowerCase();
+    let sc=0;
+    if(bc===v||num===v||code===v) sc=100;
+    else if(bc.startsWith(v)||num.startsWith(v)) sc=60-Math.min(20,bc.length-v.length);
+    else if(sh&&sh===v) sc=55;
+    else if(code.includes(v)) sc=40;
+    else if(words.every(w=>nm.includes(w))) sc=nm.startsWith(words[0])?30:20;
+    if(sc) scored.push([sc,x]);
+  }
+  return scored.sort((a,b)=>b[0]-a[0]||a[1].name.localeCompare(b[1].name)).slice(0,30).map(r=>r[1]);
+}
 function drawLabSug(){
   const box=$('#labSug'); if(!box)return;
-  box.innerHTML=labSug.length?`<div class="sug">${labSug.map((x,i)=>`<div class="${i===labIdx?'on':''}" data-labpid="${x.id}">
-    <span>${x.name} <span class="muted">${x.code}</span></span>
-    <span>${fmt(x[LAB.priceUsing])} · ${x.barcode?'has a barcode':'<b>no barcode</b>'}</span></div>`).join('')}</div>`:'';
-  document.querySelectorAll('#labSug [data-labpid]').forEach(el=>el.addEventListener('mousedown',()=>startLabel(+el.dataset.labpid)));
+  box.innerHTML=labSug.length?`<div class="sug labsug">${labSug.map((x,i)=>`<div class="${i===labIdx?'on':''}" data-labpid="${x.id}">
+    <b class="lsb">${escM(String(x.barcode||'—'))}</b><span class="lsn">${escM(x.name)}<small class="muted">${escM(x.code||'')} · ${fq(x.stock)} ${escM(x.unit||'')}</small></span>
+    <span class="lsp">${+x.mrp>0?'MRP '+money2(x.mrp):'<span class="muted">no MRP</span>'}<small class="muted">${money2(x[LAB.priceUsing])}</small></span></div>`).join('')}
+    <div class="lsk muted">↑ ↓ choose · Enter pick · Esc close · ${labSug.length} found</div></div>`:'';
+  const on=box.querySelector('.on'); if(on) on.scrollIntoView({block:'nearest'});
+  box.querySelectorAll('[data-labpid]').forEach(el=>el.addEventListener('mousedown',ev=>{ ev.preventDefault(); labSug=[]; startLabel(+el.dataset.labpid) }));
 }
 function startLabel(pid){ const p=P(pid); LAB.entry=null; LAB.ql={pid,mrp:+p.mrp>0?+p.mrp:0,price:+p[LAB.priceUsing]||+p.retail||0,copies:1}; render() }
 const labQuickItem=()=>{ const ql=LAB.ql, p=P(ql.pid); if(!p.barcode) p.barcode=normaliseBarcode('2'+String(p.id).padStart(11,'0'));
