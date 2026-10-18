@@ -24124,15 +24124,17 @@ function damageMoveModal(no){
 function damageLabel(no){
   const d=S.damages.find(x=>x.no===no); if(!d) return;
   const p=P(d.pid)||{}, s=SU(d.sid)||{};
-  const tag={head:'DAMAGED · RETURN',code:String(d.serial||d.no),l1:`${d.no} · ${fq(d.qty)} ${p.unit||''}`.trim(),l2:String(p.name||'').toUpperCase(),l3:'To: '+(s.name||'')+(d.date?' · '+d.date:'')};
-  rollTagModal(tag,'Damage tag · '+d.no,`<div class="dlbl">
+  const base=String(d.serial||d.no), pieces=Math.max(1,Math.min(200,Math.ceil(+d.qty||1)));
+  const short='D'+(+String(d.no).replace(/\D/g,'')||0);   // the barcode carries the short form, so its bars stay wide on 33 mm
+  const tag=(i,n)=>({head:'DAMAGED · RETURN',code:short+'-'+i,l1:base+'-'+i,l2:String(p.name||'').toUpperCase(),l3:`${d.no} · ${i} of ${n} · To: ${s.name||''}`});
+  rollTagModal(tag,'Damage tags · '+d.no,`<div class="dlbl">
       <div class="dl-top"><b>DAMAGED — RETURN</b><span>${CFG.shop.name}</span></div>
       <div class="dl-bc">${barcode128(d.serial,44)}<div class="dl-code">${d.serial}</div></div>
       <div class="dl-l"><b>${p.name||''}</b></div>
       <div class="dl-r"><span>${d.no}</span><span>${fq(d.qty)} ${p.unit||''}</span></div>
       <div class="dl-r"><span>To: ${s.name||''}</span><span>${d.date}</span></div>
       <div class="dl-w">${d.reason||''}${d.note?' · '+d.note:''}</div>
-    </div>`);
+    </div>`,pieces);
 }
 function damageLabelOld(no){
   const d=S.damages.find(x=>x.no===no); if(!d) return;
@@ -24159,7 +24161,9 @@ function damageScanModal(){
    <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn ghost" data-act="closeModal">Close</button></div>`);
   const out=m.querySelector('#dsOut');
   const look=()=>{ const c=m.querySelector('#dsCode').value.trim().toUpperCase(); if(!c) return out.innerHTML='';
-    const d=S.damages.find(x=>String(x.serial||'').toUpperCase()===c||String(x.no).toUpperCase()===c);
+    const cb=c.replace(/-\d+$/,'');   // DR000012-2 is piece 2 of DR000012
+    const sm=/^D(\d+)(-\d+)?$/.exec(c), num=sm?+sm[1]:null;   // the barcode's short form: D12-2
+    const d=S.damages.find(x=>[c,cb].includes(String(x.serial||'').toUpperCase())||[c,cb].includes(String(x.no).toUpperCase())||(num!==null&&+String(x.no).replace(/\D/g,'')===num));
     if(!d) return out.innerHTML='<div class="msg warn">Nothing matches that code.</div>';
     const p=P(d.pid)||{}, s=SU(d.sid)||{};
     out.innerHTML=`<div class="card"><b>${d.no}</b> · ${p.name||''}
@@ -24276,7 +24280,9 @@ function jobMoveModal(no){
 function jobLabel(no){
   const j=S.jobs.find(x=>x.no===no); if(!j) return;
   const s=j.sid?SU(j.sid):null;
-  const tag={head:'REPAIR JOB',code:String(j.tag||j.no),l1:`${j.no} · ${j.date||''}`,l2:String(j.item||'').toUpperCase(),l3:[jobName(j),j.phone].filter(Boolean).join(' · ')};
+  const base=String(j.tag||j.no);
+  const short='J'+(+String(j.no).replace(/\D/g,'')||0);
+  const tag=(i,n)=>({head:'REPAIR JOB',code:short+'-'+i,l1:base+'-'+i,l2:String(j.item||'').toUpperCase(),l3:[n>1?i+' of '+n:'',jobName(j),j.phone].filter(Boolean).join(' · ')});
   rollTagModal(tag,'Repair tag · '+j.no,`<div class="dlbl job">
       <div class="dl-top"><b>REPAIR — JOB NOTE</b><span>${CFG.shop.name}</span></div>
       <div class="dl-bc">${barcode128(j.tag,44)}<div class="dl-code">${j.tag}</div></div>
@@ -24285,7 +24291,7 @@ function jobLabel(no){
       <div class="dl-r"><span>${jobName(j)}</span><span>${j.phone||''}</span></div>
       ${j.theirSerial?`<div class="dl-r"><span>Serial</span><span>${j.theirSerial}</span></div>`:''}
       <div class="dl-w">${j.fault||''}${s?' · to '+s.name:''}</div>
-    </div>`);
+    </div>`,1);
 }
 function jobLabelOld(no){
   const j=S.jobs.find(x=>x.no===no); if(!j) return;
@@ -24613,7 +24619,7 @@ function rollTagDraw(ctx,t,x0,W,H){
   const wrap=(txt,size,bold)=>{ ctx.font=(bold?'bold ':'')+size+'px Arial'; const out=[]; let cur='';
     for(const w of String(txt).split(/\s+/)){ const t2=cur?cur+' '+w:w; if(ctx.measureText(t2).width<=inner||!cur) cur=t2; else { out.push(cur); cur=w } } if(cur) out.push(cur); return out };
   let y=by+bh+Math.round(H*.12);
-  if(t.l1){ const s=Math.max(floor,fit(t.l1,true,Math.round(H*.11))); ctx.font='bold '+s+'px Arial'; ctx.fillText(cut(t.l1),cx,y); y+=Math.round(s*1.15) }
+  if(t.l1){ const s=Math.max(floor,fit(t.l1,true,Math.round(H*.125))); ctx.font='bold '+s+'px Arial'; ctx.fillText(cut(t.l1),cx,y); y+=Math.round(s*1.15) }
   if(t.l2){ let s=Math.round(H*.09), ls; do{ ls=wrap(t.l2,s,true); if(ls.length<=2&&ls.every(l=>ctx.measureText(l).width<=inner)) break; s-- }while(s>floor);
     if(ls.length>2) ls=[ls[0],ls.slice(1).join(' ')];
     ls.forEach(l=>{ ctx.fillText(cut(l),cx,y); y+=Math.round(s*1.12) }) }
@@ -24628,8 +24634,10 @@ function rollTagCanvas(tags,r,single){
   return c;
 }
 // tags to the Zebra, a row at a time; without the print helper, the print window
-async function rollTagsSend(tag,copies){
-  const r=rollCfg(), dpm=(+r.dpi||203)/25.4, d=(mm)=>Math.round(mm*dpm), all=Array(Math.max(1,copies|0)).fill(tag), rows=[];
+async function rollTagsSend(make,copies){
+  // make(i,n) gives the tag for copy i of n — each piece its own ID
+  const n=Math.max(1,Math.min(200,copies|0)), mk=typeof make==='function'?make:()=>make;
+  const r=rollCfg(), dpm=(+r.dpi||203)/25.4, d=(mm)=>Math.round(mm*dpm), all=Array.from({length:n},(_,i)=>mk(i+1,n)), rows=[], tag=all[0];
   for(let i=0;i<all.length;i+=r.across){ const c=rollTagCanvas(all.slice(i,i+r.across),r), g=canvasZpl(c);
     rows.push(`^XA^PW${c.width}^LL${c.height}^LH${d(+r.dx||0)},${d(+r.dy||0)}^FO0,0^GFA,${g.total},${g.total},${g.bpr},${g.hex}^FS^PQ1^XZ`) }
   const url=printAgentUrl();
@@ -24639,30 +24647,31 @@ async function rollTagsSend(tag,copies){
     if(res.ok&&j.ok){ toast(`${all.length} tag${all.length===1?'':'s'} sent to ${j.printer}`,'ok'); return true }
     toast('Label printer: '+(j.error||res.status)+' — using the print window instead','warn');
   }catch(e){ toast('The print helper is not running on this PC — using the print window instead','warn') } }
-  const pageW=+(r.side*2+r.across*r.w+(r.across-1)*r.gap).toFixed(2), img=rollTagCanvas([tag],r,true).toDataURL('image/png');
+  const pageW=+(r.side*2+r.across*r.w+(r.across-1)*r.gap).toFixed(2), imgs=all.map(t=>rollTagCanvas([t],r,true).toDataURL('image/png'));
   const w=window.open('','_blank','width=520,height=640'); if(!w) return toast('Allow pop-ups to print the tags');
-  const cells=[]; for(let i=0;i<all.length;i+=r.across) cells.push(`<div class="row">${all.slice(i,i+r.across).map(()=>`<img src="${img}">`).join('')}</div>`);
+  const cells=[]; for(let i=0;i<all.length;i+=r.across) cells.push(`<div class="row">${imgs.slice(i,i+r.across).map(src=>`<img src="${src}">`).join('')}</div>`);
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escM(tag.head)}</title><style>@page{size:${pageW}mm ${r.h}mm;margin:0}html,body{margin:0}
     .row{display:flex;gap:${r.gap}mm;padding:0 ${r.side}mm;height:${r.h}mm;break-after:page}.row:last-child{break-after:auto}img{width:${r.w}mm;height:${r.h}mm;image-rendering:pixelated}</style></head>
     <body>${cells.join('')}<script>window.onload=()=>setTimeout(()=>window.print(),150)<\/script></body></html>`);
   w.document.close(); return false;
 }
 // the window for a tag: the tag at its real size, how many, and the way to print it
-function rollTagModal(tag,title,bigHtml){
-  const r=rollCfg(), img=rollTagCanvas([tag],r,true).toDataURL('image/png');
+function rollTagModal(make,title,bigHtml,copies){
+  const mk=typeof make==='function'?make:()=>make, r=rollCfg(), n0=Math.max(1,copies||1), img=rollTagCanvas([mk(1,n0)],r,true).toDataURL('image/png');
   const m=modal(`<div class="prn">
     <div class="noprint" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px"><h2 style="margin:0">${escM(title)}</h2></div>
     <div class="noprint tagprev"><img src="${img}" style="width:${r.w}mm;height:${r.h}mm;image-rendering:pixelated;background:#fff;outline:1px dashed #999"></div>
     <div class="noprint muted" style="margin:8px 0;font-size:12.5px">${r.w} × ${r.h} mm on the label printer, ${r.across} to a row.</div>
     <div class="noprint" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;justify-content:flex-end">
-      <div class="f" style="margin:0"><label>Copies</label><input id="tagN" type="number" min="1" step="1" value="${r.across}" style="width:80px"></div>
+      <div class="f" style="margin:0"><label>Copies (one per piece)</label><input id="tagN" type="number" min="1" step="1" value="${n0}" style="width:110px"></div>
       <button class="btn ghost" data-act="closeModal">Close</button>
       <button class="btn ghost" id="tagBig">Big label (A4 window)</button>
       <button class="btn tape" id="tagGo">Print on the label printer</button></div>
     <div class="tagbig" style="display:none">${bigHtml}</div>
    </div>`);
   const n=m.querySelector('#tagN'); n.focus(); n.select();
-  const go=()=>{ rollTagsSend(tag,+n.value||1); m.remove() };
+  n.oninput=()=>{ const k=Math.max(1,+n.value||1); m.querySelector('.tagprev img').src=rollTagCanvas([mk(1,k)],r,true).toDataURL('image/png') };
+  const go=()=>{ rollTagsSend(mk,+n.value||1); m.remove() };
   m.querySelector('#tagGo').onclick=go;
   n.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); go() } };
   m.querySelector('#tagBig').onclick=()=>{ m.querySelector('.tagbig').style.display=''; m.querySelector('.tagprev').style.display='none'; window.print() };
