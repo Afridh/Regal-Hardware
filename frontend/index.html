@@ -4823,11 +4823,17 @@ function purCostDown(pur,v){
     const part=share*on/l.qty; if(p.stock>0&&part>0){ p.cost=+Math.max(0,p.cost-part/p.stock).toFixed(4); inv+=part } }
   inv=+inv.toFixed(2); return {inv,cogs:+(v-inv).toFixed(2)};
 }
-function receivePurchase({supplierId,supInv,lines,other=0,date=D(today),pay,files=[],dn=null,disc=0}){
+/* The page of the hand-kept creditors' ledger the shop writes a supplier's invoice under. */
+function purLedger(pur,ledger){
+  const v=String(ledger||'').trim(); if(!v) return;
+  pur.ledger=v; const sp=SU(pur.supplierId); if(sp&&!sp.ledger) sp.ledger=v;
+}
+function receivePurchase({supplierId,supInv,lines,other=0,date=D(today),pay,files=[],dn=null,disc=0,ledger=''}){
   const sub=lines.reduce((a,l)=>a+l.qty*l.cost,0), total=+(sub+other-(+disc||0)).toFixed(2);
   lines.forEach(l=>{ if(!(l.qty>0)) throw new Error('Quantity must be above zero'); if(!(l.cost>=0)) throw new Error('Cost cannot be negative') });
   if(+disc>sub+other+0.005) throw new Error('The discount is more than the goods come to');
   const pur={no:next('PUR'),date,supplierId,supInv,lines,other,disc:+disc||0,total,paid:0,by:S.user.name,files:files||[],dn:dn||null};
+  purLedger(pur,ledger);
   S.purchases.push(pur);
   // transport and other charges are part of what the goods cost: spread across the lines by value
   const share=sub>0?(other-(+disc||0))/sub:0;
@@ -4886,7 +4892,7 @@ function receiveOnNote({supplierId,dnNo,lines,date=D(today),note='',files=[]}){
 /* The invoice turns up. The costs on it are what the goods actually cost, so they replace what
    was written on the note, the movements are corrected and every item's average is worked out
    again from its own history. The value moves off the waiting account onto what is owed. */
-function matchNoteInvoice({no,supInv,costs={},other=0,disc=0,date=D(today),files=[]}){
+function matchNoteInvoice({no,supInv,costs={},other=0,disc=0,date=D(today),files=[],ledger=''}){
   const pur=(S.purchases||[]).find(x=>x.no===no);
   if(!pur||!pur.onNote) throw new Error('That is not a delivery note');
   if(pur.invoiced) throw new Error('That note has already had its invoice');
@@ -4911,7 +4917,7 @@ function matchNoteInvoice({no,supInv,costs={},other=0,disc=0,date=D(today),files
     for(const m of S.movements) if(m.ref===pur.no&&m.pid===l.pid&&m.type==='PURCHASE') m.cost=l.landed;
     recost(l.pid);                      // the average is rebuilt from the item's own history
   }
-  pur.supInv=String(supInv).trim(); pur.other=other; pur.disc=disc; pur.total=total;
+  pur.supInv=String(supInv).trim(); pur.other=other; pur.disc=disc; pur.total=total; purLedger(pur,ledger);
   pur.invoiced=true; pur.invDate=date; pur.invBy=S.user.name;
   pur.files=[...(pur.files||[]),...(files||[])];
   const s=SU(pur.supplierId);
@@ -5051,6 +5057,7 @@ function matchNoteModal(no){
      were charged is what the goods cost, and any difference corrects them.</div>
    <div class="grid3">
     <div class="f"><label>Their invoice number</label><input id="mnInv" autocomplete="off"></div>
+    <div class="f"><label>Ledger No</label><input id="mnLedger" value="${escM((s&&s.ledger)||'')}" placeholder="page in the ledger book"></div>
     <div class="f"><label>Day on the invoice</label><input id="mnDate" type="date" value="${D(today)}"></div>
     <div class="f"><label>Other charges (transport)</label><input id="mnOther" type="number" step="any" value="0"></div>
    </div>
@@ -5106,7 +5113,7 @@ function matchNoteModal(no){
     try{
       const costs={};
       m.querySelectorAll('[data-mc]').forEach(el=>{ costs[+el.dataset.mc]=el.value });
-      const out=matchNoteInvoice({no:pur.no,supInv:$('mnInv').value,costs,
+      const out=matchNoteInvoice({no:pur.no,supInv:$('mnInv').value,ledger:$('mnLedger').value,costs,
         other:$('mnOther').value,disc:$('mnDisc').value,date:$('mnDate').value||D(today),files});
       m.remove(); persist(true); render();
       toast(`${out.supInv} matched — ${fmt(out.total)} now owed to ${s.name}`,'ok');
@@ -5122,7 +5129,7 @@ function matchNoteModal(no){
    there is no paper to lose.
    It moves no stock and touches no item cost, because it has not been told what came. The goods go on
    the floor when somebody has time to enter them, and until then the note says so plainly. */
-function receiveInvoiceOnly({supplierId,supInv,total,date=D(today),due=null,note='',files=[]}){
+function receiveInvoiceOnly({supplierId,supInv,total,date=D(today),due=null,note='',files=[],ledger=''}){
   const s=SU(supplierId); if(!s) throw new Error('Which supplier is it from?');
   total=+total; if(!(total>0)) throw new Error('What does the invoice come to?');
   if(!String(supInv||'').trim()) throw new Error('Their invoice number, so it can be matched later');
@@ -5130,7 +5137,7 @@ function receiveInvoiceOnly({supplierId,supInv,total,date=D(today),due=null,note
     total:+total.toFixed(2),paid:0,by:S.user.name,
     amountOnly:true,                       // entered by its total: no goods have been counted in
     due:due||null,note:String(note||'').trim(),files:files||[]};
-  S.purchases.push(pur);
+  purLedger(pur,ledger); S.purchases.push(pur);
   post(date,'Purchase '+pur.no+' (by invoice total)',pur.no,
     [{ac:'1200',dr:pur.total},{ac:'2100',cr:pur.total,party:{type:'S',id:supplierId}}]);
   notify('stock',`${s.name} invoice ${pur.supInv} booked at ${fmt(pur.total)} — the goods are still to be entered`,'purchases');
@@ -5174,6 +5181,7 @@ function quickPurModal(sid){
    <div class="grid2">
     <div class="f"><label>Supplier</label><select id="qpSup">${sups.map(s=>`<option value="${s.id}" ${sid===s.id?'selected':''}>${s.name}</option>`).join('')}</select></div>
     <div class="f"><label>Their invoice number</label><input id="qpInv" placeholder="as printed on it" autocomplete="off"></div></div>
+   <div class="f" style="max-width:240px"><label>Ledger No</label><input id="qpLedger" value="${escM((SU(sid)||sups[0]||{}).ledger||'')}" placeholder="page in the ledger book"></div>
    <div class="grid3">
     <div class="f"><label>Invoice total</label><input id="qpTot" type="number" step="any" inputmode="decimal" placeholder="0.00"></div>
     <div class="f"><label>Goods received on</label><input id="qpDate" type="date" value="${D(today)}"></div>
@@ -5204,9 +5212,11 @@ function quickPurModal(sid){
   $$('qpDrop').ondragover=(e)=>{ e.preventDefault(); $$('qpDrop').classList.add('over') };
   $$('qpDrop').ondragleave=()=>$$('qpDrop').classList.remove('over');
   $$('qpDrop').ondrop=(e)=>{ e.preventDefault(); $$('qpDrop').classList.remove('over'); take(e.dataTransfer.files) };
+  { const ql=$$('qpLedger'), qs=$$('qpSup'); if(ql&&qs){ ql.oninput=()=>{ ql.dataset.typed='1' };
+    qs.addEventListener('change',()=>{ if(!ql.dataset.typed) ql.value=(SU(+qs.value)||{}).ledger||'' }) } }
   $$('qpOk').onclick=()=>{
     try{
-      const pur=receiveInvoiceOnly({supplierId:+$$('qpSup').value,supInv:$$('qpInv').value,
+      const pur=receiveInvoiceOnly({supplierId:+$$('qpSup').value,supInv:$$('qpInv').value,ledger:$$('qpLedger').value,
         total:$$('qpTot').value,date:$$('qpDate').value||D(today),due:$$('qpDue').value||null,
         note:$$('qpNote').value,files});
       m.remove(); persist(true); render();
@@ -23756,6 +23766,7 @@ function supModal(id,preset){
    <div class="grid2">
     <div class="f"><label>Phone</label><input id="smPhone" value="${s?(s.phone||''):(qIsPhone?q:'')}" placeholder="07XXXXXXXX" inputmode="tel"></div>
     <div class="f"><label>Payment terms (days)</label><input id="smDays" type="number" value="${s?(s.days||30):30}"></div></div>
+   <div class="f" style="max-width:260px"><label>Ledger No <span class="muted">(their page in the ledger book)</span></label><input id="smLedger" value="${s?escM(s.ledger||''):''}" placeholder="e.g. 12 or C-4"></div>
    <div class="grid2">
     <div class="f"><label>Address</label><input id="smAddr" value="${s?(s.address||'').replace(/"/g,'&quot;'):''}" placeholder="Town, road"></div>
     <div class="f"><label>Email <span class="muted">(payment vouchers go here as PDFs)</span></label><input id="smEmail" type="email" value="${s?(s.email||'').replace(/"/g,'&quot;'):''}" placeholder="accounts@supplier.lk"></div></div>
@@ -23770,10 +23781,11 @@ function supModal(id,preset){
     if(phone&&!/^0\d{6,9}$/.test(phone)){ g('smMsg').textContent='Enter a phone like 0771234567, or leave it empty.'; g('smPhone').focus(); return }
     const dup=S.suppliers.find(x=>x.name.toLowerCase()===name.toLowerCase()&&x.id!==(s?s.id:-1));
     if(dup){ g('smMsg').textContent=`${dup.name} is already on the list.`; return }
-    if(s){ const oldName=s.name; Object.assign(s,{name,contact,phone,days,address:addr,email,notes});
+    const ledger=g('smLedger').value.trim();
+    if(s){ const oldName=s.name; Object.assign(s,{name,contact,phone,days,address:addr,email,notes,ledger});
       if(oldName!==name) S.cheques.forEach(c=>{ if(c.dir==='ISSUED'&&c.party===oldName) c.party=name });   // cheques are filed by name
       m.remove(); render(); toast('Saved'); return }
-    const ns={id:Math.max(0,...S.suppliers.map(x=>x.id))+1,code:'S'+String(S.suppliers.length+1).padStart(4,'0'),name,contact,phone,days,address:addr,email,notes,pin:'',showAccounts:false,enabled:false,lastLogin:null};
+    const ns={id:Math.max(0,...S.suppliers.map(x=>x.id))+1,code:'S'+String(S.suppliers.length+1).padStart(4,'0'),name,contact,phone,days,address:addr,email,notes,ledger,pin:'',showAccounts:false,enabled:false,lastLogin:null};
     S.suppliers.push(ns); supSel=ns.id; supQ=''; supFilter='all'; supTab='overview'; m.remove(); render(); toast(`${name} added`);
   };
   g('smOk').onclick=save;
@@ -24033,7 +24045,7 @@ function purchases(){ return `<h1>Purchases</h1><div style="margin-bottom:10px">
       ? `<div class="muted" style="margin-top:4px"><span class="tag warn">on their note ${p.dnNo}</span> invoice still to come${deAgo(p.date)>0?`, ${deAgo(p.date)} day${deAgo(p.date)===1?'':'s'} now`:''}</div>`
       : (p.onNote ? `<div class="muted" style="margin-top:4px">came in on note ${p.dnNo}</div>` : '');
     return `<tr><td>${p.no}</td><td>${p.date}</td><td>${SU(p.supplierId).name}</td>
-     <td>${p.supInv||(p.onNote?'<span class="muted">not invoiced yet</span>':'')}</td>
+     <td>${p.supInv||(p.onNote?'<span class="muted">not invoiced yet</span>':'')}${p.ledger?`<div class="muted">Ledger ${escM(p.ledger)}</div>`:''}</td>
      <td>${what}${waiting}${paper}</td>
      <td class="n">${fmt(p.total)}${p.disc?`<div class="muted">less ${fmt(p.disc)}</div>`:''}</td><td class="n">${fmt(p.paid)}</td>
      <td>${p.onNote&&!p.invoiced?`<button class="btn tape sm" data-act="purMatch" data-no="${p.no}">The invoice has come</button> `:''}
@@ -24042,11 +24054,14 @@ function purchases(){ return `<h1>Purchases</h1><div style="margin-bottom:10px">
 function newPurModal(sid,ord){
   const lines=(ord&&ord.lines&&ord.lines.length)?ord.lines.map(l=>({...l})):[{pid:1,qty:50,cost:P(1).cost}];
   const offer=(ord&&ord.disc)||null;      // what the rep said they would take off when they sent the order
-  const m=modal(`<h2>Purchase entry</h2>${ord?`<div class="card note" style="margin-bottom:10px"><b>From ${SU(ord.sid).name}'s order of ${ord.date}</b><pre style="white-space:pre-wrap;font:inherit;margin:6px 0 0">${ord.text}</pre><div class="muted">Add the lines below as they actually arrived — the order stays linked.</div></div>`:''}<div class="grid3"><div class="f"><label>Supplier</label><select id="gs">${S.suppliers.map(s=>`<option value="${s.id}" ${s.id===sid?'selected':''}>${s.name}</option>`).join('')}</select></div><div class="f"><label>Supplier invoice no</label><input id="gi" value="INV-${Math.floor(Math.random()*9000+1000)}"></div><div class="f"><label>Other charges (transport)</label><input id="go" type="number" value="0"></div></div>${offer?`<div class="card note" style="margin-bottom:8px"><b>${SU(ord.sid).name} offered ${discSays(offer)} on this order</b>${offer.note?` — ${noteEsc(offer.note)}`:''}<div class="muted">Filled in below. Change it to whatever the invoice actually shows.</div></div>`:''}<div class="f" style="max-width:260px"><label>Discount on the invoice</label><input id="gd" type="number" step="any" value="0"></div><table id="gl"></table><button class="btn ghost sm" id="gadd" style="margin-top:6px">+ Add item</button><div class="qp-drop" id="gDrop" style="margin-top:10px"><b>Photograph the invoice</b><span>Take a picture, drop it here, or click to pick one — image or PDF</span><input type="file" id="gFile" accept="image/*,application/pdf" capture="environment" multiple hidden></div><div id="gFiles" style="margin-top:6px"></div><div class="grid3" style="margin-top:10px"><div class="f"><label>Pay now</label><select id="gpm"><option value="">Credit (pay later)</option><option>CASH</option><option>BANK</option><option>CHEQUE</option></select></div><div class="f"><label>Amount now</label><input id="gpa" type="number" value="0"></div><div class="f"><label>Bank</label><select id="gpb">${S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select></div></div><div style="display:flex;justify-content:space-between;align-items:center"><b id="gt"></b><button class="btn tape" id="gok">Receive stock & post</button></div>`);
+  const m=modal(`<h2>Purchase entry</h2>${ord?`<div class="card note" style="margin-bottom:10px"><b>From ${SU(ord.sid).name}'s order of ${ord.date}</b><pre style="white-space:pre-wrap;font:inherit;margin:6px 0 0">${ord.text}</pre><div class="muted">Add the lines below as they actually arrived — the order stays linked.</div></div>`:''}<div class="grid3"><div class="f"><label>Supplier</label><select id="gs">${S.suppliers.map(s=>`<option value="${s.id}" ${s.id===sid?'selected':''}>${s.name}</option>`).join('')}</select></div><div class="f"><label>Supplier invoice no</label><input id="gi" value="INV-${Math.floor(Math.random()*9000+1000)}"></div><div class="f"><label>Ledger No</label><input id="gLedger" value="${escM((SU(ord?ord.sid:sid)||{}).ledger||'')}" placeholder="page in the ledger book"></div><div class="f"><label>Other charges (transport)</label><input id="go" type="number" value="0"></div></div>${offer?`<div class="card note" style="margin-bottom:8px"><b>${SU(ord.sid).name} offered ${discSays(offer)} on this order</b>${offer.note?` — ${noteEsc(offer.note)}`:''}<div class="muted">Filled in below. Change it to whatever the invoice actually shows.</div></div>`:''}<div class="f" style="max-width:260px"><label>Discount on the invoice</label><input id="gd" type="number" step="any" value="0"></div><table id="gl"></table><button class="btn ghost sm" id="gadd" style="margin-top:6px">+ Add item</button><div class="qp-drop" id="gDrop" style="margin-top:10px"><b>Photograph the invoice</b><span>Take a picture, drop it here, or click to pick one — image or PDF</span><input type="file" id="gFile" accept="image/*,application/pdf" capture="environment" multiple hidden></div><div id="gFiles" style="margin-top:6px"></div><div class="grid3" style="margin-top:10px"><div class="f"><label>Pay now</label><select id="gpm"><option value="">Credit (pay later)</option><option>CASH</option><option>BANK</option><option>CHEQUE</option></select></div><div class="f"><label>Amount now</label><input id="gpa" type="number" value="0"></div><div class="f"><label>Bank</label><select id="gpb">${S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select></div></div><div style="display:flex;justify-content:space-between;align-items:center"><b id="gt"></b><button class="btn tape" id="gok">Receive stock & post</button></div>`);
   const draw=()=>{m.querySelector('#gl').innerHTML=`<tr><th>Product</th><th class="n">Qty</th><th class="n">Unit cost</th><th class="n">Amount</th><th></th></tr>`+lines.map((l,i)=>`<tr><td><select data-k="pid" data-i="${i}">${S.products.map(p=>`<option value="${p.id}" ${p.id===l.pid?'selected':''}>${p.name}</option>`).join('')}</select></td><td><input type="number" data-k="qty" data-i="${i}" value="${l.qty}" style="text-align:right"></td><td><input type="number" data-k="cost" data-i="${i}" value="${l.cost}" style="text-align:right"></td><td class="n">${fmt(l.qty*l.cost)}</td><td><button class="btn ghost sm" data-rm="${i}">✕</button></td></tr>`).join('');
     m.querySelector('#gt').textContent='Total '+fmt(lines.reduce((a,l)=>a+l.qty*l.cost,0)+(+m.querySelector('#go').value||0)-(+m.querySelector('#gd').value||0));
     m.querySelectorAll('[data-k]').forEach(el=>el.onchange=()=>{const l=lines[+el.dataset.i];l[el.dataset.k]=+el.value;if(el.dataset.k==='pid')l.cost=P(l.pid).cost;draw()});m.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.rm,1);draw()})};
   draw(); m.querySelector('#go').oninput=draw; m.querySelector('#gd').oninput=draw;
+  // the ledger number follows the supplier chosen, until someone types their own
+  { const gl=m.querySelector('#gLedger'), gs=m.querySelector('#gs'); if(gl&&gs){ gl.oninput=()=>{ gl.dataset.typed='1' };
+    gs.addEventListener('change',()=>{ if(!gl.dataset.typed) gl.value=(SU(+gs.value)||{}).ledger||'' }) } }
   m.querySelector('#gadd').onclick=()=>{lines.push({pid:2,qty:10,cost:P(2).cost});draw()};
   if(offer){ const goods=lines.reduce((a,l)=>a+l.qty*l.cost,0);
     m.querySelector('#gd').value=discOn(offer,goods); draw() }
@@ -24063,7 +24078,7 @@ function newPurModal(sid,ord){
   drop.ondragover=(e)=>{ e.preventDefault(); drop.classList.add('over') };
   drop.ondragleave=()=>drop.classList.remove('over');
   drop.ondrop=(e)=>{ e.preventDefault(); drop.classList.remove('over'); take(e.dataTransfer.files) };
-  m.querySelector('#gok').onclick=()=>{const pm=m.querySelector('#gpm').value,pa=+m.querySelector('#gpa').value||0;const pur=receivePurchase({supplierId:+m.querySelector('#gs').value,supInv:m.querySelector('#gi').value,lines:lines.filter(l=>l.qty>0),other:+m.querySelector('#go').value||0,disc:+m.querySelector('#gd').value||0,files,pay:pm&&pa>0?{method:pm,bank:+m.querySelector('#gpb').value,amount:pa}:null});m.remove();
+  m.querySelector('#gok').onclick=()=>{const pm=m.querySelector('#gpm').value,pa=+m.querySelector('#gpa').value||0;const pur=receivePurchase({supplierId:+m.querySelector('#gs').value,supInv:m.querySelector('#gi').value,ledger:m.querySelector('#gLedger').value,lines:lines.filter(l=>l.qty>0),other:+m.querySelector('#go').value||0,disc:+m.querySelector('#gd').value||0,files,pay:pm&&pa>0?{method:pm,bank:+m.querySelector('#gpb').value,amount:pa}:null});m.remove();
    if(ord){const oo=ord.po?S.orders.find(x=>x.no===ord.po):ord.orderId?S.orders.find(x=>x.id===ord.orderId):ord;
      if(oo){oo.status='received';oo.grn=pur.no;oo.unreadSup=true;
        oo.events&&oo.events.push({id:'r'+Math.random().toString(36).slice(2,6),actor:'shop',name:S.user.name,action:'received',note:'Goods received as '+pur.no,at:Date.now()});}
