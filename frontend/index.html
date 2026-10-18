@@ -538,6 +538,35 @@ body.privacy nav .navuser{position:relative}
 .dlbl .dl-code{font-size:11px;letter-spacing:.14em;margin-top:1px}
 .dlbl .dl-l{font-size:12px;line-height:1.25;margin-bottom:4px}
 .dlbl .dl-r{display:flex;justify-content:space-between;font-size:9.5px;gap:8px}
+/* the job sheet on A5 landscape */
+.jsa5{font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff;padding:6mm 7mm;box-sizing:border-box;display:flex;flex-direction:column;gap:3mm;font-size:12px}
+.jsa5 .ja-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8mm;border-bottom:2px solid #000;padding-bottom:3mm}
+.jsa5 .ja-brand img{height:15mm;display:block;filter:grayscale(1) contrast(1.4)}
+.jsa5 .ja-brand b{font-size:22px;letter-spacing:.04em}
+.jsa5 .ja-addr{font-size:11px;margin-top:1mm}
+.jsa5 .ja-title{text-align:right}
+.jsa5 .ja-t{font-size:20px;font-weight:800;letter-spacing:.08em}
+.jsa5 .ja-no{font-size:16px;font-weight:800;margin-top:1mm}
+.jsa5 .ja-no span{font-weight:400;font-size:13px}
+.jsa5 .ja-bc{margin-top:1.5mm;text-align:center;display:inline-block}
+.jsa5 .ja-bc svg{height:13mm;width:60mm}
+.jsa5 .ja-bc div{font-weight:700;letter-spacing:.2em;font-size:12px}
+.jsa5 .ja-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm}
+.jsa5 .ja-box{border:1.5px solid #000;border-radius:2mm;overflow:hidden}
+.jsa5 .ja-bh{background:#000;color:#fff;font-weight:800;font-size:11px;letter-spacing:.12em;padding:1mm 3mm}
+.jsa5 .ja-bb{padding:2mm 3mm}
+.jsa5 .ja-kv{display:grid;grid-template-columns:28mm 1fr;gap:2mm;padding:.6mm 0;border-bottom:1px dotted #999}
+.jsa5 .ja-kv:last-child{border-bottom:0}
+.jsa5 .ja-kv span{color:#333}
+.jsa5 .ja-fault .ja-bb{min-height:12mm;font-size:13px}
+.jsa5 .ja-row{display:flex;gap:4mm;align-items:center;flex-wrap:wrap}
+.jsa5 .ja-war{border:1.5px solid #000;padding:1.5mm 3mm;font-weight:800;letter-spacing:.04em}
+.jsa5 .ja-war.ok{background:#000;color:#fff}
+.jsa5 .ja-est{font-size:13px}
+.jsa5 .ja-fill{flex:1}
+.jsa5 .ja-terms{font-size:10.5px;color:#222;border-top:1px solid #000;padding-top:1.5mm}
+.jsa5 .ja-sign{display:flex;gap:20mm;margin-top:8mm}
+.jsa5 .ja-sign div{flex:1;border-top:1px solid #000;padding-top:1mm;text-align:center;font-size:11px}
 .jobsheet .js-no{text-align:center;font-weight:800;font-size:15px;letter-spacing:.06em;margin:6px 0 4px}
 .jobsheet .js-bc{text-align:center;margin:2px 0 6px}
 .jobsheet .js-bc svg{width:92%;height:56px}
@@ -25033,10 +25062,38 @@ function jobSheetHtml(j){
    ${SH.web?`<div class="sb-web">${e(SH.web)}</div>`:''}
   </div>`;
 }
+/* The job sheet on A5 landscape, the paper and printer of the large bill: the shop at the top, the job number
+   and its barcode, the customer and the tool side by side, the fault, the warranty, and the signatures. */
+function jobSheetA5(j){
+  const SH=CFG.shop, s=j.sid?SU(j.sid):null, c=j.customerId?C(j.customerId):null, e=(v)=>escM(String(v==null?'':v));
+  const kv=(k,v)=>v?`<div class="ja-kv"><span>${k}</span><b>${e(v)}</b></div>`:'';
+  const war=j.warrantyTo?(jobUnderWarranty(j)?`UNDER WARRANTY until ${j.warrantyTo}`:`Warranty ended ${j.warrantyTo}`):'';
+  return `<div class="print a5 jsa5" style="width:100%;min-height:136mm">
+   <div class="ja-head">
+    <div class="ja-brand">${(CFG.bill||{}).a5Lockup!==false?`<img src="${REGAL_LOCKUP}" alt="${e(SH.name)}">`:`<b>${e(SH.name)}</b>`}
+     <div class="ja-addr">${e([SH.addr,SH.near].filter(Boolean).join(' '))}</div><div class="ja-addr">${e([SH.phone,SH.land].filter(Boolean).join('  ·  '))}</div></div>
+    <div class="ja-title"><div class="ja-t">REPAIR JOB SHEET</div>
+     <div class="ja-no">${e(j.no)} <span>· ${e(j.date)}</span></div>
+     <div class="ja-bc">${barcode128(j.tag||j.no,46)}<div>${e(j.tag||j.no)}</div></div></div></div>
+   <div class="ja-grid">
+    <div class="ja-box"><div class="ja-bh">CUSTOMER</div><div class="ja-bb">
+     ${kv('Name',(c&&c.name)||j.who||'')}${kv('Mobile',j.phone||(c&&c.phone)||'')}${kv('Address',c&&c.address)}${kv('Received by',String(j.by||'').toUpperCase())}</div></div>
+    <div class="ja-box"><div class="ja-bh">TOOL</div><div class="ja-bb">
+     ${kv('Tool',String(j.item||'').toUpperCase())}${kv('Serial',j.theirSerial)}${kv('Left with it',j.accessories)}
+     ${kv('Bought on',j.buyDate?j.buyDate+(j.bill?'  ·  bill '+j.bill:''):'')}${kv('Supplier',s&&s.name)}</div></div></div>
+   <div class="ja-box ja-fault"><div class="ja-bh">FAULT — AS TOLD BY THE CUSTOMER</div><div class="ja-bb">${e(j.fault||'')}</div></div>
+   <div class="ja-row">
+    ${war?`<div class="ja-war ${jobUnderWarranty(j)?'ok':''}">${e(war)}</div>`:''}
+    ${+j.est>0?`<div class="ja-est">Price told: <b>Rs ${money2(j.est)}</b></div>`:''}</div>
+   <div class="ja-fill"></div>
+   <div class="ja-terms">Please bring this sheet when you collect the tool. Repairs are done by the company; we will tell you the cost before any paid repair. Work under warranty is free.</div>
+   <div class="ja-sign"><div>Received by (shop)</div><div>Customer</div></div>
+  </div>`;
+}
 function jobSheetPrint(no){
   const j=S.jobs.find(x=>x.no===no); if(!j) return;
-  const inner=jobSheetHtml(j);
-  printPaper(printDocument(inner,'r80'),'r80',j.no,()=>paperFallback(inner,'r80'));
+  const inner=jobSheetA5(j);
+  printPaper(printDocument(inner,'a5'),'a5',j.no,()=>paperFallback(inner,'a5'));
 }
 // the tag for the item itself, straight to the label printer: one, numbered -1
 function jobTagPrint(no,copies=1){
