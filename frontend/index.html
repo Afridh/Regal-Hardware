@@ -925,6 +925,25 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 .od-x{color:#c0392b!important}
 .jb-next{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .jb-msg{padding:10px 12px}
+/* the system log */
+.sl-filt{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.sl-filt input{flex:1 1 260px;min-width:220px;width:auto}
+.sl-filt select{flex:0 0 auto;width:auto;min-width:150px}
+.sl-filt .btn{flex:0 0 auto}
+.sl-list{display:flex;flex-direction:column}
+.sl-row{display:grid;grid-template-columns:78px minmax(0,1fr) 120px;gap:12px;padding:9px 6px;border-bottom:1px solid var(--line2);align-items:start}
+.sl-row:hover{background:var(--panel)}
+.sl-when b{display:block;font-family:Archivo,sans-serif;font-size:14px}
+.sl-when span{font-size:11.5px;color:var(--steel)}
+.sl-area{font-size:12px;color:var(--steel);text-transform:uppercase;letter-spacing:.06em;margin-right:4px}
+.sl-ch{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:4px;font-size:12.5px}
+.sl-ch span{background:var(--panel);border-radius:6px;padding:1px 7px}
+.sl-ch i{font-style:normal;color:var(--steel);margin-right:4px}
+.sl-ch em{font-style:normal;color:var(--chip-rust);margin:0 3px}
+.sl-who{text-align:right}
+.sl-who b{display:block;font-size:13px}
+.sl-who span{font-size:11.5px;color:var(--steel)}
+.tabs .cnt{font-style:normal;font-size:11px;background:rgba(0,0,0,.08);border-radius:99px;padding:0 6px;margin-left:4px}
 .jb-wsel{display:flex;align-items:center;gap:10px;margin:2px 0 8px;flex-wrap:wrap}
 .jb-wsel>span{font-size:12.5px;color:var(--steel);min-width:70px}
 .jb-wsel label{display:flex!important;align-items:center;gap:8px;padding:10px 16px;border:2px solid var(--line);border-radius:12px;cursor:pointer;background:#fff;margin:0;transition:all .15s;flex:1;min-width:200px}
@@ -9033,6 +9052,7 @@ const dirtyUsers=new Set();
 const markUserDirty=(...names)=>names.forEach(n=>{ if(n) dirtyUsers.add(String(n).toLowerCase().trim()) });
 function persist(force){
   if(window.privacyOn||window.leavingDemo) return;
+  auditSoon();             // the system log: what this person changed, written a moment after the save
   savePosDraft();          // the bill on the screen belongs to this till, and is kept here
 
   // the books are on the server but would not come down, so this till is holding sample data:
@@ -9085,6 +9105,11 @@ const DEFAULT_ACCOUNTS = [
   { name: 'Sales4', role: 'Salesman', uid: 'S4', pass: 'Sales423', perms: ['products_view', 'dashboard_view', 'attendance_view'] }
 ];
 function applyKept(kept){
+  try{ if(S&&S.user&&window._auditBase) auditCheck() }catch(e){}
+  applyKeptBooks(kept);
+  auditRebase();           // what came in from elsewhere is not anyone's doing on this till
+}
+function applyKeptBooks(kept){
   if(!kept || !kept.S) return;
   const local = {};
   LOCAL_KEYS.forEach(k => {
@@ -11667,7 +11692,7 @@ const views=[
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['chqbooks','Cheque books'],['petty','Petty cash'],['expenses','Expenses'],['accounting','Accounting'],
  ['grp','People'],['payroll','Attendance & pay'],['leave','Leave'],['approvals','Approvals'],['users','Users & permissions'],
  ['grp','Online'],['site','Online store'],['weborders','Online orders'],['webproducts','Online products'],['social','Social'],
- ['grp','Reports'],['dashboard','Dashboard','F2'],['everything','Everything'],['reports','Reports'],['ai','AI support'],['trail','The trail'],
+ ['grp','Reports'],['dashboard','Dashboard','F2'],['everything','Everything'],['reports','Reports'],['ai','AI support'],['trail','The trail'],['syslog','System log'],
  ['grp','Shop setup'],['messages','Messages'],['printq','Printing'],['cameras','Cameras'],['billdesign','Design the bill'],['settings','Settings']];
 
 const ownerOnly=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||S.user.role==='Demo Admin'||window.isDemo||(S&&S.isDemo)));
@@ -11680,7 +11705,7 @@ const SECTIONS = {
   Online: ['weborders', 'webproducts', 'shopmanage', 'site', 'social'],
   Money: ['chequesIn', 'chequesOut', 'chqbooks', 'petty', 'expenses', 'accounting'],
   People: ['leave', 'approvals', 'payroll', 'users'],
-  Out: ['trail', 'messages', 'reports', 'printq'],
+  Out: ['trail', 'syslog', 'messages', 'reports', 'printq'],
   System: ['settings']
 };
 
@@ -11732,6 +11757,7 @@ function allowed(v){
   if(v === 'ai') return ownerOnly();        // what it is shown includes costs and margins
   if(v === 'everything') return ownerOnly();  // the same: every figure in the shop on one page
   if(v === 'trail') return ownerOnly();
+  if(v === 'syslog') return isSuperUser();   // the system log is the Super Admin's alone
   const roleName = String(S.user.role || '');
   const rLower = roleName.toLowerCase();
 
@@ -11837,6 +11863,7 @@ const icon=(k)=>`<svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="curren
   stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[k]||ICONS.dashboard}"/></svg>`;
 ICONS.tenders='M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h6M9 8h2';
 ICONS.purchasing='M3 17l5-5 4 3 5-6M3 21h18M5 3v14';
+ICONS.syslog='M12 8v4l3 2M3 12a9 9 0 1018 0 9 9 0 00-18 0M3 4v4h4';
 ICONS.social='M18 8a3 3 0 100-6 3 3 0 000 6zM6 15a3 3 0 100-6 3 3 0 000 6zM18 22a3 3 0 100-6 3 3 0 000 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4';
 ICONS.payreqs='M4 6h16v12H4zM4 10h16M8 14h4M17 3v4M15 5h4';
 ICONS.webproducts='M3 4h18v12H3zM3 8h18M8 20h8M12 16v4M9 12h2M13 12h4';
@@ -12159,7 +12186,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     mn.innerHTML = r();
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
@@ -12197,6 +12224,7 @@ function renderNow(){
   if(S.view==='bills'||S.view==='recall') billsAfter();
   if(S.view==='payroll' && (window.isDemo || (S && S.isDemo))) demoAttendanceAfter();
   if(S.view==='trail') trailAfter();
+  if(S.view==='syslog') sysLogAfter();
   if(S.view==='users'){
     const usIn = document.getElementById('userSearchInput');
     if(usIn){
@@ -19983,6 +20011,145 @@ function leaveSettingsAfter(){
 }
 function lvSetGroup(name,g){ const c=LVC(), k=String(name).toLowerCase().trim(); if(g==='director') c.groups[k]='director'; else delete c.groups[k]; persist(true) }
 let apTab='pending';
+/* ================== THE SYSTEM LOG — the Super Admin's page ==================
+   Who changed what in the books, and when. The till keeps a picture of the records that matter (items,
+   customers, suppliers, users, staff, purchases, payments, expenses, bills, the settings); a moment after
+   anyone saves, it compares, and writes what was added, changed (field by field, old → new) or removed,
+   with who and which till. Books that arrive from another till re-take the picture first, so nobody here
+   is written down for what was done somewhere else. Sign-ins, the trail and the system's own updates
+   sit in the same place. Super Admin and Owner only. */
+const AUDIT_KEEP=4000;
+const AUDIT_SETS={
+  products:['Item',x=>x.name,['name','code','barcode','cat','dept','unit','cost','retail','wholesale','mrp','min','active','warrantyMonths','supplierId','web'],true],
+  customers:['Customer',x=>x.name,['name','phone','address','email','level','limit','ledger','active','notes'],true],
+  suppliers:['Supplier',x=>x.name,['name','contact','phone','days','address','email','ledger','active'],true],
+  users:['User',x=>x.name,['name','role','active','perms'],true],
+  employees:['Staff',x=>x.name,['name','phone','role','basic','salary','active','deviceId','card','group'],true],
+  banks:['Bank account',x=>x.name,['name','no','branch','ac'],true],
+  purchases:['Purchase',x=>[x.no,x.supInv].filter(Boolean).join(' · '),['supplierId','supInv','ledger','total','disc','other','lines'],true],
+  payments:['Payment',x=>x.no,['amount','total','method','customerId','supplierId'],true],
+  expenses:['Expense',x=>x.no||x.voucher,['amount','cat','desc','date'],true],
+  sales:['Bill',x=>x.no,['customerId','total','balance','billDisc','lines','ledger'],false]};
+const auditKey=(x,i)=>String(x&&(x.id!=null?x.id:x.no!=null?x.no:i));
+function auditPick(x,fields){ const o={}; fields.forEach(f=>{ if(x[f]!==undefined) o[f]=x[f] }); return o }
+function auditSnap(){
+  const snap={};
+  for(const [k,[,,fields]] of Object.entries(AUDIT_SETS)){
+    const m=new Map(); (S[k]||[]).forEach((x,i)=>{ if(x&&typeof x==='object') m.set(auditKey(x,i),JSON.stringify(auditPick(x,fields))) }); snap[k]=m }
+  snap.CFG={}; Object.keys(CFG||{}).forEach(k=>{ try{ snap.CFG[k]=JSON.stringify(CFG[k]) }catch(e){} });
+  return snap;
+}
+// how a value reads in the log
+function auditVal(f,v){
+  if(v===undefined||v===null||v==='') return '—';
+  if(f==='supplierId') return (SU(v)||{}).name||String(v);
+  if(f==='customerId') return (C(v)||{}).name||String(v);
+  if(f==='lines') return Array.isArray(v)?`${v.length} line${v.length===1?'':'s'}`:'—';
+  if(f==='perms') return Array.isArray(v)?`${v.length} permissions`:'—';
+  if(typeof v==='boolean') return v?'yes':'no';
+  if(typeof v==='number') return String(+v.toFixed(2));
+  if(typeof v==='object') { const t=JSON.stringify(v); return t.length>70?t.slice(0,68)+'…':t }
+  const t=String(v); return t.length>70?t.slice(0,68)+'…':t;
+}
+function auditAdd(e){
+  if(window.privacyOn) return;
+  S.audit=S.audit||[];
+  const d=new Date();
+  S.audit.unshift({id:'a'+d.getTime().toString(36)+Math.random().toString(36).slice(2,5),at:d.toISOString(),date:D(today),
+    time:d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),by:(S.user&&S.user.name)||'?',till:S.terminal||'T1',...e});
+  if(S.audit.length>AUDIT_KEEP) S.audit.length=AUDIT_KEEP;
+}
+function auditRebase(){ try{ window._auditBase=auditSnap() }catch(e){ window._auditBase=null } }
+// compare with the picture and write down the difference, then take a new picture
+function auditCheck(){
+  clearTimeout(window._auditT); window._auditT=null;
+  if(window.privacyOn||!S||!S.user) return;
+  const was=window._auditBase; if(!was){ auditRebase(); return }
+  let now; try{ now=auditSnap() }catch(e){ return }
+  for(const [k,[area,nameOf,fields,logNew]] of Object.entries(AUDIT_SETS)){
+    const a=was[k]||new Map(), b=now[k]||new Map(), list=S[k]||[];
+    const byKey=new Map(list.map((x,i)=>[auditKey(x,i),x]));
+    for(const [key,js] of b){
+      const before=a.get(key);
+      if(before===undefined){ if(logNew&&a.size) auditAdd({area,act:'added',name:String(nameOf(byKey.get(key))||key)}); continue }
+      if(before===js) continue;
+      const o=JSON.parse(before), n=JSON.parse(js), changes=[];
+      fields.forEach(f=>{ if(JSON.stringify(o[f])!==JSON.stringify(n[f])) changes.push([f,auditVal(f,o[f]),auditVal(f,n[f])]) });
+      if(changes.length) auditAdd({area,act:'changed',name:String(nameOf(byKey.get(key))||key),changes});
+    }
+    for(const [key,js] of a) if(!b.has(key)){ let o={}; try{ o=JSON.parse(js) }catch(e){}
+      auditAdd({area,act:'removed',name:String(o.name||o.no||key)}) }
+  }
+  // the settings: which part, and what in it
+  const ca=was.CFG||{}, cb=now.CFG||{};
+  Object.keys(cb).forEach(k=>{ if(ca[k]===undefined||ca[k]===cb[k]) return;
+    let o={}, n={}; try{ o=JSON.parse(ca[k]) }catch(e){} try{ n=JSON.parse(cb[k]) }catch(e){}
+    const changes=[];
+    if(o&&n&&typeof o==='object'&&typeof n==='object'&&!Array.isArray(o)) [...new Set([...Object.keys(o),...Object.keys(n)])].forEach(f=>{
+      if(JSON.stringify(o[f])!==JSON.stringify(n[f])) changes.push([f,auditVal(f,o[f]),auditVal(f,n[f])]) });
+    else changes.push([k,auditVal(k,o),auditVal(k,n)]);
+    if(changes.length) auditAdd({area:'Settings',act:'changed',name:k,changes:changes.slice(0,12)});
+  });
+  window._auditBase=now;
+}
+// a moment after a save, so a burst of typing is one entry
+function auditSoon(){ clearTimeout(window._auditT); window._auditT=setTimeout(()=>{ try{ auditCheck() }catch(e){} },900) }
+
+let slTab='changes', slQ='', slWho='', slArea='', slDays=30;
+const SL_ACT={added:['added','ok'],changed:['changed','warn'],removed:['removed','bad'],'signed in':['signed in','blue'],'signed out':['signed out','']};
+function sysLogRows(){
+  const q=slQ.toLowerCase().trim(), from=slDays?D(new Date(Date.now()-slDays*864e5)):'';
+  return (S.audit||[]).filter(r=>slTab==='signin'?r.area==='Sign-in':r.area!=='Sign-in')
+    .filter(r=>!from||String(r.date||r.at).slice(0,10)>=from)
+    .filter(r=>!slWho||r.by===slWho).filter(r=>!slArea||r.area===slArea)
+    .filter(r=>!q||[r.name,r.by,r.area,r.act,r.till,...(r.changes||[]).flat()].some(v=>String(v||'').toLowerCase().includes(q)));
+}
+function sysLog(){
+  if(!isSuperUser()) return `<h1>System log</h1><div class="card muted">This page is the Super Admin's.</div>`;
+  const all=S.audit||[], rows=slTab==='changes'||slTab==='signin'?sysLogRows():[];
+  const who=[...new Set(all.map(r=>r.by))].sort(), areas=[...new Set(all.filter(r=>r.area!=='Sign-in').map(r=>r.area))].sort();
+  const today0=D(today), todayN=all.filter(r=>r.date===today0&&r.area!=='Sign-in').length;
+  const tabs=[['changes','Changes',all.filter(r=>r.area!=='Sign-in').length],['signin','Sign-ins',all.filter(r=>r.area==='Sign-in').length],['trail','Bills & the trail'],['updates','System updates',(UPDATE_LOG.items||[]).length]];
+  const filt=`<div class="sl-filt">
+     <input id="slQ" value="${escM(slQ)}" placeholder="search a name, a field, a value…">
+     ${slTab==='changes'?`<select id="slArea"><option value="">every area</option>${areas.map(a=>`<option ${slArea===a?'selected':''}>${escM(a)}</option>`).join('')}</select>`:''}
+     <select id="slWho"><option value="">everyone</option>${who.map(w=>`<option ${slWho===w?'selected':''}>${escM(w)}</option>`).join('')}</select>
+     <select id="slDays">${[[1,'Today'],[7,'Last 7 days'],[30,'Last 30 days'],[90,'Last 3 months'],[0,'Everything kept']].map(o=>`<option value="${o[0]}" ${slDays===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>
+     <button class="btn ghost" data-act="slCsv">Save as CSV</button></div>`;
+  const list=rows.length?`<div class="sl-list">${rows.slice(0,500).map(r=>{ const [aw,ac]=SL_ACT[r.act]||[r.act,''];
+      return `<div class="sl-row"><div class="sl-when"><b>${escM(r.time||'')}</b><span>${escM(String(r.date||'').slice(0,10))}</span></div>
+       <div class="sl-what"><div><span class="tag ${ac}">${escM(aw)}</span> <span class="sl-area">${escM(r.area)}</span> <b>${escM(r.name||'')}</b></div>
+        ${(r.changes||[]).length?`<div class="sl-ch">${r.changes.map(([f,o,n])=>`<span><i>${escM(f)}</i> ${escM(o)} <em>→</em> <b>${escM(n)}</b></span>`).join('')}</div>`:''}</div>
+       <div class="sl-who"><b>${escM(r.by)}</b><span>till ${escM(r.till||'?')}</span></div></div>` }).join('')}
+      ${rows.length>500?`<div class="muted" style="padding:10px">Showing the newest 500 of ${rows.length} — narrow it with the boxes above.</div>`:''}</div>`
+    :`<div class="muted" style="padding:24px;text-align:center">${all.length?'Nothing matches.':'Nothing yet — changes are written here from now on, as they happen.'}</div>`;
+  const body=slTab==='trail'?`<div class="card muted" style="margin-bottom:10px">Bills thrown away, cleared, opened again and corrected — the same list as The trail.</div>${trail().replace(/^<h1>[\s\S]*?<\/h1>/,'')}`
+    :slTab==='updates'?`<div class="card"><div class="muted" style="margin-bottom:8px">Every update put into the system — newest first.</div>
+       <table class="tbl"><tr><th>When</th><th>What changed</th><th>By</th><th>Code</th></tr>${(UPDATE_LOG.items||[]).filter(u=>!/^Update log$/i.test(u.s)).map(u=>`<tr><td class="muted" style="white-space:nowrap">${escM(u.d)}</td><td>${escM(u.s)}</td><td>${escM(u.w||'')}</td><td class="muted"><code>${escM(u.h||'')}</code></td></tr>`).join('')}</table></div>`
+    :filt+list;
+  return `<h1>System log <span class="muted" style="font-size:13px;font-weight:400">who changed what, when — for the Super Admin only</span></h1>
+   <div class="row" style="margin-bottom:12px">
+    ${stat('Changes today',todayN,'added, changed or removed','b')}
+    ${stat('People',who.length,'who have done something here','y')}
+    ${stat('Kept',all.length,'the newest '+AUDIT_KEEP+' entries','g')}
+   </div>
+   <div class="card"><div class="tabs">${tabs.map(([k,l,n])=>`<button class="${slTab===k?'on':''}" data-act="slTab" data-t="${k}">${l}${n!=null?` <i class="cnt">${n}</i>`:''}</button>`).join('')}</div>
+   <div style="margin-top:10px">${body}</div></div>`;
+}
+function sysLogAfter(){
+  const q=$('#slQ'); if(q) q.oninput=()=>{ slQ=q.value; const keep=$('#main').scrollTop; renderNow(); $('#main').scrollTop=keep; const f=$('#slQ'); if(f){ f.focus(); f.setSelectionRange(f.value.length,f.value.length) } };
+  const w=$('#slWho'); if(w) w.onchange=()=>{ slWho=w.value; render() };
+  const a=$('#slArea'); if(a) a.onchange=()=>{ slArea=a.value; render() };
+  const d=$('#slDays'); if(d) d.onchange=()=>{ slDays=+d.value; render() };
+  if(slTab==='trail') trailAfter();
+}
+function sysLogCsv(){
+  const rows=sysLogRows(), esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const txt=['Date,Time,Who,Till,Area,What,Name,Changes',...rows.map(r=>[r.date,r.time,r.by,r.till,r.area,r.act,r.name,(r.changes||[]).map(([f,o,n])=>`${f}: ${o} -> ${n}`).join('; ')].map(esc).join(','))].join('\n');
+  const b=new Blob(['﻿'+txt],{type:'text/csv'}), u=URL.createObjectURL(b), l=document.createElement('a');
+  l.href=u; l.download='system-log-'+D(today)+'.csv'; document.body.appendChild(l); l.click(); l.remove(); setTimeout(()=>URL.revokeObjectURL(u),1000);
+}
+
 /* ================== THE TRAIL — the owner's page ==================
    Everything thrown away or changed after it was entered, in one list: held bills discarded,
    bills cleared off the till, lines taken off, bills opened again and re-made, along with the
@@ -27383,6 +27550,7 @@ window.serverSignedOut=(why)=>{
 };
 function signOut(){
   if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){ leaveDemo(); return }
+  try{ auditCheck(); if(S.user) auditAdd({area:'Sign-in',act:'signed out',name:S.user.name}) }catch(e){}
   // the bill on the screen is kept on this till and comes back when they sign in again, so signing
   // out to let somebody else serve no longer costs anybody their work
   const held=S.pos.lines.length;
@@ -27865,6 +28033,7 @@ function lockFinish(u){
   u.perms=uPerms;
   S.user={name:u.name,role:u.role,perms:[...uPerms],prefs:{...PREF_DEFAULTS,...(u.prefs||{})}};
   S.signedOut=false;
+  try{ auditAdd({area:'Sign-in',act:'signed in',name:u.name+(u.role?' ('+u.role+')':'')}) }catch(e){}
   try{ localStorage.setItem('regal_user',u.name); localStorage.removeItem('regal_signed_out') }catch(e){}
   document.querySelectorAll('.lock, #lockScreen').forEach(x=>x.remove());
   document.body.classList.remove('locked');
@@ -28890,6 +29059,8 @@ document.addEventListener('click',e=>{
       if(q==='all'){repFrom='';repTo=''}
       render()},
     trTab:()=>{ trailTab=a.dataset.t; render() },
+    slTab:()=>{ slTab=a.dataset.t; render() },
+    slCsv:()=>sysLogCsv(),
     trShow:()=>trailShow(a.dataset.id),
     trBack:()=>trailBack(a.dataset.id),
     trCsv:()=>{ const rows=trailRows().map(r=>[String(r.date||r.at).slice(0,10),r.time||'',(TRAIL_KINDS[r.kind]||TRAIL_KINDS.other)[0],r.what||'',r.why||'',r.who||'',r.amount==null?'':(+r.amount).toFixed(2),r.by||'',r.till||'']);
