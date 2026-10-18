@@ -953,6 +953,7 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 .qprint{height:42px;padding:0 18px;font-weight:800;letter-spacing:.04em}
 .qprint i{background:rgba(255,255,255,.25)}
 .qadd{height:42px;white-space:nowrap}
+.qadd i{font-style:normal;font-family:Archivo,sans-serif;font-size:10px;background:var(--ink);color:#fff;border-radius:2px;padding:0 5px;margin-left:4px}
 .qlab #labSug{position:absolute;left:0;top:100%;z-index:20;width:min(560px,90vw)}
 .qlab-types{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--line2)}
 .qlab-types label{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--steel)}
@@ -23998,17 +23999,26 @@ function code128Svg(text){
 /* A roll label's facts: the barcode, the cost code, the MRP (the maker's printed price; where an item
    has none, the price chosen in the panel, without the word MRP), and the company the item comes from
    (its supplier's number) in front of the name — as the old labels had "74 - COMET SEAT COVER". */
+/* The cost code as it goes on a label. A cost with fewer digits than the MRP would give itself away
+   (a 3-letter code on a Rs 1,975 item), so it takes a T in front for each digit it is short:
+   cost 988 with MRP 1,975 prints T + the code. */
+function labelCostCode(p,mrp){
+  if(!CFG.cost.onLabel) return '';
+  const code=costCode(p.cost), digits=(n)=>String(Math.round(Math.abs(+n||0))).length;
+  const short=+mrp>0&&+p.cost>0?Math.max(0,digits(mrp)-digits(p.cost)):0;
+  return (CFG.cost.pad||'T').toUpperCase().repeat(short)+code;
+}
 function rollFacts(p,o={}){
   const bc=String(p.barcode||p.code||('2'+String(p.id).padStart(11,'0'))).trim();
-  const cc=CFG.cost.onLabel?costCode(p.cost):'';
   const m0=o.mrp!==undefined&&o.mrp!==''&&o.mrp!==null?+o.mrp:+p.mrp, mrp=m0>0?m0:0, price=mrp||(o.price!==undefined?+o.price:+p[LAB.priceUsing]||0);
+  const cc=labelCostCode(p,mrp);
   const co=p.supplierId!=null&&p.supplierId!==''?String(p.supplierId):'';   // the supplier's number, as on the old labels
   return {bc,cc,price,priceWord:mrp?'MRP Rs.':'Rs.',co,name:String(p.name||'').toUpperCase()};
 }
 function labelHtml(p,type,o={}){
   if(o.mrp!==undefined&&o.mrp!==''&&o.mrp!==null&&+o.mrp!==+p.mrp) p={...p,mrp:+o.mrp};   // the MRP typed for this label
   const price=o.price!==undefined?o.price:p[LAB.priceUsing];
-  const cc=CFG.cost.onLabel?costCode(p.cost):'';
+  const cc=labelCostCode(p,p.mrp);
   const code=p.barcode||('2'+String(p.id).padStart(11,'0'));
   const shop=CFG.shop.name.replace(/^REGAL HARDWARE$/,'REGAL HARDWARE');
   const bits=[o.d1,o.d2,o.d3].filter(Boolean).join(' · ');
@@ -24307,22 +24317,22 @@ function labels(){
      <div class="f qn"><label>MRP Rs.</label><input id="qlMrp" type="number" step="any" min="0" value="${ql&&+ql.mrp>0?ql.mrp:''}" placeholder="none" ${ql?'':'disabled'}></div>
      <div class="f qn"><label>Selling price</label><input id="qlPrice" type="number" step="any" min="0" value="${ql?ql.price:''}" ${ql?'':'disabled'}></div>
      <div class="f qc"><label>No. of copies</label><input id="qlCopies" type="number" min="1" step="1" value="${ql?ql.copies:1}" ${ql?'':'disabled'}></div>
-     <button class="btn tape qprint" data-act="qlPrint" ${ql?'':'disabled'}>PRINT <i>F12</i></button>
-     <button class="btn ghost qadd" data-act="qlAdd" ${ql?'':'disabled'} title="Gather several items, then print them together">+ Add to list</button>
+     <button class="btn ghost qadd" data-act="qlAdd" ${ql?'':'disabled'}>Add <i>Enter</i></button>
+     <button class="btn tape qprint" data-act="qlPrint" ${ql||LAB.queue.length?'':'disabled'}>PRINT ${total?total+' ':''}<i>F12</i></button>
     </div>
     <div class="qlab-types">${LABTYPES.map(t=>`<label class="${LAB.type===t[0]?'on':''}"><input type="radio" name="qlType" value="${t[0]}" ${LAB.type===t[0]?'checked':''}> ${t[1]}${t[2]?` <i>${t[2]}</i>`:''}</label>`).join('')}</div>
    </div>
 
    <div class="card items">
-    <table><tr><th>#</th><th>Item</th><th>Style</th><th class="n">Price shown</th><th class="n">Labels</th><th></th></tr>
+    <table><tr><th>#</th><th>Item</th><th>Style</th><th class="n">Price on the label</th><th class="n">Labels</th><th></th></tr>
     ${LAB.queue.length?LAB.queue.map((x,i)=>{const pr=P(x.pid);return `<tr>
       <td>${i+1}</td>
       <td>${pr.name}<div class="muted">${pr.code} · ${pr.barcode}${x.batch?' · batch '+x.batch:''}</div></td>
       <td>${LABTYPES.find(t=>t[0]===x.type)[1]}</td>
-      <td class="n">${fmt(x.price)}</td>
+      <td class="n">${(()=>{ const m=x.mrp!==undefined&&x.mrp!==''?+x.mrp:+pr.mrp; return m>0?'MRP '+fmt(m):fmt(x.price) })()}</td>
       <td class="n"><input type="number" min="1" value="${x.copies}" data-labedit="${i}"></td>
       <td><button class="btn ghost sm" data-act="labDel" data-i="${i}">✕</button></td></tr>`}).join('')
-      :'<tr><td colspan="6" class="muted" style="padding:34px;text-align:center">For one item: scan it on the line above, type how many, press <b>F12</b> — it prints at once.<br>For many: press <b>+ Add to list</b> for each, then <b>Print all labels (F10)</b>.</td></tr>'}
+      :'<tr><td colspan="6" class="muted" style="padding:34px;text-align:center">Scan an item on the line above, type how many, press <b>Enter</b> — it goes on this list.<br>Do the same for every item, then press <b>F12</b> to print them all.</td></tr>'}
     </table>
    </div>
 
@@ -24359,7 +24369,7 @@ function labels(){
      <div class="tot">${total}</div>
      <div class="muted" style="text-align:right">${LAB.queue.length} item${LAB.queue.length===1?'':'s'}</div></div>
 
-    <button class="btn tape" style="padding:13px;font-size:15px" data-act="labPrint" ${total?'':'disabled'}>Print all labels (F10)</button>
+    <button class="btn tape" style="padding:13px;font-size:15px" data-act="labPrint" ${total?'':'disabled'}>Print all labels (F12)</button>
     <div style="display:flex;gap:6px">
      <button class="btn ghost" style="flex:1" data-act="labLow">Low stock</button>
      <button class="btn ghost" style="flex:1" data-act="labGrn">Last delivery</button>
@@ -24367,7 +24377,7 @@ function labels(){
     </div>
    </div>
 
-   <div class="keys"><span><b>F1</b>item</span><span><b>Enter</b>next box</span><span><b>F12</b>print now</span><span><b>F7</b>Zebra roll</span><span><b>F4</b>standard</span><span><b>F5</b>small</span><span><b>F6</b>with MRP</span><span><b>F10</b>print the list</span><span><b>Esc</b>back</span></div>
+   <div class="keys"><span><b>F1</b>item</span><span><b>Enter</b>next box · add to list</span><span><b>F12</b>print the list</span><span><b>F7</b>Zebra roll</span><span><b>F4</b>standard</span><span><b>F5</b>small</span><span><b>F6</b>with MRP</span><span><b>Esc</b>back</span></div>
   </div>`;
 }
 let labSug=[], labIdx=0;
@@ -24381,7 +24391,7 @@ function labelsAfter(){
     [mrp,pr,cp].forEach(el=>{ el.oninput=keep; el.onfocus=()=>el.select() });
     mrp.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); pr.focus() } };
     pr.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); cp.focus() } };
-    cp.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); keep(); labelQuickPrint() } };
+    cp.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); keep(); labelQuickAdd() } };
     // only the preview is redrawn as the prices change, so the cursor stays where it is
     const prev=()=>{ const box=document.querySelector('.labprev'), p=P(ql.pid); if(box&&p) box.innerHTML=labelHtml(p,LAB.type,{price:ql.price,mrp:ql.mrp,mf:LAB.mf,exp:LAB.exp,batch:LAB.batch,d1:LAB.d1,d2:LAB.d2,d3:LAB.d3}) };
     [mrp,pr].forEach(el=>el.onchange=()=>{ keep(); prev() });
@@ -24428,10 +24438,11 @@ function drawLabSug(){
 function startLabel(pid){ const p=P(pid); LAB.entry=null; LAB.ql={pid,mrp:+p.mrp>0?+p.mrp:0,price:+p[LAB.priceUsing]||+p.retail||0,copies:1}; render() }
 const labQuickItem=()=>{ const ql=LAB.ql, p=P(ql.pid); if(!p.barcode) p.barcode=normaliseBarcode('2'+String(p.id).padStart(11,'0'));
   return {pid:ql.pid,copies:Math.max(1,Math.floor(+ql.copies||1)),type:LAB.type,price:+ql.price||0,mrp:+ql.mrp||0,mf:LAB.mf,exp:LAB.exp,batch:LAB.batch,d1:LAB.d1,d2:LAB.d2,d3:LAB.d3} };
-// F12: this item, this many, now — then the line is clear for the next
+// F12: everything on the list (and an item still on the line) prints, and the list is cleared for the next lot
 function labelQuickPrint(){
-  if(!LAB.ql) return LAB.queue.length?labelSheet():toast('Scan or type an item first');
-  const it=labQuickItem(); LAB.ql=null; render(); labelSheet([it]);
+  if(LAB.ql) LAB.queue.push(labQuickItem());
+  if(!LAB.queue.length) return toast('Scan an item, type how many, press Enter — then F12');
+  const list=LAB.queue.slice(); LAB.ql=null; LAB.queue=[]; render(); labelSheet(list);
 }
 function labelQuickAdd(){
   if(!LAB.ql) return toast('Scan or type an item first');
@@ -28306,7 +28317,7 @@ document.addEventListener('click',e=>{
       toast(`${LAB.copies} label${LAB.copies===1?'':'s'} added · ${labelTotal()} on the sheet`)},
     labDel:()=>{LAB.queue.splice(+a.dataset.i,1);render()},
     labClear:()=>{LAB.queue=[];render()},
-    labPrint:()=>labelSheet(),
+    labPrint:()=>labelQuickPrint(),
     qlPrint:()=>labelQuickPrint(),
     qlAdd:()=>labelQuickAdd(),
     labTest:()=>{ const pid=(LAB.ql&&LAB.ql.pid)||(LAB.queue[0]&&LAB.queue[0].pid)||(S.products.find(p=>p.active!==false)||{}).id; if(!pid) return toast('Add an item first');
@@ -28531,7 +28542,7 @@ document.addEventListener('keydown',e=>{
     if(e.key==='F6'){e.preventDefault();LAB.type='s3';render()}
     if(e.key==='F7'){e.preventDefault();LAB.type='roll';render()}
     if(e.key==='F12'){e.preventDefault();labelQuickPrint()}
-    if(e.key==='F10'){e.preventDefault();labelSheet()}
+    if(e.key==='F10'){e.preventDefault();labelQuickPrint()}
   }
   if(S.view!=='pos'||document.querySelector('.modal'))return;
   if(e.key==='F1'){e.preventDefault();$('#q').focus()}
