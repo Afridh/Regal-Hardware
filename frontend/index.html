@@ -26687,7 +26687,11 @@ function lockFinish(u){
   if(!(S.pos&&S.pos.lines&&S.pos.lines.length)) restorePosDraft();
   applyLayout();
   go(landingView());
-  try{ clockInAsk(u.name) }catch(e){}
+  /* A till waiting at the lock screen hears nothing from the other tills or the shift clock, so what it
+     holds may be old. Bring the books up to date first — a punch made on regalhw.lk/shift a minute ago
+     must count — and only then ask whether this person is clocked in. */
+  (async()=>{ try{ if(window.regalBridge&&regalBridge.pull&&regalBridge.online()){ if(await regalBridge.pull(true)) render() } }catch(e){}
+    try{ clockInAsk(u.name) }catch(e){} })();
 }
 /* the welcome that plays as the till opens */
 function pinWelcome(u){

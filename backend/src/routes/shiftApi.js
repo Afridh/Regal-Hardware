@@ -155,6 +155,46 @@ r.all('/shift-api.php', asyncHandler(async (req, res) => {
     const events = Array.isArray(body.events) ? body.events : [];
     if (!events.length) return res.json({ ok: true, written: 0, skipped: 0, unmatched: [] });
 
+    /* The machine's check-ins go on the shop's own board — the books the till and regalhw.lk/shift read —
+       matched to staff by the "Fingerprint machine ID" (or card) on their staff record. Each record is
+       stamped with the revision it made (_srv), as a shift-clock punch is, so a till saving an older copy
+       keeps it. A day already put in by hand is never overwritten. The old separate board below is only
+       used while nobody on the shop's staff list has a machine ID yet. */
+    const main = await withTransaction(async client => {
+      const { rows: [cur] } = await client.query(`SELECT rev, data FROM books WHERE key = $1 FOR UPDATE`, ['regal']);
+      const data = typeof cur?.data === 'string' ? JSON.parse(cur.data) : cur?.data;
+      const S = data?.S, staff = Array.isArray(S?.employees) ? S.employees.filter(e => e && e.active !== false) : [];
+      const byDevice = {};
+      for (const e of staff) {
+        if (e.deviceId) byDevice[String(e.deviceId).trim().toUpperCase()] = e.id;
+        if (e.card) byDevice[String(e.card).trim().toUpperCase()] = e.id;
+      }
+      if (!Object.keys(byDevice).length) return null;                 // nobody has a machine ID: the old board
+      const grouped = {}, unmatched = new Set();
+      for (const ev of events) {
+        const id = String(ev.id || '').trim().toUpperCase();
+        let tm = String(ev.time || '').trim(); if (/^\d:\d\d$/.test(tm)) tm = '0' + tm;
+        if (!id || !/^([01]\d|2[0-3]):[0-5]\d$/.test(tm)) continue;
+        if (!byDevice[id]) { unmatched.add(id); continue }
+        (grouped[byDevice[id]] = grouped[byDevice[id]] || []).push(tm);
+      }
+      S.shift = S.shift || {}; S.shift.days = S.shift.days || {};
+      const next = Number(cur.rev) + 1, now = Date.now();
+      let written = 0, skipped = 0;
+      for (const [empId, times] of Object.entries(grouped)) {
+        const had = (S.shift.days[date] || {})[empId];
+        const rec = dayFromPunches(times, S.shift, had);
+        if (!rec) { skipped++; continue }
+        // the same punches read again a minute later: nothing to write
+        if (had && had.in === rec.in && had.out === rec.out && JSON.stringify(had.breaks || []) === JSON.stringify(rec.breaks || [])) { skipped++; continue }
+        (S.shift.days[date] = S.shift.days[date] || {})[empId] = { ...rec, by: 'fingerprint', updatedAt: now, _srv: next };
+        written++;
+      }
+      if (written) await client.query(`UPDATE books SET data = $1, rev = $2, updated_at = now(), updated_by = $3 WHERE key = $4`, [JSON.stringify(data), next, 'fingerprint', 'regal']);
+      return { written, skipped, unmatched: [...unmatched] };
+    });
+    if (main) return res.json({ ok: true, board: 'shop', ...main });
+
     const out = await withTransaction(async client => {
       const { rows: [cur] } = await client.query(`SELECT rev, data FROM books WHERE key = $1 FOR UPDATE`, [KEY]);
       const state = cur?.data;
