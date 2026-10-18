@@ -22043,10 +22043,15 @@ const R80_WIDTH_MM=70;
 const r80Left=()=>{ const v=+(CFG.bill&&CFG.bill.r80Left); return Number.isFinite(v)&&CFG.bill.r80Left!==''&&CFG.bill.r80Left!=null?Math.max(0,Math.min(12,v)):4 };
 function r80Place(pr,page){
   const sc=+pr.dataset.scale||1;
-  pr.style.width=`calc(${R80_WIDTH_MM}mm / ${sc})`;
-  pr.style.margin=`0 0 0 calc(${r80Left()}mm / ${sc})`;
+  // never wider than the paper the printer gives us: a till whose printer is set to another roll width,
+  // or whose print box adds margins, used to lose the right-hand side of every line
+  // (and above the phone rule that makes a bill full width on narrow screens — an 80mm page is one of those)
+  pr.style.setProperty('width',`calc(min(${R80_WIDTH_MM}mm, 100% - ${r80Left()}mm) / ${sc})`,'important');
+  pr.style.setProperty('overflow','visible','important');
+  pr.style.margin=`calc(2mm / ${sc}) 0 calc(2mm / ${sc}) calc(${r80Left()}mm / ${sc})`;
   const px=(pr.offsetHeight||600)*sc, mm=Math.min(1000,Math.ceil(px*25.4/96*1.06)+8);
-  page.textContent=`@page{size:80mm ${mm}mm;margin:2mm 0}`;
+  // no page margins at all, so the browser has nowhere to put its date, title and web address
+  page.textContent=`@page{size:80mm ${mm}mm;margin:0}`;
 }
 function browserPrint(inv,f='a5'){
   const html=billHtml(inv,f);
