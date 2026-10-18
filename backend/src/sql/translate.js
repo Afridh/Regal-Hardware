@@ -215,7 +215,12 @@ export function dialect(sql) {
   // MySQL puts nulls first going up and last going down; say which is wanted
   out = out.replace(/([\w.]+)(\s+(?:ASC|DESC))?\s+NULLS\s+LAST\b/gi, '$1 IS NULL, $1$2');
   out = out.replace(/([\w.]+)(\s+(?:ASC|DESC))?\s+NULLS\s+FIRST\b/gi, '$1 IS NOT NULL, $1$2');
-  // JSON reach-in: pg's -> and ->> both exist in MySQL with the same meaning for text keys.
+  // JSON reach-in: pg's -> and ->> exist in MySQL too, but there they take a path ('$.code', not
+  // 'code') and cannot be chained, so data->'S'->>'code' becomes data->>'$.S.code'
+  out = out.replace(/([A-Za-z_][\w.]*)((?:\s*->>?\s*'[A-Za-z_]\w*')+)/g, (m, col, chain) => {
+    const steps = [...chain.matchAll(/(->>?)\s*'(\w+)'/g)];
+    return `${col}${steps[steps.length - 1][1]}'$.${steps.map(s => s[2]).join('.')}'`;
+  });
   out = out.replace(/\bjsonb_array_length\(/gi, 'JSON_LENGTH(');
   out = out.replace(/\bjsonb_build_object\(/gi, 'JSON_OBJECT(');
   out = out.replace(/\bto_jsonb\(|\bto_json\(/gi, 'CAST(');
