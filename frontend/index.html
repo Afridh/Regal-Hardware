@@ -23956,7 +23956,7 @@ const LABTYPES=[
 /* The label printer's roll, as the shop measured it: each label's width and height, how many across,
    the gap between them and the margin at each side of the roll. 32 × 25 mm, three across, is the Zebra
    roll the shop used with its old system; Settings are in the label page's side panel. */
-const ROLL_DEF={w:32,h:25,across:3,gap:2,side:2};
+const ROLL_DEF={w:32,h:25,across:3,gap:2,side:2,dx:0,dy:0,dpi:203};
 const rollCfg=()=>({...ROLL_DEF,...(CFG.labelRoll||{})});
 /* Code 128 that a scanner reads back exactly as printed: all-digit codes are packed two digits to a
    bar pattern (set C), so a long number still fits a 32 mm label. */
@@ -24289,8 +24289,11 @@ function labels(){
        <div class="f"><label>Label width (mm)</label><input type="number" step="0.5" min="10" data-roll="w" value="${r.w}"></div>
        <div class="f"><label>Label height (mm)</label><input type="number" step="0.5" min="10" data-roll="h" value="${r.h}"></div>
        <div class="f"><label>Labels across</label><input type="number" step="1" min="1" max="6" data-roll="across" value="${r.across}"></div>
-       <div class="f"><label>Gap between (mm)</label><input type="number" step="0.5" min="0" data-roll="gap" value="${r.gap}"></div></div>
-       <div class="muted" style="font-size:11.5px;margin-top:4px">Paper ${+(r.side*2+r.across*r.w+(r.across-1)*r.gap).toFixed(1)} × ${r.h} mm. In the Zebra's printing preferences set the same paper size, and print at 100% (no "fit").</div>` })():''}
+       <div class="f"><label>Gap between (mm)</label><input type="number" step="0.5" min="0" data-roll="gap" value="${r.gap}"></div>
+       <div class="f"><label>Move right (mm)</label><input type="number" step="0.5" data-roll="dx" value="${r.dx||0}"></div>
+       <div class="f"><label>Move down (mm)</label><input type="number" step="0.5" data-roll="dy" value="${r.dy||0}"></div></div>
+       <button class="btn ghost sm" style="margin-top:6px;width:100%" data-act="labTest">Print a test row of ${r.across}</button>
+       <div class="muted" style="font-size:11.5px;margin-top:4px">Roll ${+(r.side*2+r.across*r.w+(r.across-1)*r.gap).toFixed(1)} × ${r.h} mm. Sent straight to the Zebra through the print helper — no print box, no scaling.</div>` })():''}
      <label style="margin-top:8px">Price to print</label>
      <div class="chips">${[['mrp','MRP'],['retail','Counter'],['wholesale','Wholesale']]
        .map(o=>`<button class="${LAB.priceUsing===o[0]?'on':''}" data-labprice="${o[0]}">${o[1]}</button>`).join('')}</div>
@@ -24382,6 +24385,51 @@ function labelAdd(pid,copies,type){
   LAB.queue.push({pid,copies:copies||1,type:type||LAB.type,price:p[LAB.priceUsing],
     mf:LAB.mf,exp:LAB.exp,batch:LAB.batch,d1:LAB.d1,d2:LAB.d2,d3:LAB.d3});
 }
+/* The Zebra's own language. The labels are laid out in the printer's dots (8 to the millimetre at
+   203 dpi) and sent through the print helper straight to the Zebra, so nothing between the till and
+   the printer can scale them, centre them or add a margin — the reason a printed web page never sits
+   right on a label. Move right / Move down in the panel nudge the whole row if the roll sits off. */
+function zplText(t){ return String(t==null?'':t).replace(/[_^~\\]/g,c=>'_'+c.charCodeAt(0).toString(16).toUpperCase().padStart(2,'0')) }
+// Code 128 for the Zebra, packed exactly as the till's own drawing is, so its width is known and it can be centred
+function zplCode128(text){
+  const t=String(text||'').trim();
+  if(/^\d{4,}$/.test(t)){ const odd=t.length%2, ev=odd?t.slice(0,-1):t;
+    return {data:'>;'+ev+(odd?'>6'+t.slice(-1):''),modules:(1+ev.length/2+(odd?2:0)+1)*11+13} }
+  return {data:'>:'+t.replace(/>/g,'><'),modules:(1+t.length+1)*11+13};
+}
+function labelZplRow(items,r){
+  const dpm=(+r.dpi||203)/25.4, d=(mm)=>Math.round(mm*dpm);
+  const W=d(r.w), H=d(r.h), pageW=d(r.side*2+r.across*r.w+(r.across-1)*r.gap);
+  let z=`^XA^CI28^PW${pageW}^LL${H}^LH${d(+r.dx||0)},${d(+r.dy||0)}`;
+  items.forEach((it,i)=>{
+    const p=P(it.pid), x0=d(r.side+i*(r.w+r.gap)), cc=CFG.cost.onLabel?costCode(p.cost):'';
+    const bc=String(p.barcode||p.code||('2'+String(p.id).padStart(11,'0'))).trim(), b=zplCode128(bc);
+    const m=[3,2,1].find(k=>b.modules*k<=W-d(2))||1, bw=b.modules*m;
+    const bh=Math.round(H*.3), y1=Math.round(H*.06), y2=y1+bh+Math.round(H*.03), y3=y2+Math.round(H*.11), y4=y3+Math.round(H*.17);
+    const price=it.price!==undefined?it.price:p[LAB.priceUsing];
+    z+=`^FO${x0+Math.max(0,Math.round((W-bw)/2))},${y1}^BY${m},3,${bh}^BCN,${bh},N,N,N^FH_^FD${zplText(b.data)}^FS`
+      +`^FO${x0+d(.8)},${y2}^FB${W-d(1.6)},1,0,C^A0N,${Math.round(H*.095)},${Math.round(H*.085)}^FH_^FD${zplText((cc?cc+'*':'')+bc+(cc?'*':''))}^FS`
+      +`^FO${x0+d(.8)},${y3}^FB${W-d(1.6)},1,0,C^A0N,${Math.round(H*.15)},${Math.round(H*.14)}^FH_^FDRs. ${zplText(money2(price))}^FS`
+      +`^FO${x0+d(.8)},${y4}^FB${W-d(1.6)},2,2,C^A0N,${Math.round(H*.085)},${Math.round(H*.075)}^FH_^FD${zplText(String(p.name||'').toUpperCase())}^FS`;
+  });
+  return z+'^PQ1^XZ';
+}
+function labelZpl(list){
+  const r=rollCfg(), one=[]; list.forEach(x=>{ for(let i=0;i<x.copies;i++) one.push(x) });
+  const rows=[]; for(let i=0;i<one.length;i+=r.across) rows.push(labelZplRow(one.slice(i,i+r.across),r));
+  return {zpl:rows.join('\n'),count:one.length,rows:rows.length};
+}
+// straight to the Zebra through the print helper; if the helper is not there, the browser's print window instead
+async function labelRollSend(list,test){
+  const url=printAgentUrl(), z=labelZpl(list);
+  if(url){ try{
+    const r=await fetch(url+'/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({zpl:z.zpl,count:z.count,name:test?'Test labels':'Regal labels'})});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok&&j.ok){ toast(`${z.count} label${z.count===1?'':'s'} sent to ${j.printer}`,'ok'); return true }
+    toast('Label printer: '+(j.error||r.status)+' — using the print window instead','warn');
+  }catch(e){ toast('The print helper is not running on this PC — using the print window instead','warn') } }
+  labelRollPrint(list); return false;
+}
 function labelRollPrint(list){
   const r=rollCfg(), pageW=+(r.side*2+r.across*r.w+(r.across-1)*r.gap).toFixed(2);
   const labels=[]; list.forEach(x=>{ for(let i=0;i<x.copies;i++) labels.push(labelHtml(P(x.pid),'roll',x)) });
@@ -24407,7 +24455,7 @@ function labelRollPrint(list){
 function labelSheet(){
   if(!LAB.queue.length) return toast('Add something to the sheet first');
   const roll=LAB.queue.filter(x=>x.type==='roll'), rest=LAB.queue.filter(x=>x.type!=='roll');
-  if(roll.length) labelRollPrint(roll);
+  if(roll.length) labelRollSend(roll);
   if(!rest.length) return;
   const all=[];
   rest.forEach(x=>{for(let i=0;i<x.copies;i++) all.push(labelHtml(P(x.pid),x.type,x))});
@@ -28154,6 +28202,8 @@ document.addEventListener('click',e=>{
     labDel:()=>{LAB.queue.splice(+a.dataset.i,1);render()},
     labClear:()=>{LAB.queue=[];render()},
     labPrint:()=>labelSheet(),
+    labTest:()=>{ const pid=(LAB.queue[0]&&LAB.queue[0].pid)||(LAB.entry&&LAB.entry.pid)||(S.products.find(p=>p.active!==false)||{}).id; if(!pid) return toast('Add an item first');
+      labelRollSend([{pid,copies:rollCfg().across,type:'roll',price:P(pid)[LAB.priceUsing]}],true) },
     labLow:()=>{S.products.filter(x=>x.stock<=x.min).forEach(x=>labelAdd(x.id,1,LAB.type));render();toast(labelTotal()+' labels on the sheet')},
     labGrn:()=>{const last=S.purchases.at(-1); if(!last)return toast('No deliveries yet');
       last.lines.forEach(l=>labelAdd(l.pid,Math.min(20,Math.ceil(l.qty)),LAB.type)); render();

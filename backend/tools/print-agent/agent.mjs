@@ -130,6 +130,18 @@ function printImage(format, file) {
   });
 }
 
+/** Labels: the till sends the Zebra's own language (ZPL), which goes to the label printer untouched. */
+function printRaw(printer, data, name) {
+  const file = path.join(tmp, 'labels-' + Date.now() + '.zpl'); fs.writeFileSync(file, data, 'utf8');
+  const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(here, 'print-raw.ps1'), '-Printer', printer, '-File', file, '-Name', name || 'Regal labels'];
+  return new Promise((resolve, reject) => {
+    const ps = spawn('powershell.exe', args, { windowsHide: true });
+    let out = '', err = '';
+    ps.stdout.on('data', d => out += d); ps.stderr.on('data', d => err += d);
+    ps.on('close', code => { fs.unlink(file, () => {}); code === 0 ? resolve(out.trim()) : reject(new Error((err || out || 'print failed').trim().split('\n')[0])); });
+  });
+}
+
 /* ---- bills made somewhere else ----
    A bill keyed on a phone, on a second till or on the website has no printer of its own. It is left
    on the shop's server as a job, and this helper asks for the next one every couple of seconds and
@@ -182,11 +194,24 @@ let busy = Promise.resolve();
 
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
-  if (req.method === 'GET' && req.url === '/status') return send(res, 200, { ok: true, printers: { r80: cfg.r80.printer, a5: cfg.a5.printer }, renderer: path.basename(chrome) });
+  if (req.method === 'GET' && req.url === '/status') return send(res, 200, { ok: true, printers: { r80: cfg.r80.printer, a5: cfg.a5.printer, label: cfg.label && cfg.label.printer || null }, renderer: path.basename(chrome) });
   if (req.method === 'POST' && req.url === '/preview') {            // the rendered image, for checking — nothing is printed
     let body = ''; req.on('data', d => { body += d; }); req.on('end', async () => {
       try { const job = JSON.parse(body); const file = await render(job.format, job.html); const png = fs.readFileSync(file); fs.unlink(file, () => {}); res.writeHead(200, { ...HEADERS, 'Content-Type': 'image/png' }); res.end(png); }
       catch (e) { send(res, 500, { ok: false, error: e.message }); } });
+    return;
+  }
+  if (req.method === 'POST' && req.url === '/label') {             // { zpl } → straight to the label printer
+    let body = ''; req.on('data', d => { body += d; if (body.length > 4e6) req.destroy(); });
+    req.on('end', async () => {
+      let job; try { job = JSON.parse(body); } catch { return send(res, 400, { ok: false, error: 'bad request' }); }
+      const printer = (cfg.label && cfg.label.printer) || '';
+      if (!printer) return send(res, 400, { ok: false, error: 'no label printer set in the print helper (config.json: "label")' });
+      if (!job.zpl || !job.zpl.includes('^XA')) return send(res, 400, { ok: false, error: 'no labels in the request' });
+      const run = busy.then(() => printRaw(printer, job.zpl, job.name)); busy = run.catch(() => {});
+      try { const out = await run; log('labels', job.count || '', '→', out); send(res, 200, { ok: true, printer }); }
+      catch (e) { log('FAILED labels', e.message); send(res, 500, { ok: false, error: e.message }); }
+    });
     return;
   }
   if (req.method === 'POST' && req.url === '/print') {
@@ -211,7 +236,7 @@ http.createServer(async (req, res) => {
   }
   send(res, 404, { ok: false, error: 'not found' });
 }).listen(cfg.port, '127.0.0.1', () => {
-  log(`Regal print helper on http://localhost:${cfg.port} — 80mm → ${cfg.r80.printer}, A5 → ${cfg.a5.printer} (rendering with ${path.basename(chrome)})`);
+  log(`Regal print helper on http://localhost:${cfg.port} — 80mm → ${cfg.r80.printer}, A5 → ${cfg.a5.printer}, labels → ${(cfg.label && cfg.label.printer) || 'none'} (rendering with ${path.basename(chrome)})`);
   if (KEY) {
     log(`Watching ${SERVER} for bills sent from anywhere else`);
     const tick = () => takeJobs()
