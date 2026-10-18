@@ -280,6 +280,20 @@ r.delete('/media/:key', regalAuth, asyncHandler(async (req, res) => {
   res.json({ ok: true, removed: rowCount });
 }));
 
+/* What a customer may see of an order: the lines with their names (the order keeps only the product id),
+   the shop's reason if it was stopped, the events in one shape, and who is bringing it — the rider's name
+   and mobile, or the courier and its tracking number, as the till set them when it went out. */
+const namedLines = (lines, S) => (lines || []).map(l => {
+  const p = (S?.products || []).find(x => String(x.id) === String(l.pid));
+  return { ...l, name: l.name || p?.name || 'Item', unit: l.unit || p?.unit || '' };
+});
+const evView = (evs) => (evs || []).map(e => ({ by: e.by || e.who || '', at: e.at || '', what: e.what || e.text || '' }));
+const shipView = (b) => { const s = b?.ship; if (!s || !s.mode) return null;
+  return { mode: s.mode, rider: s.rider || '', riderPhone: s.riderPhone || '', courier: s.courier || '', trackNo: s.trackNo || '', trackUrl: s.trackUrl || '', at: s.at || '' }; };
+const orderView = (row, b, S) => ({ no: row.no, date: row.data.date, time: row.data.time, lines: namedLines(row.data.lines, S), total: row.data.total,
+  del: row.data.del, off: row.data.off || 0, deliver: row.data.deliver, address: row.data.address || '', zone: row.data.zone || '', pay: row.data.pay || '',
+  note: row.data.note, status: b?.status || 'placed', invoice: b?.invoice || null, reason: b?.note2 || '', events: evView(b?.events || row.data.events), ship: shipView(b) });
+
 /** Where an order is, for someone who has the order number and the mobile it was placed with. */
 r.post('/track', asyncHandler(async (req, res) => {
   const no = String(req.body?.no || '').trim().toUpperCase();
@@ -290,7 +304,7 @@ r.post('/track', asyncHandler(async (req, res) => {
   if (!row) throw new HttpError(404, 'No order with that number for that mobile');
   const data = await books();
   const b = (data?.S?.web?.orders || []).find(o => o.no === row.no);
-  res.json({ ok: true, order: { no: row.no, date: row.data.date, time: row.data.time, lines: row.data.lines, total: row.data.total, del: row.data.del, deliver: row.data.deliver, status: b?.status || 'placed', invoice: b?.invoice || null, reason: b?.note || '', events: b?.events || row.data.events || [] } });
+  res.json({ ok: true, order: orderView(row, b, data?.S) });
 }));
 
 /* The people who sign in on the site, kept in shop_customers: when they first and last came, how often,
@@ -389,9 +403,9 @@ r.get('/me', shopAuth, asyncHandler(async (req, res) => {
   const inBooks = new Map((S.web?.orders || []).map(o => [o.no, o]));
   await ensureShopTables();
   const { rows } = await query(`SELECT no, data, created_at, imported_at FROM shop_orders WHERE phone = $1 ORDER BY id DESC LIMIT 50`, [phone]);
-  const orders = rows.map(row => { const b = inBooks.get(row.no); return { no: row.no, date: row.data.date, time: row.data.time, lines: row.data.lines, total: row.data.total, del: row.data.del, deliver: row.data.deliver, address: row.data.address || '', note: row.data.note, status: b?.status || 'placed', invoice: b?.invoice || null, reason: b?.note || '', events: b?.events || row.data.events || [] }; });
+  const orders = rows.map(row => orderView(row, inBooks.get(row.no), S));
   // orders the shop keyed for this customer at the counter show too
-  for (const o of (S.web?.orders || [])) if (c && o.cid === c.id && !rows.some(x => x.no === o.no)) orders.push({ no: o.no, date: o.date, time: o.time, lines: o.lines, total: o.total, del: o.del, deliver: o.deliver, note: o.note, status: o.status, invoice: o.invoice || null });
+  for (const o of (S.web?.orders || [])) if (c && o.cid === c.id && !rows.some(x => x.no === o.no)) orders.push(orderView({ no: o.no, data: o }, o, S));
   const owing = c ? (S.sales || []).filter(s => s.customerId === c.id).reduce((a, s) => a + (+s.balance || 0), 0) : 0;
   const bills = c ? (S.sales || []).filter(s => s.customerId === c.id).length : 0;
   const spent = round2(orders.filter(o => !['rejected', 'cancelled'].includes(o.status)).reduce((a, o) => a + (+o.total || 0), 0));
