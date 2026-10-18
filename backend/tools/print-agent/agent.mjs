@@ -132,6 +132,7 @@ function printImage(format, file) {
 
 /** Labels: the till sends the Zebra's own language (ZPL), which goes to the label printer untouched. */
 function printRaw(printer, data, name) {
+  fs.mkdirSync(tmp, { recursive: true });      // Windows' clean-up may have taken the folder since the helper started
   const file = path.join(tmp, 'labels-' + Date.now() + '.zpl'); fs.writeFileSync(file, data, 'utf8');
   const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(here, 'print-raw.ps1'), '-Printer', printer, '-File', file, '-Name', name || 'Regal labels'];
   return new Promise((resolve, reject) => {
