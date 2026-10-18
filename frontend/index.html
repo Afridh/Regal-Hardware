@@ -2268,6 +2268,16 @@ tr.rowlink button{cursor:pointer}
 .lbl-s2{width:38mm;height:25mm}
 .lbl-shelf{width:80mm;height:40mm}
 .lbl-offer{width:50mm;height:40mm;text-align:center}
+/* the Zebra roll: no border (the label's own edge is the edge), barcode, code, price, name */
+.lbl-roll{width:var(--lw,32mm);height:var(--lh,25mm);border:0;padding:1.2mm 1.4mm 1mm;text-align:center;justify-content:flex-start;gap:0;overflow:hidden;box-sizing:border-box}
+.lbl.lbl-roll .lbc{display:block;width:100%;height:calc(var(--lh,25mm) * .34)}
+.lbl.lbl-roll .lcode{font-size:7.5pt;letter-spacing:.03em;line-height:1.15;margin-top:.4mm}
+.lbl.lbl-roll .lprice{font-size:10.5pt;font-weight:700;line-height:1.15}
+.lbl.lbl-roll .lname{font-size:6pt;font-weight:400;line-height:1.15;max-height:2.35em;overflow:hidden}
+.labprev .lbl-roll{outline:1px dashed #9a9a9a;outline-offset:0}
+.labroll{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.labroll .f{margin:0}
+.labroll input{width:100%}
 .lbl .lshop{font-size:6pt;letter-spacing:.06em;font-weight:700}
 .lbl .lname{font-size:8pt;font-weight:700;line-height:1.1;overflow:hidden;max-height:2.4em}
 .lbl .lname.big{font-size:12pt}
@@ -23932,9 +23942,10 @@ function ean13Svg(code,w=190,h=62){
 }
 
 window.LAB=null; // set below, exposed so the label page can be scripted in tests
-let LAB={q:'',pid:null,entry:null,copies:1,priceUsing:'retail',type:'s1',mf:'',exp:'',batch:'',d1:'',d2:'',d3:'',queue:[]};
+let LAB={q:'',pid:null,entry:null,copies:1,priceUsing:'retail',type:'roll',mf:'',exp:'',batch:'',d1:'',d2:'',d3:'',queue:[]};
 window.LAB=LAB;
 const LABTYPES=[
+  ['roll','Zebra roll · 3 across','F7','32 × 25 mm on the label printer · like the old labels'],
   ['s1','Standard label','F4','50 × 30 mm · name, barcode, price'],
   ['s2','Small label','F5','38 × 25 mm · for small items and hooks'],
   ['s3','With MRP','F6','50 × 30 mm · shows the printed price and yours'],
@@ -23942,6 +23953,22 @@ const LABTYPES=[
   ['offer','Offer label','','big price, for promotions and end caps'],
   ['shelf','Shelf edge','','80 × 40 mm · for the rack, not the item']];
 
+/* The label printer's roll, as the shop measured it: each label's width and height, how many across,
+   the gap between them and the margin at each side of the roll. 32 × 25 mm, three across, is the Zebra
+   roll the shop used with its old system; Settings are in the label page's side panel. */
+const ROLL_DEF={w:32,h:25,across:3,gap:2,side:2};
+const rollCfg=()=>({...ROLL_DEF,...(CFG.labelRoll||{})});
+/* Code 128 that a scanner reads back exactly as printed: all-digit codes are packed two digits to a
+   bar pattern (set C), so a long number still fits a 32 mm label. */
+function code128Svg(text){
+  const t=String(text||''); let vals;
+  if(/^\d{4,}$/.test(t)){ const ev=t.length%2?t.slice(0,-1):t; vals=[105]; for(let i=0;i<ev.length;i+=2) vals.push(+ev.slice(i,i+2)); if(t.length%2){ vals.push(100); vals.push(t.charCodeAt(t.length-1)-32) } }
+  else { vals=[104]; for(const ch of t){ const c=ch.charCodeAt(0)-32; vals.push(c>=0&&c<95?c:0) } }
+  let sum=vals[0]; vals.slice(1).forEach((v,i)=>{ sum+=v*(i+1) }); vals.push(sum%103);
+  const bits=vals.map(v=>CODE128[v]).join('')+'1100011101011', q=10;
+  let out='', x=q; for(let i=0;i<bits.length;){ if(bits[i]==='1'){ let j=i; while(bits[j]==='1') j++; out+=`<rect x="${x+i}" y="0" width="${j-i}" height="10"/>`; i=j } else i++ }
+  return `<svg class="lbc" viewBox="0 0 ${bits.length+q*2} 10" preserveAspectRatio="none" shape-rendering="crispEdges" fill="#000">${out}</svg>`;
+}
 function labelHtml(p,type,o={}){
   const price=o.price!==undefined?o.price:p[LAB.priceUsing];
   const cc=CFG.cost.onLabel?costCode(p.cost):'';
@@ -23949,6 +23976,9 @@ function labelHtml(p,type,o={}){
   const shop=CFG.shop.name.replace(/^REGAL HARDWARE$/,'REGAL HARDWARE');
   const bits=[o.d1,o.d2,o.d3].filter(Boolean).join(' · ');
   const dates=[o.mf?'MFD '+o.mf:'',o.exp?'EXP '+o.exp:'',o.batch?'B'+o.batch:''].filter(Boolean).join('  ');
+  if(type==='roll'){ const r=rollCfg(), bc=String(p.barcode||p.code||code).trim();
+    return `<div class="lbl lbl-roll" style="--lw:${r.w}mm;--lh:${r.h}mm">${code128Svg(bc)}<div class="lcode">${cc?cc+'*':''}${escM(bc)}${cc?'*':''}</div>
+      <div class="lprice">Rs. ${money2(price)}</div><div class="lname">${escM(p.name)}</div></div>` }
   if(type==='s2') return `<div class="lbl lbl-s2"><div class="lname">${p.name}</div>${ean13Svg(code,150,44)}
     <div class="lfoot"><span>${cc||p.code}</span><b>${fmt(price)}</b></div></div>`;
   if(type==='s3') return `<div class="lbl lbl-s1"><div class="lshop">${shop}</div><div class="lname">${p.name}</div>
@@ -24255,6 +24285,12 @@ function labels(){
    <div class="side">
     <div class="card"><label>Label style</label>
      <select id="labType">${LABTYPES.map(t=>`<option value="${t[0]}" ${LAB.type===t[0]?'selected':''}>${t[1]} — ${t[3]}</option>`).join('')}</select>
+     ${LAB.type==='roll'?(()=>{ const r=rollCfg(); return `<div class="labroll">
+       <div class="f"><label>Label width (mm)</label><input type="number" step="0.5" min="10" data-roll="w" value="${r.w}"></div>
+       <div class="f"><label>Label height (mm)</label><input type="number" step="0.5" min="10" data-roll="h" value="${r.h}"></div>
+       <div class="f"><label>Labels across</label><input type="number" step="1" min="1" max="6" data-roll="across" value="${r.across}"></div>
+       <div class="f"><label>Gap between (mm)</label><input type="number" step="0.5" min="0" data-roll="gap" value="${r.gap}"></div></div>
+       <div class="muted" style="font-size:11.5px;margin-top:4px">Paper ${+(r.side*2+r.across*r.w+(r.across-1)*r.gap).toFixed(1)} × ${r.h} mm. In the Zebra's printing preferences set the same paper size, and print at 100% (no "fit").</div>` })():''}
      <label style="margin-top:8px">Price to print</label>
      <div class="chips">${[['mrp','MRP'],['retail','Counter'],['wholesale','Wholesale']]
        .map(o=>`<button class="${LAB.priceUsing===o[0]?'on':''}" data-labprice="${o[0]}">${o[1]}</button>`).join('')}</div>
@@ -24270,7 +24306,7 @@ function labels(){
 
     <div class="card"><div class="muted">Preview</div>
      <div class="labprev" style="padding:9px">${p?labelHtml(p,LAB.type,{price:p[LAB.priceUsing],mf:LAB.mf,exp:LAB.exp,batch:LAB.batch,d1:LAB.d1,d2:LAB.d2,d3:LAB.d3}):'<div class="muted">Nothing chosen yet.</div>'}</div>
-     <div class="muted" style="margin-top:6px">Real EAN-13 — the till will read it.</div></div>
+     <div class="muted" style="margin-top:6px">${LAB.type==='roll'?`Code 128 — scans back as ${p?escM(String(p.barcode||p.code||'')):'the code'}`:'Real EAN-13 — the till will read it.'}</div></div>
 
     <div class="card"><div class="muted" style="text-align:right">Labels on the sheet</div>
      <div class="tot">${total}</div>
@@ -24284,7 +24320,7 @@ function labels(){
     </div>
    </div>
 
-   <div class="keys"><span><b>F1</b>item</span><span><b>Enter</b>add</span><span><b>F4</b>standard</span><span><b>F5</b>small</span><span><b>F6</b>with MRP</span><span><b>F10</b>print the sheet</span><span><b>Esc</b>back</span></div>
+   <div class="keys"><span><b>F1</b>item</span><span><b>Enter</b>add</span><span><b>F7</b>Zebra roll</span><span><b>F4</b>standard</span><span><b>F5</b>small</span><span><b>F6</b>with MRP</span><span><b>F10</b>print the sheet</span><span><b>Esc</b>back</span></div>
   </div>`;
 }
 let labSug=[], labIdx=0;
@@ -24325,6 +24361,8 @@ function labelsAfter(){
     if(n>0) LAB.queue[i].copies=n; else LAB.queue.splice(i,1);
     render()});
   const sel=$('#labType'); if(sel) sel.onchange=e=>{LAB.type=e.target.value;render()};
+  document.querySelectorAll('[data-roll]').forEach(inp=>inp.onchange=()=>{ const v=+inp.value; if(!(v>=0)) return;
+    CFG.labelRoll={...rollCfg(),[inp.dataset.roll]:inp.dataset.roll==='across'?Math.max(1,Math.round(v)):v}; persist(true); render() });
   const bind=(id,k)=>{const el=$('#'+id); if(el)el.onchange=ev=>{LAB[k]=ev.target.value;render()}};
   bind('labMf','mf'); bind('labExp','exp'); bind('labBatch','batch'); bind('labD1','d1'); bind('labD2','d2');
   document.querySelectorAll('[data-labprice]').forEach(b=>b.onclick=()=>{LAB.priceUsing=b.dataset.labprice;render()});
@@ -24344,10 +24382,35 @@ function labelAdd(pid,copies,type){
   LAB.queue.push({pid,copies:copies||1,type:type||LAB.type,price:p[LAB.priceUsing],
     mf:LAB.mf,exp:LAB.exp,batch:LAB.batch,d1:LAB.d1,d2:LAB.d2,d3:LAB.d3});
 }
+function labelRollPrint(list){
+  const r=rollCfg(), pageW=+(r.side*2+r.across*r.w+(r.across-1)*r.gap).toFixed(2);
+  const labels=[]; list.forEach(x=>{ for(let i=0;i<x.copies;i++) labels.push(labelHtml(P(x.pid),'roll',x)) });
+  const rows=[]; for(let i=0;i<labels.length;i+=r.across) rows.push(labels.slice(i,i+r.across));
+  // the print window carries its own rules for the label, whole, rather than lifting lines out of the page's
+  const css='.lbl{background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column}'
+    +'.lbl-roll{width:var(--lw,32mm);height:var(--lh,25mm);border:0;padding:1.2mm 1.4mm 1mm;text-align:center;justify-content:flex-start;gap:0;overflow:hidden;box-sizing:border-box;flex:none}'
+    +'.lbl-roll .lbc{display:block;width:100%;height:calc(var(--lh,25mm) * .34)}.lbl-roll .lcode{font-size:7.5pt;letter-spacing:.03em;line-height:1.15;margin-top:.4mm}'
+    +'.lbl-roll .lprice{font-size:10.5pt;font-weight:700;line-height:1.15}.lbl-roll .lname{font-size:6pt;line-height:1.15;max-height:2.35em;overflow:hidden}';
+  const w=window.open('','_blank','width=520,height=640'); if(!w) return toast('Allow pop-ups to print the labels');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${labels.length} labels</title><style>
+    @page{size:${pageW}mm ${r.h}mm;margin:0}
+    html,body{margin:0;padding:0;background:#fff}
+    ${css}
+    .row{display:flex;gap:${r.gap}mm;padding:0 ${r.side}mm;width:${pageW}mm;height:${r.h}mm;box-sizing:border-box;overflow:hidden;break-after:page;page-break-after:always}
+    .row:last-child{break-after:auto;page-break-after:auto}
+    @media screen{body{background:#ddd;padding:10px}.row{background:#fff;margin:0 auto 6px;outline:1px solid #bbb}.lbl-roll{outline:1px dashed #ccc}}
+    </style></head><body>${rows.map(rw=>`<div class="row">${rw.join('')}</div>`).join('')}
+    <script>window.onload=()=>setTimeout(()=>window.print(),150)<\/script></body></html>`);
+  w.document.close();
+  toast(`${labels.length} label${labels.length===1?'':'s'} · ${rows.length} row${rows.length===1?'':'s'} of ${r.across} · paper ${pageW} × ${r.h} mm`);
+}
 function labelSheet(){
   if(!LAB.queue.length) return toast('Add something to the sheet first');
+  const roll=LAB.queue.filter(x=>x.type==='roll'), rest=LAB.queue.filter(x=>x.type!=='roll');
+  if(roll.length) labelRollPrint(roll);
+  if(!rest.length) return;
   const all=[];
-  LAB.queue.forEach(x=>{for(let i=0;i<x.copies;i++) all.push(labelHtml(P(x.pid),x.type,x))});
+  rest.forEach(x=>{for(let i=0;i<x.copies;i++) all.push(labelHtml(P(x.pid),x.type,x))});
   modal(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
     <h2 style="margin:0">${all.length} label${all.length===1?'':'s'} · A4 sheet</h2>
     <div style="display:flex;gap:6px"><button class="btn sm" onclick="window.print()">Print</button>
@@ -28309,6 +28372,7 @@ document.addEventListener('keydown',e=>{
     if(e.key==='F4'){e.preventDefault();LAB.type='s1';render()}
     if(e.key==='F5'){e.preventDefault();LAB.type='s2';render()}
     if(e.key==='F6'){e.preventDefault();LAB.type='s3';render()}
+    if(e.key==='F7'){e.preventDefault();LAB.type='roll';render()}
     if(e.key==='F12'||e.key==='F10'){e.preventDefault();labelSheet()}
   }
   if(S.view!=='pos'||document.querySelector('.modal'))return;
