@@ -1614,7 +1614,7 @@ tr.off td{opacity:.55}
 .pw-net{color:var(--chip-rust)}
 .pw-cr.due{color:var(--chip-rust)}.pw-cr.nil{color:var(--chip-green)}.pw-cr.chg{color:var(--chip-blue)}
 #payAmt{font-family:Archivo,sans-serif;font-weight:800;font-size:24px;text-align:right;padding:4px 6px;border:0;background:transparent;width:100%}
-#payNote{border:0;background:transparent;padding:2px 0;font-size:13px}
+#payNote,#payLedger{border:0;background:transparent;padding:2px 0;font-size:13px}
 .pw-brk{width:100%;border:1px solid var(--line);border-radius:var(--r)}
 .pw-brk td{padding:5px 10px;font-size:12.5px;border-bottom:1px solid var(--line2);color:var(--steel)}
 .pw-brk tr.has td{color:var(--ink);font-weight:600}
@@ -1754,7 +1754,7 @@ tr.off td{opacity:.55}
 .pw-net{color:var(--chip-rust)}
 .pw-cr.due{color:var(--chip-rust)}.pw-cr.nil{color:var(--chip-green)}.pw-cr.chg{color:var(--chip-blue)}
 #payAmt{font-family:Archivo,sans-serif;font-weight:800;font-size:24px;text-align:right;padding:4px 6px;border:0;background:transparent;width:100%}
-#payNote{border:0;background:transparent;padding:2px 0;font-size:13px}
+#payNote,#payLedger{border:0;background:transparent;padding:2px 0;font-size:13px}
 .pw-brk{width:100%;border:1px solid var(--line);border-radius:var(--r)}
 .pw-brk td{padding:5px 10px;font-size:12.5px;border-bottom:1px solid var(--line2);color:var(--steel)}
 .pw-brk tr.has td{color:var(--ink);font-weight:600}
@@ -10798,8 +10798,16 @@ function webSet(no,st,note){
 }
 /* A web order billed at the till: the order takes the bill's number and moves to Billed. Cash on
    delivery that was not taken at the till is what the rider has to collect. */
+/* The ledger number the shop writes the bill under in its own ledger book. Typed at payment (it starts as
+   the customer's own ledger number); a customer without one keeps the first one typed for them. */
+function billLedger(inv){
+  const v=String(S.pos&&S.pos.ledger!=null?S.pos.ledger:'').trim(); if(!v) return;
+  inv.ledger=v;
+  const c=inv.customerId&&inv.customerId!==1?C(inv.customerId):null; if(c&&!c.ledger) c.ledger=v;
+}
 function webBilled(inv){
   jobBilled(inv);   // a repair charge on this bill closes its job
+  billLedger(inv);  // the page of the hand-kept ledger, typed at payment
   const wo=S.pos.fromWeb&&S.web.orders.find(x=>x.no===S.pos.fromWeb); if(!wo) return;
   wo.invoice=inv.no; wo.status='invoiced'; webEvent(wo,'Billed as '+inv.no);
   if(wo.deliver&&wo.pay==='cod') wo.cod={state:(+inv.balance||0)>0?'due':'paid',amount:+(+inv.balance||0).toFixed(2)};
@@ -15998,6 +16006,7 @@ function openPay(resume){
        <div class="pw-f"><label>${refund?'STILL TO GIVE BACK':(shown<-0.005?'CHANGE':'CREDIT AMOUNT')}</label>
         <b class="pw-cr ${shown<-0.005?'chg':(shown>0.005?'due':'nil')}" id="payLeft">${money2(Math.abs(shown))}</b></div>
        <div class="pw-f"><label>NOTE</label><input id="payNote" value="${note}" placeholder="anything for the bill"></div>
+       <div class="pw-f"><label>LEDGER NO</label><input id="payLedger" value="${escM(S.pos.ledger!=null?S.pos.ledger:(c().id!==1&&c().ledger)||'')}" placeholder="page in the ledger book"></div>
       </div>
       <div class="payw-m">
        <table class="pw-brk">
@@ -16034,6 +16043,7 @@ function openPay(resume){
       };
     });
     stage.querySelector('#payNote').oninput=e=>note=e.target.value;
+    { const lg=stage.querySelector('#payLedger'); if(lg){ if(S.pos.ledger==null) S.pos.ledger=lg.value; lg.oninput=e=>{ S.pos.ledger=e.target.value } } }
     stage.querySelectorAll('[data-paym]').forEach(b=>b.onclick=()=>take(b.dataset.paym));
     stage.querySelectorAll('[data-payrm]').forEach(b=>b.onclick=()=>{taken.splice(+b.dataset.payrm,1);draw()});
     stage.querySelector('#payDel').onclick=()=>{ taken.pop(); draw() };
@@ -19437,6 +19447,7 @@ function billHit(s,q){
   if(!q)return true;
   const c=C(s.customerId)||{name:'',phone:''}, digits=q.replace(/\D/g,'');
   if(s.no.toLowerCase().includes(q)) return true;
+  if(s.ledger&&String(s.ledger).toLowerCase()===q.replace(/^(ledger|lf|l)\s*:?\s*/,'')) return true;   // the ledger book page
   if(digits.length>=3&&s.no.replace(/\D/g,'').endsWith(digits)) return true;           // "31" finds INVM-T1-AF-00031
   // the customer: their name, the name on the bill, their code, their mobile, or the one the bill was sent to
   return c.name.toLowerCase().includes(q)||(c.code||'').toLowerCase().includes(q)
@@ -20785,11 +20796,13 @@ function custModal(id,preset){
    <div class="grid2">
     <div class="f"><label>Prices</label><select id="cmLevel"><option value="retail" ${!c||c.level==='retail'?'selected':''}>Retail</option><option value="wholesale" ${c&&c.level==='wholesale'?'selected':''}>Wholesale</option></select></div>
     <div class="f"><label>Credit limit (Rs)</label><input id="cmLimit" type="number" step="1000" value="${c?c.limit:25000}"></div></div>
+   <div class="f" style="max-width:260px"><label>Ledger No <span class="muted">(their page in the ledger book)</span></label><input id="cmLedger" value="${c?escM(c.ledger||''):''}" placeholder="e.g. 45 or L-12"></div>
    <div class="f"><label>Notes for the counter</label><textarea id="cmNotes" rows="2" placeholder="e.g. pays by cheque at month end · ask for Sunil">${c?(c.notes||''):''}</textarea></div>
    <div class="muted" id="cmMsg"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="cmOk">${c?'Save':'Add customer'}</button></div>`);
   const g=id2=>m.querySelector('#'+id2);
   const save=()=>{
+    const ledger=g('cmLedger').value.trim();
     const name=g('cmName').value.trim(), phone=g('cmPhone').value.trim(), addr=g('cmAddr').value.trim(), email=g('cmEmail').value.trim(), level=g('cmLevel').value, limit=+g('cmLimit').value||0, notes=g('cmNotes').value.trim();
     if(!name){ g('cmMsg').textContent='A name is needed.'; g('cmName').focus(); return }
     if(email&&!isEmail(email)){ g('cmMsg').textContent='Enter an email like name@company.lk, or leave it empty.'; g('cmEmail').focus(); return }
@@ -20815,10 +20828,11 @@ function custModal(id,preset){
       if(termsChanged&&needsApproval('custTerms')){
         asks.push(requestApproval('custTerms',`Change ${c.name}'s terms: limit ${fmt(c.limit)} → ${fmt(limit)}, ${c.level} → ${level} prices`,`owes ${fmt(partyBal('C',c.id))} now`,{cid:c.id,limit,level}));
       } else if(termsChanged){ Object.assign(c,{level,limit}) }
+      const ledgerChanged=(c.ledger||'')!==ledger; if(ledgerChanged) c.ledger=ledger;
       m.remove(); render();
       if(asks.length) return;                                  // requestApproval has already said so
-      toast(changed.length||termsChanged?'Saved':'Nothing changed'); return }
-    const nc={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),name,phone,address:addr,email,level,limit,notes,portal:false,lastLogin:null,points:0};
+      toast(changed.length||termsChanged||ledgerChanged?'Saved':'Nothing changed'); return }
+    const nc={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),name,phone,address:addr,email,level,limit,notes,ledger,portal:false,lastLogin:null,points:0};
     S.customers.push(nc); custSel=nc.id; custQ=''; custFilter='all'; custTab='overview'; m.remove(); render(); toast(`${name} added`);
   };
   g('cmOk').onclick=save;
@@ -21580,6 +21594,7 @@ function billHtml(inv,f='a5'){
      <div class="sb-kv"><span>Serial No :</span><b>${serialOf(inv)} | ${inv.no}</b><span>${billDate(inv)}</span></div>
      ${B.showCashier!==false?`<div class="sb-kv"><span>Invoice by:</span><b>${(inv.by||'').toUpperCase()} /</b><span>${timeOf(inv)}</span></div>`:`<div class="sb-kv"><span>Time :</span><b></b><span>${timeOf(inv)}</span></div>`}
      ${walk?'':`<div class="sb-kv"><span>Customer :</span><b>${c.name.toUpperCase()}</b><span>${c.phone||''}</span></div>`}
+     ${inv.ledger?`<div class="sb-kv"><span>Ledger No :</span><b>${escM(inv.ledger)}</b><span></span></div>`:''}
      <div class="sb-rule"></div>`,
     items:B.showSaving!==false?`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>MRP</th><th>D.Price</th><th>Amount</th></tr>
      ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td></tr>
@@ -21644,7 +21659,7 @@ function billHtml(inv,f='a5'){
   const custLine=walk?'':[c.phone?`Mob ${c.phone}`:'',c.nic?`NIC ${c.nic}`:''].filter(Boolean).map(esc5).join(' · ');
   const bandH=on('meta')?`<div class="x-band">
     <div class="x-inv"><div class="x-ttl">${title}</div><div class="x-no"><span>Invoice No.</span> ${esc5(inv.no)}</div></div>
-    <div class="x-kv">${kv('Date / Time',when)}${B.showCashier!==false?kv('Invoice By',esc5((inv.by||'').toUpperCase())):''}${kv('Payment',credit?'CREDIT':esc5(payWord.toUpperCase()))}${inv.vehicle?kv('Vehicle / Ref',esc5(inv.vehicle)):''}${kv('Terminal',esc5(inv.terminal||S.terminal||''))}</div>
+    <div class="x-kv">${kv('Date / Time',when)}${B.showCashier!==false?kv('Invoice By',esc5((inv.by||'').toUpperCase())):''}${kv('Payment',credit?'CREDIT':esc5(payWord.toUpperCase()))}${inv.ledger?kv('Ledger No',esc5(inv.ledger)):''}${inv.vehicle?kv('Vehicle / Ref',esc5(inv.vehicle)):''}${kv('Terminal',esc5(inv.terminal||S.terminal||''))}</div>
     <div class="x-to"><div class="x-lbl">BILL TO</div><div class="x-cn">${walk?'WALK-IN CUSTOMER':esc5(c.name.toUpperCase())}</div>${custLine?`<div class="x-ca">${custLine}</div>`:''}</div>
    </div>`:'';
   /* the remarks box only when something was written on the bill at the till */
@@ -29143,7 +29158,7 @@ function savePosDraft(){
     if(!p.lines||!p.lines.length) return;
     localStorage.setItem(posDraftKey(), JSON.stringify({
       at:Date.now(), lines:p.lines, customer:p.customer||null, salesman:p.salesman||null,
-      billDisc:p.billDisc||0, editing:p.editing||null, fromWeb:p.fromWeb||null, fromDoc:p.fromDoc||null, fromJob:p.fromJob||null }));
+      billDisc:p.billDisc||0, editing:p.editing||null, fromWeb:p.fromWeb||null, fromDoc:p.fromDoc||null, fromJob:p.fromJob||null, ledger:p.ledger!=null?p.ledger:null }));
   }catch(e){ /* a full or blocked store must never stop a sale */ }
 }
 function clearPosDraft(){ try{ localStorage.removeItem(posDraftKey()) }catch(e){} }
@@ -29158,7 +29173,7 @@ function restorePosDraft(){
     if(!lines.length){ clearPosDraft(); return false }
     S.pos={...S.pos, lines, customer:d.customer||null, salesman:d.salesman||null,
       billDisc:+d.billDisc||0, sel:-1, entry:null,
-      ...(d.editing?{editing:d.editing}:{}), ...(d.fromWeb?{fromWeb:d.fromWeb}:{}), ...(d.fromDoc?{fromDoc:d.fromDoc}:{}), ...(d.fromJob?{fromJob:d.fromJob}:{})};
+      ...(d.editing?{editing:d.editing}:{}), ...(d.fromWeb?{fromWeb:d.fromWeb}:{}), ...(d.fromDoc?{fromDoc:d.fromDoc}:{}), ...(d.fromJob?{fromJob:d.fromJob}:{}), ...(d.ledger!=null?{ledger:d.ledger}:{})};
     const n=lines.length, gone=d.lines.length-n;
     setTimeout(()=>toast('The bill you were keying is back — '+n+' line'+(n===1?'':'s')+(gone?', '+gone+' no longer on file':''),'ok'),700);
     return true;
