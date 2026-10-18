@@ -3088,7 +3088,14 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-item.renamed input{color:#0E5B76}
 .f-item .hint-n{font-style:normal;color:var(--faint);letter-spacing:0;font-size:9px;margin-left:4px;text-transform:none}
 .till-ro{height:40px;min-height:40px;flex:0 0 40px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel);padding:0 10px;
- display:flex;align-items:center;justify-content:flex-end;font-family:Archivo,sans-serif;color:var(--steel);font-size:13.5px}
+ display:flex;align-items:center;justify-content:flex-end;font-family:Archivo,sans-serif;color:var(--ink);font-weight:700;font-size:16px}
+/* the entry row reads at a glance: the values in solid ink, the labels dark enough to find */
+.till-entry input,.till-entry select{color:var(--ink)!important;font-weight:700;font-size:17px}
+.till-entry #csQ{font-family:Archivo,sans-serif;letter-spacing:.02em}
+.till-entry span{color:#3d4b4e}
+.f-cc{flex:1 1 92px;min-width:84px;max-width:124px}
+.till-cc{justify-content:center!important;letter-spacing:.14em;background:#FFF6E0!important;border-color:#E8C77A!important;color:#7A4A00!important;font-weight:800}
+.ln-cc{display:inline-block;font-family:Archivo,sans-serif;font-size:11px;font-weight:800;letter-spacing:.12em;color:#7A4A00;background:#FFF6E0;border:1px solid #E8C77A;border-radius:4px;padding:0 5px;margin-left:6px;vertical-align:2px}
 .till-amt{height:40px;min-height:40px;flex:0 0 40px;border:1px solid var(--ink);border-radius:var(--r);background:#fff;padding:0 10px;
  display:flex;align-items:center;justify-content:flex-end;font-family:Archivo,sans-serif;font-weight:800;
  font-size:16px;color:var(--chip-rust)}
@@ -16534,6 +16541,7 @@ function posClassic(){
     <label class="f-qty"><span>QTY</span><input id="csQty" type="number" step="any" value="${CS.qty}"></label>
     <label class="f-price"><span>PRICE</span><input id="csPrice" type="number" step="any" value="${CS.price||''}"></label>
     <div class="f-mrp"><span>MRP</span><div class="till-ro">${sel?money2(sel.mrp):'—'}</div></div>
+    ${CFG.cost&&CFG.cost.atTill&&can('cost')?`<div class="f-cc"><span>COST CODE</span><div class="till-ro till-cc">${sel?(tillCostCode(sel)||'—'):'—'}</div></div>`:''}
     <label class="f-dis"><span>DIS %${CFG.pos.discFromMrp?' <i>MRP</i>':''}</span><input id="csDisc" type="number" step="any" value="${CS.disc||0}"></label>
     <div class="f-amt"><span>AMOUNT</span><div class="till-amt" id="csAmt">${money2(csLineNet())}</div></div>
     <button class="cs-mobile-add" data-act="csCommit" type="button">Add to Bill ↵</button>
@@ -16555,7 +16563,7 @@ function posClassic(){
          <td class="c"><button type="button" class="ln-box ${chk?'on':''}" data-act="csTick" data-i="${i}"
             title="${chk?'Checked — click or press C to take it off':'Not checked — click or press C'}"
             aria-label="checked">${chk?'✓':''}</button>${p.num||p.code}</td>
-         <td class="d"><b>${lineName(l).toUpperCase()}</b>${l.qty<0?' <span class="rettag">RETURN</span>':''}
+         <td class="d"><b>${lineName(l).toUpperCase()}${tillCostCode(p)?` <span class="ln-cc" title="cost code">${tillCostCode(p)}</span>`:''}</b>${l.qty<0?' <span class="rettag">RETURN</span>':''}
           ${lineFrom(l)?`<span class="tag warn" data-act="lnLoc" data-i="${i}" style="cursor:pointer"
              title="These goods are at ${lineFrom(l)} — click to choose a different shop">issue from ${lineFrom(l)}</span>`:''}
           ${(l.serials&&l.serials.length)?`<em>serial ${l.serials.join(', ')}</em>`:''}
@@ -24191,6 +24199,12 @@ function code128Svg(text){
 /* The cost code as it goes on a label. A cost with fewer digits than the MRP would give itself away
    (a 3-letter code on a Rs 1,975 item), so it takes a T in front for each digit it is short:
    cost 988 with MRP 1,975 prints T + the code. */
+function tillCostCode(p){
+  if(!p||isOpenLine(p)||!(CFG.cost&&CFG.cost.atTill)||!can('cost')||!(+p.cost>0)) return '';
+  const code=costCode(p.cost), digits=(n)=>String(Math.round(Math.abs(+n||0))).length;
+  const short=+p.mrp>0?Math.max(0,digits(p.mrp)-digits(p.cost)):0;
+  return (CFG.cost.pad||'T').toUpperCase().repeat(short)+code;
+}
 function labelCostCode(p,mrp){
   if(!CFG.cost.onLabel) return '';
   const code=costCode(p.cost), digits=(n)=>String(Math.round(Math.abs(+n||0))).length;
