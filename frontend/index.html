@@ -4862,7 +4862,12 @@ function receivePurchase({supplierId,supInv,lines,other=0,date=D(today),pay,file
     if(p.serialised&&l.serials) addSerials(l.pid,l.serials,pur.no,landed) }
   post(date,'Purchase '+pur.no,pur.no,[{ac:'1200',dr:total},{ac:'2100',cr:total,party:{type:'S',id:supplierId}}]);
   postCostGap(date,'Cost of goods sold before '+pur.no+' came in',pur.no,gapC);
-  if(pay&&pay.amount>0) paySupplier({supplierId,date,lines:[pay]});
+  if(pay&&pay.amount>0){
+    const sp=SU(supplierId);
+    if(!payGate('supPay',`Pay ${escM(sp?sp.name:'supplier')}: ${fmt(pay.amount)} for ${pur.no}`,payWhat([pay]),
+      {supplierId,amount:+pay.amount,lines:[pay],against:[pur.no],date},{keep:true})) paySupplier({supplierId,date,lines:[pay]});
+    else pur.payWaiting=true;
+  }
   return pur;
 }
 /* ============ GOODS THAT CAME ON A DELIVERY NOTE ============
@@ -8184,6 +8189,8 @@ function prIssue(r){
     const line={ method:how, bank:+g('piBank').value||1, amount:+amt.toFixed(2),
       date:how==='CHEQUE'?(g('piDate').value||D(today)):D(today), no:(g('piRef').value||'').trim()||undefined };
     try{
+      if(payGate('supPay',`Hand ${escM(sp.name)} ${fmt(amt)} (payment request)`,payWhat([line]),
+        {supplierId:r.sid,amount:+amt.toFixed(2),lines:[line],against,notes:`Payment request ${r.id}`,prId:r.id,date:D(today)})){ m.remove(); render(); return }
       const pv = paySupplier({ supplierId:r.sid, lines:[line], against, notes:`Payment request ${r.id}` });
       r.status='issued';
       r.pay={ date:D(today), what:`${how.toLowerCase()}${how!=='CASH'?' · '+B(line.bank).name:''} · ${fmt(amt)}`,
@@ -19712,18 +19719,33 @@ const APPROVAL_KINDS=[
   ['supStock','Supplier let in to see their stock in the shop'],
   ['leave','Leave asked for'],
   ['custNew','Someone asked for a customer account on the site'],
-  ['salaryAsk','Salary or an advance asked for at the shift clock']];
+  ['salaryAsk','Salary or an advance asked for at the shift clock'],
+  ['custPay','Customer payment taken by someone other than an admin'],
+  ['supPay','Supplier paid by someone other than an admin']];
+/* Money in and money out. Only the Super Admin, the Owner or an Admin record a payment straight away;
+   anyone else's — even someone allowed to approve other things — waits for one of them to say yes, and
+   only then does it reach the customer's or supplier's account. */
+const PAY_APPROVALS=['custPay','supPay'];
+const payBoss=()=>!!(S.user&&(['super admin','superadmin','owner','admin','demo admin'].includes(String(S.user.role||'').toLowerCase())||window.isDemo));
+function payGate(kind,title,detail,data,opts){
+  if(payBoss()||(CFG.approvals||{})[kind]===false) return false;
+  requestApproval(kind,title,detail,data,opts);
+  toast('Sent to an admin for approval — it reaches the account once they say yes','warn');
+  return true;
+}
+const payWhat=(ls)=>ls.map(l=>`${String(l.method||'').toLowerCase()} ${fmt(l.amount)}${l.ref||l.no?' ('+escM(l.ref||l.no)+')':''}${l.date&&l.date!==D(today)?' dated '+l.date:''}`).join(' + ');
 const APKIND=Object.fromEntries(APPROVAL_KINDS);
 const canApprove=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||can('approve')));
 const needsApproval=(kind)=>{ const cfg=CFG.approvals||{}; return cfg[kind]!==false&&!canApprove() };
 const apPending=()=>(S.approvals||[]).filter(a=>a.status==='pending');
 const apMine=()=>apPending().filter(a=>canApprove()||a.by===(S.user||{}).name);   // what the badge counts: to decide, or waiting on my behalf
 const apStamp=()=>D(today)+' '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-function requestApproval(kind,title,detail,data){
+function requestApproval(kind,title,detail,data,opts){
   S.approvals=S.approvals||[];
   const a={id:'ap'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),kind,title,detail:detail||'',data:data||{},by:S.user.name,at:apStamp(),status:'pending'};
   S.approvals.unshift(a); S.approvals=S.approvals.slice(0,300);
   notify('approval',`${S.user.name} asks: ${title}`,'approvals',{forApprovers:true});
+  if(opts&&opts.keep){ persist(); return a }         // asked from the middle of something that carries on (goods in)
   toast('Sent to the owner for approval');
   closeModals(); render(); return a;
 }
@@ -19755,6 +19777,21 @@ function applyApproval(a){
       Object.assign(c,d.fields||{}); break }
     case 'custTerms':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); if(d.limit!==undefined) c.limit=+d.limit; if(d.level) c.level=d.level; break }
     case 'custRemove':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); if(partyBal('C',c.id)>0.005) throw new Error('They still owe money'); c.active=false; break }
+    case 'custPay':{ const c=C(d.customerId); if(!c) throw new Error('Customer no longer exists');
+      const msgs=S.messages.length;
+      const rvs=(d.parts||[]).map(p=>receiveCustomer({customerId:c.id,amount:+p.amount,method:p.method,bank:p.bank,ref:p.ref,chq:p.chq,against:d.against||[],date:d.date||D(today)}));
+      if(d.chqMeta){ const ch=S.cheques.at(-1); if(ch) Object.assign(ch,d.chqMeta,{recvDate:d.date||D(today),manual:true}) }
+      if(d.sms===false) S.messages.splice(0,S.messages.length-msgs);
+      rvs.forEach(rv=>{ if(rv) rv.takenBy=a.by });
+      setTimeout(()=>{ try{ receiptVoucherCombined(rvs,true) }catch(e){} },80);
+      break }
+    case 'supPay':{ const sp=SU(d.supplierId); if(!sp) throw new Error('Supplier no longer exists');
+      const pv=paySupplier({supplierId:sp.id,lines:d.lines||[],against:d.against||[],notes:d.notes||'',date:d.date||D(today)});
+      pv.paidBy=a.by;
+      if(d.prId){ const r=payReqs().find(x=>x.id===d.prId); if(r){ r.status='issued';
+        r.pay={date:d.date||D(today),what:payWhat(d.lines||[]),voucher:pv.voucher,by:a.by,no:pv.no}; prStep(r,'issued',payWhat(d.lines||[])) } }
+      setTimeout(()=>{ try{ supplierVoucher(pv,true) }catch(e){} },80);
+      break }
     case 'billAdjust': applySaleAdjust(d.no,+d.amount,d.why,d.note,a.by); break;
     case 'purAdjust': applyPurAdjust(d.no,+d.amount,d.why,d.note,a.by); break;
     case 'prodPrice':{ const p=P(d.pid); if(!p) throw new Error('Product no longer exists'); const oc=p.cost; Object.assign(p,d.prices); costChanged(p,oc,'price change approved'); break }
@@ -19774,6 +19811,7 @@ function salTell(d,ok,note){
 function decideApproval(id,ok,note){
   const a=(S.approvals||[]).find(x=>x.id===id); if(!a||a.status!=='pending') return;
   if(!canApprove()) return toast('Only the owner can decide this');
+  if(PAY_APPROVALS.includes(a.kind)&&!payBoss()) return toast('Only an Admin or the Super Admin can approve a payment');
   a.status=ok?'approved':'rejected'; a.decidedBy=S.user.name; a.decidedAt=apStamp(); a.note=(note||'').trim();
   if(ok){ try{ applyApproval(a) }catch(e){ a.status='failed'; a.note=(a.note?a.note+' · ':'')+e.message } }
   if(a.kind==='salaryAsk'&&a.status!=='approved') salTell(a.data||{},false,a.note);
@@ -21259,6 +21297,9 @@ function custPayModal(id){
   };
   const complete=()=>{
     if(!parts.length) return toast('Nothing to record');
+    { const c=C(id), sum=parts.reduce((a,p)=>a+(+p.amount||0),0);
+      if(payGate('custPay',`Payment from ${escM(c?c.name:'customer')}: ${fmt(sum)}`,payWhat(parts)+(sel.size?' · against '+[...sel].map(escM).join(', '):''),
+        {customerId:id,amount:+sum.toFixed(2),parts:JSON.parse(JSON.stringify(parts)),against:[...sel],date:D(today),sms:!!(g('#rsms')||{}).checked})){ m.remove(); render(); return } }
     const msgsBefore=S.messages.length;
     const rvs=parts.map(p=>receiveCustomer({customerId:id,amount:p.amount,method:p.method,bank:p.bank,ref:p.ref,chq:p.chq,against:[...sel]}));
     if(!g('#rsms').checked) S.messages.splice(0,S.messages.length-msgsBefore);
@@ -23627,7 +23668,10 @@ function chequePlanModal(sid,amount,from,pur){
   m.querySelector('#cpOk').onclick=()=>{
     if(!split.length) return toast('Nothing to write');
     try{
-      const pv=paySupplier({supplierId:sid,lines:split.map(x=>({method:'CHEQUE',bank:+bank,date:x.date,amount:x.amount})),
+      const ls=split.map(x=>({method:'CHEQUE',bank:+bank,date:x.date,amount:x.amount})), sum=+ls.reduce((a,x)=>a+x.amount,0).toFixed(2), sp=SU(sid);
+      if(payGate('supPay',`Pay ${escM(sp?sp.name:'supplier')}: ${fmt(sum)} in ${ls.length} cheque${ls.length===1?'':'s'}`,payWhat(ls),
+        {supplierId:sid,amount:sum,lines:ls,against:pur?[pur]:[],date:D(today)})){ m.remove(); render(); return }
+      const pv=paySupplier({supplierId:sid,lines:ls,
         against:pur?[pur]:[]});
       m.remove(); render(); supplierVoucher(pv,true);
       toast(`${pv.no} saved · ${split.length} cheque${split.length===1?'':'s'} ready to print`);
@@ -24154,6 +24198,8 @@ function supPayModal(id){
       const ls=lines.filter(l=>+l.amount>0); if(!ls.length) return toast('Nothing to pay');
       const sum=+ls.reduce((a,l)=>a+(+l.amount||0),0).toFixed(2);
       if(sum>t+0.005) return toast(`That is ${fmt(sum-t)} more than the bills come to`);
+      { const sp=SU(id); if(payGate('supPay',`Pay ${escM(sp?sp.name:'supplier')}: ${fmt(sum)}`,payWhat(ls)+(sel.size?' · for '+[...sel].map(escM).join(', '):''),
+          {supplierId:id,amount:sum,lines:JSON.parse(JSON.stringify(ls)),against:[...sel],date:D(today)})){ m.remove(); render(); return } }
       const pv=paySupplier({supplierId:id,lines:ls,against:[...sel]});
       const chq=ls.filter(l=>l.method==='CHEQUE').length;
       m.remove(); render(); supplierVoucher(pv,true);
@@ -25456,6 +25502,8 @@ function receiveChequeModal(prefill={}){
       post(D(today),`Cheque ${no} received from ${name}`,no,[{ac:'1030',dr:amt},{ac:'4900',cr:amt}]);
     }else{
       const c=C(+v);
+      if(payGate('custPay',`Cheque ${escM(no)} from ${escM(c.name)}: ${fmt(amt)}`,`cheque ${escM(no)} · ${escM(bank)} · dated ${date}`,
+        {customerId:c.id,amount:amt,parts:[{method:'CHEQUE',amount:amt,ref:no}],against,date:D(today),chqMeta:{bank,date,note}})){ m.remove(); render(); return }
       const rv=receiveCustomer({customerId:c.id,amount:amt,method:'CHEQUE',ref:no,against});
       const ch=S.cheques.at(-1); ch.bank=bank; ch.date=date; ch.recvDate=D(today); ch.note=note; ch.manual=true;
     }
