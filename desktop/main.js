@@ -7,11 +7,15 @@
 //     when the shop's server cannot be reached the kept copy is used. The till then works from this PC's
 //     own copy of the books (regal-bridge.js) and sends everything when the internet is back.
 //   · one copy at a time: opening it again brings the open window to the front
-// Printing is unchanged: bills go to the print helper on this PC, or to the counter through the shop.
-const { app, BrowserWindow, Menu, protocol, net, shell, session, dialog } = require('electron');
+//   · it prints by itself (printing.js): labels on the Zebra, 80mm on the Epson, A5 on the Canon, found by
+//     name on this PC — Ctrl+Shift+P to change them. A PC without one sends that paper to the counter.
+//   · it updates itself: a new version is fetched in the background and it asks before restarting
+const { app, BrowserWindow, Menu, protocol, net, shell, session, dialog, ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const printing = require('./printing');
+const HELPER_PORT = '4100';
 
 const SHOP = process.env.REGAL_SHOP || 'https://regalhw.lk';
 const START = SHOP + '/pos';
@@ -53,6 +57,12 @@ function wire() {
   // answered from what is kept when there is no internet
   for (const scheme of ['https', 'http']) protocol.handle(scheme, async (req) => {
     const u = new URL(req.url);
+    // the till asking "the print helper on this PC": this program prints it, if it has the printer
+    if ((u.hostname === 'localhost' || u.hostname === '127.0.0.1') && u.port === HELPER_PORT) {
+      const mine = await printing.answer(req).catch(e => new Response(JSON.stringify({ ok: false, error: e.message }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }));
+      if (mine) return mine;
+      return net.fetch(req, { bypassCustomProtocolHandlers: true });   // a helper on this PC, if there is one
+    }
     const canKeep = req.method === 'GET' && keepable(u);
     try {
       const res = await net.fetch(req, { bypassCustomProtocolHandlers: true });
@@ -97,6 +107,7 @@ function open() {
     else if (i.control && k === '-') { e.preventDefault(); win.webContents.setZoomLevel(win.webContents.getZoomLevel() - 0.5); }
     else if (i.control && k === '0') { e.preventDefault(); win.webContents.setZoomLevel(0); }
     else if (k === 'f11') { e.preventDefault(); win.setFullScreen(!win.isFullScreen()); }
+    else if (i.control && i.shift && k === 'p') { e.preventDefault(); printing.openPrintersWindow(win); }
   });
 
   // the till's own pop-ups (a bill to print, a label sheet) open here; WhatsApp, maps and the like in the browser
@@ -129,7 +140,58 @@ app.whenReady().then(() => {
   CACHE = path.join(app.getPath('userData'), 'till-kept'); fs.mkdirSync(CACHE, { recursive: true });
   // the camera for scanning barcodes, notifications and the clipboard: allowed for the shop's own pages
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb, d) => cb((d.requestingUrl || '').startsWith(SHOP) && ['media', 'notifications', 'clipboard-read', 'clipboard-sanitized-write', 'fullscreen'].includes(perm)));
+  printing.load();
+  ipcMain.handle('printers:list', () => printing.detect());
+  ipcMain.handle('printers:choose', (e, kind, name) => printing.choose(kind, name));
+  ipcMain.handle('printers:test', async (e, kind) => {
+    const c = printing.config();
+    try {
+      if (kind === 'label') await printing.printLabels(printing.TEST_LABEL, 'Regal POS test');
+      else await printing.printBill(kind, printing.TEST_BILL(kind));
+      return { ok: true, printer: c[kind] };
+    } catch (err) { return { ok: false, error: err.message }; }
+  });
   wire();
   open();
+  // the printers on this PC, found as soon as there is a window to ask through
+  win.webContents.once('did-finish-load', () => printing.detect().catch(() => { }));
+  // checking the drawing without paper: REGAL_SELFTEST=<folder> draws a sample 80mm and A5 bill there and quits
+  if (process.env.REGAL_SELFTEST) win.webContents.once('did-finish-load', () => setTimeout(async () => {
+    for (const f of ['r80', 'a5']) {
+      try {
+        const html = await win.webContents.executeJavaScript(`billDocument(sampleInvoice(), '${f}')`);
+        fs.writeFileSync(path.join(process.env.REGAL_SELFTEST, 'bill-' + f + '.html'), html);
+        const t = Date.now(); const file = await printing.render(f, html);
+        fs.copyFileSync(file, path.join(process.env.REGAL_SELFTEST, 'app-' + f + '.png'));
+        console.log('SELFTEST', f, 'drawn in', Date.now() - t, 'ms');
+      } catch (e) { console.log('SELFTEST', f, 'FAILED', e.message); }
+    }
+    win.__closing = true; app.quit();
+  }, 6000));
+  updates();
 });
+
+/* ---------------- a new version of the program ----------------
+   Looked for at start and every half hour (GitHub releases of Afridh/Regal-Hardware). It is fetched in the
+   background; when it is ready the program asks — nothing restarts in the middle of a bill. The till
+   itself (regalhw.lk/pos) updates on its own as before. */
+function updates() {
+  if (!app.isPackaged || process.env.REGAL_PROFILE) return;
+  let autoUpdater;
+  try { ({ autoUpdater } = require('electron-updater')); } catch { return; }
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  let asked = false;
+  autoUpdater.on('update-downloaded', async (info) => {
+    if (asked || !win) return; asked = true;
+    const r = await dialog.showMessageBox(win, { type: 'info', buttons: ['Restart and update', 'Later'], defaultId: 0, cancelId: 1, title: 'Regal POS',
+      message: 'A new version of Regal POS is ready (' + info.version + ').',
+      detail: 'Restart now to use it — it takes a few seconds, and nothing on the till is lost. Choose Later and it is put in the next time Regal POS is closed.' });
+    if (r.response === 0) { win.__closing = true; setImmediate(() => autoUpdater.quitAndInstall(false, true)); }
+  });
+  autoUpdater.on('error', () => { });                     // no internet, or GitHub not answering: try again later
+  const look = () => autoUpdater.checkForUpdates().catch(() => { });
+  setTimeout(look, 15000);
+  setInterval(look, 30 * 60 * 1000);
+}
 app.on('window-all-closed', () => app.quit());

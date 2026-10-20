@@ -1,0 +1,44 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Regal POS — Printers</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'">
+<style>
+  body{margin:0;font:14px Arial,sans-serif;background:#f4f1ef;color:#1c1414}
+  header{background:#16070a;color:#fff;padding:14px 20px}
+  header h1{margin:0;font-size:18px} header p{margin:4px 0 0;color:#d9c9c9;font-size:12.5px}
+  main{padding:14px 20px}
+  .row{background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:10px;display:grid;grid-template-columns:150px 1fr auto;gap:10px;align-items:center;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .row b{font-size:14px} .row small{display:block;color:#7a6b6b;font-size:11.5px;margin-top:2px}
+  select{width:100%;padding:8px;border:1px solid #d6cccc;border-radius:7px;font:14px Arial}
+  button{padding:8px 14px;border:0;border-radius:7px;background:#b3121f;color:#fff;font:600 13px Arial;cursor:pointer}
+  button:disabled{opacity:.45;cursor:default}
+  .say{min-height:20px;font-size:13px;margin-top:6px}
+  .ok{color:#1d7a3a} .bad{color:#b3121f}
+  .foot{color:#7a6b6b;font-size:12px;margin-top:8px;line-height:1.4}
+</style></head>
+<body>
+<header><h1>Printers on this PC</h1><p>Regal POS prints by itself — no print box, no print helper. Found by name; change any of them here.</p></header>
+<main>
+  <div id="rows"></div>
+  <div class="say" id="say"></div>
+  <div class="foot">“None” sends that kind of paper to the counter PC through the shop, as before.<br>Open this window from the till with <b>Ctrl + Shift + P</b>.</div>
+</main>
+<script>
+const KINDS = [['label', 'Labels', 'Zebra'], ['r80', '80mm receipts', 'Epson'], ['a5', 'A5 bills', 'Canon']];
+const $ = (id) => document.getElementById(id);
+const say = (t, ok) => { $('say').textContent = t; $('say').className = 'say ' + (ok ? 'ok' : 'bad'); };
+async function draw() {
+  const { printers, chosen } = await window.printers.list();
+  $('rows').innerHTML = KINDS.map(([k, name, brand]) => `
+    <div class="row"><div><b>${name}</b><small>${brand}</small></div>
+      <select data-k="${k}"><option value="">None — send to the counter</option>${printers.map(p => `<option ${p === chosen[k] ? 'selected' : ''}>${p.replace(/</g, '&lt;')}</option>`).join('')}</select>
+      <button data-test="${k}" ${chosen[k] ? '' : 'disabled'}>Test</button></div>`).join('');
+  document.querySelectorAll('select').forEach(s => s.onchange = async () => { await window.printers.choose(s.dataset.k, s.value); say('Saved.', true); draw(); });
+  document.querySelectorAll('[data-test]').forEach(b => b.onclick = async () => {
+    b.disabled = true; say('Printing a test…', true);
+    const r = await window.printers.test(b.dataset.test);
+    say(r.ok ? 'Sent to ' + r.printer + '.' : 'Could not print: ' + r.error, r.ok); b.disabled = false;
+  });
+}
+draw();
+</script>
+</body></html>
