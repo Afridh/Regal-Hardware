@@ -5919,7 +5919,7 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
 function settingsTabs(){
-  return [['screen','My screen'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messages'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['banks','Bank accounts'],['leave','Leave'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  return [['screen','My screen'],['app','Windows app'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messages'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['banks','Bank accounts'],['leave','Leave'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
 }
 function settings(){
   const tabs=settingsTabs();
@@ -5947,6 +5947,7 @@ function settings(){
         <input id="clearWord" placeholder="type CLEAR" autocomplete="off" style="border:1px solid var(--line);border-radius:var(--r);padding:8px;max-width:150px">
         <button class="btn" data-act="clearShop" style="background:var(--chip-rust,#C0442C);color:#fff;border-color:var(--chip-rust,#C0442C)">Delete everything</button></div>
     </div>`:''}`;
+  if(setTab==='app') body=appDownloadPage();
   if(setTab==='bill') body=`<div class="card note" style="margin-bottom:10px"><b>The bill number</b>
      <div class="muted">Figures alone: the cashier's own number, then a running number of theirs. ${S.users.filter(u=>u.active!==false).slice(0,4).map(u=>`<b>${u.name}</b> ${userNo(u.name)}${''.padStart(billDigits(),'0').replace(/0$/,'…')}`).join(' · ')}. Each person's number is set against them under Users &amp; permissions.</div></div>
     <div class="card note" style="margin-bottom:10px"><b>Where a bill comes out</b>
@@ -6366,7 +6367,7 @@ function settings(){
      <div class="muted">The sync script on the shop PC posts the day's reads to <span class="mono">${shiftUrl()}?action=punches</span> with the device key from the server's <span class="mono">SHIFT_DEVICE_KEY</span> setting — that PC never holds anyone's password, and the key can post punches and nothing else. A reader is matched to a person by the <i>device ID</i> on their card in The roll. A day already written by hand is never overwritten.</div>`;
   }
   if(!body&&typeof extSettingsBody==='function') body=extSettingsBody(setTab);
-  const meta={screen:['Menu, landing page and shortcuts — yours alone','M3 5h18v11H3zM8 20h8M12 16v4'],done:['What happens after a bill is finished','M9 12l2 2 4-4M12 3a9 9 0 110 18 9 9 0 010-18z'],
+  const meta={screen:['Menu, landing page and shortcuts — yours alone','M3 5h18v11H3zM8 20h8M12 16v4'],app:['Download the till for the PC — works offline, prints by itself','M12 3v12M7 10l5 5 5-5M4 19h16'],done:['What happens after a bill is finished','M9 12l2 2 4-4M12 3a9 9 0 110 18 9 9 0 010-18z'],
     shop:['Name, address and phones as printed','M3 9l2-5h14l2 5M4 9h16v11H4zM9 20v-6h6v6'],bill:['Numbering, formats and the return window',ICONS.bills],layout:['Logo, lines and text size on the bill',ICONS.docs],
     cost:['The code that hides cost on labels',ICONS.labels],msg:['How texts read, their wording, and who gets them',ICONS.messages],
     shift:['The Shift Board, the fingerprint machine and pay','M12 7v5l3 2M12 3a9 9 0 110 18 9 9 0 010-18z'],
@@ -12252,6 +12253,7 @@ function renderNow(){
   if(S.view==='bills'||S.view==='recall') billsAfter();
   if(S.view==='payroll' && (window.isDemo || (S && S.isDemo))) demoAttendanceAfter();
   if(S.view==='trail') trailAfter();
+  if(S.view==='settings'&&setTab==='app') appDownloadAfter();
   if(S.view==='syslog') sysLogAfter();
   if(S.view==='users'){
     const usIn = document.getElementById('userSearchInput');
@@ -20207,6 +20209,53 @@ function sysLogCsv(){
   const txt=['Date,Time,Who,Till,Area,What,Name,Changes',...rows.map(r=>[r.date,r.time,r.by,r.till,r.area,r.act,r.name,(r.changes||[]).map(([f,o,n])=>`${f}: ${o} -> ${n}`).join('; ')].map(esc).join(','))].join('\n');
   const b=new Blob(['﻿'+txt],{type:'text/csv'}), u=URL.createObjectURL(b), l=document.createElement('a');
   l.href=u; l.download='system-log-'+D(today)+'.csv'; document.body.appendChild(l); l.click(); l.remove(); setTimeout(()=>URL.revokeObjectURL(u),1000);
+}
+
+/* ================== REGAL POS FOR WINDOWS ==================
+   Settings → Windows app. The till as a program of its own (desktop/ in the project): its own window,
+   bills with or without the internet, prints by itself on the PC's printers, updates itself. Each version
+   is a release on GitHub; this page asks GitHub for the newest one, so the button is never out of date.
+   Inside the program it says so, with its version, and how to open its Printers window. */
+const APP_RELEASES='https://github.com/Afridh/Regal-Hardware/releases/latest';
+const APP_API='https://api.github.com/repos/Afridh/Regal-Hardware/releases/latest';
+const inApp=()=>{ const m=/regal-pos\/(\d+\.\d+\.\d+)/i.exec(navigator.userAgent||''); return m?m[1]:null };
+function appDownloadPage(){
+  const v=inApp();
+  return `<div class="card note" style="margin-bottom:12px;${v?'border-left:3px solid var(--good,#14804a)':''}">
+    ${v?`<b>You are using Regal POS for Windows, version ${v}.</b>
+      <div class="muted" style="margin-top:4px">New versions arrive by themselves — it asks before it restarts. Press <b>Ctrl + Shift + P</b> here to choose this PC's printers or print a test.</div>`
+      :`<b>Regal POS for Windows</b>
+      <div class="muted" style="margin-top:4px">The till as a program on the PC: its own window, no address bar, F1 is always the till's,
+        it <b>bills with or without the internet</b> (everything is sent when the internet is back), and it <b>prints by itself</b> —
+        labels on the Zebra, 80mm on the Epson, A5 on the Canon — with no print box. It updates itself.</div>`}
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px">
+      <a class="btn tape" id="appDl" href="${APP_RELEASES}" target="_blank" rel="noopener">⬇ Download Regal POS for Windows</a>
+      <span class="muted" id="appDlInfo">Looking up the newest version…</span></div>
+  </div>
+  <div class="card" style="padding:14px 16px">
+    <b>Setting it up on a PC</b>
+    <ol style="margin:8px 0 0;padding-left:20px;line-height:1.7">
+      <li>Download it above and open the file. Windows may say <i>“Windows protected your PC”</i> — press <b>More info → Run anyway</b>.</li>
+      <li>Open <b>Regal POS</b> from the desktop <b>with the internet on</b> the first time, and sign in. After that it opens and bills without it too.</li>
+      <li>Press <b>Ctrl + Shift + P</b> for its <b>Printers</b> window: check the label, 80mm and A5 printers it found, change any that are wrong, and press <b>Test</b> on each.
+        A PC with no printer of a kind: choose <b>None — send to the counter</b>.</li>
+      <li>Here in Settings → <b>Bills &amp; vouchers</b>, <i>Where a bill comes out</i>: keep <b>“The printer on the machine it was made on”</b> for a PC with its own printers.</li>
+      <li>Keep the <b>print helper</b> running on the counter PC — it prints the bills sent from the other PCs.</li>
+    </ol>
+    <div class="muted" style="margin-top:8px">Rule while offline: each cashier bills on one PC only, so no two bills get the same number.</div>
+  </div>`;
+}
+let appRel=null;
+function appDownloadAfter(){
+  const show=(r)=>{ const a=document.getElementById('appDl'), i=document.getElementById('appDlInfo'); if(!a||!i) return;
+    if(!r){ i.textContent='Opens the download page on GitHub.'; return }
+    if(r.exe) a.href=r.exe.browser_download_url;
+    const mb=r.exe?(r.exe.size/1048576).toFixed(0)+' MB':'', when=r.published_at?new Date(r.published_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'';
+    const v=inApp(), newer=v&&r.tag_name&&r.tag_name.replace(/^v/,'')!==v;
+    i.innerHTML=`Version <b>${escM(String(r.tag_name||'').replace(/^v/,''))}</b>${mb?' · '+mb:''}${when?' · '+when:''}${newer?' · <b>newer than this one — it will update itself shortly</b>':''}` };
+  if(appRel) return show(appRel);
+  fetch(APP_API,{headers:{Accept:'application/vnd.github+json'}}).then(r=>r.ok?r.json():null).then(j=>{
+    if(j){ j.exe=(j.assets||[]).find(a=>/\.exe$/i.test(a.name)); appRel=j } show(j) }).catch(()=>show(null));
 }
 
 /* ================== THE TRAIL — the owner's page ==================
