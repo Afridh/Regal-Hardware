@@ -9280,6 +9280,12 @@ function applyKeptBooks(kept){
     Object.keys(CFG.tpl||{}).forEach(k=>{ const t=CFG.tpl[k]; if(t&&TPL_ORIG[k]&&TPL_ONELINE[k]===String(t.text||'')) t.text=TPL_ORIG[k].text });
     CFG.msg.lines1=true;
   }
+  if(!CFG.roles5){ CFG.roles5=true;    // 21 Oct 2026: five kinds of user
+    (S.users||[]).forEach(u=>{
+      if(OLD_ROLES.includes(u.role)){ u.oldRole=u.role; u.role='Management'; u.perms=[...ROLE_DEFAULTS.Management] }
+      else if(u.role==='Salesman') u.perms=[...ROLE_DEFAULTS.Salesman];
+    });
+  }
   if(CFG.bill&&!CFG.bill.a5Bw1){ CFG.bill.a5Style='bw'; CFG.bill.a5Bw1=true; }   // 13 Oct 2026: the shop chose the black-and-white black-bar design (design 1) for the LBP6030w
   // the barcode of the invoice number is off the receipt (asked for, 5 Oct 2026) — once, so Design the bill can put it back
   if(CFG.bill&&!CFG.bill.barcodeOff1){
@@ -11747,24 +11753,37 @@ const DEFAULT_ROLES = [
   },
   {
     name: 'Admin',
-    desc: 'Full access to all 9 system sections, manage own profile and regular store operations',
+    desc: 'The directors: everything, the same as the Super Admin',
     sections: ['Counter', 'Customers', 'Suppliers', 'Stock', 'Online', 'Money', 'People', 'Out', 'System'],
     isSystem: true
   },
   {
-    name: 'KP',
-    desc: 'Counter, Suppliers, Stock, Online, Money, and People operations',
-    sections: ['Counter', 'Suppliers', 'Stock', 'Online', 'Money', 'People'],
+    name: 'Accounts',
+    desc: 'The money: customer and supplier accounts, payments, cheques, banks, expenses, the books, cash-up, reports and pay',
+    sections: ['Customers', 'Money'],
+    allowedViews: ['dashboard', 'bills', 'cashup', 'suppliers', 'payreqs', 'purchases', 'reports', 'payroll'],
+    isSystem: true
+  },
+  {
+    name: 'Management',
+    desc: 'The counter: billing, returns, quotations, customers and their payments, products, stock and labels, goods in, online orders',
+    sections: ['Counter', 'Customers', 'Stock'],
+    allowedViews: ['orders', 'purchases', 'purchasing', 'weborders', 'payroll'],
     isSystem: true
   },
   {
     name: 'Salesman',
-    desc: 'Dashboard sales metrics, view stock/products (read-only), view own attendance',
+    desc: 'Attendance only: their own times, and asking for leave',
     sections: [],
-    allowedViews: ['dashboard', 'products', 'payroll'],
+    allowedViews: ['payroll'],
     isSystem: true
   }
 ];
+/* What each role is called on the screen. Two keep their old names inside, so every check written for
+   them still holds: Admin is the directors, Salesman is Sales. */
+const ROLE_LABEL={'Super Admin':'Super Admin',Admin:'Admin / Director',Accounts:'Accounts',Management:'Management',Salesman:'Sales'};
+const roleLabel=(r)=>ROLE_LABEL[r]||r||'';
+const OLD_ROLES=['KP','Manager','Cashier','Store'];          // folded into Management (21 Oct 2026)
 
 function roleDefFor(roleName){
   if(Array.isArray(S.roles)){
@@ -11780,7 +11799,7 @@ function allowed(v){
   if(v === 'updates') return true;          // what changed is everybody's business
   if(v === 'actions') return true;
   if(v === 'leave') return true;            // everybody asks for their own days off
-  if(v === 'petty') return true;            // the counter hands it out; whoever holds some puts in what they spent
+  if(v === 'petty') return String(S.user.role||'').toLowerCase()!=='salesman';   // Sales staff are on attendance only            // the counter hands it out; whoever holds some puts in what they spent
   if(v === 'returns') return allowed('pos');  // whoever may bill may take goods back          // everyone has one; each item on it keeps to the page it comes from
   if(v === 'issues'||v === 'transfers') return typeof extMulti==='function'&&extMulti();   // nothing to see with one shop
   if(v === 'ai') return ownerOnly();        // what it is shown includes costs and margins
@@ -11798,9 +11817,7 @@ function allowed(v){
   if(rLower === 'super admin' || rLower === 'superadmin' || rLower === 'owner') return true;
   if(rLower === 'admin') return true;
   
-  if(rLower === 'salesman'){
-    return ['dashboard', 'products', 'payroll'].includes(v);   // not the ledger, and not what stock cost
-  }
+  if(rLower === 'salesman') return v === 'payroll';   // Sales: their attendance (and leave, above) — nothing else
   
   if(rLower === 'kp'){
     if(v === 'users') return false;
@@ -17865,7 +17882,7 @@ function pickSalesman(after){
       </tr>
       ${hits.map(u => `<tr class="rowlink ${S.pos.salesman === u.name ? 'sel' : ''}" data-sname="${u.name}">
         <td><b>${u.name}</b> <div class="muted">${u.role}${u.uid?` · [${u.uid}]`:''}</div></td>
-        <td><span class="tag ${u.role==='Salesman'?'ok':'blue'}">${u.role}</span></td>
+        <td><span class="tag ${u.role==='Salesman'?'ok':'blue'}">${roleLabel(u.role)}</span></td>
         <td class="n">${S.pos.salesman === u.name ? '<b style="color:var(--chip-green)">Selected ✓</b>' : ''}</td>
       </tr>`).join('')}
       ${v && !hits.length ? `<tr><td colspan="3" class="muted" style="padding:12px;text-align:center">No staff matching "${q.value.trim()}". Press Enter to keep None.</td></tr>` : ''}
@@ -18012,7 +18029,7 @@ function askBillSalesman(done){
     const hits=list.filter(u=>u.name.toLowerCase().includes(v)||String(u.role||'').toLowerCase().includes(v));
     m.querySelector('#bsL').innerHTML=`<table>
       <tr class="rowlink" data-bsn=""><td><b>Nobody — cashier only</b><div class="muted">the bill stays with ${S.user.name}</div></td><td class="n"></td></tr>
-      ${hits.map(u=>`<tr class="rowlink" data-bsn="${u.name}"><td><b>${u.name}</b> <span class="tag ${u.role==='Salesman'?'ok':''}">${u.role}</span></td>
+      ${hits.map(u=>`<tr class="rowlink" data-bsn="${u.name}"><td><b>${u.name}</b> <span class="tag ${u.role==='Salesman'?'ok':''}">${roleLabel(u.role)}</span></td>
         <td class="n">${u.uid?'['+u.uid+']':''}</td></tr>`).join('')}
       ${v&&!hits.length?'<tr><td colspan="2" class="muted">No staff match that.</td></tr>':''}</table>`;
     m.querySelectorAll('[data-bsn]').forEach(r=>r.onclick=()=>pick(r.dataset.bsn||null));
@@ -26897,20 +26914,19 @@ const ROLE_DEFAULTS={
   Owner:PERMS.map(p=>p[0]),
   Admin:PERMS.map(p=>p[0]),
   KP:['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','approve'],
-  Salesman:['products_view','dashboard_view','attendance_view'],
-  Manager:['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products'],
+  Salesman:['attendance_view'],
+  Management:['sell','discount','cancelBill','cost','receive','products','products_view','dashboard_view','attendance_view'],
+  Accounts:['receive','paySupplier','adjustInvoice','overLimit','cost','profit','payroll','products_view','dashboard_view','attendance_view'],
+  Manager:['sell','discount','cancelBill','cost','receive','products'],
   Cashier:['sell','receive'],
-  Store:['products'],
-  Accounts:['receive','paySupplier','adjustInvoice','overLimit','cost','profit','payroll']};
+  Store:['products']};
 
 const can=(k)=>{
   if(!S.user) return false;
   const r=String(S.user.role||'').toLowerCase();
   if(r==='super admin'||r==='superadmin'||r==='owner') return true;
   if(r==='admin') return true;
-  if(r==='salesman'){
-    return ['products_view','dashboard_view','attendance_view'].includes(k);
-  }
+  if(r==='salesman') return k==='attendance_view';   // Sales: attendance only
   return !!(S.user.perms&&S.user.perms.includes(k));
 };
 
@@ -27098,7 +27114,7 @@ function users(){
             const todayTot = todaySales.reduce((a, s) => a + s.total, 0);
             const allTot = mySales.reduce((a, s) => a + s.total, 0);
             const initial = (u.name||'?').trim()[0].toUpperCase();
-            const roleBadgeClass = u.role==='Super Admin'?'gold':(u.role==='Admin'?'blue':(u.role==='Salesman'?'warn':(u.role==='KP'?'ok':'')));
+            const roleBadgeClass = u.role==='Super Admin'?'gold':(u.role==='Admin'?'blue':(u.role==='Salesman'?'warn':(u.role==='Accounts'?'ok':(u.role==='Management'?'ok':''))));
 
             return `<tr class="${u.active!==false?'':'off'}">
               <td>
@@ -27121,7 +27137,7 @@ function users(){
                   </div>
                 </div>
               </td>
-              <td><span class="tag ${roleBadgeClass}" style="font-weight:700">${u.role}</span></td>
+              <td><span class="tag ${roleBadgeClass}" style="font-weight:700">${roleLabel(u.role)}</span></td>
               <td>${u.canLogin===false?'<span class="tag">no sign-in</span>':'<span class="tag ok">password</span>'+(u.pinHash||u.pin?` <span class="tag blue">code ${escM(u.uid||'')} + PIN</span>`:'')}
                <div class="muted" style="font-size:11px;margin-top:2px">${(u.prefs&&u.prefs.nav)==='top'?'menu on top':'menu at the side'}</div></td>
               <td class="muted">${u.lastSeen||'never'}</td>
@@ -27375,9 +27391,9 @@ function userModal(name){
   }
   const u=name?S.users.find(x=>x.name===name):null;
   const allRoles=[...DEFAULT_ROLES,...(S.roles||[]).filter(r=>!DEFAULT_ROLES.some(d=>d.name.toLowerCase()===r.name.toLowerCase()))];
-  const availableRoles=isSuperAdmin
+  const availableRoles=(isSuperAdmin
     ? allRoles.map(r=>r.name)
-    : allRoles.filter(r=>r.name!=='Super Admin'&&r.name!=='Owner').map(r=>r.name);
+    : allRoles.filter(r=>r.name!=='Super Admin'&&r.name!=='Owner').map(r=>r.name)).filter(r=>!OLD_ROLES.includes(r));
 
   const perms=new Set(u?u.perms:(ROLE_DEFAULTS.Cashier||[]));
   const initRole = u ? u.role : (availableRoles.includes('Salesman') ? 'Salesman' : availableRoles[0]);
@@ -27391,7 +27407,8 @@ function userModal(name){
     <div class="f"><label>Name</label><input id="uName" value="${u?u.name:''}" ${u&&u.name==='Afridh'&&!isSuperAdmin?'readonly':''}></div>
     <div class="f"><label>Leave group</label><select id="uGrp">${LV_GROUPS.map(([v,t])=>`<option value="${v}" ${u&&lvGroup(u.name)===v?'selected':''}>${t}</option>`).join('')}</select>
      <div class="muted">Sets their days off a month</div></div>
-    <div class="f"><label>Role</label><select id="uRole">${availableRoles.map(r=>`<option ${(u&&u.role===r)||(!u&&r===initRole)?'selected':''}>${r}</option>`).join('')}</select>
+    <div class="f"><label>Role</label><select id="uRole">${availableRoles.map(r=>`<option value="${r}" ${(u&&u.role===r)||(!u&&r===initRole)?'selected':''}>${roleLabel(r)}</option>`).join('')}</select>
+     <div class="muted" id="uRoleDesc" style="margin-top:4px">${noteEsc((roleDefFor(u?u.role:initRole)||{}).desc||'')}</div>
      <div class="muted">Changing the role ticks that role's usual boxes</div></div>
     <div class="f" id="uSalesIdBox" style="${isSalesman?'':'display:none'}">
      <label>Sales ID</label>
@@ -27462,6 +27479,7 @@ function userModal(name){
   loginCb.onchange=()=>{ m.querySelector('#uLoginBox').style.display=loginCb.checked?'':'none'; m.querySelector('#uErr').textContent=''; if(loginCb.checked) m.querySelector('#uPass').focus() };
   m.querySelector('#uRole').onchange=e=>{
     const selectedRole = e.target.value;
+    { const dd=m.querySelector('#uRoleDesc'); if(dd) dd.textContent=(roleDefFor(selectedRole)||{}).desc||''; }
     const def=ROLE_DEFAULTS[selectedRole]||[];
     m.querySelectorAll('[data-perm]').forEach(cb=>cb.checked=def.includes(cb.dataset.perm));
     const isSales = selectedRole === 'Salesman';
