@@ -11939,7 +11939,7 @@ function allowed(v){
   if(v === 'updates') return true;          // what changed is everybody's business
   if(v === 'actions') return true;
   if(v === 'leave') return true;            // everybody asks for their own days off
-  if(v === 'petty') return String(S.user.role||'').toLowerCase()!=='salesman';   // Sales staff are on attendance only            // the counter hands it out; whoever holds some puts in what they spent
+  if(v === 'petty') return String(S.user.role||'').toLowerCase()!=='salesman'||(S.petty||[]).some(p=>p.status==='open'&&p.who===S.user.name);   // Sales staff: only while holding some            // the counter hands it out; whoever holds some puts in what they spent
   if(v === 'returns') return allowed('pos');  // whoever may bill may take goods back          // everyone has one; each item on it keeps to the page it comes from
   if(v === 'issues'||v === 'transfers') return typeof extMulti==='function'&&extMulti();   // nothing to see with one shop
   if(v === 'ai') return ownerOnly();        // what it is shown includes costs and margins
@@ -26094,6 +26094,34 @@ function pettyUndo(id,no){
   persist(true); render(); toast('Taken off');
 }
 
+/* The evening: whoever holds the petty cash says what they are handing back. It is not counted in yet —
+   that is the counter's (or an admin's) job — but the counter is told, and sees the figure when counting. */
+function pettySubmitModal(id){
+  const p=pettyList().find(x=>x.id===id); if(!p||p.status!=='open') return;
+  if(!pettyMine(p)&&!pettyMayGive()) return toast('Only '+p.who+' hands in this balance');
+  const exp=pettyLeft(p), was=p.submitted;
+  const m=modal(`<h2>Hand in the balance — ${noteEsc(p.who)}</h2>
+   <div class="muted">${p.no}. Put in every expense first; then say how much cash you are handing back. The counter counts it in.</div>
+   <table style="margin:10px 0"><tr><td>Given</td><td class="n">${fmt(pettyGiven(p))}</td></tr>
+    <tr><td>Spent — ${p.spent.length} expense${p.spent.length===1?'':'s'}</td><td class="n rust">(${fmt(pettySpent(p))})</td></tr>
+    <tr><td><b>You should have</b></td><td class="n"><b>${fmt(exp)}</b></td></tr></table>
+   <div class="grid2"><div class="f"><label>Cash I am handing back</label><input id="pbAmt" type="number" min="0" step="any" value="${(was?was.amount:exp).toFixed(2)}"></div>
+    <div class="f"><label>Note (optional)</label><input id="pbNote" value="${noteEsc(was&&was.note||'')}" placeholder="e.g. 200 short — lost a receipt"></div></div>
+   <div id="pbGap" style="min-height:20px;margin-top:6px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Not yet</button><button class="btn tape" id="pbOk">Hand it in</button></div>`);
+  const q=(x)=>m.querySelector(x);
+  const draw=()=>{ const v=+(+q('#pbAmt').value||0).toFixed(2), gap=+(v-exp).toFixed(2);
+    q('#pbGap').innerHTML=Math.abs(gap)<0.005?'<span class="muted">It agrees.</span>':gap<0?`<span class="rust"><b>${fmt(-gap)} short</b> — say why in the note.</span>`:`<span><b>${fmt(gap)} over.</b></span>` };
+  q('#pbAmt').oninput=draw; draw(); q('#pbAmt').select();
+  q('#pbOk').onclick=()=>{
+    const amount=+(+q('#pbAmt').value||0).toFixed(2), note=q('#pbNote').value.trim();
+    if(amount<0) return;
+    p.submitted={amount,note,at:apStamp(),date:D(today),by:S.user.name,expected:exp};
+    notify('cash',`${p.who} handed in ${fmt(amount)} petty cash (${p.no})${Math.abs(amount-exp)>=0.005?' — '+fmt(Math.abs(amount-exp))+(amount<exp?' short':' over'):''} — count it in`,'petty',{forApprovers:true});
+    m.remove(); persist(true); render(); toast('Handed in — the counter counts it in','ok');
+  };
+}
+
 function pettySettleModal(id){
   const p=pettyList().find(x=>x.id===id); if(!p||p.status!=='open') return;
   if(!pettyMayGive()) return toast('The money is counted back in at the counter');
@@ -26102,7 +26130,8 @@ function pettySettleModal(id){
    <table style="margin:8px 0"><tr><td>Given</td><td class="n">${fmt(pettyGiven(p))}</td></tr>
     <tr><td>Spent — ${p.spent.length} expense${p.spent.length===1?'':'s'}</td><td class="n rust">(${fmt(pettySpent(p))})</td></tr>
     <tr><td><b>Should come back</b></td><td class="n"><b>${fmt(exp)}</b></td></tr></table>
-   <div class="grid2"><div class="f"><label>Counted back</label><input id="psAmt" type="number" min="0" step="any" value="${exp.toFixed(2)}"></div>
+   ${p.submitted?`<div class="card note" style="margin-bottom:8px">${noteEsc(p.who)} handed in <b>${fmt(p.submitted.amount)}</b> at ${p.submitted.at.slice(11)||p.submitted.date}${p.submitted.note?' — '+noteEsc(p.submitted.note):''}</div>`:''}
+   <div class="grid2"><div class="f"><label>Counted back</label><input id="psAmt" type="number" min="0" step="any" value="${(p.submitted?p.submitted.amount:exp).toFixed(2)}"></div>
     <div class="f"><label>Into</label><select id="psTo"><option value="cash">Cash drawer</option>${S.banks.map(b=>`<option value="${b.id}">${noteEsc(b.name)}</option>`).join('')}</select></div></div>
    <div id="psGap"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Not yet</button><button class="btn tape" id="psOk">Count it in and close</button></div>`);
@@ -26151,13 +26180,16 @@ function pettyPage(){
       ${p.spent.length?`<table class="pc-exp">${p.spent.map(x=>`<tr><td>${x.at.slice(11)||x.date}</td><td>${noteEsc(x.desc)}<div class="muted">${GL[x.cat]}${x.by!==p.who?' · put in by '+noteEsc(x.by):''}</div></td><td class="n">${fmt(x.amount)}</td>
         <td>${(canApprove()||(x.by===S.user.name&&x.date===t))?`<button class="btn ghost sm" data-act="pcUndo" data-id="${p.id}" data-no="${x.id}" title="Take it off">×</button>`:''}</td></tr>`).join('')}</table>`:'<div class="muted" style="margin:6px 0">Nothing spent yet.</div>'}
       <div class="rowacts" style="margin-top:8px;flex-wrap:wrap">
+       ${p.submitted?`<span class="tag ok" title="${noteEsc(p.submitted.note||'')}">handed in ${fmt(p.submitted.amount)} · ${p.submitted.at.slice(11)}</span>`:(new Date().getHours()>=17&&p.opened<=t?'<span class="tag bad">not handed in yet</span>':'')}
        ${(pettyMine(p)||may)?`<button class="btn tape sm" data-act="pcExp" data-id="${p.id}">+ An expense</button>`:''}
+       ${pettyMine(p)?`<button class="btn sm" data-act="pcSubmit" data-id="${p.id}">${p.submitted?'Change what I hand in':'Hand in the balance'}</button>`:''}
        ${may?`<button class="btn ghost sm" data-act="pcGive" data-who="${noteEsc(p.who)}">Top up</button><button class="btn sm" data-act="pcSettle" data-id="${p.id}">Brought back — count it in</button>`:''}</div></div>` };
   return `<h1 style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">Petty cash ${may?'<button class="btn tape" data-act="pcGive">Give petty cash</button>':''}</h1>
    <div class="row" style="margin-bottom:12px">
     ${stat('Out with staff now',fmt(out),`${open.length} ${open.length===1?'person':'people'} holding some`,'y')}
     ${stat('Given today',fmt(givenToday),'from the counter','b')}
-    ${stat('Spent today',fmt(spentToday),'put in as expenses','r')}</div>
+    ${stat('Spent today',fmt(spentToday),'put in as expenses','r')}
+    ${stat('Handed in, to count',String(open.filter(p=>p.submitted).length),open.filter(p=>!p.submitted).length?open.filter(p=>!p.submitted).length+' not handed in yet':'everyone has','g')}</div>
    ${open.length?`<div class="pc-grid">${open.map(card).join('')}</div>`:`<div class="card muted">${may?'Nobody is holding petty cash. <b>Give petty cash</b> hands some to a member of staff.':'You are not holding any petty cash.'}</div>`}
    ${done.length?`<div class="card" style="margin-top:12px"><h2 style="margin-top:0">Brought back</h2>
      <table><tr><th>No</th><th>Who</th><th>Back on</th><th class="n">Given</th><th class="n">Spent</th><th class="n">Back</th><th>Difference</th></tr>
@@ -29467,6 +29499,7 @@ document.addEventListener('click',e=>{
       if(list.has(gname)) list.delete(gname); else list.add(gname); p.navFold=[...list]; try{ persist(true) }catch(e){} renderNav() },
     pcGive:()=>pettyGiveModal(a.dataset.who||''), pcExp:()=>pettyExpenseModal(a.dataset.id), pcSettle:()=>pettySettleModal(a.dataset.id), pcUndo:()=>pettyUndo(a.dataset.id,a.dataset.no),
     catMgr:()=>categoriesModal(), catTidy:()=>tidyCatalogModal(),
+    pcSubmit:()=>pettySubmitModal(a.dataset.id),
     cbNew:()=>cbNewModal(), cbWrite:()=>cbWriteModal(), cbDel:()=>cbDelete(a.dataset.id),
     cbOpen:()=>{ CB.book=CB.book===a.dataset.id?null:a.dataset.id; render() },
     cbLeaf:()=>{ closeModals(); cbLeafModal(a.dataset.id,a.dataset.no) },
