@@ -3082,6 +3082,15 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-entry{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px;background:var(--panel);padding:10px 10px 11px;
  border-bottom:1px solid var(--line);width:100%;position:relative;z-index:2;min-height:66px}
 .till-entry.live{background:#FFFBF0;border-bottom-color:var(--chip-yellow)}
+/* who is on a break, above the item row */
+.brk-strip{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:5px 10px;background:#FFF7E6;border-bottom:1px solid #F3DDA8;font-size:12.5px;width:100%}
+.brk-strip[hidden]{display:none}
+.brk-strip .brk-t{font-weight:800;color:#8A5D06;letter-spacing:.02em;margin-right:2px}
+.brk-strip .brk-p{background:#fff;border:1px solid #F0D08A;border-radius:99px;padding:2px 10px;color:#5b4a1e}
+.brk-strip .brk-p b{color:var(--ink)}
+.brk-strip .brk-p i{font-style:normal;color:#a08850}
+.brk-strip .brk-p.over{background:#FDECEC;border-color:#F0B4B4;color:var(--chip-rust)}
+.brk-strip .brk-p.over b{color:var(--chip-rust)}
 .till-entry.live{animation:none;opacity:1;box-shadow:none}   /* the item row shares the name of the pulsing status dot; it must stay still */
 .till-entry>label,.till-entry>div{display:flex;flex-direction:column;justify-content:flex-end;height:58px}
 .till-entry span{display:block;font-size:10.5px;letter-spacing:.06em;color:var(--steel);font-weight:700;
@@ -6965,6 +6974,30 @@ function toggleHoliday(ds){
   persist(true); render();
 }
 function recFor(ds,id){ S.shift.days[ds]=S.shift.days[ds]||{}; return S.shift.days[ds][id] }
+/* Who is on a break this minute — from the shift clock, the same punches as the attendance board — with
+   how long they have been away and how long the break allows. Shown at the top of the till for everyone,
+   so the counter knows who is out; it turns red when someone has gone past their time. */
+function breaksOutNow(){
+  const ds=D(today), days=(S.shift&&S.shift.days&&S.shift.days[ds])||{}, now=Date.now(), out=[];
+  for(const [id,r] of Object.entries(days)){
+    if(!r||!r.in||r.out) continue;
+    const b=(r.breaks||[]).find(x=>!x.end); if(!b) continue;
+    const e=(S.employees||[]).find(x=>String(x.id)===String(id)); if(e&&e.active===false) continue;
+    const def=(shiftSet().breaks||[]).find(x=>x.id===b.id);
+    const allow=def?((+def.mins||Math.max(0,toMin(def.end)-toMin(def.start)))+(+def.extra||0)):0;
+    let from=b.startAt?+b.startAt:null;
+    if(!from){ const d=new Date(); d.setHours(0,0,0,0); from=d.getTime()+toMin(b.start)*60000 }
+    const mins=Math.max(0,Math.floor((now-from)/60000));
+    out.push({name:(e&&e.name)||r.name||('#'+id),what:b.name||(def&&def.name)||'Break',mins,allow,over:allow&&mins>allow});
+  }
+  return out.sort((a,b)=>b.mins-a.mins);
+}
+function breakStripInner(){
+  const L=breaksOutNow(); if(!L.length) return '';
+  return `<span class="brk-t">☕ On break</span>${L.map(x=>`<span class="brk-p ${x.over?'over':''}" title="${noteEsc(x.what)} — ${x.mins} min${x.allow?' of '+x.allow:''}"><b>${noteEsc(x.name)}</b> ${noteEsc(x.what)} · ${x.mins}m${x.allow?`<i>/${x.allow}</i>`:''}${x.over?' · '+(x.mins-x.allow)+'m over':''}</span>`).join('')}`;
+}
+const breakStrip=()=>{ const h=breakStripInner(); return `<div class="brk-strip" data-brk ${h?'':'hidden'}>${h}</div>` };
+setInterval(()=>{ try{ document.querySelectorAll('[data-brk]').forEach(el=>{ const h=breakStripInner(); if(el.innerHTML!==h) el.innerHTML=h; el.hidden=!h }) }catch(e){} },20000);
 function setRec(ds,id,patch){
   S.shift.days=S.shift.days||{};
   S.shift.days[ds]=S.shift.days[ds]||{};
@@ -15427,6 +15460,7 @@ function pos(){
     <button class="till-hold" data-act="hold" ${L.length?'':'disabled'} title="Put this bill aside, or make it a quotation (Ctrl+H)">HOLD<i>Ctrl+H</i></button>
     <button class="till-clear" data-act="csClear" ${L.length||S.pos.customer?'':'disabled'} title="Throw this bill away (Esc)">CLEAR<i>Esc</i></button>
    </div>
+   ${breakStrip()}
    <div class="card search">${e
      ? `<div class="entry">
          <div class="ename">${P(e.pid).name} <span class="muted">${P(e.pid).code} · ${fq(P(e.pid).stock)} ${P(e.pid).unit} in stock</span>
@@ -16613,6 +16647,7 @@ function posClassic(){
    </div>
 
 
+   ${breakStrip()}
    <div class="till-entry ${sel?'live':''}">
     <label class="f-code"><span>SCAN / INPUT CODE</span>
      <input id="csQ" value="${CS.q}" placeholder="code, short code or barcode" autocomplete="off"></label>
