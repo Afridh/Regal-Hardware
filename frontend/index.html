@@ -3099,7 +3099,30 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-no .brk-strip .brk-p{padding:1px 8px}
 .till-no .brk-strip b{display:inline;font-family:inherit;font-size:11.5px;font-weight:700}
 .till-no .brk-strip .brk-p.over{color:var(--chip-rust)}
-.till-entry.live{animation:none;opacity:1;box-shadow:none}   /* the item row shares the name of the pulsing status dot; it must stay still */
+.till-entry.live{animation:none;opacity:1;box-shadow:none}
+/* the old system's item row (chosen 21 Oct 2026): a dark bar on top with the cost code, the MRP and the
+   discount it makes; plain grey boxes, taller, with smaller writing */
+.till-bar{display:flex;align-items:center;justify-content:flex-end;gap:10px;width:100%;padding:6px 14px;background:#2a2d33;color:#e9ebef;font-size:12px;font-weight:600;position:relative;z-index:2}
+.till-bar .tb-k{color:#aeb3bc;font-size:11px;letter-spacing:.06em;margin-left:14px}
+.till-bar b{font-family:Archivo,sans-serif;font-weight:800;font-size:15px;min-width:76px;text-align:right}
+.till-bar .tb-cc{color:#fff;letter-spacing:.14em;min-width:56px}
+.till-bar .tb-mrp{color:#ffd36b;min-width:96px}
+.till-bar .tb-dis{color:#9fe0b8}
+@media (min-width:901px){
+ .till .till-entry{background:#e6e7ea;gap:6px;padding:8px 10px 10px;border-bottom-color:#c9ccd3}
+ .till .till-entry.live{background:#e6e7ea;border-bottom-color:#c9ccd3}
+ .till .till-entry>label,.till .till-entry>div{height:64px}
+ .till .till-entry span{font-size:10.5px;color:#3d4b4e}
+ .till .till-entry input,.till .till-entry select{height:44px;min-height:44px;flex:0 0 44px;border:1px solid #b9bdc5;border-radius:3px;font-size:14px!important;font-weight:600!important;font-family:"IBM Plex Sans",Arial,sans-serif!important}
+ .till .till-entry input:focus,.till .till-entry select:focus{border-color:#e0a82e;box-shadow:0 0 0 2px rgba(224,168,46,.35)}
+ .till .till-item{height:44px;min-height:44px;flex:0 0 44px;border:1px solid #b9bdc5;border-radius:3px}
+ .till .till-item.has{border-color:#b9bdc5;box-shadow:none}
+ .till .till-item b,.till .till-item input{font-family:"IBM Plex Sans",Arial,sans-serif;font-size:14px;font-weight:600;color:#5d636d}
+ .till .till-item input:focus{color:var(--ink)}
+ .till .f-qty input{background:#d9dcff}
+ .till .till-amt{height:44px;min-height:44px;flex:0 0 44px;border:1px solid #b9bdc5;border-radius:3px;background:#d3d5d9;font-size:14px;font-weight:700;color:#4a4f58}
+ .till .till-entry .f-mrp,.till .till-entry .f-cc{display:none}     /* both are in the bar above now */
+}   /* the item row shares the name of the pulsing status dot; it must stay still */
 .till-entry>label,.till-entry>div{display:flex;flex-direction:column;justify-content:flex-end;height:58px}
 .till-entry span{display:block;font-size:10.5px;letter-spacing:.06em;color:var(--steel);font-weight:700;
  margin-bottom:4px;white-space:nowrap;line-height:1.2;flex:0 0 auto}
@@ -16655,6 +16678,11 @@ function posClassic(){
    </div>
 
 
+   <div class="till-bar">
+    ${CFG.cost&&CFG.cost.atTill&&can('cost')?`<span class="tb-k">COST CODE</span><b class="tb-cc" id="tbCc">${sel?(tillCostCode(sel)||'—'):'—'}</b>`:''}
+    <span class="tb-k">MRP</span><b class="tb-mrp" id="tbMrp">${sel?money2(sel.mrp):'0.00'}</b>
+    <span class="tb-k">DISCOUNT</span><b class="tb-dis" id="tbDis">${sel?money2(Math.max(0,(+sel.mrp||0)*(+CS.qty||0)-csLineNet())):'0.00'}</b>
+   </div>
    <div class="till-entry ${sel?'live':''}">
     <label class="f-code"><span>SCAN / INPUT CODE</span>
      <input id="csQ" value="${CS.q}" placeholder="code, short code or barcode" autocomplete="off"></label>
@@ -17644,6 +17672,7 @@ function bindClassic(){
   const paint=()=>{
     const v=money2(csLineNet());
     if(amt) amt.textContent=v;
+    { const tb=$('#tbDis'), sp=CS.pid&&P(CS.pid); if(tb) tb.textContent=sp?money2(Math.max(0,(+sp.mrp||0)*(+CS.qty||0)-csLineNet())):'0.00' }
 
   };
   /* ---- moving about the row with the arrow keys ----
