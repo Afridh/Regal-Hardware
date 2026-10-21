@@ -3091,6 +3091,14 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .brk-strip .brk-p i{font-style:normal;color:#a08850}
 .brk-strip .brk-p.over{background:#FDECEC;border-color:#F0B4B4;color:var(--chip-rust)}
 .brk-strip .brk-p.over b{color:var(--chip-rust)}
+.brk-strip .brk-none{color:#3d7a52;font-weight:700}
+.till-no .brk-strip{background:none;border:0;padding:6px 0 0;justify-content:flex-end;gap:4px;font-size:11.5px;max-width:360px;margin-left:auto}
+.till-no .brk-strip span{font-size:11.5px;letter-spacing:0;color:inherit}
+.till-no .brk-strip .brk-t{color:#8A5D06}
+.till-no .brk-strip .brk-none{color:#3d7a52}
+.till-no .brk-strip .brk-p{padding:1px 8px}
+.till-no .brk-strip b{display:inline;font-family:inherit;font-size:11.5px;font-weight:700}
+.till-no .brk-strip .brk-p.over{color:var(--chip-rust)}
 .till-entry.live{animation:none;opacity:1;box-shadow:none}   /* the item row shares the name of the pulsing status dot; it must stay still */
 .till-entry>label,.till-entry>div{display:flex;flex-direction:column;justify-content:flex-end;height:58px}
 .till-entry span{display:block;font-size:10.5px;letter-spacing:.06em;color:var(--steel);font-weight:700;
@@ -6993,11 +7001,11 @@ function breaksOutNow(){
   return out.sort((a,b)=>b.mins-a.mins);
 }
 function breakStripInner(){
-  const L=breaksOutNow(); if(!L.length) return '';
+  const L=breaksOutNow(); if(!L.length) return '<span class="brk-t brk-none">☕ No one on break</span>';
   return `<span class="brk-t">☕ On break</span>${L.map(x=>`<span class="brk-p ${x.over?'over':''}" title="${noteEsc(x.what)} — ${x.mins} min${x.allow?' of '+x.allow:''}"><b>${noteEsc(x.name)}</b> ${noteEsc(x.what)} · ${x.mins}m${x.allow?`<i>/${x.allow}</i>`:''}${x.over?' · '+(x.mins-x.allow)+'m over':''}</span>`).join('')}`;
 }
-const breakStrip=()=>{ const h=breakStripInner(); return `<div class="brk-strip" data-brk ${h?'':'hidden'}>${h}</div>` };
-setInterval(()=>{ try{ document.querySelectorAll('[data-brk]').forEach(el=>{ const h=breakStripInner(); if(el.innerHTML!==h) el.innerHTML=h; el.hidden=!h }) }catch(e){} },20000);
+const breakStrip=()=>`<div class="brk-strip" data-brk>${breakStripInner()}</div>`;
+setInterval(()=>{ try{ document.querySelectorAll('[data-brk]').forEach(el=>{ const h=breakStripInner(); if(el.innerHTML!==h) el.innerHTML=h }) }catch(e){} },20000);
 function setRec(ds,id,patch){
   S.shift.days=S.shift.days||{};
   S.shift.days[ds]=S.shift.days[ds]||{};
@@ -16643,11 +16651,10 @@ function posClassic(){
      <div class="till-clock"><span id="posClockTime">${now.toLocaleTimeString('en-GB',{hour12:true})}</span><em id="posClockDay">${now.getDate()}</em></div></div>
     <div class="till-no ${S.pos.editing?'editing':''}">
      <b>${S.pos.editing||nextNo}</b>
-     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Which prices this bill uses — Ctrl+Shift+R for retail, Ctrl+Shift+W for wholesale, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><button class="till-paper" data-act="csPaper" title="Which bill prints after payment — Ctrl+Shift+N for the normal 80mm receipt, Ctrl+Shift+L for the large A5 bill"><i class="${csPaper()==='r80'?'on':''}">SMALL BILL</i><i class="${csPaper()==='a5'?'on':''}">LARGE BILL</i></button>`}</div>
+     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Which prices this bill uses — Ctrl+Shift+R for retail, Ctrl+Shift+W for wholesale, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><button class="till-paper" data-act="csPaper" title="Which bill prints after payment — Ctrl+Shift+N for the normal 80mm receipt, Ctrl+Shift+L for the large A5 bill"><i class="${csPaper()==='r80'?'on':''}">SMALL BILL</i><i class="${csPaper()==='a5'?'on':''}">LARGE BILL</i></button>`}${breakStrip()}</div>
    </div>
 
 
-   ${breakStrip()}
    <div class="till-entry ${sel?'live':''}">
     <label class="f-code"><span>SCAN / INPUT CODE</span>
      <input id="csQ" value="${CS.q}" placeholder="code, short code or barcode" autocomplete="off"></label>
