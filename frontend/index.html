@@ -3102,6 +3102,20 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-no .brk-strip b{display:inline;font-family:inherit;font-size:11.5px;font-weight:700}
 .till-no .brk-strip .brk-p.over{color:var(--chip-rust)}
 .till-entry.live{animation:none;opacity:1;box-shadow:none}
+/* the till's Menu window */
+.tm-box{width:min(980px,96vw)!important;max-width:96vw!important}
+.tm-hd{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.tm-hd h2{margin:0}
+.tm-hd .btn{margin-left:auto}
+.tm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:2px 16px;align-items:start;max-height:70vh;overflow:auto}
+.tm-grp{break-inside:avoid;margin-bottom:12px}
+.tm-grp>b{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--steel);margin:0 0 4px 4px}
+.tm-it{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;padding:7px 8px;border-radius:8px;text-align:left;font:inherit;font-size:14px;cursor:pointer;color:var(--ink)}
+.tm-it:hover,.tm-it:focus{background:var(--panel);outline:none}
+.tm-it .nvi{width:18px;height:18px;flex:none;color:var(--steel)}
+.tm-it span{flex:1}
+.tm-it i{font-style:normal;font-size:10.5px;color:var(--steel);background:var(--line2);border-radius:4px;padding:0 5px}
+.tm-ft{display:flex;justify-content:space-between;gap:8px;margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
 /* ---- Open & close the counter ---- */
 .ctr-ban{display:flex;align-items:center;gap:18px;padding:22px 24px;border-radius:18px;color:#fff;margin-bottom:14px;box-shadow:0 10px 28px rgba(30,10,15,.16)}
 .ctr-ban.closed{background:linear-gradient(120deg,#3a2e2f,#5b4446)}
@@ -12135,6 +12149,26 @@ const ICONS={
   reports:'M4 20V6M9 20V10M14 20V4M19 20v-8M3 20h18',
   settings:'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7 1.1V21a2 2 0 11-4 0v-.1A1.6 1.6 0 006.6 19.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.6 1.6 0 003 15H3a2 2 0 110-4h.1A1.6 1.6 0 004.6 9.4l-.1-.1a2 2 0 112.8-2.8l.1.1A1.6 1.6 0 009 6.6V6a2 2 0 114 0v.1a1.6 1.6 0 002.7 1.1l.1-.1a2 2 0 112.8 2.8l-.1.1A1.6 1.6 0 0021 12v0a2 2 0 110 4h-.1z'
 };
+/* The till's Menu: every page this person may open, grouped as in the side menu, in a window over the
+   till. It used to jump to the dashboard on a wide screen and slide in a side menu on a narrow one —
+   which on a screen scaled up by Windows came to nothing at all. */
+function tillMenu(){
+  const groups=[]; let cur=null;
+  for(const [k,l,key] of views){
+    if(k==='grp'){ cur={name:l,items:[]}; groups.push(cur); continue }
+    if(!allowed(k)||k==='pos') continue;
+    (cur||(cur={name:'',items:[]},groups.push(cur),cur)).items.push([k,l,key]);
+  }
+  const m=modal(`<div class="tm-hd"><h2>Menu</h2><span class="muted">${noteEsc(S.user.name)} · ${noteEsc(typeof roleLabel==='function'?roleLabel(S.user.role):S.user.role)}</span>
+     <button class="btn ghost" data-act="closeModal">✕</button></div>
+    <div class="tm-grid">${groups.filter(g=>g.items.length).map(g=>`<div class="tm-grp"><b>${noteEsc(g.name||'')}</b>
+      ${g.items.map(([k,l,key])=>`<button class="tm-it" data-tm="${k}">${icon(k)}<span>${noteEsc(l)}</span>${key?`<i>${key}</i>`:''}</button>`).join('')}</div>`).join('')}</div>
+    <div class="tm-ft"><button class="btn ghost" data-act="closeModal">Back to the till</button><button class="btn ghost" data-tm="__signout">Sign out</button></div>`);
+  m.querySelector('.box').classList.add('tm-box');
+  m.querySelectorAll('[data-tm]').forEach(b=>b.onclick=()=>{ m.remove(); const v=b.dataset.tm;
+    if(v==='__signout') return signOut();
+    document.body.classList.remove('csfull'); go(v) });
+}
 const icon=(k)=>`<svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.7"
   stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[k]||ICONS.dashboard}"/></svg>`;
 ICONS.tenders='M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h6M9 8h2';
@@ -29619,8 +29653,7 @@ document.addEventListener('click',e=>{
       clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
       render(); toast(`${no} left as it was`) },
     drawer:()=>document.body.classList.toggle('drawer'),
-    csExit:()=>{ if(window.matchMedia&&window.matchMedia('(max-width:900px)').matches) return document.body.classList.toggle('drawer');
-      document.body.classList.remove('csfull'); go('dashboard') },
+    csExit:()=>tillMenu(),
     csSignOut:()=>signOut(),
     csSel:()=>{ if(CS.editLine===+a.dataset.i) return;   // clicking into the boxes of the line being edited
       CS.editLine=null; S.pos.sel=+a.dataset.i; CS.focus='list'; fastUpdatePosSel(S.pos.sel); const el=document.querySelector('.till-lines'); if(el) el.focus(); },
