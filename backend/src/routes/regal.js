@@ -1,6 +1,6 @@
 // API for the Regal front-end (frontend/index.html): the books document store, sign-in, SMS relay.
 import { Router } from 'express';
-import { staffTexts, sendStaffTexts } from '../lib/staffTexts.js';
+import { staffTexts, sendStaffTexts, breakOverTexts } from '../lib/staffTexts.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { query, withTransaction, dbKind } from '../db.js';
@@ -1164,5 +1164,26 @@ r.post('/social/post', regalAuth, asyncHandler(async (req, res) => {
 
   res.json({ ok: Object.values(results).some(x => x.ok), results });
 }));
+
+/* ---------------------------------------------------------------- the break watch
+   Once a minute, between 7 in the morning and 9 at night (Sri Lanka time), anyone on a break past its
+   limit gets one text telling them so (lib/staffTexts.js). The break is marked warnedAt in the books so
+   a restart does not tell them twice, and kept here too in case a till's save lays an older copy over it. */
+const breakWarned = new Set();
+async function breakWatch() {
+  const hr = +new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Colombo', hour12: false }).split(':')[0];
+  if (hr < 7 || hr >= 21) return;
+  const { rows: [b] } = await query(dbKind === 'mysql' ? 'SELECT data FROM books WHERE `key` = ?' : 'SELECT data FROM books WHERE key = $1', ['regal']);
+  const data = asJson(b && b.data); if (!data) return;
+  const list = breakOverTexts(data).filter(t => !breakWarned.has(t.date + '|' + t.empId + '|' + t.start));
+  if (!list.length) return;
+  list.forEach(t => breakWarned.add(t.date + '|' + t.empId + '|' + t.start));
+  sendStaffTexts(data, list, sendViaProvider);
+  await booksEdit('regal', 'break watch', (d) => {
+    const day = d.S?.shift?.days?.[list[0].date] || {};
+    for (const t of list) { const r = day[t.empId]; const br = r && (r.breaks || []).find(x => x && !x.end && x.start === t.start); if (br) br.warnedAt = Date.now(); }
+  }).catch(e => console.warn('break watch: could not mark', e.message));
+}
+if (!process.env.VERCEL && process.env.NODE_ENV !== 'test') setInterval(() => { breakWatch().catch(e => console.warn('break watch:', e.message)); }, 60 * 1000).unref?.();
 
 export default r;

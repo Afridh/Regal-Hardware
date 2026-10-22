@@ -6614,6 +6614,7 @@ function settings(){
      <div class="card" style="margin-top:10px;padding:10px 12px"><b>Texts to staff about their own day</b>
       <div class="muted" style="margin-bottom:6px">Sent to the mobile on their staff card (or their user) the moment the punch comes in — from the shift clock, the fingerprint machine or here. Only for today, and only while sending is on in Settings → Messages.</div>
       ${fld('msg.staffIn','','When they check in — the time, and how late if past the start','check')}
+      ${fld('msg.staffBreakOver','','When a break runs past its limit — a warning while they are still away','check')}
       ${fld('msg.staffBreakLate','','When they come back late from a break — how late, and what was allowed','check')}
       ${fld('msg.staffOut','','When they check out — the time, and the hours worked','check')}</div>
      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -6753,8 +6754,8 @@ const SHIFT_DEFAULTS={
   startTime:'08:00',closeTime:'19:30',graceMin:0,otMultiplier:1.5,workDaysPerMonth:26,
   weeklyOff:[],latePerMin:0,halfDayAfterMin:240,        // the shop opens on Sundays; it closes on public holidays and Poya days (sl-holidays.js)
   breaks:[{id:'b1',name:'Breakfast',start:'08:30',end:'08:45',mins:15,extra:0,paid:true},
-          {id:'b2',name:'Lunch',start:'12:30',end:'13:00',mins:30,extra:0,paid:true},
-          {id:'b3',name:'Evening Tea',start:'15:30',end:'15:40',mins:10,extra:0,paid:true}]};
+          {id:'b2',name:'Lunch',start:'12:30',end:'12:55',mins:25,extra:0,paid:true},
+          {id:'b3',name:'Evening Tea',start:'15:30',end:'15:45',mins:15,extra:0,paid:true}]};
 const toMin=t=>{const [h,m]=String(t||'0:0').split(':').map(Number);return (h||0)*60+(m||0)};
 const hhmm=m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(Math.round(m%60)).padStart(2,'0');
 const hrs=m=>(m/60);
@@ -9562,6 +9563,11 @@ function applyKeptBooks(kept){
     Object.keys(CFG.tpl||{}).forEach(k=>{ const t=CFG.tpl[k]; if(t&&TPL_ORIG[k]&&TPL_ONELINE[k]===String(t.text||'')) t.text=TPL_ORIG[k].text });
     CFG.msg.lines1=true;
   }
+  if(CFG.msg&&CFG.msg.staffBreakOver===undefined) CFG.msg.staffBreakOver=true;   // the warning while still on a break
+  /* 22 Oct 2026: the breaks the shop allows — breakfast 15 min, lunch 25 min, evening tea 15 min */
+  if(S.shift&&S.shift.settings&&Array.isArray(S.shift.settings.breaks)&&!CFG.brkMins22){ CFG.brkMins22=true;
+    const set=(b,m)=>{ b.mins=m; b.extra=0; b.end=hhmm(toMin(b.start)+m) };
+    S.shift.settings.breaks.forEach(b=>{ const n=String(b.name||'').toLowerCase(); if(/breakfast/.test(n)) set(b,15); else if(/lunch/.test(n)) set(b,25); else if(/tea/.test(n)) set(b,15) }) }
   if(CFG.msg&&CFG.msg.staffIn===undefined){ CFG.msg.staffIn=true; CFG.msg.staffOut=true; CFG.msg.staffBreakLate=true }   // texts to staff about their day: on unless switched off
   if(!CFG.roles5){ CFG.roles5=true;    // 21 Oct 2026: five kinds of user
     (S.users||[]).forEach(u=>{

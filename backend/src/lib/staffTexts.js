@@ -51,6 +51,31 @@ export function staffTexts(data, date, empId, prev, next) {
   return out.map(body => ({ to, body: letter(CFG, 'staff', body), name: e.name }));
 }
 
+/** Everyone on a break right now who has gone past what it allows and has not been warned for this break. */
+export function breakOverTexts(data, nowMs = Date.now()) {
+  const S = data?.S || {}, CFG = data?.CFG || {}, msg = CFG.msg || {};
+  if (!msg.live || msg.staffBreakOver === false) return [];
+  const date = shopToday(), day = (S.shift && S.shift.days && S.shift.days[date]) || {};
+  const set = (S.shift && S.shift.settings) || {};
+  const nowM = (() => { const p = new Date(nowMs).toLocaleTimeString('en-GB', { timeZone: 'Asia/Colombo', hour12: false }).split(':'); return (+p[0]) * 60 + (+p[1]); })();
+  const out = [];
+  for (const [empId, r] of Object.entries(day)) {
+    if (!r || !r.in || r.out) continue;
+    const b = (r.breaks || []).find(x => x && !x.end); if (!b || b.warnedAt) continue;
+    const def = (set.breaks || []).find(x => x && x.id === b.id);
+    const allow = def ? (+def.mins || Math.max(0, toMin(def.end) - toMin(def.start))) + (+def.extra || 0) : 0;
+    if (!allow) continue;
+    const away = b.startAt ? Math.floor((nowMs - Number(b.startAt)) / 60000) : nowM - toMin(b.start);
+    if (away <= allow) continue;
+    const e = (S.employees || []).find(x => x && String(x.id) === String(empId)); if (!e || e.active === false) continue;
+    const to = phoneOf(S, e); if (!to) continue;
+    const first = String(e.name || '').split(' ')[0], what = b.name || (def && def.name) || 'break';
+    out.push({ to, empId: String(empId), date, start: b.start, name: e.name,
+      body: letter(CFG, 'staff', `${first}, your ${what} break time is over — ${allow} min allowed, you have been away ${away} min. Please come back now.`) });
+  }
+  return out;
+}
+
 /** Send them, one after another, without holding up the punch. */
 export function sendStaffTexts(data, list, send) {
   if (!list || !list.length) return;
