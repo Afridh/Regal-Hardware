@@ -1,5 +1,6 @@
 // API for the Regal front-end (frontend/index.html): the books document store, sign-in, SMS relay.
 import { Router } from 'express';
+import { staffTexts, sendStaffTexts } from '../lib/staffTexts.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import { query, withTransaction, dbKind } from '../db.js';
@@ -602,7 +603,7 @@ async function shiftPunchMySQL(key, date, id, r0, by, role) {
     else if (days[date]) { delete days[date][id]; if (!Object.keys(days[date]).length) delete days[date]; }
     await client.query('UPDATE books SET data = ?, rev = ?, updated_at = NOW(), updated_by = ? WHERE `key` = ?',
       [JSON.stringify(data), next, by, key]);
-    return { stale: false, rev: next };
+    return { stale: false, rev: next, data, had };
   });
 }
 
@@ -620,6 +621,7 @@ r.post('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
     if (!cur) throw new HttpError(404, 'The books are not on the server yet — open the shop system once first');
     if (cur.rec && r0 && Number(cur.rec.updatedAt || 0) > Number(r0.updatedAt || 0)) return { stale: true, rev: Number(cur.rev), rec: cur.rec };
     if (cur.rec?.status === 'absent' && r0?.status !== 'absent' && !isSuperRole(req.shiftUser.role)) return { stale: true, rev: Number(cur.rev), rec: cur.rec };   // only the Super Admin lifts an absence
+    const prev = cur.rec;
     // written in place, stamped with the revision it made (_srv) so a till's save can lay it over its own;
     // the whole document is never read out, rewritten or copied into the history for a punch
     const { rows: [u] } = r0
@@ -634,10 +636,16 @@ r.post('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
       : await client.query(
           `UPDATE books SET data = data #- ARRAY['S','shift','days',$2::text,$3::text], rev = rev + 1, updated_at = now(), updated_by = $4
            WHERE key = $1 RETURNING rev`, [key, date, id, req.shiftUser.name]);
-    return { stale: false, rev: Number(u.rev) };
+    return { stale: false, rev: Number(u.rev), prev };
   });
   if (out.stale) return res.status(409).json({ error: 'A newer punch is already on the server', rev: out.rev, rec: out.rec });
   res.json({ ok: true, rev: out.rev });
+  // the person is told about their own day: in, out, late back from a break (lib/staffTexts.js)
+  try {
+    let data = out.data, had = out.had;
+    if (!data && r0) { const { rows: [b] } = await query('SELECT data FROM books WHERE key = $1', [key]); data = asJson(b && b.data); had = out.prev; }
+    if (data && r0) sendStaffTexts(data, staffTexts(data, date, id, had, r0), sendViaProvider);
+  } catch (e) { console.warn('staff texts:', e.message); }
 }));
 
 /* ---------------------------------------------------------------- asking, at the shift clock

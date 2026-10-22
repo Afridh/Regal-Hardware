@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { query, withTransaction } from '../db.js';
 import { asyncHandler } from '../lib/errors.js';
 import { sendViaProvider } from './regal.js';
+import { staffTexts, sendStaffTexts } from '../lib/staffTexts.js';
 
 const r = Router();
 const KEY = 'shiftboard';
@@ -180,7 +181,7 @@ r.all('/shift-api.php', asyncHandler(async (req, res) => {
       }
       S.shift = S.shift || {}; S.shift.days = S.shift.days || {};
       const next = Number(cur.rev) + 1, now = Date.now();
-      let written = 0, skipped = 0;
+      let written = 0, skipped = 0; const told = [];
       for (const [empId, times] of Object.entries(grouped)) {
         const had = (S.shift.days[date] || {})[empId];
         const rec = dayFromPunches(times, S.shift, had);
@@ -188,9 +189,11 @@ r.all('/shift-api.php', asyncHandler(async (req, res) => {
         // the same punches read again a minute later: nothing to write
         if (had && had.in === rec.in && had.out === rec.out && JSON.stringify(had.breaks || []) === JSON.stringify(rec.breaks || [])) { skipped++; continue }
         (S.shift.days[date] = S.shift.days[date] || {})[empId] = { ...rec, by: 'fingerprint', updatedAt: now, _srv: next };
+        told.push(...staffTexts(data, date, empId, had, rec));
         written++;
       }
       if (written) await client.query(`UPDATE books SET data = $1, rev = $2, updated_at = now(), updated_by = $3 WHERE key = $4`, [JSON.stringify(data), next, 'fingerprint', 'regal']);
+      if (written) sendStaffTexts(data, told, sendViaProvider);     // in, out, late back from a break (lib/staffTexts.js)
       return { written, skipped, unmatched: [...unmatched] };
     });
     if (main) return res.json({ ok: true, board: 'shop', ...main });
