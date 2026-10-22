@@ -3202,6 +3202,17 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .ctr-blk.warn{border-color:#f0b4b4;background:#fff7f7}
 .ctr-slip{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .ctr-slip input{width:150px;text-align:right}
+.ctr-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:6px}
+.ctr-3 label>span{display:block;font-size:11.5px;color:var(--steel);font-weight:600;margin-bottom:4px}
+.ctr-3 input,.ctr-3 select{width:100%;min-width:0}
+.ctr-ro{height:36px;display:flex;align-items:center;justify-content:flex-end;padding:0 10px;border-radius:8px;background:var(--panel);font:800 15px Archivo,sans-serif}
+.ctr-ro.bad{color:#c0442c;background:#fdecec}
+.ctr-tb{width:100%;margin-top:6px;font-size:13px}
+.ctr-tb th{font-size:11px;color:var(--steel);text-transform:uppercase;letter-spacing:.04em;text-align:left;padding:4px 6px}
+.ctr-tb td{padding:5px 6px;border-top:1px solid var(--line2);vertical-align:middle}
+.ctr-tb td input{width:130px;text-align:right}
+.ctr-tb .n{text-align:right}
+.ctr-fin{max-height:calc(92vh - 140px);overflow:auto}
 @media (max-width:900px){.ctr-body{grid-template-columns:1fr}.ctr-right{border-left:0;border-top:1px solid var(--line)}.ctr-notes{grid-template-columns:repeat(2,1fr)}.ctr-tlrow{grid-template-columns:1fr}.ctr-ban{flex-wrap:wrap}}
 /* no up/down arrows in the till's number boxes — qty, price, discount, and a line being edited */
 .till input[type=number]::-webkit-inner-spin-button,.till input[type=number]::-webkit-outer-spin-button,.pos input[type=number]::-webkit-inner-spin-button,.pos input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;appearance:none;margin:0}
@@ -13517,7 +13528,7 @@ function cashMoves(d){
                ['Wages',/^Wages|^Payroll/],['Staff advances',/^Advance to/],['Petty cash out',/^Petty cash to /],['Petty cash back',/^Petty cash back /]];
   const out=kinds.map(([label])=>({label,v:0})); let other=0, net=0;
   for(const j of S.journal){
-    if(j.date!==d) continue;
+    if(j.date!==d||j.ref==='DAYEND') continue;
     const c=j.lines.filter(l=>l.ac==='1010').reduce((a,l)=>a+(+l.dr||0)-(+l.cr||0),0);
     if(!c) continue;
     net+=c;
@@ -13534,9 +13545,11 @@ function cashMoves(d){
 function cashExpected(d,loc){
   const open=cashFind('open',d,loc);
   const mv=cashMoves(d);
-  const fromBooks=!open;
-  const start=open?open.total:bal('1010',cashPrev(d));
-  return {start,fromBooks,moves:mv,expected:+(start+mv.net).toFixed(2)};
+  const prev=(typeof deFind==='function')?deFind(cashPrev(d),loc):null;
+  const carried=!open&&!!prev&&prev.keep!=null;           // what was left in the drawer last night stands for the float
+  const fromBooks=!open&&!carried;
+  const start=open?open.total:carried?+prev.keep:bal('1010',cashPrev(d));
+  return {start,fromBooks,carried:carried||!!(open&&open.carried),moves:mv,expected:+(start+mv.net).toFixed(2)};
 }
 
 function cashGrid(kind){
@@ -13774,16 +13787,18 @@ function cashPrintSlip(kind){
 }
 
 /* ====================== OPEN & CLOSE THE COUNTER ======================
-   The morning and the evening, made easy. The Day book below has every detail; this is the way
-   through it for whoever is on the counter:
-     morning  Open the counter — count the float note by note, see yesterday's closing count beside it
-     evening  Close the counter — 1 what the day came to, 2 count the drawer against what ought to be
-              there, 3 the card machine and cheques if any, a reason if it is out, and close
-   Every figure comes from the same places the Day book uses (cashSave, cashExpected, deCloseDay), so
-   the two never disagree. */
+   The morning and the evening, made easy (the Day book keeps every detail):
+     morning  nothing to count. The day starts from what was left in the drawer last night; one tap
+              says the counter is open (and the figures work even if nobody taps it).
+     evening  1 what today came to · 2 count the drawer · 3 the balances: what stays in the drawer for
+              tomorrow, what goes to the bank and the safe, every bank account against the bank, the
+              customers' cheques in hand and our own not yet cleared · 4 close.
+   Every figure comes from the same places the Day book uses (cashSave, cashExpected, deCloseDay). */
 const CTR_COL={5000:'#b8741f',1000:'#2f8a55',500:'#7448a6',100:'#c7951c',50:'#2c67ad',20:'#9a3446',10:'#7d8189',5:'#9a7a46',2:'#8f969e',1:'#ad9a72'};
-let CTC={}, ctrStep=1;
+let CTC={}, ctrStep=1, CTB=null;
 const ctrDenLabel=(d)=>d>=20?'Rs '+d.toLocaleString('en-US'):d+'/-';
+/* what was left in the drawer last night, if the day was closed that way */
+const ctrCarried=(d,loc)=>{ const r=deFind(cashPrev(d||D(today)),loc===undefined?cashStore():loc); return r&&r.keep!=null?r:null };
 function ctrTiles(counts){
   const tile=(d,coin)=>`<div class="ctr-note ${coin?'coin':''}" style="--c:${CTR_COL[d]}">
      <div class="ctr-den">${ctrDenLabel(d)}</div>
@@ -13807,38 +13822,45 @@ function ctrWire(m,counts,changed){
 }
 const ctrTag=(diff)=>Math.abs(diff)<0.005?'<span class="ctr-ok">✓ It agrees</span>':diff>0?`<span class="ctr-over">${money2(diff)} over</span>`:`<span class="ctr-short">${money2(-diff)} short</span>`;
 
-/* the morning */
+/* the morning: one tap, nothing to count (or count, if you would rather) */
+function ctrOpenNow(){
+  const t=D(today), loc=cashStore();
+  if(cashFind('open',t,loc)) return toast('The counter is already open today');
+  const c=ctrCarried(t,loc), amt=c?+c.keep:0;
+  const rec={id:'CU'+Math.random().toString(36).slice(2,8),date:t,kind:'open',loc,terminal:S.terminal,counts:{},total:amt,
+    by:S.user.name,at:new Date().toTimeString().slice(0,5),note:c?'left in the drawer last night':'opened without a count',carried:true};
+  rec.expected=amt; rec.diff=0;
+  cashList().push(rec);
+  try{ logTrail('cashup',`Counter opened on ${t} with ${money2(amt)} left in the drawer last night`,{amount:amt,ref:t}) }catch(e){}
+  persist(true); render(); toast('The counter is open — have a good day','ok');
+}
 function ctrOpenSheet(){
   const t=D(today), loc=cashStore();
   if(cashFind('open',t,loc)) return toast('The counter is already open today');
   const counts={};
-  const y=cashFind('close',cashPrev(t),loc), yd=deFind(cashPrev(t),loc);
+  const y=cashFind('close',cashPrev(t),loc), c=ctrCarried(t,loc);
   const m=modal(`<div class="ctr-sheet">
-    <div class="ctr-hd"><div><div class="ctr-kick">Good morning, ${noteEsc(S.user.name)}</div><h2>Open the counter</h2>
-      <div class="muted">Count the float in the drawer — how many of each note and coin. Enter moves to the next.</div></div>
+    <div class="ctr-hd"><div><div class="ctr-kick">Good morning, ${noteEsc(S.user.name)}</div><h2>Count the float</h2>
+      <div class="muted">Only if you want to — the counter opens with what was left last night without it.</div></div>
       <button class="btn ghost" data-act="closeModal">✕</button></div>
     <div class="ctr-body">
       <div class="ctr-left">${ctrTiles(counts)}</div>
       <div class="ctr-right">
         <div class="ctr-big"><small>Float counted</small><b id="ctrTot">${money2(0)}</b></div>
         <div class="ctr-facts">
-          <div><span>Opening at</span><b>${new Date().toTimeString().slice(0,5)} · till ${noteEsc(S.terminal||'')}</b></div>
-          <div><span>Yesterday's closing count</span><b>${y?money2(y.total):'—'}</b></div>
-          ${yd?`<div><span>Yesterday closed by</span><b>${noteEsc(yd.by)} at ${yd.at}</b></div>`:''}
+          <div><span>Left in the drawer last night</span><b>${c?money2(c.keep):y?money2(y.total):'—'}</b></div>
           <div id="ctrYgap"></div></div>
-        <input id="cashNoteOpen" placeholder="A note — optional (e.g. Rs 2,000 taken to the safe last night)" maxlength="120">
+        <input id="cashNoteOpen" placeholder="A note — optional" maxlength="120">
         <button class="btn tape ctr-go" id="ctrOpenGo">Open the counter</button>
       </div></div></div>`);
   m.querySelector('.box').classList.add('ctr-modal');
+  const ref=c?+c.keep:y?y.total:null;
   const changed=()=>{ const tot=cashTotal(counts); m.querySelector('#ctrTot').textContent=money2(tot);
-    m.querySelector('#ctrYgap').innerHTML=y&&tot?`<div class="ctr-cmp">${Math.abs(tot-y.total)<0.005?'<span class="ctr-ok">✓ Same as last night</span>':`<span class="muted">${money2(Math.abs(tot-y.total))} ${tot<y.total?'less':'more'} than last night's count</span>`}</div>`:'' };
+    m.querySelector('#ctrYgap').innerHTML=ref!=null&&tot?`<div class="ctr-cmp">${Math.abs(tot-ref)<0.005?'<span class="ctr-ok">✓ Same as last night</span>':`<span class="ctr-short">${money2(Math.abs(tot-ref))} ${tot<ref?'less':'more'} than last night</span>`}</div>`:'' };
   ctrWire(m,counts,changed); changed();
   m.querySelector('#ctrOpenGo').onclick=()=>{
-    if(!cashTotal(counts)&&!confirm('Nothing counted — open the counter with an empty drawer?')) return;
-    cashDate=null; cashDraft.open={...counts}; if(!cashTotal(counts)) cashDraft.open={1:0};
-    if(!cashTotal(counts)){ const rec={id:'CU'+Math.random().toString(36).slice(2,8),date:t,kind:'open',loc,terminal:S.terminal,counts:{},total:0,by:S.user.name,at:new Date().toTimeString().slice(0,5),note:'opened with an empty drawer'};
-      rec.expected=bal('1010',cashPrev(t)); rec.diff=+(0-rec.expected).toFixed(2); cashList().push(rec); cashDraft.open={} }
-    else cashSave('open');
+    if(!cashTotal(counts)) return toast('Count the float, or close this and use Open the counter');
+    cashDate=null; cashDraft.open={...counts}; cashSave('open');
     m.remove(); persist(true); render(); toast('The counter is open — have a good day','ok');
   };
 }
@@ -13848,29 +13870,35 @@ function ctrCloseSheet(){
   const t=D(today), loc=cashStore();
   if(deFind(t,loc)) return toast('Today is already closed');
   cashDate=null;
+  const keep0=(ctrCarried(t,loc)||{}).keep, defFloat=+((CFG.dayend||{}).float||keep0||5000);
+  if(!CTB) CTB={keep:'',depBank:(S.banks[0]||{}).id||'',dep:'',safe:'',bank:{},seen:false};
   const m=modal('<div class="ctr-sheet" id="ctrClose"></div>');
   m.querySelector('.box').classList.add('ctr-modal');
   const draw=()=>{
     const ex=cashExpected(t,loc), tn=deTenders(t,loc), po=dePaidOut(t), saved=cashFind('close',t,loc);
-    const st=deSteps(t,loc), tol=+((CFG.dayend||{}).tolerance??0);
-    const steps=[['1','What today came to'],['2','Count the drawer'],['3','Close the day']];
+    const st=deSteps(t,loc), tol=+((CFG.dayend||{}).tolerance??0), chq=st.chq;
+    const steps=[['1','Today'],['2','Count the drawer'],['3','Balances & cheques'],['4','Close the day']];
     const head=`<div class="ctr-hd"><div><div class="ctr-kick">${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</div><h2>Close the counter</h2></div>
       <button class="btn ghost" data-act="closeModal">✕</button></div>
       <div class="ctr-steps">${steps.map(([k,l])=>`<button class="${+k===ctrStep?'on':''} ${+k<ctrStep?'done':''}" data-cstep="${k}"><i>${+k<ctrStep?'✓':k}</i>${l}</button>`).join('')}</div>`;
     let body='';
+    const kpi=(l,v,sub,cls)=>`<div class="ctr-kpi ${cls||''}"><small>${l}</small><b>${v}</b>${sub?`<span>${sub}</span>`:''}</div>`;
     if(ctrStep===1){
-      const kpi=(l,v,sub,cls)=>`<div class="ctr-kpi ${cls||''}"><small>${l}</small><b>${v}</b>${sub?`<span>${sub}</span>`:''}</div>`;
       const pet=(typeof pettyOpen==='function'?pettyOpen():[]), petNo=pet.filter(p=>!p.submitted), held=(S.heldBills||[]).length, todo=deTodo(t);
+      const rcv=(S.payments||[]).filter(p=>p.dir==='IN'&&p.date===t).reduce((a,p)=>a+(+p.amount||0),0);
+      const sup=(S.journal||[]).filter(j=>j.date===t&&/^Supplier payment/.test(j.desc||'')).reduce((a,j)=>a+j.lines.filter(l=>/^10/.test(l.ac)).reduce((x,l)=>x+(+l.cr||0),0),0);
       body=`<div class="ctr-kpis">
         ${kpi('Bills',tn.bills,tn.returns?tn.returns+' returns':'')}
         ${kpi('Sales',money2(tn.sales),'','big')}
         ${kpi('Cash taken',money2(tn.t.CASH||0))}
         ${kpi('Card',money2(tn.t.CARD||0))}
         ${kpi('Bank transfer',money2(tn.t.BANK||0))}
-        ${kpi('Cheques',money2(tn.t.CHEQUE||0))}
-        ${kpi('On credit',money2(tn.credit||0))}
+        ${kpi('Cheques taken',money2(tn.t.CHEQUE||0),chq.inToday.length+' cheque'+(chq.inToday.length===1?'':'s'))}
+        ${kpi('Sold on credit',money2(tn.credit||0))}
+        ${kpi('Customer payments in',money2(rcv))}
+        ${kpi('Paid to suppliers',money2(sup),'','neg')}
         ${kpi('Paid out',money2(po.total||0),'expenses, petty cash','neg')}
-        ${kpi('Ought to be in the drawer',money2(ex.expected),ex.fromBooks?'no float counted this morning':'float '+money2(ex.start)+' + the day','key')}</div>
+        ${kpi('Ought to be in the drawer',money2(ex.expected),ex.carried?'from '+money2(ex.start)+' left last night':ex.fromBooks?'from the books':'float '+money2(ex.start)+' + the day','key')}</div>
         <div class="ctr-warns">
           ${petNo.length?`<div class="ctr-warn"><b>Petty cash not handed in</b> — ${petNo.map(p=>noteEsc(p.who)+' ('+money2(pettyLeft(p))+')').join(', ')} <button class="btn ghost sm" data-view="petty" data-act="closeModal">Petty cash</button></div>`:''}
           ${pet.filter(p=>p.submitted).length?`<div class="ctr-warn soft"><b>Petty cash handed in, to count</b> — ${pet.filter(p=>p.submitted).map(p=>noteEsc(p.who)+' '+money2(p.submitted.amount)).join(', ')}</div>`:''}
@@ -13882,34 +13910,68 @@ function ctrCloseSheet(){
     if(ctrStep===2){
       body=saved?`<div class="ctr-done"><b>Drawer counted: ${money2(saved.total)}</b> by ${noteEsc(saved.by)} at ${saved.at} — ${ctrTag(saved.diff||0)}
           <div class="muted" style="margin-top:6px">To count again, use the Day book (Count it again).</div></div>
-          <div class="ctr-foot"><button class="btn ghost" data-cstep="1">← Back</button><button class="btn tape ctr-go" data-cstep="3">Next →</button></div>`
+          <div class="ctr-foot"><button class="btn ghost" data-cstep="1">← Back</button><button class="btn tape ctr-go" data-cstep="3">Balances →</button></div>`
         :`<div class="ctr-body"><div class="ctr-left">${ctrTiles(CTC)}</div>
           <div class="ctr-right">
             <div class="ctr-big"><small>Counted</small><b id="ctrTot">${money2(cashTotal(CTC))}</b></div>
             <div class="ctr-facts"><div><span>Ought to be there</span><b>${money2(ex.expected)}</b></div>
+              <div class="sm"><span>${ex.carried?'Left last night':'Started with'}</span><b>${money2(ex.start)}</b></div>
               ${ex.moves.rows.slice(0,6).map(r=>`<div class="sm"><span>${r.label}</span><b class="${r.v<0?'rust':''}">${r.v>0?'+':''}${money2(r.v)}</b></div>`).join('')}</div>
             <div class="ctr-diff" id="ctrDiff"></div>
             <div class="ctr-foot"><button class="btn ghost" data-cstep="1">← Back</button><button class="btn tape ctr-go" id="ctrCountGo">Save the count →</button></div>
           </div></div>`;
     }
     if(ctrStep===3){
-      const diff=saved?+saved.diff||0:0, out=Math.abs(diff)>tol+0.005, chq=st.chq;
+      const counted=saved?saved.total:0;
+      if(CTB.keep==='') CTB.keep=String(Math.min(defFloat,counted||defFloat));
+      const keep=+CTB.keep||0, dep=+CTB.dep||0, toSafe=+(counted-keep-dep).toFixed(2);
+      const ourOut=(S.cheques||[]).filter(c=>c.dir==='ISSUED'&&['ISSUED','PRINTED'].includes(c.status));
+      const sumC=(a)=>a.reduce((x,c)=>x+(+c.amount||0),0);
       body=`<div class="ctr-fin">
-        <div class="ctr-done"><b>Drawer ${saved?money2(saved.total):'not counted'}</b> ${saved?ctrTag(diff):''}</div>
+        <div class="ctr-blk"><b>The cash</b><div class="muted">${saved?`Counted in the drawer: <b>${money2(counted)}</b>.`:'Count the drawer first.'} Say what stays for tomorrow and where the rest goes.</div>
+          <div class="ctr-3">
+            <label><span>Stays in the drawer for tomorrow</span><input id="ctrKeep" inputmode="decimal" value="${noteEsc(CTB.keep)}"></label>
+            <label><span>Into the bank</span><div style="display:flex;gap:6px"><select id="ctrDepBank">${S.banks.map(b=>`<option value="${b.id}" ${String(b.id)===String(CTB.depBank)?'selected':''}>${noteEsc(b.name)}</option>`).join('')}</select><input id="ctrDep" inputmode="decimal" value="${noteEsc(CTB.dep)}" placeholder="0"></div></label>
+            <label><span>To the safe</span><div class="ctr-ro ${toSafe<-0.005?'bad':''}" id="ctrSafe">${money2(toSafe)}</div></label>
+            <label><span>Cash in the safe now — optional count</span><input id="ctrSafeNow" inputmode="decimal" value="${noteEsc(CTB.safe)}" placeholder="all of it, after tonight"></label>
+          </div></div>
+        <div class="ctr-blk"><b>The banks</b><div class="muted">Type each account's balance as the bank (or its app) shows it. The books' figure includes tonight's deposit.</div>
+          <table class="ctr-tb"><tr><th>Account</th><th class="n">In the books</th><th class="n">The bank says</th><th class="n">Difference</th></tr>
+          ${S.banks.map(b=>{ const books=+(bal(b.ac)+(String(b.id)===String(CTB.depBank)?dep:0)).toFixed(2), said=CTB.bank[b.id];
+            const df=said===''||said==null||isNaN(+said)?null:+(+said-books).toFixed(2);
+            return `<tr><td>${noteEsc(b.name)}<div class="muted">${noteEsc(b.no||'')}</div></td><td class="n">${money2(books)}</td>
+              <td class="n"><input data-ctrbank="${b.id}" inputmode="decimal" value="${noteEsc(said??'')}" placeholder="balance"></td>
+              <td class="n" data-ctrbdiff="${b.id}">${df===null?'<span class="muted">—</span>':Math.abs(df)<0.005?'<span class="ctr-ok">✓ agrees</span>':`<span class="${df<0?'ctr-short':'ctr-over'}">${money2(Math.abs(df))} ${df<0?'less':'more'}</span>`}</td></tr>` }).join('')}</table></div>
+        <div class="ctr-blk"><b>Customers' cheques in hand</b> <span class="muted">${chq.held.length} · ${money2(chq.heldTotal)}</span>
+          ${chq.held.length?`<table class="ctr-tb"><tr><th>No</th><th>From</th><th>Bank</th><th>Dated</th><th class="n">Amount</th></tr>
+            ${chq.held.map(c=>`<tr><td>${noteEsc(c.no)}</td><td>${noteEsc(c.party||(C(c.customerId)||{}).name||'')}</td><td>${noteEsc(c.bank||'')}</td><td>${noteEsc(c.date||'')}${dePost(c)?' <span class="tag warn">post-dated</span>':''}</td><td class="n">${money2(c.amount)}</td></tr>`).join('')}</table>
+            <label class="chk"><input type="checkbox" id="ctrSeen" ${CTB.seen?'checked':''}> I have them — they go to the safe or the bank</label>`:'<div class="muted">None in hand.</div>'}</div>
+        <div class="ctr-blk"><b>Our cheques not cleared yet</b> <span class="muted">${ourOut.length} · ${money2(sumC(ourOut))}</span>
+          ${ourOut.length?`<table class="ctr-tb"><tr><th>No</th><th>To</th><th>Bank</th><th>Dated</th><th class="n">Amount</th></tr>
+            ${ourOut.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(0,12).map(c=>`<tr><td>${noteEsc(c.no)}</td><td>${noteEsc(c.payee||c.party||'')}</td><td>${noteEsc(c.bank||((S.banks.find(b=>b.id===c.bankId)||{}).name)||'')}</td><td>${noteEsc(c.date||'')}${String(c.date)<=t?' <span class="tag bad">due</span>':''}</td><td class="n">${money2(c.amount)}</td></tr>`).join('')}</table>`:'<div class="muted">None waiting.</div>'}</div>
+        <div class="ctr-foot"><button class="btn ghost" data-cstep="2">← Back</button><button class="btn tape ctr-go" data-cstep="4" ${saved?'':'disabled'}>Close the day →</button></div></div>`;
+    }
+    if(ctrStep===4){
+      const diff=saved?+saved.diff||0:0, out=Math.abs(diff)>tol+0.005;
+      body=`<div class="ctr-fin">
+        <div class="ctr-kpis">
+          ${kpi('Drawer counted',saved?money2(saved.total):'—',saved?ctrTag(diff):'')}
+          ${kpi('Stays for tomorrow',money2(+CTB.keep||0))}
+          ${kpi('Into the bank',money2(+CTB.dep||0),(S.banks.find(b=>String(b.id)===String(CTB.depBank))||{}).name||'')}
+          ${kpi('To the safe',money2(saved?+(saved.total-(+CTB.keep||0)-(+CTB.dep||0)).toFixed(2):0))}
+          ${kpi('Cheques in hand',money2(chq.heldTotal),chq.held.length+' cheque'+(chq.held.length===1?'':'s'))}</div>
         ${st.cardBanks.length?`<div class="ctr-blk"><b>The card machine</b><div class="muted">Key the total from each machine's end-of-day slip.</div>
           ${st.cardBanks.map(([id,v])=>`<div class="ctr-slip"><span>${noteEsc(((S.banks||[]).find(b=>String(b.id)===String(id))||{name:'Card machine'}).name)} — the books say <b>${money2((v.CARD||0)+(v.BANK||0))}</b></span>
             <input data-ctrslip="${id}" inputmode="decimal" value="${deDraft.slip[id]??''}" placeholder="slip total"></div>`).join('')}</div>`:''}
-        ${chq.bankable.length?`<div class="ctr-blk"><b>Cheques in the drawer</b><div class="muted">${chq.bankable.length} cheque${chq.bankable.length===1?'':'s'} · ${money2(chq.sum(chq.bankable))}</div>
-          <label class="chk"><input type="checkbox" id="ctrChq" ${deDraft.chqOk.seen?'checked':''}> I have seen them — they go to the bank or the safe</label></div>`:''}
         ${out?`<div class="ctr-blk warn"><b>The drawer is ${money2(Math.abs(diff))} ${diff>0?'over':'short'}</b><div class="muted">Say what happened — it goes on the trail with your name and the owner is told.</div>
           <input id="deWhy" maxlength="160" value="${noteEsc(deDraft.why||'')}" placeholder="e.g. gave change from the wrong note about 4 o'clock"></div>`:''}
         <input id="deNote" maxlength="160" value="${noteEsc(deDraft.note||'')}" placeholder="Anything worth remembering about today — optional">
-        <div class="ctr-foot"><button class="btn ghost" data-cstep="2">← Back</button>
+        <div class="ctr-foot"><button class="btn ghost" data-cstep="3">← Back</button>
           <span class="muted">${(CFG.msg||{}).autoSummary===false||!CFG.shop.owner?'':'The owner gets the day\'s figures by text.'}</span>
           <button class="btn tape ctr-go" id="ctrCloseGo" ${saved?'':'disabled'}>Close the day</button></div></div>`;
     }
     m.querySelector('#ctrClose').innerHTML=head+body;
-    m.querySelectorAll('[data-cstep]').forEach(b=>b.onclick=()=>{ const k=+b.dataset.cstep; if(k>1&&ctrStep===1||k<=ctrStep||saved||k===2){ ctrStep=k; draw() } });
+    m.querySelectorAll('[data-cstep]').forEach(b=>b.onclick=()=>{ const k=+b.dataset.cstep; if(k<=2||saved){ ctrStep=k; draw() } else toast('Count the drawer first') });
     if(ctrStep===2&&!saved){
       const changed=()=>{ const tot=cashTotal(CTC); const a=m.querySelector('#ctrTot'); if(a) a.textContent=money2(tot);
         const d=m.querySelector('#ctrDiff'); if(d) d.innerHTML=tot?ctrTag(+(tot-ex.expected).toFixed(2)):'<span class="muted">The difference shows here as you count.</span>' };
@@ -13918,11 +13980,35 @@ function ctrCloseSheet(){
         cashDate=null; cashDraft.close={...CTC}; cashSave('close'); CTC={}; ctrStep=3; persist(true); draw() };
     }
     if(ctrStep===3){
+      const re=()=>{ const sc=m.querySelector('.ctr-fin').scrollTop; draw(); const f=m.querySelector('.ctr-fin'); if(f) f.scrollTop=sc };
+      const k=m.querySelector('#ctrKeep'); if(k) k.onchange=()=>{ CTB.keep=k.value; re() };
+      const dp=m.querySelector('#ctrDep'); if(dp) dp.onchange=()=>{ CTB.dep=dp.value; re() };
+      const db=m.querySelector('#ctrDepBank'); if(db) db.onchange=()=>{ CTB.depBank=db.value; re() };
+      const sn=m.querySelector('#ctrSafeNow'); if(sn) sn.oninput=()=>{ CTB.safe=sn.value };
+      const se=m.querySelector('#ctrSeen'); if(se) se.onchange=()=>{ CTB.seen=se.checked; deDraft.chqOk.seen=se.checked };
+      m.querySelectorAll('[data-ctrbank]').forEach(el=>el.onchange=()=>{ CTB.bank[el.dataset.ctrbank]=el.value; re() });
+    }
+    if(ctrStep===4){
       m.querySelectorAll('[data-ctrslip]').forEach(el=>el.oninput=()=>{ deDraft.slip[el.dataset.ctrslip]=el.value });
-      const cq=m.querySelector('#ctrChq'); if(cq) cq.onchange=()=>{ deDraft.chqOk.seen=cq.checked };
       const w=m.querySelector('#deWhy'); if(w) w.oninput=()=>{ deDraft.why=w.value };
       const n=m.querySelector('#deNote'); if(n) n.oninput=()=>{ deDraft.note=n.value };
-      const go=m.querySelector('#ctrCloseGo'); if(go) go.onclick=()=>{ cashDate=null; deCloseDay(); if(deFind(t,loc)){ m.remove(); ctrStep=1; render() } };
+      const go=m.querySelector('#ctrCloseGo'); if(go) go.onclick=()=>{
+        const counted=saved?saved.total:0, keep=+CTB.keep||0, dep=+CTB.dep||0;
+        if(keep<0||dep<0||keep+dep>counted+0.005) return toast(`What stays and what goes to the bank come to more than the ${money2(counted)} counted`);
+        const chqs=(deSteps(t,loc).chq);
+        if(chqs.bankable.length&&!CTB.seen) deDraft.chqOk.seen=true;   // shown and listed on step 3
+        const banks={}; S.banks.forEach(b=>{ const said=CTB.bank[b.id]; const books=+(bal(b.ac)+(String(b.id)===String(CTB.depBank)?dep:0)).toFixed(2);
+          banks[b.id]={name:b.name,books,said:said===''||said==null||isNaN(+said)?null:+said} });
+        window.__deExtra={keep,deposit:dep?{bank:(S.banks.find(b=>String(b.id)===String(CTB.depBank))||{}).name||'',amount:dep}:null,
+          toSafe:+(counted-keep-dep).toFixed(2),safeCount:CTB.safe===''||isNaN(+CTB.safe)?null:+CTB.safe,banks,
+          chequesHeld:{n:chqs.held.length,total:chqs.heldTotal},
+          ourOut:(()=>{ const o=(S.cheques||[]).filter(c=>c.dir==='ISSUED'&&['ISSUED','PRINTED'].includes(c.status)); return {n:o.length,total:+o.reduce((a,c)=>a+(+c.amount||0),0).toFixed(2)} })()};
+        cashDate=null; deCloseDay();
+        if(deFind(t,loc)){
+          if(dep>0){ const b=S.banks.find(x=>String(x.id)===String(CTB.depBank)); if(b) post(t,`Cash banked at day end — ${b.name}`,'DAYEND',[{ac:b.ac,dr:dep},{ac:'1010',cr:dep}]) }
+          m.remove(); ctrStep=1; CTB=null; persist(true); render() }
+        window.__deExtra=null;
+      };
     }
   };
   draw();
@@ -13931,34 +14017,44 @@ function ctrCloseSheet(){
 /* the page */
 function counterPage(){
   const t=D(today), loc=cashStore();
-  const open=cashFind('open',t,loc), close=cashFind('close',t,loc), shut=deFind(t,loc);
+  const open=cashFind('open',t,loc), close=cashFind('close',t,loc), shut=deFind(t,loc), car=ctrCarried(t,loc);
   const tn=deTenders(t,loc), ex=cashExpected(t,loc), po=dePaidOut(t);
-  const state=shut?'shut':open?'open':'closed';
+  const state=shut?'shut':(open||tn.bills>0)?'open':'closed';
   const banner={
     closed:`<div class="ctr-ban closed"><div class="ctr-dot"></div><div><small>${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</small>
-      <h2>The counter is not open yet</h2><span>Count the float in the drawer to start the day.</span></div>
-      <button class="btn tape ctr-cta" data-act="ctrOpen">☀ Open the counter</button></div>`,
-    open:`<div class="ctr-ban open"><div class="ctr-dot"></div><div><small>Open since ${open&&open.at} · by ${noteEsc(open?open.by:'')}</small>
-      <h2>The counter is open</h2><span>Float ${money2(open?open.total:0)}${open&&open.note?' · '+noteEsc(open.note):''}</span></div>
+      <h2>Good morning — open the counter</h2><span>${car?`${money2(car.keep)} was left in the drawer last night by ${noteEsc(car.by)}. Nothing to count.`:'Nothing to count — the day starts from what is in the books.'}</span>
+      <div style="margin-top:6px"><a href="#" data-act="ctrCount" style="color:#fff;opacity:.8;font-size:12.5px">Count the float instead</a></div></div>
+      <button class="btn tape ctr-cta" data-act="ctrOpenNow">☀ Open the counter</button></div>`,
+    open:`<div class="ctr-ban open"><div class="ctr-dot"></div><div><small>${open?`Open since ${open.at} · by ${noteEsc(open.by)}`:'Open since the first bill'}</small>
+      <h2>The counter is open</h2><span>Started with ${money2(ex.start)}${ex.carried?' left in the drawer last night':''}</span></div>
       <button class="btn ctr-cta dark" data-act="ctrClose">☾ Close the counter</button></div>`,
     shut:`<div class="ctr-ban shut"><div class="ctr-dot"></div><div><small>Closed at ${shut&&shut.at} · by ${noteEsc(shut?shut.by:'')}</small>
-      <h2>Today is closed</h2><span>Sales ${money2(shut?shut.sales:0)} · drawer ${money2(shut?shut.cash.counted:0)} · ${shut&&Math.abs(shut.cash.diff)<0.005?'it agreed':shut?money2(Math.abs(shut.cash.diff))+(shut.cash.diff>0?' over':' short'):''}</span></div>
+      <h2>Today is closed</h2><span>Sales ${money2(shut?shut.sales:0)} · drawer ${money2(shut?shut.cash.counted:0)} · ${shut&&Math.abs(shut.cash.diff)<0.005?'it agreed':shut?money2(Math.abs(shut.cash.diff))+(shut.cash.diff>0?' over':' short'):''}${shut&&shut.keep!=null?' · '+money2(shut.keep)+' left for tomorrow':''}</span></div>
       <button class="btn ghost ctr-cta" data-act="dePrint">Print the day-end sheet</button></div>`}[state];
   const kpi=(l,v,sub,cls)=>`<div class="card ctr-kpi ${cls||''}"><small>${l}</small><b>${v}</b>${sub?`<span>${sub}</span>`:''}</div>`;
   const step=(done,now,label,sub)=>`<div class="ctr-tl ${done?'done':now?'now':''}"><i>${done?'✓':''}</i><div><b>${label}</b><span>${sub}</span></div></div>`;
+  const opened=open||tn.bills>0;
   return `<h1>Open &amp; close the counter</h1>
     ${banner}
     <div class="ctr-tlrow">
-      ${step(!!open,!open,'Morning — float counted',open?`${money2(open.total)} by ${noteEsc(open.by)} at ${open.at}`:'not yet')}
-      ${step(!!close,!!open&&!close,'Evening — drawer counted',close?`${money2(close.total)} · ${Math.abs(close.diff||0)<0.005?'agreed':money2(Math.abs(close.diff))+(close.diff>0?' over':' short')}`:'at the end of the day')}
-      ${step(!!shut,!!close&&!shut,'Day closed',shut?`by ${noteEsc(shut.by)} at ${shut.at}`:'last thing')}</div>
+      ${step(!!opened,!opened,'Morning — counter open',open?`${open.at} by ${noteEsc(open.by)}`:opened?'since the first bill':'not yet')}
+      ${step(!!close,!!opened&&!close,'Evening — drawer counted',close?`${money2(close.total)} · ${Math.abs(close.diff||0)<0.005?'agreed':money2(Math.abs(close.diff))+(close.diff>0?' over':' short')}`:'at the end of the day')}
+      ${step(!!shut,!!close&&!shut,'Day closed',shut?`by ${noteEsc(shut.by)} at ${shut.at}`:'balances, cheques, close')}</div>
     <div class="ctr-kpis page">
       ${kpi('Sales today',money2(tn.sales),tn.bills+' bills','big')}
       ${kpi('Cash taken',money2(tn.t.CASH||0))}
       ${kpi('Card & bank',money2((tn.t.CARD||0)+(tn.t.BANK||0)))}
       ${kpi('On credit',money2(tn.credit||0))}
       ${kpi('Paid out',money2(po.total||0),'','neg')}
-      ${kpi('Ought to be in the drawer',money2(ex.expected),ex.fromBooks?'no float counted':'','key')}</div>
+      ${kpi('Ought to be in the drawer',money2(ex.expected),ex.carried?'from what was left last night':ex.fromBooks?'from the books':'','key')}</div>
+    ${shut&&shut.banks?`<div class="card" style="margin-top:12px"><h2 style="margin-top:0">Balances at the close</h2>
+      <table><tr><th>Account</th><th class="n">Books</th><th class="n">Bank said</th></tr>
+      ${Object.values(shut.banks).map(b=>`<tr><td>${noteEsc(b.name)}</td><td class="n">${money2(b.books)}</td><td class="n">${b.said==null?'—':money2(b.said)}</td></tr>`).join('')}
+      <tr><td>Left in the drawer</td><td class="n">${money2(shut.keep||0)}</td><td></td></tr>
+      ${shut.deposit?`<tr><td>Banked (${noteEsc(shut.deposit.bank)})</td><td class="n">${money2(shut.deposit.amount)}</td><td></td></tr>`:''}
+      <tr><td>To the safe</td><td class="n">${money2(shut.toSafe||0)}</td><td class="muted">${shut.safeCount!=null?'safe holds '+money2(shut.safeCount):''}</td></tr>
+      ${shut.chequesHeld?`<tr><td>Customers' cheques in hand</td><td class="n">${money2(shut.chequesHeld.total)}</td><td class="muted">${shut.chequesHeld.n}</td></tr>`:''}
+      ${shut.ourOut?`<tr><td>Our cheques not cleared</td><td class="n">${money2(shut.ourOut.total)}</td><td class="muted">${shut.ourOut.n}</td></tr>`:''}</table></div>`:''}
     <div class="muted" style="margin-top:10px">Every detail — cheques, card machine, cash lent and borrowed, earlier days — is in the <a href="#" data-view="cashup">Day book</a>.</div>`;
 }
 
@@ -14284,7 +14380,7 @@ function deCloseDay(){
     cheques:{ inToday:st.chq.inToday.length, inValue:st.chq.total,
               left:st.chq.bankable.length, leftValue:st.chq.sum(st.chq.bankable),
               written:st.chq.outToday.length, writtenValue:st.chq.outTotal },
-    slips, open:deTodo(d).length, note, why };
+    slips, open:deTodo(d).length, note, why, ...(window.__deExtra||{}) };
   deList().push(rec);
   try{ logTrail('dayend',`Day closed for ${d} — sales ${money2(rec.sales)}, drawer ${money2(rec.cash.counted)}${Math.abs(diff)>=0.005?` (${money2(Math.abs(diff))} ${diff>0?'over':'short'})`:''}${why?' · '+why:''}`,
     {amount:rec.sales,ref:d}) }catch(e){}
@@ -14334,6 +14430,12 @@ function dePrintSheet(d,loc){
     ['Cheques still in the drawer',`${rec.cheques.left} · ${money(rec.cheques.leftValue)}`],
     ...(rec.cheques.written?[['Cheques written out',`${rec.cheques.written} · ${money(rec.cheques.writtenValue)}`]]:[]),
     ...(rec.open?[['Left open',String(rec.open)+' thing(s)']]:[]),
+    ...(rec.keep!=null?[['Left in the drawer',money(rec.keep)]]:[]),
+    ...(rec.deposit?[['Banked — '+rec.deposit.bank,money(rec.deposit.amount)]]:[]),
+    ...(rec.toSafe!=null?[['To the safe',money(rec.toSafe)+(rec.safeCount!=null?' (safe holds '+money(rec.safeCount)+')':'')]]:[]),
+    ...Object.values(rec.banks||{}).map(b=>[b.name,'books '+money(b.books)+(b.said!=null?' · bank '+money(b.said)+(Math.abs(b.said-b.books)<0.005?' ✓':' · '+money(Math.abs(b.said-b.books))+(b.said<b.books?' less':' more')):'')]),
+    ...(rec.chequesHeld?[["Customers' cheques in hand",rec.chequesHeld.n+' · '+money(rec.chequesHeld.total)]]:[]),
+    ...(rec.ourOut?[['Our cheques not cleared',rec.ourOut.n+' · '+money(rec.ourOut.total)]]:[]),
     ...(rec.note?[['Note',rec.note]]:[]),
   ];
   voucherPrint({ title:'Day End', no:rec.date+(rec.loc?' · '+extLocName(rec.loc):''), date:rec.date,
@@ -29812,7 +29914,7 @@ document.addEventListener('click',e=>{
     pcGive:()=>pettyGiveModal(a.dataset.who||''), pcExp:()=>pettyExpenseModal(a.dataset.id), pcSettle:()=>pettySettleModal(a.dataset.id), pcUndo:()=>pettyUndo(a.dataset.id,a.dataset.no),
     catMgr:()=>categoriesModal(), catTidy:()=>tidyCatalogModal(),
     pcSubmit:()=>pettySubmitModal(a.dataset.id),
-    ctrOpen:()=>ctrOpenSheet(), ctrClose:()=>{ ctrStep=1; ctrCloseSheet() },
+    ctrOpen:()=>ctrOpenNow(), ctrOpenNow:()=>ctrOpenNow(), ctrCount:()=>ctrOpenSheet(), ctrClose:()=>{ ctrStep=1; ctrCloseSheet() },
     cbNew:()=>cbNewModal(), cbWrite:()=>cbWriteModal(), cbDel:()=>cbDelete(a.dataset.id),
     cbOpen:()=>{ CB.book=CB.book===a.dataset.id?null:a.dataset.id; render() },
     cbLeaf:()=>{ closeModals(); cbLeafModal(a.dataset.id,a.dataset.no) },
