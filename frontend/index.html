@@ -6248,6 +6248,11 @@ function settings(){
   if(setTab==='screen'){
     const startable=views.filter(v=>v[0]!=='grp'&&allowed(v[0]));
     body=`<div class="muted" style="margin-bottom:10px">This is yours alone, ${S.user.name} — it follows your login to whichever machine you sit at. Everyone else keeps their own.</div>
+     <div class="card" style="margin-bottom:14px;padding:12px 14px"><b>Customer screen — a tablet facing the customer</b>
+      <div class="muted" style="margin:4px 0 8px">Open the link on the tablet and tap Start: it shows this till's bill as it is made, the total and the saving, then thank-you and the change. This setting is for this machine.</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label>This till shows on screen</label>
+       <select id="dispScr">${['off','1','2','3','4'].map(v=>`<option value="${v}" ${(dispScreen()||'off')===v?'selected':''}>${v==='off'?'none':v}</option>`).join('')}</select>
+       ${dispScreen()?`<a href="/count${dispScreen()}" target="_blank" rel="noopener"><b>${location.host}/count${dispScreen()}</b></a>`:''}</div></div>
      <h2>Where the menu goes</h2>
      <div class="navpick">
       <button class="${pref('nav')==='side'?'on':''}" data-act="prefNav" data-v="side">
@@ -11216,7 +11221,40 @@ function billLedger(inv){
   inv.ledger=v;
   const c=inv.customerId&&inv.customerId!==1?C(inv.customerId):null; if(c&&!c.ledger) c.ledger=v;
 }
+/* ---- the customer's screen (a tablet at regalhw.lk/count1) ----
+   This till sends what is on its bill whenever it changes, and the moment it is paid, to its screen
+   number (kept on this machine; T1 → 1 unless changed in Settings → My screen; "off" sends nothing).
+   Only what the customer standing there should see: the lines, the total, the saving, the change,
+   and the customer's first name. */
+const dispScreen=()=>{ let v=''; try{ v=localStorage.getItem('regal_count_screen')||'' }catch(e){}
+  if(v==='off') return ''; return v||String(S.terminal||'T1').replace(/\D/g,'')||'1' };
+let dispLast='', dispTimer=null, dispPaid=null;
+function dispData(){
+  const shop={name:CFG.shop.name,sinhala:CFG.shop.sinhala,addr:CFG.shop.addr,phone:CFG.shop.phone,web:CFG.shop.web};
+  if(dispPaid&&Date.now()-dispPaid.at<30000&&!(S.pos.lines||[]).length) return {shop,state:'paid',lines:[],paid:dispPaid,save:dispPaid.save,cust:dispPaid.cust};
+  const c=S.pos.customer&&S.pos.customer!==1?C(S.pos.customer):null;
+  let sub=0, mrpSave=0, items=0;
+  const lines=(S.pos.lines||[]).map(l=>{ const p=P(l.pid)||{}, a=+(l.qty*l.price-(l.disc||0)).toFixed(2), u=l.qty?+(a/l.qty).toFixed(2):0, m=+p.mrp||0;
+    sub+=a; items+=Math.abs(l.qty)>0?1:0; if(m>u) mrpSave+=(m-u)*l.qty;
+    return {k:String(l.pid)+'|'+l.price+'|'+(l.name||''),n:lineName(l).toUpperCase(),q:+l.qty,u,m,a} });
+  const disc=+(S.pos.billDisc||0);
+  return {shop,state:lines.length?'bill':'idle',lines,items,disc,total:+(sub-disc).toFixed(2),save:+(mrpSave+disc).toFixed(2),cust:c?String(c.name||'').split(' ')[0]:''};
+}
+function dispPush(now){
+  const scr=dispScreen(); if(!scr||!(window.regalBridge&&regalBridge.token&&regalBridge.token())) return;
+  if(S.view!=='pos'&&!now&&!dispPaid) return;
+  const d=dispData(), txt=JSON.stringify(d); if(txt===dispLast&&!now) return;
+  clearTimeout(dispTimer);
+  dispTimer=setTimeout(()=>{ dispLast=txt;
+    fetch('/api/display/'+encodeURIComponent(scr),{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:JSON.stringify({data:d})}).catch(()=>{ dispLast='' });
+  },now?0:250);
+}
 function webBilled(inv){
+  try{ const pays=(inv.pays||[]).reduce((a,p)=>a+(+p.amount||0),0), ch=+(window.__dispChange||0);
+    dispPaid={at:Date.now(),no:inv.no,total:+inv.total||0,change:ch>0?+ch.toFixed(2):0,given:+(pays+(ch>0?ch:0)).toFixed(2),
+      save:+((inv.lines||[]).reduce((a,l)=>{ const p=P(l.pid)||{}, u=l.qty?(l.qty*l.price-(l.disc||0))/l.qty:0; return a+((+p.mrp||0)>u?((+p.mrp)-u)*l.qty:0) },0)+(+inv.billDisc||0)).toFixed(2),
+      cust:inv.customerId&&inv.customerId!==1?String((C(inv.customerId)||{}).name||'').split(' ')[0]:''};
+    window.__dispChange=0; setTimeout(()=>dispPush(true),50) }catch(e){}
   jobBilled(inv);   // a repair charge on this bill closes its job
   billLedger(inv);  // the page of the hand-kept ledger, typed at payment
   const wo=S.pos.fromWeb&&S.web.orders.find(x=>x.no===S.pos.fromWeb); if(!wo) return;
@@ -12582,7 +12620,9 @@ function renderNow(){
   if(S.view==='payroll' && (window.isDemo || (S && S.isDemo))) demoAttendanceAfter();
   if(S.view==='trail') trailAfter();
   if(S.view==='settings'&&setTab==='app') appDownloadAfter();
+  { const ds=document.getElementById('dispScr'); if(ds) ds.onchange=()=>{ try{ localStorage.setItem('regal_count_screen',ds.value) }catch(e){} dispLast=''; render(); toast(ds.value==='off'?'This till shows on no screen':'This till shows on regalhw.lk/count'+ds.value) } }
   if(S.view==='syslog') sysLogAfter();
+  try{ dispPush() }catch(e){}            // the customer's screen follows the bill
   if(S.view==='users'){
     const usIn = document.getElementById('userSearchInput');
     if(usIn){
@@ -18322,7 +18362,7 @@ function askBill(m,pays,change,c,total,override){
     try{
       const inv=completeSale({lines:S.pos.lines.map(l=>({...l})),customerId:c.id,billDisc:S.pos.billDisc,pays,salesman:S.pos.salesman,override});
       inv.paper=(how==='a5'||how==='r80')?how:csPaper();     // which bill was printed, so the link shows the same
-      webBilled(inv);
+      window.__dispChange=change; webBilled(inv);
       if(S.pos.fromDoc){ const dd=S.docs.find(x=>x.no===S.pos.fromDoc);
         if(dd){ dd.status='billed'; dd.invoice=inv.no } }
       clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:how};

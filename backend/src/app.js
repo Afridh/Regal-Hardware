@@ -26,6 +26,7 @@ import shopRoutes from './routes/shop.js';
 import supplierRoutes from './routes/supplier.js';
 import fileRoutes from './routes/files.js';
 import printRoutes from './routes/print.js';
+import displayRoutes from './routes/display.js';
 import camRoutes from './routes/cams.js';
 import custRoutes from './routes/customer.js';
 import aiRoutes from './routes/ai.js';
@@ -67,6 +68,7 @@ app.use('/api/sup', supplierRoutes);
 app.use('/api/files', fileRoutes);
 // the printers are on one PC: a bill made anywhere is left here and that PC's helper takes it
 app.use('/api/print', printRoutes);
+app.use('/api/display', displayRoutes);      // the customer's screen at the counter (regalhw.lk/count1)
 app.use('/api/cams', camRoutes);              // the cameras, seen from anywhere (the camera helper calls out)
 // the Echo in the office: Amazon calls this, and the till reports what the books cannot see
 app.use('/api/alexa', alexaRoutes);
@@ -86,6 +88,7 @@ if (!process.env.VERCEL && fs.existsSync(appDir)) {
   app.get('/', fresh, (_req, res) => res.sendFile(path.join(appDir, 'shop.html')));
   app.get(['/pos', '/pos/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'index.html')));
   app.get(['/shift', '/shift/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'shift.html')));
+  app.get(/^\/count(\d{0,2})\/?$/i, fresh, (_req, res) => res.sendFile(path.join(appDir, 'display.html')));   // a tablet facing the customer
   // the demo till: the till page itself, cut off from the shop — no regal-bridge.js (so no sign-in and
   // no books from the server) and demo-sandbox.js first, which seals its storage, network and channels
   app.get(['/demo', '/demo/'], fresh, (req, res) => {

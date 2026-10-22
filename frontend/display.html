@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16070a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Regal Hardware — your bill</title>
+<link rel="icon" href="/favicon-32.png">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+Sinhala:wght@600;700&display=swap" rel="stylesheet">
+<style>
+/* The customer's screen at the counter (regalhw.lk/count1). It shows the bill the till is making,
+   live: the item just added, the list, the total and the saving; then thank-you and the change. */
+:root{--red:#b3121f;--ink:#1a1214;--mute:#857a7c;--line:#ece4e2;--green:#14804a;--greenbg:#e6f4eb;--bg:#16070a}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:#fff;font:16px "IBM Plex Sans",Arial,sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none}
+.money{font-family:Archivo;font-weight:800;font-variant-numeric:tabular-nums}
+.app{display:grid;grid-template-columns:1.15fr 1fr;height:100%}
+.left{padding:4vh 4vw;display:flex;flex-direction:column;min-width:0;position:relative;overflow:hidden}
+.left::before{content:"";position:absolute;right:-20vw;top:-25vh;width:60vw;height:60vw;border-radius:50%;background:radial-gradient(rgba(179,18,31,.35),transparent 65%)}
+.shop{display:flex;align-items:center;gap:2vw;position:relative}
+.shop img{height:11vh;width:auto;background:#fff;border-radius:1.6vh;padding:.8vh}
+.shop h1{margin:0;font:900 5vh Archivo;letter-spacing:.02em;line-height:1}
+.shop .si{font:700 2.6vh "Noto Sans Sinhala";color:#e7c3c7;margin-top:.6vh}
+.shop p{margin:.4vh 0 0;color:#cdb9bb;font-size:2vh}
+.now{margin-top:5vh;background:linear-gradient(135deg,#2a1216,#3b141b);border-radius:3vh;padding:4vh 3vw;position:relative;min-height:28vh;transition:transform .25s}
+.now.pop{animation:pop .6s ease}
+@keyframes pop{0%{transform:scale(.97);box-shadow:0 0 0 0 rgba(255,211,107,.6)}50%{transform:scale(1.02);box-shadow:0 0 0 2vh rgba(255,211,107,0)}100%{transform:scale(1)}}
+.now .lbl{font-size:1.9vh;letter-spacing:.14em;text-transform:uppercase;color:#e7a0a6;font-weight:700}
+.now h2{margin:1.5vh 0 1vh;font:800 5vh Archivo;line-height:1.15;word-break:break-word}
+.now .pp{font-size:3vh;color:#e9dcdd}
+.now .pp .money{font-size:5vh;color:#fff}
+.now .mrp{color:#c9a9ad;font-size:2.6vh;margin-left:1vw}
+.now .chg{font:900 9vh Archivo;color:#7ee2a8;margin-top:1vh}
+.foot{margin-top:auto;display:flex;gap:2vw;align-items:flex-end;justify-content:space-between;color:#cdb9bb;font-size:2vh;position:relative}
+.foot b{color:#fff}
+.clock{font:800 3.4vh Archivo;color:#fff;text-align:right}
+.clock small{display:block;font:500 1.8vh "IBM Plex Sans";color:#cdb9bb}
+.right{background:#fff;color:var(--ink);display:flex;flex-direction:column;border-radius:4vh 0 0 4vh;padding:4vh 2.6vw;min-height:0}
+.right h3{margin:0 0 1.5vh;font:800 3vh Archivo;display:flex;justify-content:space-between;align-items:baseline}
+.right h3 span{color:var(--mute);font:600 2.2vh "IBM Plex Sans"}
+.list{flex:1;overflow:hidden;position:relative}
+.row{display:grid;grid-template-columns:1fr auto;gap:.3vh 1.5vw;padding:1.5vh 0;border-bottom:1px solid var(--line);font-size:2.6vh}
+.row b{font-weight:700}
+.row .q{color:var(--mute);font-size:2.1vh}
+.row .a{text-align:right}
+.row .m{text-align:right;color:var(--mute);font-size:2vh}
+.row.new{animation:hi 2.2s ease}
+@keyframes hi{0%{background:#fff3c4}100%{background:transparent}}
+.more{color:var(--mute);font-size:2vh;padding-top:1vh}
+.sum{border-top:.5vh solid var(--ink);padding-top:2vh}
+.sum .l{display:flex;justify-content:space-between;font-size:2.4vh;color:#4b3f42;margin-bottom:.6vh}
+.sum .big{display:flex;justify-content:space-between;align-items:baseline;margin-top:1vh}
+.sum .big b{font:900 3.4vh Archivo}
+.sum .big .money{font-size:8vh;color:var(--red);line-height:1}
+.save{margin-top:1.8vh;background:var(--greenbg);color:var(--green);border-radius:2vh;padding:1.8vh 2vw;font-size:2.8vh;font-weight:700;text-align:center}
+.idle{flex:1;display:grid;place-items:center;text-align:center;color:var(--ink)}
+.idle h2{font:900 7vh Archivo;margin:0}
+.idle p{color:var(--mute);font-size:2.6vh;margin:1.5vh 0 0}
+.thanks h2{color:var(--green)}
+.status{position:fixed;left:1.5vw;bottom:1.2vh;font-size:1.6vh;color:#8d7376;display:flex;gap:.6vw;align-items:center}
+.status i{width:1vh;height:1vh;border-radius:50%;background:#2fa36d;display:inline-block}
+.status.off i{background:#c0442c}
+.start{position:fixed;inset:0;background:rgba(22,7,10,.92);display:grid;place-items:center;text-align:center;z-index:5;cursor:pointer}
+.start h2{font:900 5vh Archivo;margin:0 0 1vh}
+.start p{color:#cdb9bb;font-size:2.4vh;margin:0}
+.start b{display:inline-block;margin-top:3vh;background:var(--red);border-radius:1.4vh;padding:2vh 4vw;font:800 3vh Archivo}
+@media (orientation:portrait){.app{grid-template-columns:1fr;grid-template-rows:auto 1fr}.left{padding:3vh 5vw}.now{margin-top:2.5vh;min-height:0}.foot{display:none}.right{border-radius:3vh 3vh 0 0}}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="left">
+    <div class="shop"><img src="/regal-logo.png" alt=""><div><h1 id="shopName">REGAL HARDWARE</h1><div class="si" id="shopSi">රීගල් හාඩ්වෙයාර්</div><p id="shopAddr"></p></div></div>
+    <div class="now" id="now"></div>
+    <div class="foot"><div id="shopLine">Shop online at <b>regalhw.lk</b> — order and collect, or have it delivered.</div><div class="clock" id="clock"></div></div>
+  </section>
+  <section class="right" id="right"></section>
+</div>
+<div class="status" id="status"><i></i><span>connected</span></div>
+<div class="start" id="start"><div><h2>Customer screen <span id="scrNo"></span></h2><p>Tap once to start — the screen goes full and stays awake.</p><b>Start</b></div></div>
+<script>
+(function () {
+  const screen = (location.pathname.match(/count(\d+)/i) || [])[1] || new URLSearchParams(location.search).get('screen') || '1';
+  const $ = id => document.getElementById(id);
+  const fmt = n => (+n || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  $('scrNo').textContent = screen;
+  document.title = 'Regal Hardware — counter ' + screen;
+  let rev = 0, data = null, prevKeys = new Map(), lastOk = Date.now(), paidSeen = 0;   // the thank-you is timed by this tablet's own clock
+
+  // full screen and awake, after one tap (browsers allow neither without one)
+  let lock = null;
+  async function awake() { try { if ('wakeLock' in navigator) { lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', () => { lock = null; }); } } catch (e) { } }
+  $('start').onclick = async () => { $('start').remove(); try { await document.documentElement.requestFullscreen(); } catch (e) { } awake(); };
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !lock) awake(); });
+
+  const tick = () => { const d = new Date(); $('clock').innerHTML = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + `<small>${d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</small>`; };
+  tick(); setInterval(tick, 10000);
+
+  function draw() {
+    const d = data || {}, shop = d.shop || {};
+    if (shop.name) { $('shopName').textContent = shop.name; }
+    if (shop.sinhala) $('shopSi').textContent = shop.sinhala;
+    $('shopAddr').textContent = [shop.addr, shop.phone].filter(Boolean).join(' · ');
+    const lines = d.lines || [], state = d.state === 'paid' && d.paid && Date.now() - paidSeen < 30000 ? 'paid' : lines.length ? 'bill' : 'idle';
+    // which line is new or changed since the last look: that one is "just added"
+    const keys = new Map(lines.map(l => [l.k, l.q + '|' + l.a])); let hot = null;
+    for (const l of lines) if (prevKeys.get(l.k) !== l.q + '|' + l.a) { hot = l; }
+    if (!hot && state === 'bill') hot = lines[0];
+    const changed = hot && prevKeys.size && prevKeys.get(hot.k) !== hot.q + '|' + hot.a;
+    prevKeys = keys;
+    const now = $('now');
+    if (state === 'paid') now.innerHTML = `<div class="lbl">Thank you${d.cust ? ', ' + esc(d.cust) : ''}!</div><h2>Paid Rs ${fmt(d.paid.total)}</h2>${d.paid.change > 0 ? `<div class="pp">Your change</div><div class="chg">Rs ${fmt(d.paid.change)}</div>` : '<div class="pp">Please come again.</div>'}`;
+    else if (state === 'bill' && hot) now.innerHTML = `<div class="lbl">${changed ? 'Just added' : 'On your bill'}</div><h2>${esc(hot.n)}</h2><div class="pp">${hot.q} × <span class="money">Rs ${fmt(hot.u)}</span>${hot.m > hot.u ? `<span class="mrp">MRP ${fmt(hot.m)}</span>` : ''}</div>`;
+    else now.innerHTML = `<div class="lbl">Welcome</div><h2>Ayubowan! Welcome to ${esc((shop.name || 'Regal Hardware').replace(/^REGAL HARDWARE$/, 'Regal Hardware'))}</h2><div class="pp">Your items appear here as they are added.</div>`;
+    if (changed) { now.classList.remove('pop'); void now.offsetWidth; now.classList.add('pop'); }
+    const right = $('right');
+    if (state === 'paid') right.innerHTML = `<div class="idle thanks"><div><h2>Thank you!</h2><p>Paid <b class="money" style="color:var(--ink)">Rs ${fmt(d.paid.total)}</b>${d.paid.no ? ' · bill ' + esc(d.paid.no) : ''}</p>${d.save > 0 ? `<div class="save">🎉 You saved Rs ${fmt(d.save)} today</div>` : ''}<p>Please come again · ${esc(shop.web || 'regalhw.lk')}</p></div></div>`;
+    else if (state === 'bill') {
+      const fit = Math.max(3, Math.floor((window.innerHeight * 0.5) / (window.innerHeight * 0.07)));
+      right.innerHTML = `<h3>Your bill <span>${d.items || lines.length} item${(d.items || lines.length) === 1 ? '' : 's'}${d.cust ? ' · ' + esc(d.cust) : ''}</span></h3>
+        <div class="list">${lines.slice(0, fit).map(l => `<div class="row ${hot && l.k === hot.k && changed ? 'new' : ''}"><b>${esc(l.n)}</b><b class="money a">${fmt(l.a)}</b><span class="q">${l.q} × ${fmt(l.u)}</span><span class="m">${l.m > l.u ? 'MRP ' + fmt(l.m * l.q) : ''}</span></div>`).join('')}
+          ${lines.length > fit ? `<div class="more">+ ${lines.length - fit} more item${lines.length - fit === 1 ? '' : 's'}</div>` : ''}</div>
+        <div class="sum">${d.disc > 0 ? `<div class="l"><span>Bill discount</span><span>− ${fmt(d.disc)}</span></div>` : ''}
+          <div class="big"><b>TOTAL</b><span class="money">Rs ${fmt(d.total)}</span></div>
+          ${d.save > 0 ? `<div class="save">🎉 You save Rs ${fmt(d.save)} today</div>` : ''}</div>`;
+    } else right.innerHTML = `<div class="idle"><div><h2>Hello!</h2><p>Ready when you are.</p></div></div>`;
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch('/api/display/' + encodeURIComponent(screen) + '?since=' + rev, { cache: 'no-store' });
+      const j = await r.json();
+      if (j.ok) { lastOk = Date.now(); if (!j.same) { rev = j.rev; data = j.data; if (data && data.state === 'paid') paidSeen = Date.now(); draw(); } }
+    } catch (e) { }
+    const off = Date.now() - lastOk > 8000; $('status').classList.toggle('off', off); $('status').querySelector('span').textContent = off ? 'reconnecting…' : 'counter ' + screen;
+    if (data && data.state === 'paid' && Date.now() - paidSeen >= 30000) { data.state = 'idle'; draw(); }
+    setTimeout(poll, 900);
+  }
+  draw(); poll();
+})();
+</script>
+</body>
+</html>
