@@ -10,123 +10,318 @@
 <link rel="icon" href="/favicon-32.png">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+Sinhala:wght@600;700&display=swap" rel="stylesheet">
 <style>
-/* The customer's screen at the counter (regalhw.lk/count1). It shows the bill the till is making,
-   live: the item just added, the list, the total and the saving; then thank-you and the change. */
-:root{--red:#b3121f;--ink:#1a1214;--mute:#857a7c;--line:#ece4e2;--green:#14804a;--greenbg:#e6f4eb;--bg:#16070a}
+/* The customer's screen at the counter (regalhw.lk/count1). Live from the till: the item just added,
+   the bill, the total and the saving; then a celebration with the change. Between customers it plays
+   a welcome show. Everything moves with transforms and opacity only, so a tablet keeps up. */
+:root{--red:#c4142a;--red2:#ff4d5e;--gold:#ffd36b;--ink:#1a1214;--mute:#857a7c;--line:#efe7e5;--green:#14804a;--mint:#7ee2a8;--bg:#12050a}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:#fff;font:16px "IBM Plex Sans",Arial,sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none}
 .money{font-family:Archivo;font-weight:800;font-variant-numeric:tabular-nums}
-.app{display:grid;grid-template-columns:1.15fr 1fr;height:100%}
-.left{padding:4vh 4vw;display:flex;flex-direction:column;min-width:0;position:relative;overflow:hidden}
-.left::before{content:"";position:absolute;right:-20vw;top:-25vh;width:60vw;height:60vw;border-radius:50%;background:radial-gradient(rgba(179,18,31,.35),transparent 65%)}
-.shop{display:flex;align-items:center;gap:2vw;position:relative}
-.shop img{height:11vh;width:auto;background:#fff;border-radius:1.6vh;padding:.8vh}
-.shop h1{margin:0;font:900 5vh Archivo;letter-spacing:.02em;line-height:1}
-.shop .si{font:700 2.6vh "Noto Sans Sinhala";color:#e7c3c7;margin-top:.6vh}
-.shop p{margin:.4vh 0 0;color:#cdb9bb;font-size:2vh}
-.now{margin-top:5vh;background:linear-gradient(135deg,#2a1216,#3b141b);border-radius:3vh;padding:4vh 3vw;position:relative;min-height:28vh;transition:transform .25s}
-.now.pop{animation:pop .6s ease}
-@keyframes pop{0%{transform:scale(.97);box-shadow:0 0 0 0 rgba(255,211,107,.6)}50%{transform:scale(1.02);box-shadow:0 0 0 2vh rgba(255,211,107,0)}100%{transform:scale(1)}}
-.now .lbl{font-size:1.9vh;letter-spacing:.14em;text-transform:uppercase;color:#e7a0a6;font-weight:700}
-.now h2{margin:1.5vh 0 1vh;font:800 5vh Archivo;line-height:1.15;word-break:break-word}
-.now .pp{font-size:3vh;color:#e9dcdd}
-.now .pp .money{font-size:5vh;color:#fff}
-.now .mrp{color:#c9a9ad;font-size:2.6vh;margin-left:1vw}
-.now .chg{font:900 9vh Archivo;color:#7ee2a8;margin-top:1vh}
-.foot{margin-top:auto;display:flex;gap:2vw;align-items:flex-end;justify-content:space-between;color:#cdb9bb;font-size:2vh;position:relative}
-.foot b{color:#fff}
-.clock{font:800 3.4vh Archivo;color:#fff;text-align:right}
-.clock small{display:block;font:500 1.8vh "IBM Plex Sans";color:#cdb9bb}
-.right{background:#fff;color:var(--ink);display:flex;flex-direction:column;border-radius:4vh 0 0 4vh;padding:4vh 2.6vw;min-height:0}
-.right h3{margin:0 0 1.5vh;font:800 3vh Archivo;display:flex;justify-content:space-between;align-items:baseline}
-.right h3 span{color:var(--mute);font:600 2.2vh "IBM Plex Sans"}
+
+/* ---------- the living background ---------- */
+.bg{position:fixed;inset:0;overflow:hidden;z-index:0;background:radial-gradient(120% 90% at 10% 0%,#3b0d17 0%,#16070a 55%,#0b0306 100%)}
+.bg::before{content:"";position:absolute;inset:-50%;background:conic-gradient(from 0deg at 50% 50%,rgba(196,20,42,.0),rgba(196,20,42,.22),rgba(255,211,107,.10),rgba(196,20,42,.0),rgba(120,20,60,.18),rgba(196,20,42,.0));animation:spin 38s linear infinite;filter:blur(40px)}
+.bg .grid{position:absolute;inset:-100px;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:60px 60px;animation:drift 22s linear infinite;mask-image:radial-gradient(circle at 30% 40%,#000 0%,transparent 75%);-webkit-mask-image:radial-gradient(circle at 30% 40%,#000 0%,transparent 75%)}
+.orb{position:absolute;border-radius:50%;filter:blur(30px);opacity:.55;mix-blend-mode:screen}
+.o1{width:42vw;height:42vw;background:radial-gradient(circle,#ff2d4b 0%,transparent 65%);left:-12vw;top:-14vw;animation:float1 16s ease-in-out infinite}
+.o2{width:34vw;height:34vw;background:radial-gradient(circle,#ffb347 0%,transparent 65%);left:30vw;bottom:-18vw;animation:float2 19s ease-in-out infinite;opacity:.35}
+.o3{width:26vw;height:26vw;background:radial-gradient(circle,#9b3bff 0%,transparent 65%);left:8vw;top:45vh;animation:float3 23s ease-in-out infinite;opacity:.28}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes drift{to{transform:translate(60px,60px)}}
+@keyframes float1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(8vw,6vh) scale(1.15)}}
+@keyframes float2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-10vw,-8vh) scale(1.2)}}
+@keyframes float3{0%,100%{transform:translate(0,0)}33%{transform:translate(6vw,-10vh)}66%{transform:translate(-4vw,6vh)}}
+#fx{position:fixed;inset:0;width:100%;height:100%;z-index:30;pointer-events:none}
+
+/* ---------- the layout ---------- */
+.app{position:relative;z-index:1;display:grid;grid-template-columns:1.15fr 1fr;height:100%;transition:grid-template-columns .9s cubic-bezier(.7,0,.2,1)}
+body.idle .app{grid-template-columns:1fr 0fr}
+.left{padding:4vh 4vw 3vh;display:flex;flex-direction:column;min-width:0;position:relative}
+.shop{display:flex;align-items:center;gap:2vw;position:relative;animation:dropin .9s cubic-bezier(.2,.9,.25,1.2) both}
+.logo{position:relative;height:11vh;width:11vh;border-radius:2vh;background:#fff;display:grid;place-items:center;overflow:hidden;box-shadow:0 1vh 4vh rgba(196,20,42,.45);animation:breathe 4s ease-in-out infinite;flex:none}
+.logo img{display:block;height:9vh;width:9vh;object-fit:contain;position:relative;z-index:1}
+.logo::after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 30%,rgba(255,255,255,.85) 48%,transparent 60%);transform:translateX(-120%);animation:shine 5s ease-in-out infinite 1.2s}
+@keyframes shine{0%,60%{transform:translateX(-120%)}80%,100%{transform:translateX(120%)}}
+@keyframes breathe{0%,100%{transform:scale(1);box-shadow:0 1vh 4vh rgba(196,20,42,.45)}50%{transform:scale(1.04);box-shadow:0 1.4vh 6vh rgba(255,77,94,.65)}}
+@keyframes dropin{from{opacity:0;transform:translateY(-4vh)}}
+.shop h1{margin:0;font:900 5.2vh Archivo;letter-spacing:.03em;line-height:1;background:linear-gradient(90deg,#fff 0%,#fff 40%,var(--gold) 50%,#fff 60%,#fff 100%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:goldsweep 6s linear infinite}
+@keyframes goldsweep{from{background-position:100% 0}to{background-position:-150% 0}}
+.shop .si{font:700 2.7vh "Noto Sans Sinhala";color:#f2c2c8;margin-top:.6vh}
+.shop p{margin:.4vh 0 0;color:#cdb9bb;font-size:1.9vh}
+
+/* the stage on the left: the item, or the welcome show */
+.stage{position:relative;margin-top:4vh;flex:1;min-height:0;perspective:1400px}
+.card{position:absolute;inset:0 0 auto 0;border-radius:3.4vh;padding:4vh 3vw;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,.03));border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 2vh 7vh rgba(0,0,0,.45);overflow:hidden}
+.card::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:2px;background:conic-gradient(from var(--a,0deg),transparent 0 70%,var(--gold) 80%,var(--red2) 90%,transparent 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:ring 3s linear infinite;pointer-events:none}
+@property --a{syntax:'<angle>';initial-value:0deg;inherits:false}
+@keyframes ring{to{--a:360deg}}
+.card.fly{animation:flyin .85s cubic-bezier(.2,.9,.25,1.15) both}
+@keyframes flyin{0%{opacity:0;transform:translateX(18vw) rotateY(-38deg) scale(.86)}60%{opacity:1}100%{opacity:1;transform:none}}
+.card .lbl{font-size:1.9vh;letter-spacing:.16em;text-transform:uppercase;color:#ffb3bb;font-weight:800;display:flex;align-items:center;gap:1vw}
+.card .lbl i{width:1.2vh;height:1.2vh;border-radius:50%;background:var(--mint);animation:ping 1.6s infinite}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(126,226,168,.7)}100%{box-shadow:0 0 0 1.6vh rgba(126,226,168,0)}}
+.item{display:grid;grid-template-columns:auto 1fr;gap:2.4vw;align-items:center;margin-top:2vh}
+.pic{width:19vh;height:19vh;border-radius:2.4vh;background:linear-gradient(135deg,#ff4d5e,#8e0d18);display:grid;place-items:center;font:900 6vh Archivo;color:#fff;overflow:hidden;position:relative;box-shadow:0 1.4vh 4vh rgba(196,20,42,.4);animation:bob 3.2s ease-in-out infinite}
+.pic img{width:100%;height:100%;object-fit:contain;background:#fff;position:absolute;inset:0}
+@keyframes bob{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-1vh) rotate(1.5deg)}}
+.card h2{margin:0 0 1vh;font:800 4.6vh Archivo;line-height:1.12;word-break:break-word}
+.card .pp{font-size:2.8vh;color:#efe2e3}
+.card .pp .money{font-size:5.4vh;color:#fff;display:inline-block;animation:popin .7s cubic-bezier(.2,.9,.25,1.4) both .35s}
+.card .mrp{color:#d6b6ba;font-size:2.4vh;margin-left:1vw}
+@keyframes popin{0%{opacity:0;transform:scale(.5)}100%{opacity:1;transform:scale(1)}}
+.words span{display:inline-block;opacity:0;animation:wordup .55s cubic-bezier(.2,.9,.25,1.2) forwards}
+@keyframes wordup{from{opacity:0;transform:translateY(2.4vh) rotateX(60deg)}to{opacity:1;transform:none}}
+
+/* the welcome show */
+.show{position:absolute;inset:0}
+.slide{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;opacity:0;transform:translateY(4vh) scale(.96);transition:opacity .9s ease,transform 1.1s cubic-bezier(.2,.9,.25,1)}
+.slide.on{opacity:1;transform:none}
+.slide.out{opacity:0;transform:translateY(-4vh) scale(1.04)}
+.slide .k{font-size:2.2vh;letter-spacing:.2em;text-transform:uppercase;color:#ffb3bb;font-weight:800}
+.slide h2{margin:1.4vh 0;font:900 9vh Archivo;line-height:1.02;letter-spacing:-.01em}
+.slide h2 em{font-style:normal;background:linear-gradient(90deg,var(--gold),#ff8a5b,var(--red2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.slide p{font-size:2.8vh;color:#e7d6d8;margin:0;max-width:62vw}
+.wave{display:inline-block;transform-origin:70% 70%;animation:wave 2.2s ease-in-out infinite}
+@keyframes wave{0%,60%,100%{transform:rotate(0)}10%,30%{transform:rotate(16deg)}20%,40%{transform:rotate(-8deg)}}
+.chips{display:flex;flex-wrap:wrap;gap:1.2vh 1vw;margin-top:2.4vh}
+.chips b{font:700 2.4vh "IBM Plex Sans";padding:1.2vh 2vw;border-radius:99px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);opacity:0}
+.slide.on .chips b{animation:chipin .6s cubic-bezier(.2,.9,.25,1.3) forwards}
+@keyframes chipin{from{opacity:0;transform:translateY(2vh) scale(.8)}to{opacity:1;transform:none}}
+.dots{position:absolute;left:0;bottom:-1vh;display:flex;gap:.8vw}
+.dots i{width:1vh;height:1vh;border-radius:99px;background:rgba(255,255,255,.25);transition:all .5s}
+.dots i.on{width:4vh;background:var(--gold)}
+.bigclock{font:900 12vh Archivo;letter-spacing:-.02em;line-height:1}
+.bigclock small{font-size:4vh;margin-left:1vw;color:#ffb3bb}
+
+/* the foot: ticker and clock */
+.foot{margin-top:2vh;display:flex;align-items:center;gap:2vw}
+.ticker{flex:1;overflow:hidden;white-space:nowrap;border-radius:99px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:1.2vh 0;mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+.ticker div{display:inline-block;padding-left:100%;animation:marquee 34s linear infinite;font-size:2vh;color:#f0e2e3}
+.ticker b{color:var(--gold);margin:0 1.6vw}
+@keyframes marquee{to{transform:translateX(-100%)}}
+.clock{font:800 3.2vh Archivo;text-align:right;white-space:nowrap}
+.clock small{display:block;font:500 1.7vh "IBM Plex Sans";color:#cdb9bb}
+
+/* ---------- the bill, on the right ---------- */
+.right{position:relative;background:linear-gradient(180deg,#fff,#fbf7f6);color:var(--ink);display:flex;flex-direction:column;border-radius:4vh 0 0 4vh;padding:4vh 2.6vw;min-height:0;min-width:0;overflow:hidden;box-shadow:-2vh 0 6vh rgba(0,0,0,.4);transition:transform .9s cubic-bezier(.7,0,.2,1),opacity .6s}
+body.idle .right{transform:translateX(100%);opacity:0}
+.right::before{content:"";position:absolute;top:0;left:0;right:0;height:.7vh;background:linear-gradient(90deg,var(--red),var(--gold),var(--red));background-size:200% 100%;animation:bar 3s linear infinite}
+@keyframes bar{to{background-position:-200% 0}}
+.right h3{margin:0 0 1.6vh;display:flex;justify-content:space-between;align-items:center}
+.right h3 .t{font:800 3.2vh Archivo;display:flex;align-items:center}
+.right h3 .w{color:var(--mute);font:600 2.1vh "IBM Plex Sans"}
+.cnt{display:inline-grid;place-items:center;min-width:4.4vh;height:4.4vh;border-radius:99px;background:var(--red);color:#fff;font:800 2.2vh Archivo;margin-right:1vw;padding:0 1vh}
+.cnt.bump{animation:bump .5s cubic-bezier(.2,.9,.25,1.6)}
+@keyframes bump{40%{transform:scale(1.45)}}
 .list{flex:1;overflow:hidden;position:relative}
-.row{display:grid;grid-template-columns:1fr auto;gap:.3vh 1.5vw;padding:1.5vh 0;border-bottom:1px solid var(--line);font-size:2.6vh}
+.row{position:relative;display:grid;grid-template-columns:auto 1fr auto;gap:.2vh 1.2vw;padding:1.4vh .6vw;border-bottom:1px solid var(--line);font-size:2.5vh;overflow:hidden;align-items:center}
+.row .ix{grid-row:span 2;width:4.4vh;height:4.4vh;border-radius:1.2vh;background:#fde9eb;color:var(--red);display:grid;place-items:center;font:800 1.9vh Archivo}
 .row b{font-weight:700}
-.row .q{color:var(--mute);font-size:2.1vh}
+.row .q{color:var(--mute);font-size:2vh}
 .row .a{text-align:right}
-.row .m{text-align:right;color:var(--mute);font-size:2vh}
-.row.new{animation:hi 2.2s ease}
-@keyframes hi{0%{background:#fff3c4}100%{background:transparent}}
-.more{color:var(--mute);font-size:2vh;padding-top:1vh}
+.row .m{text-align:right;color:var(--mute);font-size:1.9vh}
+.row.new{animation:rowin .7s cubic-bezier(.2,.9,.25,1.15) both}
+.row.new::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 20%,rgba(255,211,107,.55) 50%,transparent 80%);transform:translateX(-100%);animation:sweep 1.2s ease .3s forwards;pointer-events:none}
+@keyframes rowin{from{opacity:0;transform:translateX(12vw)}}
+@keyframes sweep{to{transform:translateX(100%)}}
+.more{color:var(--mute);font-size:2vh;padding-top:1vh;text-align:center}
 .sum{border-top:.5vh solid var(--ink);padding-top:2vh}
-.sum .l{display:flex;justify-content:space-between;font-size:2.4vh;color:#4b3f42;margin-bottom:.6vh}
-.sum .big{display:flex;justify-content:space-between;align-items:baseline;margin-top:1vh}
+.sum .l{display:flex;justify-content:space-between;font-size:2.3vh;color:#4b3f42;margin-bottom:.6vh}
+.sum .big{display:flex;justify-content:space-between;align-items:baseline;margin-top:.6vh}
 .sum .big b{font:900 3.4vh Archivo}
-.sum .big .money{font-size:8vh;color:var(--red);line-height:1}
-.save{margin-top:1.8vh;background:var(--greenbg);color:var(--green);border-radius:2vh;padding:1.8vh 2vw;font-size:2.8vh;font-weight:700;text-align:center}
-.idle{flex:1;display:grid;place-items:center;text-align:center;color:var(--ink)}
-.idle h2{font:900 7vh Archivo;margin:0}
-.idle p{color:var(--mute);font-size:2.6vh;margin:1.5vh 0 0}
-.thanks h2{color:var(--green)}
-.status{position:fixed;left:1.5vw;bottom:1.2vh;font-size:1.6vh;color:#8d7376;display:flex;gap:.6vw;align-items:center}
-.status i{width:1vh;height:1vh;border-radius:50%;background:#2fa36d;display:inline-block}
-.status.off i{background:#c0442c}
-.start{position:fixed;inset:0;background:rgba(22,7,10,.92);display:grid;place-items:center;text-align:center;z-index:5;cursor:pointer}
-.start h2{font:900 5vh Archivo;margin:0 0 1vh}
+.tot{font-size:8.4vh;color:var(--red);line-height:1;display:inline-block}
+.tot.tick{animation:tick .5s ease}
+@keyframes tick{50%{transform:scale(1.07);text-shadow:0 0 3vh rgba(196,20,42,.45)}}
+.save{position:relative;margin-top:1.8vh;background:linear-gradient(90deg,#e6f4eb,#d4f3df,#e6f4eb);background-size:200% 100%;color:var(--green);border-radius:2vh;padding:1.8vh 2vw;font-size:2.7vh;font-weight:800;text-align:center;animation:savebg 3s linear infinite;overflow:hidden}
+.save.pop{animation:savebg 3s linear infinite,popin .6s cubic-bezier(.2,.9,.25,1.4) both}
+@keyframes savebg{to{background-position:-200% 0}}
+.save .em{display:inline-block;animation:jig 1.4s ease-in-out infinite}
+@keyframes jig{0%,100%{transform:rotate(0)}25%{transform:rotate(-14deg) scale(1.15)}75%{transform:rotate(14deg) scale(1.15)}}
+
+/* ---------- the celebration ---------- */
+.party{position:fixed;inset:0;z-index:20;display:grid;place-items:center;text-align:center;background:radial-gradient(circle at 50% 45%,rgba(20,128,74,.55),rgba(10,40,25,.92) 60%,rgba(5,15,10,.97));opacity:0;pointer-events:none;transition:opacity .6s}
+body.paid .party{opacity:1}
+.party .chk{width:22vh;height:22vh;margin:0 auto 2vh;border-radius:50%;background:radial-gradient(circle at 35% 30%,#3fd68a,#14804a);display:grid;place-items:center}
+body.paid .party .chk{animation:chkin .7s cubic-bezier(.2,.9,.25,1.5) both,chkpulse 2s ease-out infinite .9s}
+@keyframes chkin{from{transform:scale(0) rotate(-90deg)}}
+@keyframes chkpulse{0%{box-shadow:0 0 0 0 rgba(126,226,168,.55)}100%{box-shadow:0 0 0 6vh rgba(126,226,168,0)}}
+.party .chk path{stroke-dasharray:100;stroke-dashoffset:100}
+body.paid .party .chk path{animation:draw .7s ease forwards .5s}
+@keyframes draw{to{stroke-dashoffset:0}}
+.party h2{margin:0;font:900 11vh Archivo;letter-spacing:-.01em}
+.party h2 span{display:inline-block}
+body.paid .party h2 span{animation:bounce .8s cubic-bezier(.2,.9,.25,1.6) both}
+@keyframes bounce{0%{opacity:0;transform:translateY(-8vh) scale(.6)}100%{opacity:1;transform:none}}
+.party .paidline{font-size:3.2vh;color:#d8f5e4;margin-top:1vh}
+.party .chg{margin-top:3vh;display:inline-block;padding:2.4vh 5vw;border-radius:3vh;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2)}
+.party .chg small{display:block;font-size:2.4vh;letter-spacing:.14em;text-transform:uppercase;color:#bdf0d2}
+.party .chg b{font:900 10vh Archivo;color:var(--mint);line-height:1.05}
+.party .bye{margin-top:2.4vh;font-size:2.6vh;color:#cfe9da}
+
+.status{position:fixed;left:1.5vw;bottom:1.1vh;font-size:1.5vh;color:#8d7376;display:flex;gap:.6vw;align-items:center;z-index:40}
+.status i{width:1vh;height:1vh;border-radius:50%;background:#2fa36d;display:inline-block;animation:ping 2s infinite}
+.status.off i{background:#c0442c;animation:none}
+.start{position:fixed;inset:0;background:rgba(18,5,10,.86);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center;text-align:center;z-index:50;cursor:pointer}
+.start h2{font:900 6vh Archivo;margin:0 0 1vh}
 .start p{color:#cdb9bb;font-size:2.4vh;margin:0}
-.start b{display:inline-block;margin-top:3vh;background:var(--red);border-radius:1.4vh;padding:2vh 4vw;font:800 3vh Archivo}
-@media (orientation:portrait){.app{grid-template-columns:1fr;grid-template-rows:auto 1fr}.left{padding:3vh 5vw}.now{margin-top:2.5vh;min-height:0}.foot{display:none}.right{border-radius:3vh 3vh 0 0}}
+.start b{display:inline-block;margin-top:3vh;background:linear-gradient(90deg,var(--red),#ff6a3d);border-radius:1.6vh;padding:2.2vh 5vw;font:800 3.2vh Archivo;animation:breathe 2.4s ease-in-out infinite}
+@media (orientation:portrait){
+ .app{grid-template-columns:1fr!important;grid-template-rows:auto 1fr}
+ body.idle .app{grid-template-rows:1fr 0fr}
+ .left{padding:3vh 5vw}.stage{min-height:34vh}.foot{display:none}.right{border-radius:3vh 3vh 0 0}
+ body.idle .right{transform:translateY(100%)}
+ .slide h2{font-size:6.5vh}
+}
 </style>
 </head>
-<body>
+<body class="idle">
+<div class="bg"><div class="grid"></div><i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i></div>
+<canvas id="fx"></canvas>
 <div class="app">
   <section class="left">
-    <div class="shop"><img src="/regal-logo.png" alt=""><div><h1 id="shopName">REGAL HARDWARE</h1><div class="si" id="shopSi">රීගල් හාඩ්වෙයාර්</div><p id="shopAddr"></p></div></div>
-    <div class="now" id="now"></div>
-    <div class="foot"><div id="shopLine">Shop online at <b>regalhw.lk</b> — order and collect, or have it delivered.</div><div class="clock" id="clock"></div></div>
+    <div class="shop"><div class="logo"><img src="/regal-logo.png" alt=""></div><div><h1 id="shopName">REGAL HARDWARE</h1><div class="si" id="shopSi">රීගල් හාඩ්වෙයාර්</div><p id="shopAddr"></p></div></div>
+    <div class="stage" id="stage"></div>
+    <div class="foot"><div class="ticker"><div id="ticker"></div></div><div class="clock" id="clock"></div></div>
   </section>
   <section class="right" id="right"></section>
 </div>
+<div class="party" id="party"></div>
 <div class="status" id="status"><i></i><span>connected</span></div>
-<div class="start" id="start"><div><h2>Customer screen <span id="scrNo"></span></h2><p>Tap once to start — the screen goes full and stays awake.</p><b>Start</b></div></div>
+<div class="start" id="start"><div><h2>Customer screen <span id="scrNo"></span></h2><p>Tap once to start — full screen, and the tablet stays awake.</p><b>Start</b></div></div>
 <script>
 (function () {
   const screen = (location.pathname.match(/count(\d+)/i) || [])[1] || new URLSearchParams(location.search).get('screen') || '1';
   const $ = id => document.getElementById(id);
   const fmt = n => (+n || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  $('scrNo').textContent = screen;
-  document.title = 'Regal Hardware — counter ' + screen;
-  let rev = 0, data = null, prevKeys = new Map(), lastOk = Date.now(), paidSeen = 0;   // the thank-you is timed by this tablet's own clock
+  const nice = s => String(s || '').replace(/^REGAL HARDWARE$/, 'Regal Hardware');
+  const words = (t, d0 = 0) => esc(t).split(' ').map((w, i) => `<span style="animation-delay:${d0 + i * 70}ms">${w}</span>`).join(' ');
+  const initials = n => String(n).replace(/[^A-Za-z ]/g, ' ').split(/\s+/).filter(w => w && w.length > 1).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '★';
+  $('scrNo').textContent = screen; document.title = 'Regal Hardware — counter ' + screen;
+  let rev = 0, data = null, prevKeys = new Map(), lastOk = Date.now(), paidSeen = 0, shownTotal = 0, shownSave = 0, mode = '';
 
-  // full screen and awake, after one tap (browsers allow neither without one)
+  /* full screen and awake, after one tap */
   let lock = null;
   async function awake() { try { if ('wakeLock' in navigator) { lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', () => { lock = null; }); } } catch (e) { } }
   $('start').onclick = async () => { $('start').remove(); try { await document.documentElement.requestFullscreen(); } catch (e) { } awake(); };
   document.addEventListener('visibilitychange', () => { if (!document.hidden && !lock) awake(); });
 
-  const tick = () => { const d = new Date(); $('clock').innerHTML = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + `<small>${d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</small>`; };
-  tick(); setInterval(tick, 10000);
+  /* ---------- particles: sparkles always rising, confetti on cue ---------- */
+  const cv = $('fx'), cx = cv.getContext('2d'); let W, H, parts = []; const DPR = Math.min(2, window.devicePixelRatio || 1);
+  const size = () => { W = cv.width = innerWidth * DPR; H = cv.height = innerHeight * DPR; };
+  size(); addEventListener('resize', size);
+  const COLS = ['#ffd36b', '#ff4d5e', '#7ee2a8', '#ffffff', '#ff8a5b', '#b9a2ff'];
+  function burst(x, y, n, spread = 1, up = 1) {
+    for (let i = 0; i < n; i++) parts.push({ x: x * DPR, y: y * DPR, vx: (Math.random() - .5) * 18 * spread * DPR, vy: (-Math.random() * 16 - 4) * up * DPR, g: .35 * DPR, s: (4 + Math.random() * 8) * DPR, r: Math.random() * 6, vr: (Math.random() - .5) * .4, c: COLS[i % COLS.length], life: 120 + Math.random() * 80, kind: Math.random() < .5 ? 'rect' : 'dot' });
+  }
+  function cannon() { burst(innerWidth * .05, innerHeight * .95, 90, .9, 1.25); burst(innerWidth * .95, innerHeight * .95, 90, .9, 1.25); setTimeout(() => burst(innerWidth * .5, innerHeight * .3, 80, 1.6, .6), 350); setTimeout(() => { burst(innerWidth * .2, innerHeight * .9, 50, .8, 1.1); burst(innerWidth * .8, innerHeight * .9, 50, .8, 1.1); }, 1200); }
+  function sparkle() { if (parts.length < 70 && Math.random() < .35) parts.push({ x: Math.random() * W * (document.body.classList.contains('idle') ? 1 : .5), y: H + 10, vx: (Math.random() - .5) * .6, vy: (-.6 - Math.random() * 1.2) * DPR, g: 0, s: (1.5 + Math.random() * 2.5) * DPR, r: 0, vr: 0, c: Math.random() < .5 ? '#ffd36b' : '#ff8a99', life: 420, kind: 'glow' }); }
+  (function loop() {
+    cx.clearRect(0, 0, W, H); sparkle();
+    parts = parts.filter(p => p.life > 0 && p.y < H + 40 && p.y > -200);
+    for (const p of parts) {
+      if (p.kind === 'glow' && p.x > W * .52 && !document.body.classList.contains('idle')) { p.life = 0; continue; }   // no sparkles over the white bill
+      p.life--; p.vy += p.g; p.x += p.vx; p.y += p.vy; p.vx *= .99; p.r += p.vr;
+      cx.globalAlpha = Math.max(0, Math.min(1, p.life / 60));
+      if (p.kind === 'glow') { const g = cx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.s * 4); g.addColorStop(0, p.c); g.addColorStop(1, 'rgba(0,0,0,0)'); cx.fillStyle = g; cx.beginPath(); cx.arc(p.x, p.y, p.s * 4, 0, 7); cx.fill(); }
+      else { cx.save(); cx.translate(p.x, p.y); cx.rotate(p.r); cx.fillStyle = p.c; if (p.kind === 'rect') cx.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); else { cx.beginPath(); cx.arc(0, 0, p.s / 2.4, 0, 7); cx.fill(); } cx.restore(); }
+    }
+    cx.globalAlpha = 1; requestAnimationFrame(loop);
+  })();
 
+  /* a number that runs up (or down) to its new value */
+  function runTo(el, from, to, ms = 700) {
+    if (!el) return; const t0 = performance.now();
+    const step = (t) => { const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3); el.textContent = 'Rs ' + fmt(from + (to - from) * e); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  }
+
+  /* ---------- the clock and the ticker ---------- */
+  const tick = () => { const d = new Date(); $('clock').innerHTML = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + `<small>${d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</small>`;
+    document.querySelectorAll('.bigclock').forEach(bc => bc.innerHTML = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/ (AM|PM)/, '<small>$1</small>')); };
+  tick(); setInterval(tick, 5000);
+  function ticker(shop) {
+    const bits = [shop.line1, shop.line2, shop.tags && ('We have ' + shop.tags), 'Order online at ' + (shop.web || 'regalhw.lk') + ' — collect at the counter or have it delivered', shop.hours && ('Open ' + shop.hours), shop.phone && ('Call ' + shop.phone)].filter(Boolean);
+    const html = bits.map(b => esc(b)).join('<b>✦</b>') + '<b>✦</b>';
+    if ($('ticker').dataset.h !== html) { $('ticker').innerHTML = html; $('ticker').dataset.h = html; }
+  }
+
+  /* ---------- the welcome show ---------- */
+  let showTimer = null, slideNo = 0;
+  function startShow(shop) {
+    const sn = nice(shop.name || 'Regal Hardware');
+    const cats = String(shop.tags || 'Hardware · Paints · Electrical · PVC · Motor items').split(/\s*[·,|]\s*/).filter(Boolean).slice(0, 8);
+    const slides = [
+      `<div class="k">Welcome</div><h2><span class="wave">👋</span> Ayubowan!</h2><p>Welcome to <b>${esc(sn)}</b>. Your items appear here as they are added — every price, as it happens.</p>`,
+      `<div class="k">Shop any time</div><h2>Order at <em>${esc(shop.web || 'regalhw.lk')}</em></h2><p>Choose online, then collect at the counter or have it delivered to your door.</p>`,
+      `<div class="k">Everything you need</div><h2>One stop for <em>the whole job</em></h2><div class="chips">${cats.map((c, i) => `<b style="animation-delay:${200 + i * 110}ms">${esc(c)}</b>`).join('')}</div>`,
+      `<div class="k">${esc(shop.hours ? 'Open ' + shop.hours : 'Open every day')}</div><div class="bigclock"></div><p style="margin-top:1.4vh">${esc(shop.line2 || 'Paint colours mixed to order — ask at the counter.')}</p>`
+    ];
+    const st = $('stage');
+    st.innerHTML = `<div class="show">${slides.map((s, i) => `<div class="slide" data-i="${i}">${s}</div>`).join('')}<div class="dots">${slides.map(() => '<i></i>').join('')}</div></div>`;
+    slideNo = 0;
+    const go = () => { const all = st.querySelectorAll('.slide'), dots = st.querySelectorAll('.dots i'); if (!all.length) return;
+      all.forEach((s, i) => { s.classList.toggle('out', s.classList.contains('on') && i !== slideNo); s.classList.toggle('on', i === slideNo); });
+      dots.forEach((d, i) => d.classList.toggle('on', i === slideNo)); tick();
+      slideNo = (slideNo + 1) % all.length; };
+    clearInterval(showTimer); go(); showTimer = setInterval(go, 6500);
+  }
+  function stopShow() { clearInterval(showTimer); showTimer = null; }
+
+  /* ---------- drawing ---------- */
   function draw() {
     const d = data || {}, shop = d.shop || {};
-    if (shop.name) { $('shopName').textContent = shop.name; }
+    if (shop.name) $('shopName').textContent = shop.name;
     if (shop.sinhala) $('shopSi').textContent = shop.sinhala;
     $('shopAddr').textContent = [shop.addr, shop.phone].filter(Boolean).join(' · ');
-    const lines = d.lines || [], state = d.state === 'paid' && d.paid && Date.now() - paidSeen < 30000 ? 'paid' : lines.length ? 'bill' : 'idle';
-    // which line is new or changed since the last look: that one is "just added"
-    const keys = new Map(lines.map(l => [l.k, l.q + '|' + l.a])); let hot = null;
-    for (const l of lines) if (prevKeys.get(l.k) !== l.q + '|' + l.a) { hot = l; }
-    if (!hot && state === 'bill') hot = lines[0];
-    const changed = hot && prevKeys.size && prevKeys.get(hot.k) !== hot.q + '|' + hot.a;
-    prevKeys = keys;
-    const now = $('now');
-    if (state === 'paid') now.innerHTML = `<div class="lbl">Thank you${d.cust ? ', ' + esc(d.cust) : ''}!</div><h2>Paid Rs ${fmt(d.paid.total)}</h2>${d.paid.change > 0 ? `<div class="pp">Your change</div><div class="chg">Rs ${fmt(d.paid.change)}</div>` : '<div class="pp">Please come again.</div>'}`;
-    else if (state === 'bill' && hot) now.innerHTML = `<div class="lbl">${changed ? 'Just added' : 'On your bill'}</div><h2>${esc(hot.n)}</h2><div class="pp">${hot.q} × <span class="money">Rs ${fmt(hot.u)}</span>${hot.m > hot.u ? `<span class="mrp">MRP ${fmt(hot.m)}</span>` : ''}</div>`;
-    else now.innerHTML = `<div class="lbl">Welcome</div><h2>Ayubowan! Welcome to ${esc((shop.name || 'Regal Hardware').replace(/^REGAL HARDWARE$/, 'Regal Hardware'))}</h2><div class="pp">Your items appear here as they are added.</div>`;
-    if (changed) { now.classList.remove('pop'); void now.offsetWidth; now.classList.add('pop'); }
-    const right = $('right');
-    if (state === 'paid') right.innerHTML = `<div class="idle thanks"><div><h2>Thank you!</h2><p>Paid <b class="money" style="color:var(--ink)">Rs ${fmt(d.paid.total)}</b>${d.paid.no ? ' · bill ' + esc(d.paid.no) : ''}</p>${d.save > 0 ? `<div class="save">🎉 You saved Rs ${fmt(d.save)} today</div>` : ''}<p>Please come again · ${esc(shop.web || 'regalhw.lk')}</p></div></div>`;
-    else if (state === 'bill') {
-      const fit = Math.max(3, Math.floor((window.innerHeight * 0.5) / (window.innerHeight * 0.07)));
-      right.innerHTML = `<h3>Your bill <span>${d.items || lines.length} item${(d.items || lines.length) === 1 ? '' : 's'}${d.cust ? ' · ' + esc(d.cust) : ''}</span></h3>
-        <div class="list">${lines.slice(0, fit).map(l => `<div class="row ${hot && l.k === hot.k && changed ? 'new' : ''}"><b>${esc(l.n)}</b><b class="money a">${fmt(l.a)}</b><span class="q">${l.q} × ${fmt(l.u)}</span><span class="m">${l.m > l.u ? 'MRP ' + fmt(l.m * l.q) : ''}</span></div>`).join('')}
+    ticker(shop);
+    const lines = d.lines || [];
+    const state = d.state === 'paid' && d.paid && Date.now() - paidSeen < 30000 ? 'paid' : lines.length ? 'bill' : 'idle';
+
+    // the celebration
+    document.body.classList.toggle('paid', state === 'paid');
+    if (state === 'paid' && mode !== 'paid') {
+      const ch = +d.paid.change || 0;
+      $('party').innerHTML = `<div><div class="chk"><svg viewBox="0 0 52 52" width="60%" height="60%"><path d="M14 27 l8 8 l16 -18" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" pathLength="100"/></svg></div>
+        <h2>${'Thank you!'.split('').map((c, i) => `<span style="animation-delay:${300 + i * 55}ms">${c === ' ' ? '&nbsp;' : esc(c)}</span>`).join('')}</h2>
+        <div class="paidline">${d.cust ? esc(d.cust) + ', you' : 'You'} paid <b class="money">Rs ${fmt(d.paid.total)}</b>${d.paid.no ? ' · bill ' + esc(d.paid.no) : ''}</div>
+        ${ch > 0 ? `<div class="chg"><small>Your change</small><b class="money" id="chgN">Rs 0.00</b></div>` : ''}
+        ${d.save > 0 ? `<div class="bye">🎉 You saved <b>Rs ${fmt(d.save)}</b> today</div>` : ''}
+        <div class="bye">Please come again · ${esc(shop.web || 'regalhw.lk')}</div></div>`;
+      setTimeout(cannon, 500); setTimeout(() => runTo($('chgN'), 0, ch, 1400), 900);
+    }
+
+    // idle: the show takes the whole screen; a bill brings the list in
+    document.body.classList.toggle('idle', state === 'idle');
+    if (state === 'idle') { if (mode !== 'idle') startShow(shop); }
+    else stopShow();
+
+    if (state === 'bill') {
+      const keys = new Map(lines.map(l => [l.k, l.q + '|' + l.a])); let hot = null;
+      for (const l of lines) if (prevKeys.get(l.k) !== l.q + '|' + l.a) hot = l;
+      const changed = !!hot && mode === 'bill';
+      if (!hot) hot = lines[0];
+      prevKeys = keys;
+      if (changed || mode !== 'bill') {
+        const pid = String(hot.k || '').split('|')[0];
+        $('stage').innerHTML = `<div class="card fly"><div class="lbl"><i></i>${changed ? 'Just added' : 'On your bill'}</div>
+          <div class="item"><div class="pic">${esc(initials(hot.n))}<img src="/api/shop/media/${encodeURIComponent('p:' + pid)}" alt="" onerror="this.remove()"></div>
+          <div><h2 class="words">${words(hot.n, 150)}</h2><div class="pp">${hot.q} × <span class="money">Rs ${fmt(hot.u)}</span>${hot.m > hot.u ? `<span class="mrp">MRP ${fmt(hot.m)}</span>` : ''}</div></div></div></div>`;
+        if (changed) setTimeout(() => { const r = $('stage').getBoundingClientRect(); burst(r.left + r.width * .45, r.top + 30, 30, 1, .6); }, 250);
+      }
+      const fit = Math.max(3, Math.floor((innerHeight * 0.5) / (innerHeight * 0.075)));
+      const n = d.items || lines.length, saveUp = (d.save || 0) > shownSave + .5;
+      $('right').innerHTML = `<h3><span class="t"><span class="cnt ${changed ? 'bump' : ''}">${n}</span>Your bill</span><span class="w">${d.cust ? 'for ' + esc(d.cust) : 'item' + (n === 1 ? '' : 's')}</span></h3>
+        <div class="list">${lines.slice(0, fit).map((l, i) => `<div class="row ${(changed && l.k === hot.k) || mode !== 'bill' ? 'new' : ''}" style="${mode !== 'bill' ? 'animation-delay:' + (i * 90) + 'ms' : ''}"><span class="ix">${lines.length - i}</span><b>${esc(l.n)}</b><b class="money a">${fmt(l.a)}</b><span class="q">${l.q} × ${fmt(l.u)}</span><span class="m">${l.m > l.u ? 'MRP ' + fmt(l.m * l.q) : ''}</span></div>`).join('')}
           ${lines.length > fit ? `<div class="more">+ ${lines.length - fit} more item${lines.length - fit === 1 ? '' : 's'}</div>` : ''}</div>
         <div class="sum">${d.disc > 0 ? `<div class="l"><span>Bill discount</span><span>− ${fmt(d.disc)}</span></div>` : ''}
-          <div class="big"><b>TOTAL</b><span class="money">Rs ${fmt(d.total)}</span></div>
-          ${d.save > 0 ? `<div class="save">🎉 You save Rs ${fmt(d.save)} today</div>` : ''}</div>`;
-    } else right.innerHTML = `<div class="idle"><div><h2>Hello!</h2><p>Ready when you are.</p></div></div>`;
+          <div class="big"><b>TOTAL</b><span class="money tot" id="totN">Rs ${fmt(shownTotal)}</span></div>
+          ${d.save > 0 ? `<div class="save ${saveUp ? 'pop' : ''}" id="saveB"><span class="em">🎉</span> You save Rs ${fmt(d.save)} today</div>` : ''}</div>`;
+      if (Math.abs((d.total || 0) - shownTotal) > .005) { const el = $('totN'); el.classList.add('tick'); runTo(el, shownTotal, d.total || 0, 800); shownTotal = d.total || 0; }
+      if (saveUp) setTimeout(() => { const b = $('saveB'); if (b) { const r = b.getBoundingClientRect(); burst(r.left + r.width / 2, r.top, 24, .7, .5); } }, 350);
+      shownSave = d.save || 0;
+    } else { prevKeys = new Map(); shownTotal = 0; shownSave = 0; }
+    mode = state;
   }
 
   async function poll() {
@@ -136,7 +331,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:#fff;font:16px "IBM Pl
       if (j.ok) { lastOk = Date.now(); if (!j.same) { rev = j.rev; data = j.data; if (data && data.state === 'paid') paidSeen = Date.now(); draw(); } }
     } catch (e) { }
     const off = Date.now() - lastOk > 8000; $('status').classList.toggle('off', off); $('status').querySelector('span').textContent = off ? 'reconnecting…' : 'counter ' + screen;
-    if (data && data.state === 'paid' && Date.now() - paidSeen >= 30000) { data.state = 'idle'; draw(); }
+    if (data && data.state === 'paid' && mode === 'paid' && Date.now() - paidSeen >= 30000) { data.state = 'idle'; draw(); }
     setTimeout(poll, 900);
   }
   draw(); poll();
