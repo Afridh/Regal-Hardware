@@ -3102,6 +3102,29 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-no .brk-strip b{display:inline;font-family:inherit;font-size:11.5px;font-weight:700}
 .till-no .brk-strip .brk-p.over{color:var(--chip-rust)}
 .till-entry.live{animation:none;opacity:1;box-shadow:none}
+/* send to many */
+.bk-box{width:min(940px,96vw)!important;max-width:96vw!important}
+.bk-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.bk-hd h2{margin:0}
+.bk-who{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.bk-who button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer;color:var(--ink2)}
+.bk-who button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.bk-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.bk-bar input#bkQ{flex:1;min-width:200px}
+.bk-list{max-height:200px;overflow:auto;border:1px solid var(--line2);border-radius:10px;margin-bottom:10px}
+.bk-row{display:grid;grid-template-columns:22px 1fr 120px 130px;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line2);font-size:13px;cursor:pointer}
+.bk-row span{color:var(--steel);font-size:12.5px}
+.bk-grid{display:grid;grid-template-columns:1fr 300px;gap:14px}
+.bk-l{display:block;font-size:11.5px;font-weight:700;color:var(--steel);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.bk-grid textarea{width:100%;font:inherit;font-size:14px;border:1px solid var(--line);border-radius:10px;padding:10px;resize:vertical}
+.bk-tags{margin-top:6px;font-size:12.5px;color:var(--steel)}
+.bk-phone{background:#e9f6ee;border:1px solid #cfe9d8;border-radius:14px 14px 14px 4px;padding:10px 12px;font-size:13.5px;min-height:110px;white-space:normal}
+.bk-sum{margin-top:12px;padding:10px 12px;background:var(--panel);border-radius:10px;font-size:14px}
+.bk-prog{position:relative;height:26px;background:var(--panel);border-radius:99px;overflow:hidden;margin-top:10px}
+.bk-prog i{position:absolute;left:0;top:0;bottom:0;background:#1e8a5a;width:0;transition:width .3s}
+.bk-prog span{position:relative;display:block;text-align:center;font-size:12.5px;font-weight:700;line-height:26px}
+.bk-ft{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+@media (max-width:800px){.bk-grid{grid-template-columns:1fr}}
 /* the till's Menu window */
 .tm-box{width:min(980px,96vw)!important;max-width:96vw!important}
 .tm-hd{display:flex;align-items:center;gap:12px;margin-bottom:10px}
@@ -26978,12 +27001,105 @@ function accounting(){ const tabs=[['tb','Trial balance'],['pl','Profit & loss']
 
 /* ---- messages ---- */
 const unsentSms=m=>m.via!=='wa'&&/fail|held|not sent|queued/i.test(m.status||'');
+/* ====================== SEND TO MANY ======================
+   One text to many people: every customer, every supplier, both, or the customers ticked. Each gets
+   the greeting and sign-off their kind gets (letter()), and {name} / {owes} / {shop} filled in for them.
+   Numbers that are not a Sri Lankan mobile, and the same number twice, are left out and counted. The
+   texts go one at a time at a steady pace through sms() — the same road as every other text, so test
+   mode, the gateway and the Messages list all hold — with a bar to watch and a Stop button. */
+let BK={who:'cust',q:'',owe:false,lvl:'',picked:new Set(),body:'',running:false,stop:false};
+const bkPhone=(p)=>{ let d=String(p||'').replace(/\D/g,''); if(d.startsWith('94')&&d.length===11) d='0'+d.slice(2); return /^07\d{8}$/.test(d)?d:'' };
+function bkPeople(){
+  const out=[];
+  if(BK.who!=='sup') for(const c of (S.customers||[])){ if(c.id===1||c.active===false) continue;
+    out.push({k:'C'+c.id,type:'C',id:c.id,name:c.name,phone:c.phone,lvl:c.level||'retail',owes:partyBal('C',c.id)}) }
+  if(BK.who==='sup'||BK.who==='both') for(const s of (S.suppliers||[])){ if(s.active===false) continue;
+    out.push({k:'S'+s.id,type:'S',id:s.id,name:s.name,phone:s.phone,lvl:'supplier',owes:partyBal('S',s.id)}) }
+  return out;
+}
+function bkTargets(){
+  const all=bkPeople(), seen=new Set(), go=[], bad=[], dup=[];
+  for(const p of all){
+    if(BK.who==='pick'&&!BK.picked.has(p.k)) continue;
+    if(BK.who!=='pick'&&BK.owe&&!(p.owes>0.5)) continue;
+    if(BK.who!=='pick'&&BK.lvl&&p.lvl!==BK.lvl) continue;
+    const ph=bkPhone(p.phone); if(!ph){ bad.push(p); continue }
+    if(seen.has(ph)){ dup.push(p); continue } seen.add(ph); go.push({...p,ph});
+  }
+  return {go,bad,dup};
+}
+const bkFill=(body,p)=>String(body).replace(/\{name\}/gi,p.name||'').replace(/\{owes\}/gi,money2(Math.max(0,p.owes||0))).replace(/\{shop\}/gi,(CFG.shop&&CFG.shop.name)||'');
+const bkParts=(t)=>{ const n=t.length, uni=/[^\x00-\x7F]/.test(t); const one=uni?70:160, many=uni?67:153; return n<=one?1:Math.ceil(n/many) };
+function bulkSmsModal(){
+  if(!ownerOnly()) return toast('Only the Super Admin or an Admin sends to many at once');
+  const m=modal('<div id="bkBody"></div>'); m.querySelector('.box').classList.add('bk-box');
+  const draw=(focus)=>{
+    const T=bkTargets(), first=T.go[0];
+    const preview=first?letter(first.type==='S'?'supplier':'customer',bkFill(BK.body||'…',first)):'';
+    const parts=preview?bkParts(preview):0;
+    const people=BK.who==='pick'?bkPeople().filter(p=>{ const q=BK.q.trim().toLowerCase(); return !q||p.name.toLowerCase().includes(q)||String(p.phone||'').includes(q) }):[];
+    m.querySelector('#bkBody').innerHTML=`<div class="bk-hd"><h2>Send a text to many</h2><button class="btn ghost" data-act="closeModal">✕</button></div>
+     <div class="bk-who">${[['cust','All customers'],['sup','All suppliers'],['both','Customers & suppliers'],['pick','Choose customers']].map(([k,l])=>`<button class="${BK.who===k?'on':''}" data-bkwho="${k}">${l}</button>`).join('')}</div>
+     ${BK.who==='pick'?`<div class="bk-pick"><div class="bk-bar"><input id="bkQ" placeholder="Find a customer by name or number…" value="${noteEsc(BK.q)}">
+        <button class="btn ghost sm" id="bkAll">Tick these ${people.length}</button><button class="btn ghost sm" id="bkNone">Untick all</button><span class="muted">${BK.picked.size} ticked</span></div>
+        <div class="bk-list">${people.slice(0,400).map(p=>`<label class="bk-row"><input type="checkbox" data-bkp="${p.k}" ${BK.picked.has(p.k)?'checked':''}><b>${noteEsc(p.name)}</b><span>${noteEsc(p.phone||'no number')}</span><span class="${p.owes>0.5?'rust':'muted'}">${p.owes>0.5?'owes '+money2(p.owes):''}</span></label>`).join('')||'<div class="muted" style="padding:10px">No customer matches.</div>'}</div></div>`
+       :`<div class="bk-bar"><label class="chk"><input type="checkbox" id="bkOwe" ${BK.owe?'checked':''}> Only those with a balance</label>
+          ${BK.who!=='sup'?`<select id="bkLvl"><option value="">Retail and wholesale</option><option value="retail" ${BK.lvl==='retail'?'selected':''}>Retail customers only</option><option value="wholesale" ${BK.lvl==='wholesale'?'selected':''}>Wholesale customers only</option></select>`:''}</div>`}
+     <div class="bk-grid">
+      <div><label class="bk-l">The message</label>
+       <textarea id="bkText" rows="6" maxlength="600" placeholder="e.g. New stock of Dulux paints is in — 10% off this week only.">${noteEsc(BK.body)}</textarea>
+       <div class="bk-tags">Fill in for each person: ${['{name}','{owes}','{shop}'].map(t=>`<button type="button" class="chip" data-bktag="${t}">${t}</button>`).join(' ')}</div>
+       <div class="muted" style="font-size:12px;margin-top:4px">The greeting (Dear Customer / Dear Supplier) and the shop's sign-off are added for you, as on every text.</div></div>
+      <div class="bk-prev"><label class="bk-l">How it reads${first?` — to ${noteEsc(first.name)}`:''}</label>
+       <div class="bk-phone">${preview?noteEsc(preview).replace(/\n/g,'<br>'):'<span class="muted">Nobody to send to yet.</span>'}</div>
+       <div class="muted" style="font-size:12px">${preview?`${preview.length} letters · ${parts} text${parts===1?'':'s'} each`:''}</div></div></div>
+     <div class="bk-sum"><b>${T.go.length}</b> will get it${T.bad.length?` · <span class="muted">${T.bad.length} without a mobile number left out</span>`:''}${T.dup.length?` · <span class="muted">${T.dup.length} with the same number as another left out</span>`:''}
+       ${T.go.length&&parts?` · <span class="muted">about ${T.go.length*parts} texts in all</span>`:''}
+       ${!CFG.msg.live?' · <b class="rust">sending is off in Settings → Messages — they will only be listed</b>':CFG.msg.testOnly?' · <b class="rust">test mode — only the test number gets them</b>':''}</div>
+     <div class="bk-prog" id="bkProg" ${BK.running?'':'hidden'}><i id="bkFillBar"></i><span id="bkProgT"></span></div>
+     <div class="bk-ft"><button class="btn ghost" data-act="closeModal">Close</button>
+       ${BK.running?'<button class="btn" id="bkStop">Stop</button>':`<button class="btn tape" id="bkGo" ${T.go.length&&BK.body.trim()?'':'disabled'}>Send to ${T.go.length}</button>`}</div>`;
+    const q=(x)=>m.querySelector(x);
+    m.querySelectorAll('[data-bkwho]').forEach(b=>b.onclick=()=>{ if(BK.running) return; BK.who=b.dataset.bkwho; draw() });
+    const ta=q('#bkText'); ta.oninput=()=>{ BK.body=ta.value; draw('#bkText') };
+    m.querySelectorAll('[data-bktag]').forEach(b=>b.onclick=()=>{ const s=ta.selectionStart??ta.value.length; BK.body=ta.value.slice(0,s)+b.dataset.bktag+ta.value.slice(ta.selectionEnd??s); draw('#bkText') });
+    const ow=q('#bkOwe'); if(ow) ow.onchange=()=>{ BK.owe=ow.checked; draw() };
+    const lv=q('#bkLvl'); if(lv) lv.onchange=()=>{ BK.lvl=lv.value; draw() };
+    const bq=q('#bkQ'); if(bq) bq.oninput=()=>{ BK.q=bq.value; draw('#bkQ') };
+    const ba=q('#bkAll'); if(ba) ba.onclick=()=>{ people.forEach(p=>BK.picked.add(p.k)); draw() };
+    const bn=q('#bkNone'); if(bn) bn.onclick=()=>{ BK.picked.clear(); draw() };
+    m.querySelectorAll('[data-bkp]').forEach(cb=>cb.onchange=()=>{ cb.checked?BK.picked.add(cb.dataset.bkp):BK.picked.delete(cb.dataset.bkp); draw() });
+    const st=q('#bkStop'); if(st) st.onclick=()=>{ BK.stop=true };
+    const go=q('#bkGo'); if(go) go.onclick=async()=>{
+      const list=bkTargets().go; if(!list.length||!BK.body.trim()) return;
+      if(!confirm(`Send this text to ${list.length} ${BK.who==='sup'?'supplier':BK.who==='both'?'customer and supplier':'customer'}${list.length===1?'':'s'}?`)) return;
+      BK.running=true; BK.stop=false; draw();
+      let sent=0;
+      for(const p of list){
+        if(BK.stop||!document.body.contains(m)) break;
+        try{ sms(p.ph,bkFill(BK.body,p),p.type==='S'?'supplier':'customer') }catch(e){}
+        sent++;
+        const bar=m.querySelector('#bkFillBar'), tx=m.querySelector('#bkProgT');
+        if(bar) bar.style.width=Math.round(sent/list.length*100)+'%'; if(tx) tx.textContent=`${sent} of ${list.length} — ${p.name}`;
+        await new Promise(r=>setTimeout(r,CFG.msg.live?700:40));
+      }
+      BK.running=false;
+      try{ logTrail('other',`Text sent to ${sent} ${BK.who==='sup'?'suppliers':BK.who==='both'?'customers and suppliers':'customers'}: "${BK.body.slice(0,80)}"`,{ref:'BULK'}) }catch(e){}
+      persist(true); toast(BK.stop?`Stopped — ${sent} sent`:`${sent} texts on their way — see Messages`,'ok');
+      if(!BK.stop) BK.body='';
+      if(document.body.contains(m)) draw(); render();
+    };
+    if(focus){ const el=q(focus); if(el){ el.focus(); const n=el.value.length; try{ el.setSelectionRange(n,n) }catch(e){} } }
+  };
+  draw('#bkText');
+}
+
 function messages(){ loadWaInbox();
   const unsent=S.messages.filter(unsentSms).length;
   const held=S.messages.filter(m=>/^Held/.test(m.status||'')).length, waOn=CFG.msg.waMode==='cloud';
   const tagOf=st=>/sent|delivered|read/i.test(st)?'ok':/fail|held|not sent/i.test(st)?'bad':/queued|sending|opened/i.test(st)?'warn':'blue';
   const ago=(t)=>{ const d=(Date.now()-new Date(t).getTime())/60000; return d<1?'just now':d<60?Math.round(d)+' min ago':d<1440?Math.round(d/60)+' h ago':new Date(t).toLocaleDateString('en-GB') };
-  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h1>Messages</h1>${unsent?`<button class="btn sm" data-act="smsRetryAll">Send again — ${unsent} not sent</button>`:''}</div>
+  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h1>Messages</h1>${ownerOnly()?'<button class="btn tape" data-act="bulkSms">✉ Send to many</button>':''}${unsent?`<button class="btn sm" data-act="smsRetryAll">Send again — ${unsent} not sent</button>`:''}</div>
   <div class="muted" style="margin-bottom:10px">Texts go through ${CFG.msg.provider||'the SMS gateway'}${CFG.msg.live?'':' — <b>sending is off</b> (Settings → Messages)'}${CFG.msg.testOnly?` · <b>test mode</b>: only ${CFG.msg.testOnly} gets them${held?` (${held} held)`:''}`:''}${supTest()?` · <b>supplier test mode</b>: suppliers' messages go to ${supTest()}`:''}${waOn?' · WhatsApp through the Cloud API':' · WhatsApp buttons open WhatsApp on this PC'}.</div>
   ${waOn?`<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">${WA_ICON} WhatsApp replies ${waInbox.unread?`<span class="nbadge">${waInbox.unread} new</span>`:''}</h2>
      <span style="display:flex;gap:6px"><button class="btn ghost sm" data-act="waInboxRefresh">Refresh</button>${waInbox.unread?`<button class="btn ghost sm" data-act="waInboxRead">Mark all read</button>`:''}</span></div>
@@ -29952,6 +30068,7 @@ document.addEventListener('click',e=>{
     smsRetry:async()=>{ const m=S.messages.find(x=>x.id===a.dataset.id); if(!m) return; if(!CFG.msg.live) return toast('Sending is off — tick "Send messages through the provider" in Settings → Messages','bad');
       if(/^: /.test(m.body)&&CFG.shop.name) m.body=CFG.shop.name+m.body;   // made while the shop name was blank
       m.status='Sending'; render(); await smsSend(m); if(/^Sent/i.test(m.status)) toast('Sent to '+m.to); persist(); render() },
+    bulkSms:()=>bulkSmsModal(),
     smsRetryAll:async()=>{ if(!CFG.msg.live) return toast('Sending is off — tick "Send messages through the provider" in Settings → Messages','bad');
       const list=S.messages.filter(m=>unsentSms(m)&&m.to); if(!list.length) return; if(!confirm('Send '+list.length+' text'+(list.length===1?'':'s')+' again?')) return;
       toast('Sending '+list.length+'…'); let ok=0;
