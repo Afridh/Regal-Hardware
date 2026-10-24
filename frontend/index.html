@@ -17405,7 +17405,7 @@ function posClassic(){
          <td class="n q">${ed?`<input class="ln-in" id="lnQty" type="number" step="any" value="${l.qty}">`:fq(l.qty)}</td>
          <td class="n mrp">${p.mrp?money2(p.mrp):'—'}</td>
          <td class="n pr">${ed?`<input class="ln-in" id="lnPrice" type="number" step="any" value="${l.price}">`
-           :money2(l.price)}</td>
+           :money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td>
          <td class="n ds">${l.disc?(l.discPct?`<b title="${money2(l.disc)}">${l.discPct}%</b>`:money2(l.disc)):'—'}</td>
          <td class="n am"><b id="${ed?'lnAmt':''}">${money2(l.qty*l.price-l.disc)}</b></td>
          <td class="x">${ed
@@ -18353,8 +18353,9 @@ function bindClassic(){
     const v=money2(csLineNet());
     if(amt) amt.textContent=v;
     { const tb=$('#tbDis'), sp=CS.pid&&P(CS.pid); if(tb) tb.textContent=sp?money2(Math.max(0,(+sp.mrp||0)*(+CS.qty||0)-csLineNet())):'0.00' }
-    // a % off the MRP puts the line at the MRP: the price box says so while the % is there, and goes back when it is cleared
-    { const pf=$('#csPrice'), sp=CS.pid&&P(CS.pid); if(pf&&sp&&document.activeElement!==pf){ const v=(CFG.pos.discFromMrp&&sp.mrp>0&&+CS.disc>0)?String(+sp.mrp):String(CS.price); if(pf.value!==v) pf.value=v } }
+    // a % typed: the price box shows the price after the discount (MRP less the %), and goes back when it is cleared
+    { const pf=$('#csPrice'), sp=CS.pid&&P(CS.pid); if(pf&&sp&&document.activeElement!==pf){ const d=+CS.disc||0;
+      const v=(CFG.pos.discFromMrp&&sp.mrp>0&&d>0&&d<=100)?String(+(sp.mrp*(1-d/100)).toFixed(2)):String(CS.price); if(pf.value!==v) pf.value=v } }
 
   };
   /* ---- moving about the row with the arrow keys ----
@@ -19080,7 +19081,7 @@ function docPaperHtml(doc,f){
    <div class="sb-rule"></div>
    <table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>Qty</th><th>Price</th><th>Amount</th></tr>
    ${doc.lines.map((l,i)=>{const p=P(l.pid)||{};return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${(l.name||p.name||'').toUpperCase()}</td></tr>
-     <tr class="qt"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}
+     <tr class="qt"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}
    </table>
    <div class="sb-rule"></div>
    <div class="sb-tot"><span>Gross Total Rs.</span><b>${money2(gross)}</b></div>
@@ -22721,11 +22722,11 @@ function billHtml(inv,f='a5'){
      <div class="sb-rule"></div>`,
     items:B.showSaving!==false?`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>MRP</th><th>D.Price</th><th>Amount</th></tr>
      ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td></tr>
-      <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l">${l.qty.toFixed(3)}</td><td>${money2(p.mrp)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`}).join('')}
+      <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l">${l.qty.toFixed(3)}</td><td>${money2(p.mrp)}</td><td>${money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`}).join('')}
      </table>`
      :`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>Qty</th><th>Price</th><th>Amount</th></tr>
      ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td></tr>
-      <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`}).join('')}
+      <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`}).join('')}
      </table>`,
     totals:`<div class="sb-rule"></div>
      <div class="sb-tot"><span>Gross Total Rs.</span><i>:</i><b>${money2(gross)}</b></div>
