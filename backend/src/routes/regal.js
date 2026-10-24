@@ -1,5 +1,6 @@
 // API for the Regal front-end (frontend/index.html): the books document store, sign-in, SMS relay.
 import { Router } from 'express';
+import { touchPresence } from '../lib/presence.js';
 import { staffTexts, sendStaffTexts, breakOverTexts } from '../lib/staffTexts.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
@@ -90,6 +91,7 @@ export async function regalAuth(req, _res, next) {
       if (now && now !== p.sid) throw new HttpError(401, SIGNED_ELSEWHERE);
     }
     req.regalUser = p;
+    touchPresence(p);   // signed in and talking to the server: on the Super Admin's who-is-online list
     next();
   } catch (e) {
     if (e.name === 'JsonWebTokenError' || e.name === 'TokenExpiredError') return next(new HttpError(401, 'Session expired'));
