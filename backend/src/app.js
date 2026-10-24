@@ -27,6 +27,7 @@ import supplierRoutes from './routes/supplier.js';
 import fileRoutes from './routes/files.js';
 import printRoutes from './routes/print.js';
 import displayRoutes from './routes/display.js';
+import presenceRoutes from './routes/presence.js';
 import camRoutes from './routes/cams.js';
 import custRoutes from './routes/customer.js';
 import aiRoutes from './routes/ai.js';
@@ -69,6 +70,7 @@ app.use('/api/files', fileRoutes);
 // the printers are on one PC: a bill made anywhere is left here and that PC's helper takes it
 app.use('/api/print', printRoutes);
 app.use('/api/display', displayRoutes);      // the customer's screen at the counter (regalhw.lk/count1)
+app.use('/api/presence', presenceRoutes);    // who is signed in right now (the Super Admin sees them)
 app.use('/api/cams', camRoutes);              // the cameras, seen from anywhere (the camera helper calls out)
 // the Echo in the office: Amazon calls this, and the till reports what the books cannot see
 app.use('/api/alexa', alexaRoutes);
