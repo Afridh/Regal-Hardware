@@ -11467,14 +11467,15 @@ window.addEventListener('keydown',e=>{
 },true);
 window.onhelp=()=>false;   // the older Edge's own help key
 /* The important places, one key each, from anywhere (22 Oct 2026). A page that already uses the key
-   keeps it: F8 is the bill discount on the till and the statement on Customers and Suppliers; F12
+   keeps it: F8 is the bill discount on the till and the statement on Customers (Ctrl+F8 on Suppliers); F12
    prints on Barcode labels. */
 window.addEventListener('keydown',e=>{
   if(!S.user||!S.user.name||document.querySelector('.modal,.lock')) return;
   const k=e.key, v=S.view;
   const to={F8:'customers',F12:'suppliers',F11:'labels'}[k];
   if(!to) return;
-  if(k==='F8'&&['pos','customers','suppliers'].includes(v)) return;
+  if(e.ctrlKey||e.altKey||e.metaKey||e.shiftKey) return;   // Ctrl+F8 is the supplier statement
+  if(k==='F8'&&['pos','customers'].includes(v)) return;   // the bill discount; the customer's statement
   if(k==='F12'&&v==='labels') return;
   e.preventDefault(); e.stopPropagation();
   if(v!==to) go(to);
@@ -24710,7 +24711,7 @@ function supplierPanel(s){
     <div class="cu-acts">
      <button class="btn tape" data-act="supPay" data-id="${s.id}">Pay supplier <i class="kbd">F7</i></button>
      <button class="btn ghost" data-act="newPur" data-id="${s.id}">New purchase <i class="kbd">F6</i></button>
-     <button class="btn ghost" data-act="supStmt" data-id="${s.id}">Statement <i class="kbd">F8</i></button>
+     <button class="btn ghost" data-act="supStmt" data-id="${s.id}">Statement <i class="kbd">Ctrl+F8</i></button>
      <button class="btn ghost" data-act="prn" data-id="${s.id}">Goods back</button>
      <button class="btn ghost" data-act="supDamage" data-id="${s.id}">Damage returns${damageOpen(s.id).length?' · '+damageOpen(s.id).length:''}</button>
      <button class="btn ghost ${supStockOn(s)?'on':''}" data-act="supStock" data-id="${s.id}"
@@ -30375,7 +30376,7 @@ document.addEventListener('keydown',e=>{
     const s=SU(supSel); const onRow=(document.activeElement||{}).classList&&document.activeElement.classList.contains('cu-row');
     if(e.key==='F7'&&s){ e.preventDefault(); supPayModal(s.id); return }
     if(e.key==='F6'&&s){ e.preventDefault(); newPurModal(s.id); return }
-    if(e.key==='F8'&&s){ e.preventDefault(); supplierStatement(s.id); return }
+    if(e.key==='F8'&&(e.ctrlKey||e.metaKey)&&s){ e.preventDefault(); supplierStatement(s.id); return }   // Ctrl+F8: F8 alone goes to Customers
     if((e.ctrlKey||e.metaKey)&&(e.key==='n'||e.key==='N')){ e.preventDefault(); supModal(null,supQ); return }
     if((e.ctrlKey||e.metaKey)&&(e.key==='e'||e.key==='E')&&s){ e.preventDefault(); supModal(s.id); return }
     if(e.key==='Enter'&&onRow&&s){ e.preventDefault(); supPayModal(s.id); return }
