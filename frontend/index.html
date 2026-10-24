@@ -344,6 +344,7 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 
 /* ---- overlays ---- */
 .modal{position:fixed;inset:0;background:rgba(16,22,20,.55);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.brk-p.sw-ask{background:#FEF3C7;color:#92400E}.brk-p.sw-ask button{border:0;border-radius:4px;padding:0 6px;margin-left:3px;cursor:pointer;font:700 11px/16px inherit;color:#fff;background:#15803D}.brk-p.sw-ask .sw-n{background:#9CA3AF}
 .upd-out p{margin:6px 0}.upd-out .upd-ok{color:var(--ok,#1a7f37)}.upd-out .upd-warn{color:var(--warn,#9a6700)}
 .modal .box{background:var(--white);border-radius:var(--r);padding:18px;min-width:420px;max-width:900px;width:92%;
  max-height:90vh;overflow:auto;border-top:4px solid var(--chip-yellow);box-shadow:0 18px 50px rgba(16,22,20,.35)}
@@ -6850,7 +6851,7 @@ function dayFigures(ds,empId){
   out.late = Math.max(0, inM - (shiftStart + grace));
 
   // Breaks processing: 15m Breakfast, 30m Lunch, 10m Evening Tea
-  const breaksTaken = r.breaks || [];
+  const breaksTaken = (r.breaks || []).filter(b => b.id !== 'sw');   // shop work is worked time
   const breakIntervals = breaksTaken.map(b => {
     const def = (shiftSet().breaks || []).find(x => x.id === b.id);
     let allowance = 15;
@@ -7269,13 +7270,16 @@ function breaksOutNow(){
     let from=b.startAt?+b.startAt:null;
     if(!from){ const d=new Date(); d.setHours(0,0,0,0); from=d.getTime()+toMin(b.start)*60000 }
     const mins=Math.max(0,Math.floor((now-from)/60000));
-    out.push({name:(e&&e.name)||r.name||('#'+id),what:b.name||(def&&def.name)||'Break',mins,allow,over:allow&&mins>allow});
+    out.push({name:(e&&e.name)||r.name||('#'+id),what:b.id==='sw'?'Shop work'+(b.what?': '+b.what:''):(b.name||(def&&def.name)||'Break'),mins,allow,over:allow&&mins>allow});
   }
   return out.sort((a,b)=>b.mins-a.mins);
 }
 function breakStripInner(){
-  const L=breaksOutNow(); if(!L.length) return '<span class="brk-t brk-none">☕ No one on break</span>';
-  return `<span class="brk-t">☕ On break</span>${L.map(x=>`<span class="brk-p ${x.over?'over':''}" title="${noteEsc(x.what)} — ${x.mins} min${x.allow?' of '+x.allow:''}"><b>${noteEsc(x.name)}</b> ${noteEsc(x.what)} · ${x.mins}m${x.allow?`<i>/${x.allow}</i>`:''}${x.over?' · '+(x.mins-x.allow)+'m over':''}</span>`).join('')}`;
+  const ds=D(today), days=(S.shift&&S.shift.days&&S.shift.days[ds])||{};
+  const ask=Object.entries(days).filter(([id,r])=>r&&r.shopWork&&r.shopWork.pending&&r.in&&!r.out).map(([id,r])=>{ const e=(S.employees||[]).find(x=>String(x.id)===String(id));
+    return `<span class="brk-p sw-ask" title="Asked at ${r.shopWork.at||''}">⏳ <b>${noteEsc((e&&e.name)||r.name||'#'+id)}</b> asks: shop work · ${noteEsc(r.shopWork.what||'')}${swCanApprove()?` <button class="sw-y" data-act="swYes" data-id="${id}" title="Approve — the break starts">✓</button><button class="sw-n" data-act="swNo" data-id="${id}" title="Not now">✕</button>`:''}</span>` }).join('');
+  const L=breaksOutNow(); if(!L.length) return (ask||'<span class="brk-t brk-none">☕ No one on break</span>');
+  return ask+`<span class="brk-t">☕ On break</span>${L.map(x=>`<span class="brk-p ${x.over?'over':''}" title="${noteEsc(x.what)} — ${x.mins} min${x.allow?' of '+x.allow:''}"><b>${noteEsc(x.name)}</b> ${noteEsc(x.what)} · ${x.mins}m${x.allow?`<i>/${x.allow}</i>`:''}${x.over?' · '+(x.mins-x.allow)+'m over':''}</span>`).join('')}`;
 }
 const breakStrip=()=>`<div class="brk-strip" data-brk>${breakStripInner()}</div>`;
 /* Who is online. Every till that is signed in says "still here" every 30 seconds, with the page it is
@@ -7526,7 +7530,7 @@ function punchOut(id,ds=D(today)){
    says how many may be on a break at once (1 out of the box; 0 for no limit). */
 const breakMax=()=>{ const v=(S.shift&&S.shift.settings||{}).breakMax; return v===undefined||v===null||v===''?1:Math.max(0,Math.round(+v)||0) };
 function onBreakNow(except){ const ds=D(today), day=((S.shift||{}).days||{})[ds]||{}, out=[];
-  for(const e of (S.employees||[])){ if(e.id===except||e.active===false) continue; const r=day[e.id]; const b=r&&(r.breaks||[]).find(x=>!x.end); if(b&&r.in&&!r.out) out.push({e,b}) }
+  for(const e of (S.employees||[])){ if(e.id===except||e.active===false) continue; const r=day[e.id]; const b=r&&(r.breaks||[]).find(x=>!x.end&&x.id!=='sw'); if(b&&r.in&&!r.out) out.push({e,b}) }
   return out }
 function breakAdminAsk(id,mealId,on){
   const e=S.employees.find(x=>x.id===id)||{name:'Staff'}, def=(shiftSet().breaks||[]).find(x=>x.id===mealId)||{name:'a break'};
@@ -7575,6 +7579,54 @@ function endMeal(id){
   refreshAttendanceBoard();
   toast(`${e?e.name:'Staff'} back from ${closedName||'break'}`);
 }
+
+/* Shop work — out on the shop's business (a delivery, the bank, a supplier). It is asked for, and the
+   Super Admin or a Director approves it; only then it starts, like a break. It shows on the till's break
+   line, and its time is worked time, not break time. (24 Oct 2026) */
+const swCanApprove=()=>isSuperUser()||String(S.user&&S.user.role||'')==='Admin';
+function shopWorkAsk(id){
+  const ds=D(today), r=recFor(ds,id), e=S.employees.find(x=>x.id===id);
+  if(!e) return;
+  if(!r||r.status!=='work'||!r.in||r.out) return toast('Check in required before going out on shop work');
+  if(r.shopWork&&r.shopWork.pending) return toast(`${e.name}'s shop work is waiting for approval`);
+  const boss=swCanApprove();
+  const m=modal(`<h2>🛠 Shop work · ${noteEsc(e.name)}</h2>
+   <div class="muted">${boss?'You can approve it yourself — it starts at once.':'The Super Admin or a Director approves it first. Once it is approved, the break starts.'}</div>
+   <div class="f" style="margin-top:10px"><label>What work?</label><input id="swWhat" maxlength="80" autocomplete="off" placeholder="delivery, bank, supplier pick-up…"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="swOk">${boss?'Approve and start':'Ask for approval'}</button></div>`);
+  const inp=m.querySelector('#swWhat'); inp.focus();
+  const go=()=>{ const what=(inp.value||'').trim(); if(!what){ inp.focus(); return toast('Say what the shop work is','warn') }
+    m.remove();
+    if(boss) return shopWorkStart(id,what,S.user.name);
+    setRec(ds,id,{shopWork:{pending:true,what,at:hhmm(nowMin()),askedBy:S.user.name}});
+    notify('approval',`${e.name} asks to go out on shop work — ${what}`,'payroll');
+    refreshAttendanceBoard(); render();
+    toast('Asked — the break starts once the Super Admin or a Director approves it'); };
+  m.querySelector('#swOk').onclick=go; inp.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); go() } };
+}
+function shopWorkStart(id,what,by){
+  const ds=D(today), r=recFor(ds,id), e=S.employees.find(x=>x.id===id);
+  if(!r||r.status!=='work'||!r.in||r.out) return toast('They are not checked in');
+  (r.breaks||[]).forEach(b=>{ if(!b.end) b.end=hhmm(nowMin()) });
+  const brs=(r.breaks||[]).concat([{id:'sw',name:'Shop work',what,start:hhmm(nowMin()),startAt:Date.now(),end:null,approvedBy:by}]);
+  setRec(ds,id,{breaks:brs,shopWork:null});
+  refreshAttendanceBoard(); render();
+  toast(`${e?e.name:'Staff'} is out on shop work — ${what}`);
+}
+function shopWorkDecide(id,yes){
+  if(!swCanApprove()) return toast('Only the Super Admin or a Director can approve shop work','warn');
+  const ds=D(today), r=recFor(ds,id), e=S.employees.find(x=>x.id===id)||{name:'Staff'};
+  if(!r||!r.shopWork||!r.shopWork.pending){ render(); return toast('That request is no longer waiting') }
+  const what=r.shopWork.what;
+  if(yes){ shopWorkStart(id,what,S.user.name); notify('people',`${S.user.name} approved ${e.name}'s shop work — ${what}`,'payroll') }
+  else { setRec(ds,id,{shopWork:null}); refreshAttendanceBoard(); render(); notify('people',`${S.user.name} did not approve ${e.name}'s shop work — ${what}`,'payroll'); toast(`Shop work not approved for ${e.name}`) }
+}
+// the waiting request, on a staff card: with Approve / Not now for the Super Admin and Directors
+const swNotice=(r,id)=>r&&r.shopWork&&r.shopWork.pending?`<div class="bc-notice" style="margin:4px 0 8px"><b>⏳ Shop work asked:</b> ${noteEsc(r.shopWork.what||'')} (${r.shopWork.at||''}) · waiting for approval
+  ${swCanApprove()?`<div style="display:flex;gap:6px;margin-top:6px"><button class="btn sm tape" data-act="swYes" data-id="${id}">✓ Approve</button><button class="btn sm ghost" data-act="swNo" data-id="${id}">✕ Not now</button></div>`:''}</div>`:'';
+const swBtn=(r,id,big)=>{ const p=r&&r.shopWork&&r.shopWork.pending;
+  return `<button class="bc-meal-btn ${p?'taken':''}" ${big?'style="padding:7px 14px;font-size:13px"':''} data-act="shopWork" data-id="${id}" title="Out on the shop's business — the Super Admin or a Director approves it">${p?'⏳ Shop Work asked':'🛠 Shop Work'}</button>` };
 
 function breakStart(id,ds=D(today)){
   const w=breakWindow();
@@ -7821,7 +7873,9 @@ function renderStaffCard({e, st, f, r}){
             <button class="bc-meal-btn ${hasB3?'taken':''}" data-act="mealStart" data-id="${e.id}" data-meal="b3" title="Evening Tea 15:30 – 15:40 (10m)">
               ${hasB3?'✓ Evening Tea':'🫖 Evening Tea (10m)'}
             </button>
+            ${swBtn(r,e.id)}
           </div>
+          ${swNotice(r,e.id)}
         </div>`:''}
 
       ${st==='break'?`
@@ -7985,7 +8039,9 @@ function salesmanPortalToday(me, st, f){
                 <button class="bc-meal-btn ${hasB3?'taken':''}" style="padding:7px 14px;font-size:13px" data-act="mealStart" data-id="${me.id}" data-meal="b3">
                   ${hasB3 ? '✓ Evening Tea Done' : '🫖 Start Evening Tea (10m)'}
                 </button>
+                ${swBtn(r,me.id,true)}
               </div>
+              ${swNotice(r,me.id)}
             </div>`:''}
 
           ${st==='break'?`
@@ -13292,7 +13348,9 @@ function salesmanDashboard(){
               <button class="bc-meal-btn ${openB&&openB.id==='b1'?'active':(hasB1?'taken':'')}" data-act="${openB&&openB.id==='b1'?'mealEnd':'mealStart'}" data-id="${emp.id}" data-meal="b1">${openB&&openB.id==='b1'?'☕ Finish Breakfast':(hasB1?'✓ Breakfast Done':'☕ Breakfast')}</button>
               <button class="bc-meal-btn ${openB&&openB.id==='b2'?'active':(hasB2?'taken':'')}" data-act="${openB&&openB.id==='b2'?'mealEnd':'mealStart'}" data-id="${emp.id}" data-meal="b2">${openB&&openB.id==='b2'?'🍛 Finish Lunch':(hasB2?'✓ Lunch Done':'🍛 Lunch')}</button>
               <button class="bc-meal-btn ${openB&&openB.id==='b3'?'active':(hasB3?'taken':'')}" data-act="${openB&&openB.id==='b3'?'mealEnd':'mealStart'}" data-id="${emp.id}" data-meal="b3">${openB&&openB.id==='b3'?'🫖 Finish Tea':(hasB3?'✓ Tea Done':'🫖 Evening Tea')}</button>
+              ${openB&&openB.id==='sw'?`<button class="bc-meal-btn active" data-act="mealEnd" data-id="${emp.id}">🛠 Back from Shop Work</button>`:swBtn(empRec,emp.id)}
             </div>
+            ${swNotice(empRec,emp.id)}
           </div>`:''}
 
         ${st==='leave_pending'?`
@@ -30174,6 +30232,9 @@ document.addEventListener('click',e=>{
     leaveShop:()=>leaveShopModal(+a.dataset.id),
     approveLeave:()=>approveEarlyLeave(+a.dataset.id, true),
     rejectLeave:()=>approveEarlyLeave(+a.dataset.id, false),
+    shopWork:()=>shopWorkAsk(+a.dataset.id),
+    swYes:()=>shopWorkDecide(+a.dataset.id, true),
+    swNo:()=>shopWorkDecide(+a.dataset.id, false),
     confirmAbsent:()=>confirmAbsentModal(+a.dataset.id),
     undoAbsent:()=>undoAbsentModal(+a.dataset.id),
     toggleDetails:()=>{
