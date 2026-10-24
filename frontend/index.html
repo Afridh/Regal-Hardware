@@ -16458,8 +16458,8 @@ function openItemAdd(){
     if(!name){ toast('Type what to call it'); nm.focus(); return }
     if(!(price>0)){ toast('Enter a price above zero'); pr.focus(); pr.select&&pr.select(); return }
     if(!qty){ toast('Enter a quantity, or -1 to take one back'); qt.focus(); qt.select&&qt.select(); return }
-    S.pos.lines.push({pid:OPEN_PID,name,qty,price,disc:0,open:true,auto:false});
-    S.pos.sel=S.pos.lines.length-1; m.remove(); render();
+    S.pos.lines.unshift({pid:OPEN_PID,name,qty,price,disc:0,open:true,auto:false});   // on top, as every newest line
+    S.pos.sel=0; m.remove(); render();
     toast(`${name} — ${fq(qty)} at ${money2(price)}`);
     const f=$('#csQ')||$('#q')||$('#qq')||$('#phQ'); if(f) f.focus();
   };
@@ -17677,13 +17677,16 @@ function csCommit(){
       const l=S.pos.lines[same]; l.qty=+(l.qty+qty).toFixed(3);
       l.disc=+((l.disc||0)+disc).toFixed(2);          // same price and same % means the same discount per piece, so the rupees simply add up
       if(by) l.belowCost=by; l.auto=Math.abs(price-priceFor(p,l.qty))<0.005;
-      S.pos.sel=same; toast(`${p.name} — now ${fq(l.qty)} ${p.unit} on the bill`);
+      // the line just added to comes up to the top, where the newest line sits
+      if(same>0){ S.pos.lines.splice(same,1); S.pos.lines.unshift(l) }
+      S.pos.sel=0; toast(`${p.name} — now ${fq(l.qty)} ${p.unit} on the bill`);
     } else {
       const typed=(CS.name||'').trim();
-      S.pos.lines.push({pid:p.id,qty,price,disc,discPct:pctGiven||undefined,warranty:CS.warranty,serials:serials||undefined,
+      // the newest line goes on top of the bill (24 Oct 2026, as on the old till) — the printed bill follows the screen
+      S.pos.lines.unshift({pid:p.id,qty,price,disc,discPct:pctGiven||undefined,warranty:CS.warranty,serials:serials||undefined,
         ...(typed&&typed.toUpperCase()!==p.name.toUpperCase()?{name:typed}:{}),
         auto:Math.abs(price-priceFor(p,qty))<0.005,...(by?{belowCost:by}:{})});
-      S.pos.sel=S.pos.lines.length-1;
+      S.pos.sel=0;
     }
     CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null,name:null};
     if(qty>0&&!CFG.stock.allowNegative&&CFG.stock.track!==false){ const on=S.pos.lines.filter(l=>l.pid===p.id).reduce((a,l)=>a+l.qty,0);
