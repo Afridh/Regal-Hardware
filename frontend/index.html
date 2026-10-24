@@ -12583,8 +12583,22 @@ function renderNow(){
   _lastRenderView = S.view;
   const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
-    mn.innerHTML = r();
+    try{ mn.innerHTML = r() }
+    catch(err){
+      /* a page that cannot be drawn used to leave the screen blank, with no way to tell why */
+      console.error('Could not draw '+S.view, err);
+      try{ (window._drawErrs=window._drawErrs||[]).unshift({view:S.view,at:new Date().toISOString(),msg:String(err&&err.message||err),stack:String(err&&err.stack||'').split('\n').slice(0,4).join(' | ')}) }catch(e){}
+      mn.innerHTML=`<div class="card" style="max-width:720px;margin:40px auto;padding:22px 24px;border-left:4px solid var(--chip-rust)">
+        <h2 style="margin-top:0">This page could not be shown</h2>
+        <div class="muted">Nothing is lost — the books are safe. Please send a picture of this box to the person who looks after the system.</div>
+        <pre style="white-space:pre-wrap;font-size:12px;background:var(--panel);border-radius:8px;padding:10px;margin:12px 0">${noteEsc(S.view+': '+String(err&&err.message||err))}\n${noteEsc(String(err&&err.stack||'').split('\n').slice(1,4).join('\n'))}</pre>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn tape" onclick="location.reload()">Reload</button>
+          <button class="btn ghost" onclick="go('pos')">Go to the till</button><button class="btn ghost" onclick="go('updates')">What is new</button></div></div>`;
+    }
     if(keepMainScroll && mn.scrollTop !== keepMainScroll) mn.scrollTop = keepMainScroll;
+  } else if(mn && S.user && S.view && typeof r !== 'function' && S.view!=='dashboard'){
+    /* a page this version does not know (left over from another till, or an older one): the dashboard instead of nothing */
+    S.view='dashboard'; return render();
   }
   if(typeof ordPopsSync==='function') ordPopsSync();
   document.body.classList.toggle('csfull',tillNow()==='classic'&&S.view==='pos');
