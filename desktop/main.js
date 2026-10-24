@@ -94,7 +94,7 @@ function open() {
     width: 1366, height: 860, minWidth: 900, minHeight: 600, show: false,
     title: 'Regal POS', backgroundColor: '#16070a',
     icon: path.join(__dirname, 'icon.png'),
-    webPreferences: { contextIsolation: true, spellcheck: false, backgroundThrottling: false }
+    webPreferences: { contextIsolation: true, spellcheck: false, backgroundThrottling: false, preload: path.join(__dirname, 'app-preload.js') }
   });
   win.once('ready-to-show', () => { win.maximize(); win.show(); });
   win.loadURL(START);
@@ -181,20 +181,35 @@ app.whenReady().then(() => {
    background; when it is ready the program asks — nothing restarts in the middle of a bill. The till
    itself (regalhw.lk/pos) updates on its own as before. */
 function updates() {
+  // the till's "Check for updates" button: { state: 'latest' | 'downloading' | 'ready' | 'error' | 'off', version, error }
+  let checkNow = async () => ({ state: 'off', version: app.getVersion() });
+  ipcMain.handle('app:checkUpdate', (e) => String(e.senderFrame && e.senderFrame.url || '').startsWith(SHOP) ? checkNow() : { state: 'off' });
   if (!app.isPackaged || process.env.REGAL_PROFILE) return;
   let autoUpdater;
   try { ({ autoUpdater } = require('electron-updater')); } catch { return; }
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
-  let asked = false;
-  autoUpdater.on('update-downloaded', async (info) => {
-    updStatus = 'update ' + info.version + ' ready — restart to use it'; setTitle();
-    if (asked || !win) return; asked = true;
+  let asked = false, ready = null;
+  const askRestart = async (info) => {
     const r = await dialog.showMessageBox(win, { type: 'info', buttons: ['Restart and update', 'Later'], defaultId: 0, cancelId: 1, title: 'Regal POS',
       message: 'A new version of Regal POS is ready (' + info.version + ').',
       detail: 'Restart now to use it — it takes a few seconds, and nothing on the till is lost. Choose Later and it is put in the next time Regal POS is closed.' });
     if (r.response === 0) { win.__closing = true; setImmediate(() => autoUpdater.quitAndInstall(false, true)); }
+  };
+  autoUpdater.on('update-downloaded', async (info) => {
+    ready = info;
+    updStatus = 'update ' + info.version + ' ready — restart to use it'; setTitle();
+    if (asked || !win) return; asked = true;
+    askRestart(info);
   });
+  checkNow = async () => {
+    if (ready) { askRestart(ready); return { state: 'ready', version: ready.version }; }   // fetched already: ask again
+    try {
+      const r = await autoUpdater.checkForUpdates();
+      if (r && r.isUpdateAvailable) { asked = false; return { state: 'downloading', version: r.updateInfo.version }; }   // it asks to restart when it is in
+      return { state: 'latest', version: app.getVersion() };
+    } catch (err) { return { state: 'error', version: app.getVersion(), error: String(err && err.message || err).slice(0, 200) }; }
+  };
   autoUpdater.on('checking-for-update', () => { updStatus = 'checking for updates'; setTitle(); });
   autoUpdater.on('update-not-available', () => { updStatus = 'up to date'; setTitle(); });
   autoUpdater.on('update-available', (i) => { updStatus = 'downloading update ' + i.version + '…'; setTitle(); });

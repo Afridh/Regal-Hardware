@@ -524,6 +524,8 @@
     localKeys: LOCAL_KEYS,
     token: function () { return token; },
     rev: function () { return rev; },
+    // the Check for updates button: is the till page on the server newer than this one?
+    newerPage: async function () { var j = await call("GET", "/books/" + KEY + "/rev"); if (j.__status !== 200) return null; if (!build) build = j.build || ""; return !!(j.build && j.build !== build); },
     unsynced: function () { return unsynced; },
     lastSync: function () { return lastSyncAt; },
     offline: function () { return !!window.workingOffline; },

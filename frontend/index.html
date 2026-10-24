@@ -344,6 +344,7 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 
 /* ---- overlays ---- */
 .modal{position:fixed;inset:0;background:rgba(16,22,20,.55);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.upd-out p{margin:6px 0}.upd-out .upd-ok{color:var(--ok,#1a7f37)}.upd-out .upd-warn{color:var(--warn,#9a6700)}
 .modal .box{background:var(--white);border-radius:var(--r);padding:18px;min-width:420px;max-width:900px;width:92%;
  max-height:90vh;overflow:auto;border-top:4px solid var(--chip-yellow);box-shadow:0 18px 50px rgba(16,22,20,.35)}
 /* notices: top centre, one under another, each with its colour and a bar that runs down as it fades */
@@ -4043,6 +4044,7 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
  header .sub,header .meta{display:none}
  header .brand{font-size:15px}
  #logoutBtn{padding:6px 10px;font-size:12px;margin-left:auto}
+ #updBtn{display:none}
 
  /* the menu is always a strip on a phone, whatever the person chose */
  nav,body.navmini nav,body.navtop nav{display:flex;overflow-x:auto;overflow-y:hidden;padding:0 6px;gap:2px;
@@ -4587,6 +4589,7 @@ tr.cb-on td{background:#FBE4E6}
   <span class="meta" id="savedAt" style="font-size:11px;opacity:.7"></span>
   <button class="burger" id="burger" data-act="drawer" title="Menu">☰</button>
   <div id="bell" class="bellwrap"></div>
+  <button class="btn ghost" id="updBtn" title="Look for a new version now">Check for updates</button>
   <button class="btn ghost" id="logoutBtn">Sign out</button>
 </header>
 <nav id="nav"></nav>
@@ -12327,6 +12330,32 @@ const ICONS={
   reports:'M4 20V6M9 20V10M14 20V4M19 20v-8M3 20h18',
   settings:'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7 1.1V21a2 2 0 11-4 0v-.1A1.6 1.6 0 006.6 19.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.6 1.6 0 003 15H3a2 2 0 110-4h.1A1.6 1.6 0 004.6 9.4l-.1-.1a2 2 0 112.8-2.8l.1.1A1.6 1.6 0 009 6.6V6a2 2 0 114 0v.1a1.6 1.6 0 002.7 1.1l.1-.1a2 2 0 112.8 2.8l-.1.1A1.6 1.6 0 0021 12v0a2 2 0 110 4h-.1z'
 };
+/* Check for updates: asks the Windows program whether a new Regal POS is out (it fetches it and asks to
+   restart), and the server whether the till page is newer than the one open (it loads it when no bill is
+   open). An older program without the question says so; in a browser only the page is looked at. */
+async function checkForUpdates(){
+  if(window.isDemo) return toast('This is the demo till — it is always the newest version');
+  const m=modal(`<h2>Check for updates</h2><div class="upd-out"><p class="muted">Checking…</p></div>
+    <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" data-act="closeModal">OK</button></div>`);
+  const inApp=/regal-pos\//i.test(navigator.userAgent||''), mine=(navigator.userAgent.match(/regal-pos\/([\d.]+)/i)||[])[1]||'';
+  const out=[];
+  if(inApp){
+    let r=null; if(window.regalApp&&regalApp.checkUpdate){ try{ r=await regalApp.checkUpdate() }catch(e){} }
+    if(!r) out.push(['warn',`Regal POS ${mine} cannot check by itself — it still updates on its own when a new version is out.`]);
+    else if(r.state==='latest') out.push(['ok',`Regal POS ${noteEsc(r.version||mine)} is the latest version.`]);
+    else if(r.state==='downloading') out.push(['ok',`A new version ${noteEsc(r.version)} is downloading — Regal POS asks to restart when it is ready.`]);
+    else if(r.state==='ready') out.push(['ok',`Version ${noteEsc(r.version)} is ready — choose Restart and update.`]);
+    else if(r.state==='error') out.push(['warn','Could not reach GitHub to check for a new Regal POS — is the internet on?']);
+    else out.push(['warn',`Regal POS ${mine} — updates are off on this copy.`]);
+  }
+  let page=null; try{ page=window.regalBridge&&regalBridge.newerPage?await regalBridge.newerPage():null }catch(e){}
+  const busy=!!(S.pos&&S.pos.lines&&S.pos.lines.length);
+  if(page===true&&!busy){ out.push(['ok','A newer till page is on the server — loading it now.']); setTimeout(()=>location.reload(),1500) }
+  else if(page===true) out.push(['warn','A newer till page is on the server — it loads when this bill is done, or press F5.']);
+  else if(page===false) out.push(['ok','The till page is up to date.']);
+  else out.push(['warn','Could not reach the server to check the till page.']);
+  const box=m.querySelector('.upd-out'); if(box) box.innerHTML=out.map(([k,t])=>`<p class="upd-${k}">${k==='ok'?'✓':'!'} ${t}</p>`).join('');
+}
 /* The till's Menu: every page this person may open, grouped as in the side menu, in a window over the
    till. It used to jump to the dashboard on a wide screen and slide in a side menu on a narrow one —
    which on a screen scaled up by Windows came to nothing at all. */
@@ -12341,10 +12370,11 @@ function tillMenu(){
      <button class="btn ghost" data-act="closeModal">✕</button></div>
     <div class="tm-grid">${groups.filter(g=>g.items.length).map(g=>`<div class="tm-grp"><b>${noteEsc(g.name||'')}</b>
       ${g.items.map(([k,l,key])=>`<button class="tm-it" data-tm="${k}">${icon(k)}<span>${noteEsc(l)}</span>${key?`<i>${key}</i>`:''}</button>`).join('')}</div>`).join('')}</div>
-    <div class="tm-ft"><button class="btn ghost" data-act="closeModal">Back to the till</button><button class="btn ghost" data-tm="__signout">Sign out</button></div>`);
+    <div class="tm-ft"><button class="btn ghost" data-act="closeModal">Back to the till</button><button class="btn ghost" data-tm="__update">Check for updates</button><button class="btn ghost" data-tm="__signout">Sign out</button></div>`);
   m.querySelector('.box').classList.add('tm-box');
   m.querySelectorAll('[data-tm]').forEach(b=>b.onclick=()=>{ m.remove(); const v=b.dataset.tm;
     if(v==='__signout') return signOut();
+    if(v==='__update') return checkForUpdates();
     document.body.classList.remove('csfull'); go(v) });
 }
 const icon=(k)=>`<svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.7"
@@ -30449,6 +30479,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='+'&&S.pos.sel>=0){e.preventDefault();const l=S.pos.lines[S.pos.sel];const onBill=S.pos.lines.filter(x=>x.pid===l.pid).reduce((a,x)=>a+x.qty,0);
     if(onBill+1>P(l.pid).stock+1e-9) toast(`Only ${fq(P(l.pid).stock)} ${P(l.pid).unit} in stock`); l.qty++; if(l.auto)l.price=priceFor(P(l.pid),l.qty); render()} if(e.key==='-'&&S.pos.sel>=0){e.preventDefault();const l=S.pos.lines[S.pos.sel];l.qty--;if(l.qty<=0)S.pos.lines.splice(S.pos.sel,1);render()} if(e.key==='Delete'&&S.pos.sel>=0){S.pos.lines.splice(S.pos.sel,1);S.pos.sel=-1;render()} });
 $('#logoutBtn').onclick=signOut;
+$('#updBtn').onclick=()=>checkForUpdates();
 /* the dim behind the drawer on a phone & click outside to close */
 (function(){
   const bg=document.createElement('div'); bg.className='scrim'; bg.id='scrim';
