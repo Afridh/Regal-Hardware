@@ -21,6 +21,8 @@ const SHOP = process.env.REGAL_SHOP || 'https://regalhw.lk';
 const START = SHOP + '/pos';
 const SHOP_HOST = new URL(SHOP).host;
 
+// the till knows it is inside the program by this (Electron no longer puts the app's name in it by itself)
+app.userAgentFallback = app.userAgentFallback + ' regal-pos/' + app.getVersion();
 if (process.env.REGAL_PROFILE) app.setPath('userData', path.resolve(process.env.REGAL_PROFILE));   // for testing only
 if (!app.requestSingleInstanceLock()) { app.quit(); return; }
 app.setAppUserModelId('lk.regalhw.pos');
@@ -84,7 +86,8 @@ function wire() {
 }
 
 /* ---------------- the window ---------------- */
-let win = null;
+let win = null, pageStatus = 'starting…', updStatus = '';
+function setTitle() { if (win && !win.isDestroyed()) win.setTitle(['Regal POS ' + app.getVersion(), pageStatus, updStatus].filter(Boolean).join('   ·   ')); }
 function open() {
   Menu.setApplicationMenu(null);                          // no browser menus, no F1 help page
   win = new BrowserWindow({
@@ -95,7 +98,9 @@ function open() {
   });
   win.once('ready-to-show', () => { win.maximize(); win.show(); });
   win.loadURL(START);
-  win.on('page-title-updated', (e) => { e.preventDefault(); });
+  // the title bar: the version, how the till stands (from the page: "RPOS|● Online · synced 08:31") and any update
+  win.on('page-title-updated', (e, title) => { e.preventDefault(); if (String(title).startsWith('RPOS|')) { pageStatus = String(title).slice(5); setTitle(); } });
+  setTitle();
 
   // keys a browser menu would have given
   win.webContents.on('before-input-event', (e, i) => {
@@ -106,7 +111,7 @@ function open() {
     else if (i.control && (k === '=' || k === '+')) { e.preventDefault(); win.webContents.setZoomLevel(win.webContents.getZoomLevel() + 0.5); }
     else if (i.control && k === '-') { e.preventDefault(); win.webContents.setZoomLevel(win.webContents.getZoomLevel() - 0.5); }
     else if (i.control && k === '0') { e.preventDefault(); win.webContents.setZoomLevel(0); }
-    else if (k === 'f11') { e.preventDefault(); win.setFullScreen(!win.isFullScreen()); }
+    else if (k === 'f11' && i.shift) { e.preventDefault(); win.setFullScreen(!win.isFullScreen()); }   // F11 alone is the till's (Barcode labels)
     else if (i.control && i.shift && k === 'p') { e.preventDefault(); printing.openPrintersWindow(win); }
   });
 
@@ -183,13 +188,18 @@ function updates() {
   autoUpdater.autoInstallOnAppQuit = true;
   let asked = false;
   autoUpdater.on('update-downloaded', async (info) => {
+    updStatus = 'update ' + info.version + ' ready — restart to use it'; setTitle();
     if (asked || !win) return; asked = true;
     const r = await dialog.showMessageBox(win, { type: 'info', buttons: ['Restart and update', 'Later'], defaultId: 0, cancelId: 1, title: 'Regal POS',
       message: 'A new version of Regal POS is ready (' + info.version + ').',
       detail: 'Restart now to use it — it takes a few seconds, and nothing on the till is lost. Choose Later and it is put in the next time Regal POS is closed.' });
     if (r.response === 0) { win.__closing = true; setImmediate(() => autoUpdater.quitAndInstall(false, true)); }
   });
-  autoUpdater.on('error', () => { });                     // no internet, or GitHub not answering: try again later
+  autoUpdater.on('checking-for-update', () => { updStatus = 'checking for updates'; setTitle(); });
+  autoUpdater.on('update-not-available', () => { updStatus = 'up to date'; setTitle(); });
+  autoUpdater.on('update-available', (i) => { updStatus = 'downloading update ' + i.version + '…'; setTitle(); });
+  autoUpdater.on('download-progress', (p) => { updStatus = 'downloading update ' + Math.round(p.percent || 0) + '%'; setTitle(); });
+  autoUpdater.on('error', () => { updStatus = ''; setTitle(); });                     // no internet, or GitHub not answering: try again later
   const look = () => autoUpdater.checkForUpdates().catch(() => { });
   setTimeout(look, 15000);
   setInterval(look, 30 * 60 * 1000);

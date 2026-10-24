@@ -62,7 +62,7 @@
      Kept in IndexedDB, which has room for the whole shop (localStorage does not). With these, a till that
      starts with no internet opens the real books, bills, and puts its work together with the other tills'
      when the internet is back — instead of refusing to save, or worse. */
-  var unsynced = false, lastRetryAt = 0;
+  var unsynced = false, lastRetryAt = 0, lastSyncAt = 0;   // lastSyncAt: the books last saved to, or brought from, the shop
   var idb = (function () {
     var dbp = null;
     function db() {
@@ -251,7 +251,7 @@
     if (j.__status !== 200) { window.booksUnreadable = true; return false; }
     window.booksUnreadable = false;
     if (j.data) {
-      rev = j.rev; base = strip(j.data); keepBase(); applyRemote(j.data);
+      rev = j.rev; base = strip(j.data); keepBase(); lastSyncAt = Date.now(); applyRemote(j.data);
       if (!quiet) say('Books picked up from the server');
       // orders from the shop site ride in with the books; saving is what hands them to the shop for good
       if (j.inbox > 0) { say(j.inbox === 1 ? 'A new order from the website' : j.inbox + ' new orders from the website'); if (typeof window.persist === 'function') window.persist(true); }
@@ -313,7 +313,7 @@
         window._allowWipeOnce = 0;
         var j = await call('PUT', '/books/' + KEY, { data: doc, rev: rev });
         if (j.__status === 200) {
-          rev = j.rev; lastPushAt = Date.now(); base = doc; keepBase(); setUnsynced(false);
+          rev = j.rev; lastPushAt = Date.now(); lastSyncAt = Date.now(); base = doc; keepBase(); setUnsynced(false);
           if (offlineSince) { offlineSince = 0; window.workingOffline = false; say('Back online — the work done on this PC is with the shop now'); }
           if (j.shiftDays) takeShiftDays(j.shiftDays);
           badge('saved ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' · shared');
@@ -329,7 +329,7 @@
             merged.at = new Date().toISOString();
             var r2 = await call('PUT', '/books/' + KEY, { data: merged, rev: srvRev });
             if (r2.__status === 200) {
-              rev = r2.rev; base = merged; keepBase(); setUnsynced(false); lastPushAt = Date.now();
+              rev = r2.rev; base = merged; keepBase(); setUnsynced(false); lastPushAt = Date.now(); lastSyncAt = Date.now();
               if (offlineSince) { offlineSince = 0; window.workingOffline = false; say('Back online — the work done on this PC is put together with the other tills\' and saved'); }
               // work done here while this was saving is laid over the merged books, not lost
               var show = merged;
@@ -463,6 +463,7 @@
     renew();                                              // keeps the sign-in alive while the till is in use
     var j = await call('GET', '/books/' + KEY + '/rev');
     if (j.__status !== 200) return;
+    if (j.rev === rev && !unsynced) lastSyncAt = Date.now();
     // the server answers again and this PC has work it never took: send it now (merged with whatever the
     // other tills did meanwhile), before pulling anything over it
     if (unsynced && !window.booksUnreadable) {
@@ -524,6 +525,7 @@
     token: function () { return token; },
     rev: function () { return rev; },
     unsynced: function () { return unsynced; },
+    lastSync: function () { return lastSyncAt; },
     offline: function () { return !!window.workingOffline; },
     login: login, pinWho: pinWho, pinLogin: pinLogin, otpSend: otpSend, otpLogin: otpLogin, logout: logout, pull: pull, sms: sms, serverUsers: serverUsers,
     setTerminal: function (t) { localStorage.setItem(TERMINAL_KEY, t); },

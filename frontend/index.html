@@ -11401,6 +11401,27 @@ window.addEventListener('keydown',e=>{
   if(box){ box.focus(); if(box.select) box.select() }
 },true);
 window.onhelp=()=>false;   // the older Edge's own help key
+/* The important places, one key each, from anywhere (22 Oct 2026). A page that already uses the key
+   keeps it: F8 is the bill discount on the till and the statement on Customers and Suppliers; F12
+   prints on Barcode labels. */
+window.addEventListener('keydown',e=>{
+  if(!S.user||!S.user.name||document.querySelector('.modal,.lock')) return;
+  const k=e.key, v=S.view;
+  const to={F8:'customers',F12:'suppliers',F11:'labels'}[k];
+  if(!to) return;
+  if(k==='F8'&&['pos','customers','suppliers'].includes(v)) return;
+  if(k==='F12'&&v==='labels') return;
+  e.preventDefault(); e.stopPropagation();
+  if(v!==to) go(to);
+},true);
+/* Inside the Windows app, the title bar says how things stand: online or working from this PC, when the
+   books were last in step with the shop. The app adds its version and any update waiting. */
+if(/regal-pos\//i.test(navigator.userAgent||'')) setInterval(()=>{ try{
+  const off=!navigator.onLine||window.workingOffline||(window.regalBridge&&regalBridge.unsynced&&regalBridge.unsynced());
+  const t=window.regalBridge&&regalBridge.lastSync&&regalBridge.lastSync();
+  const at=t?new Date(t).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'';
+  document.title='RPOS|'+(off?'○ Offline — working from this PC'+(at?' · last synced '+at:''):'● Online'+(at?' · synced '+at:''))+(S.user&&S.user.name?' · '+S.user.name:'');
+}catch(e){} },5000);
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape'||e.defaultPrevented) return;
   if(document.querySelector('.modal.askbox')) return;          // the writing window closes itself
@@ -12047,12 +12068,12 @@ const $=(s)=>document.querySelector(s);
    role's sections — SECTIONS below — and does not depend on these headings.) */
 const views=[
  ['updates','What is new'],['actions','Action centre'],
- ['grp','Sell'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills','F9'],['receipts','Take a payment','F7'],['docs','Quotes & delivery notes'],['counter','Open & close'],['cashup','Day book'],
- ['grp','Customers'],['customers','Customers'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],
- ['grp','Buying'],['suppliers','Suppliers'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Payment requests'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
- ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels'],
+ ['grp','Sell'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills'],['receipts','Take a payment','F7'],['docs','Quotes & delivery notes'],['counter','Open & close'],['cashup','Day book'],
+ ['grp','Customers'],['customers','Customers','F8'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],
+ ['grp','Buying'],['suppliers','Suppliers','F12'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Payment requests'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
+ ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels','F11'],
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['chqbooks','Cheque books'],['petty','Petty cash'],['expenses','Expenses'],['accounting','Accounting'],
- ['grp','People'],['payroll','Attendance & pay'],['leave','Leave'],['approvals','Approvals'],['users','Users & permissions'],
+ ['grp','People'],['payroll','Attendance & pay','F9'],['leave','Leave'],['approvals','Approvals'],['users','Users & permissions'],
  ['grp','Online'],['site','Online store'],['weborders','Online orders'],['webproducts','Online products'],['social','Social'],
  ['grp','Reports'],['dashboard','Dashboard','F2'],['everything','Everything'],['reports','Reports'],['ai','AI support'],['trail','The trail'],['syslog','System log'],
  ['grp','Shop setup'],['messages','Messages'],['printq','Printing'],['cameras','Cameras'],['billdesign','Design the bill'],['settings','Settings']];
@@ -30288,7 +30309,7 @@ document.addEventListener('keydown',e=>{
     else go('pos');
     return;
   }
-  if(e.key==='F9'){e.preventDefault();go('bills')}
+  if(e.key==='F9'){e.preventDefault();go('payroll')}   // the shift: attendance and breaks
   if((e.ctrlKey||e.metaKey)&&(e.key==='p'||e.key==='P')&&S.view==='pos'&&S.pos.lines.length&&!document.querySelector('.modal')){ e.preventDefault(); proofBill(); return }
   if(S.view==='pos'&&pref('till')==='classic'&&!document.querySelector('.modal')){
     const typing=/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName);
