@@ -12644,7 +12644,22 @@ function billSaved(inv){
   const ms=+CFG.done.noticeMs||3200;
   setTimeout(()=>el.classList.add('out'),ms); setTimeout(()=>el.remove(),ms+500);
 }
-function modal(html){ const m=document.createElement('div');m.className='modal';m.innerHTML=`<div class="box">${html}</div>`;m.addEventListener('click',e=>{if(e.target===m)m.remove()});document.body.appendChild(m);const f=m.querySelector('input,select,button');f&&f.focus();return m }
+/* When a window closes — Esc, Cancel, a click outside, or its own button — the cursor goes back where it
+   was before it opened (on the till: the box or the bill line it was on), not onto the bare page, where
+   the next key did nothing and the next Esc asked to clear the bill. (26 Oct 2026) */
+let modalBack=null;
+function focusBack(){
+  if(document.querySelector('.modal,.veil')) return;
+  const a=document.activeElement; if(a&&a!==document.body&&a!==document.documentElement&&a.isConnected) return;   // the window's own button already moved it
+  let t=modalBack&&modalBack.isConnected&&!modalBack.disabled&&modalBack.offsetParent!==null?modalBack:null;
+  if(!t&&S.view==='pos'){ t=(CS&&CS.focus==='list'&&S.pos.lines.length&&document.querySelector('.till-lines'))||(CS&&CS.pid&&$('#csQty'))||$('#csQ') }
+  modalBack=null;
+  if(t){ try{ t.focus(); if(t.select&&/^(INPUT)$/.test(t.tagName)&&t.type!=='checkbox') t.select() }catch(e){} }
+}
+new MutationObserver(ms=>{ if(ms.some(m=>[...m.removedNodes].some(n=>n.nodeType===1&&n.classList&&(n.classList.contains('modal')||n.classList.contains('veil'))))) setTimeout(focusBack,0) })
+  .observe(document.body,{childList:true});
+function modal(html){ if(!document.querySelector('.modal')){ const a=document.activeElement; modalBack=a&&a!==document.body?a:null }
+  const m=document.createElement('div');m.className='modal';m.innerHTML=`<div class="box">${html}</div>`;m.addEventListener('click',e=>{if(e.target===m)m.remove()});document.body.appendChild(m);const f=m.querySelector('input,select,button');f&&f.focus();return m }
 function closeModals(){document.querySelectorAll('.modal').forEach(m=>m.remove())}
 /* ============================== MOTION ==============================
    What moves, and when. The rules it works to are in the stylesheet; this decides which
@@ -30505,7 +30520,7 @@ document.addEventListener('keydown',e=>{
     if(document.getElementById('poModal')||document.getElementById('ordModal')) return;   // the order popups close themselves
     const hadModal=!!document.querySelector('.modal'); closeModals();
     // on the shop's own screen, Esc with nothing open clears the bill, as CLEAR does
-    if(!hadModal&&S.view==='pos'&&pref('till')!=='quick'&&!/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName)) csClearAsk();
+    if(!hadModal&&!e.defaultPrevented&&S.view==='pos'&&pref('till')!=='quick'&&!/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName)) csClearAsk();
     return}
   // the customers page: F7 takes a payment from the one on the screen, F6 starts a bill for them,
   // F8 prints their statement, Ctrl+N adds a customer, Ctrl+E edits; Enter on a list row takes a payment
