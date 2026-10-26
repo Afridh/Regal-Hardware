@@ -4576,7 +4576,7 @@ tr.cb-on td{background:#FBE4E6}
   opacity:.55;margin:12px 0 4px}
 .bd-reg:first-child{margin-top:0}
 </style>
-<link rel="stylesheet" href="bill-print.css?v=19">
+<link rel="stylesheet" href="bill-print.css?v=20">
 <link rel="stylesheet" href="pos-theme.css?v=1">
 <script src="pos-theme.js?v=1" defer></script>
 </head>
@@ -5679,7 +5679,7 @@ const JOB_OPEN=['in','check','informed','sent','quote','fixing','declined','back
 const jobTagFor=(no)=>'JOB'+String(no).replace(/[^0-9]/g,'').padStart(6,'0');
 const jobPhone=(j)=>j.phone||(j.customerId&&C(j.customerId)?C(j.customerId).phone||'':'');
 const jobDays=(d)=>{ if(!d) return 0; const t=new Date(d); return isNaN(t)?0:Math.max(0,Math.floor((new Date(D(today))-t)/864e5)) };
-const warrantyMonthsOf=(w)=>{ const m=/(\d+)\s*(YEAR|MONTH)/i.exec(String(w||'')); return m?(+m[1])*(/YEAR/i.test(m[2])?12:1):0 };
+const warrantyMonthsOf=(w)=>{ if(/LIFE/i.test(String(w||''))) return 1200; const m=/(\d+)\s*(YEAR|MONTH)/i.exec(String(w||'')); return m?(+m[1])*(/YEAR/i.test(m[2])?12:1):0 };
 // the counter's choice when it made one (With / Without warranty), else what the dates say
 const jobUnderWarranty=(j)=>j.warranty===true||j.warranty===false?j.warranty:!!(j.warrantyTo&&j.warrantyTo>=j.date);
 /* What it was sold on: a sold serial number, or a bill number. Gives the item, the bill, the date, the
@@ -17451,11 +17451,11 @@ function posClassic(){
    <div class="till-entry ${sel?'live':''}">
     <label class="f-code"><span>SCAN / INPUT CODE</span>
      <input id="csQ" value="${CS.q}" placeholder="code, short code or barcode" autocomplete="off"></label>
-    <div class="f-item"><span>ITEM</span>
+    <div class="f-item"><span>ITEM <i title="Press E to change the name on this bill">E edit name</i></span>
      <div class="till-item ${sel?'has':''} ${CS.name?'renamed':''}">${sel
        // the name is typed over when the goods need saying differently on the bill — a colour code
        // mixed into a paint base, a size. The stock and the codes are on the match list above.
-       ? `<input id="csName" value="${String(CS.name||sel.name).toUpperCase().replace(/"/g,'&quot;')}" maxlength="90" spellcheck="false" autocomplete="off">${(CS.last||sel.serialised)?`<em>${[CS.last?`<b class="lastp">last time ${money2(CS.last.price)} on ${CS.last.no}</b>`:'',sel.serialised?'serial asked on Enter':''].filter(Boolean).join(' · ')}</em>`:''}`
+       ? `<input id="csName" value="${String(CS.name||sel.name).toUpperCase().replace(/"/g,'&quot;')}" maxlength="90" spellcheck="false" autocomplete="off" ${CS.nameEdit?'':'readonly title="Press E to change the name on this bill"'}>${(CS.last||sel.serialised)?`<em>${[CS.last?`<b class="lastp">last time ${money2(CS.last.price)} on ${CS.last.no}</b>`:'',sel.serialised?'serial asked on Enter':''].filter(Boolean).join(' · ')}</em>`:''}`
        : '<i>scan or key a code — F1</i>'}</div></div>
     <label class="f-qty"><span>QTY <i title="Press W for the warranty and serial numbers">W warranty</i></span><input id="csQty" type="number" step="any" value="${CS.qty}"></label>
     <label class="f-price"><span>PRICE</span><input id="csPrice" type="number" step="any" value="${CS.price||''}"></label>
@@ -17640,7 +17640,7 @@ function csEditLine(i){
     <div class="f"><label>Discount ${CFG.pos.discFromMrp?'— % off the MRP':'in rupees'}</label>
      <input id="elDisc" type="number" step="any" value="${l.discPct!==undefined?l.discPct:(l.disc||0)}"></div></div>
    <div class="grid2">
-    <div class="f"><label>Warranty</label><select id="elWarr">${['0','3 MONTHS','6 MONTHS','1 YEAR','2 YEARS','3 YEARS'].map(x=>`<option ${((l.warranty||'0')===x)?'selected':''}>${x}</option>`).join('')}</select></div>
+    <div class="f"><label>Warranty</label><select id="elWarr">${WARR_PERIODS.map(x=>`<option ${((l.warranty||'0')===x)?'selected':''}>${x}</option>`).join('')}</select></div>
     <div class="f"><label>Line comes to</label><div class="till-amt" id="elAmt">${money2(l.qty*l.price-(l.disc||0))}</div></div></div>
    <div class="muted" id="elNote" style="margin-top:6px"></div>
    <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-wrap:wrap">
@@ -17713,15 +17713,16 @@ function csAskDel(i){
 }
 function csStart(pid){
   const p=P(pid); if(!p) return;
-  CS.pid=pid; CS.q=p.num||p.code; CS.qty=1; CS.disc=0; CS.serials=[]; CS.focus=''; CS.editLine=null; CS.name=null;
+  CS.pid=pid; CS.q=p.num||p.code; CS.qty=1; CS.disc=0; CS.serials=[]; CS.focus=''; CS.editLine=null; CS.name=null; CS.nameEdit=false;
   const was=lastPriceFor(pid,S.pos.customer);
   if(was&&CFG.pos.repriceToLast&&was.price>=p.cost-0.005){ CS.price=was.price; CS.auto=false; CS.last=was }
   else { CS.price=priceFor(p,1); CS.auto=true; CS.last=was||null }
-  CS.warranty=p.warrantyMonths?(p.warrantyMonths>=36?'3 YEARS':p.warrantyMonths>=24?'2 YEARS':p.warrantyMonths>=12?'1 YEAR':p.warrantyMonths>=6?'6 MONTHS':'3 MONTHS'):'0';
+  CS.warranty=p.warrantyMonths?(p.warrantyMonths>=1200?'LIFETIME':p.warrantyMonths>=36?'3 YEARS':p.warrantyMonths>=24?'2 YEARS':p.warrantyMonths>=12?'1 YEAR':p.warrantyMonths>=6?'6 MONTHS':'3 MONTHS'):'0';
   render();
   // the name is the next box: Enter leaves it as it is, or type onto the end first (a colour code on a paint base)
-  const f=$('#csName')||$('#csQty');
-  if(f){ f.focus(); if(f.id==='csName'){ const n=f.value.length; try{ f.setSelectionRange(n,n) }catch(e){} } else if(f.select) f.select() }
+  // the quantity comes first; E opens the name for typing (a colour code on a paint base)
+  const f=$('#csQty')||$('#csName');
+  if(f){ f.focus(); if(f.select) f.select() }
 }
 /* CLEAR (F3 / Esc): a bill with anything on it is only thrown away after a yes */
 function csClearAsk(){
@@ -18320,7 +18321,7 @@ function bindClassic(){
           toast(l.checked?'Checked':'Not checked — it will show on the bill'); render() } return }
       // P goes straight to the price of the line under the cursor, N to what it is called on this bill
       if(!e.ctrlKey&&!e.altKey&&e.key.toLowerCase()==='p'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csLineEdit(S.pos.sel,'price'); return }
-      if(!e.ctrlKey&&!e.altKey&&e.key.toLowerCase()==='n'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csLineRename(S.pos.sel); return }
+      if(!e.ctrlKey&&!e.altKey&&(e.key.toLowerCase()==='n'||e.key.toLowerCase()==='e')){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csLineRename(S.pos.sel); return }
       // W: the warranty and serial numbers of the line under the cursor
       if(!e.ctrlKey&&!e.altKey&&!e.metaKey&&e.key.toLowerCase()==='w'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csWarranty(S.pos.sel); return }
       if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csEditLine(S.pos.sel); return }
@@ -18452,7 +18453,8 @@ function bindClassic(){
      boxes, Enter moves to the next box and only puts the line on the bill from
      the discount box, down drops onto the bill, Esc goes back to the code box. */
   // the boxes in the order they are worked through: code, then the name as it will read, then the rest
-  const FIELDS=[['csQ','q'],['csName','name'],['csQty','qty'],['csPrice','price'],['csDisc','disc']];
+  const FIELDS=[['csQ','q'],['csQty','qty'],['csPrice','price'],['csDisc','disc']];   // the name is reached with E
+  const editName=()=>{ const n=$('#csName'); if(!n) return; CS.nameEdit=true; n.readOnly=false; n.removeAttribute('title'); n.focus(); const k=n.value.length; try{ n.setSelectionRange(k,k) }catch(e){} };
   const focusField=(i)=>{
     const wrap=Math.max(0,Math.min(FIELDS.length-1,i));
     const el=$('#'+FIELDS[wrap][0]); if(!el) return;
@@ -18490,6 +18492,7 @@ function bindClassic(){
       paint() };
     el.onkeydown=e=>{
       if(e.key==='Escape'){ e.preventDefault(); const q2=$('#csQ'); if(q2){q2.focus();q2.select()} return }
+      if(!e.ctrlKey&&!e.altKey&&!e.metaKey&&CS.pid&&e.key.toLowerCase()==='e'){ e.preventDefault(); CS[key]=el.value; editName(); return }   // E: change the item's name on this bill
       if((id==='csQty'||id==='csDisc')&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&CS.pid&&e.key.toLowerCase()==='w'){ e.preventDefault(); CS[key]=el.value; csWarranty(-1); return }
       // in the price box, as on the old till: S shows every price this item went for, W / R switch the price list
       if(id==='csPrice'&&!e.ctrlKey&&!e.altKey&&CS.pid){
@@ -18511,10 +18514,12 @@ function bindClassic(){
   const nm=$('#csName');
   if(nm){
     const pSel=P(CS.pid);
+    nm.onclick=()=>{ if(nm.readOnly) editName() };
     nm.oninput=()=>{ CS.name=nm.value; const box=nm.closest('.till-item');
       if(box) box.classList.toggle('renamed',!!nm.value.trim()&&nm.value.trim().toUpperCase()!==(pSel?pSel.name.toUpperCase():'')) };
     nm.onkeydown=e=>{
       e.stopPropagation();
+      if(nm.readOnly){ if(e.key.toLowerCase()==='e'&&!e.ctrlKey&&!e.altKey){ e.preventDefault(); editName(); return } if(e.key==='Enter'||e.key==='Tab'){ e.preventDefault(); focusField(FIELDS.findIndex(f=>f[0]==='csQty')) } return }
       if(e.key==='Enter'){ e.preventDefault(); CS.name=nm.value; focusField(FIELDS.findIndex(f=>f[0]==='csQty')); return }
       if(e.key==='Escape'){ e.preventDefault(); CS.name=null; nm.value=pSel?pSel.name.toUpperCase():''; const box=nm.closest('.till-item'); if(box) box.classList.remove('renamed'); const f=$('#csQty'); if(f){f.focus();f.select()} return }
       if(e.key==='ArrowDown'){ e.preventDefault(); goList(); return }
@@ -20076,14 +20081,17 @@ const warrantyLeft=(rec)=>{ if(!rec||!rec.warrantyTo) return null;
 /* W on the till: how long the warranty is and the serial numbers, for the item being keyed (i = -1) or
    a line on the bill. The warranty starts at the item's own; the serials are scanned or keyed, Enter after
    each, and Enter on an empty box keeps it all. (26 Oct 2026) */
-const WARR_PERIODS=['0','3 MONTHS','6 MONTHS','1 YEAR','2 YEARS','3 YEARS'];
+const WARR_PERIODS=['0','3 MONTHS','6 MONTHS','1 YEAR','2 YEARS','3 YEARS','LIFETIME'];
+// the warranty and serials of a bill line, printed under it on the small bill
+const billWarrLine=(l)=>{ const t=[l.warranty&&l.warranty!=='0'?'WARRANTY: '+l.warranty:'',(l.serials&&l.serials.length)?'S/N: '+l.serials.join(', '):''].filter(Boolean).join('  |  ');
+  return t?`<tr class="wr"><td colspan="4">${noteEsc(t)}</td></tr>`:'' };
 function csWarranty(i){
   const line=i>=0?S.pos.lines[i]:null, pid=line?line.pid:CS.pid, p=P(pid); if(!p) return;
   const qty=Math.max(1,Math.round(Math.abs(+(line?line.qty:CS.qty)||1)));
   let per=String((line?line.warranty:CS.warranty)||'0'), list=[...((line?line.serials:CS.serials)||[])];
   const m=modal(`<h2>🛡 Warranty and serial numbers</h2>
    <div class="muted">${noteEsc(lineName(line||{pid,name:CS.name}).toUpperCase())} · qty ${fq(qty)}</div>
-   <div class="f" style="margin-top:10px"><label>Warranty period <span class="muted">— keys 0 to 5</span></label><div class="wr-per" id="wrPer"></div></div>
+   <div class="f" style="margin-top:10px"><label>Warranty period <span class="muted">— keys 0 to 6</span></label><div class="wr-per" id="wrPer"></div></div>
    <div class="f" style="margin-top:8px"><label>Serial numbers <span class="muted">— scan or key, Enter after each${p.serialised?` · this item needs ${fq(qty)}`:''}</span></label>
     <input id="wrSn" autocomplete="off" placeholder="serial number"><div class="srlist" id="wrList" style="margin-top:6px"></div></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="wrOk">Keep (Enter)</button></div>`);
@@ -20103,7 +20111,7 @@ function csWarranty(i){
     if(line){ line.warranty=per; if(list.length) line.serials=list; else delete line.serials; render(); toast('Warranty and serials kept on the line') }
     else { CS.warranty=per; CS.serials=list; const q=$('#csQty'); if(q){ q.focus(); q.select&&q.select() } toast(per==='0'?'No warranty':per+' warranty'+(list.length?' · '+list.length+' serial'+(list.length===1?'':'s'):'')) } };
   sn.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); if(sn.value.trim()){ add(sn.value); sn.value='' } else keep(); return }
-    if(!sn.value&&/^[0-5]$/.test(e.key)){ e.preventDefault(); per=WARR_PERIODS[+e.key]; drawPer() } };
+    if(!sn.value&&/^[0-6]$/.test(e.key)){ e.preventDefault(); per=WARR_PERIODS[+e.key]; drawPer() } };
   m.querySelector('#wrOk').onclick=keep;
   drawPer(); drawList(); sn.focus();
 }
@@ -22847,11 +22855,11 @@ function billHtml(inv,f='a5'){
      <div class="sb-rule"></div>`,
     items:B.showSaving!==false?`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>MRP</th><th>D.Price</th><th>Amount</th></tr>
      ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td></tr>
-      <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l">${l.qty.toFixed(3)}</td><td>${money2(p.mrp)}</td><td>${money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`}).join('')}
+      <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l">${l.qty.toFixed(3)}</td><td>${money2(p.mrp)}</td><td>${money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>${billWarrLine(l)}`}).join('')}
      </table>`
      :`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>Qty</th><th>Price</th><th>Amount</th></tr>
      ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td></tr>
-      <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`}).join('')}
+      <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>${billWarrLine(l)}`}).join('')}
      </table>`,
     totals:`<div class="sb-rule"></div>
      <div class="sb-tot"><span>Gross Total Rs.</span><i>:</i><b>${money2(gross)}</b></div>
@@ -22900,7 +22908,7 @@ function billHtml(inv,f='a5'){
     const unit=q?net/q:0; const mrp=Math.max(+l.mrp||0,+p.mrp||0);
     const pct=(x)=>x.toFixed(1).replace(/\.0$/,'')+'%';
     const dsc=l.discPct?pct(+l.discPct):((+l.disc||0)>0.005?money2(l.disc):(mrp>unit+0.005?pct((1-unit/mrp)*100):'—'));
-    const extra=[lineFrom(l,inv)?`issue from ${lineFrom(l,inv)}`:'', (l.serials&&l.serials.length)?`S/N ${l.serials.join(', ')}`:'', (l.warranty&&l.warranty!=='0')?`${l.warranty} warranty`:''].filter(Boolean).join(' · ');
+    const extra=[lineFrom(l,inv)?`issue from ${lineFrom(l,inv)}`:'', (l.serials&&l.serials.length)?`S/N ${l.serials.join(', ')}`:'', (l.warranty&&l.warranty!=='0')?`Warranty: ${l.warranty}`:''].filter(Boolean).join(' · ');
     return `<tr class="${anyChecked&&l.checked!==true?'notck':''}"><td class="c">${i+1}</td>${showCode?`<td class="cd">${esc5(p.num||p.code||'')}</td>`:''}<td class="d"><b>${esc5(lineName(l))}</b>${extra?` <i>${esc5(extra)}</i>`:''}</td>${showUom?`<td class="u">${esc5((p.unit||'').toUpperCase())}</td>`:''}<td class="n">${q.toFixed(q%1?3:2)}</td>${showMrp?`<td class="n mrp">${mrp>0?(mrp>unit+0.005?`<s>${money2(mrp)}</s>`:money2(mrp)):'—'}</td>`:''}<td class="n">${money2(unit)}</td><td class="n amt">${money2(net)}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`; }).join('');
   const brandH=on('brand')&&B.a5Lockup!==false?`<div class="x-brand"><img class="x-lockup" src="${REGAL_LOCKUP}" alt="${esc5(nm)}"></div>`:on('brand')?`<div class="x-brand">${B.showLogo!==false?`<div class="x-mark">${logo(46)}</div>`:''}<div class="x-name"><div class="x-nm"><span class="blk">${esc5(nmA)}</span> ${esc5(nmB)}</div>${(SH.sinhala||SHOP.sinhala)?`<div class="x-sin">${SH.sinhala||SHOP.sinhala}</div>`:''}</div></div>`:'';
   const shopH=on('addr')?`<div class="x-shop"><div class="x-line">${esc5(addrTxt)}</div>${phoneTxt?`<div class="x-phone">☎ ${esc5(phoneTxt)}</div>`:''}${strap?`<div class="x-strap">${esc5(strap)}</div>`:''}${ids?`<div class="x-ids">${ids}</div>`:''}</div>`:'<div class="x-shop"></div>';
@@ -23535,7 +23543,7 @@ function productModal(pid){
    </div>
    <div class="grid3">
     ${f('pshort','Short code',p?(p.short||''):'','text','Type this at the till and press Enter — e.g. cem')}
-    <div class="f"><label>Warranty given, in months</label><input id="pwar" type="number" value="${p?(p.warrantyMonths||0):0}"></div>
+    <div class="f"><label>Warranty given, in months <span class="muted">— 1200 for lifetime</span></label><input id="pwar" type="number" value="${p?(p.warrantyMonths||0):0}"></div>
     <div class="f"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="pser" ${p&&p.serialised?'checked':''}> every piece has a serial number</label></div>
     <div class="f"><label>Product number</label><input value="${p?p.num:nextNum()}" readonly><div class="muted">Four figures, given by the system — also works at the till</div></div>
    </div>
