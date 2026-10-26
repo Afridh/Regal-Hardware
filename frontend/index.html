@@ -5013,7 +5013,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   let usedCredit=0;
   if(credit>0.005&&customerId!==1){ const held=custCredit(customerId); usedCredit=+Math.min(held,credit).toFixed(2); if(usedCredit>0.005) credit=+(credit-usedCredit).toFixed(2) }
   const assignedSalesman = salesman !== undefined ? salesman : ((S.pos && S.pos.salesman) || null);
-  const inv={no:no||next('INV'),date,type:(credit>0||acct)?'CREDIT':'CASH',customerId,lines:lines.map(l=>(isOpenLine(l)?{...l,cost:l.price,mrp:l.price,open:true}:{...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,loc:(S.locId||undefined),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}),link:billLinkFor(),serial:(S.serial=(((+S.serial)||((+(CFG.bill&&CFG.bill.serialStart))||0))+1))};
+  const inv={no:no||next('INV'),date,type:(credit>0||acct)?'CREDIT':'CASH',customerId,lines:lines.map(l=>(isOpenLine(l)?{...l,cost:l.price,mrp:l.price,open:true}:{...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,credit0:credit,paid0:paid,...(customerId&&customerId!==1?{prevOut:+Math.max(0,partyBal('C',customerId)).toFixed(2)}:{}),pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,loc:(S.locId||undefined),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}),link:billLinkFor(),serial:(S.serial=(((+S.serial)||((+(CFG.bill&&CFG.bill.serialStart))||0))+1))};
   S.sales.push(inv);
   if(typeof BroadcastChannel !== 'undefined'){
     try { bcSend('sale_completed'); }catch(_){}
@@ -19586,6 +19586,7 @@ function editSaleModal(no){
     inv.lines=keep; inv.sub=sub; inv.total=newTotal;
     inv.balance=+Math.max(0,newTotal-inv.paid).toFixed(2);
     inv.type=inv.balance>0?'CREDIT':inv.type;
+    inv.credit0=inv.balance; inv.paid0=inv.paid;
     // the customer can be corrected too: what is owed moves from one account to the other
     if(newCust!==inv.customerId&&inv.balance>0.005){
       post(D(today),`Bill ${inv.no} moved to ${C(newCust).name}`,inv.no,
@@ -19720,7 +19721,7 @@ function retireBill(no){
 function finishRemake(r,fresh){
   const {old,carry,idx}=r, c=C(fresh.customerId);
   const use=+Math.min(carry,fresh.balance).toFixed(2);
-  if(use>0){ fresh.paid=+(fresh.paid+use).toFixed(2); fresh.balance=+(fresh.balance-use).toFixed(2); fresh.type=fresh.balance>0?'CREDIT':fresh.type }
+  if(use>0){ fresh.paid=+(fresh.paid+use).toFixed(2); fresh.balance=+(fresh.balance-use).toFixed(2); fresh.type=fresh.balance>0?'CREDIT':fresh.type; fresh.credit0=fresh.balance; fresh.paid0=fresh.paid }
   fresh.remade=(old.remade||[]).concat([{at:D(today),by:S.user.name,total:old.total,lines:old.lines.length,why:r.why||''}]);
   fresh.edits=old.edits; fresh.date=old.date; fresh.link=old.link;
   S.sales.pop(); S.sales.splice(idx,0,fresh);          // back where the old one sat
@@ -23032,9 +23033,22 @@ function billdesignAfter(){
   bdFit();
 }
 
+/* A bill prints as it was sold. Paying a credit bill off later brings its balance down, and a reprint
+   read from that came out as a cash bill with no credit lines at all. The sale keeps what went on credit,
+   what was paid and what was owed before it; a bill from before that kept them works it out from what
+   was taken at the till. (26 Oct 2026) */
+function billAsSold(inv){
+  if(!inv||inv.docKind) return inv;
+  const tillPays=(inv.pays||[]).filter(p=>p.method!=='CREDIT'), onAcct=(inv.pays||[]).some(p=>p.method==='CREDIT')||inv.type==='CREDIT';
+  let credit0=inv.credit0!=null?+inv.credit0:+inv.balance||0;
+  if(inv.credit0==null&&onAcct&&inv.total>0) credit0=Math.max(credit0,+(inv.total-tillPays.reduce((a,p)=>a+(+p.amount||0),0)-(+inv.usedCredit||0)).toFixed(2));
+  const paid0=inv.paid0!=null?+inv.paid0:credit0>(+inv.balance||0)+0.005?+Math.max(0,inv.total-credit0).toFixed(2):inv.paid;
+  return {...inv,balance:credit0,paid:paid0,balanceNow:+inv.balance||0};
+}
 function billHtml(inv,f='a5'){
+  inv=billAsSold(inv);
   const c=C(inv.customerId)||C(1), credit=inv.balance>0, walk=c.id===1;
-  const prev=walk?0:Math.max(0,partyBal('C',c.id)-inv.balance);
+  const prev=walk?0:inv.prevOut!=null?+inv.prevOut:Math.max(0,partyBal('C',c.id)-inv.balanceNow);
   const qty=inv.lines.reduce((a,l)=>a+l.qty,0);
   // as the old till showed it: the gross is at the maker's price (MRP), the discount is everything below that
   const gross=inv.lines.reduce((a,l)=>{const p=P(l.pid)||{}; const mrp=Math.max(+l.mrp||0,+p.mrp||0,l.price); return a+l.qty*mrp},0);
@@ -23086,7 +23100,8 @@ function billHtml(inv,f='a5'){
      <div class="sb-net"><span>Invoice Total Rs.</span><i>:</i><b>${money2(inv.total)}</b></div>
      <div class="sb-stars">${'*'.repeat(46)}</div>`,
     paid:credit?`<div class="sb-tot"><span>Credit Rs.</span><i>:</i><b>${money2(inv.balance)}</b></div>${inv.paid>0?`<div class="sb-tot"><span>Paid Rs.</span><i>:</i><b>${money2(inv.paid)}</b></div>`:''}
-      ${CFG.bill.showOutstanding?`<div class="sb-tot"><span>Previous Outstanding</span><i>:</i><b>${money2(prev)}</b></div><div class="sb-tot"><span>Total Outstanding Rs.</span><i>:</i><b>${money2(prev+inv.balance)}</b></div>`:''}`
+      ${!walk&&CFG.bill.showOutstanding!==false?`<div class="sb-tot"><span>Previous Outstanding</span><i>:</i><b>${money2(prev)}</b></div><div class="sb-tot"><span>Total Outstanding Rs.</span><i>:</i><b>${money2(prev+inv.balance)}</b></div>`:''}
+      ${inv.reprint&&Math.abs(inv.balanceNow-inv.balance)>0.005?`<div class="sb-tot bold"><span>Still owing on this bill</span><i>:</i><b>${money2(inv.balanceNow)}</b></div>`:''}`
      :`<div class="sb-tot"><span>${payWord} Payment Rs.</span><i>:</i><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div class="sb-tot"><span>Change Rs.</span><i>:</i><b>${money2(inv.paid-inv.total)}</b></div>`:''}`,
     barcode:`<div class="sb-bc">${barcode128(inv.no,40)}</div>`,
     sign:`<div class="sb-sign"><span>${B.signLeft||'Authorized By'}</span><span>${B.signRight||'Checked By'}</span></div>`,
@@ -23097,7 +23112,7 @@ function billHtml(inv,f='a5'){
     web:(SH.web||(S.web&&S.web.settings&&S.web.settings.domain))?`<div class="sb-web">${SH.web||S.web.settings.domain}</div>`:'',
    };
    return `<div class="print r80 sb80" data-scale="${sc80}" style="zoom:${sc80};width:calc(302px / ${sc80});font-family:${billFontCss(B.r80Font)};${r80SizeVars()}">
-   <div class="sb-inner">${r80Order().filter(k=>r80On(k)).map(k=>part[k]||'').join('')}</div>
+   <div class="sb-inner">${r80Order().filter(k=>r80On(k)||(k==='paid'&&credit)).map(k=>part[k]||'').join('')}</div>
   </div>`;
   }
   // ---------- A5 landscape: the large invoice ----------
