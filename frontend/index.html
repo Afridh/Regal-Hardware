@@ -19209,20 +19209,20 @@ function docPaperHtml(doc,f){
    ${B.showSinhala&&SH.sinhala?`<div class="sb-sin">${SH.sinhala}</div>`:''}
    <div class="sb-addr">${(SH.addr||'').toUpperCase()}</div>
    <div class="sb-phone">${SH.phone||''}</div>
-   <div class="sb-rule"></div>
+   <div style="text-align:center;font-weight:800;font-size:18px;letter-spacing:.25em;border:2px solid #000;padding:3px 0;margin:4px 0 6px">${k.label.toUpperCase()}</div>
    <div class="sb-kv"><span>${k.label} No :</span><b>${doc.no}</b><span>${doc.date}</span></div>
    <div class="sb-kv"><span>Prepared by :</span><b>${(doc.by||'').toUpperCase()}</b><span></span></div>
    ${c.id===1?'':`<div class="sb-kv"><span>Customer :</span><b>${c.name.toUpperCase()}</b><span>${c.phone||''}</span></div>`}
    <div class="sb-rule"></div>
    <table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>Qty</th><th>Price</th><th>Amount</th></tr>
-   ${doc.lines.map((l,i)=>{const p=P(l.pid)||{};return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${(l.name||p.name||'').toUpperCase()}</td></tr>
-     <tr class="qt"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}
+   ${doc.lines.map((l,i)=>{const p=P(l.pid)||{};return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${noteEsc(lineName(l).toUpperCase())}</td></tr>
+     <tr class="qt"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}</td></tr>${billWarrLine(l)}`}).join('')}
    </table>
    <div class="sb-rule"></div>
-   <div class="sb-tot"><span>Gross Total Rs.</span><b>${money2(gross)}</b></div>
-   ${disc>0?`<div class="sb-tot"><span>- Discount :</span><b>${money2(disc)}</b></div>`:''}
+   <div class="sb-tot"><span>Gross Total Rs.</span><i>:</i><b>${money2(gross)}</b></div>
+   ${disc>0?`<div class="sb-tot"><span>- Discount</span><i>:</i><b>${money2(disc)}</b></div>`:''}
    <div class="sb-dbl"></div>
-   <div class="sb-net"><span>${k.label} Total Rs. :</span><b>${money2(doc.total)}</b></div>
+   <div class="sb-net"><span>Total Rs.</span><i>:</i><b>${money2(doc.total)}</b></div>
    <div class="sb-dbl"></div>
    <div class="sb-cnt">No of Item / Qty - &nbsp; ${doc.lines.length.toFixed(2)} &nbsp;/&nbsp; ${qty.toFixed(2)}</div>
    ${B.t80Sign!==false?`<div class="sb-sign"><span>Prepared By</span><span>Customer</span></div>`:''}
@@ -19236,6 +19236,11 @@ function docPaperHtml(doc,f){
 /* A quotation or delivery note reaches paper the way a bill does: the helper if it is there, else the
    browser — no save-as-PDF box in the way, and sized to fit the sheet. */
 function docToPaper(doc,f){
+  if(doc.kind==='QUOTE'&&f!=='r80'){
+    const inv={...doc,docKind:'QUOTE',sub:doc.lines.reduce((a,l)=>a+l.qty*l.price-(l.disc||0),0),paid:0,balance:0,pays:[],terminal:'',time:''};
+    const inner=billHtml(inv,'a5');
+    return printPaper(printDocument(inner,'a5'),'a5',doc.no,()=>paperFallback(inner,'a5'));
+  }
   let inner=docPaperHtml(doc,f);
   if(!inner){
     // the A5 sheet is drawn by the preview, so that same drawing is taken and printed rather than a
@@ -19247,12 +19252,33 @@ function docToPaper(doc,f){
   }
   printPaper(printDocument(inner,f),f,doc.no,()=>paperFallback(inner,f));
 }
+/* Which paper — small (80mm) or large (A5) — asked as each quotation or delivery note goes to print.
+   1 or S small, 2 or L large, Enter the one already set at the top of the till, Esc not now. (26 Oct 2026) */
+function docPaperAsk(doc){
+  const k=DOCK[doc.kind], now=csPaper()==='r80'?'r80':'a5';
+  const m=modal(`<h2>Print ${k.label.toLowerCase()} ${noteEsc(doc.no)}</h2>
+   <div class="muted">Which paper?</div>
+   <div style="display:flex;gap:10px;margin-top:12px">
+    <button class="btn ${now==='r80'?'tape':'ghost'}" data-pf="r80" style="flex:1;padding:14px"><b>1</b> · Small bill (80mm)</button>
+    <button class="btn ${now==='a5'?'tape':'ghost'}" data-pf="a5" style="flex:1;padding:14px"><b>2</b> · Large bill (A5)</button></div>
+   <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn ghost" data-act="closeModal">Not now <i class="kbd">Esc</i></button></div>`);
+  const go=(f)=>{ m.remove(); document.removeEventListener('keydown',key,true); docToPaper(doc,f) };
+  const key=(e)=>{ if(!document.body.contains(m)){ document.removeEventListener('keydown',key,true); return }
+    const x=e.key.toLowerCase();
+    if(x==='1'||x==='s'){ e.preventDefault(); e.stopPropagation(); go('r80') }
+    else if(x==='2'||x==='l'){ e.preventDefault(); e.stopPropagation(); go('a5') }
+    else if(x==='enter'){ e.preventDefault(); e.stopPropagation(); go(now) }
+    else if(x==='escape'){ e.preventDefault(); e.stopPropagation(); document.removeEventListener('keydown',key,true); m.remove() } };
+  document.addEventListener('keydown',key,true);
+  m.querySelectorAll('[data-pf]').forEach(b=>b.onclick=()=>go(b.dataset.pf));
+  const def=m.querySelector(`[data-pf="${now}"]`); if(def) def.focus();
+}
 /* A quotation is printed the way a bill is: straight to the paper the till is set to, with no
    preview in the way. Preview is a button of its own for the times somebody wants to look first. */
 function docPrint(no,opts){
   const preview=!!(opts&&opts.preview);
   const f=(opts&&opts.format)||csPaper();
-  if(!preview){ const d0=S.docs.find(d=>d.no===no); if(d0) return docToPaper(d0,f) }
+  if(!preview){ const d0=S.docs.find(d=>d.no===no); if(d0) return (opts&&opts.format)?docToPaper(d0,f):docPaperAsk(d0) }
   const doc=S.docs.find(d=>d.no===no), c=C(doc.customerId), k=DOCK[doc.kind];
   const qty=doc.lines.reduce((a,l)=>a+l.qty,0);
   const gross=doc.lines.reduce((a,l)=>a+l.qty*l.price,0);
@@ -22937,7 +22963,8 @@ function billHtml(inv,f='a5'){
   const strap=SH.line1||SH.tags||'';
   const webAddr=SH.web||(S.web&&S.web.settings&&S.web.settings.domain)||'';
   const ids=[SH.vat?`VAT Reg No <b>${esc5(SH.vat)}</b>`:'', webAddr?`Web <b>${esc5(webAddr)}</b>`:'', SH.email?`Email <b>${esc5(SH.email)}</b>`:''].filter(Boolean).join(' · ');
-  const title=inv.proof?'PROOF — NOT A BILL':((SH.vat?'TAX INVOICE':heading.toUpperCase())+(inv.reprint?' · COPY':''));
+  const dk=inv.docKind&&DOCK[inv.docKind];   // a quotation drawn on the bill's sheet
+  const title=dk?dk.label.toUpperCase():inv.proof?'PROOF — NOT A BILL':((SH.vat?'TAX INVOICE':heading.toUpperCase())+(inv.reprint?' · COPY':''));
   const sale=credit?'CREDIT SALE':'CASH SALE';
   const when=`${(inv.date||D(today))} ${timeOf(inv)}`;
   const qtyAll=inv.lines.reduce((a,l)=>a+(+l.qty||0),0);
@@ -22952,21 +22979,21 @@ function billHtml(inv,f='a5'){
     return `<tr class="${anyChecked&&l.checked!==true?'notck':''}"><td class="c">${i+1}</td>${showCode?`<td class="cd">${esc5(p.num||p.code||'')}</td>`:''}<td class="d"><b>${esc5(lineName(l))}</b>${extra?` <i>${esc5(extra)}</i>`:''}</td>${showUom?`<td class="u">${esc5((p.unit||'').toUpperCase())}</td>`:''}<td class="n">${q.toFixed(q%1?3:2)}</td>${showMrp?`<td class="n mrp">${mrp>0?(mrp>unit+0.005?`<s>${money2(mrp)}</s>`:money2(mrp)):'—'}</td>`:''}<td class="n">${money2(unit)}</td><td class="n amt">${money2(net)}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`; }).join('');
   const brandH=on('brand')&&B.a5Lockup!==false?`<div class="x-brand"><img class="x-lockup" src="${REGAL_LOCKUP}" alt="${esc5(nm)}"></div>`:on('brand')?`<div class="x-brand">${B.showLogo!==false?`<div class="x-mark">${logo(46)}</div>`:''}<div class="x-name"><div class="x-nm"><span class="blk">${esc5(nmA)}</span> ${esc5(nmB)}</div>${(SH.sinhala||SHOP.sinhala)?`<div class="x-sin">${SH.sinhala||SHOP.sinhala}</div>`:''}</div></div>`:'';
   const shopH=on('addr')?`<div class="x-shop"><div class="x-line">${esc5(addrTxt)}</div>${phoneTxt?`<div class="x-phone">☎ ${esc5(phoneTxt)}</div>`:''}${strap?`<div class="x-strap">${esc5(strap)}</div>`:''}${ids?`<div class="x-ids">${ids}</div>`:''}</div>`:'<div class="x-shop"></div>';
-  const qrH=on('qr')?`<div class="x-qrs">${qr(inv.no,50)}${qr('c'+inv.no,50)}</div>`:'';
+  const qrH=on('qr')&&!dk?`<div class="x-qrs">${qr(inv.no,50)}${qr('c'+inv.no,50)}</div>`:'';
   const custLine=walk?'':[c.phone?`Mob ${c.phone}`:'',c.nic?`NIC ${c.nic}`:''].filter(Boolean).map(esc5).join(' · ');
-  const bandH=on('meta')?`<div class="x-band">
-    <div class="x-inv"><div class="x-ttl">${title}</div><div class="x-no"><span>Invoice No.</span> ${esc5(inv.no)}</div></div>
-    <div class="x-kv">${kv('Date / Time',when)}${B.showCashier!==false?kv('Invoice By',esc5((inv.by||'').toUpperCase())):''}${kv('Payment',credit?'CREDIT':esc5(payWord.toUpperCase()))}${inv.ledger?kv('Ledger No',esc5(inv.ledger)):''}${inv.vehicle?kv('Vehicle / Ref',esc5(inv.vehicle)):''}${kv('Terminal',esc5(inv.terminal||S.terminal||''))}</div>
-    <div class="x-to"><div class="x-lbl">BILL TO</div><div class="x-cn">${walk?'WALK-IN CUSTOMER':esc5(c.name.toUpperCase())}</div>${custLine?`<div class="x-ca">${custLine}</div>`:''}</div>
-   </div>`:'';
+  const bandH=(dk?`<div style="text-align:center;font-weight:800;font-size:22px;letter-spacing:.35em;border:2px solid #000;padding:4px 0;margin:8px 0 2px">${dk.label.toUpperCase()}</div>`:'')+(on('meta')?`<div class="x-band">
+    <div class="x-inv"><div class="x-ttl">${title}</div><div class="x-no"><span>${dk?dk.label:'Invoice'} No.</span> ${esc5(inv.no)}</div></div>
+    <div class="x-kv">${kv(dk?'Date':'Date / Time',dk?esc5(inv.date||''):when)}${B.showCashier!==false?kv(dk?'Prepared By':'Invoice By',esc5((inv.by||'').toUpperCase())):''}${dk?kv('Valid for',(inv.valid||CFG.bill.quoteDays||14)+' days'):kv('Payment',credit?'CREDIT':esc5(payWord.toUpperCase()))}${inv.ledger?kv('Ledger No',esc5(inv.ledger)):''}${inv.vehicle?kv('Vehicle / Ref',esc5(inv.vehicle)):''}${(dk?'':kv('Terminal',esc5(inv.terminal||S.terminal||'')))}</div>
+    <div class="x-to"><div class="x-lbl">${dk?'QUOTED FOR':'BILL TO'}</div><div class="x-cn">${walk?'WALK-IN CUSTOMER':esc5(c.name.toUpperCase())}</div>${custLine?`<div class="x-ca">${custLine}</div>`:''}</div>
+   </div>`:'');
   /* the remarks box only when something was written on the bill at the till */
   const remH=inv.note?`<div class="x-box x-rem"><div class="x-bh">REMARKS</div><div class="x-bb">${esc5(inv.note)}</div></div>`:'';
   const subH=`<div class="x-box x-sub"><div class="x-bh">SUB TOTAL</div><div class="x-bb"><div><span>Lines</span><b>${inv.lines.length}</b></div><div><span>Quantity</span><b>${fq(qtyAll)}</b></div><div><span>Gross value</span><b>${money2(gross)}</b></div>${disc>0.005?`<div><span>Discount</span><b>− ${money2(disc)}</b></div>`:''}<div class="net"><span>Net</span><b>${money2(inv.total)}</b></div></div></div>`;
-  const paidH=credit?`<div><span>Paid now</span><b>${money2(inv.paid)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div>`
+  const paidH=dk?`<div><span>Quoted on</span><b>${esc5(inv.date||'')}</b></div><div><span>Holds good for</span><b>${inv.valid||CFG.bill.quoteDays||14} days</b></div>`:credit?`<div><span>Paid now</span><b>${money2(inv.paid)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div>`
     :`<div><span>${esc5(payWord)} received</span><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div><span>Change</span><b>${money2(inv.paid-inv.total)}</b></div>`:''}`;
   const osH=(credit&&!walk&&on('outstanding'))?`<div class="x-box x-osb"><div class="x-bh">ACCOUNT OUTSTANDING</div><div class="x-bb"><div><span>Previous outstanding</span><b>${money2(prev)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div><div class="tot"><span>TOTAL OUTSTANDING</span><b>${money2(prev+inv.balance)}</b></div></div></div>`:'';
-  const totH=`<div class="x-tot"><div class="x-paid">${paidH}</div><div class="x-grand"><span>INVOICE TOTAL</span><b><small>LKR</small> ${money2(inv.total)}</b></div></div>`;
-  const termsH=`<div class="x-terms">${(on('note')&&B.footer)?`<b>Terms:</b> ${esc5(B.footer.replace('{days}',B.returnDays))}`:''}</div>`;
+  const totH=`<div class="x-tot"><div class="x-paid">${paidH}</div><div class="x-grand"><span>${dk?dk.label.toUpperCase()+' TOTAL':'INVOICE TOTAL'}</span><b><small>LKR</small> ${money2(inv.total)}</b></div></div>`;
+  const termsH=dk?`<div class="x-terms"><b>Note:</b> This is a quotation, not a bill. Prices hold for ${inv.valid||CFG.bill.quoteDays||14} days and depend on stock at the time of order.</div>`:`<div class="x-terms">${(on('note')&&B.footer)?`<b>Terms:</b> ${esc5(B.footer.replace('{days}',B.returnDays))}`:''}</div>`;
   const signH=on('signs')?`<div class="x-sign"><div>${esc5((B.signLeft||'Authorised By').toUpperCase())}</div><div>${esc5((B.signRight||'Received By').toUpperCase())}</div></div>`:'';
   return `<div class="print a5 sbx x-${{bands:'modern x-bands',bw:'standard x-bw',boxed:'standard x-bw x-boxed'}[a5Style()]||a5Style()}" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5});font-family:${billFontCss(B.a5Font)};${a5SizeVars()}">
    <div class="x-head">${brandH}${shopH}${qrH}</div>
