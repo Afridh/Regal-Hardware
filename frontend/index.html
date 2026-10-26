@@ -16570,6 +16570,7 @@ function openItemAdd(){
   };
   m.querySelector('#oiOk').onclick=ok;
   const chain=(el,next)=>{ if(!el) return; el.onkeydown=e=>{ e.stopPropagation();
+    if(e.key==='Escape'){ e.preventDefault(); m.remove(); return }
     if(e.key==='Enter'){ e.preventDefault(); if(next){ next.focus(); next.select&&next.select() } else ok() } }; };
   chain(nm,pr); chain(pr,qt); chain(qt,null);
   nm.focus();
@@ -17470,7 +17471,7 @@ function posClassic(){
      <div class="till-item ${sel?'has':''} ${CS.name?'renamed':''}">${sel
        // the name is typed over when the goods need saying differently on the bill — a colour code
        // mixed into a paint base, a size. The stock and the codes are on the match list above.
-       ? `<input id="csName" value="${String(CS.name||sel.name).toUpperCase().replace(/"/g,'&quot;')}" maxlength="90" spellcheck="false" autocomplete="off" ${CS.nameEdit?'':'readonly title="Press E to change the name on this bill"'}>${(CS.last||sel.serialised)?`<em>${[CS.last?`<b class="lastp">last time ${money2(CS.last.price)} on ${CS.last.no}</b>`:'',sel.serialised?'serial asked on Enter':''].filter(Boolean).join(' · ')}</em>`:''}`
+       ? `<input id="csName" value="${String(CS.name||(sel.id===OPEN_PID?'':sel.name)).toUpperCase().replace(/"/g,'&quot;')}" ${sel.id===OPEN_PID?'placeholder="OPEN ITEM — type what to call it, then Enter"':''} maxlength="90" spellcheck="false" autocomplete="off" ${CS.nameEdit?'':'readonly title="Press E to change the name on this bill"'}>${(CS.last||sel.serialised)?`<em>${[CS.last?`<b class="lastp">last time ${money2(CS.last.price)} on ${CS.last.no}</b>`:'',sel.serialised?'serial asked on Enter':''].filter(Boolean).join(' · ')}</em>`:''}`
        : '<i>scan or key a code — F1</i>'}</div></div>
     <label class="f-qty"><span>QTY <i title="Press W for the warranty and serial numbers">W warranty</i></span><input id="csQty" type="number" step="any" value="${CS.qty}"></label>
     <label class="f-price"><span>PRICE</span><input id="csPrice" type="number" step="any" value="${CS.price||''}"></label>
@@ -17739,6 +17740,15 @@ function csStart(pid){
   const f=$('#csQty')||$('#csName');
   if(f){ f.focus(); if(f.select) f.select() }
 }
+/* The open item on the classic till (the open code, 1, and Enter): keyed in the entry row like any item —
+   the name is typed first, then the quantity, the price and any discount, and Enter puts it on the bill.
+   It sells for the price typed and touches no stock. (26 Oct 2026) */
+function csOpenStart(){
+  CS.pid=OPEN_PID; CS.q=openCode(); CS.qty=1; CS.price=''; CS.disc=0; CS.serials=[]; CS.focus=''; CS.editLine=null;
+  CS.name=''; CS.nameEdit=true; CS.auto=false; CS.last=null; CS.warranty='0';
+  render();
+  const f=$('#csName'); if(f){ f.readOnly=false; f.focus() }
+}
 /* CLEAR (F3 / Esc): a bill with anything on it is only thrown away after a yes */
 function csClearAsk(){
   const doIt=()=>{
@@ -17762,6 +17772,18 @@ function csCommit(){
   if(dcEl&&dcEl.value) CS.disc=+dcEl.value||CS.disc;
   if(wrEl&&wrEl.value) CS.warranty=wrEl.value;
   const p=P(CS.pid); if(!p) return toast('Pick an item first');
+  if(p.id===OPEN_PID){
+    const name=String(CS.name||'').trim(), qty=+CS.qty||0, price=+CS.price||0, d=+CS.disc||0;
+    if(!name){ toast('Type what to call it on the bill'); const n=$('#csName'); if(n){ n.readOnly=false; n.focus() } return }
+    if(!qty) return toast('Enter a quantity, or -1 to take one back');
+    if(!(price>0)){ toast('Enter a price above zero'); const f=$('#csPrice'); if(f){ f.focus(); f.select() } return }
+    const disc=d>0&&d<=100?+(qty*price*d/100).toFixed(2):0;   // a % here comes off the price typed — an open item has no MRP
+    S.pos.lines.unshift({pid:OPEN_PID,name:name.toUpperCase(),qty,price,disc,...(disc?{discPct:d}:{}),open:true,auto:false,
+      ...(CS.warranty&&CS.warranty!=='0'?{warranty:CS.warranty}:{}),...((CS.serials||[]).length?{serials:[...CS.serials]}:{})});
+    S.pos.sel=0;
+    CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null,name:null,nameEdit:false};
+    render(); toast(`${name.toUpperCase()} — ${fq(qty)} at ${money2(price)}`); const f=$('#csQ'); if(f) f.focus(); return;
+  }
   const qty=+CS.qty||0;
   // a % off the MRP: the line is at the MRP and the % is its discount
   const price=(CFG.pos.discFromMrp&&p.mrp>0&&+CS.disc>0)?+p.mrp:(+CS.price||0);
@@ -18430,7 +18452,7 @@ function bindClassic(){
       if(e.key==='ArrowUp'){ e.preventDefault(); cur=Math.max(0,cur-1); navved=true; mark(); return }
       if(e.key==='Escape'){ e.preventDefault(); CS.q=''; q.value=''; draw(); return }
       if(e.key!=='Enter') return; e.preventDefault();
-      if(q.value.trim()===openCode()&&!navved){ csArmed=0; CS.q=''; q.value=''; navved=false; draw(); openItemAdd(); return }
+      if(q.value.trim()===openCode()&&!navved){ csArmed=0; navved=false; csOpenStart(); return }
       if(q.value.trim()){ csArmed=0;
         const b=list()[cur];
         if(b) csStart(+b.dataset.id); else toast('No item matches that');
@@ -18510,7 +18532,7 @@ function bindClassic(){
       if(!e.ctrlKey&&!e.altKey&&!e.metaKey&&CS.pid&&e.key.toLowerCase()==='e'){ e.preventDefault(); CS[key]=el.value; editName(); return }   // E: change the item's name on this bill
       if((id==='csQty'||id==='csDisc')&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&CS.pid&&e.key.toLowerCase()==='w'){ e.preventDefault(); CS[key]=el.value; csWarranty(-1); return }
       // in the price box, as on the old till: S shows every price this item went for, W / R switch the price list
-      if(id==='csPrice'&&!e.ctrlKey&&!e.altKey&&CS.pid){
+      if(id==='csPrice'&&!e.ctrlKey&&!e.altKey&&CS.pid&&CS.pid!==OPEN_PID){
         const k=e.key.toLowerCase();
         if(k==='s'){ e.preventDefault(); priceHistory(CS.pid); return }
         if(k==='w'||k==='r'){ e.preventDefault(); CS.auto=true; posSetLevel(k==='w'?'wholesale':'retail'); const pf=$('#csPrice'); if(pf){ pf.focus(); pf.select() } return }
@@ -18537,6 +18559,8 @@ function bindClassic(){
       e.stopPropagation();
       if(nm.readOnly){ if(e.key.toLowerCase()==='e'&&!e.ctrlKey&&!e.altKey){ e.preventDefault(); editName(); return } if(e.key==='Enter'||e.key==='Tab'){ e.preventDefault(); focusField(FIELDS.findIndex(f=>f[0]==='csQty')) } return }
       if(e.key==='Enter'){ e.preventDefault(); CS.name=nm.value; focusField(FIELDS.findIndex(f=>f[0]==='csQty')); return }
+      if(e.key==='Escape'&&CS.pid===OPEN_PID){ e.preventDefault(); CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,name:null,nameEdit:false}; render(); const q0=$('#csQ'); if(q0) q0.focus(); return }
+      if(e.key==='Enter'&&CS.pid===OPEN_PID&&!nm.value.trim()){ e.preventDefault(); toast('Type what to call it on the bill'); return }
       if(e.key==='Escape'){ e.preventDefault(); CS.name=null; nm.value=pSel?pSel.name.toUpperCase():''; const box=nm.closest('.till-item'); if(box) box.classList.remove('renamed'); const f=$('#csQty'); if(f){f.focus();f.select()} return }
       if(e.key==='ArrowDown'){ e.preventDefault(); goList(); return }
     };
