@@ -4710,7 +4710,7 @@ const billNoFrom=(seq)=>billPlain()
   : `${CFG.bill.prefix||'INVM-'}${S.terminal}-${userUid()}-${String(seq).padStart(5,'0')}`;
 const peekBillNo=()=>billNoFrom(billSeqNow()+1);      // what the next bill will be called
 const next=(k)=>{
-  if(k==='INV'){ const seq=billSeqNow()+1; S.seqBy[billKey()]=seq; return billNoFrom(seq) }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',JOB:'JOB-',JE:'JE-'}[k];if(!(S.seq[k]>0))S.seq[k]=1;return p+String(S.seq[k]++).padStart(5,'0')};
+  if(k==='INV'){ const seq=billSeqNow()+1; S.seqBy[billKey()]=seq; return billNoFrom(seq) }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',JOB:'JOB-',JE:'JE-',ISN:'ISN-'}[k];if(!(S.seq[k]>0))S.seq[k]=1;return p+String(S.seq[k]++).padStart(5,'0')};
 
 const GL = {'2050':'Customer advances','1010':'Cash in hand','1015':'Petty cash with staff','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1023':'Bank account 4','1024':'Bank account 5','1025':'Bank account 6','1026':'Bank account 7','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2120':'Goods received, invoice to come','2150':'Cash borrowed and lent (the circle)','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other'};
 function post(date,desc,ref,lines){ // lines: [{ac,dr,cr,party}]
@@ -12202,7 +12202,7 @@ const $=(s)=>document.querySelector(s);
    role's sections — SECTIONS below — and does not depend on these headings.) */
 const views=[
  ['updates','What is new'],['actions','Action centre'],
- ['grp','Sell'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills'],['receipts','Take a payment','F7'],['docs','Quotes & delivery notes'],['counter','Open & close'],['cashup','Day book'],
+ ['grp','Sell'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills'],['receipts','Take a payment','F7'],['docs','Quotes & delivery notes'],['collect','Goods to collect'],['counter','Open & close'],['cashup','Day book'],
  ['grp','Customers'],['customers','Customers','F8'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],
  ['grp','Buying'],['suppliers','Suppliers','F12'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Payment requests'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels','F11'],
@@ -12215,7 +12215,7 @@ const views=[
 const ownerOnly=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||S.user.role==='Demo Admin'||window.isDemo||(S&&S.isDemo)));
 
 const SECTIONS = {
-  Counter: ['actions', 'everything', 'dashboard', 'pos', 'returns', 'bills', 'billdesign', 'cashup', 'docs'],
+  Counter: ['actions', 'everything', 'dashboard', 'pos', 'returns', 'bills', 'billdesign', 'cashup', 'docs', 'collect'],
   Customers: ['customers', 'receipts', 'tenders'],
   Suppliers: ['suppliers', 'orders', 'payreqs', 'purchases', 'purchasing'],
   Stock: ['products', 'stock', 'ledger', 'inventory', 'stocktake', 'labels', 'cameras'],
@@ -12282,6 +12282,7 @@ function allowed(v){
   if(v === 'actions') return true;
   if(v === 'leave') return true;            // everybody asks for their own days off
   if(v === 'petty') return String(S.user.role||'').toLowerCase()!=='salesman'||(S.petty||[]).some(p=>p.status==='open'&&p.who===S.user.name);   // Sales staff: only while holding some            // the counter hands it out; whoever holds some puts in what they spent
+  if(v === 'collect') return allowed('pos')||allowed('bills');   // goods paid for and waiting to be collected
   if(v === 'returns') return allowed('pos');  // whoever may bill may take goods back          // everyone has one; each item on it keeps to the page it comes from
   if(v === 'issues'||v === 'transfers') return typeof extMulti==='function'&&extMulti();   // nothing to see with one shop
   if(v === 'ai') return ownerOnly();        // what it is shown includes costs and margins
@@ -12778,7 +12779,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     try{ mn.innerHTML = r() }
     catch(err){
@@ -12805,6 +12806,7 @@ function renderNow(){
   if(S.view==='stocktake') stockTakeAfter();
   if(S.view==='purchasing') purchasingAfter();
   if(S.view==='social') socialAfter();
+  if(S.view==='collect') collectAfter();
   if(S.view==='serials'){ const sq=$('#srQ'); if(sq){ sq.oninput=e=>{srQ=e.target.value;render();const n=$('#srQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body) sq.focus() } } if(S.view==='labels') labelsAfter(); if(S.view==='receipts') receiptsAfter(); if(S.view==='dashboard') dashboardAfter();
 
@@ -17433,7 +17435,7 @@ function posClassic(){
   const nextNo=peekBillNo();
   const now=new Date(), sel=P(CS.pid), drag=CFG.pos.dragLines!==false;
   const owed=c.id===1?0:partyBal('C',c.id);
-  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['P on the bill','Price'],['N on the bill','Rename'],['F1','Back to item'],['F4','Customer'],
+  const keys=[['← → Enter','Next box'],['Enter on DIS','Add line'],['↓','To the bill'],['↑ ↓','On the bill'],['Space','Edit qty · price / done'],['P on the bill','Price'],['L on the bill','Collect later'],['N on the bill','Rename'],['F1','Back to item'],['F4','Customer'],
               ['F5 / Ctrl+R','Held bills'],['F7 / Ctrl+H','Hold bill'],['F8','Bill disc.'],['F10','Pay'],['F6','On account'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['S in price','Past prices'],['C','Tick · untick a line'],['Ctrl+Shift+W / R','Wholesale · retail'],['Ctrl+Shift+L / N','Large · normal bill'],['Clear','Reset bill']];
 
   const sync=(document.getElementById('savedAt')||{}).textContent||'';
@@ -17504,7 +17506,7 @@ function posClassic(){
           ${(l.warranty&&l.warranty!=='0')||(l.serials&&l.serials.length)?`<em class="ln-wr" title="W — warranty and serial numbers">${[l.warranty&&l.warranty!=='0'?'🛡 '+l.warranty+' warranty':'',(l.serials&&l.serials.length)?'S/N '+l.serials.join(', '):''].filter(Boolean).join(' · ')}</em>`:''}
           ${l.fromLast?`<span class="tag blue">their last price · ${l.fromLast}</span>`:''}
           ${!isOpenLine(l)&&l.qty>p.stock+1e-9&&CFG.stock.track!==false?'<span class="tag bad">short on the floor</span>':''}
-          ${l.belowCost?'<span class="tag bad">under cost</span>':''}</td>
+          ${l.belowCost?'<span class="tag bad">under cost</span>':''}${laterOf(l)?`<span class="tag warn" data-act="csLaterAct" data-i="${i}" style="cursor:pointer" title="L — collect later">📦 ${fq(laterOf(l))} to collect later${l.laterNote?' · '+noteEsc(l.laterNote):''}</span>`:''}</td>
          <td class="n q">${ed?`<input class="ln-in" id="lnQty" type="number" step="any" value="${l.qty}">`:fq(l.qty)}</td>
          <td class="n mrp">${p.mrp?money2(p.mrp):'—'}</td>
          <td class="n pr">${ed?`<input class="ln-in" id="lnPrice" type="number" step="any" value="${l.price}">`
@@ -18359,6 +18361,8 @@ function bindClassic(){
       // P goes straight to the price of the line under the cursor, N to what it is called on this bill
       if(!e.ctrlKey&&!e.altKey&&e.key.toLowerCase()==='p'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csLineEdit(S.pos.sel,'price'); return }
       if(!e.ctrlKey&&!e.altKey&&(e.key.toLowerCase()==='n'||e.key.toLowerCase()==='e')){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csLineRename(S.pos.sel); return }
+      // L: some or all of the line is collected later
+      if(!e.ctrlKey&&!e.altKey&&!e.metaKey&&e.key.toLowerCase()==='l'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csLater(S.pos.sel); return }
       // W: the warranty and serial numbers of the line under the cursor
       if(!e.ctrlKey&&!e.altKey&&!e.metaKey&&e.key.toLowerCase()==='w'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csWarranty(S.pos.sel); return }
       if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csEditLine(S.pos.sel); return }
@@ -20000,7 +20004,8 @@ function stockTake(){
   const list=S.products.filter(p=>!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)
     ||(p.short||'').toLowerCase()===q||String(p.num||'')===q||p.cat.toLowerCase().includes(q));
   const counted=Object.keys(stkCount).filter(k=>stkCount[k]!=='');
-  const diffs=counted.map(k=>{const p=P(+k); return {p,c:+stkCount[k],d:+stkCount[k]-p.stock}}).filter(x=>Math.abs(x.d)>1e-9);
+  const held=heldMap(), onShelf=p=>+(p.stock+(held[p.id]||0)).toFixed(3);   // sold, still here for the customer to collect
+  const diffs=counted.map(k=>{const p=P(+k); return {p,c:+stkCount[k],d:+stkCount[k]-onShelf(p)}}).filter(x=>Math.abs(x.d)>1e-9);
   const short=diffs.filter(x=>x.d<0).reduce((a,x)=>a+(-x.d)*x.p.cost,0);
   const over=diffs.filter(x=>x.d>0).reduce((a,x)=>a+x.d*x.p.cost,0);
   return `<h1>Stock take</h1>
@@ -20020,13 +20025,13 @@ function stockTake(){
    <div class="muted">Count what is actually on the floor and type it in. Nothing moves until you close the count — then the difference is posted to stock adjustments, with a note of who counted.</div>
   </div>
   <div class="card">
-   <table><tr><th>No.</th><th>Item</th><th>Category</th><th class="n">Books say</th><th class="n">Counted</th><th class="n">Difference</th><th class="n">At cost</th></tr>
-   ${list.slice(0,200).map(p=>{const c=stkCount[p.id], d=(c===''||c===undefined)?null:+c-p.stock;
+   <table><tr><th>No.</th><th>Item</th><th>Category</th><th class="n">Should be on the shelf</th><th class="n">Counted</th><th class="n">Difference</th><th class="n">At cost</th></tr>
+   ${list.slice(0,200).map(p=>{const c=stkCount[p.id], d=(c===''||c===undefined)?null:+c-onShelf(p);
      return `<tr class="${d===null?'':d===0?'':'stk'}">
       <td><span class="pnum">${p.num||''}</span></td>
       <td>${p.name}<div class="muted">${p.code}</div></td>
       <td class="muted">${p.cat}</td>
-      <td class="n">${fq(p.stock)} ${p.unit}</td>
+      <td class="n">${fq(onShelf(p))} ${p.unit}${held[p.id]?`<div class="muted" title="Sold, waiting to be collected">incl. ${fq(held[p.id])} to collect</div>`:''}</td>
       <td class="n"><input type="number" step="any" data-stk="${p.id}" value="${c===undefined?'':c}" placeholder="—" style="width:100px;text-align:right"></td>
       <td class="n">${d===null?'—':d===0?'<span class="tag ok">agrees</span>':`<b class="${d<0?'rust':'green'}">${d>0?'+':''}${fq(d)}</b>`}</td>
       <td class="n">${d===null||d===0?'—':fmt(Math.abs(d)*p.cost)}</td></tr>`}).join('')}</table>
@@ -20043,7 +20048,8 @@ function stockTakeAfter(){
   });
 }
 function postStockTake(){
-  const diffs=Object.keys(stkCount).filter(k=>stkCount[k]!=='').map(k=>{const p=P(+k);return {p,d:+stkCount[k]-p.stock}}).filter(x=>Math.abs(x.d)>1e-9);
+  const held=heldMap();
+  const diffs=Object.keys(stkCount).filter(k=>stkCount[k]!=='').map(k=>{const p=P(+k);return {p,d:+stkCount[k]-(p.stock+(held[p.id]||0))}}).filter(x=>Math.abs(x.d)>1e-9);
   if(!diffs.length) return toast('Nothing differs from the books');
   const note=prompt('A word about this count — who counted, which aisle, anything unusual','Stock take '+D(today));
   if(note===null) return;
@@ -20053,7 +20059,7 @@ function postStockTake(){
   if(down>0.005) post(D(today),`Stock take ${no} — short on the floor`,no,[{ac:'5300',dr:+down.toFixed(2)},{ac:'1200',cr:+down.toFixed(2)}]);
   if(up>0.005) post(D(today),`Stock take ${no} — more than the books said`,no,[{ac:'1200',dr:+up.toFixed(2)},{ac:'5300',cr:+up.toFixed(2)}]);
   S.stocktakes.push({no,date:D(today),by:S.user.name,note,items:diffs.length,short:+down.toFixed(2),over:+up.toFixed(2),
-    lines:diffs.map(({p,d})=>({pid:p.id,was:p.stock-d,counted:p.stock,diff:d,cost:p.cost}))});
+    lines:diffs.map(({p,d})=>({pid:p.id,was:p.stock-d,counted:p.stock+(held[p.id]||0),diff:d,cost:p.cost,...(held[p.id]?{held:held[p.id]}:{})}))});
   notify('stock',`${S.user.name} closed a stock take — ${diffs.length} item(s), ${fmt(down-up)} net`,'inventory');
   stkCount={}; render();
   toast(`${no} posted — ${fmt(down)} short, ${fmt(up)} over`);
@@ -20150,7 +20156,10 @@ const warrantyLeft=(rec)=>{ if(!rec||!rec.warrantyTo) return null;
 const WARR_PERIODS=['0','3 MONTHS','6 MONTHS','1 YEAR','2 YEARS','3 YEARS','LIFETIME'];
 // the warranty and serials of a bill line, printed under it on the small bill
 const billWarrLine=(l)=>{ const t=[l.warranty&&l.warranty!=='0'?'WARRANTY: '+l.warranty:'',(l.serials&&l.serials.length)?'S/N: '+l.serials.join(', '):''].filter(Boolean).join('  |  ');
-  return t?`<tr class="wr"><td colspan="4">${noteEsc(t)}</td></tr>`:'' };
+  return (t?`<tr class="wr"><td colspan="4">${noteEsc(t)}</td></tr>`:'')+(+l.later>0?`<tr class="wr"><td colspan="4"><b>** NOT ISSUED — ${fq(+l.later)} TO COLLECT LATER **</b></td></tr>`:'') };
+// under the items: the goods the customer comes back for
+const billLaterNote=(inv)=>{ const L=(inv.lines||[]).filter(l=>+l.later>0); if(!L.length) return '';
+  return `<div style="border:1.5px solid #000;padding:3px 5px;margin:4px 0;font-weight:700">GOODS NOT ISSUED — TO COLLECT LATER:${L.map(l=>`<div style="font-weight:400">${noteEsc(lineName(l).toUpperCase())} — ${fq(+l.later)}</div>`).join('')}<div style="font-weight:400;font-size:.9em">Bring this bill to collect them.</div></div>` };
 function csWarranty(i){
   const line=i>=0?S.pos.lines[i]:null, pid=line?line.pid:CS.pid, p=P(pid); if(!p) return;
   const qty=Math.max(1,Math.round(Math.abs(+(line?line.qty:CS.qty)||1)));
@@ -20217,6 +20226,143 @@ function askSerials(p,qty,then,pre){
   draw(); f.focus();
 }
 
+/* ================== GOODS TO COLLECT ==================
+   Paid for on a bill but left here — the customer comes back for them. On the till, L on a bill line
+   says how many of it are to be collected later; the bill prints "NOT ISSUED — to collect later".
+   The sale is complete as any other: paid, posted and out of stock, so nobody can sell those pieces
+   again. They are still on the shelf, though, so a stock take counts them back in. When the customer
+   comes, they are issued here — all or part — and a goods issue note is printed for the signature.
+   A return of the line takes it off the list. (26 Oct 2026) */
+const laterOf=(l)=>+l.later>0?+l.later:0;
+function collectOpen(){
+  const out=[];
+  (S.sales||[]).forEach(inv=>{ if(inv.returnOf) return; let ret=null;
+    (inv.lines||[]).forEach((l,i)=>{ if(!laterOf(l)) return; if(!ret) ret=returnedFrom(inv);
+      const issued=(l.issued||[]).reduce((a,x)=>a+(+x.qty||0),0);
+      const left=+Math.max(0,laterOf(l)-issued-(ret[i]||0)).toFixed(3);
+      out.push({inv,i,l,issued,left}) }) });
+  return out;
+}
+// what is sold but still on the shelf, by item — the stock take adds it to what the books say
+function heldFor(pid){ return collectOpen().filter(x=>x.left>0&&String(x.l.pid)===String(pid)).reduce((a,x)=>a+x.left,0) }
+function heldMap(){ const m={}; collectOpen().forEach(x=>{ if(x.left>0&&!isOpenLine(x.l)) m[x.l.pid]=+((m[x.l.pid]||0)+x.left).toFixed(3) }); return m }
+let colQ='', colTab='open';
+function collectPage(){
+  const all=collectOpen(), open=all.filter(x=>x.left>0);
+  const q=colQ.trim().toLowerCase();
+  const hit=x=>{ const c=C(x.inv.customerId)||{}; return !q||String(x.inv.no).toLowerCase().includes(q)||String(c.name||'').toLowerCase().includes(q)||String(c.phone||'').includes(q)||lineName(x.l).toLowerCase().includes(q)||String(x.l.laterNote||'').toLowerCase().includes(q) };
+  const bills=[...new Set(open.map(x=>x.inv.no))];
+  const age=d=>Math.max(0,Math.round((today-new Date(d))/864e5));
+  const old=open.filter(x=>age(x.inv.date)>=7).length;
+  const value=open.reduce((a,x)=>a+x.left*paidEach(x.inv,x.l),0);
+  const issues=[]; all.forEach(x=>(x.l.issued||[]).forEach(r=>issues.push({...r,x}))); issues.sort((a,b)=>String(b.at||b.date).localeCompare(String(a.at||a.date)));
+  const rowsOpen=open.filter(hit).sort((a,b)=>String(a.inv.date).localeCompare(String(b.inv.date))).map(x=>{ const c=C(x.inv.customerId)||{}, a=age(x.inv.date);
+    return `<tr><td><b class="mono">${noteEsc(x.inv.no)}</b><div class="muted">${x.inv.date}</div></td>
+     <td>${noteEsc(c.id===1?'Walk-in':c.name||'')}<div class="muted">${noteEsc(c.phone||'')}</div></td>
+     <td>${noteEsc(lineName(x.l).toUpperCase())}${x.l.laterNote?`<div class="muted">📝 ${noteEsc(x.l.laterNote)}</div>`:''}</td>
+     <td class="n">${fq(x.l.qty)}</td><td class="n">${fq(x.issued)}</td><td class="n"><b>${fq(x.left)}</b></td>
+     <td class="n">${a>=7?`<span class="tag bad">${a} days</span>`:a?a+' day'+(a===1?'':'s'):'today'}</td>
+     <td class="n" style="white-space:nowrap"><button class="btn tape sm" data-act="colIssue" data-no="${noteEsc(x.inv.no)}" data-i="${x.i}">Issue</button>
+      <button class="btn ghost sm" data-act="colIssueBill" data-no="${noteEsc(x.inv.no)}" title="Everything still to collect on this bill">Whole bill</button></td></tr>` }).join('');
+  const rowsDone=issues.filter(r=>hit(r.x)).slice(0,200).map(r=>{ const c=C(r.x.inv.customerId)||{};
+    return `<tr><td><b class="mono">${noteEsc(r.no||'')}</b><div class="muted">${noteEsc(r.date||'')}</div></td><td class="mono">${noteEsc(r.x.inv.no)}</td>
+     <td>${noteEsc(c.id===1?'Walk-in':c.name||'')}</td><td>${noteEsc(lineName(r.x.l).toUpperCase())}</td><td class="n">${fq(r.qty)}</td>
+     <td>${noteEsc(r.by||'')}${r.who?`<div class="muted">collected by ${noteEsc(r.who)}</div>`:''}</td>
+     <td class="n"><button class="btn ghost sm" data-act="colReprint" data-isn="${noteEsc(r.no||'')}">Print</button></td></tr>` }).join('');
+  return `<h1>Goods to collect</h1>
+  <div class="row" style="margin-bottom:12px">
+   ${stat('Bills with goods waiting',bills.length,'paid for, not yet collected','b')}
+   ${stat('Lines to issue',open.length,fq(open.reduce((a,x)=>a+x.left,0))+' pieces in all','y')}
+   ${stat('Waiting a week or more',old,old?'call the customer':'none','r')}
+   ${stat('Value held for customers',fmt(value),'already sold — still on our shelf','g')}
+  </div>
+  <div class="card" style="margin-bottom:12px"><div class="findbar">
+   <div class="f" style="flex:2;min-width:240px"><label>Find — bill number, customer, phone or item</label><input id="colQ" value="${noteEsc(colQ)}" placeholder="scan the bill or type" autocomplete="off"></div>
+   <div class="f" style="flex:0"><label>&nbsp;</label><div style="display:flex;gap:6px;white-space:nowrap"><button class="btn ${colTab==='open'?'tape':'ghost'}" data-act="colTab" data-t="open">To issue (${open.length})</button><button class="btn ${colTab==='done'?'tape':'ghost'}" data-act="colTab" data-t="done">Issued (${issues.length})</button></div></div></div>
+   <div class="muted">On the till, press <b>L</b> on a bill line to keep it (or some of it) for the customer to collect later. The goods are sold and out of stock from the bill; the stock take counts them back in while they are still here.</div></div>
+  <div class="card">${colTab==='open'
+    ? `<table><tr><th>Bill</th><th>Customer</th><th>Item</th><th class="n">On the bill</th><th class="n">Issued</th><th class="n">To issue</th><th class="n">Waiting</th><th></th></tr>${rowsOpen||'<tr><td colspan="8" class="muted" style="padding:22px;text-align:center">Nothing waiting to be collected.</td></tr>'}</table>`
+    : `<table><tr><th>Issue note</th><th>Bill</th><th>Customer</th><th>Item</th><th class="n">Qty</th><th>Issued by</th><th></th></tr>${rowsDone||'<tr><td colspan="7" class="muted" style="padding:22px;text-align:center">Nothing issued yet.</td></tr>'}</table>`}</div>`;
+}
+function collectAfter(){
+  const q=$('#colQ'); if(!q) return;
+  q.oninput=()=>{ colQ=q.value; render(); const n=$('#colQ'); if(n){ n.focus(); n.setSelectionRange(n.value.length,n.value.length) } };
+}
+/* issue: one line, or everything still waiting on a bill */
+function collectIssue(no,only){
+  const inv=(S.sales||[]).find(s=>s.no===no&&!s.returnOf); if(!inv) return toast('That bill is not in the books','warn');
+  const L=collectOpen().filter(x=>x.inv===inv&&x.left>0&&(only===undefined||x.i===only));
+  if(!L.length) return toast('Nothing left to issue on '+no);
+  const c=C(inv.customerId)||{};
+  const m=modal(`<h2>📦 Issue goods · ${noteEsc(no)}</h2>
+   <div class="muted">${noteEsc(c.id===1?'Walk-in customer':c.name||'')} · billed ${inv.date}. Hand over the goods, then press Issue — a goods issue note prints for the signature.</div>
+   <table style="margin-top:10px"><tr><th>Item</th><th class="n">Waiting</th><th class="n">Giving now</th></tr>
+    ${L.map((x,k)=>`<tr><td>${noteEsc(lineName(x.l).toUpperCase())}${x.l.laterNote?`<div class="muted">📝 ${noteEsc(x.l.laterNote)}</div>`:''}</td><td class="n">${fq(x.left)}</td>
+     <td class="n"><input type="number" step="any" min="0" max="${x.left}" data-ci="${k}" value="${x.left}" style="width:90px;text-align:right"></td></tr>`).join('')}</table>
+   <div class="f" style="margin-top:10px"><label>Collected by — name or phone (optional)</label><input id="ciWho" maxlength="60" autocomplete="off"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="ciOk">Issue and print (Enter)</button></div>`);
+  const ok=()=>{
+    const give=L.map((x,k)=>({x,q:+m.querySelector(`[data-ci="${k}"]`).value||0})).filter(g=>g.q>0);
+    for(const g of give) if(g.q>g.x.left+1e-9) return toast(`Only ${fq(g.x.left)} of ${lineName(g.x.l)} is waiting`,'warn');
+    if(!give.length) return toast('Nothing to give');
+    const isn=next('ISN'), who=(m.querySelector('#ciWho').value||'').trim(), at=Date.now();
+    give.forEach(g=>{ g.x.l.issued=(g.x.l.issued||[]).concat([{no:isn,qty:g.q,date:D(today),at,by:S.user.name,...(who?{who}:{})}]) });
+    try{ logTrail('other',`${isn}: goods from ${no} handed over — ${give.map(g=>lineName(g.x.l)+' × '+fq(g.q)).join(', ')}`,{ref:no}) }catch(e){}
+    persist(true); m.remove(); render();
+    toast(`${isn} — goods from ${no} issued`);
+    collectPrint(isn);
+  };
+  m.querySelector('#ciOk').onclick=ok;
+  m.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); ok() } }));
+  const f=m.querySelector('[data-ci]'); if(f){ f.focus(); f.select() }
+}
+/* the goods issue note, on the 80mm roll: what went, what is still to come, and two signatures */
+function collectPrint(isn){
+  const lines=[]; let inv=null, rec=null;
+  (S.sales||[]).forEach(s=>(s.lines||[]).forEach((l,i)=>(l.issued||[]).forEach(r=>{ if(r.no===isn){ inv=s; rec=r; lines.push({l,i,r}) } })));
+  if(!inv) return toast('That issue note is not in the books','warn');
+  const c=C(inv.customerId)||{}, SH=CFG.shop, B=CFG.bill, sc=Math.max(0.6,Math.min(2,(+B.r80Scale||100)/100));
+  const still=collectOpen().filter(x=>x.inv===inv&&x.left>0);
+  const inner=`<div class="print r80 sb80" data-scale="${sc}" style="zoom:${sc};width:calc(302px / ${sc});font-family:${billFontCss(B.r80Font)}">
+   <div class="sb-name">${noteEsc(SH.name||'REGAL HARDWARE')}</div>
+   <div class="sb-addr">${noteEsc((SH.addr||'').toUpperCase())}</div>
+   <div class="sb-phone">${noteEsc(SH.phone||'')}</div>
+   <div style="text-align:center;font-weight:800;font-size:16px;letter-spacing:.12em;border:2px solid #000;padding:3px 0;margin:4px 0 6px">GOODS ISSUE NOTE</div>
+   <div class="sb-kv"><span>Issue No :</span><b>${noteEsc(isn)}</b><span>${noteEsc(rec.date)}</span></div>
+   <div class="sb-kv"><span>Bill No :</span><b>${noteEsc(inv.no)}</b><span>${noteEsc(inv.date)}</span></div>
+   ${c.id===1?'':`<div class="sb-kv"><span>Customer :</span><b>${noteEsc((c.name||'').toUpperCase())}</b><span>${noteEsc(c.phone||'')}</span></div>`}
+   ${rec.who?`<div class="sb-kv"><span>Collected by :</span><b>${noteEsc(rec.who.toUpperCase())}</b><span></span></div>`:''}
+   <div class="sb-rule"></div>
+   <table class="sb-items"><tr><th class="l">#&nbsp; Item</th><th></th><th></th><th>Qty</th></tr>
+    ${lines.map((x,k)=>`<tr class="nm"><td colspan="3">${k+1})&nbsp; ${noteEsc(lineName(x.l).toUpperCase())}</td><td>${fq(x.r.qty)}</td></tr>`).join('')}</table>
+   <div class="sb-rule"></div>
+   ${still.length?`<div style="font-weight:700;margin:2px 0">STILL TO COLLECT ON THIS BILL:</div>${still.map(x=>`<div>${noteEsc(lineName(x.l).toUpperCase())} — ${fq(x.left)}</div>`).join('')}<div class="sb-rule"></div>`:'<div style="text-align:center;font-weight:700">ALL GOODS ON THIS BILL ARE NOW ISSUED</div><div class="sb-rule"></div>'}
+   <div class="sb-sign"><span>Issued By (${noteEsc(rec.by||'')})</span><span>Received By</span></div>
+   <div class="sb-foot">Goods received in good order.</div>
+  </div>`;
+  printPaper(printDocument(inner,'r80'),'r80',isn,()=>paperFallback(inner,'r80'));
+}
+/* L on the till: how much of a bill line the customer comes back for */
+function csLater(i){
+  const l=S.pos.lines[i]; if(!l) return;
+  if(!(l.qty>0)) return toast('A line coming back cannot be kept for later','warn');
+  const m=modal(`<h2>📦 Customer collects later</h2>
+   <div class="muted">${noteEsc(lineName(l).toUpperCase())} · ${fq(l.qty)} on the bill. It is paid for on this bill and is theirs; the goods stay here until they come. The bill prints NOT ISSUED, and it waits on Goods to collect until it is issued.</div>
+   <div class="grid2" style="margin-top:10px"><div class="f"><label>How many to collect later</label><input id="clQty" type="number" step="any" min="0" value="${laterOf(l)||l.qty}"></div>
+    <div class="f"><label>Note — who comes, when (optional)</label><input id="clNote" maxlength="80" autocomplete="off" value="${noteEsc(l.laterNote||'')}"></div></div>
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px">${laterOf(l)?'<button class="btn ghost" id="clOff">They take it all now</button>':'<span></span>'}
+    <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="clOk">Keep for later (Enter)</button></div></div>`);
+  const q=m.querySelector('#clQty'), nt=m.querySelector('#clNote');
+  const ok=()=>{ const n=+q.value||0;
+    if(n<=0){ delete l.later; delete l.laterNote; m.remove(); render(); return toast('All taken now') }
+    if(n>l.qty+1e-9){ q.focus(); q.select(); return toast(`Only ${fq(l.qty)} on this line`,'warn') }
+    l.later=+n.toFixed(3); const t=(nt.value||'').trim(); if(t) l.laterNote=t; else delete l.laterNote;
+    m.remove(); render(); toast(`${fq(l.later)} of ${lineName(l)} to collect later`) };
+  m.querySelector('#clOk').onclick=ok;
+  const off=m.querySelector('#clOff'); if(off) off.onclick=()=>{ delete l.later; delete l.laterNote; m.remove(); render(); toast('All taken now') };
+  [q,nt].forEach(el=>el.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); ok() } }));
+  q.focus(); q.select();
+}
 /* the serial book: look one up, see where it has been */
 let srQ='';
 function serials(){
@@ -22927,7 +23073,7 @@ function billHtml(inv,f='a5'){
      ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td></tr>
       <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>${billWarrLine(l)}`}).join('')}
      </table>`,
-    totals:`<div class="sb-rule"></div>
+    totals:`${billLaterNote(inv)}<div class="sb-rule"></div>
      <div class="sb-tot"><span>Gross Total Rs.</span><i>:</i><b>${money2(gross)}</b></div>
      ${disc>0?`<div class="sb-tot bold"><span>- Line Discount ${discPct.toFixed(2)} %</span><i>:</i><b>${money2(disc)}</b></div>`:''}
      <div class="sb-stars">${'*'.repeat(46)}</div>
@@ -22975,7 +23121,7 @@ function billHtml(inv,f='a5'){
     const unit=q?net/q:0; const mrp=Math.max(+l.mrp||0,+p.mrp||0);
     const pct=(x)=>x.toFixed(1).replace(/\.0$/,'')+'%';
     const dsc=l.discPct?pct(+l.discPct):((+l.disc||0)>0.005?money2(l.disc):(mrp>unit+0.005?pct((1-unit/mrp)*100):'—'));
-    const extra=[lineFrom(l,inv)?`issue from ${lineFrom(l,inv)}`:'', (l.serials&&l.serials.length)?`S/N ${l.serials.join(', ')}`:'', (l.warranty&&l.warranty!=='0')?`Warranty: ${l.warranty}`:''].filter(Boolean).join(' · ');
+    const extra=[lineFrom(l,inv)?`issue from ${lineFrom(l,inv)}`:'', (l.serials&&l.serials.length)?`S/N ${l.serials.join(', ')}`:'', (l.warranty&&l.warranty!=='0')?`Warranty: ${l.warranty}`:'', +l.later>0?`NOT ISSUED — ${fq(+l.later)} to collect later`:''].filter(Boolean).join(' · ');
     return `<tr class="${anyChecked&&l.checked!==true?'notck':''}"><td class="c">${i+1}</td>${showCode?`<td class="cd">${esc5(p.num||p.code||'')}</td>`:''}<td class="d"><b>${esc5(lineName(l))}</b>${extra?` <i>${esc5(extra)}</i>`:''}</td>${showUom?`<td class="u">${esc5((p.unit||'').toUpperCase())}</td>`:''}<td class="n">${q.toFixed(q%1?3:2)}</td>${showMrp?`<td class="n mrp">${mrp>0?(mrp>unit+0.005?`<s>${money2(mrp)}</s>`:money2(mrp)):'—'}</td>`:''}<td class="n">${money2(unit)}</td><td class="n amt">${money2(net)}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`; }).join('');
   const brandH=on('brand')&&B.a5Lockup!==false?`<div class="x-brand"><img class="x-lockup" src="${REGAL_LOCKUP}" alt="${esc5(nm)}"></div>`:on('brand')?`<div class="x-brand">${B.showLogo!==false?`<div class="x-mark">${logo(46)}</div>`:''}<div class="x-name"><div class="x-nm"><span class="blk">${esc5(nmA)}</span> ${esc5(nmB)}</div>${(SH.sinhala||SHOP.sinhala)?`<div class="x-sin">${SH.sinhala||SHOP.sinhala}</div>`:''}</div></div>`:'';
   const shopH=on('addr')?`<div class="x-shop"><div class="x-line">${esc5(addrTxt)}</div>${phoneTxt?`<div class="x-phone">☎ ${esc5(phoneTxt)}</div>`:''}${strap?`<div class="x-strap">${esc5(strap)}</div>`:''}${ids?`<div class="x-ids">${ids}</div>`:''}</div>`:'<div class="x-shop"></div>';
@@ -22987,7 +23133,8 @@ function billHtml(inv,f='a5'){
     <div class="x-to"><div class="x-lbl">${dk?'QUOTED FOR':'BILL TO'}</div><div class="x-cn">${walk?'WALK-IN CUSTOMER':esc5(c.name.toUpperCase())}</div>${custLine?`<div class="x-ca">${custLine}</div>`:''}</div>
    </div>`:'');
   /* the remarks box only when something was written on the bill at the till */
-  const remH=inv.note?`<div class="x-box x-rem"><div class="x-bh">REMARKS</div><div class="x-bb">${esc5(inv.note)}</div></div>`:'';
+  const laterH=(inv.lines||[]).some(l=>+l.later>0)?`<div class="x-box x-rem"><div class="x-bh">GOODS NOT ISSUED — TO COLLECT LATER</div><div class="x-bb">${inv.lines.filter(l=>+l.later>0).map(l=>`${esc5(lineName(l).toUpperCase())} — ${fq(+l.later)}`).join('<br>')}<br><i>Bring this bill to collect them.</i></div></div>`:'';
+  const remH=laterH+(inv.note?`<div class="x-box x-rem"><div class="x-bh">REMARKS</div><div class="x-bb">${esc5(inv.note)}</div></div>`:'');
   const subH=`<div class="x-box x-sub"><div class="x-bh">SUB TOTAL</div><div class="x-bb"><div><span>Lines</span><b>${inv.lines.length}</b></div><div><span>Quantity</span><b>${fq(qtyAll)}</b></div><div><span>Gross value</span><b>${money2(gross)}</b></div>${disc>0.005?`<div><span>Discount</span><b>− ${money2(disc)}</b></div>`:''}<div class="net"><span>Net</span><b>${money2(inv.total)}</b></div></div></div>`;
   const paidH=dk?`<div><span>Quoted on</span><b>${esc5(inv.date||'')}</b></div><div><span>Holds good for</span><b>${inv.valid||CFG.bill.quoteDays||14} days</b></div>`:credit?`<div><span>Paid now</span><b>${money2(inv.paid)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div>`
     :`<div><span>${esc5(payWord)} received</span><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div><span>Change</span><b>${money2(inv.paid-inv.total)}</b></div>`:''}`;
@@ -30344,6 +30491,11 @@ document.addEventListener('click',e=>{
     leaveShop:()=>leaveShopModal(+a.dataset.id),
     approveLeave:()=>approveEarlyLeave(+a.dataset.id, true),
     rejectLeave:()=>approveEarlyLeave(+a.dataset.id, false),
+    colTab:()=>{ colTab=a.dataset.t; render() },
+    csLaterAct:()=>csLater(+a.dataset.i),
+    colIssue:()=>collectIssue(a.dataset.no,+a.dataset.i),
+    colIssueBill:()=>collectIssue(a.dataset.no),
+    colReprint:()=>collectPrint(a.dataset.isn),
     shopWork:()=>shopWorkAsk(+a.dataset.id),
     swYes:()=>shopWorkDecide(+a.dataset.id, true),
     swNo:()=>shopWorkDecide(+a.dataset.id, false),
