@@ -16,13 +16,17 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['--no-sandbox'] });
 const pg = await b.newPage(); await pg.setViewport({ width: 1366, height: 768 });
 const errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('dialog', d => d.accept());
-const prints = []; let played = [];
+const prints = []; let played = [], oldHelper = false;
 await pg.setRequestInterception(true);
 pg.on('request', rq => { const u = rq.url();
+  // the pictures kept with a bill on the shop's server — three stand-ins
+  if (/\/api\/cams\/shots\//.test(u)) return rq.respond({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ shots: [0, 1, 2].map(k => ({ url: '/kept-shot-' + k + '.jpg', at: new Date().toISOString() })) }) });
+  if (/\/kept-shot-\d\.jpg$/.test(u)) return rq.respond({ status: 200, contentType: 'image/jpeg', body: JPEG });
   if (/^https?:\/\/(localhost|127\.0\.0\.1):4101\//.test(u)) {           // the camera helper, answered here
     const p = new URL(u);
     if (p.pathname === '/health') return rq.respond({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify({ ok: true, helper: 'camera', live: true, playback: true, cameras: 2 }) });
+      body: JSON.stringify({ ok: true, helper: 'camera', live: true, cameras: 2, ...(oldHelper ? {} : { playback: true }) }) });
     if (p.pathname === '/playback') { played.push(Object.fromEntries(p.searchParams)); return rq.respond({ status: 200, contentType: 'image/jpeg', headers: { 'Access-Control-Allow-Origin': '*' }, body: JPEG }) }
     return rq.respond({ status: 404, body: '' });
   }
@@ -46,11 +50,13 @@ const no = await pg.evaluate(() => { document.querySelectorAll('.modal').forEach
   const s = S.sales.filter(x => x.time && x.lines && x.lines.length).slice(-1)[0];
   window.eval('billSel = ' + JSON.stringify(s.no)); window.eval('go')('bills'); return s.no });
 await wait(600);
-const groups = await pg.$$eval('.bl-grp > span', e => e.map(x => x.textContent));
-ok(groups.length === 4, 'the bill\'s buttons are in four groups', groups.join(' · '));
+const tiles = await pg.$$eval('.bl-tile b', e => e.map(x => x.textContent));
+ok(tiles.join() === 'Large bill,Small bill,Look first,Camera', 'four tiles: large, small, look first, camera', tiles.join(' · '));
+ok(await pg.evaluate(() => new Set([...document.querySelectorAll('.bl-tile')].map(e => Math.round(e.getBoundingClientRect().top))).size === 1), 'all four on one line');
+ok(await pg.evaluate(() => [...document.querySelectorAll('.bl-more > div > span')].map(e => e.textContent).join()) === 'Send,Change', 'the rest in one small row: Send, Change');
 ok(await pg.evaluate(() => !!document.querySelector('[data-act="billPrint"][data-f="a5"]') && !!document.querySelector('[data-act="billPrint"][data-f="r80"]')), 'Large bill and Small bill are buttons of their own');
 await pg.screenshot({ path: OUT + '/bill-acts.png' });
-const lay = await pg.evaluate(() => [...document.querySelectorAll('.bl-grp .btn')].every(b => b.getBoundingClientRect().height < 60));
+const lay = await pg.evaluate(() => [...document.querySelectorAll('.bl-tile, .bl-more .btn')].every(b => b.getBoundingClientRect().height < 64));
 ok(lay, 'no button breaks over two lines');
 
 // print in one press, and by key
@@ -71,6 +77,7 @@ await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remov
 const inv = await pg.evaluate(n => { const s = window.eval('S').sales.find(x => x.no === n); return { date: s.date, time: s.time } }, no);
 await pg.keyboard.down('Alt'); await pg.keyboard.press('KeyC'); await pg.keyboard.up('Alt'); await wait(1200);
 ok(!!(await pg.$('.modal #bcImg')), 'Alt+C opens the bill\'s camera');
+ok(await pg.evaluate(() => { const r = document.querySelector('.modal .box').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight + 1 }), 'the camera window fits a 1366×768 screen — nothing to scroll');
 const p1 = played.at(-1) || {};
 const m = String(inv.time).match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap])?/i); let h = +m[1]; if (/p/i.test(m[4] || '') && h < 12) h += 12; if (/a/i.test(m[4] || '') && h === 12) h = 0;
 const billAt = new Date(+inv.date.slice(0, 4), +inv.date.slice(5, 7) - 1, +inv.date.slice(8, 10), h, +m[2], +(m[3] || 0));
@@ -86,6 +93,15 @@ ok((played.at(-1) || {}).ch === '201', 'picking the other camera plays that one'
 ok(await pg.evaluate(() => localStorage.getItem('regal_bill_cam')) === 'c2', 'and it is the one that comes up next time on this till');
 await pg.keyboard.press('Escape'); await wait(800);
 ok(await pg.evaluate(() => !document.querySelector('#bcImg')), 'Esc closes it (and lets the recorder go)');
+// a helper from before playback: straight to the pictures kept with the bill, and how to put it right
+oldHelper = true;
+await pg.evaluate(() => { window.eval('camHelper = null') });
+await pg.evaluate(n => window.eval('billCam')(n), no); await wait(1200);
+ok(await pg.evaluate(() => document.querySelectorAll('.bc-thumbs img').length) === 3, 'an old camera helper: it opens on the 3 pictures kept with the bill');
+await pg.screenshot({ path: OUT + '/bill-cam-old.png' });
+await pg.evaluate(() => document.querySelector('[data-mode="rec"]').click()); await wait(300);
+ok(/needs a restart/.test(await pg.evaluate(() => document.getElementById('bcMsg').innerText)), 'and Recording says the helper needs a restart, and how');
+await pg.keyboard.press('Escape'); await wait(300);
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);
 await b.close();
