@@ -40,6 +40,8 @@ const { w, d } = A;
 ok('A: app booted', !!w.S && typeof w.completeSale === 'function', `${w.S.products.length} products seeded`);
 const lock = await until(() => d.getElementById('lockScreen'));
 ok('A: lock screen shown first (server build)', !!lock);
+// since 2026-10-15 the lock asks for a user code + PIN first; the name + password form is one tap away
+if (!d.getElementById('lockUser') && !d.getElementById('lockPw')) w.shopLockPassword();
 if (d.getElementById('lockUser')) {
   d.getElementById('lockUser').value = 'Afridh';
   d.getElementById('lockUser').dispatchEvent(new w.Event('input'));
@@ -182,7 +184,7 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   ok('S: ledger billed − paid = balance', Math.abs(w.supLedger(1).reduce((a, r) => a + r.billed - r.paid, 0) - w.partyBal('S', 1)) < 0.01);
   // the window opens on the bills now, and the cheque lines come on the stage after it
   keyDoc('F7'); await sleep(30); ok('S: F7 opens Pay supplier', !!d.querySelector('.modal #spBody') && !!d.querySelector('.modal .sp-steps') && /Pay /.test(d.querySelector('.modal h2').textContent)); w.closeModals();
-  keyDoc('F8'); await sleep(30); ok('S: F8 prints the statement with a running balance', /SUPPLIER STATEMENT/.test(d.querySelector('.modal').innerHTML) && /Balance brought forward|Particulars/.test(d.querySelector('.modal').innerHTML)); w.closeModals();
+  keyDoc('F8', { ctrlKey: true }); await sleep(30); ok('S: Ctrl+F8 prints the statement with a running balance', /SUPPLIER STATEMENT/.test(d.querySelector('.modal').innerHTML) && /Balance brought forward|Particulars/.test(d.querySelector('.modal').innerHTML)); w.closeModals();
   keyDoc('n', { ctrlKey: true }); await sleep(30);
   ok('S: Ctrl+N opens the new supplier form', !!d.getElementById('smName'));
   d.getElementById('smName').value = 'Lanka Tiles'; key(d.getElementById('smName'), 'Enter'); ok('S: Enter steps to the contact', d.activeElement.id === 'smContact');
@@ -207,8 +209,9 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   w.S.pos = { lines: [], customer: null, billDisc: 0, sel: -1, entry: null, lastBill: w.S.pos.lastBill };
   w.go('pos'); await sleep(30);
   w.csStart(1); await sleep(20);
-  // the name is a step of its own now: code → name → qty → price → discount
-  ok('K: picking an item lands on the name', active() === 'csName');
+  // since 2026-10-26: code → qty → price → discount; the name opens for typing only with E
+  ok('K: picking an item lands on Qty', active() === 'csQty');
+  key(d.getElementById('csQty'), 'e'); ok('K: E opens the name for typing', active() === 'csName');
   key(d.getElementById('csName'), 'Enter'); ok('K: Enter on the name goes to Qty', active() === 'csQty');
   key(d.getElementById('csQty'), 'ArrowRight'); ok('K: → from Qty goes to Price', active() === 'csPrice');
   key(d.getElementById('csPrice'), 'ArrowRight'); ok('K: → from Price goes to Discount', active() === 'csDisc');
@@ -243,9 +246,8 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   const qb = d.getElementById('csQ'); qb.value = 'cement'; qb.dispatchEvent(new w.Event('input')); await sleep(20);
   ok('K: typing shows matches', d.querySelectorAll('#csHits [data-act="csPick"]').length > 0);
   w.csStart(1); await sleep(20);
-  ok('K: match list gone once an item is picked', d.querySelectorAll('#csHits [data-act="csPick"]').length === 0 && active() === 'csName');
+  ok('K: match list gone once an item is picked', d.querySelectorAll('#csHits [data-act="csPick"]').length === 0 && active() === 'csQty');
   // Space on a bill line: qty and price become boxes in the row
-  key(d.getElementById('csName'), 'Enter');
   key(d.getElementById('csQty'), 'ArrowDown'); await sleep(20);
   w.S.pos.sel = 1; key(d.activeElement, ' '); await sleep(20);
   ok('K: Space opens the line in place', active() === 'lnQty' && w.eval('CS').editLine === 1 && !d.querySelector('.modal'));
@@ -289,18 +291,26 @@ ok('A: cannot spend more points than held', /only has/.test(tooMany || ''), tooM
 // the printed bill, both layouts, as the old till printed them
 {
   const h80 = w.billHtml(inv1, 'r80'), ha5 = w.billHtml(inv1, 'a5');
-  ok('P: 80mm receipt has the old layout', /Invoice No :/.test(h80) && /Gross Total Rs\./.test(h80) && /Invoice Total Rs\./.test(h80) && /Payment Rs\./.test(h80) && /<svg class="bc"/.test(h80) && /No of Item \/ Qty/.test(h80) && /Authori[sz]ed By/i.test(h80));
-  ok('P: A5 invoice has the old layout', /Invoice No/.test(ha5) && /Invoice By/.test(ha5) && /<th>Code<\/th>/.test(ha5) && /D\.Price/.test(ha5) && /Gross Total/.test(ha5) && /- Inv\.Discount/.test(ha5) && /Net Total/.test(ha5) && /Amount Paid/.test(ha5) && /CHANGE RS\.|CREDIT RS\./.test(ha5) && /Authorised By/.test(ha5) && /Received By/.test(ha5));
+  // which of the expected pieces a printed bill is missing, so a failure names them
+  const miss = (h, res) => res.filter(r => !r.test(h)).map(r => r.source).join(' | ');
+  const m80 = miss(h80, [/Serial No :|Invoice No :/, /Gross Total Rs\./, /Invoice Total Rs\./, /Payment Rs\./, /No of Item \/ Qty/, /Authori[sz]ed By/i]);
+  ok('P: 80mm receipt has the old layout', !m80, m80 && 'missing ' + m80);
+  // the large bill is the boxed design since 2026-10-13: capitals, ITEM CODE / UNIT PRICE columns
+  const ma5 = miss(ha5, [/Invoice No/, /Invoice By/, /<th[^>]*>ITEM CODE<\/th>/, /<th[^>]*>DESCRIPTION<\/th>/, /UNIT PRICE/, /INVOICE TOTAL/, /Amount in words/, /AUTHORISED BY/, /RECEIVED BY/]);
+  ok('P: A5 invoice has the boxed layout', !ma5, ma5 && 'missing ' + ma5);
   ok('P: bill date is the local date', w.D(w.today) === new Date().toLocaleDateString('en-CA'));
   // the bill is set up under Settings → What the bill shows: logo, names, wording, what appears
   w.eval("setTab='layout'"); w.go('settings'); await sleep(40);
   ok('P: bill design tab shows both live samples and the logo box', d.querySelectorAll('.billprev .print').length === 2 && !!d.getElementById('logoFile') && !!d.querySelector('[data-set="shop.name"]') && !!d.querySelector('[data-set="bill.footer"]'));
-  w.eval("CFG.shop.logo='data:image/png;base64,iVBORw0KGgo='; CFG.shop.name='TEST STORES'; CFG.bill.showBarcode=false; CFG.bill.signLeft='Cashier'; CFG.bill.t80Thanks='Come back soon'");
+  // the barcode is off the receipt since 5 Oct 2026 (barcodeOff1); the large bill shows the Regal lockup unless a5Lockup is off
+  w.eval("CFG.bill.a5Lockup=false; CFG.shop.logo='data:image/png;base64,iVBORw0KGgo='; CFG.shop.name='TEST STORES'; CFG.bill.showBarcode=false; CFG.bill.signLeft='Cashier'; CFG.bill.t80Thanks='Come back soon'");
   const h80b = w.billHtml(inv1, 'r80'), ha5b = w.billHtml(inv1, 'a5');
-  ok('P: logo, name, wording and toggles all reach the printed bill', /<img src="data:image\/png/.test(h80b) && /TEST STORES/.test(h80b) && !/<svg class="bc"/.test(h80b) && /Cashier/.test(h80b) && /Come back soon/.test(h80b) && /<img src="data:image\/png/.test(ha5b) && /TEST<\/span> STORES/.test(ha5b) && /Cashier/.test(ha5b));
+  const mcf = [miss(h80b, [/<img src="data:image\/png/, /TEST STORES/, /Cashier/, /Come back soon/]), /<svg class="bc"/.test(h80b) ? 'barcode still on 80mm' : '', miss(ha5b, [/<img src="data:image\/png/, /TEST/, /CASHIER/]) && 'A5: ' + miss(ha5b, [/<img src="data:image\/png/, /TEST/, /CASHIER/])].filter(Boolean).join(' ; ');
+  ok('P: logo, name, wording and toggles all reach the printed bill', !mcf, mcf && 'missing ' + mcf);
   w.eval("CFG.bill.showCode=false; CFG.bill.showMrp=false");
-  ok('P: A5 columns follow the toggles', !/<th>Code<\/th>/.test(w.billHtml(inv1, 'a5')) && !/>MRP</.test(w.billHtml(inv1, 'a5')) && />Price</.test(w.billHtml(inv1, 'a5')));
-  w.eval("CFG.shop.logo=''; CFG.shop.name='REGAL HARDWARE'; CFG.bill.showBarcode=true; CFG.bill.signLeft='Authorised By'; CFG.bill.showCode=true; CFG.bill.showMrp=true; CFG.bill.t80Thanks='Thank you, come again!'");
+  const ha5c = w.billHtml(inv1, 'a5');
+  ok('P: A5 columns follow the toggles', !/>ITEM CODE</.test(ha5c) && !/>MRP</.test(ha5c) && />UNIT PRICE</.test(ha5c), [/>ITEM CODE</.test(ha5c) && 'Code still shown', />MRP</.test(ha5c) && 'MRP still shown', !/>UNIT PRICE</.test(ha5c) && 'no price column'].filter(Boolean).join(', '));
+  w.eval("delete CFG.bill.a5Lockup; CFG.shop.logo=''; CFG.shop.name='REGAL HARDWARE'; CFG.bill.showBarcode=true; CFG.bill.signLeft='Authorised By'; CFG.bill.showCode=true; CFG.bill.showMrp=true; CFG.bill.t80Thanks='Thank you, come again!'");
   let printed = 0; w.print = () => { printed++; }; w.eval("CFG.print.agent=''"); w.printBill(inv1, 'r80');
   /* A bill is offered to the helper on this machine, then to the shop's queue, and only if neither
      will take it does this browser print. Each of those is a round trip, so wait for the bill to get
@@ -559,7 +569,8 @@ A.w.eval(`(function(){ if(!S.users.some(u=>u.name==='Ravi')) S.users.push({name:
 A.w.persist(true); await sleep(1200);
 
 const B = await openTill('B');
-const lockB = await until(() => B.d.getElementById('lockScreen'));
+let lockB = await until(() => B.d.getElementById('lockScreen'));
+if (!B.d.getElementById('lockUser') && !B.d.getElementById('lockPw')) { B.w.shopLockPassword(); lockB = B.d.getElementById('lockScreen'); }
 const staffB = () => [...lockB.querySelectorAll('[data-user]')].map(b => b.dataset.user);   // older lock screen listed them as buttons
 ok('B: fresh browser gets the lock screen and knows the staff', !!lockB && (!!B.d.getElementById('lockUser') || (staffB().includes('Afridh') && staffB().includes('Ravi'))),
   B.d.getElementById('lockUser') ? 'name and password asked for' : staffB().join(', '));

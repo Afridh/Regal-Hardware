@@ -97,7 +97,7 @@ nav .navsignout .nvi{width:16px;height:16px}
 
 /* the page needs air between it and the menu */
 @media (min-width:901px){
-  body:not(.navtop) main{padding-left:14px}
+  body:not(.navtop) main{padding:18px 22px 32px}
   body:not(.navtop) nav{border-right:1px solid rgba(255,255,255,.08)}
 }
 
@@ -308,7 +308,8 @@ input,select,textarea{border:1px solid var(--line);border-radius:var(--r);paddin
 input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--chip-yellow);outline-offset:1px}
 label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .f{margin-bottom:10px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.grid2 input,.grid2 select{min-width:0;max-width:100%}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 
 /* ---- paint chips for status ---- */
@@ -2138,11 +2139,14 @@ tr.rowlink{transition:background .1s ease}
 .ch-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
 .ch-f{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--steel);margin-top:6px}
 .ch-f .up{color:var(--chip-green)}.ch-f .down{color:var(--chip-rust)}
-.bchart{width:100%;height:150px;display:block}
+.bchart{width:100%;height:132px;display:block}
 .bchart .grid{stroke:var(--line2);stroke-width:.4;vector-effect:non-scaling-stroke}
-.bchart .bar{transform-origin:bottom;animation:barup .6s cubic-bezier(.2,.8,.3,1) backwards;animation-delay:var(--d)}
-.bchart .bar:hover{opacity:.8}
-.bchart .lbl{font-size:5px;fill:var(--steel);text-anchor:middle;font-family:Archivo,sans-serif}
+/* not .bar: the general .bar{height:6px} progress-bar rule beats an SVG rect's height attribute */
+.bchart .bc-bar{transform-box:fill-box;transform-origin:bottom;animation:barup .6s cubic-bezier(.2,.8,.3,1) backwards;animation-delay:var(--d)}
+.bchart .bc-bar:hover{opacity:.8}
+/* the labels sit under the drawing in HTML: inside a stretched viewBox the text squashes */
+.bc-lbls{display:flex;margin-top:4px}
+.bc-lbls span{flex:1 1 0;min-width:0;text-align:center;font-size:11px;color:var(--steel);font-family:Archivo,sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @keyframes barup{from{transform:scaleY(0)}}
 .donutwrap{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 .donut{transform:rotate(-90deg);flex:0 0 auto}
@@ -2167,7 +2171,7 @@ tr.rowlink{transition:background .1s ease}
 .dsrow{display:flex;align-items:center;gap:6px;padding:7px 4px;border-bottom:1px solid var(--line2)}
 .dsrow.off b{color:var(--faint)}
 @media (max-width:900px){.twoup,.flowchart{grid-template-columns:1fr}.dashrow>.flex1{min-width:0;flex-basis:100%}}
-@media (prefers-reduced-motion:reduce){.bchart .bar,.donut .arc,.fc-bar i{animation:none}}
+@media (prefers-reduced-motion:reduce){.bchart .bc-bar,.donut .arc,.fc-bar i{animation:none}}
 
 #cl tr.on td{background:var(--tint-yellow);box-shadow:inset 3px 0 0 var(--chip-yellow)}
 
@@ -2455,6 +2459,7 @@ tr.rowlink button{cursor:pointer}
 .pageing b{font-family:Archivo,sans-serif;font-size:13px}
 .pageing .late{background:var(--tint-rust)}
 .pbar{display:flex;align-items:center;gap:7px;padding:4px 0;font-size:12px}
+.pbar>b{white-space:nowrap;flex:0 0 auto}   /* the amount stays on one line; the bar gives way */
 .pbar span{width:82px;color:var(--steel);flex:0 0 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pbar i{height:9px;background:var(--chip-yellow);border-radius:2px;min-width:3px}
 .pbar b{margin-left:auto;font-size:12px}
@@ -4183,6 +4188,9 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
  html,body{max-width:100%;overflow-x:hidden}
  #app,main,.card,.row,.dashrow{max-width:100%;min-width:0}
  .row>*,.dashrow>*{min-width:0!important;flex-basis:100%!important}
+ /* a basis of 100% alone still let dashboard panels run 30px past a phone's edge */
+ .dashrow>*{max-width:100%}
+ .dashrow>.flex1>.card{min-width:0;overflow-x:auto}
  header{flex-wrap:wrap;row-gap:4px}
  header .sub{display:none}
  .board{grid-template-columns:1fr;gap:12px}
@@ -10874,7 +10882,7 @@ function actionItems(){
     const view=`data-id="${esA(o.id||o.no)}"`, open=actBtn('ordView','Open',view);
     if((o.dir||'IN')!=='OUT'&&o.status==='pending'){
       const id=`data-no="${esA(o.id)}"`;
-      push({cat:'supord',view:'orders',pri:2,key:'in'+o.id,who:s.name,when:o.date,title:`${s.name} sent an order`,sub:`${o.no||''} · ${n} line${n===1?'':'s'}${o.rep?' · '+o.rep:''}`,tag:'Their order',
+      push({cat:'supord',view:'orders',pri:2,key:'in'+o.id,who:s.name,when:o.date,title:`${s.name} sent an order`,sub:[o.no, n?`${n} line${n===1?'':'s'}`:(o.text&&o.text!=='(photo only)'?noteEsc(o.text.length>60?o.text.slice(0,60)+'…':o.text):(o.files||[]).length?`${o.files.length} photo${o.files.length===1?'':'s'}`:''), o.rep].filter(Boolean).join(' · '),tag:'Their order',
         acts:may?[actBtn('ord','Approve',id+' data-st="accepted"','tape'),actBtn('ordAdjust','Ask for a change',id),actBtn('ord','Turn down',id+' data-st="rejected"'),open]:[open]});
     } else if(o.dir==='OUT'&&o.status==='completed'){
       const no=`data-no="${esA(o.no)}"`, total=(o.supLines||[]).reduce((a,l)=>a+l.qty*(+l.price||0),0);
@@ -13237,13 +13245,12 @@ function barChart(rows,{h=120,money=true,stack=false}={}){
   // rows: [{label, values:[...] , tip}]
   const max=Math.max(1,...rows.map(r=>stack?r.values.reduce((a,b)=>a+b,0):Math.max(...r.values)));
   const W=100/rows.length;
-  return `<svg class="bchart" viewBox="0 0 100 ${h+18}" preserveAspectRatio="none">
+  return `<div class="bcwrap"><svg class="bchart" viewBox="0 0 100 ${h}" preserveAspectRatio="none">
    ${[0.25,0.5,0.75,1].map(k=>`<line x1="0" x2="100" y1="${h-h*k}" y2="${h-h*k}" class="grid"/>`).join('')}
    ${rows.map((r,i)=>{ let y=h; const x=i*W+W*0.15, bw=W*0.7;
      return r.values.map((v,j)=>{ const bh=v/max*h; y-=bh;
-       return `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="${CHART_COLORS[j]}" class="bar" style="--d:${i*30}ms"><title>${r.tip||r.label}: ${money?fmt(v):v}</title></rect>`}).join('')
-     +`<text x="${x+bw/2}" y="${h+13}" class="lbl">${r.label}</text>`}).join('')}
-  </svg>`;
+       return `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="${CHART_COLORS[j]}" class="bc-bar" style="--d:${i*30}ms"><title>${r.tip||r.label}: ${money?fmt(v):v}</title></rect>`}).join('')}).join('')}
+  </svg><div class="bc-lbls">${rows.map(r=>`<span>${r.label}</span>`).join('')}</div></div>`;
 }
 function donut(parts,{size=118,thick=16,center=''}={}){
   // parts: [{label,v,color}]
@@ -15923,8 +15930,9 @@ function dashboard(){
     <div class="chips"><span>Purchases <b>${fmt(sum(S.purchases.filter(p=>p.date===t),'total'))}</b></span>
      <span>Expenses <b>${fmt(expToday)}</b></span>
      <span>Collected <b>${fmt(S.payments.filter(p=>p.dir==='IN'&&p.date===t).reduce((a,p)=>a+p.amount,0))}</b></span></div></div>`,
-   alerts:()=>{ const items=[
-     waiting.length?`<button class="alert" data-view="orders"><b>${waiting.length}</b><span>supplier order${waiting.length===1?'':'s'} waiting on you</span></button>`:'',
+   alerts:()=>{ const pulseShown=!dashPrefs().hidden.includes('pulse'); // the pulse across the top already counts supplier orders
+     const items=[
+     waiting.length&&!pulseShown?`<button class="alert" data-view="orders"><b>${waiting.length}</b><span>supplier order${waiting.length===1?'':'s'} waiting on you</span></button>`:'',
      claims.length?`<button class="alert" data-view="customers"><b>${claims.length}</b><span>payment notice${claims.length===1?'':'s'} to check</span></button>`:'',
      noteS.length?`<button class="alert" data-view="suppliers"><b>${noteS.length}</b><span>supplier note${noteS.length===1?'':'s'} still to settle${noteS.reduce((a,n)=>a+(n.amount||0),0)>0.005?' · '+fmt(noteS.reduce((a,n)=>a+(n.amount||0),0)):''}</span></button>`:'',
      noteC.length?`<button class="alert" data-view="customers"><b>${noteC.length}</b><span>customer note${noteC.length===1?'':'s'} still to settle${noteC.reduce((a,n)=>a+(n.amount||0),0)>0.005?' · '+fmt(noteC.reduce((a,n)=>a+(n.amount||0),0)):''}</span></button>`:'',
@@ -20285,7 +20293,7 @@ function collectPage(){
   </div>
   <div class="card" style="margin-bottom:12px"><div class="findbar">
    <div class="f" style="flex:2;min-width:240px"><label>Find — bill number, customer, phone or item</label><input id="colQ" value="${noteEsc(colQ)}" placeholder="scan the bill or type" autocomplete="off"></div>
-   <div class="f" style="flex:0"><label>&nbsp;</label><div style="display:flex;gap:6px;white-space:nowrap"><button class="btn ${colTab==='open'?'tape':'ghost'}" data-act="colTab" data-t="open">To issue (${open.length})</button><button class="btn ${colTab==='done'?'tape':'ghost'}" data-act="colTab" data-t="done">Issued (${issues.length})</button></div></div></div>
+   <div class="f" style="flex:0 0 auto"><label>&nbsp;</label><div style="display:flex;gap:6px;white-space:nowrap"><button class="btn ${colTab==='open'?'tape':'ghost'}" data-act="colTab" data-t="open">To issue (${open.length})</button><button class="btn ${colTab==='done'?'tape':'ghost'}" data-act="colTab" data-t="done">Issued (${issues.length})</button></div></div></div>
    <div class="muted">On the till, press <b>L</b> on a bill line to keep it (or some of it) for the customer to collect later. The goods are sold and out of stock from the bill; the stock take counts them back in while they are still here.</div></div>
   <div class="card">${colTab==='open'
     ? `<table><tr><th>Bill</th><th>Customer</th><th>Item</th><th class="n">On the bill</th><th class="n">Issued</th><th class="n">To issue</th><th class="n">Waiting</th><th></th></tr>${rowsOpen||'<tr><td colspan="8" class="muted" style="padding:22px;text-align:center">Nothing waiting to be collected.</td></tr>'}</table>`

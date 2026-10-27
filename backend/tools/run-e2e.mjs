@@ -24,7 +24,7 @@ const testUrl = new URL(real.href); testUrl.pathname = '/' + E2E_DB;
   if (!rows.length) { await c.query(`CREATE DATABASE "${E2E_DB}" ENCODING 'UTF8' TEMPLATE template0`); console.log(`created database ${E2E_DB}`); }
   await c.end();
 }
-const testEnv = { ...process.env, ...env, DATABASE_URL: testUrl.href, PORT, JWT_SECRET: 'e2e-secret', CORS_ORIGIN: '*' };
+const testEnv = { ...process.env, ...env, DATABASE_URL: testUrl.href, PORT, JWT_SECRET: 'e2e-secret', CORS_ORIGIN: '*', SHOW_CODES: '1' };   // sign-in codes come back on screen (localhost only) so the website tests can sign in
 const node = process.execPath;
 const run = (args, opts = {}) => { const r = spawnSync(node, args, { cwd: serverDir, env: testEnv, stdio: 'inherit', ...opts }); if (r.status) process.exit(r.status); };
 run(['db/migrate.js']); run(['db/seed.js']); run(['db/clear-books.js']);

@@ -29,6 +29,8 @@ pg.on('dialog', async d => { await d.accept() });
 await pg.goto(BASE + '/demo', { waitUntil: 'networkidle2' });
 await pg.waitForFunction(() => document.getElementById('lockScreen') || document.querySelector('#nav button'), { timeout: 25000 });
 if (await pg.$('#lockScreen')) {
+  // the lock asks for a user code + PIN first since 2026-10-15; the name + password form is one call away
+  if (!(await pg.$('#lockUser')) && !(await pg.$('#lockPw'))) await pg.evaluate(() => shopLockPassword());
   if (await pg.$('#lockUser')) await pg.type('#lockUser', 'Afridh'); else await pg.click('[data-user="Afridh"]');
   await pg.waitForSelector('#lockPw');
   await pg.type('#lockPw', 'Afridh123');

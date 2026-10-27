@@ -16,6 +16,8 @@ const ok = (c, what, extra = '') => { if (c) { pass++; console.log('PASS ' + wha
 
 await pg.goto(BASE + '/pos', { waitUntil: 'networkidle2' });
 await pg.waitForSelector('#lockScreen', { timeout: 15000 });
+// the lock asks for a user code + PIN first since 2026-10-15; the name + password form is one call away
+if (!(await pg.$('#lockUser')) && !(await pg.$('#lockPw'))) await pg.evaluate(() => shopLockPassword());
 if (await pg.$('#lockUser')) await pg.type('#lockUser', 'Afridh'); else await pg.click('[data-user="Afridh"]');
 await pg.type('#lockPw', 'Afridh123');
 await pg.click('#lockGo');

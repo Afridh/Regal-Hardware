@@ -10,6 +10,8 @@ let pass=0,fail=0; const ok=(c,w,x='')=>{c?(pass++,console.log('PASS '+w+(x?'  '
 
 await pg.goto(BASE+'/pos',{waitUntil:'networkidle2'});
 await pg.waitForSelector('#lockScreen');
+// the lock asks for a user code + PIN first since 2026-10-15; the name + password form is one call away
+if (!(await pg.$('#lockUser')) && !(await pg.$('#lockPw'))) await pg.evaluate(() => shopLockPassword());
 if(await pg.$('#lockUser')) await pg.type('#lockUser','Afridh'); else await pg.click('[data-user="Afridh"]');
 await pg.type('#lockPw','Afridh123'); await pg.click('#lockGo');
 await pg.waitForFunction(()=>!document.getElementById('lockScreen'));
@@ -21,7 +23,7 @@ const base=await pg.evaluate(()=>{
   return { parts:R80_DEFAULT.length, order:r80Order().join(','), html:billHtml(inv,'r80'), mm:r80Mm(inv) };
 });
 ok(base.parts===17&&base.order.startsWith('top,logo,name'),'the receipt is made of named parts, in the order it has always had',`${base.parts} parts`);
-ok(/sb-logo/.test(base.html)&&/sb-items/.test(base.html)&&/sb-bc/.test(base.html)&&/sb-thanks/.test(base.html),
+ok(/sb-hd-logo|sb-logo/.test(base.html)&&/sb-items/.test(base.html)&&/sb-bc/.test(base.html)&&/sb-thanks/.test(base.html),
    'and all of them print by default');
 ok(base.mm>80&&base.mm<400,'it knows how far down the roll it runs',base.mm+' mm');
 

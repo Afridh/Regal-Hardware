@@ -11,6 +11,8 @@ let pass=0,fail=0; const ok=(c,w,x='')=>{c?(pass++,console.log('PASS '+w+(x?'  '
 
 await pg.goto(BASE+'/pos',{waitUntil:'networkidle2'});
 await pg.waitForSelector('#lockScreen');
+// the lock asks for a user code + PIN first since 2026-10-15; the name + password form is one call away
+if (!(await pg.$('#lockUser')) && !(await pg.$('#lockPw'))) await pg.evaluate(() => shopLockPassword());
 if(await pg.$('#lockUser')) await pg.type('#lockUser','Afridh'); else await pg.click('[data-user="Afridh"]');
 await pg.type('#lockPw','Afridh123'); await pg.click('#lockGo');
 await pg.waitForFunction(()=>!document.getElementById('lockScreen'));
