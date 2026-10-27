@@ -32,6 +32,8 @@ import camRoutes from './routes/cams.js';
 import custRoutes from './routes/customer.js';
 import aiRoutes from './routes/ai.js';
 import alexaRoutes from './routes/alexa.js';
+import maintenanceRoutes from './routes/maintenance.js';
+import { maintenanceGate } from './lib/maintenance.js';
 
 if (!process.env.JWT_SECRET) console.error('JWT_SECRET is not set (copy .env.example to .env, or set it in the host\'s environment)');
 
@@ -40,6 +42,9 @@ app.disable('x-powered-by');
 app.set('trust proxy', true);
 app.use(cors({ origin: (process.env.CORS_ORIGIN || '*').split(',').map(s => s.trim()), credentials: true }));
 app.use(express.json({ limit: '12mb' }));       // the books, and attachments of up to 8 MB as data URLs
+// maintenance mode: the back-shortly page in front of the website, or of everything (lib/maintenance.js)
+app.use(maintenanceGate);
+app.use('/api/maintenance', maintenanceRoutes);
 
 app.get('/api/health', async (_req, res) => {
   // which setting the address came from, so a host that names it its own way can be told apart from none at all

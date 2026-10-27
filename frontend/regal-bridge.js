@@ -353,7 +353,7 @@
           say('Another till saved first — the books were reloaded. Please re-enter what you were doing.');
           return true;
         }
-        if (j.__status === 0 || j.__status >= 500) { offlineSince = offlineSince || Date.now(); badge('server unreachable — kept on this PC'); }
+        if (j.__status === 0 || j.__status >= 500) { offlineSince = offlineSince || Date.now(); badge(j.maintenance ? 'the shop system is being updated — kept on this PC' : 'server unreachable — kept on this PC'); }
         setUnsynced(true);                                   // not with the shop yet: it goes up, and is merged, before anything comes down
         throw new Error(j.error || ('save failed ' + j.__status));
       } finally {

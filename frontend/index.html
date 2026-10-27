@@ -1144,7 +1144,7 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 /* the welcome as the till opens */
 .pin-welcome{position:fixed;inset:0;z-index:10050;display:grid;place-items:center;overflow:hidden;color:#fff;
   background:radial-gradient(circle at 50% 40%,#B52A33 0%,#7D1D23 55%,#3E0E12 100%);animation:pw-in .35s ease both}
-.pin-welcome.out{animation:pw-out .6s ease forwards}
+.pin-welcome.out{animation:pw-out .6s ease forwards;pointer-events:none}   /* fading: the till under it is already usable */
 .pw-rays{position:absolute;inset:-50%;background:conic-gradient(from 0deg,transparent 0 10deg,rgba(255,255,255,.06) 10deg 20deg);animation:pin-spin 18s linear infinite}
 .pw-in{position:relative;text-align:center}
 .pw-av{width:96px;height:96px;margin:0 auto 18px;border-radius:50%;display:grid;place-items:center;font:800 32px Archivo,sans-serif;background:rgba(255,255,255,.14);border:3px solid rgba(255,255,255,.6);animation:pin-pop .6s cubic-bezier(.2,.9,.25,1.4) both}
@@ -1255,6 +1255,21 @@ tr.off td{opacity:.55}
 .att-search-box input:focus{border-color:var(--accent,#C62833);box-shadow:0 0 0 2px rgba(198,40,51,.15)}
 
 .bgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+/* Settings → Maintenance */
+.mx-state{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:16px 18px;border-radius:14px;border:1px solid #BBF7D0;background:#F0FDF4;margin-bottom:12px}
+.mx-state.on{border-color:#FCA5A5;background:linear-gradient(135deg,#FEF2F2,#FFF7ED)}
+.mx-state b{font-size:16px}
+.mx-light{width:14px;height:14px;border-radius:50%;background:#16A34A;box-shadow:0 0 0 0 rgba(22,163,74,.45);animation:mxPing 2s infinite;flex:none}
+.mx-state.on .mx-light{background:#DC2626;box-shadow:0 0 0 0 rgba(220,38,38,.45)}
+@keyframes mxPing{80%,100%{box-shadow:0 0 0 10px transparent}}
+.mx-opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.mx-opt{display:flex;flex-direction:column;gap:4px;border:2px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;position:relative}
+.mx-opt input{position:absolute;opacity:0;pointer-events:none}
+.mx-opt span{font-size:12.5px;color:var(--steel)}
+.mx-opt.on,.mx-opt:has(input:checked){border-color:var(--brand,#AE1E2B);background:#FFF6F7}
+.mx-link{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.mx-link code{flex:1;min-width:0;overflow-wrap:anywhere;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12.5px}
+@media (prefers-reduced-motion:reduce){.mx-light{animation:none}}
 /* the Today board in the Shift Clock's look (shift.html): keep the two in step */
 .scb{--sc-work:#10B981;--sc-late:#F59E0B;--sc-brk:#6366F1;--sc-done:#64748B;--sc-abs:#EF4444;--sc-ot:#0EA5A4;--sc-pend:#EAB308;--sc-ink:#101E22;--sc-steel:#5A6E72;--sc-faint:#8C9CA0;--sc-line:#D8DEDD;--sc-line2:#EAEEED;--sc-panel:#F7F9F8;--sc-gold:#F0A81E;--sc-brand:#9E2A31;--sc-ease:cubic-bezier(.2,.8,.2,1);
  font-family:'IBM Plex Sans',system-ui,sans-serif;font-variant-numeric:tabular-nums;color:var(--sc-ink);display:grid;gap:12px}
@@ -6311,8 +6326,58 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
   <div style="display:flex;gap:10px;align-items:flex-start"><div class="mediapic"><img src="/api/shop/media/${encodeURIComponent(key)}?v=${Date.now()}" onerror="this.parentNode.classList.add('empty');this.remove()"></div>
    <div style="flex:1;min-width:0"><input type="file" accept="image/*" data-mediafile="${key}" style="padding:6px;width:100%">${withLink?`<input data-medialink="${key}" placeholder="Where a tap goes, e.g. #/search?cat=Cement" style="margin-top:4px">`:''}
     <div class="muted">${hint}</div><button class="btn ghost sm" data-mediarm="${key}" style="margin-top:4px">Remove</button></div></div></div>`;
+/* Maintenance mode: the "back shortly" page in front of the website, or of everything. The switch lives
+   on the server (backend/maintenance.json); this tab reads and flips it. Whoever switches it on keeps a pass
+   in this browser (cookie regal_mx), and the preview link hands the pass to a phone or another PC. */
+let MX=null, mxBusy=false;
+const mxMay=()=>!!(S.user&&['super admin','superadmin','owner','admin'].includes(String(S.user.role||'').toLowerCase()));
+const mxLocal=iso=>{ if(!iso) return ''; const d=new Date(iso); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16) };
+async function mxCall(method,body){
+  if(!(window.regalBridge&&regalBridge.token())){ toast('Maintenance mode needs the shop server','warn'); return null }
+  mxBusy=true;
+  try{
+    const r=await fetch('/api/maintenance'+(method==='GET'?'/admin':''),{method,headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},body:body?JSON.stringify(body):undefined});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){ toast(j.error||'The server said no','bad'); return null }
+    MX=j;
+    if(j.on&&j.key) document.cookie='regal_mx='+encodeURIComponent(j.key)+';path=/;max-age='+30*86400+';samesite=lax';
+    return j;
+  }catch(e){ toast('Could not reach the server — '+e.message,'bad'); return null }
+  finally{ mxBusy=false; if(S.view==='settings'&&setTab==='mx') render() }
+}
+function mxBody(){
+  if(!MX&&!mxBusy) mxCall('GET');
+  const m=MX||{}, since=m.since?new Date(m.since).toLocaleString('en-GB',{weekday:'short',hour:'numeric',minute:'2-digit',hour12:true}):'';
+  const scope=m.scope==='all'?'all':'site';
+  const opt=(k,title,sub)=>`<label class="mx-opt ${scope===k?'on':''}"><input type="radio" name="mxScope" value="${k}" ${scope===k?'checked':''}><b>${title}</b><span>${sub}</span></label>`;
+  const link=m.key?location.origin+'/?mx='+m.key:'';
+  return `<div class="mx-state ${m.on?'on':''}">
+      <span class="mx-light"></span>
+      <div style="flex:1;min-width:220px"><b>${!MX?'Asking the server…':m.on?'Maintenance is ON':'The site is open'}</b>
+        <div class="muted">${!MX?'':m.on?(m.scope==='all'?'The website, the tills and the shift board show “back shortly”':'The website shows “back shortly” — the tills work as normal')+(since?' · since '+since:'')+(m.by?' · by '+noteEsc(m.by):''):'Customers see the shop as usual.'}</div></div>
+      ${m.on?`<button class="btn tape" data-act="mxOff">Open again</button>`:''}
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">What to stop</h2>
+      <div class="mx-opts">${opt('site','The website only','The shop site, customer and supplier pages. The tills, the shift board and the helpers work as normal.')}
+        ${opt('all','Everything','The tills and the shift board too. A till already open keeps working on its own PC and sends its work up when you open again. This browser is let through.')}</div>
+      <div class="grid2" style="margin-top:12px">
+        <div class="f"><label>Message (optional)</label><input id="mxMsg" maxlength="400" value="${noteEsc(m.msg||'')}" placeholder="e.g. Stock-taking tonight — back tomorrow at 9 AM"><div class="muted">Shown under the heading. Empty: “We’ll be back shortly”.</div></div>
+        <div class="f"><label>Back by (optional)</label><input id="mxUntil" type="datetime-local" value="${mxLocal(m.until)}"><div class="muted">The page counts down to it.</div></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <button class="btn ${m.on?'ghost':'tape'}" data-act="mxOn" ${mxBusy?'disabled':''}>${m.on?'Save changes':'Switch maintenance on'}</button>
+        <a class="btn ghost" href="/maintenance" target="_blank" rel="noopener">See the page</a>
+      </div>
+    </div>
+    ${link&&m.on?`<div class="card"><h2 style="margin-top:0">Getting in while it is on</h2>
+      <div class="muted">This browser is let through. To check the site on a phone or another PC, open this link there once:</div>
+      <div class="mx-link"><code>${noteEsc(link)}</code><button class="btn ghost sm" data-act="mxCopy" data-link="${noteEsc(link)}">Copy</button></div>
+      <div class="muted">Keep it to yourself — anyone with it gets past the page.</div></div>`:''}
+    <div class="card note"><b>From the server</b><div class="muted">When the till cannot be reached: <code>node backend/tools/maintenance.mjs on</code> (add <code>--all</code> for everything, <code>--msg "…"</code>, <code>--until 2026-10-28T09:00</code>), <code>… off</code>, <code>… status</code>.</div></div>`;
+}
 function settingsTabs(){
-  return [['screen','My screen'],['app','Windows app'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messages'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['banks','Bank accounts'],['leave','Leave'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  return [['screen','My screen'],['app','Windows app'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),...(mxMay()?[['mx','Maintenance']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messages'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['banks','Bank accounts'],['leave','Leave'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
 }
 function settings(){
   const tabs=settingsTabs();
@@ -6648,6 +6713,7 @@ function settings(){
      ${fld('mail.autoVoucher','','Email receipt vouchers to customers, and payment vouchers to suppliers, as PDFs when a payment is recorded','check')}</div>
     <div class="muted">Any bill or voucher can also be emailed by hand — the <b>Email PDF</b> button on the bill and on the voucher.</div>`;
 
+  if(setTab==='mx'&&mxMay()) body=mxBody();
   if(setTab==='privacy'&&S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')){ const p=CFG.privacy||{};
     body=`<div class="card note" style="margin-bottom:12px"><b>What it does</b><div class="muted">One key, and every screen shows a quieter shop — a share of the bills you choose, no credit customers, the day's takings and the reports following suit. The real books are not touched: they are held aside and come straight back when the key is pressed again, or after the time below. While the screen is up nothing can be billed or saved (staff see “till is busy”) and nothing comes in from the server, so the two can never mix. Only you see this page.</div></div>
      ${fld('privacy.on','','Privacy screen switched on','check')}
@@ -30534,6 +30600,11 @@ document.addEventListener('click',e=>{
       b.style.display=open?'none':'block';
       a.innerHTML=open?(a.dataset.more||'See details ▾'):(a.dataset.less||'Hide details ▴');
     },
+    mxOn:()=>{ const sc=(document.querySelector('input[name="mxScope"]:checked')||{}).value||'site', u=($('#mxUntil')||{}).value||'';
+      if(sc==='all'&&!(MX&&MX.on&&MX.scope==='all')&&!confirm('Stop everything — the website, the tills and the shift board?\n\nThis browser stays in. Tills already open keep working on their own PC and send their work up when you open again.')) return;
+      mxCall('POST',{on:true,scope:sc,msg:($('#mxMsg')||{}).value||'',until:u?new Date(u).toISOString():''}).then(j=>{ if(j) toast(j.scope==='all'?'Maintenance on — everything':'Maintenance on — the website','ok') }) },
+    mxOff:()=>mxCall('POST',{on:false,scope:MX&&MX.scope,msg:MX&&MX.msg}).then(j=>{ if(j) toast('Open again — the site is back','ok') }),
+    mxCopy:()=>{ const l=a.dataset.link; (navigator.clipboard?navigator.clipboard.writeText(l):Promise.reject()).then(()=>toast('Link copied')).catch(()=>prompt('Copy the link:',l)) },
     scFilter:()=>{ scFilter=scFilter===a.dataset.k&&a.dataset.k!=='all'?'all':a.dataset.k; refreshAttendanceBoard() },
     // Ask for leave from the board: the Leave page, with that person picked (an approver may pick anyone)
     scLeave:()=>{ LV.user=S.user.name; LV.who=a.dataset.name; LV.from=null; LV.to=null; LV.half=false; LV.reason=''; go('leave') },
