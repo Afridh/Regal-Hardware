@@ -17,7 +17,9 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const MX_FILE = process.env.MAINTENANCE_FILE || path.resolve(here, '../../maintenance.json');
 const PAGE = path.resolve(here, '../../../frontend/maintenance.html');
-const OFF = { on: false, scope: 'site', msg: '', until: '', since: '', by: '', key: '' };
+const OFF = { on: false, scope: 'site', msg: '', until: '', since: '', by: '', key: '', intro: 'shutter' };
+// how the page opens: the shop's shutter rolling up, a soft fade, or straight in
+export const INTROS = ['shutter', 'fade', 'none'];
 
 let cache = null, cachedAt = 0;
 export function mxState() {
@@ -28,7 +30,9 @@ export function mxState() {
 }
 export function mxSave(patch) {
   const cur = mxState();
-  const next = { ...cur, ...patch };
+  // only what was given changes: a patch of just { intro } leaves the switch where it is
+  const next = { ...cur, ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) };
+  if (!INTROS.includes(next.intro)) next.intro = 'shutter';
   if (!next.key) next.key = crypto.randomBytes(9).toString('base64url');   // the pass; kept between switch-ons
   if (next.on && !cur.on) next.since = new Date().toISOString();
   if (!next.on) next.since = '';
@@ -40,7 +44,15 @@ export function mxSave(patch) {
   return next;
 }
 // what anybody may know: no key
-export const mxPublic = s => ({ on: !!s.on, scope: s.scope, msg: s.msg, until: s.until, since: s.since });
+export const mxPublic = s => ({ on: !!s.on, scope: s.scope, msg: s.msg, until: s.until, since: s.since, intro: s.intro || 'shutter' });
+
+// the page, told how to open (the owner's choice, or ?intro= when previewing one)
+function sendPage(req, res, s) {
+  if (!fs.existsSync(PAGE)) return res.type('text').send('Regal Hardware is being updated — back shortly.');
+  const want = INTROS.includes(req.query && req.query.intro) ? req.query.intro : (s.intro || 'shutter');
+  res.set('Cache-Control', 'no-store');
+  res.type('html').send(fs.readFileSync(PAGE, 'utf8').replace('<body class="wait">', `<body class="wait" data-intro="${want}"${req.query && req.query.intro ? ' data-preview="1"' : ''}>`));
+}
 
 const cookieOf = (req, name) => {
   const m = String(req.headers.cookie || '').match(new RegExp('(?:^|;\\s*)' + name + '=([^;]+)'));
@@ -57,8 +69,10 @@ const ALWAYS = [/^\/api\/health$/i, /^\/api\/maintenance(\/|$)/i, /^\/api\/(prin
 
 export function maintenanceGate(req, res, next) {
   const s = mxState();
-  if (!s.on) return next();
   const p = req.path;
+  // the page itself, on or off, so the owner can look at it (and try each way in) before switching on
+  if (req.method === 'GET' && /^\/maintenance(\.html)?$/i.test(p)) return sendPage(req, res, s);
+  if (!s.on) return next();
   // the preview link: /?mx=<key> gives this browser the pass and drops the key from the address
   if (req.query && req.query.mx && req.query.mx === s.key) {
     res.cookie('regal_mx', s.key, { path: '/', httpOnly: false, sameSite: 'lax', secure: req.secure, maxAge: 30 * 86400e3 });
@@ -74,5 +88,5 @@ export function maintenanceGate(req, res, next) {
   if (p.startsWith('/api/') || p === '/shift-api.php' || req.method !== 'GET')
     return res.status(503).json({ error: 'The shop system is being updated — back shortly', maintenance: true, until: s.until || null });
   res.status(503);
-  fs.existsSync(PAGE) ? res.sendFile(PAGE) : res.type('text').send('Regal Hardware is being updated — back shortly.');
+  sendPage(req, res, s);
 }

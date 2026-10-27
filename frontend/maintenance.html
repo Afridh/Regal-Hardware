@@ -185,6 +185,9 @@ body.wait header *,body.wait main *,body.wait footer *,body.wait .grid,body.wait
 @keyframes railOut{to{opacity:0}}
 @keyframes spark2{0%{opacity:1;transform:translate(0,0)}100%{opacity:0;transform:translate(var(--x),var(--y))}}
 
+/* "straight in": no entrance at all — everything is simply there (the gears still turn) */
+body.no-intro .brand,body.no-intro .shop,body.no-intro .kicker,body.no-intro h1 .ln>span,body.no-intro h1 em::after,body.no-intro .lead,body.no-intro .si,
+body.no-intro .when,body.no-intro .reach,body.no-intro .open,body.no-intro .status{animation:none}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.gate{display:none}}
 </style>
 </head>
@@ -288,10 +291,13 @@ body.wait header *,body.wait main *,body.wait footer *,body.wait .grid,body.wait
   (function gate() {
     var g = $('gate'), body = document.body, done = false;
     var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    var seen = false; try { seen = sessionStorage.getItem('regal_mx_gate') === '1'; sessionStorage.setItem('regal_mx_gate', '1'); } catch (e) {}
+    // the owner picks the way in (Settings → Maintenance): shutter, fade, or none; the server writes it on <body>
+    var intro = body.getAttribute('data-intro') || 'shutter', preview = body.getAttribute('data-preview') === '1';
+    var seen = false; try { seen = !preview && sessionStorage.getItem('regal_mx_gate') === '1'; sessionStorage.setItem('regal_mx_gate', '1'); } catch (e) {}
     function open() { if (!done) { done = true; body.classList.remove('wait'); } }
     function finish() { open(); g.classList.add('gone'); }
-    if (still) return finish();
+    if (intro === 'none') body.classList.add('no-intro');
+    if (still || intro !== 'shutter') return finish();
     var sp = $('sparks'), h = '';
     for (var i = 0; i < 26; i++) {
       // they fall away below the rising edge, with a little sideways scatter
@@ -363,6 +369,8 @@ body.wait header *,body.wait main *,body.wait footer *,body.wait .grid,body.wait
       var r = await fetch('/api/maintenance', { cache: 'no-store' });
       var j = await r.json();
       $('status').className = 'status live';
+      // looking at the page from Settings (/maintenance): show it, never go "back"
+      if (/^\/maintenance/i.test(location.pathname)) { $('statusTxt').textContent = 'Preview — this is what customers see' + (j.on ? '' : ' (maintenance is off)'); state = j; draw(); return; }
       $('statusTxt').textContent = 'Live — this page opens the shop by itself when we’re back';
       if (!j.on || j.pass) return backAgain();
       state = j; draw();

@@ -1263,7 +1263,7 @@ tr.off td{opacity:.55}
 .mx-state.on .mx-light{background:#DC2626;box-shadow:0 0 0 0 rgba(220,38,38,.45)}
 @keyframes mxPing{80%,100%{box-shadow:0 0 0 10px transparent}}
 .mx-opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
-.mx-opt{display:flex;flex-direction:column;gap:4px;border:2px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;position:relative}
+.mx-opt{display:flex;flex-direction:column;gap:4px;text-align:left;font:inherit;color:inherit;background:#fff;border:2px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;position:relative}
 .mx-opt input{position:absolute;opacity:0;pointer-events:none}
 .mx-opt span{font-size:12.5px;color:var(--steel)}
 .mx-opt.on,.mx-opt:has(input:checked){border-color:var(--brand,#AE1E2B);background:#FFF6F7}
@@ -6330,6 +6330,9 @@ const mediaSlot=(key,label,hint,withLink)=>`<div class="f mediaslot" data-mediak
    on the server (backend/maintenance.json); this tab reads and flips it. Whoever switches it on keeps a pass
    in this browser (cookie regal_mx), and the preview link hands the pass to a phone or another PC. */
 let MX=null, mxBusy=false;
+const MX_INTROS=[['shutter','The shutter rolls up','The shop’s red shutter, its bolts coming loose, then up it goes with sparks — about 2½ seconds, once per visit.'],
+  ['fade','Soft fade','No shutter: the gears, the heading and the buttons rise gently into place.'],
+  ['none','Straight in','No entrance at all — the page is simply there. The gears still turn.']];
 const mxMay=()=>!!(S.user&&['super admin','superadmin','owner','admin'].includes(String(S.user.role||'').toLowerCase()));
 const mxLocal=iso=>{ if(!iso) return ''; const d=new Date(iso); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16) };
 async function mxCall(method,body){
@@ -6348,7 +6351,7 @@ async function mxCall(method,body){
 function mxBody(){
   if(!MX&&!mxBusy) mxCall('GET');
   const m=MX||{}, since=m.since?new Date(m.since).toLocaleString('en-GB',{weekday:'short',hour:'numeric',minute:'2-digit',hour12:true}):'';
-  const scope=m.scope==='all'?'all':'site';
+  const scope=m.scope==='all'?'all':'site', intro=m.intro||'shutter';
   const opt=(k,title,sub)=>`<label class="mx-opt ${scope===k?'on':''}"><input type="radio" name="mxScope" value="${k}" ${scope===k?'checked':''}><b>${title}</b><span>${sub}</span></label>`;
   const link=m.key?location.origin+'/?mx='+m.key:'';
   return `<div class="mx-state ${m.on?'on':''}">
@@ -6367,8 +6370,15 @@ function mxBody(){
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
         <button class="btn ${m.on?'ghost':'tape'}" data-act="mxOn" ${mxBusy?'disabled':''}>${m.on?'Save changes':'Switch maintenance on'}</button>
-        <a class="btn ghost" href="/maintenance" target="_blank" rel="noopener">See the page</a>
+        <a class="btn ghost" href="/maintenance?intro=${m.intro||'shutter'}" target="_blank" rel="noopener">See the page</a>
       </div>
+    </div>
+    <div class="card">
+      <h2 style="margin-top:0">How the page opens</h2>
+      <div class="mx-opts">${MX_INTROS.map(([k,title,sub])=>`<button type="button" class="mx-opt ${intro===k?'on':''}" data-act="mxIntro" data-v="${k}"><b>${title}</b><span>${sub}</span></button>`).join('')}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center">
+        <a class="btn ghost sm" href="/maintenance?intro=${intro}" target="_blank" rel="noopener">See it</a>
+        <span class="muted">Saved as soon as you pick — on or off. People whose phone is set to reduce motion always get it straight in.</span></div>
     </div>
     ${link&&m.on?`<div class="card"><h2 style="margin-top:0">Getting in while it is on</h2>
       <div class="muted">This browser is let through. To check the site on a phone or another PC, open this link there once:</div>
@@ -30604,6 +30614,7 @@ document.addEventListener('click',e=>{
       if(sc==='all'&&!(MX&&MX.on&&MX.scope==='all')&&!confirm('Stop everything — the website, the tills and the shift board?\n\nThis browser stays in. Tills already open keep working on their own PC and send their work up when you open again.')) return;
       mxCall('POST',{on:true,scope:sc,msg:($('#mxMsg')||{}).value||'',until:u?new Date(u).toISOString():''}).then(j=>{ if(j) toast(j.scope==='all'?'Maintenance on — everything':'Maintenance on — the website','ok') }) },
     mxOff:()=>mxCall('POST',{on:false,scope:MX&&MX.scope,msg:MX&&MX.msg}).then(j=>{ if(j) toast('Open again — the site is back','ok') }),
+    mxIntro:()=>mxCall('POST',{intro:a.dataset.v}).then(j=>{ if(j) toast('The page now opens with: '+((MX_INTROS.find(x=>x[0]===j.intro)||[])[1]||j.intro),'ok') }),
     mxCopy:()=>{ const l=a.dataset.link; (navigator.clipboard?navigator.clipboard.writeText(l):Promise.reject()).then(()=>toast('Link copied')).catch(()=>prompt('Copy the link:',l)) },
     scFilter:()=>{ scFilter=scFilter===a.dataset.k&&a.dataset.k!=='all'?'all':a.dataset.k; refreshAttendanceBoard() },
     // Ask for leave from the board: the Leave page, with that person picked (an approver may pick anyone)

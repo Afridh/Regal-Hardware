@@ -17,7 +17,10 @@ r.get('/admin', regalAuth, mayFlip, (_req, res) => { const s = mxState(); res.js
 
 r.post('/', regalAuth, mayFlip, asyncHandler(async (req, res) => {
   const b = req.body || {};
-  const s = mxSave({ on: !!b.on, scope: b.scope, msg: b.msg, until: b.until, by: req.regalUser.name });
+  // only what was sent changes: { intro } alone picks how the page opens without flipping the switch
+  const patch = { by: req.regalUser.name };
+  for (const k of ['on', 'scope', 'msg', 'until', 'intro']) if (k in b) patch[k] = k === 'on' ? !!b.on : b[k];
+  const s = mxSave(patch);
   // the browser that switched it on keeps working
   if (s.on) res.cookie('regal_mx', s.key, { path: '/', sameSite: 'lax', secure: req.secure, maxAge: 30 * 86400e3 });
   res.json({ ...mxPublic(s), by: s.by, key: s.key });
