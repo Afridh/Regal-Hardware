@@ -4122,6 +4122,14 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .hb-btn-del{display:flex;align-items:center;gap:6px;padding:10px 14px;color:var(--chip-rust);border:1px solid rgba(192,68,44,0.3);border-radius:var(--r);cursor:pointer;background:#fff}
 .hb-btn-del:hover{background:var(--tint-rust);border-color:var(--chip-rust)}
 .hb-btn-del span{font-size:10px;background:rgba(192,68,44,0.1);padding:2px 5px;border-radius:3px}
+.hb-c-top{gap:6px;flex-wrap:wrap}
+.hb-c-bottom{gap:8px;align-items:flex-end}
+.hb-c-figs{display:flex;flex-direction:column;gap:1px;min-width:0}
+.hb-c-amt,.hb-c-meta,.hb-p-sum-row b,.hb-btn-del b,.hb-btn-recall b{white-space:nowrap}
+.hb-c-amt{font-size:15px}
+.hb-c-btns{flex:0 0 auto}
+.hb-p-summary{gap:12px;flex-wrap:wrap}
+.hb-p-actions{margin-left:auto}
 .hb-empty{padding:60px 20px;text-align:center;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%}
 .hb-empty-icon{font-size:42px;margin-bottom:12px}
 .hb-empty h3{margin:0 0 8px 0;color:var(--ink);font-size:18px}
@@ -17878,6 +17886,25 @@ const TRAIL_KINDS={
    to find it by. No name is fine; a held bill then goes under the time it was held. */
 function holdAsk(prefer){
   if(!S.pos.lines.length) return toast('Nothing to put aside — the bill is empty');
+  const twin=prefer==='quote'?-1:heldTwin(S.pos);
+  if(twin>=0){
+    const h=S.heldBills[twin];
+    const m=modal(`<h2>This bill is already on hold</h2>
+     <div class="hb-ask"><b>#${twin+1} · ${noteEsc(h.ref||'Held bill')}</b><span>the same ${h.lines.length} line${h.lines.length===1?'':'s'} · held ${h.date?new Date(h.date).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):''} by ${noteEsc(h.user||'staff')}</span></div>
+     <div class="muted" style="margin-top:8px">Holding it again would make a second copy. Clear the till instead — the held one stays.</div>
+     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn ghost" id="hbNo">Keep billing <i class="kbd">Esc</i></button>
+      <button class="btn ghost" id="hbCopy">Hold another copy</button>
+      <button class="btn tape" id="hbClr">Clear the till <i class="kbd">Enter</i></button></div>`);
+    const clr=()=>{ m.remove(); clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill}; render(); toast('Till cleared — the bill is still on hold as #'+(twin+1),'ok') };
+    const back=()=>{ m.remove(); const q=$('#csQ')||$('#q'); if(q) q.focus() };
+    m.querySelector('#hbClr').onclick=clr; m.querySelector('#hbNo').onclick=back;
+    m.querySelector('#hbCopy').onclick=()=>{ m.remove(); holdCurrentBill(true,'Held '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})) };
+    const key=(e)=>{ if(!document.body.contains(m)){ window.removeEventListener('keydown',key,true); return } e.stopPropagation();
+      if(e.key==='Enter'){ e.preventDefault(); clr() } if(e.key==='Escape'){ e.preventDefault(); back() } };
+    window.addEventListener('keydown',key,true); m.querySelector('#hbClr').focus();
+    return;
+  }
   const c=C(S.pos.customer||1), T=csTotals(), quoteFirst=prefer==='quote';
   const m=modal(`<h2>${quoteFirst?'Make this a quotation':'Put this bill aside'}</h2>
    <div class="muted" style="margin-bottom:10px">${S.pos.lines.length} line${S.pos.lines.length===1?'':'s'} · ${fmt(T.net)}${c.id!==1?' · '+c.name:''}</div>
@@ -17901,6 +17928,10 @@ function holdAsk(prefer){
     if(e.key==='Enter'){ e.preventDefault(); (quoteFirst?quote:hold)() }
     if(e.key==='Escape'){ e.preventDefault(); m.remove(); const q=$('#csQ')||$('#q'); if(q) q.focus() } };
 }
+/* A bill on hold with exactly these lines for this customer — held already, so holding it again
+   would only make a second copy. */
+const heldSig=(b)=>JSON.stringify([b.customer||null,(b.lines||[]).map(l=>[l.pid,+l.qty,+l.price,+(l.disc||0),l.name||''])]);
+function heldTwin(b){ const s=heldSig(b); return (S.heldBills||[]).findIndex(h=>h&&heldSig(h)===s) }
 function holdCurrentBill(notify = true, ref){
   if(!S.pos || !S.pos.lines || !S.pos.lines.length){
     if(notify) toast('Nothing to hold — bill is empty');
@@ -17923,6 +17954,7 @@ function holdCurrentBill(notify = true, ref){
   S.heldBills = S.heldBills || [];
   S.heldBills.unshift(bill);
   S.held = bill;
+  clearPosDraft();                               // it is on hold now, not being keyed
   alexaNote('hold', bill);
   S.pos = { lines: [], customer: null, salesman: null, billDisc: 0, sel: -1, entry: null, lastBill: S.pos.lastBill };
   if(typeof CS !== 'undefined') CS = { ...CS, pid: null, q: '', qty: 1, price: 0, disc: 0, focus: '', editLine: null };
@@ -18095,8 +18127,8 @@ function showHeldBillsModal(initIdx = 0){
         <div class="hb-c-name">${(b.ref || c.name || 'WALK-IN').toUpperCase()}</div>
         ${b.ref && isNamed && b.ref !== c.name ? `<div class="hb-c-ref">${c.name}</div>` : ''}
         <div class="hb-c-bottom">
-          <span class="hb-c-meta">${(b.lines || []).length} item${(b.lines || []).length === 1 ? '' : 's'} · ${fq(qty)} qty</span>
-          <span class="hb-c-amt">${fmt(net)}</span>
+          <span class="hb-c-figs"><span class="hb-c-amt">${fmt(net)}</span>
+          <span class="hb-c-meta">${(b.lines || []).length} line${(b.lines || []).length === 1 ? '' : 's'} · ${fq(qty)} qty</span></span>
           <span class="hb-c-btns"><button type="button" class="hb-c-del-btn" data-hb-del="${i}" title="Throw this held bill away">🗑</button>
           <button type="button" class="hb-c-recall-btn" data-hb-recall="${b.id}" title="Recall this bill to till">Recall ↵</button></span>
         </div>
@@ -18143,7 +18175,7 @@ function showHeldBillsModal(initIdx = 0){
               return `<tr>
                 <td>${li + 1}</td>
                 <td>
-                  <b>${p ? p.name : 'Unknown Item'}</b>
+                  <b>${noteEsc(lineName(l))}</b>
                   <div class="muted">${p ? (p.num || p.code || '') : ''}${l.warranty && l.warranty !== '0' ? ' · Warranty: ' + l.warranty : ''}${(l.serials && l.serials.length) ? ' · SN: ' + l.serials.join(', ') : ''}</div>
                 </td>
                 <td class="n">${fq(l.qty)}</td>
@@ -28979,6 +29011,7 @@ function lockFinish(u){
   const accDef=DEFAULT_ACCOUNTS.find(a=>a.name.toLowerCase()===String(u.name).toLowerCase());
   const uPerms=Array.isArray(u.perms)&&u.perms.length?[...u.perms]:(accDef?[...accDef.perms]:(Array.isArray(u.perms)?[...u.perms]:[]));
   u.perms=uPerms;
+  const prevTill=S.user&&S.user.name;
   S.user={name:u.name,role:u.role,perms:[...uPerms],prefs:{...PREF_DEFAULTS,...(u.prefs||{})}};
   S.signedOut=false;
   try{ auditAdd({area:'Sign-in',act:'signed in',name:u.name+(u.role?' ('+u.role+')':'')}) }catch(e){}
@@ -28986,7 +29019,7 @@ function lockFinish(u){
   document.querySelectorAll('.lock, #lockScreen').forEach(x=>x.remove());
   document.body.classList.remove('locked');
   closeModals();
-  if(!(S.pos&&S.pos.lines&&S.pos.lines.length)) restorePosDraft();
+  tillHandover(prevTill);
   applyLayout();
   go(landingView());
   /* A till waiting at the lock screen hears nothing from the other tills or the shift clock, so what it
@@ -29327,6 +29360,7 @@ function shopLockPassword(prefill){
       const accDef = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === u.name.toLowerCase());
       const uPerms = Array.isArray(u.perms) && u.perms.length ? [...u.perms] : (accDef ? [...accDef.perms] : (Array.isArray(u.perms) ? [...u.perms] : []));
       u.perms = uPerms;
+      const prevTill = S.user && S.user.name;
       S.user = { name: u.name, role: u.role, perms: [...uPerms], prefs: { ...PREF_DEFAULTS, ...(u.prefs || {}) } };
       S.signedOut = false;
       try {
@@ -29339,7 +29373,7 @@ function shopLockPassword(prefill){
       document.body.classList.remove('locked');
       closeModals();
       // signing back in at the lock screen brings back whatever this person was keying
-      if(!(S.pos&&S.pos.lines&&S.pos.lines.length)) restorePosDraft();
+      tillHandover(prevTill);
 
       applyLayout();
       go(landingView());
@@ -30400,18 +30434,28 @@ const rememberedUser = (() => {
    picked up again when the same person is back at the till. */
 const POS_DRAFT='regal_pos_draft';
 const posDraftKey=()=>POS_DRAFT+':'+String((S.user&&S.user.name)||'').toLowerCase().trim();
-function savePosDraft(){
+function savePosDraft(who){
   try{
-    if(!S.user||!S.user.name) return;
+    if(!who&&(!S.user||!S.user.name)) return;
     const p=S.pos||{};
     // an empty screen is not the same as a finished bill: on a reload the bill is empty for a
     // moment before it is put back, and clearing here would throw away what we are about to
     // restore. The draft is only ever removed by clearPosDraft, where a bill is really done with.
     if(!p.lines||!p.lines.length) return;
-    localStorage.setItem(posDraftKey(), JSON.stringify({
+    localStorage.setItem(who?POS_DRAFT+':'+String(who).toLowerCase().trim():posDraftKey(), JSON.stringify({
       at:Date.now(), lines:p.lines, customer:p.customer||null, salesman:p.salesman||null,
       billDisc:p.billDisc||0, editing:p.editing||null, fromWeb:p.fromWeb||null, fromDoc:p.fromDoc||null, fromJob:p.fromJob||null, ledger:p.ledger!=null?p.ledger:null }));
   }catch(e){ /* a full or blocked store must never stop a sale */ }
+}
+/* Who is at the till changed: a bill on the screen keyed by the one before stays theirs (kept for them
+   on this PC) rather than passing to the next person, who gets their own back instead. */
+function tillHandover(prev){
+  const was=String(prev||'').toLowerCase().trim(), now=String((S.user&&S.user.name)||'').toLowerCase().trim();
+  if(was&&was!==now&&S.pos&&S.pos.lines&&S.pos.lines.length){
+    savePosDraft(prev);
+    S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+  }
+  if(!S.pos||!S.pos.lines||!S.pos.lines.length) restorePosDraft();
 }
 function clearPosDraft(){ try{ localStorage.removeItem(posDraftKey()) }catch(e){} }
 /** Put back what was on the screen, if it is recent and the items are still on file. */
@@ -30423,6 +30467,7 @@ function restorePosDraft(){
     if(Date.now()-(d.at||0) > 36*60*60*1000){ clearPosDraft(); return false }
     const lines=d.lines.filter(l=>P(l.pid));
     if(!lines.length){ clearPosDraft(); return false }
+    if(heldTwin({customer:d.customer,lines})>=0){ clearPosDraft(); return false }   // held already
     S.pos={...S.pos, lines, customer:d.customer||null, salesman:d.salesman||null,
       billDisc:+d.billDisc||0, sel:-1, entry:null,
       ...(d.editing?{editing:d.editing}:{}), ...(d.fromWeb?{fromWeb:d.fromWeb}:{}), ...(d.fromDoc?{fromDoc:d.fromDoc}:{}), ...(d.fromJob?{fromJob:d.fromJob}:{}), ...(d.ledger!=null?{ledger:d.ledger}:{})};
@@ -30449,6 +30494,7 @@ const backAtTheTill=(name)=>{
   const def = DEFAULT_ACCOUNTS.find(a => a.name.toLowerCase() === u.name.toLowerCase());
   const uPerms = Array.isArray(u.perms) && u.perms.length ? [...u.perms] : (def ? [...def.perms] : (Array.isArray(u.perms) ? [...u.perms] : []));
   u.perms = uPerms;
+  const prevTill=S.user&&S.user.name;
   S.user={name:u.name,role:u.role,perms:uPerms,prefs:{...PREF_DEFAULTS,...(u.prefs||{})}};
   S.signedOut=false;
   try {
@@ -30458,7 +30504,7 @@ const backAtTheTill=(name)=>{
   document.querySelectorAll('.lock, #lockScreen').forEach(x => x.remove());
   document.body.classList.remove('locked');
   // whatever this person was keying when they left the till comes back with them
-  if(!(S.pos&&S.pos.lines&&S.pos.lines.length)) restorePosDraft();
+  tillHandover(prevTill);
   applyLayout();
   // the view you left off on comes back with you — unless there is an update log you have not read
   if(!allowed(S.view)) S.view = landingView();
