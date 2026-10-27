@@ -353,7 +353,8 @@ const ACT={sent:'Order sent',accepted:'Accepted',changes:'Asked for a change',di
 
 /* ---- the five pages, one menu ---- */
 const MENU=[['orders','📥','Orders From Shop','From shop'],['create','➕','Create new order','Create'],['pending','⏳','Pending Orders','Pending'],['history','🗂️','Order History','History'],['stock','📦','Your stock','Stock'],['pay','💳','Payment Request','Payment'],['prices','📄','Price lists','Prices'],['account','👤','Account','Account']];
-/* Their stock is a place only while the shop has opened it to them (Suppliers → Show them their stock). */
+/* Their stock is always in the menu. The shop opens it a day at a time (Suppliers → Show them their stock,
+   or Approvals when they ask from here); while it is shut the page lets them ask. */
 const stockOpen=()=>!!(st.me&&+st.me.stockUntil>Date.now());
 const ACTIVE=['sent','accepted','changes','dispatched','adjusted'];      // a shop order still in the supplier's hands — once completed it is under Pending Orders
 const NEEDS_ME=['sent','accepted','changes','dispatched','adjusted'];
@@ -374,7 +375,7 @@ function render(){
   document.body.classList.add('in');
   const me=st.me;
   const badge={orders:me.pos.filter(o=>NEEDS_ME.includes(o.status)).length, pending:(me.sent||[]).filter(o=>o.status==='adjusted').length, pay:(me.payReqs||[]).filter(r=>r.status==='ready').length};
-  const menu=MENU.filter(x=>x[0]!=='stock'||stockOpen());
+  const menu=MENU;
   if(!menu.some(x=>x[0]===st.tab)) st.tab='orders';
   nav.style.display='';
   nav.innerHTML=`<div class="menu-in">${menu.map(([k,ic,label,short])=>`<button class="${st.tab===k?'on':''}" data-t="${k}" title="${label}"><span class="ic">${ic}</span><span class="long">${label}</span><span class="short">${short}</span>${badge[k]?`<i>${badge[k]}</i>`:''}</button>`).join('')}</div>`;
@@ -704,7 +705,14 @@ function addAllShownToOrder(){
   render();
 }
 function stockPage(){
-  if(!stockOpen()) return '<div class="empty"><div>📦</div><b>Not open just now</b><span>The shop opens this for you for a day at a time. Ask them to show you your stock.</span></div>';
+  if(!stockOpen()){
+    const ask=st.me&&st.me.stockAsk;
+    if(ask&&ask.state==='waiting') return `<div class="empty"><div>⏳</div><b>Asked — waiting for the shop</b><span>You asked ${esc(ask.at)}. When the shop says yes it opens here for a day, and we text you.</span></div>`;
+    return `<div class="empty"><div>📦</div><b>See what the shop holds of your items</b>
+      <span>${ask&&ask.state==='no'?`The shop said not just now${ask.note?' — “'+esc(ask.note)+'”':''}. You can ask again.`:'The shop opens this for you for a day at a time — how much of each of your items is on their shelves, and what is running low, so you can write the next order.'}</span>
+      <div class="f" style="max-width:420px;width:100%;margin:12px auto 0;text-align:left;font-size:14px;animation:none"><label>A note for the shop (optional)</label><input id="stockAskNote" maxlength="200" placeholder="e.g. writing this month’s order" style="margin:0"></div>
+      <div class="acts" style="justify-content:center;font-size:14px;animation:none"><button class="btn" id="stockAsk">Ask the shop to open my stock</button></div></div>`;
+  }
   if(!st.stock&&!st.stockBusy){ setTimeout(loadStock,0); return '<div class="card muted">Loading your stock…</div>' }
   if(st.stockBusy&&!st.stock) return '<div class="card muted">Loading your stock…</div>';
   const S2=st.stock||{};
@@ -870,6 +878,12 @@ function bind(){
   // their stock
   const sq=$('#stockQ'); if(sq) sq.oninput=()=>{ st.stockQ=sq.value; const at=sq.selectionStart; render(); const n=$('#stockQ'); if(n){ n.focus(); try{ n.setSelectionRange(at,at) }catch(e){} } };
   const sa=$('#stockAgain'); if(sa) sa.onclick=()=>{ st.stock=null; loadStock() };
+  const sk=$('#stockAsk'); if(sk) sk.onclick=async()=>{ sk.disabled=true; sk.textContent='Asking…';
+    try{ const j=await api('/stock/ask',{method:'POST',body:{note:(($('#stockAskNote')||{}).value||'').trim()}});
+      if(j.open){ st.me=await api('/me'); }
+      else { st.me.stockAsk=j.stockAsk||{state:'waiting',at:'just now'}; toast(j.already?'You have already asked — the shop will answer soon':'Asked — the shop will see it in their Approvals'); }
+    }catch(e){ toast(e.message||'Could not ask just now'); sk.disabled=false; sk.textContent='Ask the shop to open my stock'; return }
+    render() };
   $$('[data-stockadd]',m).forEach(b=>b.onclick=()=>{ const l=stockLineByKey(b.dataset.stockadd); if(!l) return; const inp=b.closest('td').querySelector('.stqin'); stockOrder(l, inp?+inp.value||0:0); });
   $$('.stqin',m).forEach(el=>el.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); const b=el.closest('td').querySelector('[data-stockadd]'); if(b) b.click(); } });
   const saa=$('#stockAddAll'); if(saa) saa.onclick=addAllShownToOrder;

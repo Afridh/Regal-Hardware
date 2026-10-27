@@ -10796,6 +10796,16 @@ function actionItems(){
       acts:may?[`<input class="act-note" id="apn-${esA(a.id)}" placeholder="Note (optional)">`,actBtn('apOk','Approve',id,'tape'),actBtn('apNo','Turn down',id),actOpen('approvals','All approvals')]
         :[`<span class="muted" style="font-size:12.5px">Waiting for the owner to decide</span>`]});
   }
+  /* staff at the shift clock asking to leave early, or to go out on the shop's business */
+  if(canApprove()||swCanApprove()) for(const e of (S.employees||[]).filter(x=>x.active!==false)){
+    const r=recFor(day,e.id)||{}, id=`data-id="${e.id}"`;
+    if(r.leaveEarly&&r.leaveEarly.pending&&r.in&&!r.out) push({cat:'approve',view:'payroll',pri:1,key:'le'+e.id,decide:true,who:e.name,when:`${day} ${r.leaveEarly.requestedAt||''}`.trim(),
+      title:`${e.name} asks to leave early`,sub:r.leaveEarly.reason||'personal',tag:'Leave early',
+      acts:[actBtn('approveLeave','Let them go',id,'tape'),actBtn('rejectLeave','No',id)]});
+    if(r.shopWork&&r.shopWork.pending&&r.in&&!r.out&&swCanApprove()) push({cat:'approve',view:'payroll',pri:1,key:'sw'+e.id,decide:true,who:e.name,when:`${day} ${r.shopWork.at||''}`.trim(),
+      title:`${e.name} asks to go out on shop work`,sub:r.shopWork.what||'',tag:'Shop work',
+      acts:[actBtn('swYes','Approve',id,'tape'),actBtn('swNo','Not now',id)]});
+  }
   /* supplier payment requests */
   if(typeof payReqOpen==='function') for(const r of payReqOpen()){
     const s=SU(r.sid)||{name:'Supplier'}, id=`data-id="${esA(r.id)}"`, may=typeof canPayReq==='function'&&canPayReq();
@@ -10915,15 +10925,25 @@ function actions(){
    <div class="st-bar"><div class="muted">${list.length===all.length?'Everything waiting, the most pressing first.':`${list.length} of ${all.length} shown.`}</div>
     <input id="actQ" class="st-search" placeholder="Search names, numbers, anything…" value="${escM(actQ)}"></div>
    ${groups.map(([p,items])=>`<div class="act-group"><h2>${ACT_PRI[p][0]} <span class="muted">${items.length} · ${ACT_PRI[p][1]}</span></h2>
-     ${items.map(x=>{ const c=catOf(x.cat); return `<div class="act-item" style="--c:${c[3]};animation-delay:${Math.min(k++,14)*0.03}s">
+     ${items.map(x=>actItemHtml(x,k++)).join('')}</div>`).join('')
+   ||`<div class="act-clear"><span class="tick">${storeIc('M5 12l5 5 9-11')}</span><b>${q||actCat!=='all'?'Nothing matches':'All clear'}</b><span class="muted">${q||actCat!=='all'?'Try another word, or look at everything.':'Nothing is waiting on anybody. Enjoy the quiet.'}</span>${q||actCat!=='all'?'<button class="btn ghost sm" data-act="actCat" data-c="all">Show everything</button>':''}</div>`}`;
+}
+/* one waiting item as a card with its own buttons — the Action centre and the Approvals page draw the same */
+function actItemHtml(x,k){
+  const c=ACT_CATS.find(z=>z[0]===x.cat)||ACT_CATS[0];
+  return `<div class="act-item" style="--c:${c[3]};animation-delay:${Math.min(k||0,14)*0.03}s">
        <span class="act-ic">${storeIc(c[2])}</span>
        <div class="body"><div class="top"><b>${esA(x.title)}</b>${x.tag?`<span class="st-tag" style="--c:${c[3]}">${esA(x.tag)}</span>`:''}</div>
         ${x.sub?`<div class="sub">${esA(x.sub)}</div>`:''}
         <div class="meta">${[x.who&&`<span>${esA(x.who)}</span>`,x.when&&`<span>${esA(x.when)}</span>`,`<span>${c[1]}</span>`].filter(Boolean).join('<i>·</i>')}</div></div>
        ${x.amount?`<div class="amt">${fmt(x.amount)}</div>`:'<div></div>'}
-       <div class="acts">${x.acts.filter(Boolean).join('')}</div></div>` }).join('')}</div>`).join('')
-   ||`<div class="act-clear"><span class="tick">${storeIc('M5 12l5 5 9-11')}</span><b>${q||actCat!=='all'?'Nothing matches':'All clear'}</b><span class="muted">${q||actCat!=='all'?'Try another word, or look at everything.':'Nothing is waiting on anybody. Enjoy the quiet.'}</span>${q||actCat!=='all'?'<button class="btn ghost sm" data-act="actCat" data-c="all">Show everything</button>':''}</div>`}`;
+       <div class="acts">${x.acts.filter(Boolean).join('')}</div></div>`;
 }
+/* What waits on a yes or no besides the Approvals list itself: suppliers asking to be paid, orders a
+   supplier sent, customers saying they have paid, new online orders, and staff asking to leave early or
+   go out on shop work. The Approvals page shows these too, so every decision is in one place. */
+const isDecision=(x)=>x.decide===true||x.cat==='suppay'||(x.cat==='supord'&&x.tag==='Their order')||(x.cat==='customer'&&x.tag==='Paid — check it')||(x.cat==='web'&&x.tag==='New');
+const decisionsWaiting=()=>canApprove()&&typeof actionItems==='function'?actionItems().filter(isDecision):[];
 function actionsAfter(){
   const fresh=actLastSeen!==actCat; actLastSeen=actCat;
   const main=$('#main'); if(main) main.classList.toggle('st-still',!fresh);
@@ -12424,7 +12444,7 @@ function renderNav(){
       items.map(v=>v[0]==='grp'
         ? `<div class="grp ${folded.has(v[1])?'fold':''}" data-act="navFold" data-g="${escM(v[1])}" title="${folded.has(v[1])?'Open':'Fold away'} ${escM(v[1])}"><span>${v[1]}</span><i>${v[1]}</i><em class="gn">${grpCount[v[1]]||''}</em><b class="gch">▾</b></div>`
         : `<button class="${S.view===v[0]?'on':''} ${folded.has(grpOf[v[0]])?'hid':''}" data-view="${v[0]}" data-g="${escM(grpOf[v[0]]||'')}" title="${v[1]}">
-            <i class="ic">${icon(v[0])}</i><span>${v[1]}</span>${v[2]?`<em class="k">${v[2]}</em>`:''}${v[0]==='actions'&&actionCount()?`<i class="nbadge">${actionCount()}</i>`:''}${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}${v[0]==='issues'&&typeof storeToIssue==='function'&&storeToIssue()?`<i class="nbadge">${storeToIssue()}</i>`:''}${v[0]==='updates'&&updatesUnseen()?`<i class="nbadge">${updatesUnseen()}</i>`:''}<i class="tip">${v[1]}${v[2]?' · '+v[2]:''}</i></button>`).join('')
+            <i class="ic">${icon(v[0])}</i><span>${v[1]}</span>${v[2]?`<em class="k">${v[2]}</em>`:''}${v[0]==='actions'&&actionCount()?`<i class="nbadge">${actionCount()}</i>`:''}${v[0]==='approvals'&&(apMine().length+decisionsWaiting().length)?`<i class="nbadge">${apMine().length+decisionsWaiting().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}${v[0]==='issues'&&typeof storeToIssue==='function'&&storeToIssue()?`<i class="nbadge">${storeToIssue()}</i>`:''}${v[0]==='updates'&&updatesUnseen()?`<i class="nbadge">${updatesUnseen()}</i>`:''}<i class="tip">${v[1]}${v[2]?' · '+v[2]:''}</i></button>`).join('')
       +`</div>
        <div class="navfooter">
          <div class="navfoot-actions">
@@ -12442,7 +12462,7 @@ function renderNav(){
     : items.map(v=>v[0]==='grp'
         ? `<div class="grp"><span>${v[1]}</span></div>`
         : `<button class="${S.view===v[0]?'on':''}" data-view="${v[0]}" title="${v[1]}${v[2]?' · '+v[2]:''}">
-            ${icon(v[0])}<span>${v[1]}</span>${v[0]==='actions'&&actionCount()?`<i class="nbadge">${actionCount()}</i>`:''}${v[0]==='approvals'&&apMine().length?`<i class="nbadge">${apMine().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}${v[0]==='issues'&&typeof storeToIssue==='function'&&storeToIssue()?`<i class="nbadge">${storeToIssue()}</i>`:''}${v[0]==='updates'&&updatesUnseen()?`<i class="nbadge">${updatesUnseen()}</i>`:''}</button>`).join('');
+            ${icon(v[0])}<span>${v[1]}</span>${v[0]==='actions'&&actionCount()?`<i class="nbadge">${actionCount()}</i>`:''}${v[0]==='approvals'&&(apMine().length+decisionsWaiting().length)?`<i class="nbadge">${apMine().length+decisionsWaiting().length}</i>`:''}${v[0]==='payreqs'&&payReqNew()?`<i class="nbadge">${payReqNew()}</i>`:''}${v[0]==='issues'&&typeof storeToIssue==='function'&&storeToIssue()?`<i class="nbadge">${storeToIssue()}</i>`:''}${v[0]==='updates'&&updatesUnseen()?`<i class="nbadge">${updatesUnseen()}</i>`:''}</button>`).join('');
   $('#hdr').innerHTML=`${S.user.name}, ${S.user.role.toLowerCase()} &nbsp;|&nbsp; till ${S.terminal}, drawer open since ${S.drawer.opened}<br>${today.toDateString()}`;
   drawBell();
   const list=$('#nav .navlist');
@@ -21416,16 +21436,16 @@ function approvals(){
   const list=S.approvals||[], mine=!canApprove();
   const vis=list.filter(a=>!mine||a.by===S.user.name);
   const pend=vis.filter(a=>a.status==='pending'), done=vis.filter(a=>a.status!=='pending');
-  const shown=apTab==='pending'?pend:done;
+  const shown=apTab==='pending'?pend:done, more=mine?[]:decisionsWaiting(), waitN=pend.length+more.length;
   const badge=(st)=>`<span class="tag ${st==='approved'?'ok':st==='pending'?'warn':st==='failed'?'bad':'bad'}">${({pending:'waiting',approved:'approved',rejected:'turned down',failed:'could not apply'})[st]||st}</span>`;
   return `<h1>Approvals <span class="muted" style="font-size:13px;font-weight:400">${mine?'what you have asked the owner for':'changes waiting on you'}</span></h1>
    <div class="row" style="margin-bottom:12px">
-    ${stat('Waiting',pend.length,pend.length?'need a decision':'nothing waiting',pend.length?'y':'g')}
+    ${stat('Waiting',waitN,waitN?'need a decision':'nothing waiting',waitN?'y':'g')}
     ${stat('Approved',done.filter(a=>a.status==='approved').length,'','g')}
     ${stat('Turned down',done.filter(a=>a.status==='rejected').length,'','r')}
     ${mine?'':stat('Asking',[...new Set(pend.map(a=>a.by))].length,'people','b')}
    </div>
-   <div class="tabs"><button class="${apTab==='pending'?'on':''}" data-act="apTab" data-t="pending">Waiting${pend.length?` <i class="nbadge">${pend.length}</i>`:''}</button><button class="${apTab==='done'?'on':''}" data-act="apTab" data-t="done">Decided</button></div>
+   <div class="tabs"><button class="${apTab==='pending'?'on':''}" data-act="apTab" data-t="pending">Waiting${waitN?` <i class="nbadge">${waitN}</i>`:''}</button><button class="${apTab==='done'?'on':''}" data-act="apTab" data-t="done">Decided</button></div>
    ${shown.length?shown.map(a=>`<div class="card ap-card ${a.status}">
      <div class="ap-h"><div><b>${a.title}</b><div class="muted">${APKIND[a.kind]||a.kind} · asked by <b>${a.by}</b> · ${a.at}</div>${a.detail?`<div class="ap-d">${a.detail}</div>`:''}</div>${badge(a.status)}</div>
      ${a.status==='pending'?(mine?'<div class="muted" style="margin-top:8px">Waiting for the owner.</div>'
@@ -21435,7 +21455,9 @@ function approvals(){
         ${a.kind==='salaryAsk'&&a.status==='approved'&&(a.data||{}).type==='advance'?(a.paid?`<div style="margin-top:6px"><span class="tag ok">Paid ${money2(a.paid.amount)} · ${a.paid.at} · ${noteEsc(a.paid.by)}</span></div>`
           :`<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="tag warn">Not paid in the books yet</span><button class="btn tape sm" data-act="apPayAdv" data-id="${a.id}">Pay it now</button></div>`):''}`}
     </div>`).join('')
-    :`<div class="card muted">${apTab==='pending'?(mine?'You have nothing waiting.':'Nothing is waiting on you.'):'Nothing decided yet.'}</div>`}`;
+    :(apTab==='pending'&&more.length?'':`<div class="card muted">${apTab==='pending'?(mine?'You have nothing waiting.':'Nothing is waiting on you.'):'Nothing decided yet.'}</div>`)}
+   ${apTab==='pending'&&more.length?`<h2 style="margin:18px 0 8px">Also waiting for your decision <span class="muted" style="font-size:13px;font-weight:400">${more.length} · payment requests, supplier orders, payments to check, online orders, staff asks</span></h2>
+     <div class="act-group">${more.map((x,k)=>actItemHtml(x,k)).join('')}</div>`:''}`;
 }
 /* the doing of each change, shared by the request path and the direct path */
 /* ---- switching a page on ----

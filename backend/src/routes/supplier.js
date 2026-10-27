@@ -193,6 +193,18 @@ export async function injectSupplierInbox(data) {
         p.removed = true; p.dropInbox = row.id; p.removedBy = d.rep || name;
       }
       added++;
+    } else if (row.kind === 'askstock') {
+      // a supplier asks to see what the shop holds of their lines: the owner says yes or no in Approvals
+      S.approvals = S.approvals || [];
+      if (S.approvals.some(a => a.supInbox === row.id)) continue;
+      if (+sup?.stockUntil > Date.now()) { orphans.push(row.id); continue; }      // already open: nothing to decide
+      const d = row.data || {};
+      S.approvals.unshift({ id: 'apk' + row.id, supInbox: row.id, kind: 'supStock', title: `${name} asks to see their stock`,
+        detail: [d.rep, d.note].filter(Boolean).join(' · ') || 'for a day, to write their next order',
+        data: { sid: row.sid }, by: (d.rep || name) + ' (from the supplier page)',
+        at: new Date(row.created_at).toLocaleString('en-CA', { timeZone: TZ, hour12: false }).slice(0, 16).replace(',', ''), status: 'pending' });
+      S.notif.unshift({ id: 'n' + row.id.toString(36) + 'k', kind: 'approval', text: `${name} asks to see their stock`, view: 'approvals', at: localTime(), read: false, forApprovers: true });
+      added++;
     } else if (row.kind === 'stockread') {
       // somebody read the shelves: it goes on the till's own list, so the shop can see who and when
       const d = row.data;
@@ -466,7 +478,8 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
   const sup = (S.suppliers || []).find(s => s.id === req.sup.sid);
   if (!sup) throw new HttpError(404, 'Supplier no longer on file');
   await ensureSupplierTables();
-  const pending = (await inboxRows(sup.id)).map(p => ({ ...p, photos: p.photos.length }));
+  const pending = (await inboxRows(sup.id)).filter(p => p.kind !== 'askstock').map(p => ({ ...p, photos: p.photos.length }));   // the stock ask has its own place
+  const stockAsk = await stockAskOf(sup, S);
   const hidden = new Set((await query(`SELECT ref FROM sup_hidden WHERE sid = $1`, [sup.id])).rows.map(r => r.ref));
   const pendingReplies = pending.filter(p => p.kind === 'reply');
   const pos = (S.orders || []).filter(o => o.dir === 'OUT' && o.sid === sup.id).map(o => {
@@ -528,7 +541,7 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
     login: me ? { username: me.username, name: me.name || '', role: me.role || '', own: !!me.own_hash } : null,
     bills, payReqs, damages, damageValue, priceLists,
     // when the shop's door onto their stock closes; the page shows the tab only while it is open
-    stockUntil: +sup.stockUntil || 0,
+    stockUntil: +sup.stockUntil || 0, stockAsk,
     shop: { name: CFG.shop?.name || 'Regal Hardware', phone: CFG.shop?.phone || '', addr: CFG.shop?.addr || '' }, rep: req.sup.rep || '', pos, sent });
 }));
 
@@ -537,6 +550,34 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
    stops working when the day is up. Only their own lines are ever sent — another supplier's stock is
    not theirs to see — and no cost, no margin and no takings go with it, only what is on the shelf.
    Every read is written to the supplier's inbox so the shop can see afterwards who looked and when. */
+/* Their latest ask to see the stock, from the last two days: waiting (not yet with the till, or with
+   it and undecided) or turned down. Once approved the stock is simply open, so nothing is said. */
+async function stockAskOf(sup, S) {
+  const { rows: [row] } = await query(`SELECT id, created_at, imported_at FROM sup_inbox WHERE sid = $1 AND kind = 'askstock'
+     AND created_at > now() - interval '2 days' ORDER BY id DESC LIMIT 1`, [sup.id]);
+  if (!row || +sup.stockUntil > Date.now()) return null;
+  const a = (S.approvals || []).find(x => x.supInbox === Number(row.id));
+  const at = new Date(row.created_at).toLocaleString('en-GB', { timeZone: TZ, weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  if (a && a.status === 'rejected') return { state: 'no', at, note: a.note || '' };
+  if (a && a.status !== 'pending') return null;
+  return { state: 'waiting', at };
+}
+/** "Ask the shop to open my stock": once at a time — a second ask while one waits just says so. */
+r.post('/stock/ask', supAuth, asyncHandler(async (req, res) => {
+  const data = await books();
+  const S = data?.S || {};
+  const sup = (S.suppliers || []).find(s => s.id === req.sup.sid);
+  if (!sup) throw new HttpError(404, 'Supplier no longer on file');
+  await ensureSupplierTables();
+  if (+sup.stockUntil > Date.now()) return res.json({ ok: true, open: true });
+  const now = await stockAskOf(sup, S);
+  if (now && now.state === 'waiting') return res.json({ ok: true, already: true, stockAsk: now });
+  const note = String(req.body?.note || '').trim().slice(0, 200);
+  await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'askstock', $2)`,
+    [sup.id, JSON.stringify({ rep: String(req.sup.rep || '').trim().slice(0, 60), note })]);
+  res.json({ ok: true, stockAsk: await stockAskOf(sup, S) });
+}));
+
 r.get('/stock', supAuth, asyncHandler(async (req, res) => {
   const data = await books();
   const S = data?.S || {};
