@@ -27,7 +27,7 @@ function extInstall() {
   const _applyKept = applyKept;
   applyKept = function (kept) { _applyKept(kept); extEnsure(); };
   const _seed = seed;
-  seed = function () { _seed(); extEnsure(); extSeedDemo(); };
+  seed = function () { _seed(); extEnsure(); };
   // the stock tab gains a column per location
   const _inventory = inventory;
   inventory = function () { return extInventory(_inventory()); };
@@ -62,31 +62,6 @@ function extRelocate() {
   return false;
 }
 
-/* The demo (/demo) is a sealed box — its own storage, no network, sample data — so it is
-   where the two-store setup can be tried without touching a real shop. It ships switched on,
-   with the stock split so every case can be seen in a minute:
-
-     Tokyo Super Cement    all of it at Store 2   — bill it at the Main shop and Store 2 gets an order
-     QT Steel bar 10mm     all of it at the Main shop — bill it at Store 2 and the Main shop gets one
-     LED bulb 9W           at both                — each store sells its own, and raises nothing
-     PVC pipe 25mm         at both, more at Main  — enough at either for a small line
-
-   "Reset demo" puts all of this back. */
-function extSeedDemo() {
-  if (S.locations.length === 1) S.locations.push({ id: 2, name: 'Store 2', till: true });
-  if (!CFG.stores || typeof CFG.stores !== 'object') CFG.stores = {};
-  CFG.stores.on = true;
-  const put = (code, main, two) => {
-    const p = S.products.find(x => x.code === code); if (!p) return;
-    p.stock = +(main + two).toFixed(3); p.locs = { 1: main, 2: two };
-  };
-  put('CEM-TOK-50', 0, 64);          // the cement is all at the second store
-  put('STL-10MM', 120, 0);           // the steel is all at the main shop
-  put('ELE-LED-9', 120, 90);         // bulbs at both
-  put('PVC-PIP-25', 40, 20);
-  S.products.forEach(p => extLocsOf(p));   // everything else stays at the main shop
-  S.customers.forEach((c, i) => { if (c.id !== 1) c.points = [0, 120, 45, 300, 0, 80][i] || 0; });
-}
 
 /* ================================================================ locations */
 const extLoc = () => S.locations.find(l => l.id === S.locId) || S.locations[0];

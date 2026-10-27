@@ -1,5 +1,6 @@
 // Runs the end-to-end suite against ITS OWN database and port, so it can never touch the shop's real books.
 //   node backend/tools/run-e2e.mjs            (needs the local PostgreSQL running: cd server; npm run db:local)
+//   node backend/tools/run-e2e.mjs --keep     … and leave that test server up on :4010 for the browser tools
 // It creates database `sepos_e2e` next to the real one (same server, same user), applies the schema,
 // starts a second API on port 4010 with JWT/SMS settings of its own, clears the e2e books, runs e2e.mjs
 // against it and stops the server again.
@@ -37,5 +38,7 @@ if (!(await up())) { console.error('e2e API did not start'); srv.kill(); process
 
 // 3. the suite
 const r = spawnSync(node, [path.join(here, 'e2e.mjs')], { env: { ...process.env, E2E_BASE: `http://localhost:${PORT}` }, stdio: 'inherit' });
-srv.kill();
-process.exit(r.status || 0);
+// --keep: leave the test server up (port ${PORT}, the tests' sample shop) for the browser tools to drive — never the real books
+if (process.argv.includes('--keep')) { console.log(`
+test server left running on http://localhost:${PORT} (sign in Afridh / Afridh123) — stop it with Ctrl+C`); process.on('SIGINT', () => { srv.kill(); process.exit(r.status || 0) }); }
+else { srv.kill(); process.exit(r.status || 0); }

@@ -244,20 +244,6 @@ r.post('/books/refresh', regalAuth, asyncHandler(async (req, res) => {
 r.post('/books/login', asyncHandler(async (req, res) => {
   const { user, password } = req.body || {};
   if (!user || typeof password !== 'string') throw new HttpError(400, 'Name and password required');
-  if (String(user).toLowerCase() === 'demo') {
-    if (password !== 'demo123') throw new HttpError(401, 'Demo password is demo123');
-    const demoUser = {
-      name: 'Demo User',
-      role: 'Demo Admin',
-      perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve']
-    };
-    return res.json({
-      ok: true,
-      token: jwt.sign({ kind: 'regal', name: 'Demo User', role: 'Demo Admin', perms: demoUser.perms, isDemo: true }, process.env.JWT_SECRET, { expiresIn: '12h' }),
-      user: demoUser,
-      isDemo: true
-    });
-  }
   const adminPass = process.env.SEED_ADMIN_PASSWORD || 'admin123';
   const isAdmin = String(user).toLowerCase() === 'admin';
   const row = await loadBooks();

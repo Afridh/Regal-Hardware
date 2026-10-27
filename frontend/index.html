@@ -4725,43 +4725,9 @@ tr.cb-on td{background:#FBE4E6}
 <div id="phoneWrap"></div>
 </div>
 <script>
-/* ==================== 100% API CANCELLATION GUARD FOR DEMO ==================== */
-(function initDemoApiGuard(){
-  function isDemoUrlOrSession(){
-    try {
-      if(typeof window !== 'undefined' && window.isDemo) return true;
-      if(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1') return true;
-      if(typeof location !== 'undefined' && (location.search.includes('demo=1') || location.pathname.startsWith('/demo'))) return true;
-    } catch(_){}
-    return false;
-  }
-  // the demo till (/demo) is sealed by demo-sandbox.js and has nothing to do with this old mode
-  if(window.__sandboxDemo) return;
-  // an old demo link or a demo left open in this tab: the demo lives on its own page now
-  if(isDemoUrlOrSession() && location.pathname !== '/demo'){
-    try { sessionStorage.removeItem('regal_is_demo'); sessionStorage.removeItem('regal_demo_store'); } catch(_){}
-    location.replace('/demo');
-    return;
-  }
-  if(isDemoUrlOrSession()){
-    window.isDemo = true;
-    try { sessionStorage.setItem('regal_is_demo', '1'); } catch(_){}
-    if(typeof window.fetch === 'function' && !window._origFetch){
-      window._origFetch = window.fetch;
-      window.fetch = async function(url, opts){
-        const u = String(url || '');
-        if(u.startsWith('/api') || u.includes('/books') || u.includes('/sms') || u.includes('/shift') || u.includes('/supplier') || u.includes('/files')){
-          console.warn('[DEMO MODE - 100% API CANCELLED]', u);
-          if(u.includes('/users')) return new Response(JSON.stringify({ ok: true, users: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-          if(u.includes('/rev')) return new Response(JSON.stringify({ ok: true, rev: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-          if(u.includes('/shift')) return new Response(JSON.stringify({ ok: true, employees: [], shift: { days: {}, settings: {} } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-          return new Response(JSON.stringify({ ok: true, demo: true, message: 'API cancelled in demo mode' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        }
-        return window._origFetch.apply(this, arguments);
-      };
-    }
-  }
-})();
+/* The demo till is gone (27 Oct 2026). A tab that used it still carries its flag: clear it, so it opens
+   the real till like any other. */
+try { sessionStorage.removeItem('regal_is_demo'); sessionStorage.removeItem('regal_demo_store'); } catch(_){}
 /* tabs of this till in one browser tell each other the books moved. It is one channel object for the
    page, sending and listening: a BroadcastChannel never hands a message back to the object that sent it,
    so this page does not hear its own "sale completed" — hearing it made the page reload its older saved
@@ -7231,27 +7197,8 @@ function syncUsersAndStaff(){
 
 /* the punches themselves, generated the way a month at the shop actually runs */
 function seedShift(){
+  // the shift rules, and no days: attendance is only ever what staff actually punched
   S.shift={settings:{...SHIFT_DEFAULTS},days:{},imported:null};
-  const start=toMin(SHIFT_DEFAULTS.startTime);
-  let seed=7;
-  const rnd=()=>{seed=(seed*1103515245+12345)&0x7fffffff;return seed/0x7fffffff};
-  for(let back=45;back>=0;back--){
-    const dt=new Date(today); dt.setDate(dt.getDate()-back); const ds=D(dt);
-    if(SHIFT_DEFAULTS.weeklyOff.includes(dt.getDay())) continue;
-    S.shift.days[ds]={};
-    S.employees.forEach(e=>{
-      const roll=rnd();
-      if(roll<0.03){ S.shift.days[ds][e.id]={status:'absent'}; return }
-      if(roll<0.05){ S.shift.days[ds][e.id]={status:'leave',note:'Approved leave'}; return }
-      const inM=start+Math.round(rnd()*26)-6;
-      const outM=toMin(SHIFT_DEFAULTS.closeTime)+Math.round(rnd()*70)-15;
-      const brs=SHIFT_DEFAULTS.breaks.filter(()=>rnd()<0.85).map(b=>{
-        const over=rnd()<0.18?Math.round(rnd()*18):0;
-        return {id:b.id,start:b.start,end:hhmm(toMin(b.end)+over)};
-      });
-      S.shift.days[ds][e.id]={status:'work',in:hhmm(inM),out:hhmm(outM),breaks:brs};
-    });
-  }
 }
 function applyShift(data){
   const byName={}; S.employees.forEach(e=>byName[e.name.toLowerCase().trim()]=e.id);
@@ -9254,9 +9201,6 @@ function rulesTab(){
 }
 
 function payroll(){
-  if(window.isDemo || (S && S.isDemo)){
-    return demoAttendanceView();
-  }
   const isSalesman=S.user&&S.user.role==='Salesman';
   const mk=payMonth||D(today).slice(0,7);
   const monthName=new Date(mk+'-01').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
@@ -9385,101 +9329,16 @@ function clearShopFlow(){
 }
 
 /* ---- seed ---- */
+/* A till with no books — a new shop, or books that could not be read — starts EMPTY. It used to
+   start on a whole sample shop (products, customers, suppliers, bills, attendance), and a till that
+   fell back to it once saved it over the real catalogue. There is no sample data in the system now;
+   the automated tests bring their own (backend/tools/fixtures/sample-shop.js). */
 function seed(){
-  const cats=['Cement & building','Paint','Electrical','PVC & plumbing','Tools','Fasteners','Motor & garden'];
-  const raw=[
-   ['CEM-TOK-50','Tokyo Super Cement 50kg','Cement & building','bag',2150,2350,2290,64,20],
-   ['CEM-INS-50','Insee Sanstha Cement 50kg','Cement & building','bag',2120,2320,2260,38,20],
-   ['STL-10MM','QT Steel bar 10mm (6m)','Cement & building','pcs',1980,2250,2180,120,30],
-   ['PNT-DLX-W4','Dulux Weathershield 4L White','Paint','tin',7900,9200,8900,14,6],
-   ['PNT-DLX-E1','Dulux Pentalite Emulsion 1L','Paint','tin',1450,1750,1690,42,10],
-   ['PNT-AP-W4','Asian Paints Apex 4L','Paint','tin',6800,7950,7700,9,6],
-   ['PNT-BRS-4','Paint brush 4"','Paint','pcs',380,520,480,55,12],
-   ['PNT-THN-1','Thinner 1L','Paint','btl',620,780,750,30,10],
-   ['ELE-WIR-15','Kevilton wire 1.5mm² (100m)','Electrical','roll',8400,9800,9500,11,4],
-   ['ELE-WIR-25','Kevilton wire 2.5mm² (100m)','Electrical','roll',12800,14900,14400,7,4],
-   ['ELE-SW-1G','Orange 1-gang switch','Electrical','pcs',210,290,270,140,40],
-   ['ELE-SOC-13','Orange 13A socket','Electrical','pcs',310,420,395,96,30],
-   ['ELE-LED-9','LED bulb 9W','Electrical','pcs',340,450,430,210,50],
-   ['ELE-MCB-32','MCB 32A single pole','Electrical','pcs',890,1150,1100,25,8],
-   ['PVC-PIP-20','PVC pipe 20mm (4m)','PVC & plumbing','pcs',640,780,750,85,30],
-   ['PVC-PIP-25','PVC pipe 25mm (4m)','PVC & plumbing','pcs',820,990,950,60,30],
-   ['PVC-ELB-20','PVC elbow 20mm','PVC & plumbing','pcs',38,55,50,420,100],
-   ['PVC-TAP-BR','Brass bib tap ½"','PVC & plumbing','pcs',1150,1450,1390,32,10],
-   ['PVC-SOL-250','PVC solvent cement 250ml','PVC & plumbing','tin',540,690,660,28,10],
-   ['TL-HAM-500','Claw hammer 500g','Tools','pcs',950,1250,1200,18,5],
-   ['TL-DRL-BSH','Bosch GSB 13RE drill','Tools','pcs',18500,21500,21000,3,2],
-   ['TL-TAP-5M','Measuring tape 5m','Tools','pcs',420,590,560,27,8],
-   ['FST-NL-2','Wire nails 2" (1kg)','Fasteners','kg',390,480,460,150,40],
-   ['FST-SCR-40','Drywall screw 40mm (box 500)','Fasteners','box',780,950,920,22,8],
-   ['MTR-PMP-05','Water pump 0.5HP','Motor & garden','pcs',13800,16500,16000,4,2],
-   ['MTR-HOS-30','Garden hose 30m','Motor & garden','pcs',2100,2650,2550,12,4]];
-  S.products=raw.map((r,i)=>({id:i+1,code:r[0],name:r[1],cat:r[2],unit:r[3],cost:r[4],mrp:Math.round(r[5]*1.22/5)*5,retail:r[5],wholesale:r[6],stock:r[7],min:r[8],barcode:'8'+String(93000+i*37).padStart(12,'0')}));
-  // every product gets a four-figure number the counter can key in
-  S.products.forEach((p,i)=>{ p.num=String(1000+i) });
-  // the power tools are followed one by one, with a year on them
-  ['TL-DRL-BSH','MTR-PMP-05'].forEach(code=>{const x=S.products.find(p=>p.code===code);
-    if(x){ x.serialised=true; x.warrantyMonths=12;
-      addSerials(x.id,[...Array(Math.max(0,Math.min(4,Math.floor(x.stock))))].map((_,i)=>`${code.split('-').pop()}${String(2600+i)}`),'OPENING',x.cost) }});
-  // short codes the counter knows by heart
-  [['CEM-TOK-50','cem'],['ELE-LED-9','led'],['PNT-DLX-E1','pen'],['ELE-WIR-25','w25'],['PVC-PIP-25','p25']].forEach(([code,sh])=>{const x=S.products.find(p=>p.code===code); if(x) x.short=sh});
-  // wire is cut off the roll: dearer in short lengths, cheaper by the 50
-  const wireM=S.products.find(x=>x.code==='ELE-WIR-25');
-  if(wireM) wireM.tiers=[{min:50,price:Math.round(wireM.retail*0.92),label:'50 m or more'},
-                         {min:100,price:Math.round(wireM.retail*0.86),label:'a full roll'}];
-  S.customers=[
-   {id:1,code:'C0001',name:'Walk-in customer',phone:'',level:'retail',limit:0},
-   {id:2,code:'C0002',name:'Nimal Constructions',phone:'0771234501',level:'wholesale',limit:400000,address:'New Town, Polonnaruwa',portal:true,lastLogin:null},
-   {id:3,code:'C0003',name:'S. Jayasinghe (Mason)',phone:'0712345602',level:'wholesale',limit:150000,address:'Kaduruwela',portal:false,lastLogin:null},
-   {id:4,code:'C0004',name:'Hotel Sudu Araliya',phone:'0272225603',level:'retail',limit:250000,address:'Polonnaruwa',portal:false,lastLogin:null},
-   {id:5,code:'C0005',name:'R. Fernando',phone:'0765678904',level:'retail',limit:50000,address:'Hingurakgoda',portal:false,lastLogin:null},
-   {id:6,code:'C0006',name:'Green Field Electricals',phone:'0779876505',level:'wholesale',limit:200000,address:'Manampitiya',portal:false,lastLogin:null}];
-  S.suppliers=[
-   {id:1,code:'S0001',name:'Tokyo Cement Distributor – Polonnaruwa',phone:'0272233100',contact:'Mr. Rathnayake',days:30,pin:'4417',showAccounts:true,enabled:true,lastLogin:null},
-   {id:2,code:'S0002',name:'Dulux (Akzo Nobel) – Dealer',phone:'0112675400',contact:'Ms. Perera',days:45,pin:'',showAccounts:true,enabled:true,lastLogin:null},
-   {id:3,code:'S0003',name:'Kevilton Electricals',phone:'0112345678',contact:'Mr. Silva',days:30,pin:'',showAccounts:true,enabled:true,lastLogin:null},
-   {id:4,code:'S0004',name:'National PVC Industries',phone:'0332290111',contact:'Mr. Dias',days:30,pin:'',showAccounts:false,enabled:true,lastLogin:null},
-   {id:5,code:'S0005',name:'Bosch / Tool Mart Colombo',phone:'0114455667',contact:'Mr. Fazil',days:14,pin:'',showAccounts:true,enabled:true,lastLogin:null}];
-  S.banks=[{id:1,name:'HNB Kaduruwela',ac:'1020',no:'0034 ****  2259',nextChq:124},{id:2,name:'BOC Polonnaruwa',ac:'1021',no:'0071 **** 8890',nextChq:301},{id:3,name:'Sampath Polonnaruwa',ac:'1022',no:'0110 **** 4411',nextChq:57}];
+  S.products=[]; S.suppliers=[]; S.banks=[]; S.orders=[];
+  S.customers=[{id:1,code:'C0001',name:'Walk-in customer',phone:'',level:'retail',limit:0}];
   syncUsersAndStaff();
-  // opening balances
-  const stockVal=S.products.reduce((a,p)=>a+p.stock*p.cost,0);
-  S.products.forEach(p=>{ if(p.stock>0){ const q=p.stock; p.stock=0; move(p.id,q,'OPENING','Opening',p.cost,ago(40)) } });
-  post(ago(40),'Opening balances','OPEN',[{ac:'1200',dr:+stockVal.toFixed(2)},{ac:'1010',dr:45000},{ac:'1020',dr:1250000},{ac:'1021',dr:680000},{ac:'1022',dr:215000},{ac:'3100',cr:+(stockVal+45000+1250000+680000+215000).toFixed(2)}]);
-  // purchases
-  receivePurchase({supplierId:1,supInv:'TC-8812',date:ago(12),lines:[{pid:1,qty:100,cost:2150},{pid:2,qty:50,cost:2120}]});
-  receivePurchase({supplierId:2,supInv:'DLX-44107',date:ago(9),lines:[{pid:4,qty:12,cost:7900},{pid:5,qty:36,cost:1450},{pid:8,qty:24,cost:620}]});
-  receivePurchase({supplierId:3,supInv:'KV-2231',date:ago(7),lines:[{pid:9,qty:10,cost:8400},{pid:10,qty:6,cost:12800},{pid:13,qty:200,cost:340}]});
-  receivePurchase({supplierId:4,supInv:'NPI-9051',date:ago(5),lines:[{pid:15,qty:100,cost:640},{pid:16,qty:60,cost:820},{pid:17,qty:500,cost:38}],pay:{method:'CASH',amount:50000}});
-  receivePurchase({supplierId:5,supInv:'TM-311',date:ago(3),lines:[{pid:21,qty:2,cost:18500},{pid:25,qty:2,cost:13800}]});
-  // supplier payment split across 3 cheques (Tokyo)
-  paySupplier({supplierId:1,date:ago(6),lines:[{method:'CHEQUE',bank:1,amount:100000,date:ago(6)},{method:'CHEQUE',bank:1,amount:100000,date:ago(-4)},{method:'CHEQUE',bank:2,amount:100000,date:ago(-14)}],notes:'Part settlement TC-8812, post-dated'});
-  chequeStatus(S.cheques[0],'CLEARED',ago(2));
-  paySupplier({supplierId:2,date:ago(4),lines:[{method:'BANK',bank:1,amount:80000}]});
-  // sales history
-  const hist=[[ago(6),1,[[1,10],[23,5]],[['CASH']]],[ago(6),2,[[1,60],[3,20],[23,20]],[['CREDIT']]],[ago(5),4,[[4,3],[7,4],[8,2]],[['CARD',1]]],[ago(5),1,[[13,6],[11,4]],[['CASH']]],[ago(4),3,[[15,20],[17,60],[19,3]],[['CREDIT']]],[ago(4),1,[[20,1],[22,1]],[['CASH']]],[ago(3),6,[[9,3],[12,20],[14,4]],[['CREDIT']]],[ago(2),1,[[5,4],[7,2]],[['CASH']]],[ago(2),5,[[25,1],[26,1]],[['CASH',null,10000],['CREDIT']]],[ago(1),1,[[1,5],[16,4],[18,2]],[['CASH']]],[ago(1),4,[[6,2],[8,3]],[['CASH']]],[D(today),1,[[13,10],[11,2],[12,2]],[['CASH']]],[D(today),2,[[2,20],[3,10]],[['CREDIT']]],[D(today),1,[[23,2],[24,1]],[['CASH']]]];
-  for(const h of hist){ const c=C(h[1]); const lines=h[2].map(([pid,q])=>({pid,qty:q,price:c.level==='wholesale'?P(pid).wholesale:P(pid).retail,disc:0})); const total=lines.reduce((a,l)=>a+l.qty*l.price,0);
-    const pays=h[3].map(p=>({method:p[0],bank:p[1]||null,amount:p[2]!=null?p[2]:(p[0]==='CREDIT'?0:total)})); completeSale({lines,customerId:c.id,pays,date:h[0],by:'admin'}) }
-  receiveCustomer({customerId:2,amount:100000,method:'CHEQUE',ref:'HNB 556201',date:ago(2)});
-  S.cheques.at(-1).depositTo=1; chequeStatus(S.cheques.at(-1),'DEPOSITED',ago(1));
-  receiveCustomer({customerId:3,amount:15000,method:'CASH',date:ago(1)});
-  // expenses
-  addExpense({cat:'6010',amount:38650,method:'BANK',bank:1,desc:'CEB August bill',date:ago(3)});
-  addExpense({cat:'6040',amount:6500,method:'CASH',desc:'Lorry hire – cement delivery',date:ago(2)});
-  addExpense({cat:'6070',amount:3200,method:'CASH',desc:'Staff tea & breakfast (week)',date:ago(1)});
-  addExpense({cat:'6050',amount:4800,method:'CASH',desc:'Shutter repair',date:D(today)});
-  addDamage({pid:4,qty:1,reason:'Tin dented, leaking',date:ago(3)});
-  addDamage({pid:15,qty:3,reason:'Cracked in transport',date:ago(1)});
-  // supplier orders already in flight
-  S.orders=[
-   {id:'ord1',sid:3,rep:'Silva',text:'Kevilton wire 2.5mm² — 6 rolls\nMCB 32A — 10 pcs',date:ago(3),status:'accepted',note:'',files:[],unreadShop:false,unreadSup:false,src:'portal',
-    events:[{id:'a1',actor:'supplier',name:'Silva',action:'uploaded',note:'',at:Date.now()-3*864e5},
-            {id:'a2',actor:'shop',name:'admin',action:'accepted',note:'',at:Date.now()-3*864e5+36e5}]},
-   {id:'ord2',sid:2,rep:'Perera',text:'Dulux Weathershield 4L White — 12 tins\nPentalite 1L — 24 tins',date:ago(1),status:'pending',note:'',files:[],unreadShop:true,unreadSup:false,src:'portal',
-    events:[{id:'b1',actor:'supplier',name:'Perera',action:'uploaded',note:'Delivery possible Thursday',at:Date.now()-864e5}]}];
   S.web.settings={...WEB_DEFAULTS};
   seedShift();
-  S.messages=S.messages.slice(0,8);
 }
 /* ---- keeping the books between sessions ----
    In the demo this is the browser's storage. In production it is the database
@@ -12918,7 +12777,6 @@ function renderNow(){
   if(S.view==='ai') aiAfter();
   if(S.view==='updates') markUpdatesSeen();
   if(S.view==='bills'||S.view==='recall') billsAfter();
-  if(S.view==='payroll' && (window.isDemo || (S && S.isDemo))) demoAttendanceAfter();
   if(S.view==='trail') trailAfter();
   if(S.view==='settings'&&setTab==='app') appDownloadAfter();
   { const ds=document.getElementById('dispScr'); if(ds) ds.onchange=()=>{ try{ localStorage.setItem('regal_count_screen',ds.value) }catch(e){} dispLast=''; render(); toast(ds.value==='off'?'This till shows on no screen':'This till shows on regalhw.lk/count'+ds.value) } }
@@ -24147,8 +24005,8 @@ function bulkCheck(list,update){
 }
 function bulkTemplate(){
   const head=BULK_COLS.map(c=>c[1]);
-  const eg=['CEM-TOK-50','Tokyo Super Cement 50kg','Cement & building','bag','2150','2865','2350','2290','20','0','cem','','Tokyo Cement'];
-  const csv=[head,eg].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  // the headings only: an example row left in a filled-in sheet would come back in as a real product
+  const csv=[head].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
   a.download='products-template.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
 }
@@ -24316,9 +24174,8 @@ const PEOPLE={
 };
 function peopleTemplate(kind){
   const cfg=PEOPLE[kind], head=cfg.cols.map(c=>c[1]);
-  const eg=kind==='cust'?['C0001','Nimal Constructions','0771234501','New Town, Polonnaruwa','wholesale','400000','pays at month end']
-    :['S0001','Tokyo Cement Distributor','Mr. Silva','0771234500','30','Colombo Road','lorry comes Tuesdays'];
-  const csv=[head,eg].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  // the headings only: an example row left in a filled-in sheet would come back in as a real customer or supplier
+  const csv=[head].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}));
   a.download=kind+'-template.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
 }
@@ -29057,7 +28914,6 @@ window.serverSignedOut=(why)=>{
     const m=document.getElementById('pinMsg1'); if(m&&elsewhere){ m.textContent='You signed in on another device — this one was signed out.'; m.classList.add('bad') } },400);
 };
 function signOut(){
-  if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')){ leaveDemo(); return }
   try{ auditCheck(); if(S.user) auditAdd({area:'Sign-in',act:'signed out',name:S.user.name}) }catch(e){}
   // the bill on the screen is kept on this till and comes back when they sign in again, so signing
   // out to let somebody else serve no longer costs anybody their work
@@ -29090,445 +28946,6 @@ function proofBill(fmtWanted){
     link:'regalhw.lk/b/proof',proof:true};
   showInvoice(proof,fmtWanted||S.pos.lastBill||CFG.bill.defaultFormat);
 }
-/* ==================== DEMO ATTENDANCE SIMULATION ==================== */
-let demoAttFilter = 'all';
-let demoAttTab = 'today';
-let demoAttDateOffset = 0;
-let demoAttClockTimer = null;
-let demoAttSearch = '';
-
-let demoStaffList = [
-  { id: 101, name: 'Kamal Perera', role: 'Head Salesman & Counter', state: 'working', checkIn: '08:02 AM', breakMins: 25, workedHours: '4h 15m', avatar: 'KP', card: 'C101' },
-  { id: 102, name: 'Nimal Silva', role: 'Cashier & KP Desk', state: 'working', checkIn: '07:55 AM', breakMins: 0, workedHours: '4h 22m', avatar: 'NS', card: 'C102' },
-  { id: 103, name: 'Sunil Shantha', role: 'Warehouse & Stock', state: 'break', checkIn: '08:00 AM', breakSince: '11:30 AM', breakMins: 32, workedHours: '3h 30m', avatar: 'SS', card: 'C103' },
-  { id: 104, name: 'Ruwan Jayasinghe', role: 'Counter Salesman', state: 'late', checkIn: '08:14 AM', breakMins: 15, workedHours: '4h 03m', avatar: 'RJ', card: 'C104' },
-  { id: 105, name: 'Priyantha Bandara', role: 'Lorry Driver & Transport', state: 'out', checkIn: null, breakMins: 0, workedHours: '0h 00m', avatar: 'PB', card: 'C105' },
-  { id: 106, name: 'Dinesh Kumara', role: 'Store Associate', state: 'absent', checkIn: null, breakMins: 0, workedHours: '0h 00m', reason: 'Approved Medical Leave', avatar: 'DK', card: 'C106' }
-];
-
-window.demoSetAttFilter = function(f){
-  demoAttFilter = f;
-  render();
-};
-
-window.demoSetAttTab = function(t){
-  demoAttTab = t;
-  render();
-};
-
-window.demoNavAttDate = function(offset){
-  demoAttDateOffset = offset;
-  render();
-};
-
-window.demoSimulatePunch = function(id, action){
-  const emp = demoStaffList.find(e => e.id === id);
-  if(!emp) return;
-  const nowStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-  if(action === 'checkin'){
-    emp.state = 'working';
-    emp.checkIn = nowStr;
-    emp.workedHours = 'Just checked in';
-    toast('Demo punch: ' + emp.name + ' checked in at ' + nowStr + ' (Simulated · No API called)', 'ok');
-  } else if(action === 'break'){
-    emp.state = 'break';
-    emp.breakSince = nowStr;
-    toast('Demo punch: ' + emp.name + ' started break at ' + nowStr + ' (Simulated · No API called)', 'ok');
-  } else if(action === 'resume'){
-    emp.state = 'working';
-    emp.breakSince = null;
-    toast('Demo punch: ' + emp.name + ' resumed work at ' + nowStr + ' (Simulated · No API called)', 'ok');
-  } else if(action === 'checkout'){
-    emp.state = 'done';
-    toast('Demo punch: ' + emp.name + ' checked out at ' + nowStr + ' (Simulated · No API called)', 'ok');
-  }
-  render();
-};
-
-function demoAttendanceView(){
-  const now = new Date();
-  const d = new Date(now);
-  d.setDate(d.getDate() + demoAttDateOffset);
-  const dateStr = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  const isToday = demoAttDateOffset === 0;
-
-  const inShopCount = demoStaffList.filter(e => e.state === 'working' || e.state === 'late' || e.state === 'break').length;
-  const workingCount = demoStaffList.filter(e => e.state === 'working' || e.state === 'late').length;
-  const breakCount = demoStaffList.filter(e => e.state === 'break').length;
-  const outCount = demoStaffList.filter(e => e.state === 'out' || e.state === 'done').length;
-  const absentCount = demoStaffList.filter(e => e.state === 'absent').length;
-
-  let list = demoStaffList;
-  if(demoAttFilter === 'working') list = list.filter(e => e.state === 'working' || e.state === 'late');
-  else if(demoAttFilter === 'break') list = list.filter(e => e.state === 'break');
-  else if(demoAttFilter === 'out') list = list.filter(e => e.state === 'out' || e.state === 'done');
-  else if(demoAttFilter === 'absent') list = list.filter(e => e.state === 'absent');
-
-  if(demoAttSearch){
-    const q = demoAttSearch.toLowerCase().trim();
-    list = list.filter(e => e.name.toLowerCase().includes(q) || e.role.toLowerCase().includes(q) || (e.card && e.card.toLowerCase().includes(q)));
-  }
-
-  return `
-    <div class="att-banner">
-      <div class="att-banner-row">
-        <div>
-          <div class="att-banner-title">
-            <span style="color:var(--accent,#F0A81E)">🏪</span> Regal Hardware · Attendance & Shifts
-            <span style="font-size:11px;font-weight:700;padding:2px 7px;border-radius:12px;background:#4F46E5;color:#fff;margin-left:6px">DEMO SANDBOX · NO API</span>
-          </div>
-          <div class="att-banner-rules">
-            <span>⏰ 8:00 AM – 7:30 PM</span>
-            <span>⚡ Late past 8:00 AM</span>
-            <span>🌙 OT past 7:30 PM</span>
-            <span style="color:#34D399">● Simulated View</span>
-          </div>
-        </div>
-        <div class="att-header-right">
-          <div class="att-summary-chips">
-            <span class="att-chip green"><b>${inShopCount}</b> In Shop</span>
-            <span class="att-chip amber"><b>${breakCount}</b> Break</span>
-            <span class="att-chip slate"><b>${outCount}</b> Out</span>
-            <span class="att-chip red"><b>${absentCount}</b> Absent</span>
-          </div>
-          <div class="att-clock" id="demoLiveClock">🕒 ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</div>
-        </div>
-      </div>
-    </div>
-
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:gap:10px;margin-bottom:12px">
-      <div class="tabs" style="margin:0">
-        <button class="${demoAttTab==='today'?'on':''}" onclick="demoSetAttTab('today')">Today Shift Board</button>
-        <button class="${demoAttTab==='sheet'?'on':''}" onclick="demoSetAttTab('sheet')">Month Timesheet</button>
-        <button class="${demoAttTab==='rules'?'on':''}" onclick="demoSetAttTab('rules')">Shop Rules</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px">
-        <button class="btn ghost sm" onclick="demoNavAttDate(-1)">‹ Yesterday</button>
-        <button class="btn sm ${isToday?'primary':'ghost'}" onclick="demoNavAttDate(0)">Today</button>
-        <button class="btn ghost sm" onclick="demoNavAttDate(1)">Tomorrow ›</button>
-        <span style="font-size:12px;font-weight:700;color:var(--steel,#64748B);margin-left:6px" id="demoLiveDate">${dateStr}</span>
-      </div>
-    </div>
-
-    ${demoAttTab === 'today' ? `
-      <div class="att-search-bar" style="margin-bottom:12px">
-        <div class="att-search-box">
-          <input id="demoAttSearchInp" placeholder="Search staff by name or role…" value="${demoAttSearch}">
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="chip ${demoAttFilter==='all'?'on':''}" onclick="demoSetAttFilter('all')">All (${demoStaffList.length})</button>
-          <button class="chip ${demoAttFilter==='working'?'on':''}" onclick="demoSetAttFilter('working')">🟢 Working (${workingCount})</button>
-          <button class="chip ${demoAttFilter==='break'?'on':''}" onclick="demoSetAttFilter('break')">☕ On Break (${breakCount})</button>
-          <button class="chip ${demoAttFilter==='out'?'on':''}" onclick="demoSetAttFilter('out')">⚪ Not In (${outCount})</button>
-          <button class="chip ${demoAttFilter==='absent'?'on':''}" onclick="demoSetAttFilter('absent')">🔴 Absent (${absentCount})</button>
-        </div>
-      </div>
-
-      <div class="bgrid">
-        ${list.map(e => {
-          const isLate = e.state === 'late';
-          const isWorking = e.state === 'working' || isLate;
-          const isOnBreak = e.state === 'break';
-          const isOut = e.state === 'out';
-          const isDone = e.state === 'done';
-          const isAbsent = e.state === 'absent';
-          return `
-          <div class="bcard ${isLate ? 'late' : e.state}">
-            <div class="bc-top">
-              <div class="bc-avatar">${e.avatar}</div>
-              <div class="bc-meta">
-                <div class="bc-name">${e.name}</div>
-                <div class="bc-role">${e.role}</div>
-              </div>
-              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-                ${!isOut ? `<div class="bc-badge ${isLate ? 'late' : e.state}">${isLate ? 'WORKING · LATE 15H 37M' : isWorking ? 'WORKING' : isOnBreak ? 'ON BREAK · EVENING TEA' : isDone ? 'GONE HOME' : isAbsent ? 'ABSENT' : ''}</div>` : ''}
-                ${isOnBreak ? `<div class="bc-badge extra-break">EXTRA BREAK · 1M</div>` : ''}
-              </div>
-            </div>
-
-            <!-- Live Working Time Counting Badge -->
-            <div class="bc-live-badge ${e.state}">
-              ${isWorking ? `<span class="live-dot"></span>⏱️ ${e.workedHours || '1h 42m'} working` :
-                isOnBreak ? `☕ Evening tea · ${e.workedHours || '2h 10m'} floor time` :
-                isDone ? `✓ ${e.workedHours || '8h 24m'} worked today` :
-                isAbsent ? `✕ Absent today` :
-                `⏱️ 0h 0m · Not in yet`}
-            </div>
-
-            <!-- Meal & Tea Options -->
-            ${isWorking ? `
-              <div class="bc-meal-row">
-                <div class="bc-meal-title">BREAK OPTIONS:</div>
-                <div class="bc-meals">
-                  <button class="bc-meal-btn taken" onclick="demoSimulatePunch(${e.id}, 'break')">✓ Breakfast</button>
-                  <button class="bc-meal-btn taken" onclick="demoSimulatePunch(${e.id}, 'break')">✓ Lunch</button>
-                  <button class="bc-meal-btn ${e.name === 'Zarook' ? 'taken' : ''}" onclick="demoSimulatePunch(${e.id}, 'break')">
-                    ${e.name === 'Zarook' ? '✓ Evening Tea' : '🫖 Evening Tea (10m)'}
-                  </button>
-                </div>
-              </div>
-            ` : ''}
-
-            ${isOnBreak ? `
-              <div style="margin:2px 0">
-                <button class="btn tape sm" style="width:100%;padding:8px 12px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px" onclick="demoSimulatePunch(${e.id}, 'resume')">
-                  ✓ Back from Evening tea
-                </button>
-                <div class="muted" style="font-size:10.5px;text-align:center;margin-top:3px">
-                  Break started at ${e.breakSince || '23:45'}
-                </div>
-              </div>
-            ` : ''}
-
-            <div class="bc-acts">
-              ${isOut ? `
-                <button class="btn tape sm" onclick="demoSimulatePunch(${e.id}, 'checkin')">⚡ Check In</button>
-              ` : isWorking ? `
-                <button class="btn tape sm" onclick="demoSimulatePunch(${e.id}, 'checkout')">Check Out</button>
-              ` : isOnBreak ? `
-                <button class="btn ghost sm" onclick="demoSimulatePunch(${e.id}, 'checkout')">Check Out</button>
-              ` : isDone ? `
-                <button class="btn tape sm" onclick="demoSimulatePunch(${e.id}, 'checkin')">⚡ Check In Again</button>
-              ` : `
-                <span class="muted" style="font-size:12px;align-self:center">Marked absent today</span>
-              `}
-            </div>
-
-            <div class="bc-bottom-row">
-              <button class="bc-toggle-btn" onclick="demoToggleDetails(${e.id})">See details ▾</button>
-            </div>
-
-            <div class="bc-details-box" id="details-demo-${e.id}" style="display:none">
-              <div class="bc-metrics">
-                <div class="bc-metric">
-                  <span class="lbl">Check-In</span>
-                  <span class="val ${isLate ? 'late-val' : ''}">${e.checkIn || '—'}${isLate ? ' <small style="font-size:10px">(14m late)</small>' : ''}</span>
-                </div>
-                <div class="bc-metric">
-                  <span class="lbl">Check-Out</span>
-                  <span class="val">—</span>
-                </div>
-                <div class="bc-metric">
-                  <span class="lbl">Floor Time</span>
-                  <span class="val">${e.workedHours || '—'}</span>
-                </div>
-                <div class="bc-metric">
-                  <span class="lbl">OT Past 7:30 PM</span>
-                  <span class="val">0.00h</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        `;}).join('')}
-      </div>
-    ` : demoAttTab === 'sheet' ? `
-      <div style="background:var(--panel,#fff);border:1px solid var(--line,#E2E8F0);border-radius:10px;padding:16px">
-        <h2 style="margin:0 0 12px;font-size:16px">September 2026 Timesheet (Demo Simulation)</h2>
-        <table style="width:100%;font-size:13px">
-          <thead>
-            <tr style="text-align:left;border-bottom:2px solid var(--line,#E2E8F0)">
-              <th style="padding:8px">Employee</th>
-              <th style="padding:8px">Role</th>
-              <th style="padding:8px">Present Days</th>
-              <th style="padding:8px">Regular Hours</th>
-              <th style="padding:8px">OT Hours</th>
-              <th style="padding:8px">Attendance Rate</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${demoStaffList.map(e => `
-              <tr style="border-bottom:1px solid var(--line,#F1F5F9)">
-                <td style="padding:10px 8px;font-weight:700">${e.name}</td>
-                <td style="padding:10px 8px;color:var(--steel,#64748B)">${e.role}</td>
-                <td style="padding:10px 8px">${e.state==='absent'?'23 / 26':'26 / 26'}</td>
-                <td style="padding:10px 8px">${e.state==='absent'?'242 hrs':'273 hrs'}</td>
-                <td style="padding:10px 8px;color:#059669;font-weight:700">${e.state==='absent'?'8.5 hrs':'16.0 hrs'}</td>
-                <td style="padding:10px 8px"><span style="background:#ECFDF5;color:#065F46;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${e.state==='absent'?'88.5%':'100%'}</span></td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    ` : `
-      <div style="background:var(--panel,#fff);border:1px solid var(--line,#E2E8F0);border-radius:10px;padding:18px">
-        <h2 style="margin:0 0 12px;font-size:16px">Regal Hardware Shift Rules & OT Policy</h2>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;font-size:13px">
-          <div style="border:1px solid var(--line,#E2E8F0);border-radius:8px;padding:12px">
-            <h3 style="margin:0 0 6px;font-size:14px;color:#1E293B">⏰ Working Hours</h3>
-            <p style="margin:0;color:#64748B">Standard store shift starts at <b>08:00 AM</b> and ends at <b>07:30 PM</b>. Staff checking in after 08:00 AM are flagged with the late margin.</p>
-          </div>
-          <div style="border:1px solid var(--line,#E2E8F0);border-radius:8px;padding:12px">
-            <h3 style="margin:0 0 6px;font-size:14px;color:#1E293B">☕ Break Time Allowance</h3>
-            <p style="margin:0;color:#64748B">Tea breaks are 15–20 minutes. Lunch break is 30–45 minutes. Total permitted daily break time is 60 minutes.</p>
-          </div>
-          <div style="border:1px solid var(--line,#E2E8F0);border-radius:8px;padding:12px">
-            <h3 style="margin:0 0 6px;font-size:14px;color:#1E293B">🌙 Overtime (OT) Policy</h3>
-            <p style="margin:0;color:#64748B">Work performed after 07:30 PM counts as Overtime (OT) at 1.5x regular hourly rate.</p>
-          </div>
-        </div>
-      </div>
-    `}
-  `;
-}
-
-function demoAttendanceAfter(){
-  if(demoAttClockTimer) clearInterval(demoAttClockTimer);
-  const updateClock = () => {
-    const el = document.getElementById('demoLiveClock');
-    if(!el){
-      if(demoAttClockTimer){ clearInterval(demoAttClockTimer); demoAttClockTimer = null; }
-      return;
-    }
-    const now = new Date();
-    el.textContent = '🕒 ' + now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
-  };
-  demoAttClockTimer = setInterval(updateClock, 1000);
-
-  const inp = document.getElementById('demoAttSearchInp');
-  if(inp){
-    inp.oninput = (e) => {
-      demoAttSearch = e.target.value;
-      render();
-      const el = document.getElementById('demoAttSearchInp');
-      if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
-    };
-  }
-}
-
-/* ==================== DEMO POS MODE ==================== */
-function renderDemoBanner(){
-  if(!window.isDemo && !(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')) return;
-  let banner = document.getElementById('demoModeBanner');
-  if(!banner){
-    banner = document.createElement('div');
-    banner.id = 'demoModeBanner';
-    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;width:100%;height:34px;background:linear-gradient(90deg,#6D28D9 0%,#4F46E5 100%);color:#fff;padding:0 16px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between;z-index:999999;box-shadow:0 2px 6px rgba(0,0,0,0.22);box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif;';
-    banner.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-        <span style="font-size:15px;line-height:1">🧪</span>
-        <span><b>DEMO ADMIN</b> (100% API Cancelled · View All)</span>
-        <span style="opacity:.35">|</span>
-        <button onclick="go('dashboard')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">Dashboard</button>
-        <button onclick="go('pos')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">POS</button>
-        <button onclick="go('payroll')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">Attendance</button>
-        <button onclick="go('inventory')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">Stock</button>
-        <button onclick="go('accounting')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">Money</button>
-        <button onclick="go('users')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">Users</button>
-        <button onclick="go('reports')" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;font-weight:700">Reports</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-        <button onclick="resetDemoData()" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.45);color:#fff;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;font-weight:600;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.18)'">↺ Reset Demo</button>
-        <button onclick="exitDemoMode()" style="background:#EF4444;border:none;color:#fff;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;font-weight:600;transition:background .15s" onmouseover="this.style.background='#DC2626'" onmouseout="this.style.background='#EF4444'">Exit Demo ✕</button>
-      </div>
-    `;
-    document.body.prepend(banner);
-  }
-  document.body.style.paddingTop = '34px';
-}
-
-function activateDemoMode(){
-  window.isDemo = true;
-  try {
-    sessionStorage.setItem('regal_is_demo', '1');
-    localStorage.removeItem('regal_signed_out');
-  } catch(e){}
-  S.isDemo = true;
-
-  // Neutralize BroadcastChannel in demo mode so sync messages never cross between live and demo
-  if(typeof window.BroadcastChannel !== 'undefined' && !window._origBroadcastChannel){
-    window._origBroadcastChannel = window.BroadcastChannel;
-    window.BroadcastChannel = class extends window._origBroadcastChannel {
-      constructor(name){
-        super(name === 'regal_books_sync' ? 'regal_demo_isolated_sync' : name);
-      }
-    };
-  }
-
-  // 100% API CANCELLED: Intercept window.fetch so zero network requests reach the backend API
-  if(typeof window.fetch === 'function' && !window._origFetch){
-    window._origFetch = window.fetch;
-    window.fetch = async function(url, opts){
-      const u = String(url || '');
-      if(u.startsWith('/api') || u.includes('/books') || u.includes('/sms') || u.includes('/shift') || u.includes('/supplier') || u.includes('/files')){
-        console.warn('[DEMO MODE - 100% API CANCELLED]', u);
-        if(u.includes('/users')) return new Response(JSON.stringify({ ok: true, users: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        if(u.includes('/rev')) return new Response(JSON.stringify({ ok: true, rev: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        if(u.includes('/shift')) return new Response(JSON.stringify({ ok: true, employees: [], shift: { days: {}, settings: {} } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        return new Response(JSON.stringify({ ok: true, demo: true, message: 'API cancelled in demo mode' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      }
-      return window._origFetch.apply(this, arguments);
-    };
-  }
-
-  // Load demo data if available in sessionStorage, otherwise seed demo products
-  let demoStore = null;
-  try {
-    const raw = sessionStorage.getItem('regal_demo_store');
-    if(raw) demoStore = JSON.parse(raw);
-  } catch(e){}
-
-  if(demoStore && demoStore.S){
-    applyKept(demoStore);
-  } else {
-    seed();
-    try { sessionStorage.setItem('regal_demo_store', snapshotTxt()); } catch(e){}
-  }
-
-  const demoPerms = ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve','products_view','dashboard_view','attendance_view'];
-  S.user = {
-    name: 'Demo User',
-    role: 'Demo Admin',
-    perms: [...demoPerms],
-    prefs: { ...PREF_DEFAULTS }
-  };
-  S.signedOut = false;
-
-  // Cleanly remove all lock overlays
-  document.querySelectorAll('.lock, #lockScreen').forEach(x => x.remove());
-  document.body.classList.remove('locked');
-  closeModals();
-
-  renderDemoBanner();
-  applyLayout();
-  go('pos');
-  toast('Welcome to Regal Hardware Demo POS Trial');
-}
-
-function resetDemoData(){
-  if(!confirm('Reset all demo products, stock, and cart to default trial state?')) return;
-  try {
-    sessionStorage.removeItem('regal_demo_store');
-  } catch(e){}
-  seed();
-  try {
-    sessionStorage.setItem('regal_demo_store', snapshotTxt());
-  } catch(e){}
-  applyLayout();
-  go('pos');
-  toast('Demo products & stock reset to initial state');
-}
-
-function exitDemoMode(){
-  if(!confirm('Exit Demo mode and return to sign in screen?')) return;
-  leaveDemo();
-}
-/* the demo leaves its sample books, S.isDemo and the fetch guard in this page's memory —
-   a fresh load of the till without ?demo=1 is the only clean way back to the live shop */
-function leaveDemo(){
-  window.leavingDemo = true;             // beforeunload must not keep the demo books as this till's copy
-  window.isDemo = false; S.isDemo = false;
-  clearTimeout(saveTimer);
-  try {
-    sessionStorage.removeItem('regal_is_demo');
-    sessionStorage.removeItem('regal_demo_store');
-    localStorage.setItem('regal_signed_out', '1');
-  } catch(e){}
-  const url = new URL(location.href);
-  url.searchParams.delete('demo');
-  const path = url.pathname.startsWith('/demo') ? '/pos' : url.pathname;
-  location.replace(path + url.search + url.hash);
-}
-
 /* ==================== THE LOCK SCREEN: user code, then PIN ====================
    Staff type their short user code (AF, KP, S1 …). The screen turns to them — their initials, "Welcome
    back", their name and role — and asks for their PIN on a number pad (or the keyboard's digits). The
@@ -29643,7 +29060,6 @@ function shopLock(){
   const back=()=>{ who=null; pin=''; mode='pin'; resendAt=0; clearInterval(tick); s2.classList.add('hide'); s2.classList.remove('enter'); s1.classList.remove('hide'); say('#pinMsg1',''); code.value=''; code.focus() };
   const next=async()=>{
     const c=code.value.trim(); if(!c) return code.focus();
-    if(c.toLowerCase()==='demo'){ location.href='/demo'; return }
     $l('#pinNext').disabled=true; say('#pinMsg1','');
     let w=null, failed='';
     if(window.regalBridge&&regalBridge.pinWho){
@@ -29752,14 +29168,6 @@ function shopLockPassword(prefill){
   const msg = el.querySelector('#lockMsg');
   let tries = 0;
 
-  const urlParams = (typeof location !== 'undefined') ? new URLSearchParams(location.search) : null;
-  const isDemoUrl = (urlParams && urlParams.get('demo') === '1') || (typeof location !== 'undefined' && location.pathname.startsWith('/demo'));
-  if(isDemoUrl){
-    uInp.value = 'demo';
-    pInp.value = 'demo123';
-    setTimeout(() => { if(typeof updateRoleBadge === 'function') updateRoleBadge(); }, 50);
-    msg.innerHTML = '<span style="color:#6D28D9;font-weight:600">🎮 Demo POS Mode: Click Sign In to start trial</span>';
-  }
 
   const updateRoleBadge = () => {
     const val = (uInp.value || '').trim();
@@ -29835,18 +29243,6 @@ function shopLockPassword(prefill){
         return;
       }
       const lower = uName.toLowerCase().trim();
-      if(lower === 'demo'){
-        if(pInp.value !== 'demo123'){
-          tries++;
-          msg.textContent = 'Demo password is demo123';
-          msg.style.color = 'var(--chip-rust)';
-          if(btn){ btn.disabled = false; btn.textContent = 'Sign In'; }
-          pInp.focus();
-          return;
-        }
-        location.href = '/demo';              // the demo till is its own page, sealed off from the shop
-        return;
-      }
       let lsDel = [];
       try { lsDel = JSON.parse(localStorage.getItem('regal_deleted_users') || '[]'); } catch(_){}
       const isDel = (S.deletedUsers || []).includes(lower) || lsDel.includes(lower);
@@ -31111,34 +30507,7 @@ window.addEventListener('storage', async (e) => {
   }
 });
 
-/* the demo till (/demo, sealed by demo-sandbox.js): the sample books this file starts with, with the
-   owners' names swapped for made-up ones, signed in as the demo owner with every screen open */
-function sandboxBoot(){
-  if(!S.sandboxPeople){
-    const names={Afridh:'Demo Owner',Azhad:'Nimal Perera',Akmal:'Kamal Silva'};
-    let txt=JSON.stringify(S);
-    Object.entries(names).forEach(([a,b])=>{ txt=txt.split('"'+a+'"').join('"'+b+'"') });
-    const fresh=JSON.parse(txt);
-    Object.keys(fresh).forEach(k=>{ S[k]=fresh[k] });
-    (S.users||[]).forEach(u=>{ delete u.passHash; delete u.pass });
-    S.sandboxPeople=1;
-  }
-  const owner=(S.users||[]).find(u=>u.name==='Demo Owner');
-  S.user={name:'Demo Owner',role:'Super Admin',perms:PERMS.map(p=>p[0]),prefs:{...PREF_DEFAULTS,...((owner&&owner.prefs)||{})}};
-  S.signedOut=false;
-  window.signOut=()=>toast('This is the demo till — press Reset demo at the bottom to start again');
-  applyLayout(); render(); drawPhone(); persist();
-}
-const urlDemoParam = (typeof location !== 'undefined') ? new URLSearchParams(location.search).get('demo') : null;
-const isDemoParam = urlDemoParam === '1' || (typeof location !== 'undefined' && location.pathname.startsWith('/demo'));
-if(window.__sandboxDemo){
-  sandboxBoot();
-} else if(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1'){
-  activateDemoMode();
-} else if(isDemoParam){
-  S.signedOut = true;
-  shopLock();
-} else if(window.regalBridge){
+if(window.regalBridge){
   if(regalBridge.terminal()) S.terminal=regalBridge.terminal();
   // the terminal's name arrives after the books, and the shop it belongs to hangs off it
   if(typeof extRelocate==='function') extRelocate();

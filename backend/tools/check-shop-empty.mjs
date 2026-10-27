@@ -1,5 +1,5 @@
 // The website shows only what the till lists. With every item switched off it says so — no sample
-// goods; with the server down it says that; the hand-added switches follow "Only the items I tick".
+// goods; with the server down it says that; and it never adds goods of its own.
 //   npm start (in backend/), then:  node backend/tools/check-shop-empty.mjs [screenshot-dir]
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
@@ -47,7 +47,7 @@ ok(!SAMPLES.test(down.text) && /can’t reach the shop/i.test(down.text), 'serve
 
 const all = await site({ shop, settings: { open: true, listMode: 'all' }, categories: [{ name: 'Tools', count: 3 }], products: [prod(1), prod(2), prod(3)] }, '/#/search?q=enigma', 'all');
 const all2 = await site({ shop, settings: { open: true, listMode: 'all' }, categories: [{ name: 'Tools', count: 3 }], products: [prod(1), prod(2), prod(3)] }, '/#/search?q=test%20item', 'all2');
-ok(/TEST ITEM 1/i.test(all2.text) && /ORANGE ENIGMA/i.test(all.text), 'everything listed: the till’s items, plus the hand-added switches');
+ok(/TEST ITEM 1/i.test(all2.text) && !/ORANGE ENIGMA/i.test(all.text), 'everything listed: the till’s items, and nothing written into the site besides');
 const sel = await site({ shop, settings: { open: true, listMode: 'selected' }, categories: [{ name: 'Tools', count: 2 }], products: [prod(1), prod(2)] }, '/#/search?q=enigma', 'selected');
 ok(!/ORANGE ENIGMA/i.test(sel.text), '"Only the items I tick": no hand-added switches');
 

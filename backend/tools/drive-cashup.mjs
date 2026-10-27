@@ -1,8 +1,9 @@
 // Drive the cash-up page in a real browser and check the counting works end to end.
+// Runs on the throw-away test server: node backend/tools/run-e2e.mjs --keep  (port 4010, the tests' own sample shop) — never the real books.
 //   npm start            (in backend/)  — then:
 //   node backend/tools/drive-cashup.mjs [out-dir]
 //
-// It runs against /demo, which is sealed off from the shop and needs no database, so this
+// It runs against /pos, which is sealed off from the shop and needs no database, so this
 // is safe to run at any time and never touches real books. Screenshots land in out-dir.
 //
 // The page is woven into the rest of the till (the day tabs, deStrip, deSteps), so lifting
@@ -11,7 +12,7 @@ import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 
 const OUT = process.argv[2] || '.';
-const BASE = process.env.BASE || 'http://localhost:4000';
+const BASE = process.env.BASE || 'http://localhost:4010';
 const exe = ['C:/Program Files/Google/Chrome/Application/chrome.exe',
              'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
              'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
@@ -28,9 +29,10 @@ const errs = []; pg.on('pageerror', e => errs.push(e.message));
 const asked = [];
 pg.on('dialog', async d => { asked.push(d.type() + ': ' + d.message()); await d.accept() });
 
-await pg.goto(BASE + '/demo', { waitUntil: 'networkidle2' });
+await pg.goto(BASE + '/pos', { waitUntil: 'networkidle2' });
 await pg.waitForFunction(() => document.getElementById('lockScreen') || document.querySelector('#nav button'), { timeout: 25000 });
 if (await pg.$('#lockScreen')) {
+  if (!(await pg.$('#lockUser')) && !(await pg.$('#lockPw'))) await pg.evaluate(() => shopLockPassword());
   if (await pg.$('#lockUser')) await pg.type('#lockUser', 'Afridh'); else await pg.click('[data-user="Afridh"]');
   await pg.waitForSelector('#lockPw');
   await pg.type('#lockPw', 'Afridh123');

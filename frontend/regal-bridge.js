@@ -375,18 +375,6 @@
 
   /* ---------------- sign in ---------------- */
   async function login(name, password) {
-    if (String(name).toLowerCase() === 'demo') {
-      if (password !== 'demo123') return { ok: false, status: 401, error: 'Demo password is demo123' };
-      window.isDemo = true;
-      try { sessionStorage.setItem('regal_is_demo', '1'); } catch(e){}
-      stopPolling();
-      var demoUser = {
-        name: 'Demo User',
-        role: 'Demo Admin',
-        perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve']
-      };
-      return { ok: true, isDemo: true, user: demoUser };
-    }
     var j = await call('POST', '/books/login', { user: name, password: password });
     if (j.__status !== 200 || !j.ok) return { ok: false, status: j.__status, error: j.error || 'Could not sign in' };
     token = j.token; localStorage.setItem(TOKEN_KEY, token);

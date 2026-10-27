@@ -1,11 +1,12 @@
-// Every screen in /demo: script errors, sideways overflow, even margins, a screenshot; then every dashboard button.
+// Every screen in /pos: script errors, sideways overflow, even margins, a screenshot; then every dashboard button.
+// Runs on the throw-away test server: node backend/tools/run-e2e.mjs --keep  (port 4010, the tests' own sample shop) — never the real books.
 //   npm start (in backend/), then: node backend/tools/audit-screens.mjs <out-dir> [width, default 1440]
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 
 const OUT = process.argv[2] || '.';
 const W = +(process.argv[3] || 1440);
-const BASE = process.env.BASE || 'http://localhost:4000';
+const BASE = process.env.BASE || 'http://localhost:4010';
 const exe = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
 const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['--no-sandbox'] });
 const pg = await b.newPage();
@@ -15,9 +16,10 @@ pg.on('pageerror', e => errs.push('pageerror: ' + e.message.split('\n')[0]));
 pg.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|net::ERR/.test(m.text())) errs.push('console: ' + m.text().slice(0, 200)) });
 pg.on('dialog', async d => { await d.dismiss() });
 
-await pg.goto(BASE + '/demo', { waitUntil: 'networkidle2' });
+await pg.goto(BASE + '/pos', { waitUntil: 'networkidle2' });
 await pg.waitForFunction(() => document.getElementById('lockScreen') || document.querySelector('#nav button'), { timeout: 25000 });
 if (await pg.$('#lockScreen')) {
+  if (!(await pg.$('#lockUser')) && !(await pg.$('#lockPw'))) await pg.evaluate(() => shopLockPassword());
   if (await pg.$('#lockUser')) await pg.type('#lockUser', 'Afridh'); else await pg.click('[data-user="Afridh"]');
   await pg.waitForSelector('#lockPw'); await pg.type('#lockPw', 'Afridh123'); await pg.click('#lockGo');
   await pg.waitForFunction(() => !document.getElementById('lockScreen'), { timeout: 20000 });

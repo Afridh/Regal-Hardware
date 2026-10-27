@@ -1,6 +1,7 @@
 // Headless end-to-end run of the Regal app against the live server (jsdom).
 //   node backend/tools/e2e.mjs            (server must be running on :4000, books cleared)
 import jsdom from 'jsdom';
+import { SAMPLE_SHOP_JS } from './fixtures/sample-shop.js';
 const { JSDOM, VirtualConsole, requestInterceptor } = jsdom;
 
 const BASE = process.env.E2E_BASE || 'http://localhost:4000';
@@ -37,7 +38,8 @@ async function openTill(label, token) {
 // ---------------------------------------------------------------- till A: first ever sign-in
 const A = await openTill('A');
 const { w, d } = A;
-ok('A: app booted', !!w.S && typeof w.completeSale === 'function', `${w.S.products.length} products seeded`);
+ok('A: app booted', !!w.S && typeof w.completeSale === 'function');
+ok('A: a till with no books starts empty — no sample goods, customers or suppliers', w.S.products.length === 0 && w.S.suppliers.length === 0 && w.S.customers.length <= 1 && !(w.S.sales || []).length, `${w.S.products.length} products, ${w.S.customers.length} customers`);
 const lock = await until(() => d.getElementById('lockScreen'));
 ok('A: lock screen shown first (server build)', !!lock);
 // since 2026-10-15 the lock asks for a user code + PIN first; the name + password form is one tap away
@@ -53,6 +55,11 @@ d.getElementById('lockPw').value = 'Afridh123';
 d.getElementById('lockGo').click();
 ok('A: signed in', !!(await until(() => !d.getElementById('lockScreen'))), `as ${w.S.user.name} (${w.S.user.role})`);
 ok('A: bridge holds a token', w.regalBridge.online());
+// the tests' own sample shop, into this throw-away test database only (fixtures/sample-shop.js)
+w.eval(SAMPLE_SHOP_JS); w.eval('sampleShop()'); w.render(); w.persist();
+// an empty shop has no attendance yet, so signing in asked "Clock in?" — not what these tests are about
+await sleep(400); w.closeModals();
+ok('A: test shop loaded (tests only)', w.S.products.length >= 26 && w.S.customers.length >= 6, `${w.S.products.length} products`);
 await sleep(1200);                                          // bootstrap persist (50ms) + debounce (400ms)
 const tok = w.localStorage.getItem('regal_token');
 const rev = await (await fetch(BASE + '/api/books/regal/rev', { headers: { Authorization: 'Bearer ' + tok } })).json();

@@ -1,8 +1,9 @@
 // Drive the dashboard in a real browser and check it shows the day's work.
+// Runs on the throw-away test server: node backend/tools/run-e2e.mjs --keep  (port 4010, the tests' own sample shop) — never the real books.
 //   npm start            (in backend/)  — then:
 //   node backend/tools/drive-dashboard.mjs [out-dir]
 //
-// Runs against /demo, which is sealed off from the shop and needs no database, so it never
+// Runs against /pos, on the test server (node backend/tools/run-e2e.mjs --keep), so it never
 // touches real books. It seeds a day with something in every corner — cash lent out, a
 // cheque in, a bill on hold, an open quotation, a repair job — and then checks the board
 // actually says so, because a panel that draws nothing when it has nothing is only right
@@ -11,7 +12,7 @@ import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 
 const OUT = process.argv[2] || '.';
-const BASE = process.env.BASE || 'http://localhost:4000';
+const BASE = process.env.BASE || 'http://localhost:4010';
 const exe = ['C:/Program Files/Google/Chrome/Application/chrome.exe',
              'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
              'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
@@ -26,7 +27,7 @@ await pg.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1.1 });
 const errs = []; pg.on('pageerror', e => errs.push(e.message));
 pg.on('dialog', async d => { await d.accept() });
 
-await pg.goto(BASE + '/demo', { waitUntil: 'networkidle2' });
+await pg.goto(BASE + '/pos', { waitUntil: 'networkidle2' });
 await pg.waitForFunction(() => document.getElementById('lockScreen') || document.querySelector('#nav button'), { timeout: 25000 });
 if (await pg.$('#lockScreen')) {
   // the lock asks for a user code + PIN first since 2026-10-15; the name + password form is one call away

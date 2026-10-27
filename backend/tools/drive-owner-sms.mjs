@@ -1,14 +1,15 @@
 // Does the owner get told about the bills they asked to be told about, and only those?
+// Runs on the throw-away test server: node backend/tools/run-e2e.mjs --keep  (port 4010, the tests' own sample shop) — never the real books.
 //   npm start            (in backend/)  — then:
 //   node backend/tools/drive-owner-sms.mjs
 //
-// Runs against /demo, which is sealed off: no network leaves the page, so every message is
+// Runs against /pos, which is sealed off: no network leaves the page, so every message is
 // recorded in the books rather than sent. That is the point — this checks what WOULD go
 // out, for every setting, without a single real text.
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 
-const BASE = process.env.BASE || 'http://localhost:4000';
+const BASE = process.env.BASE || 'http://localhost:4010';
 const exe = ['C:/Program Files/Google/Chrome/Application/chrome.exe',
              'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
              'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
@@ -23,9 +24,10 @@ await pg.setViewport({ width: 1366, height: 900 });
 const errs = []; pg.on('pageerror', e => errs.push(e.message));
 pg.on('dialog', async d => { await d.accept() });
 
-await pg.goto(BASE + '/demo', { waitUntil: 'networkidle2' });
+await pg.goto(BASE + '/pos', { waitUntil: 'networkidle2' });
 await pg.waitForFunction(() => document.getElementById('lockScreen') || document.querySelector('#nav button'), { timeout: 25000 });
 if (await pg.$('#lockScreen')) {
+  if (!(await pg.$('#lockUser')) && !(await pg.$('#lockPw'))) await pg.evaluate(() => shopLockPassword());
   if (await pg.$('#lockUser')) await pg.type('#lockUser', 'Afridh'); else await pg.click('[data-user="Afridh"]');
   await pg.waitForSelector('#lockPw'); await pg.type('#lockPw', 'Afridh123'); await pg.click('#lockGo');
   await pg.waitForFunction(() => !document.getElementById('lockScreen'), { timeout: 20000 });

@@ -3859,26 +3859,6 @@ function keepLook(cat) {
 const NOT_ONLINE = new Set([
   'PCT-11-001772', 'PCT-11-003028', 'PCT-11-003444',   // Kevilton 5A plug bases
 ]);
-/* Goods shown on the online shop that the till does not have yet: [code, name, department, MRP, price].
-   They can be looked at and asked about, but not put in the basket — an online order is only taken
-   for what is in the books. Once the till has a product with the same code, the till's one is shown. */
-const WEB_ONLY = [
-  ['PCT-12-007801', 'ORANGE ENIGMA 1G 1WAY SWITCH - GUNMETAL', 'SWITCHES', 890, 715],
-  ['PCT-12-007802', 'ORANGE ENIGMA 2G 1WAY SWITCH - GUNMETAL', 'SWITCHES', 1160, 930],
-  ['PCT-12-007803', 'ORANGE ENIGMA 3G 1WAY SWITCH - GUNMETAL', 'SWITCHES', 1520, 1220],
-  ['PCT-12-007804', 'ORANGE ENIGMA 4G 1WAY SWITCH - GUNMETAL', 'SWITCHES', 1970, 1580],
-  ['PCT-12-007805', 'ORANGE ENIGMA 5G 1WAY SWITCH - GUNMETAL', 'SWITCHES', 2320, 1860],
-  ['PCT-12-007806', 'ORANGE ENIGMA 6G 1WAY SWITCH - GUNMETAL', 'SWITCHES', 2850, 2280],
-  ['PCT-12-007807', 'ORANGE ENIGMA 1G 2WAY SWITCH - GUNMETAL', 'SWITCHES', 1200, 960],
-  ['PCT-12-007808', 'ORANGE ENIGMA 13AMP PLUG BASE - GUNMETAL', 'PLUG BASS', 865, 692],
-  ['PCT-12-007809', 'ORANGE ENIGMA BELL PRESS SWITCH - GUNMETAL', 'SWITCHES', 595, 476],
-  ['PCT-12-007810', 'ORANGE ENIGMA 20AMP D/POLE INDICATOR - GUNMETAL', 'SWITCHES', 2180, 1800],
-  ['PCT-12-007811', 'ORANGE ENIGMA LIGHT DIMMER - GUNMETAL', 'SWITCHES', 3840, 3075],
-  ['PCT-12-007812', 'ORANGE ENIGMA FAN CONTROLLER - GUNMETAL', 'SWITCHES', 3530, 2830],
-  ['PCT-12-007813', 'ORANGE ENIGMA FAN SPEED CONTROLER - GUNMETAL', 'SWITCHES', 1375, 1160],
-  ['PCT-12-007814', 'ORANGE ENIGMA TELEPHONE SOCKET - GUNMETAL', 'SWITCHES', 3000, 2400],
-  ['PCT-12-007815', 'ORANGE ENIGMA TV SOCKET - GUNMETAL', 'SWITCHES', 2850, 2290],
-];
 /* What the shop shows differently from the till, until the till is tidied: names put right, and a
    product moved to the category it belongs in (product code -> category). */
 const SHOP_RENAME = [[/\bSUN ?BOX\b/g, 'SUNK BOX']];
@@ -3894,21 +3874,12 @@ function tidyCatalog(cat) {
   Object.keys(count).forEach(n => { if (!cats.has(n)) cats.set(n, { name: n, count: 0, img: '' }); });
   cat.categories = [...cats.values()].map(c => ({ ...c, count: count[c.name] || 0 })).filter(c => c.count);
 }
-function addWebOnly(cat) {
-  // "Only the items I tick" in the till: these are not ticked anywhere, so they stay off
-  if ((cat.settings || {}).listMode === 'selected') return;
-  const have = new Set(cat.products.flatMap(p => [p.code, p.oldCode].filter(Boolean)));
-  // a tidied till names these categories differently: theirs is used, so the goods sit with the rest
-  const tidied = cat.products.some(p => p.dept), CAT_NOW = { SWITCHES: 'Switches & Sockets', 'PLUG BASS': 'Plug Bases' };
-  WEB_ONLY.filter(([code]) => !have.has(code)).forEach(([code, name, dept, mrp, price]) => cat.products.push(
-    { id: 'web-' + code, code, name, cat: tidied ? (CAT_NOW[dept] || dept) : dept, ...(tidied ? { dept: 'Switches' } : {}), unit: 'pcs', mrp, price, stock: null, img: '', desc: '', warranty: 0, sold: 0, featured: false, webOnly: true }));
-}
 const askOnWhatsApp = (p) => 'https://wa.me/' + waLinkNo() + '?text=' + encodeURIComponent(`Hello ${shopName()}, I'd like to order ${p.name} (${p.code}).`);
 async function loadCatalog() {
   try {
     // once — it is the whole shop (thousands of items), and asking twice made every visit wait twice
     const live = await api('/catalog');
-    if (live && Array.isArray(live.products)) { live.products = live.products.filter(p => !NOT_ONLINE.has(p.code) && !NOT_ONLINE.has(p.oldCode)); if (live.products.length) { addWebOnly(live); tidyCatalog(live); groupCatalog(live); groupVariants(live); } }
+    if (live && Array.isArray(live.products)) { live.products = live.products.filter(p => !NOT_ONLINE.has(p.code) && !NOT_ONLINE.has(p.oldCode)); if (live.products.length) { tidyCatalog(live); groupCatalog(live); groupVariants(live); } }
     if (live && live.products && live.products.length > 0) { st.cat = live; keepLook(live); }
     else if (live) st.cat = { ...live, products: [], categories: [] };   // every item switched off: the site says so (home → emptyNote)
   } catch (e) {
