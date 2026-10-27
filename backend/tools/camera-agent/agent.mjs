@@ -9,6 +9,7 @@
 //   GET /health                        is it running, and what is it allowed to reach
 //   GET /snap?host=..&port=..&ch=101   one still, as a JPEG
 //   GET /live?host=..&port=..&ch=101   moving pictures, while the page is watching
+//   GET /playback?..&start=20261027T182127&secs=180   what the recorder kept from that moment (a bill's camera)
 //
 // Moving pictures are the same JPEGs one after another, in the form browsers have understood
 // since the nineties: multipart/x-mixed-replace, which plays in a plain <img> with no player and
@@ -84,6 +85,7 @@ setInterval(() => {
   const now = Date.now();
   for (const [key, w] of live) {
     if (now - w.seen < WATCH_GRACE) continue;
+    if (key.startsWith('pb:')) continue;            // a recording played back ends by itself (secs), or when its page goes
     log('nobody watching', key, '— stopping');
     try { w.ff.kill() } catch (e) {}
     live.delete(key);
@@ -108,7 +110,7 @@ const srv = http.createServer(async (req, res) => {
     return send(200, 'application/json', JSON.stringify({
       ok: true, helper: 'camera', port: cfg.port,
       ready: !!cfg.pass, cameras: cfg.allow.length || 'any on this network',
-      live: !!FFMPEG && !!cfg.pass, watching: live.size,
+      live: !!FFMPEG && !!cfg.pass, playback: !!FFMPEG && !!cfg.pass, watching: live.size,
       recorder: recorder.host ? { host: recorder.host, serial: recorder.serial() } : null
     }));
   }
@@ -146,7 +148,14 @@ const srv = http.createServer(async (req, res) => {
      The recorder speaks RTSP and sends H.265; ffmpeg turns that into JPEGs one after another, in
      the multipart form a browser plays in a plain <img>. Nothing is stored and nothing is kept:
      when the page goes away the socket closes, and ffmpeg is stopped with it. */
-  if (u.pathname === '/live') {
+  /* /playback is the same, from the recorder's own recording: Hikvision plays back from a time asked
+     for on the "tracks" path (channel 101's recording is track 101). The time is the recorder's clock
+     as it reads on the picture — local time, written with a Z on the end as Hikvision wants it. */
+  if (u.pathname === '/live' || u.pathname === '/playback') {
+    const back = u.pathname === '/playback';
+    const start = String(u.searchParams.get('start') || '').replace(/[^0-9T]/g, '');
+    if (back && !/^\d{8}T\d{6}$/.test(start)) return send(400, 'application/json', JSON.stringify({ error: 'from when? start=YYYYMMDDTHHMMSS' }));
+    const secs = Math.max(10, Math.min(900, +u.searchParams.get('secs') || 180));
     const at = whereIs(u.searchParams.get('host'), +u.searchParams.get('port') || 80);
     const host = at.host, port = at.port;
     const rtsp = +u.searchParams.get('rtsp') || 554;
@@ -166,14 +175,15 @@ const srv = http.createServer(async (req, res) => {
     if (!cfg.pass) return send(503, 'application/json', JSON.stringify({ error: 'no camera password set in config.local.json' }));
     if (!FFMPEG) return send(503, 'application/json', JSON.stringify({ error: 'moving pictures need ffmpeg on this PC — the stills still work' }));
 
-    const url = `rtsp://${encodeURIComponent(cfg.user)}:${encodeURIComponent(cfg.pass)}@${host}:${rtsp}/Streaming/Channels/${ch}`;
+    const url = `rtsp://${encodeURIComponent(cfg.user)}:${encodeURIComponent(cfg.pass)}@${host}:${rtsp}/Streaming/` + (back ? `tracks/${ch}?starttime=${start}Z` : `Channels/${ch}`);
     const ff = spawn(FFMPEG, ['-hide_banner', '-loglevel', 'error',
       '-rtsp_transport', 'tcp',          // the shop's network is not always kind to UDP
       '-i', url,
+      ...(back ? ['-t', String(secs)] : []),     // a recording has an end; a live picture does not
       '-an', '-vf', `scale=${w}:${h}`,
       '-f', 'mpjpeg', '-q:v', String(q), '-r', String(fps), '-']);
 
-    const key = `${host}:${rtsp}/${ch}`;
+    const key = (back ? 'pb:' : '') + `${host}:${rtsp}/${ch}`;   // playing one back does not stop it live
     const prev = live.get(key);
     if (prev) { try { prev.ff.kill() } catch (e) {} }   // one ffmpeg per camera, not one per reload
     live.set(key, { ff, seen: Date.now() });
