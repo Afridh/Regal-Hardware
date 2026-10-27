@@ -21,7 +21,10 @@ async function openTill(label, token) {
   const dom = new JSDOM(html, {
     url: BASE + '/pos', runScripts: 'dangerously', resources: { interceptors: [localOnly] }, pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(window) {
-      window.fetch = (u, o) => fetch(new URL(String(u), BASE), o);
+      // only the test server: never the print helper on this PC (its printers are the shop's — test
+      // vouchers once came out of them) nor any other address
+      window.fetch = (u, o) => { const url = new URL(String(u), BASE);
+        return url.origin === new URL(BASE).origin ? fetch(url, o) : Promise.reject(new TypeError('blocked in the tests: ' + url.origin)); };
       window.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {} });
       window.print = () => {}; window.confirm = () => true; window.prompt = (_m, d) => d ?? 'ok'; window.alert = () => {};
       window.HTMLCanvasElement.prototype.getContext = () => null;

@@ -226,6 +226,19 @@ const HEADERS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Meth
 const send = (res, code, body) => { res.writeHead(code, HEADERS); res.end(JSON.stringify(body)); };
 let busy = Promise.resolve();
 
+/* Who may print on this PC's printers straight away: the shop's till page (regalhw.lk, also inside the
+   Regal POS program, which opens that page) — the same server the queue is fetched from. A till opened
+   from anywhere else on this PC — a copy on localhost, a test, a script — is refused, and prints the
+   browser's own way instead. Test runs here once sent their sample vouchers to the shop's printer
+   (V-00310 and V-00311, a dozen times on 27 Oct 2026). More addresses: "allow": [...] in config.local.json. */
+const siteOf = (u) => { try { return new URL(u).origin.toLowerCase() } catch { return '' } };
+const ALLOWED = new Set([cfg.server, ...(Array.isArray(cfg.allow) ? cfg.allow : [])].map(siteOf).filter(Boolean)
+  .flatMap(o => [o, o.replace('://www.', '://'), o.replace('://', '://www.').replace('://www.www.', '://www.')])
+  .flatMap(o => [o, o.replace(/^https:/, 'http:'), o.replace(/^http:/, 'https:')]));
+const fromTheShop = (req) => ALLOWED.has(String(req.headers.origin || '').toLowerCase());
+const refuse = (req, res, what) => { log(what, 'NOT printed — asked from', req.headers.origin || 'no web page (a script on this PC)', '— only the shop till prints here');
+  send(res, 403, { ok: false, error: 'This print helper only prints for the shop till (' + [...ALLOWED][0] + ')' }); };
+
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   if (req.method === 'GET' && req.url === '/status') return send(res, 200, { ok: true, printers: { r80: cfg.r80.printer, a5: cfg.a5.printer, label: cfg.label && cfg.label.printer || null }, renderer: path.basename(chrome) });
@@ -236,6 +249,7 @@ http.createServer(async (req, res) => {
     return;
   }
   if (req.method === 'POST' && req.url === '/label') {             // { zpl } → straight to the label printer
+    if (!fromTheShop(req)) return refuse(req, res, 'labels');
     let body = ''; req.on('data', d => { body += d; if (body.length > 4e6) req.destroy(); });
     req.on('end', async () => {
       let job; try { job = JSON.parse(body); } catch { return send(res, 400, { ok: false, error: 'bad request' }); }
@@ -249,6 +263,7 @@ http.createServer(async (req, res) => {
     return;
   }
   if (req.method === 'POST' && req.url === '/print') {
+    if (!fromTheShop(req)) return refuse(req, res, 'print');
     let body = ''; req.on('data', d => { body += d; if (body.length > 8e6) req.destroy(); });
     req.on('end', async () => {
       let job; try { job = JSON.parse(body); } catch { return send(res, 400, { ok: false, error: 'bad request' }); }
