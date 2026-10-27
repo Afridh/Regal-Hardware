@@ -1855,7 +1855,7 @@ tr.off td{opacity:.55}
 @media (prefers-reduced-motion:reduce){.saved,.saved.out,.saved .tick circle,.saved .tick path{animation:none;stroke-dashoffset:0}}
 
 /* which bill, and the printer */
-.sizeq .billpick{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.sizeq .billpick{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
 .sizeq .pick{position:relative;text-align:left;border:1px solid var(--line);background:#fff;border-radius:var(--r);padding:12px;cursor:pointer;font-family:inherit}
 .sizeq .pick i{font-style:normal;font-family:Archivo,sans-serif;font-weight:700;font-size:11px;background:var(--ink);color:#fff;border-radius:3px;padding:1px 7px;display:inline-block;margin-bottom:6px}
 .sizeq .pick b{display:block;font-size:15px}
@@ -1995,7 +1995,7 @@ tr.off td{opacity:.55}
 @media (prefers-reduced-motion:reduce){.saved,.saved.out,.saved .tick circle,.saved .tick path{animation:none;stroke-dashoffset:0}}
 
 /* which bill, and the printer */
-.sizeq .billpick{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.sizeq .billpick{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
 .sizeq .pick{position:relative;text-align:left;border:1px solid var(--line);background:#fff;border-radius:var(--r);padding:12px;cursor:pointer;font-family:inherit}
 .sizeq .pick i{font-style:normal;font-family:Archivo,sans-serif;font-weight:700;font-size:11px;background:var(--ink);color:#fff;border-radius:3px;padding:1px 7px;display:inline-block;margin-bottom:6px}
 .sizeq .pick b{display:block;font-size:15px}
@@ -3189,6 +3189,8 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-paper{background:none;border:0;display:inline-flex;gap:4px;cursor:pointer;padding:0;margin:2px 0 0 8px}
 .till-paper i{font-style:normal;font-size:9.5px;letter-spacing:.08em;padding:2px 8px;border-radius:99px;color:#B09A9D;border:1px solid var(--line);transition:all .15s}
 .till-paper i.on{background:#1f3b5a;color:#fff;border-color:#1f3b5a;font-weight:700}
+.till-paper i.np.on{background:#8a2a1c;border-color:#8a2a1c}
+.np-box{margin:10px 0 0;color:var(--steel)}
 .till-paper:hover i:not(.on){border-color:var(--steel);color:var(--ink)}
 .till-date{flex:0 0 auto;background:#fff;border-radius:var(--r);padding:6px 14px;text-align:center}
 .till-date b{font-family:Archivo,sans-serif;font-size:14px}
@@ -6032,13 +6034,32 @@ function tpl(key,vars={}){
   return body;
 }
 
-/* ---- one voucher, A5 landscape, used by every kind of payment ---- */
+/* ---- "No print": a tick-box on the payment windows. Ticked when the save button is pressed, the voucher
+   that save makes is kept but not printed (or shown) — it can be opened and printed later from its list. ---- */
+let npAt=0;
+const npTake=()=>{ const on=npAt&&Date.now()-npAt<20000; npAt=0; return !!on };
+function npAdd(m){
+  if(!m||m.querySelector('.np-chk')) return m;
+  const box='<label class="chk np-box"><input type="checkbox" class="np-chk"> <span>No print — save it without printing a voucher</span></label>';
+  // a window that draws its steps into one part of itself keeps the box outside that part
+  const dyn=m.querySelector('#payBody,#spBody'), btn=[...m.querySelectorAll('button.tape')].pop(), row=btn&&btn.parentElement;
+  if(dyn) dyn.insertAdjacentHTML('afterend',box);
+  else if(row) row.insertAdjacentHTML('beforebegin',box);
+  else (m.querySelector('.box')||m).insertAdjacentHTML('beforeend',box);
+  return m;
+}
+// pressed by mouse or by key (Enter, F12 …): what the box says at that moment goes with the save
+['click','keydown'].forEach(ev=>document.addEventListener(ev,()=>{ const c=document.querySelector('.modal .np-chk'); if(c) npAt=c.checked?Date.now():0 },true));
+/* ---- one voucher, A5 landscape, used by every kind of payment ----
+   Printed by itself only when it has just been made. Opening one again later (from a list, a
+   statement, the payments page) only shows it, with Print on it — looking is not printing. */
 function voucherPrint(v){
+  const skip=!v.view&&npTake();
   const rows=v.rows.map(r=>`<tr><td class="k">${r[0]}</td><td class="v">${r[1]}</td></tr>`).join('');
   const lines=(v.lines||[]).map((l,i)=>`<tr><td>${i+1}</td><td>${l[0]}</td><td class="n">${money2(l[1])}</td></tr>`).join('');
   const vm=modal(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
     <h2 style="margin:0">${v.title} — ${v.no}</h2>
-    <div style="display:flex;gap:6px"><button class="btn sm" data-act="rePrintPaper">Print</button>
+    <div style="display:flex;gap:6px"><button class="btn ${v.view?'tape':''} sm" data-act="rePrintPaper">Print</button>
      ${v.mail?`<button class="btn ghost sm" id="vMail" title="${v.mail.to?'Email it to '+v.mail.to:'Their email is asked for'}">Email PDF</button>`:''}
      <button class="btn ghost sm" data-act="closeModal">Close</button></div></div>
    <div class="print a5 bill voucher">
@@ -6065,7 +6086,9 @@ function voucherPrint(v){
     <div class="bnote"><span>${CFG.shop.name} · this voucher is a record of payment and must be kept with the day's documents.</span>
      <em>PRINTED ${D(today).split('-').reverse().join(' ')} · PAGE 1 OF 1</em></div>
    </div>`);
-  const pr=vm&&vm.querySelector('.print'); if(pr){ const inner=pr.outerHTML; window._paperNow={inner,f:'a5',no:v.no}; printPaper(printDocument(inner,'a5'),'a5',v.no,()=>paperFallback(inner,'a5'));
+  const pr=vm&&vm.querySelector('.print'); if(pr){ const inner=pr.outerHTML; window._paperNow={inner,f:'a5',no:v.no};
+    if(!v.view&&!skip) printPaper(printDocument(inner,'a5'),'a5',v.no,()=>paperFallback(inner,'a5'));
+    if(skip){ if(v.mail&&v.mail.auto) mailPaperAuto({...v.mail,inner}); vm.remove(); toast(`${v.title} ${v.no} saved — not printed`,'ok'); return }
     if(v.mail){ const b=vm.querySelector('#vMail'); if(b) b.onclick=()=>mailPaperModal({...v.mail,inner}); if(v.mail.auto) mailPaperAuto({...v.mail,inner}); } }
 }
 
@@ -6163,7 +6186,7 @@ const autoMailOn=(k)=>!!(CFG.mail&&CFG.mail.host&&CFG.mail[k]!==false);
 function supplierVoucher(pv,fresh){
   const s=SU(pv.supplierId);
   const owe=partyBal('S',s.id), how=(pv.lines||[]).map(l=>l.method==='CHEQUE'?`cheque #${l.no}${l.date?' dated '+l.date:''}`:String(l.method||'').toLowerCase()).filter(Boolean).join(' and ');
-  voucherPrint({title:'Payment Voucher',no:pv.voucher,date:pv.date,payee:s.name,payeeSub:`${s.contact} · ${s.phone} · account ${s.code}`,
+  voucherPrint({view:!fresh,title:'Payment Voucher',no:pv.voucher,date:pv.date,payee:s.name,payeeSub:`${s.contact} · ${s.phone} · account ${s.code}`,
     mail:{to:isEmail(s.email)?s.email.trim():'',party:{kind:'S',id:s.id},filename:pv.voucher,what:'Payment voucher '+pv.voucher,
       subject:`Payment voucher ${pv.voucher} — ${shopNice()}`,
       text:letter('supplier',`Please find attached our payment voucher ${pv.voucher} dated ${pv.date} for ${fmt(pv.total)}${how?', paid by '+how:''}.`+(owe>0.005?` After this payment we owe you ${fmt(owe)}.`:' This settles our account with you.')),
@@ -6177,7 +6200,7 @@ function supplierVoucher(pv,fresh){
     thirdSign:'RECEIVED BY (SUPPLIER)'});
 }
 function expenseVoucher(e){
-  voucherPrint({title:'Expense Voucher',no:e.voucher,date:e.date,payee:e.desc||GL[e.cat],payeeLabel:'PAID FOR',
+  voucherPrint({view:true,title:'Expense Voucher',no:e.voucher,date:e.date,payee:e.desc||GL[e.cat],payeeLabel:'PAID FOR',
     amount:e.amount,rows:[['Reference',e.no],['Category',GL[e.cat]],['Paid by',e.method],
       ['Account',e.method==='CASH'?'Cash in hand':B(e.bank||1).name],['Entered by',e.by||S.user.name]],
     note:'Attach the bill or receipt to this voucher.'});
@@ -6192,7 +6215,7 @@ function receiptMail(c,no,date,amount,fresh){
 }
 function receiptVoucher(rv,fresh){
   const c=C(rv.customerId);
-  voucherPrint({title:'Receipt Voucher',no:rv.voucher,date:rv.date,payee:c.name,payeeLabel:'RECEIVED FROM',mail:receiptMail(c,rv.voucher,rv.date,rv.amount,fresh),
+  voucherPrint({view:!fresh,title:'Receipt Voucher',no:rv.voucher,date:rv.date,payee:c.name,payeeLabel:'RECEIVED FROM',mail:receiptMail(c,rv.voucher,rv.date,rv.amount,fresh),
     payeeSub:`${c.phone||''}${c.code?' · account '+c.code:''}`,amount:rv.amount,totalLabel:'AMOUNT RECEIVED',
     rows:[['Receipt number',rv.no],['Method',rv.method],
       ['Against',(rv.against&&rv.against.length)?rv.against.join(', '):'oldest bills first'],
@@ -6201,7 +6224,7 @@ function receiptVoucher(rv,fresh){
 }
 function salaryVoucher(e,p,mk){
   const month=new Date((mk||D(today).slice(0,7))+'-01').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
-  voucherPrint({title:'Salary Voucher',no:'SV-'+e.code+'-'+(mk||'').replace('-',''),date:D(today),payee:e.name,payeeLabel:'PAID TO',
+  voucherPrint({view:true,title:'Salary Voucher',no:'SV-'+e.code+'-'+(mk||'').replace('-',''),date:D(today),payee:e.name,payeeLabel:'PAID TO',
     payeeSub:`${e.position} · ${e.code}`,amount:p.net,totalLabel:'NET PAY',
     rows:[['Period',month],['Pay basis',e.basis+' at '+fmt(e.rate)],['Days worked',p.t.days+(p.t.half?` (${p.t.half} half)`:'')],
       ['Absent / leave',`${p.t.absent} / ${p.t.leave}`],['Hours worked',hrs(p.t.worked).toFixed(2)],
@@ -8248,7 +8271,7 @@ function advanceModal(id,askId){
    <div class="muted">It comes off their next pay run and is posted against them, not written off.</div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
     <button class="btn ghost" data-act="closeModal">Cancel</button>
-    <button class="btn tape" id="avOk">Pay the advance</button></div>`);
+    <button class="btn tape" id="avOk">Pay the advance</button></div>`); npAdd(m);
   m.querySelector('#avOk').onclick=()=>{
     const amt=+m.querySelector('#avAmt').value||0;
     if(!(amt>0))return toast('Enter the amount');
@@ -8648,7 +8671,7 @@ function prIssue(r){
    <div class="muted" id="piMsg"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
     <button class="btn ghost" data-act="closeModal">Cancel</button>
-    <button class="btn tape" id="piGo">Hand it over</button></div>`);
+    <button class="btn tape" id="piGo">Hand it over</button></div>`); npAdd(m);
   const g = i => m.querySelector('#'+i);
   g('piHow').onchange = () => { const chq=g('piHow').value==='CHEQUE'; g('piDate').disabled=!chq; g('piBank').disabled=g('piHow').value==='CASH' };
   g('piGo').onclick = () => {
@@ -16471,10 +16494,11 @@ function posSetLevel(level,{quiet=false}={}){
 /* which bill prints once the money is taken: the SMALL / LARGE switch on the bill (F5) picks the 80mm
    receipt or the A5 bill for this bill only and skips the question after payment; with nothing picked
    the till follows Settings → After the sale as before */
-const csPaper=()=>CS.paper||((CFG.done||{}).cashDefault==='a5'?'a5':'r80');
+const csPaper=()=>(CS.paper&&CS.paper!=='none'?CS.paper:null)||((CFG.done||{}).cashDefault==='a5'?'a5':'r80');
+const csNoPrint=()=>CS.paper==='none';
 function csSetPaper(k){
   CS.paper=k; render();
-  toast(k==='a5'?'Large bill — A5 printed bill after payment':'Small bill — 80mm receipt after payment','info');
+  toast(k==='none'?'No print — this bill is saved without printing':k==='a5'?'Large bill — A5 printed bill after payment':'Small bill — 80mm receipt after payment','info');
   const q=$('#csQ'); if(q&&!CS.pid) q.focus();
 }
 /* Some goods are dearer in small pieces — wire cut off the roll, cement by the
@@ -17197,18 +17221,19 @@ function askSize(inv){
   const kind=inv.balance>0?'CREDIT':'CASH';
   const def=(kind==='CREDIT'?CFG.done.creditDefault:CFG.done.cashDefault) || 'r80';
   const c=C(inv.customerId);
-  if(typeof CS!=='undefined'&&CS.paper){ const k=CS.paper; CS.paper=null; S.pos.lastBill=k; return printAnim(inv,k) }   // picked on the bill itself — no question
+  if(typeof CS!=='undefined'&&CS.paper){ const k=CS.paper; CS.paper=null; if(k!=='none') S.pos.lastBill=k; return printAnim(inv,k) }   // picked on the bill itself — no question
   if(!CFG.done.askSize){ S.pos.lastBill=def; return printAnim(inv,def==='sms'&&!c.phone?'r80':def) }
   const opts=[['r80','1','80mm Till receipt','80mm thermal — quick for the counter'],
               ['a5','2','Printed bill','A5 landscape — full bill with outstanding boxes'],
-              ['sms','3','e-Bill by text',c.phone?`link to ${maskP(c.phone)}`:'no mobile on file']];
+              ['sms','3','e-Bill by text',c.phone?`link to ${maskP(c.phone)}`:'no mobile on file'],
+              ['none','4','No print','save the bill — nothing printed']];
   let cur=def;
   if(cur==='sms'&&!c.phone) cur='r80';
   const validKeys=opts.filter(o=>!(o[0]==='sms'&&!c.phone)).map(o=>o[0]);
   if(!validKeys.includes(cur)) cur=validKeys[0]||'r80';
 
   const m=modal(`<div class="sizeq"><h2>${inv.no} — ${kind==='CREDIT'?'credit bill':'cash bill'} · ${fmt(inv.total)}</h2>
-   <div class="muted">Enter prints chosen format. Use <b>◄ Left / Right ►</b> arrows to navigate printer (or 1 / 2 / 3).</div>
+   <div class="muted">Enter prints chosen format. Use <b>◄ Left / Right ►</b> arrows to navigate printer (or 1 / 2 / 3 / 4 — 4 is no print).</div>
    <div class="billpick">${opts.map(([k,n,l,sub])=>`<button class="pick ${k===cur?'def on':''}" data-bill="${k}" ${k==='sms'&&!c.phone?'disabled':''}>
      <i>${n}</i><b>${l}</b><span>${sub}</span>${k===cur?'<em>selected</em>':''}</button>`).join('')}</div>
    <label class="chk" style="margin-top:10px"><input type="checkbox" id="szRemember" ${CFG.done.rememberPick?'checked':''}> remember my choice for ${kind==='CREDIT'?'credit':'cash'} bills</label>
@@ -17233,8 +17258,8 @@ function askSize(inv){
 
   const go=(k)=>{
     const chosen=validKeys.includes(k)?k:cur;
-    if(m.querySelector('#szRemember').checked) CFG.done[kind==='CREDIT'?'creditDefault':'cashDefault']=chosen;
-    S.pos.lastBill=chosen; stop(); m.remove(); printAnim(inv,chosen);
+    if(chosen!=='none'&&m.querySelector('#szRemember').checked) CFG.done[kind==='CREDIT'?'creditDefault':'cashDefault']=chosen;
+    if(chosen!=='none') S.pos.lastBill=chosen; stop(); m.remove(); printAnim(inv,chosen);
   };
 
   const handler=(ev)=>{
@@ -17262,7 +17287,7 @@ function askSize(inv){
       go(cur);
       return;
     }
-    if(k==='1'||k==='2'||k==='3'){
+    if(k==='1'||k==='2'||k==='3'||k==='4'){
       const o=opts[+k-1];
       if(o&&validKeys.includes(o[0])){
         ev.preventDefault(); ev.stopPropagation();
@@ -17273,7 +17298,7 @@ function askSize(inv){
     }
     if(k==='Escape'){
       ev.preventDefault(); stop(); m.remove();
-      showInvoice(inv,cur||'r80');
+      showInvoice(inv,cur&&cur!=='none'?cur:'r80');
       return;
     }
   };
@@ -17291,6 +17316,7 @@ function askSize(inv){
 }
 /* the paper comes out of the printer, then the bill is on the screen */
 function printAnim(inv,k){
+  if(k==='none'){ toast(`${inv.no} saved — not printed. It can be printed later from Sales.`,'ok'); return }
   const c=C(inv.customerId);
   const el=document.createElement('div'); el.className='printing';
   el.innerHTML=k==='sms'
@@ -17431,7 +17457,7 @@ function posClassic(){
      <div class="till-clock"><span id="posClockTime">${now.toLocaleTimeString('en-GB',{hour12:true})}</span><em id="posClockDay">${now.getDate()}</em></div></div>
     <div class="till-no ${S.pos.editing?'editing':''}">
      <b>${S.pos.editing||nextNo}</b>
-     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Which prices this bill uses — Ctrl+Shift+R for retail, Ctrl+Shift+W for wholesale, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><button class="till-paper" data-act="csPaper" title="Which bill prints after payment — Ctrl+Shift+N for the normal 80mm receipt, Ctrl+Shift+L for the large A5 bill"><i class="${csPaper()==='r80'?'on':''}">SMALL BILL</i><i class="${csPaper()==='a5'?'on':''}">LARGE BILL</i></button>`}<div class="onl-brk"><span data-onl>${onlSlot()}</span>${breakStrip()}</div></div>
+     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Which prices this bill uses — Ctrl+Shift+R for retail, Ctrl+Shift+W for wholesale, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><span class="till-paper" title="Which bill prints after payment — Ctrl+Shift+N for the normal 80mm receipt, Ctrl+Shift+L for the large A5 bill, or no print at all for this bill"><i data-act="csPaperSet" data-k="r80" class="${!csNoPrint()&&csPaper()==='r80'?'on':''}">SMALL BILL</i><i data-act="csPaperSet" data-k="a5" class="${!csNoPrint()&&csPaper()==='a5'?'on':''}">LARGE BILL</i><i data-act="csPaperSet" data-k="none" class="np ${csNoPrint()?'on':''}">NO PRINT</i></span>`}<div class="onl-brk"><span data-onl>${onlSlot()}</span>${breakStrip()}</div></div>
    </div>
 
 
@@ -22391,7 +22417,7 @@ function custPayModal(id){
   const m=modal(`<div class="pay-win">
    <div class="pay-top"><div><h2 style="margin:0">Payment from ${c.name}</h2><div class="muted">${c.phone||'no mobile'} · ${c.code} · owes <b>${fmt(partyBal('C',id))}</b></div></div>
     <div class="pay-keys"><span><i class="kbd">Enter</i>cash</span><span><i class="kbd">F8</i>cheque</span><span><i class="kbd">F9</i>card</span><span><i class="kbd">B</i>bank</span><span><i class="kbd">Del</i>undo</span><span><i class="kbd">F12</i>complete</span><span><i class="kbd">Esc</i>close</span></div></div>
-   <div id="payBody"></div></div>`);
+   <div id="payBody"></div></div>`); npAdd(m);
   m.classList.add('wide');
   const open=()=>S.sales.filter(s=>s.customerId===id&&s.balance>0).sort((a,b)=>a.date.localeCompare(b.date));
   const owed=()=>Math.max(0,partyBal('C',id));
@@ -22512,7 +22538,7 @@ function custPayModal(id){
 function receiptVoucherCombined(rvs,fresh){
   if(rvs.length===1) return receiptVoucher(rvs[0],fresh);
   const first=rvs[0], c=C(first.customerId), total=rvs.reduce((a,r)=>a+r.amount,0);
-  voucherPrint({title:'Receipt Voucher',no:first.voucher,date:first.date,payee:c.name,payeeLabel:'RECEIVED FROM',mail:receiptMail(c,first.voucher,first.date,total,fresh),
+  voucherPrint({view:!fresh,title:'Receipt Voucher',no:first.voucher,date:first.date,payee:c.name,payeeLabel:'RECEIVED FROM',mail:receiptMail(c,first.voucher,first.date,total,fresh),
     payeeSub:`${c.phone||''}${c.code?' · account '+c.code:''}`,amount:total,totalLabel:'AMOUNT RECEIVED',
     rows:[['Receipt numbers',rvs.map(r=>r.no).join(', ')],['Against',(first.against&&first.against.length)?first.against.join(', '):'oldest bills first'],
       ['Balance after this payment',fmt(partyBal('C',c.id))],['Received by',first.by||S.user.name]],
@@ -24874,7 +24900,7 @@ function chequePlanModal(sid,amount,from,pur){
    <div id="cpOut" style="margin-top:8px"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
     <button class="btn ghost" data-act="closeModal">Cancel</button>
-    <button class="btn tape" id="cpOk">Write these cheques</button></div>`);
+    <button class="btn tape" id="cpOk">Write these cheques</button></div>`); npAdd(m);
   let split=[];
   const draw=()=>{
     max=Math.max(1000,+m.querySelector('#cpMax').value||100000);
@@ -25343,7 +25369,7 @@ function supPayModal(id){
   const picked=()=>{ const b=openBills(); return sel.size?b.filter(p=>sel.has(p.no)):b };
   const total=()=>+picked().reduce((a,p)=>a+(p.total-p.paid),0).toFixed(2);
 
-  const m=modal('<div id="spBody"></div>');
+  const m=modal('<div id="spBody"></div>'); npAdd(m);
   const $=(x)=>m.querySelector(x);
 
   /* ---------- one: the bills, and whether they are right ---------- */
@@ -26786,7 +26812,7 @@ function endorseModal(no){
     <div class="f"><label>Supplier</label><select id="enSup">${S.suppliers.map(s=>`<option value="${s.id}">${s.name} — owes them ${fmt(partyBal('S',s.id))}</option>`).join('')}</select></div>
     <div class="f"><label>Date handed over</label><input id="enDate" type="date" value="${D(today)}"></div></div>
    <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button>
-    <button class="btn tape" id="enOk">Hand it over and print a voucher</button></div>`);
+    <button class="btn tape" id="enOk">Hand it over and print a voucher</button></div>`); npAdd(m);
   m.querySelector('#enOk').onclick=()=>{
     const sid=+m.querySelector('#enSup').value, date=m.querySelector('#enDate').value, s=SU(sid);
     ch.status='ENDORSED'; ch.endorsedTo=s.name; ch.changed=date;
@@ -27010,7 +27036,7 @@ function pettyGiveModal(forWho){
     <div class="f"><label>Out of</label><select id="pcFrom"><option value="cash">Cash drawer</option>${S.banks.map(b=>`<option value="${b.id}">${noteEsc(b.name)}</option>`).join('')}</select></div></div>
    <div class="f"><label>What for (optional)</label><input id="pcNote" placeholder="e.g. delivery charges and tea for today"></div>
    <div id="pcSay" class="muted" style="min-height:18px"></div>
-   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="pcOk">Give it and print</button></div>`);
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="pcOk">Give it and print</button></div>`); npAdd(m);
   const q=(x)=>m.querySelector(x);
   const say=()=>{ const o=pettyOpen().find(p=>p.who===q('#pcWho').value); q('#pcSay').innerHTML=o?`${noteEsc(o.who)} already holds <b>${fmt(pettyLeft(o))}</b> (${o.no}) — this is added to it.`:'' };
   q('#pcWho').onchange=say; say(); q('#pcAmt').focus();
@@ -27103,7 +27129,7 @@ function pettySettleModal(id){
    <div class="grid2"><div class="f"><label>Counted back</label><input id="psAmt" type="number" min="0" step="any" value="${(p.submitted?p.submitted.amount:exp).toFixed(2)}"></div>
     <div class="f"><label>Into</label><select id="psTo"><option value="cash">Cash drawer</option>${S.banks.map(b=>`<option value="${b.id}">${noteEsc(b.name)}</option>`).join('')}</select></div></div>
    <div id="psGap"></div>
-   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Not yet</button><button class="btn tape" id="psOk">Count it in and close</button></div>`);
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Not yet</button><button class="btn tape" id="psOk">Count it in and close</button></div>`); npAdd(m);
   const q=(x)=>m.querySelector(x);
   const draw=()=>{ const back=+(+q('#psAmt').value||0).toFixed(2), gap=+(back-exp).toFixed(2);
     q('#psGap').innerHTML=Math.abs(gap)<0.005?'<div class="card note">It agrees.</div>'
@@ -29688,6 +29714,7 @@ document.addEventListener('click',e=>{
     privacyTry:()=>{ go('dashboard'); privacyToggle() },
     csLevel:()=>{ posSetLevel(posLevel()==='wholesale'?'retail':'wholesale'); const q2=$('#csQ'); if(q2&&!CS.pid) q2.focus() },
     csPaper:()=>csSetPaper(csPaper()==='a5'?'r80':'a5'),
+    csPaperSet:()=>csSetPaper(CS.paper===a.dataset.k&&a.dataset.k==='none'?null:a.dataset.k),
     invMore:()=>{ invLimit+=200; const keep=$('#main').scrollTop; render(); $('#main').scrollTop=keep },
     tdNew:()=>tenderModal(null), tdEdit:()=>tenderModal(a.dataset.id), tdSel:()=>{ tdSel=a.dataset.id; tdLineQ=''; render() }, tdFilter:()=>{ tdFilter=a.dataset.v; render() },
     tdPrint:()=>tenderPrint(S.tenders.find(x=>x.id===a.dataset.id)), tdEmail:()=>tenderEmail(S.tenders.find(x=>x.id===a.dataset.id)),
