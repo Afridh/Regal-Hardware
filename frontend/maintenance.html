@@ -185,10 +185,49 @@ body.wait header *,body.wait main *,body.wait footer *,body.wait .grid,body.wait
 @keyframes railOut{to{opacity:0}}
 @keyframes spark2{0%{opacity:1;transform:translate(0,0)}100%{opacity:0;transform:translate(var(--x),var(--y))}}
 
+/* ---- logo reveal: red, the badge pulses, then a circle opens out of it onto the page ---- */
+@property --hole{syntax:'<length>';inherits:false;initial-value:0px}
+.reveal{position:fixed;inset:0;z-index:40;cursor:pointer;display:none;
+  background:radial-gradient(circle at 50% 46%,#C62833 0%,#9E1B27 45%,#5E0F17 100%);
+  -webkit-mask:radial-gradient(circle at 50% 46%,transparent var(--hole),#000 calc(var(--hole) + 1px));
+          mask:radial-gradient(circle at 50% 46%,transparent var(--hole),#000 calc(var(--hole) + 1px))}
+.reveal.run,.reveal.quick{display:block}
+.reveal .plate{position:relative}
+.reveal .plate::after{content:"";position:absolute;inset:-8px;border-radius:50%;border:2px solid rgba(255,255,255,.7);opacity:0}
+.reveal.run .plate{animation:plateIn .7s cubic-bezier(.2,1.4,.4,1) both}
+.reveal.run .plate::after{animation:ringOut 1s ease-out .55s}
+.reveal.run .badge b{animation:fadeUp .6s var(--ease) both .2s}
+.reveal.run .badge span{animation:fadeUp .6s var(--ease) both .3s}
+.reveal.run .badge{animation:badgeOut .35s ease-in forwards 1.05s}
+.reveal.run{animation:hole 1.1s cubic-bezier(.7,0,.2,1) forwards 1.25s}
+.reveal.quick .badge{display:none}
+.reveal.quick{animation:hole .6s cubic-bezier(.7,0,.2,1) forwards .05s}
+@keyframes ringOut{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(1.9)}}
+@keyframes badgeOut{to{opacity:0;transform:translate(-50%,-50%) scale(1.3)}}
+@keyframes hole{to{--hole:150vmax}}
+
+/* ---- blueprint: the gears and the spanner draw themselves in red line, then take their colour ---- */
+body.bp .shop svg :is(path,circle,rect,polygon):not(.spark):not([fill="none"]){stroke:#AE1E2B;stroke-width:1.3;stroke-dasharray:100;stroke-dashoffset:100;fill-opacity:0;
+  animation:bpDraw 1.5s cubic-bezier(.6,0,.3,1) forwards .15s,bpFill .7s ease forwards 1.45s}
+body.bp .shop svg [fill="none"]{stroke-dasharray:100;stroke-dashoffset:100;animation:bpDraw 1.5s cubic-bezier(.6,0,.3,1) forwards .15s}
+body.bp .shop .shadow{animation:bpFill .7s ease both 1.5s}
+@keyframes bpDraw{to{stroke-dashoffset:0}}
+@keyframes bpFill{to{fill-opacity:1;stroke-opacity:0}}
+
+/* ---- assemble: the big gear rolls in from the left, the small one from the right, the spanner drops on ---- */
+body.asm .in-big{transform-origin:118px 122px;animation:flyL 1.1s cubic-bezier(.2,.9,.25,1.1) both .1s}
+body.asm .in-small{transform-origin:222px 76px;animation:flyR 1.1s cubic-bezier(.2,.9,.25,1.1) both .3s}
+body.asm .in-wr{transform-origin:240px 178px;animation:drop .9s cubic-bezier(.3,1.5,.5,1) both .75s}
+body.asm .shop svg{animation:clunk .4s ease 1.45s}
+@keyframes flyL{from{transform:translateX(-280px) rotate(-320deg);opacity:0}}
+@keyframes flyR{from{transform:translateX(280px) rotate(320deg);opacity:0}}
+@keyframes drop{from{transform:translateY(-230px) rotate(-70deg);opacity:0}}
+@keyframes clunk{25%{transform:translate(-2px,1px)}50%{transform:translate(2px,-1px)}75%{transform:translate(-1px,0)}}
+
 /* "straight in": no entrance at all — everything is simply there (the gears still turn) */
 body.no-intro .brand,body.no-intro .shop,body.no-intro .kicker,body.no-intro h1 .ln>span,body.no-intro h1 em::after,body.no-intro .lead,body.no-intro .si,
 body.no-intro .when,body.no-intro .reach,body.no-intro .open,body.no-intro .status{animation:none}
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.gate{display:none}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.gate,.reveal{display:none!important}}
 </style>
 </head>
 <body class="wait">
@@ -205,6 +244,13 @@ body.no-intro .when,body.no-intro .reach,body.no-intro .open,body.no-intro .stat
     <div class="sparks" id="sparks"></div>
   </div>
   <span class="rail l"></span><span class="rail r"></span>
+</div>
+<!-- the "logo reveal" way in: Regal red, the badge, and a circle opening out of it onto the page -->
+<div class="reveal" id="reveal" aria-hidden="true">
+  <div class="badge">
+    <div class="plate"><img src="/regal-logo.png" alt=""></div>
+    <b>REGAL</b><span>Hardware</span>
+  </div>
 </div>
 <div class="board" aria-hidden="true"><div class="grid"></div><div class="glow a"></div><div class="glow b"></div></div>
 
@@ -226,10 +272,11 @@ body.no-intro .when,body.no-intro .reach,body.no-intro .open,body.no-intro .stat
       <ellipse class="shadow" cx="170" cy="232" rx="110" ry="7" fill="#111" opacity=".07"/>
       <!-- gears: drawn by the script below so the teeth come out even; the inner turns set a tooth of
            the big one into a gap of the small one, and their speeds (14 s and 14×8/12 s) keep it there -->
-      <g class="g-big"><g transform="rotate(6.1 118 122)"><path id="gearBig" fill="url(#gRed)"/></g><circle cx="118" cy="122" r="22" fill="#fafafa"/><circle cx="118" cy="122" r="22" fill="none" stroke="#7E141D" stroke-width="3"/><circle cx="118" cy="122" r="7" fill="#7E141D"/></g>
-      <g class="g-small"><g transform="rotate(-1.4 222 76)"><path id="gearSmall" fill="url(#gInk)"/></g><circle cx="222" cy="76" r="14" fill="#fafafa"/><circle cx="222" cy="76" r="5" fill="#111"/></g>
+      <!-- (the in-* wrappers carry the "assemble" way in, so it never fights the turning) -->
+      <g class="in-big"><g class="g-big"><g transform="rotate(6.1 118 122)"><path id="gearBig" fill="url(#gRed)"/></g><circle cx="118" cy="122" r="22" fill="#fafafa"/><circle cx="118" cy="122" r="22" fill="none" stroke="#7E141D" stroke-width="3"/><circle cx="118" cy="122" r="7" fill="#7E141D"/></g></g>
+      <g class="in-small"><g class="g-small"><g transform="rotate(-1.4 222 76)"><path id="gearSmall" fill="url(#gInk)"/></g><circle cx="222" cy="76" r="14" fill="#fafafa"/><circle cx="222" cy="76" r="5" fill="#111"/></g></g>
       <!-- a ring spanner turning a nut: they turn together, tightening it -->
-      <g class="wrench">
+      <g class="in-wr"><g class="wrench">
         <rect x="160" y="171.5" width="72" height="13" rx="6.5" fill="url(#gSteel)" stroke="#5c5c5c" stroke-width="1.2"/>
         <rect x="172" y="175.5" width="44" height="5" rx="2.5" fill="#fafafa" opacity=".55"/>
         <circle cx="160" cy="178" r="12" fill="url(#gSteel)" stroke="#5c5c5c" stroke-width="1.2"/>
@@ -237,7 +284,7 @@ body.no-intro .when,body.no-intro .reach,body.no-intro .open,body.no-intro .stat
         <circle cx="240" cy="178" r="19" fill="url(#gSteel)" stroke="#5c5c5c" stroke-width="1.2"/>
         <polygon points="240,165 251.3,171.5 251.3,184.5 240,191 228.7,184.5 228.7,171.5" fill="#2b2b2b"/>
         <circle cx="240" cy="178" r="5" fill="#9c9c9c"/><circle cx="240" cy="178" r="2.2" fill="#2b2b2b"/>
-      </g>
+      </g></g>
       <!-- sparks -->
       <g fill="#F2A33A">
         <circle class="spark" cx="252" cy="168" r="2.6" style="--dx:22px;--dy:-26px"/>
@@ -286,18 +333,35 @@ body.no-intro .when,body.no-intro .reach,body.no-intro .open,body.no-intro .stat
 (function () {
   var $ = function (id) { return document.getElementById(id); };
 
-  /* the shutter: the whole show the first time in a visit, a quick roll after that, none at all for
-     those who asked their device for less movement; a tap skips it */
+  /* the way in, as the owner picked it (Settings → Maintenance; the server writes it on <body>):
+       reveal    — Regal red, the badge, a circle opening out of it onto the page (the default)
+       blueprint — the drawing sketches itself in red line, then takes its colour
+       assemble  — the gears roll in from either side, the spanner drops on
+       fade      — everything rises gently;  none — it is simply there
+       shutter   — the shop's shutter rolls up
+     The whole show the first time in a visit, a short one after that, nothing for devices set to
+     reduce motion; a tap skips the red screens. */
+  var body = document.body, intro = body.getAttribute('data-intro') || 'reveal';
   (function gate() {
-    var g = $('gate'), body = document.body, done = false;
+    var g = $('gate'), rv = $('reveal'), done = false;
     var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    // the owner picks the way in (Settings → Maintenance): shutter, fade, or none; the server writes it on <body>
-    var intro = body.getAttribute('data-intro') || 'shutter', preview = body.getAttribute('data-preview') === '1';
+    var preview = body.getAttribute('data-preview') === '1';
     var seen = false; try { seen = !preview && sessionStorage.getItem('regal_mx_gate') === '1'; sessionStorage.setItem('regal_mx_gate', '1'); } catch (e) {}
     function open() { if (!done) { done = true; body.classList.remove('wait'); } }
-    function finish() { open(); g.classList.add('gone'); }
+    function finish() { open(); g.classList.add('gone'); rv.style.display = 'none'; }
+    if (still) return finish();
     if (intro === 'none') body.classList.add('no-intro');
-    if (still || intro !== 'shutter') return finish();
+    if (intro === 'blueprint' && !seen) { body.classList.add('bp'); setTimeout(function () { body.classList.remove('bp'); }, 2400); }
+    if (intro === 'assemble' && !seen) body.classList.add('asm');
+    if (intro === 'reveal') {
+      g.classList.add('gone');
+      rv.classList.add(seen ? 'quick' : 'run');
+      setTimeout(open, seen ? 60 : 1250);
+      setTimeout(finish, seen ? 700 : 2450);
+      rv.addEventListener('click', function () { rv.style.transition = 'opacity .25s'; rv.style.opacity = '0'; open(); setTimeout(finish, 260); });
+      return;
+    }
+    if (intro !== 'shutter') return finish();
     var sp = $('sparks'), h = '';
     for (var i = 0; i < 26; i++) {
       // they fall away below the rising edge, with a little sideways scatter
@@ -325,6 +389,9 @@ body.no-intro .when,body.no-intro .reach,body.no-intro .open,body.no-intro .stat
   }
   $('gearBig').setAttribute('d', gear(118, 122, 12, 62, 78, 0));
   $('gearSmall').setAttribute('d', gear(222, 76, 8, 36, 50, 0));
+  // blueprint: every line measured as 100, so each one draws in the same time whatever its length
+  if (body.classList.contains('bp'))
+    document.querySelectorAll('.shop svg :is(path,circle,rect,polygon,ellipse):not(.spark)').forEach(function (el) { el.setAttribute('pathLength', '100'); });
 
   /* the tape: the words twice over, so it can roll forever */
   var words = ['Under maintenance', 'Regal Hardware', 'Back shortly', 'Kaduruwela', 'ඉක්මනින් නැවත හමුවෙමු'];

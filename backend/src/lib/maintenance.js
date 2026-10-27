@@ -17,9 +17,10 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const MX_FILE = process.env.MAINTENANCE_FILE || path.resolve(here, '../../maintenance.json');
 const PAGE = path.resolve(here, '../../../frontend/maintenance.html');
-const OFF = { on: false, scope: 'site', msg: '', until: '', since: '', by: '', key: '', intro: 'shutter' };
-// how the page opens: the shop's shutter rolling up, a soft fade, or straight in
-export const INTROS = ['shutter', 'fade', 'none'];
+const OFF = { on: false, scope: 'site', msg: '', until: '', since: '', by: '', key: '', intro: 'reveal' };
+// how the page opens (the first is the default): the logo reveal, the drawing sketching itself, the
+// gears assembling, a soft fade, straight in, or the shop's shutter rolling up
+export const INTROS = ['reveal', 'blueprint', 'assemble', 'fade', 'none', 'shutter'];
 
 let cache = null, cachedAt = 0;
 export function mxState() {
@@ -32,7 +33,7 @@ export function mxSave(patch) {
   const cur = mxState();
   // only what was given changes: a patch of just { intro } leaves the switch where it is
   const next = { ...cur, ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) };
-  if (!INTROS.includes(next.intro)) next.intro = 'shutter';
+  if (!INTROS.includes(next.intro)) next.intro = INTROS[0];
   if (!next.key) next.key = crypto.randomBytes(9).toString('base64url');   // the pass; kept between switch-ons
   if (next.on && !cur.on) next.since = new Date().toISOString();
   if (!next.on) next.since = '';
@@ -44,12 +45,12 @@ export function mxSave(patch) {
   return next;
 }
 // what anybody may know: no key
-export const mxPublic = s => ({ on: !!s.on, scope: s.scope, msg: s.msg, until: s.until, since: s.since, intro: s.intro || 'shutter' });
+export const mxPublic = s => ({ on: !!s.on, scope: s.scope, msg: s.msg, until: s.until, since: s.since, intro: s.intro || INTROS[0] });
 
 // the page, told how to open (the owner's choice, or ?intro= when previewing one)
 function sendPage(req, res, s) {
   if (!fs.existsSync(PAGE)) return res.type('text').send('Regal Hardware is being updated — back shortly.');
-  const want = INTROS.includes(req.query && req.query.intro) ? req.query.intro : (s.intro || 'shutter');
+  const want = INTROS.includes(req.query && req.query.intro) ? req.query.intro : (s.intro || INTROS[0]);
   res.set('Cache-Control', 'no-store');
   res.type('html').send(fs.readFileSync(PAGE, 'utf8').replace('<body class="wait">', `<body class="wait" data-intro="${want}"${req.query && req.query.intro ? ' data-preview="1"' : ''}>`));
 }

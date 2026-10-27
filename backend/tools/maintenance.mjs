@@ -2,7 +2,7 @@
 //   node tools/maintenance.mjs status
 //   node tools/maintenance.mjs on [--all] [--msg "Stock-taking tonight"] [--until 2026-10-28T09:00]
 //   node tools/maintenance.mjs off
-//   node tools/maintenance.mjs intro shutter|fade|none     how the page opens
+//   node tools/maintenance.mjs intro reveal|blueprint|assemble|fade|none|shutter     how the page opens
 // --all stops the tills and the shift board too; without it only the website stops. The running server
 // sees the change within two seconds — no restart.
 import { mxState, mxSave, MX_FILE, INTROS } from '../src/lib/maintenance.js';
@@ -19,4 +19,4 @@ if (cmd === 'on') show(mxSave({ on: true, scope: opt('all') ? 'all' : 'site', ms
 else if (cmd === 'off') show(mxSave({ on: false }));
 else if (cmd === 'intro' && INTROS.includes(rest[0])) { mxSave({ intro: rest[0] }); show(mxState()); console.log('the page opens with: ' + rest[0]) }
 else if (cmd === 'status') show(mxState());
-else { console.error('use: status | on [--all] [--msg "…"] [--until 2026-10-28T09:00] | off | intro shutter|fade|none'); process.exit(1) }
+else { console.error('use: status | on [--all] [--msg "…"] [--until 2026-10-28T09:00] | off | intro reveal|blueprint|assemble|fade|none|shutter'); process.exit(1) }

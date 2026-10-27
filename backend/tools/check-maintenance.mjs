@@ -54,7 +54,7 @@ await pg.waitForSelector('[data-act="mxOff"]', { timeout: 8000 }).catch(() => {}
 await pg.click('[data-act="mxOff"]'); await wait(800);
 ok(/The site is open/.test(await pg.$eval('#main', e => e.textContent)), 'Open again from the till');
 // leave the switch as a new shop would have it: off, no message, the shutter
-await pg.evaluate(() => window.eval('mxCall')('POST', { on: false, scope: 'site', msg: '', until: '', intro: 'shutter' })); await wait(500);
+await pg.evaluate(() => window.eval('mxCall')('POST', { on: false, scope: 'site', msg: '', until: '', intro: 'reveal' })); await wait(500);
 await sp.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
 await sp.waitForFunction(() => !document.getElementById('gearBig'), { timeout: 12000 }).catch(() => {});
 ok(!(await sp.$('#gearBig')), 'the stranger\'s page reloads into the real page by itself', sp.url());
