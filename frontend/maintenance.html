@@ -64,7 +64,12 @@ main{flex:1;display:flex;flex-direction:column;align-items:center;justify-conten
   background:var(--red-soft);border:1px solid rgba(174,30,43,.18);border-radius:99px;padding:7px 14px 7px 12px;animation:rise .7s var(--ease) both .2s}
 .kicker i{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 0 0 rgba(174,30,43,.5);animation:ping 1.8s infinite}
 @keyframes ping{0%{box-shadow:0 0 0 0 rgba(174,30,43,.45)}80%,100%{box-shadow:0 0 0 9px rgba(174,30,43,0)}}
-h1{font-weight:800;font-size:clamp(34px,6.4vw,58px);line-height:1.02;letter-spacing:-.025em;margin:18px 0 0;animation:rise .7s var(--ease) both .28s}
+h1{font-weight:800;font-size:clamp(34px,6.4vw,58px);line-height:1.02;letter-spacing:-.025em;margin:18px 0 0}
+/* the heading comes up line by line, out of its own slot */
+h1 .ln{display:block;overflow:hidden;padding:0 .06em .1em;margin-bottom:-.1em}
+h1 .ln>span{display:inline-block;animation:lineUp .95s cubic-bezier(.16,1,.3,1) both .3s}
+h1 .ln+.ln>span{animation-delay:.42s}
+@keyframes lineUp{from{transform:translateY(110%) rotate(3deg);opacity:0}}
 h1 em{font-style:normal;color:var(--red);position:relative;white-space:nowrap}
 h1 em::after{content:"";position:absolute;left:2px;right:2px;bottom:.04em;height:.12em;background:currentColor;opacity:.18;border-radius:2px;transform-origin:left;animation:underline 1s var(--ease) both .9s}
 @keyframes underline{from{transform:scaleX(0)}}
@@ -131,10 +136,73 @@ footer{overflow:hidden;border-top:1px solid rgba(0,0,0,.06)}
   .count{gap:7px}.count div{min-width:0;flex:1}.count b{font-size:28px}
   .reach .btn{flex:1 1 100%}
 }
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+/* ---- the way in: the shop's roller shutter, rolled up on the page ----
+   While body.wait is on, everything behind the shutter holds its first frame (hidden, gears still);
+   the moment the shutter starts to lift, it all plays. */
+body.wait header *,body.wait main *,body.wait footer *,body.wait .grid,body.wait .glow{animation-play-state:paused!important}
+.gate{position:fixed;inset:0;z-index:40;cursor:pointer;overflow:hidden;-webkit-tap-highlight-color:transparent}
+.gate.gone{display:none}
+.shutter{position:absolute;inset:0;bottom:-2px;will-change:transform;
+  background:
+    linear-gradient(90deg,rgba(0,0,0,.28),transparent 9%,transparent 91%,rgba(0,0,0,.28)),
+    repeating-linear-gradient(180deg,#B3202D 0 16px,#C9303C 16px 19px,#8E1722 19px 22px,#A51C29 22px 30px);
+  box-shadow:0 18px 40px rgba(0,0,0,.35)}
+/* the bottom rail and its handle */
+.shutter::after{content:"";position:absolute;left:0;right:0;bottom:0;height:34px;background:linear-gradient(180deg,#3a3a3a,#161616);border-top:3px solid #5a5a5a}
+.handle{position:absolute;left:50%;bottom:9px;width:120px;height:14px;margin-left:-60px;border-radius:8px;background:linear-gradient(180deg,#d9d9d9,#8a8a8a);z-index:2;box-shadow:0 2px 0 #000}
+/* the side guides the shutter runs in */
+.rail{position:absolute;top:0;bottom:0;width:14px;background:linear-gradient(90deg,#2a2a2a,#555 50%,#2a2a2a);z-index:3}
+.rail.l{left:0}.rail.r{right:0}
+.bolt{position:absolute;width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#f0f0f0,#8a8a8a 60%,#4a4a4a);box-shadow:0 1px 2px rgba(0,0,0,.5);z-index:2}
+.bolt::before{content:"";position:absolute;left:3px;right:3px;top:8px;height:2px;background:#3a3a3a;border-radius:1px}
+.bolt.tl{left:28px;top:24px}.bolt.tr{right:28px;top:24px}.bolt.bl{left:28px;bottom:50px}.bolt.br{right:28px;bottom:50px}
+.badge{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:14px;z-index:2;text-align:center;color:#fff}
+.plate{width:118px;height:118px;border-radius:50%;background:#fff;display:grid;place-items:center;box-shadow:0 0 0 6px rgba(255,255,255,.18),0 14px 34px rgba(0,0,0,.35)}
+.plate img{width:70px;height:70px;object-fit:contain}
+.badge b{font-weight:800;font-size:clamp(26px,5vw,40px);letter-spacing:.24em;text-shadow:0 2px 0 rgba(0,0,0,.25)}
+.badge span{font-size:12px;font-weight:600;letter-spacing:.5em;opacity:.85;text-transform:uppercase}
+.badge em{white-space:nowrap;font-style:normal;font-size:11.5px;letter-spacing:clamp(.08em,1vw,.2em);text-transform:uppercase;opacity:.75;margin-top:6px;border:1px solid rgba(255,255,255,.4);border-radius:99px;padding:6px 14px}
+/* the sparks ride on the shutter's lower edge, where it scrapes the rails */
+.sparks{position:absolute;left:0;right:0;bottom:0;height:0;z-index:4;pointer-events:none}
+.sparks i{position:absolute;bottom:0;width:4px;height:4px;border-radius:50%;background:#FFC266;box-shadow:0 0 8px 2px rgba(255,170,60,.8);opacity:0}
+
+/* the sequence, about 2.4 s: the badge arrives, the bolts come loose, a jolt, and up it goes */
+.gate.run .plate{animation:plateIn .7s cubic-bezier(.2,1.4,.4,1) both}
+.gate.run .badge b{animation:fadeUp .6s var(--ease) both .2s}
+.gate.run .badge span{animation:fadeUp .6s var(--ease) both .3s}
+.gate.run .badge em{animation:fadeUp .6s var(--ease) both .4s}
+.gate.run .bolt{animation:unscrew .55s ease-in both .75s}
+.gate.run .bolt.tr{animation-delay:.82s}.gate.run .bolt.bl{animation-delay:.89s}.gate.run .bolt.br{animation-delay:.96s}
+.gate.run .shutter{animation:lift 1.15s cubic-bezier(.7,0,.2,1) both 1.25s}
+.gate.run .rail{animation:railOut .5s ease both 2.05s}
+.gate.run .sparks i{animation:spark2 .7s ease-out forwards 1.4s}
+.gate.quick .shutter{animation:lift .55s cubic-bezier(.7,0,.2,1) both .05s}
+.gate.quick .rail{animation:railOut .3s ease both .4s}
+@keyframes plateIn{from{transform:scale(.3) rotate(-120deg);opacity:0}}
+@keyframes fadeUp{from{transform:translateY(12px);opacity:0}}
+@keyframes unscrew{0%{transform:rotate(0)}60%{transform:rotate(-540deg) scale(1.1)}100%{transform:rotate(-720deg) translateY(30px) scale(.6);opacity:0}}
+@keyframes lift{0%{transform:translateY(0)}12%{transform:translateY(14px)}100%{transform:translateY(-104%)}}
+@keyframes railOut{to{opacity:0}}
+@keyframes spark2{0%{opacity:1;transform:translate(0,0)}100%{opacity:0;transform:translate(var(--x),var(--y))}}
+
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.gate{display:none}}
 </style>
 </head>
-<body>
+<body class="wait">
+<!-- the way in: the shop's shutter rolls up on the page (tap to skip) -->
+<div class="gate" id="gate" aria-hidden="true">
+  <div class="shutter">
+    <span class="bolt tl"></span><span class="bolt tr"></span><span class="bolt bl"></span><span class="bolt br"></span>
+    <div class="badge">
+      <div class="plate"><img src="/regal-logo.png" alt=""></div>
+      <b>REGAL</b><span>Hardware</span>
+      <em>Opening the workshop…</em>
+    </div>
+    <span class="handle"></span>
+    <div class="sparks" id="sparks"></div>
+  </div>
+  <span class="rail l"></span><span class="rail r"></span>
+</div>
 <div class="board" aria-hidden="true"><div class="grid"></div><div class="glow a"></div><div class="glow b"></div></div>
 
 <header>
@@ -177,7 +245,7 @@ footer{overflow:hidden;border-top:1px solid rgba(0,0,0,.06)}
   </div>
 
   <div class="kicker"><i></i><span id="kick">Under maintenance</span></div>
-  <h1 id="title">We’re tightening<br>a few <em>bolts.</em></h1>
+  <h1 id="title"><span class="ln"><span>We’re tightening</span></span><span class="ln"><span>a few <em>bolts.</em></span></span></h1>
   <p class="lead" id="lead">Our online shop is getting an upgrade. We’ll be back shortly — and the shop in Kaduruwela is open as usual.</p>
   <div class="si" lang="si">ඉක්මනින් නැවත හමුවෙමු</div>
 
@@ -214,6 +282,29 @@ footer{overflow:hidden;border-top:1px solid rgba(0,0,0,.06)}
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
+
+  /* the shutter: the whole show the first time in a visit, a quick roll after that, none at all for
+     those who asked their device for less movement; a tap skips it */
+  (function gate() {
+    var g = $('gate'), body = document.body, done = false;
+    var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var seen = false; try { seen = sessionStorage.getItem('regal_mx_gate') === '1'; sessionStorage.setItem('regal_mx_gate', '1'); } catch (e) {}
+    function open() { if (!done) { done = true; body.classList.remove('wait'); } }
+    function finish() { open(); g.classList.add('gone'); }
+    if (still) return finish();
+    var sp = $('sparks'), h = '';
+    for (var i = 0; i < 26; i++) {
+      // they fall away below the rising edge, with a little sideways scatter
+      var left = 4 + Math.random() * 92, x = (Math.random() * 2 - 1) * 90, y = 40 + Math.random() * 140;
+      h += '<i style="left:' + left.toFixed(1) + '%;--x:' + x.toFixed(0) + 'px;--y:' + y.toFixed(0) + 'px;animation-delay:' + (1.35 + Math.random() * .35).toFixed(2) + 's"></i>';
+    }
+    sp.innerHTML = h;
+    g.classList.add(seen ? 'quick' : 'run');
+    // the page behind starts moving as the shutter starts to rise
+    setTimeout(open, seen ? 80 : 1350);
+    setTimeout(finish, seen ? 750 : 2600);
+    g.addEventListener('click', function () { g.style.transition = 'opacity .25s'; g.style.opacity = '0'; open(); setTimeout(finish, 260); });
+  })();
 
   /* gears with even teeth: n teeth between radius r (root) and R (tip) */
   function gear(cx, cy, n, r, R, hole) {
