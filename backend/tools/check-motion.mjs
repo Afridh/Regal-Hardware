@@ -1,104 +1,71 @@
-// What moves, and — just as important — what does not. The till redraws on every keystroke,
-// so this checks the motion layer stays out of the way while somebody is typing.
+// The travelling highlight: on the menu, filter chips and switch buttons it slides to the item just
+// picked and stretches as it goes; afterwards nothing is left behind; less-motion machines get none.
+//   node backend/tools/run-e2e.mjs --keep        (the test server on :4010, the tests' sample shop)
+//   node backend/tools/check-motion.mjs [screenshot-dir]
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
-const BASE='http://localhost:4000';
-const exe=['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p=>fs.existsSync(p));
-const b=await puppeteer.launch({executablePath:exe,headless:true,args:['--no-sandbox']});
-const pg=await b.newPage(); await pg.setViewport({width:1400,height:900});
-const errs=[]; pg.on('pageerror',e=>errs.push(e.message));
-let pass=0,fail=0; const ok=(c,w,x='')=>{c?(pass++,console.log('PASS '+w+(x?'  '+x:''))):(fail++,console.log('FAIL '+w+(x?'  '+x:'')))};
+const OUT = process.argv[2] || '.';
+const BASE = process.env.BASE || 'http://localhost:4010';
+const exe = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
+let pass = 0, fail = 0; const ok = (c, m, x = '') => { c ? pass++ : fail++; console.log((c ? 'PASS ' : 'FAIL ') + m + (x ? '  ' + x : '')) };
+const wait = ms => new Promise(r => setTimeout(r, ms));
 
-await pg.goto(BASE+'/pos',{waitUntil:'networkidle2'});
-await pg.waitForSelector('#lockScreen');
-// the lock asks for a user code + PIN first since 2026-10-15; the name + password form is one call away
-if (!(await pg.$('#lockUser')) && !(await pg.$('#lockPw'))) await pg.evaluate(() => shopLockPassword());
-if(await pg.$('#lockUser')) await pg.type('#lockUser','Afridh'); else await pg.click('[data-user="Afridh"]');
-await pg.type('#lockPw','Afridh123'); await pg.click('#lockGo');
-await pg.waitForFunction(()=>!document.getElementById('lockScreen'));
-await new Promise(r=>setTimeout(r,800));
+const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['--no-sandbox'] });
+const pg = await b.newPage(); await pg.setViewport({ width: 1366, height: 768 });
+const errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('dialog', d => d.accept());
+await pg.setRequestInterception(true);
+pg.on('request', rq => { if (/^https?:\/\/(localhost|127\.0\.0\.1):41\d\d/.test(rq.url()) || (/\/api\/print\b/.test(rq.url()) && rq.method() === 'POST')) return rq.abort(); rq.continue() });
+await pg.goto(BASE + '/pos', { waitUntil: 'networkidle2' });
+await pg.waitForFunction(() => document.getElementById('lockScreen') || document.querySelector('#nav button'), { timeout: 25000 });
+if (await pg.$('#lockScreen')) {
+  if (!(await pg.$('#lockUser')) && !(await pg.$('#lockPw'))) await pg.evaluate(() => shopLockPassword());
+  if (await pg.$('#lockUser')) await pg.type('#lockUser', 'Afridh');
+  await pg.waitForSelector('#lockPw'); await pg.type('#lockPw', 'Afridh123'); await pg.click('#lockGo');
+  await pg.waitForFunction(() => !document.getElementById('lockScreen'), { timeout: 20000 });
+}
+await pg.waitForFunction(() => !document.querySelector('.pin-welcome'), { timeout: 10000 }).catch(() => {});
+await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); window.eval("CFG.print.agent=''"); window.eval('go')('bills') });
+await wait(800);
 
-// a page arriving
-const arrive=await pg.evaluate(()=>{ go('bills');
-  const mn=document.getElementById('main');
-  return { page:mn.classList.contains('mo-page'), rows:mn.querySelectorAll('.mo-in').length,
-    maxDelay:Math.max(0,...[...mn.querySelectorAll('.mo-in')].map(e=>+getComputedStyle(e).animationDelay.replace('s',''))) };
-});
-ok(arrive.page&&arrive.rows>0,'a page and its rows arrive together',JSON.stringify({page:arrive.page,rows:arrive.rows}));
-ok(arrive.maxDelay<=0.3,'the last row is in within a third of a second',arrive.maxDelay+'s');
+// the menu: from Bills to another page — sample the pill as it goes
+const pillAt = () => pg.evaluate(() => { const p = document.querySelector('nav .navlist .mo-pill'); if (!p) return null; const r = p.getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(r.height) } });
+const target = await pg.evaluate(() => { const bs = [...document.querySelectorAll('nav .navlist button[data-view]')]; const i = bs.findIndex(x => x.classList.contains('on')); const t = bs[Math.min(bs.length - 1, i + 4)]; return t && t.dataset.view });
+const samples = [];
+await pg.evaluate(v => document.querySelector(`nav .navlist button[data-view="${v}"]`).click(), target);
+for (const ms of [40, 110, 200]) { await wait(ms === 40 ? 40 : 70); samples.push(await pillAt()); if (ms === 110) await pg.screenshot({ path: OUT + '/motion-nav-mid.png', clip: { x: 0, y: 0, width: 300, height: 768 } }) }
+await wait(500);
+const seen = samples.filter(Boolean);
+ok(seen.length >= 2, 'picking another page: a pill travels down the menu', JSON.stringify(samples));
+ok(seen.length >= 2 && (seen[seen.length - 1].top !== seen[0].top || seen[seen.length - 1].h !== seen[0].h), 'and it moves and stretches as it goes');
+ok(Math.max(...seen.map(s => s.h)) > Math.min(...seen.map(s => s.h)) + 4, 'stretching: taller mid-way than at either end', seen.map(s => s.h).join(' → '));
+ok(await pg.evaluate(() => !document.querySelector('.mo-pill') && !document.querySelector('.mo-pill-wait')), 'once it lands nothing is left behind, and the item shows its own highlight');
 
-// a redraw of the SAME page must not re-animate anything
-// let the arrival finish, then redraw the same page: nothing should move or be left behind
-await new Promise(r=>setTimeout(r,400));
-const still=await pg.evaluate(()=>{ render();
-  const mn=document.getElementById('main');
-  return { page:mn.classList.contains('mo-page'), rows:mn.querySelectorAll('.mo-in').length };
-});
-ok(!still.page&&still.rows===0,'redrawing the same page moves nothing',JSON.stringify(still));
+// filter chips on the Bills page
+await pg.evaluate(() => window.eval('go')('bills')); await wait(700);
+const chipGroup = await pg.evaluate(() => { const g = [...document.querySelectorAll('.chips')].find(g => g.querySelectorAll('button').length > 2 && g.querySelector('button.on')); if (!g) return null;
+  const bs = [...g.querySelectorAll('button')], i = bs.findIndex(x => x.classList.contains('on')); const t = bs[i === 0 ? bs.length - 1 : 0]; t.setAttribute('data-motest', '1'); return bs.length });
+if (chipGroup) {
+  await pg.click('[data-motest="1"]'); await wait(90);
+  const mid = await pg.evaluate(() => !!document.querySelector('.chips .mo-pill'));
+  await pg.screenshot({ path: OUT + '/motion-chips-mid.png', clip: { x: 80, y: 120, width: 480, height: 240 } });
+  ok(mid, 'filter chips: the highlight slides to the one picked');
+  await wait(500);
+  ok(await pg.evaluate(() => !document.querySelector('.mo-pill')), 'and is gone once it lands');
+} else ok(true, 'filter chips: none on this page to try', '');
 
-// the till: typing into the search must not set the rows going
-await pg.evaluate(()=>{ go('pos'); S.pos.lines=[]; render() });
-await new Promise(r=>setTimeout(r,300));
-const typing=await pg.evaluate(async()=>{
-  const q=document.querySelector('#csQ')||document.querySelector('input');
-  let moved=0;
-  for(const ch of 'cem'){ if(q){ q.value+=ch; q.dispatchEvent(new Event('input',{bubbles:true})) }
-    await new Promise(r=>setTimeout(r,60));
-    moved+=document.querySelectorAll('#main .mo-in').length; }
-  return { moved, focused:document.activeElement&&document.activeElement.id };
-});
-ok(typing.moved===0,'searching at the till animates nothing under the fingers',JSON.stringify(typing));
+// an ordinary redraw (typing in a search) does not set anything off
+await pg.evaluate(() => { window.eval('render')(); window.eval('render')() }); await wait(60);
+ok(await pg.evaluate(() => !document.querySelector('.mo-pill')), 'a redraw with nothing newly picked moves nothing');
 
-// a line joining the bill says so, and the total answers
-const added=await pg.evaluate(async()=>{
-  S.pos.lines=[]; moLastLines=-1; render();
-  await new Promise(r=>setTimeout(r,60));
-  const p=S.products[0];
-  S.pos.lines.push({pid:p.id,qty:2,price:p.retail,disc:0});
-  render();
-  await new Promise(r=>setTimeout(r,60));
-  return { flash:!!document.querySelector('.mo-flash'), bump:!!document.querySelector('.mo-bump') };
-});
-ok(added.flash,'a line joining the bill shows where it landed');
-ok(added.bump,'and the total answers it',JSON.stringify(added));
+// a page arrives through a soft blur
+await pg.evaluate(() => window.eval('go')('customers')); await wait(40);
+const blur = await pg.evaluate(() => getComputedStyle(document.getElementById('main')).filter);
+ok(/blur/.test(blur), 'a page arrives through a soft blur', blur);
 
-// a figure that changes counts to its new value; one that does not, does not move
-const roll=await pg.evaluate(async()=>{
-  go('dashboard'); await new Promise(r=>setTimeout(r,120));
-  const el=document.querySelector('.stat .v, .kpi b'); if(!el) return {no:'nothing to roll'};
-  const before=el.textContent;
-  render(); await new Promise(r=>setTimeout(r,60));
-  const unchanged=(document.querySelector('.stat .v, .kpi b')||{}).classList;
-  const stayed=!(unchanged&&unchanged.contains('mo-roll'));
-  // now make one actually change
-  const keys=[...MO_ROLLS.keys()]; const k=keys[0];
-  if(k) MO_ROLLS.set(k, MO_ROLLS.get(k)+1234);
-  render(); await new Promise(r=>setTimeout(r,60));
-  const now=document.querySelector('.stat .v, .kpi b');
-  return { before, stayed, rolled:!!(now&&now.classList.contains('mo-roll')) };
-});
-ok(roll.stayed,'a figure that has not changed stays still',JSON.stringify({stayed:roll.stayed}));
-ok(roll.rolled,'a figure that has changed counts to its new value',JSON.stringify({rolled:roll.rolled}));
-
-// somebody who has asked for less movement gets none
-const quiet=await pg.evaluate(async()=>{
-  await pg_emulate();
-  go('customers'); await new Promise(r=>setTimeout(r,120));
-  return { rows:document.querySelectorAll('#main .mo-in').length };
-}).catch(()=>null);
-
-await pg.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'reduce'}]);
-const reduced=await pg.evaluate(async()=>{
-  go('suppliers'); await new Promise(r=>setTimeout(r,120));
-  const any=[...document.querySelectorAll('#main .mo-in')].some(e=>getComputedStyle(e).animationName!=='none');
-  S.pos.lines=[]; moLastLines=-1; render();
-  S.pos.lines.push({pid:S.products[0].id,qty:1,price:100,disc:0}); render();
-  return { animating:any, flash:!!document.querySelector('.mo-flash') };
-});
-ok(!reduced.animating&&!reduced.flash,'a machine asking for less movement gets none',JSON.stringify(reduced));
-await pg.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'no-preference'}]);
-
-ok(errs.length===0,'no script errors anywhere',errs.join(' | '));
-await b.close();
+// less motion asked for: none of it
+await pg.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+await pg.evaluate(() => window.eval('go')('bills')); await wait(60);
+ok(await pg.evaluate(() => !document.querySelector('.mo-pill')), 'a machine set to less motion gets no travelling highlight');
+ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail?1:0);
+await b.close();

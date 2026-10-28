@@ -2926,13 +2926,24 @@ tr.rowlink button{cursor:pointer}
 }
 
 /* a page arriving */
-@keyframes moPage{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+@keyframes moPage{from{opacity:0;transform:translateY(7px);filter:blur(3px)}to{opacity:1;transform:none;filter:none}}
 #main.mo-page{animation:moPage var(--mo) var(--mo-ease)}
 
 /* a row or a card joining a list. --i is set as they are found, and capped, so a long table
    does not take four seconds to finish arriving */
 @keyframes moRise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .mo-in{animation:moRise var(--mo) var(--mo-ease) both;animation-delay:calc(var(--i,0) * var(--mo-step))}
+
+/* the highlight travelling to the item just picked: a stand-in pill under the labels, while the
+   item's own highlight waits for it to land */
+.mo-pill-host.mo-pill-static{position:relative}
+.mo-pill-host button{position:relative;z-index:1}
+.mo-pill{position:absolute;z-index:0;pointer-events:none;will-change:left,top,width,height}
+.mo-pill-wait{background:transparent!important;box-shadow:none!important;border-bottom-color:transparent!important}
+/* white-on-dark chips read in the page's colour until the pill is under them; the dark menu keeps its own */
+.mo-pill-wait.mo-pill-ink{color:inherit!important}
+/* a window over the till: the till behind goes soft, so the eye goes to the window */
+@media (prefers-reduced-motion:no-preference){.modal{backdrop-filter:blur(2.5px);-webkit-backdrop-filter:blur(2.5px)}}
 
 /* something that has just changed, said once and quietly */
 @keyframes moFlash{0%{background:var(--tint-yellow)}100%{background:transparent}}
@@ -12838,11 +12849,68 @@ function moBillLine(){
   if(tot){ tot.classList.remove('mo-bump'); void tot.offsetWidth; tot.classList.add('mo-bump') }
 }
 
+/* A highlight that travels. On the menu, a row of tabs, a set of filter chips or switch buttons, the
+   highlight slides from the item it was on to the one just picked and stretches as it goes: the edge in
+   front leads and the edge behind catches up, so it reads as one thing moving rather than two things
+   blinking. A stand-in pill does the travelling under the labels; the item's own highlight is held back
+   until it lands, so the item itself looks exactly as it always has. Each group remembers where its
+   highlight was by the page and its place on it, so a redraw does not set it off — only a real change. */
+const MO_PILLS = new Map();
+const MO_PILL_GROUPS = 'nav .navlist, .subnav, .tabs, .chips, .seg-tabs, .st-chips, .pfilter, .cp-pills, .bc-tabs';
+const moEase = { out: k => 1 - Math.pow(1 - k, 3), inOut: k => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2 };
+function moPills(){
+  const count = {};
+  document.querySelectorAll(MO_PILL_GROUPS).forEach(g=>{
+    const cls = g.matches('nav .navlist') ? 'nav' : (g.className.split(' ')[0] || 'g');
+    const n = count[cls] = (count[cls]||0) + 1;
+    const key = cls === 'nav' ? 'nav' : S.view + '|' + cls + '|' + n;
+    const ons = [...g.querySelectorAll('button.on, [role="tab"][aria-selected="true"]')].filter(b=>b.closest(MO_PILL_GROUPS)===g);
+    if(ons.length !== 1){ MO_PILLS.delete(key); return }       // none picked, or several (a multi-pick): nothing to travel
+    const on = ons[0], gr = g.getBoundingClientRect(), r = on.getBoundingClientRect();
+    if(!r.width || !gr.width) return;
+    const now = { l: r.left - gr.left + g.scrollLeft, t: r.top - gr.top + g.scrollTop, w: r.width, h: r.height, id: on.textContent.trim().slice(0,40) };
+    const had = MO_PILLS.get(key);
+    MO_PILLS.set(key, now);
+    if(!had || had.id === now.id || moLess()) return;
+    if(Math.abs(had.l - now.l) < 2 && Math.abs(had.t - now.t) < 2) return;
+    moPillRun(g, on, had, now);
+  });
+}
+function moPillRun(g, on, from, to){
+  const cs = getComputedStyle(on), line = g.classList.contains('tabs');      // tabs show an underline, the rest a filled pill
+  // a filled highlight may be a colour or a gradient (the menu's is a red wash)
+  const solid = line ? cs.borderBottomColor : cs.backgroundColor, grad = !line && cs.backgroundImage && cs.backgroundImage !== 'none' ? cs.backgroundImage : '';
+  const fill = grad || solid;
+  if(!fill || fill === 'rgba(0, 0, 0, 0)' || fill === 'transparent') return;
+  g.classList.add('mo-pill-host'); if(getComputedStyle(g).position==='static') g.classList.add('mo-pill-static');   // a pinned menu stays pinned
+  g.querySelectorAll(':scope > .mo-pill').forEach(p=>p.remove());
+  const p = document.createElement('i'); p.className = 'mo-pill';
+  p.style.background = fill; p.style.borderRadius = line ? '2px' : cs.borderRadius;
+  g.appendChild(p); on.classList.add('mo-pill-wait'); if(!g.matches('nav .navlist')) on.classList.add('mo-pill-ink');
+  // edges, not a box: which one leads depends on the way it is going
+  const box = (o) => line ? { L: o.l, R: o.l + o.w, T: o.t + o.h - 2, B: o.t + o.h } : { L: o.l, R: o.l + o.w, T: o.t, B: o.t + o.h };
+  const A = box(from), Z = box(to), vertical = Math.abs(to.t - from.t) > Math.abs(to.l - from.l), fwd = vertical ? to.t > from.t : to.l > from.l;
+  const lead = vertical ? (fwd ? 'B' : 'T') : (fwd ? 'R' : 'L'), trail = vertical ? (fwd ? 'T' : 'B') : (fwd ? 'L' : 'R');
+  const LEAD = 230, TRAIL = 340, t0 = performance.now();
+  const step = (nowT) => {
+    if(!p.isConnected){ on.classList.remove('mo-pill-wait','mo-pill-ink'); return }
+    const e = nowT - t0, a = moEase.out(Math.min(1, e / LEAD)), b = moEase.inOut(Math.min(1, e / TRAIL)), at = {};
+    for(const k of ['L','R','T','B']) at[k] = A[k] + (Z[k] - A[k]) * (k === trail ? b : a);
+    p.style.left = at.L + 'px'; p.style.top = at.T + 'px'; p.style.width = Math.max(2, at.R - at.L) + 'px'; p.style.height = Math.max(2, at.B - at.T) + 'px';
+    if(e < TRAIL) requestAnimationFrame(step);
+    else { on.classList.remove('mo-pill-wait','mo-pill-ink'); p.remove() }
+  };
+  requestAnimationFrame(step);
+}
+// a group switched in place without a redraw (a panel's own tabs) is looked at after the click lands
+document.addEventListener('click', ()=>{ setTimeout(()=>{ try{ moPills() }catch(e){} }, 0) }, true);
+
 /* Called once after every draw. `moved` says whether this is a different page from the last. */
 function motionAfter(moved){
   try{ if(moved) moArrive() }catch(e){}
   try{ moRolls() }catch(e){}
   try{ moBillLine() }catch(e){}
+  try{ moPills() }catch(e){}
 }
 
 let _rendering=false, _lastRenderView=null;
