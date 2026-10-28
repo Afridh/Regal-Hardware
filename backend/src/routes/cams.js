@@ -14,7 +14,12 @@
 //   GET  /api/cams/status             is the helper there, and which cameras
 //   GET  /api/cams/live/:ch           the latest picture of a camera, and "keep it coming" for a while
 //   POST /api/cams/shot               { ch, ref, count } pictures for a bill
-//   GET  /api/cams/shots/:ref         the pictures kept with that bill
+//   GET  /api/cams/shots/:ref         the pictures (and a credit bill's clip) kept with that bill
+//
+//   Kept with a bill: a cash bill's pictures for CFG.cams.cashDays (31 days); a credit bill's pictures
+//   and a short clip from the recorder (CFG.cams.creditClip seconds, 30) for CFG.cams.creditDays (122).
+//   Each file carries its keep_until and goes once that has passed. The clip is made by the helper from
+//   the recorder's own recording a little after the bill:   POST /api/cams/clip?key=&id=  (video/mp4)
 //   GET  /api/cams/events?since=      what the recorder raised
 //
 // A picture is only sent while somebody is looking: the helper asks every second or so what is
@@ -23,7 +28,7 @@ import express, { Router } from 'express';
 import { query } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { regalAuth, sendViaProvider } from './regal.js';
-import { saveFile, ensure as ensureFiles, fileUrl } from './files.js';
+import { saveBuffer, ensure as ensureFiles, fileUrl } from './files.js';
 
 const r = Router();
 const WANT_MS = 15000;          // a viewer's ask holds this long; the page asks again well inside it
@@ -39,7 +44,11 @@ function ensure() {
       taken smallint NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now());
     CREATE TABLE IF NOT EXISTS cam_events (id bigserial PRIMARY KEY, kind varchar(30) NOT NULL, ch varchar(20), text varchar(300) NOT NULL,
       at timestamptz NOT NULL DEFAULT now());
-    CREATE TABLE IF NOT EXISTS cam_helper (one varchar(4) PRIMARY KEY, seen_at timestamptz, info text)`)
+    CREATE TABLE IF NOT EXISTS cam_helper (one varchar(4) PRIMARY KEY, seen_at timestamptz, info text);
+    ALTER TABLE cam_jobs ADD COLUMN IF NOT EXISTS keep_days smallint;
+    CREATE TABLE IF NOT EXISTS cam_clips (id bigserial PRIMARY KEY, ch varchar(20) NOT NULL, ref varchar(40) NOT NULL,
+      start_at timestamptz NOT NULL, secs smallint NOT NULL, keep_days smallint NOT NULL, ready_at timestamptz NOT NULL,
+      state varchar(10) NOT NULL DEFAULT 'new', taken_at timestamptz, note varchar(200), created_at timestamptz NOT NULL DEFAULT now())`)
     .catch(e => { ready = null; throw e; });
   return ready;
 }
@@ -63,7 +72,16 @@ r.get('/jobs', asyncHandler(async (req, res) => {
   // a job left over for long (the helper was off) is let go rather than taken at the wrong moment
   await query(`DELETE FROM cam_jobs WHERE taken >= n OR created_at < $1`, [new Date(Date.now() - 120000)]);
   const cfg = await camCfg();
+  await tidy();
+  // clips whose moment the recorder now has (or one handed out ten minutes ago and never brought back);
+  // after a week the recorder may have nothing left of it, so those are let go
+  const now = Date.now();
+  const { rows: clips } = await query(`SELECT id, ch, ref, start_at, secs FROM cam_clips
+     WHERE created_at > $1 AND ((state = 'new' AND ready_at <= $2) OR (state = 'taking' AND taken_at < $3)) ORDER BY id LIMIT 2`,
+    [new Date(now - 7 * 864e5), new Date(now), new Date(now - 600000)]);
+  for (const c of clips) await query(`UPDATE cam_clips SET state = 'taking', taken_at = $1 WHERE id = $2`, [new Date(now), c.id]);
   res.json({ ok: true, watch: wants.map(w => w.ch), shots: jobs.map(j => ({ id: Number(j.id), ch: j.ch, ref: j.ref, left: j.n - j.taken })),
+    clips: clips.map(c => ({ id: Number(c.id), ch: c.ch, ref: c.ref, start: new Date(c.start_at).toISOString(), secs: +c.secs })),
     alerts: cfg.alerts !== false });
 }));
 
@@ -73,14 +91,33 @@ r.post('/frame', express.raw({ type: ['image/jpeg', 'application/octet-stream'],
   if (!Buffer.isBuffer(buf) || buf.length < 200 || buf[0] !== 0xff || buf[1] !== 0xd8) throw new HttpError(400, 'Not a JPEG');
   const shot = +req.query.shot || 0;
   if (shot) {
-    const { rows: [j] } = await query(`SELECT id, ref, n, taken FROM cam_jobs WHERE id = $1`, [shot]);
+    const { rows: [j] } = await query(`SELECT id, ref, n, taken, keep_days FROM cam_jobs WHERE id = $1`, [shot]);
     if (j && j.taken < j.n) {
-      await saveFile({ kind: 'billcam', ref: j.ref, name: `${j.ref} camera ${ch} ${j.taken + 1}.jpg`, dataUrl: 'data:image/jpeg;base64,' + buf.toString('base64'), by: 'camera' });
+      await saveBuffer({ kind: 'billcam', ref: j.ref, name: `${j.ref} camera ${ch} ${j.taken + 1}.jpg`, mime: 'image/jpeg', buf, by: 'camera',
+        keepUntil: new Date(Date.now() + (+j.keep_days || CASH_DAYS) * 864e5) });
       await query(`UPDATE cam_jobs SET taken = taken + 1 WHERE id = $1`, [shot]);
     }
   } else {
     await query(`INSERT INTO cam_frames (ch, jpeg, at) VALUES ($1, $2, now()) ON CONFLICT (ch) DO UPDATE SET jpeg = EXCLUDED.jpeg, at = EXCLUDED.at`, [ch, buf]);
   }
+  res.json({ ok: true });
+}));
+
+/* A credit bill's clip, from the helper: the MP4 it made from the recorder's recording — or, with fail,
+   why it could not (the recorder had nothing then, say). */
+r.post('/clip', express.raw({ type: ['video/mp4', 'application/octet-stream'], limit: '12mb' }), asyncHandler(async (req, res) => {
+  needDevice(req); await ensure();
+  const { rows: [c] } = await query(`SELECT id, ch, ref, keep_days FROM cam_clips WHERE id = $1`, [+req.query.id || 0]);
+  if (!c) throw new HttpError(404, 'No such clip');
+  if (req.query.fail) {
+    await query(`UPDATE cam_clips SET state = 'failed', note = $1 WHERE id = $2`, [String(req.query.fail).slice(0, 200), c.id]);
+    return res.json({ ok: true });
+  }
+  const buf = req.body;
+  if (!Buffer.isBuffer(buf) || buf.length < 1000) throw new HttpError(400, 'Not a clip');
+  await saveBuffer({ kind: 'billclip', ref: c.ref, name: `${c.ref} camera ${c.ch}.mp4`, mime: 'video/mp4', buf, by: 'camera',
+    keepUntil: new Date(Date.now() + (+c.keep_days || CREDIT_DAYS) * 864e5) });
+  await query(`UPDATE cam_clips SET state = 'done' WHERE id = $1`, [c.id]);
   res.json({ ok: true });
 }));
 
@@ -149,18 +186,51 @@ r.get('/live/:ch', regalAuth, asyncHandler(async (req, res) => {
   res.type('image/jpeg').send(Buffer.from(f.jpeg));
 }));
 
+/* Pictures for a bill, asked for by the till the moment it is made: { ch, ref, count, credit, at }.
+   A credit bill also gets a clip — from half its length before the bill to half after — made once the
+   recorder can play it back, about a quarter of an hour later. */
 r.post('/shot', regalAuth, asyncHandler(async (req, res) => {
   await ensure();
   const ch = chOk(req.body?.ch), ref = String(req.body?.ref || '').slice(0, 40), n = Math.max(1, Math.min(5, +req.body?.count || 3));
   if (!ref) throw new HttpError(400, 'Which bill?');
-  await query(`INSERT INTO cam_jobs (ch, ref, n) VALUES ($1, $2, $3)`, [ch, ref, n]);
-  res.json({ ok: true });
+  const cfg = await camCfg(), credit = !!req.body?.credit;
+  const days = keepDays(cfg, credit);
+  await query(`INSERT INTO cam_jobs (ch, ref, n, keep_days) VALUES ($1, $2, $3, $4)`, [ch, ref, n, days]);
+  const secs = credit ? clipSecs(cfg) : 0;
+  if (secs) {
+    const at = Math.min(Date.now(), +req.body?.at || Date.now());
+    await query(`INSERT INTO cam_clips (ch, ref, start_at, secs, keep_days, ready_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [ch, ref, new Date(at - secs * 500), secs, days, new Date(at + secs * 500 + RECORDER_LAG)]);
+  }
+  res.json({ ok: true, keepDays: days, clip: secs });
 }));
+const CASH_DAYS = 31, CREDIT_DAYS = 122;
+// the recorder only plays back a moment some ten minutes after it (it writes its recording in pieces)
+const RECORDER_LAG = 12 * 60000;
+const keepDays = (cfg, credit) => Math.max(1, Math.min(366, Math.round(+(credit ? cfg.creditDays : cfg.cashDays) || (credit ? CREDIT_DAYS : CASH_DAYS))));
+const clipSecs = (cfg) => { const v = cfg.creditClip === undefined || cfg.creditClip === '' ? 30 : +cfg.creditClip; return Math.max(0, Math.min(120, Math.round(v || 0))); };
+/* What has had its time goes: once an hour, files past their keep_until — and pictures from before
+   keep_until existed, after the longest keep (a credit bill's). */
+let tidied = 0;
+async function tidy() {
+  if (Date.now() - tidied < 3600e3) return; tidied = Date.now();
+  try {
+    await ensureFiles();
+    await query(`DELETE FROM files WHERE keep_until IS NOT NULL AND keep_until < $1`, [new Date()]);
+    await query(`DELETE FROM files WHERE kind = 'billcam' AND keep_until IS NULL AND created_at < $1`, [new Date(Date.now() - CREDIT_DAYS * 864e5)]);
+    await query(`DELETE FROM cam_clips WHERE created_at < $1`, [new Date(Date.now() - 8 * 864e5)]);
+  } catch (e) { tidied = 0; }
+}
 
 r.get('/shots/:ref', regalAuth, asyncHandler(async (req, res) => {
   await ensureFiles();
-  const { rows } = await query(`SELECT id, name, created_at FROM files WHERE kind = 'billcam' AND ref = $1 ORDER BY id`, [String(req.params.ref).slice(0, 40)]);
-  res.json({ ok: true, shots: rows.map(x => ({ id: Number(x.id), url: fileUrl(x.id), name: x.name, at: x.created_at })) });
+  await ensure();
+  const ref = String(req.params.ref).slice(0, 40);
+  const { rows } = await query(`SELECT id, kind, name, created_at, keep_until FROM files WHERE kind IN ('billcam', 'billclip') AND ref = $1 ORDER BY id`, [ref]);
+  const { rows: [pend] } = await query(`SELECT state, ready_at, note FROM cam_clips WHERE ref = $1 ORDER BY id DESC LIMIT 1`, [ref]);
+  const one = x => ({ id: Number(x.id), url: fileUrl(x.id), name: x.name, at: x.created_at, until: x.keep_until });
+  res.json({ ok: true, shots: rows.filter(x => x.kind === 'billcam').map(one), clips: rows.filter(x => x.kind === 'billclip').map(one),
+    clip: pend ? { state: pend.state, ready: pend.ready_at, note: pend.note || '' } : null });
 }));
 
 r.get('/events', regalAuth, asyncHandler(async (req, res) => {

@@ -16,13 +16,16 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['--no-sandbox'] });
 const pg = await b.newPage(); await pg.setViewport({ width: 1366, height: 768 });
 const errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('dialog', d => d.accept());
-const prints = []; let played = [], oldHelper = false;
+const prints = []; let played = [], oldHelper = false, withClip = false;
+const MP4 = process.argv[4] && fs.existsSync(process.argv[4]) ? fs.readFileSync(process.argv[4]) : null;
 await pg.setRequestInterception(true);
 pg.on('request', rq => { const u = rq.url();
-  // the pictures kept with a bill on the shop's server — three stand-ins
+  // what is kept with a bill on the shop's server — three stand-in pictures, and (a credit bill) a clip
   if (/\/api\/cams\/shots\//.test(u)) return rq.respond({ status: 200, contentType: 'application/json',
-    body: JSON.stringify({ shots: [0, 1, 2].map(k => ({ url: '/kept-shot-' + k + '.jpg', at: new Date().toISOString() })) }) });
+    body: JSON.stringify({ shots: [0, 1, 2].map(k => ({ url: '/kept-shot-' + k + '.jpg', at: new Date().toISOString(), until: new Date(Date.now() + 31 * 864e5).toISOString() })),
+      clips: withClip ? [{ url: '/kept-clip.mp4', at: new Date().toISOString(), until: new Date(Date.now() + 122 * 864e5).toISOString() }] : [] }) });
   if (/\/kept-shot-\d\.jpg$/.test(u)) return rq.respond({ status: 200, contentType: 'image/jpeg', body: JPEG });
+  if (/\/kept-clip\.mp4$/.test(u)) return rq.respond({ status: 200, contentType: 'video/mp4', body: MP4 || Buffer.alloc(0) });
   if (/^https?:\/\/(localhost|127\.0\.0\.1):4101\//.test(u)) {           // the camera helper, answered here
     const p = new URL(u);
     if (p.pathname === '/health') return rq.respond({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' },
@@ -101,6 +104,16 @@ ok(await pg.evaluate(() => document.querySelectorAll('.bc-thumbs img').length) =
 await pg.screenshot({ path: OUT + '/bill-cam-old.png' });
 await pg.evaluate(() => document.querySelector('[data-mode="rec"]').click()); await wait(300);
 ok(/needs a restart/.test(await pg.evaluate(() => document.getElementById('bcMsg').innerText)), 'and Recording says the helper needs a restart, and how');
+await pg.keyboard.press('Escape'); await wait(300);
+// a credit bill: its clip first, big, with the pictures beside it, and how long they are kept
+withClip = true;
+await pg.evaluate(n => window.eval('billCam')(n), no); await wait(2000);
+const sv = await pg.evaluate(() => ({ video: !!document.querySelector('.bc-main video'), thumbs: [...document.querySelectorAll('.bc-thumbs button')].map(b => b.innerText.split('\n')[0]),
+  keep: document.getElementById('bcKeep').textContent, playing: (document.querySelector('.bc-main video') || {}).readyState || 0 }));
+ok(sv.video && /Clip/.test(sv.thumbs[0]) && sv.thumbs.length === 4, 'a credit bill: the clip big, with the 3 pictures as thumbnails', sv.thumbs.join(' | '));
+ok(/Kept until/.test(sv.keep), 'and it says how long it is kept', sv.keep);
+if (MP4) ok(sv.playing >= 2, 'the clip loads and plays in the window', 'readyState ' + sv.playing);
+await pg.screenshot({ path: OUT + '/bill-cam-clip.png' });
 await pg.keyboard.press('Escape'); await wait(300);
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);

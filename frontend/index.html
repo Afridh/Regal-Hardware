@@ -546,7 +546,9 @@ body.privacy nav .navuser{position:relative}
 .bc-seg button:last-child{border-right:0}.bc-seg button:hover{background:var(--panel)}
 .bc-seg button.mid{background:var(--chip-rust,#B3261E);color:#fff}
 .bc-shots{position:absolute;inset:0;display:flex;flex-direction:column}
-.bc-shots .bc-big{flex:1;min-height:0;width:100%;object-fit:contain;display:block}
+.bc-shots .bc-main{flex:1;min-height:0;display:flex}
+.bc-shots .bc-big{flex:1;min-height:0;width:100%;height:100%;object-fit:contain;display:block;background:#000}
+.bc-thumbs .bc-play{display:flex;align-items:center;justify-content:center;aspect-ratio:16/9;color:#fff;font-size:13px;background:#2b2f35}
 .bc-thumbs{display:flex;gap:8px;justify-content:center;padding:8px;background:#151515}
 .bc-thumbs button{position:relative;width:132px;padding:0;border:2px solid transparent;border-radius:6px;overflow:hidden;background:#000;cursor:pointer;opacity:.7}
 .bc-thumbs button.on{border-color:#fff;opacity:1}
@@ -13620,9 +13622,14 @@ function camExtras(){
   const evs=(camEvents||[]).slice(0,12);
   return `<div class="cam-x">
    <div class="card"><h2 style="margin-top:0">Pictures with each bill</h2>
-    <div class="muted" style="margin-bottom:8px">When a bill is made, the counter camera takes three pictures a moment apart and keeps them with the bill. Open the bill and press <b>Counter camera</b> to see who was there.</div>
+    <div class="muted" style="margin-bottom:8px">When a bill is made, the counter camera takes three pictures a moment apart and keeps them with the bill. A credit bill also keeps a short clip from the recorder, from just before the bill to just after. Open the bill on the Bills page and press <b>Camera</b> → <b>Saved with the bill</b>.</div>
     <label class="chk"><input type="checkbox" data-camcfg="billShot" ${c.billShot!==false?'checked':''}> Keep pictures with each bill</label>
-    <div class="f" style="margin-top:8px"><label>Counter camera</label><select data-camcfg="counter"><option value="">— choose —</option>${cams.map(x=>`<option value="${x.ch}" ${String(c.counter)===String(x.ch)?'selected':''}>${noteEsc(x.name||camName(x.ch))}</option>`).join('')}</select></div></div>
+    <div class="f" style="margin-top:8px"><label>Counter camera</label><select data-camcfg="counter"><option value="">— choose —</option>${cams.map(x=>`<option value="${x.ch}" ${String(c.counter)===String(x.ch)?'selected':''}>${noteEsc(x.name||camName(x.ch))}</option>`).join('')}</select></div>
+    <div class="grid3" style="margin-top:8px">
+     <div class="f"><label>Cash bill pictures kept (days)</label><input type="number" min="1" max="366" data-camcfg="cashDays" value="${noteEsc(c.cashDays||31)}"></div>
+     <div class="f"><label>Credit bill pictures and clip kept (days)</label><input type="number" min="1" max="366" data-camcfg="creditDays" value="${noteEsc(c.creditDays||122)}"></div>
+     <div class="f"><label>Credit bill clip (seconds, 0 = none)</label><input type="number" min="0" max="120" data-camcfg="creditClip" value="${noteEsc(c.creditClip===undefined||c.creditClip===''?30:c.creditClip)}"></div></div>
+    <div class="muted" style="font-size:12px">After that they are removed from the shop server by themselves. The recorder's own recording is not touched — it keeps what it keeps (about 20 days).</div></div>
    <div class="card"><h2 style="margin-top:0">Alarms</h2>
     <div class="muted" style="margin-bottom:8px">What the recorder raises — movement, a line crossed, a camera covered, a disk fault — shows in the bell and the Action centre. Movement while the shop is open is customers, so it is only told when the shop is shut.</div>
     <label class="chk"><input type="checkbox" data-camcfg="alerts" ${c.alerts!==false?'checked':''}> Show the recorder's alarms here</label>
@@ -13678,8 +13685,10 @@ function camBillShot(inv){
   const c=camCfg();
   if(c.billShot===false||!c.counter||!(inv&&+inv.total>0)) return;
   if(!(window.regalBridge&&regalBridge.online())) return;
-  inv.cam={ch:String(c.counter),at:Date.now()};
-  camApi('shot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ch:c.counter,ref:inv.no,count:3})}).catch(()=>{});
+  const credit=inv.type==='CREDIT'||+inv.balance>0.005;
+  inv.cam={ch:String(c.counter),at:Date.now(),...(credit?{credit:true}:{})};
+  // a cash bill's pictures are kept for a month; a credit bill's, with a short clip, for four (Settings → Cameras)
+  camApi('shot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ch:c.counter,ref:inv.no,count:3,credit,at:inv.cam.at})}).catch(()=>{});
 }
 async function camBillView(no){
   const m=modal(`<h2>Counter camera — ${noteEsc(no)}</h2><div id="cbv" class="muted">Fetching the pictures…</div>
@@ -20936,20 +20945,21 @@ async function billCam(no){
   const SECS=180;
   const m=modal(`<div class="bc-top">
      <div><h2>${inv.no} on camera</h2><div class="muted">${inv.date} ${inv.time||''} · ${noteEsc(C(inv.customerId).name||'')} · ${fmt(inv.total)} · by ${noteEsc(inv.by||'')}</div></div>
-     <div class="bc-right"><div class="bc-tabs"><button data-mode="rec">▶ Recording</button><button data-mode="shots">🖼 Pictures at the bill</button></div>
+     <div class="bc-right"><div class="bc-tabs"><button data-mode="rec">▶ Recording</button><button data-mode="shots">🖼 Saved with the bill</button></div>
       <button class="btn ghost sm" data-act="closeModal">Close <i class="kbd">Esc</i></button></div></div>
     <div class="bc-cams" id="bcCams"></div>
     <div class="bc-view" id="bcView"><img id="bcImg" alt="" class="wait"><div class="bc-msg" id="bcMsg">Asking the recorder…</div></div>
     <div class="bc-bar" id="bcBar"><span class="bc-at" id="bcAt"></span>
      <div class="bc-seg"><button data-j="-120">« 2 min</button><button data-j="-30">‹ 30 s</button><button class="mid" data-j="0">At the bill</button><button data-j="30">30 s ›</button><button data-j="120">2 min »</button></div>
-     <span class="muted" style="font-size:11.5px" title="The time shown on the picture is the recorder's own clock">recorder's clock on the picture</span></div>`);
+     <span class="muted" style="font-size:11.5px" title="The time shown on the picture is the recorder's own clock">recorder's clock on the picture</span></div>
+    <div class="muted" id="bcKeep" style="font-size:11.5px;margin-top:6px;text-align:right"></div>`);
   m.querySelector('.box').classList.add('bc-box');
   const img=m.querySelector('#bcImg'), msg=m.querySelector('#bcMsg'), view=m.querySelector('#bcView');
   const say=(h)=>{ msg.innerHTML=h; msg.style.display=h?'flex':'none'; img.classList.toggle('wait',!!h) };
   const stop=()=>{ clearInterval(img._seen); img.onerror=null; img.removeAttribute('src') };
   const gone=setInterval(()=>{ if(!document.body.contains(m)){ clearInterval(gone); stop() } },500);
   const drawCams=()=>{ m.querySelector('#bcCams').innerHTML=mode==='rec'&&cams.length>1?cams.map(c=>`<button class="btn ghost sm ${c===cam?'on':''}" data-cam="${c.id}">📹 ${noteEsc(c.name||('Camera '+c.channel))}</button>`).join(''):'' };
-  const tabs=()=>{ m.querySelectorAll('.bc-tabs button').forEach(b=>b.classList.toggle('on',b.dataset.mode===mode)); m.querySelector('#bcBar').style.display=mode==='rec'?'':'none'; drawCams() };
+  const tabs=()=>{ m.querySelector('#bcKeep').textContent=''; m.querySelectorAll('.bc-tabs button').forEach(b=>b.classList.toggle('on',b.dataset.mode===mode)); m.querySelector('#bcBar').style.display=mode==='rec'?'':'none'; drawCams() };
   /* why the recording cannot be played here, and what to do about it */
   let why='';
   const play=()=>{
@@ -20959,19 +20969,27 @@ async function billCam(no){
     m.querySelector('#bcAt').textContent='From '+at.toLocaleTimeString('en-GB',{hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true})+(off?` · ${Math.abs(off)<60?Math.abs(off)+' s':Math.abs(off/60)+' min'} ${off<0?'before':'after'}`:' · the bill');
     say('Asking the recorder…');
     clearInterval(img._seen); img._seen=setInterval(()=>{ if(!document.body.contains(m)) return clearInterval(img._seen); if(img.naturalWidth>0){ clearInterval(img._seen); say('') } },250);
-    img.onload=()=>say(''); img.onerror=()=>say('<b>Nothing recorded at this moment on this camera</b>It may have been recorded over, or the camera was off — try another camera or time.');
+    img.onload=()=>say(''); img.onerror=()=>say(Date.now()-at.getTime()<12*60000?'<b>Not ready on the recorder yet</b>The recorder lets a moment be played back about ten minutes after it. Look again shortly — or watch it live on the Cameras page.'
+      :'<b>Nothing recorded at this moment on this camera</b>It may have been recorded over (the recorder keeps about 20 days), or the camera was off — try another camera or time.');
     img.src=camPlayUrl(cam,at,SECS);
   };
   /* the few pictures the helper kept with the bill on the shop's server — seen from anywhere */
   const shots=async()=>{
-    stop(); say('Fetching the pictures kept with this bill…');
+    stop(); say('Fetching what was kept with this bill…');
     try{ const r=await camApi('shots/'+encodeURIComponent(inv.no)); const j=await r.json();
       if(mode!=='shots'||!document.body.contains(m)) return;
-      if(!(j.shots||[]).length) return say('<b>No pictures were kept with this bill</b>The shop PC may have been off then, or no counter camera is chosen in Settings → Cameras.');
+      const pics=j.shots||[], clips=j.clips||[], pend=j.clip&&(j.clip.state==='new'||j.clip.state==='taking')?j.clip:null;
+      const until=[...clips,...pics].map(x=>x.until).filter(Boolean).sort().pop();
+      m.querySelector('#bcKeep').textContent=until?'Kept until '+new Date(until).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'';
+      if(!pics.length&&!clips.length) return say(pend?'<b>The clip is being made</b>From the recorder, about a quarter of an hour after the bill — look again then.'
+        :'<b>Nothing was kept with this bill</b>The shop PC may have been off then, or no counter camera is chosen in Settings → Cameras.'
+          +(inv.date<D(new Date(Date.now()-31*864e5))?'<br>Or its time is up: a cash bill\'s pictures are kept for a month, a credit bill\'s for four.':''));
       say(''); img.classList.add('wait');
-      // one big, the others small underneath to switch to — the moment the bill was made, a picture or two apart
-      view.insertAdjacentHTML('beforeend',`<div class="bc-shots"><img class="bc-big" src="${j.shots[0].url}" alt=""><div class="bc-thumbs">${j.shots.map((s,k)=>`<button class="${k?'':'on'}" data-u="${s.url}" title="Show this one"><img src="${s.url}" alt=""><span>${new Date(s.at).toLocaleTimeString('en-GB')}</span></button>`).join('')}</div></div>`);
-      view.querySelector('.bc-thumbs').onclick=(e)=>{ const b=e.target.closest('[data-u]'); if(!b) return; view.querySelector('.bc-big').src=b.dataset.u; view.querySelectorAll('.bc-thumbs button').forEach(x=>x.classList.toggle('on',x===b)) };
+      // the clip big (a credit bill), or the first picture; everything kept as a thumbnail underneath to switch to
+      const items=[...clips.map(c=>({k:'v',u:c.url,at:c.at})),...pics.map(s=>({k:'i',u:s.url,at:s.at}))];
+      const big=(x)=>x.k==='v'?`<video class="bc-big" src="${x.u}" controls autoplay muted playsinline></video>`:`<img class="bc-big" src="${x.u}" alt="">`;
+      view.insertAdjacentHTML('beforeend',`<div class="bc-shots"><div class="bc-main">${big(items[0])}</div><div class="bc-thumbs">${items.map((x,k)=>`<button class="${k?'':'on'}" data-k="${k}" title="${x.k==='v'?'The clip':'Show this one'}">${x.k==='v'?'<b class="bc-play">▶ Clip</b>':`<img src="${x.u}" alt="">`}<span>${new Date(x.at).toLocaleTimeString('en-GB')}</span></button>`).join('')}${pend?'<button disabled title="Made from the recorder about a quarter of an hour after the bill"><b class="bc-play">⏳ Clip coming</b></button>':''}</div></div>`);
+      view.querySelector('.bc-thumbs').onclick=(e)=>{ const b=e.target.closest('[data-k]'); if(!b) return; view.querySelector('.bc-main').innerHTML=big(items[+b.dataset.k]); view.querySelectorAll('.bc-thumbs button').forEach(x=>x.classList.toggle('on',x===b)) };
     }catch(e){ if(mode==='shots') say('<b>Could not reach the shop server</b>') }
   };
   const show=()=>{ tabs(); view.querySelector('.bc-shots')?.remove(); if(mode==='shots') shots(); else play() };

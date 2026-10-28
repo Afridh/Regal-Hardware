@@ -76,5 +76,10 @@ is('a column named text is not retyped', /,\s*text varchar\(300\)/.test(notes) &
 const jobs = ddl(toMySQL(`CREATE TABLE IF NOT EXISTS print_jobs (id bigserial PRIMARY KEY, html text NOT NULL, error text)`, []).sql);
 is('the type text still becomes LONGTEXT', /html LONGTEXT NOT NULL/.test(jobs) && /error LONGTEXT/.test(jobs), true);
 
+/* a column added to a table that is already there gets MySQL's types too (keep_until on files) */
+is('an added timestamptz column is a DATETIME', ddl('ALTER TABLE files ADD COLUMN IF NOT EXISTS keep_until timestamptz'), 'ALTER TABLE files ADD COLUMN keep_until DATETIME');
+is('an added boolean with a default', ddl('ALTER TABLE x ADD COLUMN IF NOT EXISTS on_ boolean NOT NULL DEFAULT true'), 'ALTER TABLE x ADD COLUMN on_ TINYINT(1) NOT NULL DEFAULT true');
+is('an added varchar is left as it is', ddl('ALTER TABLE t ADD COLUMN IF NOT EXISTS starter varchar(40)'), 'ALTER TABLE t ADD COLUMN starter varchar(40)');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

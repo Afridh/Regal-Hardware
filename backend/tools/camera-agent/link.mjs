@@ -16,11 +16,16 @@
    Where the server is, and the key, come from config.local.json ("server", "key") or else from the
    print helper's, which already has both. The recorder is "recorder": { "host", "port" }. */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { snapshot, channels, deviceInfo, parseChallenge, digestHeader, tag, isapi } from './hik.mjs';
 import { sadpSearch } from './recorder.mjs';
 
-export function startLink({ cfg, here, log, recorder }) {
+/* "20261027T182142" — the recorder's clock, which is this PC's local time; Hikvision wants a Z after it */
+const recStamp = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`;
+
+export function startLink({ cfg, here, log, recorder, ffmpeg }) {
   const printCfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(here, '../print-agent/config.local.json'), 'utf8').replace(/^﻿/, '')) } catch { return {} } })();
   const SERVER = String(cfg.server || printCfg.server || '').replace(/\/+$/, '');
   const KEY = cfg.key || printCfg.key || '';
@@ -56,6 +61,45 @@ export function startLink({ cfg, here, log, recorder }) {
   };
   status(); setInterval(status, 5 * 60 * 1000);
 
+  /* ---- a credit bill's clip ----
+     Made from the recorder's own recording of the bill's moment (so it can be made a little later, or
+     after this PC was off — for as long as the recorder still has it): played back, shrunk to a small
+     H.264 MP4 a browser plays anywhere, and sent to be kept with the bill. One at a time, so the
+     recorder and this PC are never asked for more than one playback by this. */
+  const clipping = new Set(), clipQueue = [];
+  let clipBusy = false;
+  const nextClip = async () => {
+    if (clipBusy || !clipQueue.length) return;
+    clipBusy = true;
+    const c = clipQueue.shift();
+    const tell = (q, body) => fetch(api('clip', `&id=${c.id}${q}`), { method: 'POST', headers: { 'Content-Type': 'video/mp4' }, body: body || '', signal: AbortSignal.timeout(120000) }).catch(() => {});
+    const out = path.join(os.tmpdir(), `regal-clip-${c.id}.mp4`);
+    try {
+      if (!ffmpeg) { await tell('&fail=' + encodeURIComponent('no ffmpeg on the shop PC')); return; }
+      await recorder.ready();
+      if (!recorder.host) throw new Error('recorder not found');
+      const secs = Math.max(5, Math.min(120, +c.secs || 30));
+      const url = `rtsp://${encodeURIComponent(cfg.user)}:${encodeURIComponent(cfg.pass)}@${recorder.host}:${cfg.rtsp || 554}/Streaming/tracks/${c.ch}?starttime=${recStamp(new Date(c.start))}Z`;
+      // 854×480 at 10 a second: a face and a hand at the counter, in well under a megabyte or two
+      let said = '';
+      const ok = await new Promise((done) => {
+        const ff = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-rtsp_transport', 'tcp', '-i', url, '-t', String(secs), '-an',
+          '-vf', 'scale=854:480,fps=10', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-pix_fmt', 'yuv420p',
+          '-movflags', '+faststart', '-fs', '9000000', '-y', out]);
+        ff.stderr.on('data', d => { said = String(d).trim().split('\n')[0].replaceAll(encodeURIComponent(cfg.pass), '***').replaceAll(cfg.pass, '***').slice(0, 150) });
+        const kill = setTimeout(() => { try { ff.kill() } catch {} }, (secs + 90) * 1000);
+        ff.on('exit', (code) => { clearTimeout(kill); done(code === 0) });
+        ff.on('error', () => { clearTimeout(kill); done(false) });
+      });
+      const size = ok && fs.existsSync(out) ? fs.statSync(out).size : 0;
+      // "400" for a moment under half an hour old: the recorder has not put it out for playback yet — asked again later
+      if (size < 1000 && /\b400\b/.test(said) && Date.now() - new Date(c.start) < 30 * 60000) throw new Error('the recorder has not got it ready yet — again later');
+      if (size < 1000) { await tell('&fail=' + encodeURIComponent('the recorder had nothing to play then' + (said ? ' — ' + said : ''))); log('clip', c.ref, '— nothing from the recorder', said); }
+      else { const r = await tell('', fs.readFileSync(out)); log('clip', c.ref, (size / 1024).toFixed(0) + ' KB', r && r.ok ? 'kept' : 'not taken by the server'); }
+    } catch (e) { log('clip', c.ref, '—', e.message); clipping.delete(c.id); }   // asked for again in ten minutes
+    finally { try { fs.unlinkSync(out) } catch {} clipBusy = false; setTimeout(nextClip, 1000); }
+  };
+
   /* ---- what is wanted now ---- */
   let alertsOn = false, bad = 0;
   const taking = new Set();
@@ -85,6 +129,8 @@ export function startLink({ cfg, here, log, recorder }) {
             setTimeout(() => taking.delete(job.id), 60000);
           })();
         }
+        for (const c of j.clips || []) if (!clipping.has(c.id)) { clipping.add(c.id); clipQueue.push(c); }
+        nextClip();
       }
     } catch (e) { /* the shop's internet blinked — ask again */ }
     setTimeout(loop, wait);

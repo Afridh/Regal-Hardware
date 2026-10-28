@@ -293,13 +293,16 @@ export function ddl(sql) {
     const cols = idx[4].replace(/\b(?:lower|upper)\s*\(\s*([\w.]+)\s*\)/gi, '$1');
     return `CREATE ${idx[1] || ''}INDEX ${idx[2]} ON ${idx[3]} (${cols})`;
   }
+  // a column added later is typed the same way as one made with its table — "timestamptz" would stop
+  // the whole setup on MySQL, and everything after it in the same breath with it
+  const types = (x) => x.replace(/\bbytea\b/gi, 'LONGBLOB').replace(/\btimestamptz\b/gi, 'DATETIME').replace(/\bjsonb\b/gi, 'JSON')
+    .replace(/\bDEFAULT\s+now\(\)/gi, 'DEFAULT CURRENT_TIMESTAMP').replace(/\bboolean\b/gi, 'TINYINT(1)')
+    // PostgreSQL's text has no size; MySQL's TEXT stops at 64 KB, short of a bill sent to print
+    // only where text is the type (after a column name), never a column that is itself called text
+    .replace(/(\b[A-Za-z_]\w*\s+)text\b/gi, '$1LONGTEXT');
+  if (/^ALTER\s+TABLE\s+\S+\s+ADD\s+COLUMN\b/i.test(s)) return types(s);
   if (/^CREATE\s+TABLE/i.test(s)) {
-    s = s.replace(/\bbigserial\b/gi, 'BIGINT AUTO_INCREMENT').replace(/\bserial\b/gi, 'INT AUTO_INCREMENT')
-      .replace(/\bbytea\b/gi, 'LONGBLOB').replace(/\btimestamptz\b/gi, 'DATETIME').replace(/\bjsonb\b/gi, 'JSON')
-      .replace(/\bDEFAULT\s+now\(\)/gi, 'DEFAULT CURRENT_TIMESTAMP').replace(/\bboolean\b/gi, 'TINYINT(1)')
-      // PostgreSQL's text has no size; MySQL's TEXT stops at 64 KB, short of a bill sent to print
-      // only where text is the type (after a column name), never a column that is itself called text
-      .replace(/(\b[A-Za-z_]\w*\s+)text\b/gi, '$1LONGTEXT');
+    s = types(s.replace(/\bbigserial\b/gi, 'BIGINT AUTO_INCREMENT').replace(/\bserial\b/gi, 'INT AUTO_INCREMENT'));
     if (!/\bENGINE\s*=/i.test(s)) s += ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci';
   }
   return s;

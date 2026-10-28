@@ -188,7 +188,8 @@ const srv = http.createServer(async (req, res) => {
     if (prev) { try { prev.ff.kill() } catch (e) {} }   // one ffmpeg per camera, not one per reload
     live.set(key, { ff, seen: Date.now() });
     let said = '';
-    ff.stderr.on('data', d => { said = String(d).trim().split('\n')[0] });
+    // ffmpeg names the address it failed on, password and all: never into the log
+    ff.stderr.on('data', d => { said = String(d).trim().split('\n')[0].replaceAll(encodeURIComponent(cfg.pass), '***').replaceAll(cfg.pass, '***') });
 
     res.writeHead(200, {
       'Content-Type': 'multipart/x-mixed-replace; boundary=ffmpeg',
@@ -229,5 +230,5 @@ srv.listen(cfg.port, '127.0.0.1', () => {
   log(`camera helper on http://127.0.0.1:${cfg.port}`);
   log(cfg.allow.length ? `cameras it may reach: ${cfg.allow.join(', ')}` : 'it may reach any camera on this network');
   if (!cfg.pass) log('it will not fetch anything until a password is set');
-  else startLink({ cfg, here, log, recorder });             // the line out to regalhw.lk: watching from anywhere, bill pictures, alarms
+  else startLink({ cfg, here, log, recorder, ffmpeg: FFMPEG });   // the line out to regalhw.lk: watching from anywhere, bill pictures and clips, alarms
 });
