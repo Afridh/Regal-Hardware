@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Deliveries</title>
+<link rel="icon" href="regal-logo.png">
+<style>
+/* A driver's day on a phone: one card per stop, in the shop's order — call, map, on the way, delivered
+   (a photo, the customer's signature, the cash), or could not deliver. Big buttons, one hand, outdoors. */
+:root{--red:#B3261E;--ink:#1d1b1c;--steel:#6a6466;--line:#e3dfe0;--bg:#f4f2f2;--ok:#12613d;--okbg:#e3f4ea;--warn:#8a5d06;--warnbg:#fff4df}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  padding:0 max(14px,env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}
+header{position:sticky;top:0;z-index:5;background:var(--red);color:#fff;margin:0 calc(-1 * max(14px,env(safe-area-inset-left)));padding:calc(10px + env(safe-area-inset-top)) 16px 12px}
+header b{display:block;font-size:18px}header span{opacity:.85;font-size:13px}
+.sum{display:flex;gap:8px;margin:12px 0}
+.sum div{flex:1;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.sum span{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--steel);font-weight:700}.sum b{font-size:18px}
+.stop{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+.stop.done{opacity:.6}.stop.out{border-color:#1f3b5a;box-shadow:inset 4px 0 0 #1f3b5a}
+.top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.top b{font-size:16px}.n{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--ink);color:#fff;font-weight:800;font-size:13px;margin-right:6px}
+.tag{font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--line);white-space:nowrap}
+.tag.out{background:#dde7f2;color:#1f3b5a}.tag.delivered{background:var(--okbg);color:var(--ok)}.tag.failed{background:#fbe4de;color:var(--red)}
+.addr{margin:6px 0;color:var(--ink)}.muted{color:var(--steel);font-size:13px}
+.cod{margin:8px 0;padding:8px 10px;border-radius:10px;background:var(--warnbg);color:var(--warn);font-weight:700}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.btn{display:flex;align-items:center;justify-content:center;gap:6px;min-height:48px;border-radius:12px;border:1px solid var(--line);background:#fff;color:var(--ink);font:700 15px system-ui,sans-serif;text-decoration:none;cursor:pointer}
+.btn.go{background:#1f3b5a;border-color:#1f3b5a;color:#fff}.btn.done{background:var(--ok);border-color:var(--ok);color:#fff}.btn.full{grid-column:1/-1}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;z-index:10}
+.sheet>div{background:#fff;width:100%;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));max-height:92vh;overflow:auto}
+.sheet h3{margin:0 0 8px}label{display:block;font-size:12px;font-weight:700;color:var(--steel);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.05em}
+input[type=text],input[type=number]{width:100%;min-height:46px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:16px}
+canvas{width:100%;height:150px;border:1px dashed var(--steel);border-radius:10px;touch-action:none;background:#fff}
+.ph{width:100%;max-height:200px;object-fit:cover;border-radius:10px;margin-top:6px;display:none}
+.msg{padding:30px 10px;text-align:center;color:var(--steel)}
+</style>
+</head>
+<body>
+<header><b id="hName">Deliveries</b><span id="hSub">Loading…</span></header>
+<div class="sum" id="sum"></div>
+<div id="list"><div class="msg">Loading your stops…</div></div>
+<script>
+const k = new URLSearchParams(location.search).get('k') || '';
+let data = null;
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const money = n => 'Rs ' + (+n || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const TAG = { planned: 'to go', out: 'on the way', delivered: 'delivered', failed: 'not delivered' };
+
+async function load() {
+  try {
+    const r = await fetch('/api/dlv/driver?k=' + encodeURIComponent(k)); const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Could not load');
+    data = j; draw();
+  } catch (e) { $('#list').innerHTML = `<div class="msg">${esc(e.message)}</div>`; $('#hSub').textContent = '' }
+}
+function draw() {
+  const st = data.stops, left = st.filter(s => s.status === 'planned' || s.status === 'out');
+  $('#hName').textContent = data.driver.name;
+  $('#hSub').textContent = `${data.shop.name} · ${new Date(data.day).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}`;
+  $('#sum').innerHTML = `<div><span>Stops left</span><b>${left.length}</b></div><div><span>Done</span><b>${st.length - left.length}</b></div><div><span>To collect</span><b>${money(left.reduce((a, s) => a + s.cod, 0))}</b></div>`;
+  $('#list').innerHTML = st.length ? st.map((s, i) => `<div class="stop ${s.status === 'delivered' || s.status === 'failed' ? 'done' : s.status}">
+    <div class="top"><div><span class="n">${i + 1}</span><b>${esc(s.who)}</b><div class="muted">${esc(s.no)}${s.slot ? ' · ' + esc(s.slot) : ''}${s.bill ? ' · bill ' + esc(s.bill) : ''}</div></div><span class="tag ${s.status}">${TAG[s.status] || s.status}</span></div>
+    <div class="addr">${esc(s.address)}</div>
+    ${s.items ? `<div class="muted">${esc(s.items)}</div>` : ''}${s.note ? `<div class="muted">Note: ${esc(s.note)}</div>` : ''}
+    ${s.cod > 0 && s.status !== 'delivered' ? `<div class="cod">Collect ${money(s.cod)}</div>` : ''}
+    ${s.status === 'delivered' ? `<div class="muted">Delivered ${esc(s.at || '')}${s.collected ? ' · collected ' + money(s.collected) : ''}</div>` : ''}
+    ${s.status === 'planned' || s.status === 'out' ? `<div class="row">
+      ${s.phone ? `<a class="btn" href="tel:${esc(s.phone)}">📞 Call</a>` : '<span></span>'}
+      <a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address)}">🗺 Map</a>
+      ${s.status === 'planned' ? `<button class="btn go full" data-out="${s.id}">On the way</button>` : ''}
+      <button class="btn done" data-done="${s.id}">Delivered</button><button class="btn" data-fail="${s.id}">Could not</button></div>` : ''}
+  </div>`).join('') : '<div class="msg">No deliveries for you today.</div>';
+}
+async function send(id, body) {
+  const r = await fetch('/api/dlv/driver/' + encodeURIComponent(id), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ k, ...body }) });
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'It did not go — try again');
+}
+/* a photo from the phone's camera, made small enough to send on mobile data */
+function shrink(file) {
+  return new Promise((ok, no) => { const img = new Image(); img.onload = () => { const s = Math.min(1, 1024 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+    c.width = Math.round(img.width * s); c.height = Math.round(img.height * s); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', .75)) };
+    img.onerror = () => no(new Error('That picture could not be read')); img.src = URL.createObjectURL(file) });
+}
+function doneSheet(s) {
+  const el = document.createElement('div'); el.className = 'sheet';
+  el.innerHTML = `<div><h3>Delivered to ${esc(s.who)}</h3>
+    <label>Photo of the goods there</label><input type="file" id="ph" accept="image/*" capture="environment"><img class="ph" id="phv" alt="">
+    <label>Their signature</label><canvas id="sg"></canvas><div class="muted" id="sgClear" style="text-align:right;cursor:pointer">clear</div>
+    <label>Received by</label><input type="text" id="rb" placeholder="name">
+    <label>Cash collected</label><input type="number" id="cc" inputmode="decimal" value="${s.cod || 0}">
+    <div class="row"><button class="btn" id="no">Back</button><button class="btn done" id="ok">Done</button></div></div>`;
+  document.body.appendChild(el);
+  let photo = '', drew = false;
+  const cv = $('#sg', el), ctx = cv.getContext('2d'); cv.width = cv.clientWidth * 2; cv.height = 300; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  let down = false; const pt = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height] };
+  cv.onpointerdown = e => { down = true; drew = true; const [x, y] = pt(e); ctx.beginPath(); ctx.moveTo(x, y); cv.setPointerCapture(e.pointerId) };
+  cv.onpointermove = e => { if (!down) return; const [x, y] = pt(e); ctx.lineTo(x, y); ctx.stroke() };
+  cv.onpointerup = () => { down = false };
+  $('#sgClear', el).onclick = () => { ctx.clearRect(0, 0, cv.width, cv.height); drew = false };
+  $('#ph', el).onchange = async e => { const f = e.target.files[0]; if (!f) return; try { photo = await shrink(f); const v = $('#phv', el); v.src = photo; v.style.display = 'block' } catch (x) { alert(x.message) } };
+  $('#no', el).onclick = () => el.remove();
+  $('#ok', el).onclick = async () => { const b = $('#ok', el); b.disabled = true; b.textContent = 'Sending…';
+    try { await send(s.id, { status: 'delivered', photo, sign: drew ? cv.toDataURL('image/png') : '', receiver: $('#rb', el).value.trim(), collected: +$('#cc', el).value || 0 }); el.remove(); load() }
+    catch (x) { alert(x.message); b.disabled = false; b.textContent = 'Done' } };
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-out],[data-done],[data-fail]'); if (!t || !data) return;
+  const s = data.stops.find(x => x.id === (t.dataset.out || t.dataset.done || t.dataset.fail));
+  if (t.dataset.done) return doneSheet(s);
+  try {
+    if (t.dataset.out) { t.disabled = true; await send(s.id, { status: 'out' }) }
+    else { const why = prompt('Why could it not be delivered?', 'nobody home'); if (why === null) return; await send(s.id, { status: 'failed', note: why }) }
+    load();
+  } catch (x) { alert(x.message); t.disabled = false }
+});
+load(); setInterval(load, 30000);
+</script>
+</body>
+</html>

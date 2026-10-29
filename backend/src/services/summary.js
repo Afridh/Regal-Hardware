@@ -69,7 +69,7 @@ export async function summaryTick(send, booksEdit) {
   try {
     await send(CFG.msg || {}, to, letter(CFG, 'owner', fill(tpl, { shop: (CFG.shop || {}).name || '', ...summaryOf(data, day) })));
     await query(`UPDATE sum_runs SET ok = true WHERE day = $1`, [day]);
-    if (booksEdit) await booksEdit('regal', 'closing summary', (d) => { d.S = d.S || {}; d.S.summarySent = { ...(d.S.summarySent || {}), [day]: 'server' }; }).catch(() => {});
+    if (booksEdit) await booksEdit('regal', 'closing summary', (d) => { d.S = d.S || {}; d.S.summarySent = { ...(d.S.summarySent || {}), [day]: 'server' }; }, { full: true }).catch(() => {});
   } catch (e) {
     await query(`UPDATE sum_runs SET ok = false, note = $1 WHERE day = $2`, [String(e.message || e).slice(0, 300), day]);
   }

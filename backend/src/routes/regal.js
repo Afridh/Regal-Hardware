@@ -643,7 +643,11 @@ r.post('/books/:key/shift', shiftAuth, asyncHandler(async (req, res) => {
    on the device is not enough, or anyone at the door could ask in someone else's name. A leave is checked
    against the same rules as at the till; then the ask goes into the books as the till would make it — on
    the calendar, in Approvals, and on the approvers' bell — and the owner says yes or no at the till. */
-async function booksEdit(key, by, fn) {
+/* An edit the server makes itself. opts.full: it changes more than shift punches (a driver's delivery, the
+   day's summary sent), so it counts as a whole-document save — a till holding older books is then told
+   "someone saved first" and puts both together, instead of laying its copy over this and keeping only the
+   punches. Without it (the break watch, the shift page's asks) a till's save goes straight through. */
+export async function booksEdit(key, by, fn, opts = {}) {
   return withTransaction(async client => {
     const { rows: [cur] } = await client.query(dbKind === 'mysql' ? 'SELECT rev, data FROM books WHERE `key` = ? FOR UPDATE' : 'SELECT rev, data FROM books WHERE key = $1 FOR UPDATE', [key]);
     if (!cur) throw new HttpError(404, 'The books are not on the server yet — open the shop system once first');
@@ -651,6 +655,7 @@ async function booksEdit(key, by, fn) {
     data.S = data.S || {};
     const out = await fn(data);
     const next = Number(cur.rev) + 1;
+    if (opts.full) data._fullRev = next;
     await client.query(dbKind === 'mysql' ? 'UPDATE books SET data = ?, rev = ?, updated_at = NOW(), updated_by = ? WHERE `key` = ?' : 'UPDATE books SET data = $1, rev = $2, updated_at = now(), updated_by = $3 WHERE key = $4',
       [JSON.stringify(data), next, by, key]);
     return { rev: next, out };

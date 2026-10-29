@@ -6063,6 +6063,8 @@ const CFG={
  // smart reorder (Purchasing): sales looked at (days), stock to hold after the goods come (days), a supplier's
  // usual delivery time unless set on them (days), and when an item counts as not selling (days)
  reorder:{days:60,cover:14,lead:7,dead:90},
+ // deliveries: the usual charge, the time slots, and whether the customer is texted when it is on the way
+ dlv:{charge:0,slots:['Morning','Afternoon','Evening'],sms:true},
  trade:{rate:2,sms:true,kinds:['Mason','Electrician','Plumber','Carpenter','Painter','Welder','Other']},
  tpl:{
   cashSale:{label:'Cash bill',vars:'{shop} {invoice} {total} {link} {customer}',
@@ -6104,6 +6106,8 @@ const CFG={
     text:'A reminder: part {part} of {parts} of your easy-payment plan, {amount}, is due on {due}.\nPaid so far: {paid} of {total}.\nDetails: {link}'},
   planLate:{label:'Easy payments — part late',vars:'{shop} {part} {parts} {amount} {due} {paid} {total} {link}',
     text:'Part {part} of {parts} of your easy-payment plan, {amount}, was due on {due} and is not paid yet.\nPaid so far: {paid} of {total}.\nPlease pay at your earliest. Details: {link}'},
+  // sent by the server when the driver presses "On the way" on their phone (services: routes/deliveries.js)
+  dlvOut:{label:'Delivery — on the way',vars:'{shop} {no} {driver} {codPart}',text:'Your delivery {no} is on the way with {driver}.{codPart}'},
   hireDue:{label:'Tool hire — due back',vars:'{shop} {customer} {item} {due} {days}',
     text:'A reminder: the {item} you hired is due back{dueWhen}.\nIt is charged by the day until it comes back.\nPlease bring it in, or call us to keep it longer.'},
   tradeThanks:{label:'Tradesman — thank you for a customer',vars:'{shop} {name} {customer} {invoice} {total} {earn} {pendingPart} {due}',
@@ -12348,7 +12352,7 @@ const $=(s)=>document.querySelector(s);
    role's sections — SECTIONS below — and does not depend on these headings.) */
 const views=[
  ['updates','What is new'],['actions','Action centre'],
- ['grp','Sell'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills'],['receipts','Take a payment','F7'],['docs','Quotes & delivery notes'],['collect','Goods to collect'],['hire','Tool hire'],['counter','Open & close'],['cashup','Day book'],
+ ['grp','Sell'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills'],['receipts','Take a payment','F7'],['docs','Quotes & delivery notes'],['collect','Goods to collect'],['dlv','Deliveries'],['hire','Tool hire'],['counter','Open & close'],['cashup','Day book'],
  ['grp','Customers'],['customers','Customers','F8'],['dues','Credit follow-up'],['plans','Easy payments'],['trades','Tradesmen'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],
  ['grp','Buying'],['suppliers','Suppliers','F12'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Payment requests'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels','F11'],
@@ -12430,7 +12434,8 @@ function allowed(v){
   if(v === 'petty') return String(S.user.role||'').toLowerCase()!=='salesman'||(S.petty||[]).some(p=>p.status==='open'&&p.who===S.user.name);   // Sales staff: only while holding some            // the counter hands it out; whoever holds some puts in what they spent
   if(v === 'dues') return allowed('customers');
   if(v === 'hire') return allowed('pos');
-  if(v === 'plans') return allowed('customers');           // whoever bills can hire out and take back
+  if(v === 'plans') return allowed('customers');
+  if(v === 'dlv') return allowed('pos')||allowed('bills');           // whoever bills can hire out and take back
   if(v === 'trades') return allowed('customers');   // the tradesmen who send customers, and what they are owed   // who owes and what they have been told — whoever looks after customers
   if(v === 'collect') return allowed('pos')||allowed('bills');   // goods paid for and waiting to be collected
   if(v === 'returns') return allowed('pos');  // whoever may bill may take goods back          // everyone has one; each item on it keeps to the page it comes from
@@ -12522,6 +12527,7 @@ const ICONS={
   dues:'M12 8v4l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0zM4 4l3 3M20 4l-3 3',
   hire:'M3 17h4l2-6h6l2 6h4M7 17a2 2 0 104 0M13 17a2 2 0 104 0M9 11V6h6v5',
   plans:'M4 6h16M4 12h16M4 18h10M18 16l2 2 3-4',
+  dlv:'M3 7h11v9H3zM14 10h4l3 3v3h-7M7 19a2 2 0 100-4 2 2 0 000 4zM17 19a2 2 0 100-4 2 2 0 000 4z',
   trades:'M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z',
   suppliers:'M3 8h11v9H3zM14 11h4l3 3v3h-7zM6.5 20a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17.5 20a1.5 1.5 0 100-3 1.5 1.5 0 000 3z',
   orders:'M8 4h9l3 4v12H8zM8 4H4v16h4M12 11h5M12 15h5',
@@ -13012,7 +13018,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,hire:hirePage,plans:plansPage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,hire:hirePage,plans:plansPage,dlv:dlvPage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     try{ mn.innerHTML = r() }
     catch(err){
@@ -21334,6 +21340,7 @@ function billDetail(inv){
     <div><span>Change</span>
      ${inv.balance>0?`<button class="btn tape sm" data-act="custPay" data-id="${inv.customerId}">Take payment</button>`:''}
      ${+inv.balance>0.005&&inv.customerId!==1&&!(S.plans||[]).some(p=>p.status!=='closed'&&(p.bills||[]).includes(inv.no))?`<button class="btn ghost sm" data-act="planNew" data-no="${inv.no}">Easy payments</button>`:''}
+     ${(S.deliveries||[]).some(d=>d.bill===inv.no&&d.status!=='cancelled')?'':`<button class="btn ghost sm" data-act="dlvNew" data-no="${inv.no}">Deliver</button>`}
      <button class="btn ghost sm" data-act="billCopy" data-no="${inv.no}">Bill again</button>
      ${canEdit?`<button class="btn ghost sm" data-act="billEdit" data-no="${inv.no}">Edit in the till</button><button class="btn ghost sm" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}</div>
    </div>
@@ -27908,6 +27915,103 @@ function pettySettleModal(id){
   };
 }
 
+/* ================== DELIVERIES ==================
+   A bill to take to the customer: where, which day and slot, which driver, what to collect at the door.
+   The board shows each day by driver in route order (↑ ↓ to change it). Each driver has their own page
+   on their phone (regalhw.lk/driver?k=…, routes/deliveries.js on the server): their stops, call, map,
+   On the way (the customer is texted), Delivered with a photo, a signature and the cash, or Could not.
+   What the driver does comes back to every till with the books. The cash they bring back is handed in
+   here: for an account customer it is their payment against the bill; for a walk-in the delivery charge
+   becomes a cash bill. A charge for an account customer is a small bill on their account when planned. */
+let dlvDay=null;
+const dlvCfg=()=>({charge:0,slots:['Morning','Afternoon','Evening'],sms:true,...(CFG.dlv||{})});
+const dlvAll=()=>{ if(!Array.isArray(S.deliveries)) S.deliveries=[]; return S.deliveries };
+const drivers=()=>{ if(!Array.isArray(S.drivers)) S.drivers=[]; return S.drivers };
+const dlvKey=()=>{ const a=new Uint8Array(12); crypto.getRandomValues(a); return [...a].map(x=>'abcdefghjkmnpqrstuvwxyz23456789'[x%31]).join('') };
+const dlvLink=(d)=>((S.web&&S.web.settings&&S.web.settings.domain)||location.host)+'/driver?k='+d.key;
+function dlvNew(no){
+  const inv=S.sales.find(x=>x.no===no); if(!inv) return; const c=C(inv.customerId), cfg=dlvCfg(), acc=c&&c.id!==1;
+  const tomorrow=new Date(today); tomorrow.setDate(tomorrow.getDate()+1);
+  const m=modal(`<h2>Deliver ${inv.no}</h2><div class="muted">${noteEsc(c.name)} · ${inv.lines.length} line${inv.lines.length===1?'':'s'} · ${money2(inv.total)}${+inv.balance>0.005?' · '+money2(inv.balance)+' unpaid':''}</div>
+   <div class="grid2" style="margin-top:8px"><div class="f"><label>To</label><input id="dvW" value="${noteEsc(acc?c.name:'')}" placeholder="who it is for"></div><div class="f"><label>Mobile</label><input id="dvP" inputmode="tel" value="${noteEsc((acc&&c.phone)||inv.phone||'')}"></div></div>
+   <div class="f"><label>Address</label><input id="dvA" value="${noteEsc((acc&&c.address)||'')}" placeholder="street, town — what the driver puts in the map"></div>
+   <div class="grid3"><div class="f"><label>Day</label><input id="dvD" type="date" value="${D(today)}"></div>
+    <div class="f"><label>Slot</label><select id="dvS">${cfg.slots.map(s=>`<option>${noteEsc(s)}</option>`).join('')}</select></div>
+    <div class="f"><label>Driver</label><select id="dvR"><option value="">— later —</option>${drivers().filter(d=>d.active!==false).map(d=>`<option value="${d.id}">${noteEsc(d.name)}</option>`).join('')}</select></div></div>
+   <div class="grid2"><div class="f"><label>Delivery charge</label><input id="dvC" type="number" min="0" step="any" value="${+cfg.charge||0}"></div>
+    <div class="f"><label>Note for the driver</label><input id="dvN" placeholder="e.g. call before, gate code"></div></div>
+   <div class="muted" id="dvCod"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="dvOk">Plan the delivery</button></div>`);
+  const g=id=>m.querySelector('#'+id);
+  const cod=()=>+((+inv.balance>0.005?+inv.balance:0)+Math.max(0,+g('dvC').value||0)).toFixed(2);
+  const sumUp=()=>{ g('dvCod').textContent=cod()>0?`The driver collects ${money2(cod())} at the door${acc?' (it can also stay on their account)':''}.`:'Nothing to collect at the door.' };
+  g('dvC').oninput=sumUp; sumUp();
+  g('dvOk').onclick=()=>{ const address=g('dvA').value.trim(); if(!address) return toast('Where is it going?');
+    const charge=Math.max(0,+g('dvC').value||0), no2='DLV-'+String(dlvAll().length+1).padStart(5,'0');
+    let chargeBill=null;
+    if(charge>0&&acc) try{ chargeBill=completeSale({lines:[{pid:OPEN_PID,name:`Delivery — ${no2}`,qty:1,price:+charge.toFixed(2),disc:0,open:true}],customerId:c.id,pays:[{method:'CREDIT',amount:0}],override:true}).no }catch(e){ return toast(e.message) }
+    const day=g('dvD').value||D(today), drv=g('dvR').value||null;
+    const sameRun=dlvAll().filter(d=>d.date===day&&d.driver===drv).length;
+    dlvAll().push({id:'dv'+Date.now().toString(36),no:no2,bill:inv.no,chargeBill,cid:acc?c.id:null,who:g('dvW').value.trim()||c.name,phone:g('dvP').value.replace(/[^\d+]/g,''),
+      address,date:day,slot:g('dvS').value,driver:drv,charge,cod:cod(),note:g('dvN').value.trim(),order:sameRun+1,status:'planned',
+      items:inv.lines.slice(0,6).map(l=>`${fq(l.qty)} × ${lineName(l)}`).join(', ')+(inv.lines.length>6?` and ${inv.lines.length-6} more`:''),made:D(today),by:S.user.name,events:[]});
+    m.remove(); persist(true); render(); toast(`${no2} planned for ${day}`,'ok') };
+}
+function dlvHandIn(id){
+  const d=dlvAll().find(x=>x.id===id); if(!d||!(+d.collected>0)||d.handedIn) return;
+  try{
+    if(d.cid) receiveCustomer({customerId:d.cid,amount:+d.collected,method:'CASH',against:[d.bill,d.chargeBill].filter(Boolean)});
+    else{ const ch=Math.min(+d.charge||0,+d.collected), bill=S.sales.find(x=>x.no===d.bill);
+      if(ch>0) completeSale({lines:[{pid:OPEN_PID,name:`Delivery — ${d.no}`,qty:1,price:+ch.toFixed(2),disc:0,open:true}],customerId:1,pays:[{method:'CASH',amount:+ch.toFixed(2)}],override:true});
+      const rest=+(d.collected-ch).toFixed(2); if(rest>0.005&&bill&&+bill.balance>0.005) receiveCustomer({customerId:bill.customerId,amount:rest,method:'CASH',against:[bill.no]}) }
+    d.handedIn={at:D(today),by:S.user.name,amount:+d.collected}; persist(true); render(); toast(`${money2(d.collected)} handed in for ${d.no}`,'ok');
+  }catch(e){ toast(e.message) }
+}
+function dlvDriver(id){
+  const d=id?drivers().find(x=>x.id===id):{name:'',phone:'',active:true};
+  const m=modal(`<h2>${id?noteEsc(d.name):'A driver'}</h2>
+   <div class="grid2"><div class="f"><label>Name</label><input id="drN" value="${noteEsc(d.name)}"></div><div class="f"><label>Mobile</label><input id="drP" inputmode="tel" value="${noteEsc(d.phone||'')}"></div></div>
+   ${id?`<div class="f"><label>Their page — open it on their phone</label><input readonly value="${noteEsc(dlvLink(d))}" onclick="this.select()"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" id="drSend" ${d.phone?'':'disabled'}>Text it to them</button><button class="btn ghost sm" id="drNew">Make a new link (the old one stops)</button>
+     <label class="chk" style="margin:0"><input type="checkbox" id="drA" ${d.active!==false?'checked':''}> still driving</label></div>`:''}
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Close</button><button class="btn tape" id="drOk">Save</button></div>`);
+  m.querySelector('#drOk').onclick=()=>{ const name=m.querySelector('#drN').value.trim(); if(!name) return toast('A name is needed');
+    if(id){ d.name=name; d.phone=m.querySelector('#drP').value.replace(/[^\d+]/g,''); d.active=m.querySelector('#drA').checked }
+    else drivers().push({id:'dr'+Date.now().toString(36),name,phone:m.querySelector('#drP').value.replace(/[^\d+]/g,''),key:dlvKey(),active:true});
+    m.remove(); persist(true); render(); toast('Saved','ok') };
+  if(id){ m.querySelector('#drNew').onclick=()=>{ d.key=dlvKey(); persist(true); m.remove(); dlvDriver(id); toast('A new link — the old one no longer opens','ok') };
+    m.querySelector('#drSend').onclick=()=>{ sms(d.phone,`Your deliveries for ${CFG.shop.name}: ${dlvLink(d)}\nOpen it on this phone each day.`,'staff'); toast('Texted to '+d.name,'ok') } }
+}
+function dlvPage(){
+  const day=dlvDay||D(today), all=dlvAll().filter(d=>d.status!=='cancelled');
+  const list=all.filter(d=>d.date===day||(d.date<day&&(d.status==='planned'||d.status==='out')));
+  const byDrv=new Map(); list.forEach(d=>{ const k=d.driver||''; if(!byDrv.has(k)) byDrv.set(k,[]); byDrv.get(k).push(d) });
+  const cashOut=all.filter(d=>+d.collected>0&&!d.handedIn), tags={planned:['to go','warn'],out:['on the way','blue'],delivered:['delivered','ok'],failed:['not delivered','bad']};
+  const days=[0,1,2,3].map(i=>{ const x=new Date(today); x.setDate(x.getDate()+i); return D(x) });
+  return `<h1>Deliveries</h1>
+   <div class="row" style="margin-bottom:12px">
+    ${stat('This day',list.length,list.filter(d=>d.status==='delivered').length+' delivered','b')}
+    ${stat('On the way',list.filter(d=>d.status==='out').length,'with the drivers','y')}
+    ${stat('Not delivered',list.filter(d=>d.status==='failed').length,'to plan again','r')}
+    ${stat('Cash with drivers',money2(cashOut.reduce((a,d)=>a+(+d.collected||0),0)),cashOut.length+' to hand in','g')}
+   </div>
+   <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+    <div class="chips" style="margin:0">${days.map((x,i)=>`<button class="${x===day?'on':''}" data-act="dlvDay" data-d="${x}">${i===0?'Today':i===1?'Tomorrow':new Date(x).toLocaleDateString('en-GB',{weekday:'short',day:'numeric'})}</button>`).join('')}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${drivers().map(d=>`<button class="btn ghost sm" data-act="dlvDriver" data-id="${d.id}">🚚 ${noteEsc(d.name)}</button>`).join('')}<button class="btn ghost sm" data-act="dlvDriver" data-id="">+ Driver</button></div></div>
+   ${cashOut.length?`<div class="card note" style="margin-bottom:10px"><b>Cash to hand in</b>${cashOut.map(d=>`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-top:6px"><span>${d.no} · ${noteEsc(d.who)} · ${money2(d.collected)} · ${noteEsc((drivers().find(x=>x.id===d.driver)||{}).name||'')}</span><button class="btn tape sm" data-act="dlvHandIn" data-id="${d.id}">Handed in</button></div>`).join('')}</div>`:''}
+   ${list.length?[...byDrv.entries()].map(([k,ds])=>{ const dr=drivers().find(x=>x.id===k); ds.sort((a,b)=>(a.order||0)-(b.order||0));
+     return `<div class="card" style="margin-bottom:10px"><b style="font-size:15px">${dr?'🚚 '+noteEsc(dr.name):'No driver yet'}</b> <span class="muted">· ${ds.length} stop${ds.length===1?'':'s'}</span>
+      <div style="overflow-x:auto;margin-top:8px"><table><tr><th>#</th><th>Delivery</th><th>To</th><th>Address</th><th>Slot</th><th class="n">Collect</th><th></th><th></th></tr>
+      ${ds.map((d,i)=>`<tr><td style="white-space:nowrap">${i+1} <button class="btn ghost sm" data-act="dlvMove" data-id="${d.id}" data-dir="-1" ${i?'':'disabled'}>↑</button><button class="btn ghost sm" data-act="dlvMove" data-id="${d.id}" data-dir="1" ${i<ds.length-1?'':'disabled'}>↓</button></td>
+        <td>${d.no}<div class="muted">bill ${d.bill}</div></td><td><b>${noteEsc(d.who)}</b><div class="muted">${noteEsc(d.phone||'')}</div></td><td>${noteEsc(d.address)}</td><td>${noteEsc(d.slot||'')}${d.date<day?' <span class="tag bad">from '+d.date+'</span>':''}</td>
+        <td class="n">${+d.cod>0?money2(d.cod):'—'}</td><td><span class="tag ${tags[d.status][1]}">${tags[d.status][0]}</span>${d.photo?` <a href="${d.photo}" target="_blank" rel="noopener">photo</a>`:''}${d.sign?` <a href="${d.sign}" target="_blank" rel="noopener">signed</a>`:''}${d.failWhy?`<div class="muted">${noteEsc(d.failWhy)}</div>`:''}</td>
+        <td style="white-space:nowrap"><select data-dlvdrv="${d.id}" style="width:auto;margin:0"><option value="">driver…</option>${drivers().filter(x=>x.active!==false).map(x=>`<option value="${x.id}" ${x.id===d.driver?'selected':''}>${noteEsc(x.name)}</option>`).join('')}</select>
+         ${d.status==='failed'?`<button class="btn ghost sm" data-act="dlvAgain" data-id="${d.id}">Again tomorrow</button>`:''}</td></tr>`).join('')}</table></div></div>` }).join('')
+    :'<div class="card muted">Nothing to deliver this day. Plan one from a bill: Bills → the bill → Deliver.</div>'}`;
+}
+document.addEventListener('change',e=>{ const id=e.target&&e.target.dataset&&e.target.dataset.dlvdrv; if(!id) return;
+  const d=dlvAll().find(x=>x.id===id); if(!d) return; d.driver=e.target.value||null; d.order=dlvAll().filter(x=>x.date===d.date&&x.driver===d.driver&&x!==d).length+1; persist(true); render() });
+
 /* ================== EASY PAYMENTS ==================
    A bill (or all a customer owes) split into monthly parts. Nothing about how they pay changes: a payment
    settles their oldest bills first as always, and a part counts as paid once what has been paid toward the
@@ -31375,6 +31479,10 @@ document.addEventListener('click',e=>{
     trCam:()=>camTrail(a.dataset.id),
     siteEdit:()=>siteEdit(+a.dataset.id,a.dataset.s||null), siteStmt:()=>siteStatement(+a.dataset.id,a.dataset.s),
     roMake:()=>roMake(+a.dataset.id||a.dataset.id),
+    dlvNew:()=>dlvNew(a.dataset.no), dlvDay:()=>{ dlvDay=a.dataset.d; render() }, dlvDriver:()=>dlvDriver(a.dataset.id||null), dlvHandIn:()=>dlvHandIn(a.dataset.id),
+    dlvAgain:()=>{ const d=dlvAll().find(x=>x.id===a.dataset.id); if(!d) return; const x=new Date(today); x.setDate(x.getDate()+1); d.date=D(x); d.status='planned'; delete d.doneAt; persist(true); render(); toast(d.no+' is on tomorrow\'s run','ok') },
+    dlvMove:()=>{ const d=dlvAll().find(x=>x.id===a.dataset.id); if(!d) return; const run=dlvAll().filter(x=>x.date===d.date&&x.driver===d.driver).sort((p,q)=>(p.order||0)-(q.order||0));
+      run.forEach((x,i)=>x.order=i+1); const i=run.indexOf(d), j=i+(+a.dataset.dir); if(j<0||j>=run.length) return; [run[i].order,run[j].order]=[run[j].order,run[i].order]; persist(true); render() },
     planNew:()=>planNew(a.dataset.no), planView:()=>planView(a.dataset.id), planClose:()=>{ const p=plansAll().find(x=>x.id===a.dataset.id); if(p&&confirm('Close this plan? Their bills stay owed; the reminders stop.')){ p.status='closed'; p.closed=D(today); closeModals(); persist(true); render() } },
     hireTab:()=>{ hireTab=a.dataset.t; render() }, hireItem:()=>hireItemEdit(a.dataset.id||null), hireNew:()=>hireNew(), hireBack:()=>hireBack(a.dataset.id), hireRemind:()=>hireRemind(a.dataset.id),
     tradePick:()=>tradePick(), tradeNew:()=>tradeEdit(null), tradeEdit:()=>tradeEdit(a.dataset.id), tradePay:()=>tradePay(a.dataset.id), tradeStmt:()=>tradeStatement(a.dataset.id),
