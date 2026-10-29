@@ -6053,6 +6053,9 @@ const CFG={
  // bill reaches each step in days, a monthly statement, and new credit stopped past stopDays (0 = never)
  dues:{on:false,at:'10:00',steps:[7,30,60],monthly:true,monthDay:1,stopDays:0},
  // tradesmen who bring customers (Customers → Tradesmen): their commission, in % of the bill, unless set per person
+ // smart reorder (Purchasing): sales looked at (days), stock to hold after the goods come (days), a supplier's
+ // usual delivery time unless set on them (days), and when an item counts as not selling (days)
+ reorder:{days:60,cover:14,lead:7,dead:90},
  trade:{rate:2,sms:true,kinds:['Mason','Electrician','Plumber','Carpenter','Painter','Welder','Other']},
  tpl:{
   cashSale:{label:'Cash bill',vars:'{shop} {invoice} {total} {link} {customer}',
@@ -25271,6 +25274,100 @@ function diarySays(ds, extra){
 
 /* ---- the page ---- */
 let purchTab='plan';
+/* ---- smart reorder ----
+   What sells, not only what is under its reorder level. Each item's pace is what it sold a day over the
+   last few weeks (goods brought back taken off). It is ordered when what is on the floor and already on
+   order will not last until a new delivery arrives and then a couple of weeks more — the supplier's usual
+   delivery time (theirs, or the shop's) plus the weeks to hold. Items under their reorder level are on the
+   list whatever their pace. Each supplier's list becomes a supplier order in one press, to check and send.
+   Alongside: what has not sold in months (and the money standing on the shelf in it), and items whose cost
+   from the supplier has gone up since last time — the profit on them now, and the price that keeps it. */
+const roCfg=()=>({days:60,cover:14,lead:7,dead:90,...(CFG.reorder||{})});
+let roTick={};                                   // which suggested lines are left out, by item
+function reorderData(){
+  const c=roCfg(), since=ago(+c.days||60), deadSince=ago(+c.dead||90), sold={}, lastSold={};
+  for(const s of S.sales){ for(const l of s.lines||[]){ if(!l.pid) continue;
+    if(String(s.date)>=since) sold[l.pid]=(sold[l.pid]||0)+(+l.qty||0);
+    if(+l.qty>0&&(!lastSold[l.pid]||String(s.date)>lastSold[l.pid])) lastSold[l.pid]=String(s.date) } }
+  const onOrder={};
+  for(const o of S.orders||[]){ if(o.dir!=='OUT'||['received','cancelled','rejected'].includes(o.status)) continue;
+    for(const l of o.lines||[]) if(l.known&&l.pid) onOrder[l.pid]=(onOrder[l.pid]||0)+(+l.qty||0) }
+  const live=S.products.filter(p=>p.active!==false&&!p.open&&p.id!==OPEN_PID);
+  const lines=[];
+  for(const p of live){
+    const pace=Math.max(0,(sold[p.id]||0)/(+c.days||60)), sup=lastSupplier(p.id), lead=+((sup&&sup.leadDays)||c.lead||7);
+    const have=(+p.stock||0)+(onOrder[p.id]||0), want=pace*(lead+(+c.cover||14));
+    let qty=Math.ceil(Math.max(0,want-have));
+    // under its reorder level: ordered back up — but only if it sells at all (what has not sold in months is under Not selling)
+    if(p.stock<=p.min&&qty<=0&&!(onOrder[p.id]>0)&&lastSold[p.id]>=deadSince) qty=Math.ceil(Math.max(1,(+p.min||0)*2-(+p.stock||0)));
+    if(qty<=0) continue;
+    lines.push({p,sup,pace,lead,qty,days:pace>0?Math.floor((+p.stock||0)/pace):null,onOrder:onOrder[p.id]||0,below:p.stock<=p.min});
+  }
+  lines.sort((a,b)=>(a.days??9999)-(b.days??9999));
+  const dead=live.filter(p=>+p.stock>0&&!(lastSold[p.id]>=deadSince)).map(p=>({p,last:lastSold[p.id]||null,value:+(p.stock*(+p.cost||0)).toFixed(2)}))
+    .sort((a,b)=>b.value-a.value);
+  const costs=[];
+  for(const p of live){
+    const buys=[]; for(const pu of S.purchases){ for(const l of pu.lines||[]) if(l.pid===p.id&&+l.cost>0) buys.push({date:pu.date,cost:+(l.landed||l.cost),sup:pu.supplierId}) }
+    if(buys.length<2) continue; buys.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    const now=buys[buys.length-1], was=buys[buys.length-2];
+    if(now.cost>was.cost*1.02){ const price=+p.retail||0, mWas=price?((price-was.cost)/price*100):0, mNow=price?((price-now.cost)/price*100):0;
+      costs.push({p,was,now,up:(now.cost-was.cost)/was.cost*100,price,mWas,mNow,keep:mWas<99?Math.ceil(now.cost/(1-mWas/100)):price}) }
+  }
+  costs.sort((a,b)=>(a.mNow-a.mWas)-(b.mNow-b.mWas));
+  return {lines,dead,costs,cfg:c};
+}
+function roOrderTab(RO){
+  const c=RO.cfg, by=new Map();
+  RO.lines.forEach(x=>{ const k=x.sup?x.sup.id:'none'; if(!by.has(k)) by.set(k,{sup:x.sup,lines:[]}); by.get(k).lines.push(x) });
+  const groups=[...by.values()].sort((a,b)=>(a.sup?0:1)-(b.sup?0:1));
+  return `<div class="card note" style="margin-bottom:10px">Ordered by what sells: the last <b>${c.days} days</b> of sales, enough to last until the goods come (each supplier's delivery time — <b>${c.lead} days</b> unless set on them) and <b>${c.cover} days</b> more. Items under their reorder level are here whatever their pace. Tick off what you do not want, then make the order — it opens as a supplier order to check and send.
+     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center">${[['days','Sales looked at (days)'],['cover','Hold after delivery (days)'],['lead','Usual delivery time (days)'],['dead','Not selling after (days)']].map(([k,l])=>`<label style="display:flex;gap:6px;align-items:center;font-size:12.5px">${l}<input type="number" min="1" data-rocfg="${k}" value="${+c[k]}" style="width:70px;margin:0"></label>`).join('')}</div></div>
+   ${groups.length?groups.map(g=>{ const keep=g.lines.filter(x=>!roTick[x.p.id]), est=keep.reduce((a,x)=>a+x.qty*(+x.p.cost||0),0);
+     return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+       <div><b style="font-size:15px">${g.sup?noteEsc(g.sup.name):'No supplier yet'}</b> <span class="muted">· ${g.lines.length} item${g.lines.length===1?'':'s'} · about ${money2(est)}</span></div>
+       <div style="display:flex;gap:8px;align-items:center">${g.sup?`<label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12.5px">delivers in<input type="number" min="1" data-rolead="${g.sup.id}" value="${+(g.sup.leadDays||c.lead)}" style="width:60px;margin:0">days</label>
+        <button class="btn tape sm" data-act="roMake" data-id="${g.sup.id}" ${keep.length?'':'disabled'}>Make the order (${keep.length})</button>`:'<span class="muted">bought from nobody yet — order them by hand</span>'}</div></div>
+      <div style="overflow-x:auto;margin-top:8px"><table><tr><th></th><th>Item</th><th class="n">On the floor</th><th class="n">On order</th><th class="n">Sells a day</th><th>Lasts</th><th class="n">Order</th></tr>
+      ${g.lines.map(x=>`<tr${roTick[x.p.id]?' style="opacity:.45"':''}><td><input type="checkbox" data-rotick="${x.p.id}" ${roTick[x.p.id]?'':'checked'}></td>
+        <td><b>${noteEsc(x.p.name)}</b>${x.below?' <span class="tag warn">under reorder level</span>':''}<div class="muted">${noteEsc(x.p.code||'')}</div></td>
+        <td class="n">${fq(x.p.stock)} ${x.p.unit}</td><td class="n">${x.onOrder?fq(x.onOrder):'—'}</td><td class="n">${x.pace>0?fq(+x.pace.toFixed(2)):'—'}</td>
+        <td>${x.days===null?'<span class="muted">not selling lately</span>':`<span class="tag ${x.days<=x.lead?'bad':x.days<=x.lead+7?'warn':'ok'}">${x.days} day${x.days===1?'':'s'}</span>`}</td>
+        <td class="n"><input type="number" min="0" step="any" data-roqty="${x.p.id}" value="${roQty[x.p.id]??x.qty}" style="width:80px;margin:0;text-align:right"></td></tr>`).join('')}</table></div></div>` }).join('')
+     :'<div class="card muted">Nothing needs ordering — everything will last until a delivery comes.</div>'}`;
+}
+let roQty={};
+function roDeadTab(RO){
+  const tot=RO.dead.reduce((a,x)=>a+x.value,0);
+  return `<div class="card note" style="margin-bottom:10px">Items with stock that have not sold in <b>${RO.cfg.dead} days</b> — <b>${money2(tot)}</b> standing on the shelf at cost. Worth a discount, a bundle, or sending back.</div>
+   ${RO.dead.length?`<div class="card" style="overflow-x:auto"><table><tr><th>Item</th><th class="n">On the floor</th><th class="n">At cost</th><th>Last sold</th><th></th></tr>
+    ${RO.dead.slice(0,300).map(x=>`<tr><td><b>${noteEsc(x.p.name)}</b><div class="muted">${noteEsc(x.p.code||'')}</div></td><td class="n">${fq(x.p.stock)} ${x.p.unit}</td><td class="n">${money2(x.value)}</td>
+      <td>${x.last?x.last+' · '+daysAgo(x.last)+' days ago':'<span class="muted">never on a bill</span>'}</td><td><button class="btn ghost sm" data-act="editProd" data-id="${x.p.id}">Open</button></td></tr>`).join('')}</table></div>`
+    :'<div class="card muted">Everything with stock has sold lately.</div>'}`;
+}
+function roCostTab(RO){
+  return `<div class="card note" style="margin-bottom:10px">Items whose cost from the supplier went up on the last delivery. The profit on each at today's price, what it was, and the price that would keep the old profit.</div>
+   ${RO.costs.length?`<div class="card" style="overflow-x:auto"><table><tr><th>Item</th><th class="n">Cost was</th><th class="n">Cost now</th><th class="n">Up</th><th class="n">Selling at</th><th class="n">Profit was</th><th class="n">Profit now</th><th class="n">Keeps the profit</th><th></th></tr>
+    ${RO.costs.map(x=>`<tr><td><b>${noteEsc(x.p.name)}</b><div class="muted">${x.now.date}${x.now.sup?' · '+noteEsc((SU(x.now.sup)||{}).name||''):''}</div></td><td class="n">${money2(x.was.cost)}</td><td class="n">${money2(x.now.cost)}</td>
+      <td class="n"><span class="tag warn">+${x.up.toFixed(1)}%</span></td><td class="n">${money2(x.price)}</td><td class="n">${x.mWas.toFixed(1)}%</td><td class="n"><b style="color:${x.mNow<x.mWas-0.05?'var(--chip-rust)':'inherit'}">${x.mNow.toFixed(1)}%</b></td>
+      <td class="n">${money2(x.keep)}</td><td><button class="btn ghost sm" data-act="editProd" data-id="${x.p.id}">Change price</button></td></tr>`).join('')}</table></div>`
+    :'<div class="card muted">No costs have gone up on the last deliveries.</div>'}`;
+}
+/* a supplier's suggested lines, as a supplier order to check and send */
+function roMake(sid){
+  const RO=reorderData(), lines=RO.lines.filter(x=>x.sup&&x.sup.id===sid&&!roTick[x.p.id]);
+  go('orders');                                   // the order form lives on the Supplier orders page
+  newPO(sid);
+  poDraft.lines=lines.map(x=>{ const q=+(roQty[x.p.id]??x.qty)||0; return {pid:x.p.id,desc:x.p.name,unit:x.p.unit,qty:q,est:x.p.cost,known:true} }).filter(l=>l.qty>0);
+  poDraft.note='From What to order';
+  poDraft.prodOpen=false; render();
+  toast(`${poDraft.lines.length} line${poDraft.lines.length===1?'':'s'} on the order — check it and send`,'ok');
+}
+document.addEventListener('change',e=>{ const el=e.target; if(!el||!el.dataset) return;
+  if(el.dataset.rotick){ if(el.checked) delete roTick[el.dataset.rotick]; else roTick[el.dataset.rotick]=true; render() }
+  else if(el.dataset.roqty){ roQty[el.dataset.roqty]=Math.max(0,+el.value||0) }
+  else if(el.dataset.rolead){ const s=SU(+el.dataset.rolead)||S.suppliers.find(x=>String(x.id)===el.dataset.rolead); if(s){ s.leadDays=Math.max(1,Math.round(+el.value||1)); persist(true); render() } }
+  else if(el.dataset.rocfg){ CFG.reorder={...roCfg(),[el.dataset.rocfg]:Math.max(1,Math.round(+el.value||1))}; persist(true); render() } });
 function purchasing(){
   const cfg=planCfg(), L=cashLadder(), weeks=ladderWeeks(L);
   const low=ladderLow(L), pinch=ladderPinch(L), room=planHeadroom(L);
@@ -25278,10 +25375,11 @@ function purchasing(){
   const chqOut=S.cheques.filter(c=>c.dir==='ISSUED'&&['ISSUED','PRINTED'].includes(c.status));
   const soon=d=>parts.filter(x=>x.due<=ago(-d)).reduce((a,x)=>a+x.owing,0)
               +chqOut.filter(c=>c.date<=ago(-d)).reduce((a,c)=>a+(+c.amount||0),0);
-  const tabs=[['plan','The plan'],['due','What falls due',parts.length+chqOut.length],
-              ['diary','Cheque diary'],['terms','Credit periods'],['season','Season & rules']];
+  const RO=reorderData();
+  const tabs=[['plan','The plan'],['order','What to order',RO.lines.length],['dead','Not selling',RO.dead.length],['costs','Costs gone up',RO.costs.length],
+              ['due','What falls due',parts.length+chqOut.length],['diary','Cheque diary'],['terms','Credit periods'],['season','Season & rules']];
 
-  const body=({plan:()=>planTab(L,weeks,cfg),due:()=>dueTab(parts,chqOut,L),
+  const body=({plan:()=>planTab(L,weeks,cfg),order:()=>roOrderTab(RO),dead:()=>roDeadTab(RO),costs:()=>roCostTab(RO),due:()=>dueTab(parts,chqOut,L),
                diary:()=>diaryTab(),
                terms:()=>termsTab(),season:()=>seasonTab(cfg,L)})[purchTab]();
 
@@ -30976,6 +31074,7 @@ document.addEventListener('click',e=>{
     pcSubmit:()=>pettySubmitModal(a.dataset.id),
     trCam:()=>camTrail(a.dataset.id),
     siteEdit:()=>siteEdit(+a.dataset.id,a.dataset.s||null), siteStmt:()=>siteStatement(+a.dataset.id,a.dataset.s),
+    roMake:()=>roMake(+a.dataset.id||a.dataset.id),
     tradePick:()=>tradePick(), tradeNew:()=>tradeEdit(null), tradeEdit:()=>tradeEdit(a.dataset.id), tradePay:()=>tradePay(a.dataset.id), tradeStmt:()=>tradeStatement(a.dataset.id),
     darkToggle:()=>darkSet(!darkOn(),a),
     duSave:()=>duesSave(), duReload:()=>{ DUES.data=null; DUES.err=''; duesLoad(); render() },
