@@ -6067,6 +6067,9 @@ const CFG={
     VAT, so a bill's VAT is the part of its total that is tax: total × rate ÷ (100 + rate). SSCL is reported
     on the turnover without VAT, only when switched on. Reports only — the books are not changed by it. */
  tax:{rate:18,sscl:false,ssclRate:2.5},
+ /* the weighing scale: what its labels look like (prefix, item digits, weight digits — or the price, in rupees),
+    and for one cabled to the PC its speed and, for scales that only answer when asked, what to send */
+ scale:{on:true,prefix:'20,21,22,23,24,25,26,27,28,29',plu:5,digits:5,price:false,baud:9600,ask:''},
  // deliveries: the usual charge, the time slots, and whether the customer is texted when it is on the way
  dlv:{charge:0,slots:['Morning','Afternoon','Evening'],sms:true},
  trade:{rate:2,sms:true,kinds:['Mason','Electrician','Plumber','Carpenter','Painter','Welder','Other']},
@@ -6569,6 +6572,12 @@ function settings(){
      <div class="grid3">${fld('shop.vat','VAT registration number','Put in only if the shop is VAT registered — bills then become TAX INVOICES and show the VAT')}${fld('tax.rate','VAT rate %','Shelf prices include it','number')}${fld('tax.ssclRate','SSCL rate %','On the turnover without VAT','number')}</div>
      ${fld('tax.sscl','SSCL','The shop pays SSCL — show it on the VAT & SSCL return','check')}
      <div class="muted">The VAT & SSCL return is under Reports → For my accountant. Have your accountant check the figures before you file.</div></div>
+    <div class="card" style="margin-top:12px"><b>Weighing scale</b>
+     <div class="muted" style="margin:4px 0 8px">Labels from a label scale: scan them at the till and the item comes up with its weight. The number on the scale is the item's PLU (on the item), or else its item number.</div>
+     <div class="grid3">${fld('scale.prefix','Label starts with','e.g. 20,21,22 — as set on the scale')}${fld('scale.plu','Item digits','After the prefix','number')}${fld('scale.digits','Weight digits','Grams (or rupees)','number')}</div>
+     <div class="grid2">${fld('scale.on','Scale labels','Read scale labels at the till','check')}${fld('scale.price','The label carries','the price, not the weight','check')}</div>
+     <div class="muted" style="margin:10px 0 6px">A scale cabled to this PC: press <b>K</b> in the quantity box. Chrome asks once which port it is on.</div>
+     <div class="grid3">${fld('scale.baud','Speed (baud)','9600 for most scales','number')}${fld('scale.ask','Send to ask for the weight','Empty if it sends by itself; e.g. W or \\r')}<div class="f"><label>&nbsp;</label><button class="btn ghost" data-act="scaleTest">Test the scale</button></div></div></div>
     <div class="card note" style="margin-top:10px">These go straight onto every bill, voucher and statement. Print one after changing to check the fit.</div>
     ${isSuperUser()?`<div class="card note" style="border:1px solid var(--chip-rust,#C0442C);margin-top:16px">
       <b style="color:var(--chip-rust,#C0442C)">Delete everything & start fresh</b>
@@ -17968,7 +17977,7 @@ function posClassic(){
        // mixed into a paint base, a size. The stock and the codes are on the match list above.
        ? `<input id="csName" value="${String(CS.name||(sel.id===OPEN_PID?'':sel.name)).toUpperCase().replace(/"/g,'&quot;')}" ${sel.id===OPEN_PID?'placeholder="OPEN ITEM — type what to call it, then Enter"':''} maxlength="90" spellcheck="false" autocomplete="off" ${CS.nameEdit?'':'readonly title="Press E to change the name on this bill"'}>${(CS.last||sel.serialised)?`<em>${[CS.last?`<b class="lastp">last time ${money2(CS.last.price)} on ${CS.last.no}</b>`:'',sel.serialised?'serial asked on Enter':''].filter(Boolean).join(' · ')}</em>`:''}`
        : '<i>scan or key a code — F1</i>'}</div></div>
-    <label class="f-qty"><span>QTY <i title="Press W for the warranty and serial numbers">W warranty</i></span><input id="csQty" type="number" step="any" value="${CS.qty}"></label>
+    <label class="f-qty"><span>QTY <i title="Press W for the warranty and serial numbers">W warranty</i>${'serial' in navigator?' <i title="Press K to read the weighing scale">K scale</i>':''}</span><input id="csQty" type="number" step="any" value="${CS.qty}"></label>
     <label class="f-price"><span>PRICE</span><input id="csPrice" type="number" step="any" value="${CS.price||''}"></label>
     <div class="f-mrp"><span>MRP</span><div class="till-ro">${sel?money2(sel.mrp):'—'}</div></div>
     ${CFG.cost&&CFG.cost.atTill&&can('cost')?`<div class="f-cc"><span>COST CODE</span><div class="till-ro till-cc">${sel?(tillCostCode(sel)||'—'):'—'}</div></div>`:''}
@@ -18223,6 +18232,64 @@ function csAskDel(i){
   m.querySelector('#cdNo').onclick=()=>{ stop(); m.remove() };
   m.querySelector('#cdYes').focus();
 }
+/* ================== WEIGHING SCALE ==================
+   Two ways a weight gets onto the bill.
+   1. A label from a label-printing scale: a 13-digit code that starts with one of the scale's prefixes
+      (20–29 as usual), then the item's number on the scale (the PLU set on the item, or else its item number),
+      then the weight in grams (or the price in rupees), then the check digit. Scanned or typed into the code
+      box, the item comes up with that weight as its quantity. A real barcode on an item always wins.
+   2. A scale cabled to this PC (USB or serial): K in the quantity box reads it. Chrome asks once which port;
+      after that it is read whenever K is pressed. Most counter scales send the weight as a line of text
+      ("ST,GS,+  1.235kg"); the last number on a steady line is taken. */
+function scaleLabel(code){
+  const sc=CFG.scale||{}, v=String(code||'').trim(); if(sc.on===false||!/^\d{13}$/.test(v)) return null;
+  const pre=String(sc.prefix||'').split(/[,\s]+/).filter(Boolean).find(x=>v.startsWith(x)); if(!pre) return null;
+  const n=+sc.plu||5, w=+sc.digits||5; if(pre.length+n+w>12) return null;
+  const plu=v.slice(pre.length,pre.length+n), val=+v.slice(pre.length+n,pre.length+n+w), nz=s=>String(s||'').replace(/^0+/,'');
+  const live=S.products.filter(x=>x.active!==false);
+  const p=live.find(x=>x.plu&&nz(x.plu)===nz(plu))||live.find(x=>!x.plu&&x.num&&nz(x.num)===nz(plu));
+  if(!p) return {plu:nz(plu)||'0',miss:true};
+  if(sc.price){ const pr=priceFor(p,1); return {p,qty:pr>0?+(val/pr).toFixed(3):1} }
+  return {p,qty:+(val/1000).toFixed(3)};
+}
+/* a quantity put into the entry row as if typed — the price follows it as it would */
+function csSetQty(n){ const f=$('#csQty'); if(!f){ CS.qty=n; return } f.value=String(n); f.dispatchEvent(new Event('input')); f.focus(); f.select() }
+const SCALE={port:null,last:null,at:0,steady:false,buf:''};
+async function scaleOpen(){
+  if(SCALE.port) return true;
+  if(!('serial' in navigator)) throw new Error('This browser cannot reach a scale — use Chrome or Edge on the PC the scale is plugged into');
+  let port=(await navigator.serial.getPorts())[0];
+  if(!port) port=await navigator.serial.requestPort();
+  await port.open({baudRate:+(CFG.scale||{}).baud||9600});
+  SCALE.port=port; scaleLoop(port); return true;
+}
+async function scaleLoop(port){
+  const dec=new TextDecoder();
+  try{ while(port.readable){ const rd=port.readable.getReader();
+    try{ for(;;){ const {value,done}=await rd.read(); if(done) break; SCALE.buf=(SCALE.buf+dec.decode(value)).slice(-400);
+      const lines=SCALE.buf.split(/[\r\n\x02\x03]+/); SCALE.buf=lines.pop(); lines.forEach(scaleLine) } }
+    finally{ rd.releaseLock() } } }catch(e){}
+  if(SCALE.port===port) SCALE.port=null;                    // unplugged: the next K asks again
+}
+function scaleLine(s){
+  if(/\bUS\b|unstable|motion/i.test(s)){ SCALE.steady=false; return }   // still settling
+  const m=[...String(s).matchAll(/([-+]?\s*\d+(?:\.\d+)?)\s*(kg|g|lb)?/gi)].pop(); if(!m) return;
+  let w=+m[1].replace(/\s/g,''); const u=(m[2]||'kg').toLowerCase(); if(u==='g') w/=1000; if(u==='lb') w*=0.45359237;
+  SCALE.last=+w.toFixed(3); SCALE.at=Date.now(); SCALE.steady=true;
+}
+/* the weight on the scale now, or null with the reason already said */
+async function scaleRead(){
+  try{ await scaleOpen();
+    const ask=String((CFG.scale||{}).ask||''), t0=Date.now();
+    if(ask){ try{ const wr=SCALE.port.writable.getWriter(); await wr.write(new TextEncoder().encode(ask.replace(/\\r/g,'\r').replace(/\\n/g,'\n'))); wr.releaseLock() }catch(e){} }
+    while(Date.now()-t0<1500&&!(SCALE.steady&&SCALE.at>t0)) await new Promise(r=>setTimeout(r,60));
+    if(!(SCALE.steady&&SCALE.at>t0)){ toast('No steady weight from the scale — let it settle and try again'); return null }
+    if(!(SCALE.last>0)){ toast('The scale reads zero'); return null }
+    return SCALE.last;
+  }catch(e){ if(!(e&&e.name==='NotFoundError')) toast(e.message||'The scale could not be read'); return null }
+}
+async function scaleWeigh(){ const w=await scaleRead(); if(w==null||!CS.pid) return; csSetQty(w); toast(`${fq(w)} kg from the scale`) }
+async function scaleTest(){ const w=await scaleRead(); if(w!=null) toast(`The scale reads ${fq(w)} kg`) }
 function csStart(pid){
   const p=P(pid); if(!p) return;
   CS.pid=pid; CS.q=p.num||p.code; CS.qty=1; CS.disc=0; CS.serials=[]; CS.focus=''; CS.editLine=null; CS.name=null; CS.nameEdit=false;
@@ -19000,6 +19067,10 @@ function bindClassic(){
       if(e.key==='Escape'){ e.preventDefault(); CS.q=''; q.value=''; draw(); return }
       if(e.key!=='Enter') return; e.preventDefault();
       if(q.value.trim()===openCode()&&!navved){ csArmed=0; navved=false; csOpenStart(); return }
+      { const v=q.value.trim(), sl=!navved&&scaleLabel(v);
+        if(sl&&!S.products.some(p=>p.active!==false&&(String(p.barcode||'')===v||String(p.barcode2||'')===v))){ csArmed=0;
+          if(sl.miss){ toast(`No item has the scale number ${sl.plu}`); return }
+          csStart(sl.p.id); csSetQty(sl.qty); return } }
       if(q.value.trim()){ csArmed=0;
         const b=list()[cur];
         if(b) csStart(+b.dataset.id); else toast('No item matches that');
@@ -19078,6 +19149,7 @@ function bindClassic(){
       if(e.key==='Escape'){ e.preventDefault(); const q2=$('#csQ'); if(q2){q2.focus();q2.select()} return }
       if(!e.ctrlKey&&!e.altKey&&!e.metaKey&&CS.pid&&e.key.toLowerCase()==='e'){ e.preventDefault(); CS[key]=el.value; editName(); return }   // E: change the item's name on this bill
       if((id==='csQty'||id==='csDisc')&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&CS.pid&&e.key.toLowerCase()==='w'){ e.preventDefault(); CS[key]=el.value; csWarranty(-1); return }
+      if(id==='csQty'&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&CS.pid&&e.key.toLowerCase()==='k'){ e.preventDefault(); scaleWeigh(); return }   // K: the weight from the scale
       // in the price box, as on the old till: S shows every price this item went for, W / R switch the price list
       if(id==='csPrice'&&!e.ctrlKey&&!e.altKey&&CS.pid&&CS.pid!==OPEN_PID){
         const k=e.key.toLowerCase();
@@ -24444,6 +24516,7 @@ function productModal(pid){
     <div class="f"><label>Warranty given, in months <span class="muted">— 1200 for lifetime</span></label><input id="pwar" type="number" value="${p?(p.warrantyMonths||0):0}"></div>
     <div class="f"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="pser" ${p&&p.serialised?'checked':''}> every piece has a serial number</label></div>
     <div class="f"><label>Brand <span class="muted">— empty: the first word of the name</span></label><input id="pbrand" value="${noteEsc(p?p.brand||'':'')}" placeholder="${noteEsc(p?brandOf({name:p.name}):'e.g. Tokyo')}" autocomplete="off"></div>
+    <div class="f"><label>Number on the weighing scale <span class="muted">— PLU; empty: the product number</span></label><input id="pplu" inputmode="numeric" value="${noteEsc(p?p.plu||'':'')}" placeholder="${p?p.num:''}" autocomplete="off"></div>
     <div class="f"><label>Product number</label><input value="${p?p.num:nextNum()}" readonly><div class="muted">Four figures, given by the system — also works at the till</div></div>
    </div>
    <div class="grid3">
@@ -24515,7 +24588,7 @@ function productModal(pid){
       retail:g('pretail'),wholesale:g('pwhole')||g('pretail'),min:g('pmin'),short,num:p?p.num:nextNum(),
       webPrice:g('pweb')>0?+(+g('pweb')).toFixed(2):0,              // nought means: sell online at the counter price
       warrantyMonths:g('pwar'),serialised:m.querySelector('#pser').checked,desc:m.querySelector('#pdesc').value.trim(),
-      brand:(m.querySelector('#pbrand').value||'').trim().replace(/\s+/g,' '),
+      brand:(m.querySelector('#pbrand').value||'').trim().replace(/\s+/g,' '), plu:(m.querySelector('#pplu').value||'').replace(/\D/g,''),
       tiers:tiers.filter(t=>+t.min>0&&+t.price>0).map(t=>({min:+t.min,price:+t.price,label:(t.label||'').trim()}))};
     const photo=m.querySelector('#pphotoFile').files[0];
     const sendPhoto=pid=>{ if(photo) shopMediaUpload('p:'+pid,photo,900).then(()=>toast('Photo is on the site')).catch(e=>toast('Photo not saved: '+e.message)) };
@@ -31513,7 +31586,7 @@ document.addEventListener('click',e=>{
       run.forEach((x,i)=>x.order=i+1); const i=run.indexOf(d), j=i+(+a.dataset.dir); if(j<0||j>=run.length) return; [run[i].order,run[j].order]=[run[j].order,run[i].order]; persist(true); render() },
     planNew:()=>planNew(a.dataset.no), planView:()=>planView(a.dataset.id), planClose:()=>{ const p=plansAll().find(x=>x.id===a.dataset.id); if(p&&confirm('Close this plan? Their bills stay owed; the reminders stop.')){ p.status='closed'; p.closed=D(today); closeModals(); persist(true); render() } },
     hireTab:()=>{ hireTab=a.dataset.t; render() }, hireItem:()=>hireItemEdit(a.dataset.id||null), hireNew:()=>hireNew(), hireBack:()=>hireBack(a.dataset.id), hireRemind:()=>hireRemind(a.dataset.id),
-    tradePick:()=>tradePick(), tradeNew:()=>tradeEdit(null), tradeEdit:()=>tradeEdit(a.dataset.id), tradePay:()=>tradePay(a.dataset.id), tradeStmt:()=>tradeStatement(a.dataset.id),
+    scaleTest:()=>scaleTest(), tradePick:()=>tradePick(), tradeNew:()=>tradeEdit(null), tradeEdit:()=>tradeEdit(a.dataset.id), tradePay:()=>tradePay(a.dataset.id), tradeStmt:()=>tradeStatement(a.dataset.id),
     darkToggle:()=>darkSet(!darkOn(),a),
     duSave:()=>duesSave(), duReload:()=>{ DUES.data=null; DUES.err=''; duesLoad(); render() },
     duRun:()=>{ if(!confirm('Send today\'s reminders now?')) return; duesApi('/run',{method:'POST',body:'{}'}).then(j=>{ toast(`${j.sent} sent${j.failed?', '+j.failed+' did not go':''}`,j.failed?'warn':'ok'); DUES.data=null; duesLoad() }).catch(e=>toast(e.message)) },
