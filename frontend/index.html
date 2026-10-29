@@ -5041,7 +5041,7 @@ const WA_STD_TEMPLATES=[
   {name:'regal_bill_v2',category:'UTILITY',lang:'en',core:'Your bill {{1}} for {{2}} is ready. See it at {{3}} any time.',example:['INVM-T1-AF-00031','Rs 4,890.00','regalhw.lk/b/abc123'],params:'invoice,total,link',keys:['cashSale','creditSale','billLink']},
   {name:'regal_payment_v2',category:'UTILITY',lang:'en',core:'We have received your payment of {{1}}, receipt {{2}}. Your balance is now {{3}}.',example:['Rs 10,000.00','RCP-00012','Rs 5,000.00'],params:'amount,receipt,outstanding',keys:['paymentReceived']},
   {name:'regal_statement_v2',category:'UTILITY',lang:'en',core:'Your statement for {{1}}: {{2}} unpaid bill(s), total {{3}}. See them at {{4}} any time.',example:['Nimal Constructions','3','Rs 45,000.00','regalhw.lk/my/c0012'],params:'customer,count,outstanding,link',keys:['statement']},
-  {name:'regal_portal_v2',category:'UTILITY',lang:'en',core:'You can check what you owe any time at {{1}}. Sign in with a code we text you.',example:['regalhw.lk/my/c0012'],params:'link',keys:['portalInvite']},
+  {name:'regal_portal_v2',category:'UTILITY',lang:'en',core:'You can check your outstanding any time at {{1}}. Sign in with a code we text you.',example:['regalhw.lk/my/c0012'],params:'link',keys:['portalInvite']},
   {name:'regal_order_v2',category:'UTILITY',lang:'en',core:'Your order {{1}} for {{2}} is {{3}}.',example:['ONL-00012','Rs 12,500.00','on the way to you'],params:'order,total,status',keys:['webOrder']}
 ].map(t=>Object.defineProperty(t,'body',{get(){ return waStdBody(this.core) },enumerable:true}));
 function waTemplateFor(key){ const map=CFG.msg.waTemplates||{}; if(map[key]&&map[key].name) return map[key]; const std=WA_STD_TEMPLATES.find(t=>t.keys.includes(key)); return std?{name:std.name,lang:std.lang,params:std.params}:null }
@@ -6533,7 +6533,7 @@ function supplierVoucher(pv,fresh){
   voucherPrint({view:!fresh,title:'Payment Voucher',no:pv.voucher,date:pv.date,payee:s.name,payeeSub:`${s.contact} · ${s.phone} · account ${s.code}`,
     mail:{to:isEmail(s.email)?s.email.trim():'',party:{kind:'S',id:s.id},filename:pv.voucher,what:'Payment voucher '+pv.voucher,
       subject:`Payment voucher ${pv.voucher} — ${shopNice()}`,
-      text:letter('supplier',`Please find attached our payment voucher ${pv.voucher} dated ${pv.date} for ${fmt(pv.total)}${how?', paid by '+how:''}.`+(owe>0.005?` After this payment we owe you ${fmt(owe)}.`:' This settles our account with you.')),
+      text:letter('supplier',`Please find attached our payment voucher ${pv.voucher} dated ${pv.date} for ${fmt(pv.total)}${how?', paid by '+how:''}.`+(owe>0.005?` After this payment the outstanding to you is ${fmt(owe)}.`:' This settles our account with you.')),
       auto:!!fresh&&isEmail(s.email)&&autoMailOn('autoVoucher')},
     amount:pv.total,totalLabel:'TOTAL PAID',
     rows:[['Payment reference',pv.no],['Supplier account',s.code],
@@ -7266,7 +7266,7 @@ const TPL_OLD_DEFAULT={cashSale:'{shop}: thank you for your purchase. Bill {invo
   orderRejected:'{shop}: your order could not be accepted — {reason}. Please call the shop.',
   orderAdjusted:'{shop}: we need a change to your order — {reason}.',
   orderReceived:'{shop}: your order has been received as {grn}. Thank you.',
-  dailySummary:'{shop} today — sales {sales}, cash {cash}, credit {credit}, expenses {expenses}. Customers owe {outstanding}.'};
+  dailySummary:'{shop} today — sales {sales}, cash {cash}, credit {credit}, expenses {expenses}. Customer outstanding {outstanding}.'};
 // the one-line wording each message had before it was laid out in lines (14 Oct 2026)
 const TPL_ONELINE={cashSale:'Thank you for your purchase. Your bill {invoice} for {total}: {link}',
   creditSale:'Your credit bill {invoice} is for {total}. Your total outstanding is now {outstanding}. See it at {link}',
@@ -7274,7 +7274,7 @@ const TPL_ONELINE={cashSale:'Thank you for your purchase. Your bill {invoice} fo
   billLink:'Your bill {invoice} for {total}{balancePart}: {link}',
   paymentReceived:'We have received your payment of {amount}, receipt {receipt}. Your balance is now {outstanding}.',
   statement:'Your statement for {customer}: {count} unpaid bill(s), total {outstanding}. See them at {link}.',
-  portalInvite:'You can check what you owe any time at {link}. Sign in with a code we text you.',
+  portalInvite:'You can check your outstanding any time at {link}. Sign in with a code we text you.',
   portalLogin:'Your sign-in for {customer} is ready. Open {link}, user name {user}, password {pass}. Please change the password once you are in.',
   portalPassword:'Your new password for {user} at {link} is {pass}. Please change it once you are in.',
   otp:'Your sign-in code is {code}. It expires in 10 minutes. Please do not share it.',
@@ -7282,7 +7282,7 @@ const TPL_ONELINE={cashSale:'Thank you for your purchase. Your bill {invoice} fo
   orderRejected:'We could not accept your order: {reason}. Please call the shop.',
   orderAdjusted:'We need a change to your order: {reason}.',
   orderReceived:'Your goods have been received as {grn}.',
-  dailySummary:'Today — sales {sales}, cash {cash}, credit {credit}, expenses {expenses}. Customers owe {outstanding}.'};
+  dailySummary:'Today — sales {sales}, cash {cash}, credit {credit}, expenses {expenses}. Customer outstanding {outstanding}.'};
 // who each template is written to, for its preview and its test
 const TPL_AUD={dmgSupplier:'supplier',dmgReady:'customer',closingSummary:'owner',repairSupplier:'supplier',orderAccepted:'supplier',orderRejected:'supplier',orderAdjusted:'supplier',orderReceived:'supplier',ownerBill:'owner',dailySummary:'owner'};
 function labelSampleBill(inv){
@@ -8948,7 +8948,7 @@ function prCard(r){
 
     ${r.note?`<div class="card note" style="margin:10px 0">“${String(r.note).replace(/</g,'&lt;')}”</div>`:''}
 
-    <table style="margin-top:10px"><tr><th>Their invoice</th><th>GRN</th><th class="n">Invoice</th><th class="n">Days</th><th class="n">Owing</th><th class="n">Asked for</th><th></th></tr>
+    <table style="margin-top:10px"><tr><th>Their invoice</th><th>GRN</th><th class="n">Invoice</th><th class="n">Days</th><th class="n">Outstanding</th><th class="n">Asked for</th><th></th></tr>
      ${(r.lines||[]).map(l=>{ const gap=(+l.claim||0)-(+l.owing||0);
        const days=l.date?Math.max(0,Math.floor((today-new Date(l.date+'T00:00:00'))/864e5)):null, terms=sp?(+sp.days||0):0;
        return `<tr><td><b>${l.supInv||'—'}</b><div class="muted">${l.date||''}</div></td>
@@ -9070,7 +9070,7 @@ const SOCIAL_CH=[['fb','Facebook','the shop Page'],
                  ['ig','Instagram','needs a picture'],
                  ['wa','WhatsApp','to customers you pick']];
 const WA_AUDIENCE=[['all','Everyone with a mobile'],['wholesale','Wholesale customers'],
-                   ['recent','Bought in the last 90 days'],['owing','Customers who owe us']];
+                   ['recent','Bought in the last 90 days'],['owing','Customers with an outstanding']];
 const SOCIAL_MAX_WA=200;
 let socTab='new';
 let SOC={text:'',img:'',channels:['fb'],when:'',audience:'all',editing:null};
@@ -11578,7 +11578,7 @@ function webAnswer(q){
   if(/owe|balance|outstanding|bill/.test(s2)){
     if(!c) return 'Sign in at checkout and I can tell you your balance.';
     const b=partyBal('C',c.id);
-    return b>0?`You owe ${fmt(b)} across ${S.sales.filter(x=>x.customerId===c.id&&x.balance>0).length} bill(s).`:'Your account is clear — nothing owing.';
+    return b>0?`Your outstanding ${fmt(b)} across ${S.sales.filter(x=>x.customerId===c.id&&x.balance>0).length} bill(s).`:'Your account is clear — nothing outstanding.';
   }
   if(/deliver|delivery charge|how much to deliver/.test(s2))
     return `Delivery in town is ${money2(S.web.settings.delivery)}, free over ${money2(S.web.settings.freeOver)}. ${S.web.settings.payNote}`;
@@ -12056,7 +12056,7 @@ function portalDamage(s){
   const worth=list.reduce((a,d)=>a+(+d.value||0),0);
   return `<div class="card"><b>Damaged goods</b>
    <div class="muted" style="margin:4px 0 8px">${list.length} item${list.length===1?'':'s'} of yours came in broken,
-    worth ${fmt(worth)}. That is already off what the shop owes you.</div>
+    worth ${fmt(worth)}. That is already off your outstanding.</div>
    ${list.slice(0,8).map(d=>`<div class="prow"><span>${P(d.pid)?P(d.pid).name:'an item'}
      <span class="muted">${d.date}${d.reason?' · '+d.reason:''}</span></span>
      <b>${fq(d.qty)} · ${fmt(d.value)}</b></div>`).join('')}
@@ -12071,7 +12071,7 @@ function portalAccount(s){
   const owed=partyBal('S',s.id), age=supAgeing(s.id);
   const months={}; pur.forEach(p=>{const k=p.date.slice(0,7); months[k]=(months[k]||0)+p.total});
   const days=d=>Math.round((today-new Date(d))/864e5);
-  return portalDamage(s) + `<div class="card"><div class="muted">Regal Hardware owes you</div>
+  return portalDamage(s) + `<div class="card"><div class="muted">Outstanding to you</div>
    <div class="pbig">${fmt(owed)}</div>
    <div class="muted">${age.count} unpaid bill${age.count===1?'':'s'} · your terms with the shop: ${s.days} days</div>
    <div class="pageing">
@@ -12235,7 +12235,7 @@ function portalHome(){
   const owed=s.showAccounts?partyBal('S',s.id):0;
   return `<div class="ptop"><div><b style="font-family:Archivo,sans-serif">REGAL<span style="color:var(--chip-yellow)">HW</span></b>
     <div style="font-size:11px;opacity:.75">${s.name}</div></div><button class="btn ghost sm" id="pout">Sign out</button></div>
-   ${s.showAccounts?`<div class="pstrip">Owed to you <b>${fmt(owed)}</b></div>`:''}
+   ${s.showAccounts?`<div class="pstrip">Outstanding to you <b>${fmt(owed)}</b></div>`:''}
    <div class="pbody">${S.portal.flash?`<div class="tag ok" style="display:block;padding:8px 10px;margin-bottom:10px">${S.portal.flash}</div>`:''}
     ${tab==='new'?portalNew(s):tab==='orders'?portalOrders(s):tab==='stock'?portalStock(s):tab==='account'?portalAccount(s):portalShop(s)}</div>
    <div class="pnav">
@@ -12267,7 +12267,7 @@ function custOwed(c){
   const owed=partyBal('C',c.id);
   const age=open.reduce((a,s)=>{const d=days(s.date); if(d<=30)a.now+=s.balance; else if(d<=60)a.mid+=s.balance; else a.old+=s.balance; return a},{now:0,mid:0,old:0});
   const left=Math.max(0,c.limit-owed);
-  return `<div class="card"><div class="muted">You owe Regal Hardware</div>
+  return `<div class="card"><div class="muted">Your outstanding</div>
    <div class="pbig">${fmt(owed)}</div>
    <div class="muted">${open.length} unpaid bill${open.length===1?'':'s'}</div>
    <div class="pageing">
@@ -12296,7 +12296,7 @@ function custBills(c){
    ${inv.map(s=>`<div class="prow"><div><a href="#" data-cinv="${s.no}">${s.no}</a>
      <div class="muted">${s.date} ${s.time||''} · ${s.lines.length} item${s.lines.length===1?'':'s'}</div></div>
     <div style="text-align:right"><b>${fmt(s.total)}</b>
-     <div>${s.balance?`<span class="tag warn">${fmt(s.balance)} owing</span>`:'<span class="tag ok">paid</span>'}</div></div></div>`).join('')||'<div class="muted">No bills yet.</div>'}</div>
+     <div>${s.balance?`<span class="tag warn">${fmt(s.balance)} outstanding</span>`:'<span class="tag ok">paid</span>'}</div></div></div>`).join('')||'<div class="muted">No bills yet.</div>'}</div>
   <div class="card"><b>What you buy most</b>
    ${(()=>{const t={}; inv.forEach(s=>s.lines.forEach(l=>{const n=P(l.pid).name; t[n]=(t[n]||0)+l.qty*l.price-l.disc}));
      const rows=Object.entries(t).sort((a,b)=>b[1]-a[1]).slice(0,6); const max=rows.length?rows[0][1]:1;
@@ -12363,9 +12363,9 @@ function supplierStatement(sid){
    <table width="100%" style="font-size:12.5px"><tr><th align="left">Date</th><th align="left">Particulars</th><th align="left">Ref</th><th align="right">Billed</th><th align="right">Paid</th><th align="right">Balance</th></tr>
    ${from?`<tr><td>${from}</td><td colspan="4">Balance brought forward</td><td align="right"><b>${opening.toFixed(2)}</b></td></tr>`:''}
    ${shown.map(r=>`<tr><td>${r.date}</td><td>${r.desc}</td><td>${r.ref||''}</td><td align="right">${r.billed?r.billed.toFixed(2):''}</td><td align="right">${r.paid?r.paid.toFixed(2):''}</td><td align="right">${r.run.toFixed(2)}</td></tr>`).join('')||'<tr><td colspan="6">No movement in this period.</td></tr>'}
-   <tr><td colspan="5" align="right"><b>Balance owed</b></td><td align="right"><b>${owed.toFixed(2)}</b></td></tr></table>
+   <tr><td colspan="5" align="right"><b>Outstanding</b></td><td align="right"><b>${owed.toFixed(2)}</b></td></tr></table>
    ${open.length?`<div style="margin-top:12px"><b>Unpaid bills</b></div>
-   <table width="100%" style="font-size:12.5px"><tr><th align="left">Their invoice</th><th align="left">Our GRN</th><th align="left">Date</th><th align="right">Amount</th><th align="right">Paid</th><th align="right">Owing</th></tr>
+   <table width="100%" style="font-size:12.5px"><tr><th align="left">Their invoice</th><th align="left">Our GRN</th><th align="left">Date</th><th align="right">Amount</th><th align="right">Paid</th><th align="right">Outstanding</th></tr>
    ${open.map(p=>`<tr><td>${p.supInv}</td><td>${p.no}</td><td>${p.date}</td><td align="right">${p.total.toFixed(2)}</td><td align="right">${p.paid.toFixed(2)}</td><td align="right">${(p.total-p.paid).toFixed(2)}</td></tr>`).join('')}</table>`:''}
    <div style="margin-top:10px">Amount in words: <i>${words(owed)} rupees only</i></div></div>
    <div style="text-align:right;margin-top:10px"><button class="btn ghost" data-act="closeModal">Close</button> <button class="btn" onclick="window.print()">Print</button></div>`);
@@ -13002,7 +13002,7 @@ function billSaved(inv){
   el.innerHTML=credit
    ? `<svg viewBox="0 0 52 52" class="tick"><circle cx="26" cy="26" r="24"/><path d="M17 20h18M17 27h18M17 34h11"/></svg>
       <div><b>${CFG.done.creditWord} · ${inv.no}</b><span><em class="count" data-to="${inv.balance.toFixed(2)}">${fmt(inv.balance)}</em> on ${c.name}'s account
-       · now owes ${fmt(partyBal('C',c.id))}${partyBal('C',c.id)>c.limit?' <i class="over">over limit</i>':''}</span></div>`
+       · now — outstanding ${fmt(partyBal('C',c.id))}${partyBal('C',c.id)>c.limit?' <i class="over">over limit</i>':''}</span></div>`
    : `<svg viewBox="0 0 52 52" class="tick"><circle cx="26" cy="26" r="24"/><path d="M14 27l8 8 16-17"/></svg>
       <div><b>${CFG.done.cashWord} · ${inv.no}</b><span>${c.name} · <em class="count" data-to="${inv.total.toFixed(2)}">${fmt(inv.total)}</em></span></div>`;
   document.body.appendChild(el);
@@ -13538,7 +13538,7 @@ function receipts(){
      </div>
 
      <div class="row" style="margin:12px 0">
-      ${stat('Owes you',fmt(owed),`${open.length} unpaid bill${open.length===1?'':'s'}`,over?'r':'y')}
+      ${stat('Outstanding',fmt(owed),`${open.length} unpaid bill${open.length===1?'':'s'}`,over?'r':'y')}
       ${stat('Credit limit',fmt(c.limit),over?'over the limit':fmt(Math.max(0,c.limit-owed))+' still available',over?'r':'g')}
       ${stat('Oldest unpaid',open.length?days(open[0].date)+' days':'—',open.length?open[0].no:'','b')}
       ${stat('Last payment',paid.length?fmt(paid[0].amount):'—',paid.length?paid[0].date+' · '+paid[0].method.toLowerCase():'nothing yet','g')}
@@ -13556,8 +13556,8 @@ function receipts(){
       <button data-act="cust" data-id="${c.id}">Open their full record</button>
      </div>
 
-     <h2 style="margin-top:14px">Bills still owing</h2>
-     <table><tr><th>Invoice</th><th>Date</th><th>Age</th><th class="n">Bill total</th><th class="n">Paid</th><th class="n">Owing</th><th></th></tr>
+     <h2 style="margin-top:14px">Bills outstanding</h2>
+     <table><tr><th>Invoice</th><th>Date</th><th>Age</th><th class="n">Bill total</th><th class="n">Paid</th><th class="n">Outstanding</th><th></th></tr>
       ${open.map(s=>`<tr><td><a href="#" data-act="invoice" data-no="${s.no}">${s.no}</a></td><td>${s.date}</td>
        <td>${days(s.date)>60?`<span class="tag bad">${days(s.date)}d</span>`:days(s.date)>30?`<span class="tag warn">${days(s.date)}d</span>`:`<span class="muted">${days(s.date)}d</span>`}</td>
        <td class="n">${fmt(s.total)}</td><td class="n">${fmt(s.paid)}</td><td class="n"><b>${fmt(s.balance)}</b></td>
@@ -13575,11 +13575,11 @@ function receipts(){
     panel=`<div class="card flex1 fade">
      <h2>Who is paying?</h2>
      <div class="muted" style="margin-bottom:10px">Search above, or pick from the people who owe you. Biggest balance first.</div>
-     <table><tr><th>Customer</th><th>Phone</th><th>Oldest bill</th><th class="n">Owes</th></tr>
+     <table><tr><th>Customer</th><th>Phone</th><th>Oldest bill</th><th class="n">Outstanding</th></tr>
       ${owing.slice(0,15).map(x=>{const o=S.sales.filter(s=>s.customerId===x.id&&s.balance>0).sort((a,b)=>a.date.localeCompare(b.date))[0];
         return `<tr class="rowlink" data-act="recPick" data-id="${x.id}"><td><b>${x.name}</b></td><td>${x.phone||'—'}</td>
         <td>${o?`${days(o.date)} days`:'—'}</td><td class="n"><b>${fmt(partyBal('C',x.id))}</b></td></tr>`}).join('')
-        ||'<tr><td colspan="4" class="muted">Nobody owes you anything right now.</td></tr>'}</table></div>`;
+        ||'<tr><td colspan="4" class="muted">Nothing outstanding right now.</td></tr>'}</table></div>`;
   }
 
   return `<h1>Take a payment</h1>
@@ -13642,10 +13642,10 @@ const DASH_PANELS=[
   ['sales','Sales, last 14 days','bars, cash against credit','sell'],
   ['week','This week','gross profit, margin, best sellers','sell'],
   ['cashier','Takings by cashier','today','sell'],
-  ['custOwed','What customers owe us','by age — up to 30, 31 to 60, over 60 days','cust'],
+  ['custOwed','Customer outstanding','by age — up to 30, 31 to 60, over 60 days','cust'],
   ['bills','Latest bills','the last six','cust'],
 ['papers','Quotations and delivery notes','what is still open, and what is waiting for an invoice','cust'],
-  ['supOwed','What we owe suppliers','by supplier, with our cheques still to clear','sup'],
+  ['supOwed','Supplier outstanding','by supplier, with our cheques still to clear','sup'],
   ['low','Running low','below reorder level — what to order next','sup'],
   ['position','Where the shop stands','receivable, payable, expenses, wages','cash'],
   ['money','Where the money is','cash, banks, cheques in the drawer','cash'],
@@ -15341,12 +15341,12 @@ function dayCircle(){
   const owedOut=circleOwedToThem(), owedIn=circleOwedToUs();
   const moves=circleMoves().slice(0,40);
 
-  const who=(p)=>p.bal>0.005?`<span class="tag bad">we owe ${money2(p.bal)}</span>`
-    :p.bal<-0.005?`<span class="tag ok">they owe ${money2(-p.bal)}</span>`
+  const who=(p)=>p.bal>0.005?`<span class="tag bad">outstanding ${money2(p.bal)}</span>`
+    :p.bal<-0.005?`<span class="tag ok">outstanding ${money2(-p.bal)}</span>`
     :'<span class="tag">square</span>';
 
   return `<div class="daygrid">
-    ${dayTile('The shop owes',owedOut,'to be given back','r')}
+    ${dayTile('Supplier outstanding',owedOut,'to be given back','r')}
     ${dayTile('Owed to the shop',owedIn,'to be collected','g')}
     ${dayTile('In the drawer',bal('1010',D(today)),'what there is to lend or to deposit','')}
    </div>
@@ -15414,7 +15414,7 @@ function circleMoveModal(dir,pid){
   const title=out?'Cash going out to the circle':'Cash coming in from the circle';
   const m=modal(`<h2>${title}</h2>
    <div class="f"><label>Who</label><select id="cmWho">
-     ${people.map(p=>{const b=circleBal(p.id);return `<option value="${p.id}" ${pid&&p.id===+pid?'selected':''}>${noteEsc(p.name)}${Math.abs(b)>0.005?` — ${b>0?'we owe '+money2(b):'they owe '+money2(-b)}`:''}</option>`}).join('')}
+     ${people.map(p=>{const b=circleBal(p.id);return `<option value="${p.id}" ${pid&&p.id===+pid?'selected':''}>${noteEsc(p.name)}${Math.abs(b)>0.005?` — ${b>0?'outstanding '+money2(b):'outstanding '+money2(-b)}`:''}</option>`}).join('')}
     </select></div>
    <div class="grid2">
     <div class="f"><label>How much</label><input id="cmAmt" type="number" step="any" min="0" placeholder="0.00" autocomplete="off"></div>
@@ -15435,8 +15435,8 @@ function circleMoveModal(dir,pid){
     const b=circleBal(p.id), amt=+m.querySelector('#cmAmt').value||0;
     const after=+(out?b-amt:b+amt).toFixed(2);
     m.querySelector('#cmSays').innerHTML=!amt?'':
-      after>0.005?`After this the shop owes ${noteEsc(p.name)} <b>${money2(after)}</b>.`
-      :after<-0.005?`After this ${noteEsc(p.name)} owes the shop <b>${money2(-after)}</b>.`
+      after>0.005?`After this the outstanding to ${noteEsc(p.name)} <b>${money2(after)}</b>.`
+      :after<-0.005?`After this ${noteEsc(p.name)}'s outstanding is <b>${money2(-after)}</b>.`
       :`After this you are square with ${noteEsc(p.name)}.`;
   };
   m.querySelector('#cmWho').onchange=says;
@@ -16347,11 +16347,11 @@ function dashboard(){
      return `<div class="card"><h2>Cash lent and borrowed</h2>
       <div class="muted">Money passed with people outside the trade.</div>
       <table style="margin-top:6px">
-       <tr><td>The shop owes</td><td class="n rust"><b>${fmt(circleOwedToThem())}</b></td></tr>
-       <tr><td>Owed to the shop</td><td class="n"><b>${fmt(circleOwedToUs())}</b></td></tr>
+       <tr><td>Outstanding to suppliers</td><td class="n rust"><b>${fmt(circleOwedToThem())}</b></td></tr>
+       <tr><td>Outstanding to the shop</td><td class="n"><b>${fmt(circleOwedToUs())}</b></td></tr>
       </table>
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
-       ${people.slice(0,8).map(p=>`<span class="tag ${p.bal>0?'bad':'ok'}">${noteEsc(p.name)} · ${p.bal>0?'we owe':'they owe'} ${fmt(Math.abs(p.bal))}</span>`).join('')}
+       ${people.slice(0,8).map(p=>`<span class="tag ${p.bal>0?'bad':'ok'}">${noteEsc(p.name)} · ${p.bal>0?'outstanding':'in credit'} ${fmt(Math.abs(p.bal))}</span>`).join('')}
        ${people.length>8?`<span class="muted">and ${people.length-8} more</span>`:''}</div>
       <button class="btn ghost sm" data-view="cashup" style="margin-top:8px">The circle</button></div>`;
    },
@@ -16399,13 +16399,13 @@ function dashboard(){
      return items.length?`<div class="alerts">${items.join('')}</div>`:'' },
    position:()=>`<div class="position">
     <div class="pos-h"><div><h2 style="margin:0">Where the shop stands</h2>
-      <div class="muted">Held ${fmt(held)} · owed to us ${fmt(ar)} · owed by us ${fmt(ap+chqOut+wagesDue)}</div></div>
+      <div class="muted">Held ${fmt(held)} · outstanding from customers ${fmt(ar)} · outstanding to suppliers ${fmt(ap+chqOut+wagesDue)}</div></div>
      <div class="pos-net ${netPos>=0?'up':'down'}"><span>Net, if everything settled today</span>
       <b class="count" data-to="${Math.abs(netPos).toFixed(2)}">${fmt(Math.abs(netPos))}</b>${netPos<0?' <em>short</em>':''}</div></div>
     <div class="ptiles">
-     ${tile(0,'Customers owe us',ar,`${owingCust} customer${owingCust===1?'':'s'} · ${fmt(age.old)} over 60 days`,'receipts',ar/posMax,'in')}
+     ${tile(0,'Customer outstanding',ar,`${owingCust} customer${owingCust===1?'':'s'} · ${fmt(age.old)} over 60 days`,'receipts',ar/posMax,'in')}
      ${tile(1,'Cheques we must cover',chqOut,`${pend.length} not yet cleared · ${pend.filter(c=>CHQ_DAYS(c.date)<=7).length} due this week`,'chequesOut',chqOut/posMax,'out')}
-     ${tile(2,'We owe suppliers',ap,`${owedSup} supplier${owedSup===1?'':'s'} · terms running`,'suppliers',ap/posMax,'out')}
+     ${tile(2,'Supplier outstanding',ap,`${owedSup} supplier${owedSup===1?'':'s'} · terms running`,'suppliers',ap/posMax,'out')}
      ${tile(3,'Expenses this month',expMonth,`${fmt(expToday)} of it today`,'expenses',expMonth/posMax,'out')}
      ${tile(4,'Wages '+(payRun?'paid':'due')+' for '+new Date(mk+'-01').toLocaleDateString('en-GB',{month:'short'}),wagesDue||wages,payRun?`paid ${payRun.date}`:`${S.employees.filter(e=>e.active!==false).length} on the roll · from the punches`,'payroll',(wagesDue||wages)/posMax,payRun?'done':'out')}
     </div></div>`,
@@ -16421,12 +16421,12 @@ function dashboard(){
       ${[['Purchases',mPurch],['Paid to suppliers',mPaidSup],['Expenses',expMonth],['Wages',wages]].map(([l,v])=>`<div class="fc-bar"><span>${l}</span><i style="--w:${Math.max(2,v/Math.max(mSales,mPurch,1)*100)}%;background:var(--chip-rust)"></i><b>${fmt(v)}</b></div>`).join('')}</div>
     </div>
     <div class="ch-f"><span>Billed less bought, expenses and wages: <b class="${mSales-mPurch-expMonth-wages>=0?'up':'down'}">${fmt(mSales-mPurch-expMonth-wages)}</b></span></div></div>`,
-   custOwed:()=>`<div class="card chartcard"><h2>What customers owe us</h2>
-    ${ar>0.005?donut([{label:'Up to 30 days',v:age.now,color:CHART_COLORS[2]},{label:'31 to 60',v:age.mid,color:CHART_COLORS[0]},{label:'Over 60',v:age.old,color:CHART_COLORS[3]}],{center:'owed to us'})
-      :'<div class="muted">Nobody owes us anything — every bill is settled.</div>'}
+   custOwed:()=>`<div class="card chartcard"><h2>Customer outstanding</h2>
+    ${ar>0.005?donut([{label:'Up to 30 days',v:age.now,color:CHART_COLORS[2]},{label:'31 to 60',v:age.mid,color:CHART_COLORS[0]},{label:'Over 60',v:age.old,color:CHART_COLORS[3]}],{center:'outstanding'})
+      :'<div class="muted">Nothing outstanding — every bill is settled.</div>'}
     <div class="muted" style="margin-top:4px">${fmt(ar)} across ${owingCust} customer${owingCust===1?'':'s'}${age.old>0?` · ${fmt(age.old)} of it older than 60 days`:''}${noteC.length?` · ${noteC.length} note${noteC.length===1?'':'s'} to settle`:''}</div></div>`,
-   supOwed:()=>`<div class="card chartcard"><h2>What we owe suppliers</h2>
-    ${ap>0.005?donut(S.suppliers.map(sp=>({label:sp.name.split(/[–(]/)[0].trim(),v:Math.max(0,partyBal('S',sp.id))})).filter(x=>x.v>0),{center:'we owe'})
+   supOwed:()=>`<div class="card chartcard"><h2>Supplier outstanding</h2>
+    ${ap>0.005?donut(S.suppliers.map(sp=>({label:sp.name.split(/[–(]/)[0].trim(),v:Math.max(0,partyBal('S',sp.id))})).filter(x=>x.v>0),{center:'outstanding'})
       :'<div class="muted">Every supplier bill is paid.</div>'}
     <div class="muted" style="margin-top:4px">${fmt(ap)} across ${owedSup} supplier${owedSup===1?'':'s'}${chqOut>0.005?` · ${fmt(chqOut)} in our cheques not yet cleared`:''}${noteS.length?` · ${noteS.length} note${noteS.length===1?'':'s'} to settle`:''}</div></div>`,
    expenses:()=>`<div class="card chartcard"><h2>Where the expenses go, ${new Date(mk+'-01').toLocaleDateString('en-GB',{month:'long'})}</h2>
@@ -16448,7 +16448,7 @@ function dashboard(){
     ${Object.keys(byCashier).length?barChart(Object.entries(byCashier).map(([u,v])=>({label:u.split(' ')[0],values:[v]})),{h:90}):'<div class="muted">No sales yet today.</div>'}
     ${Object.entries(byCashier).map(([u,v])=>`<div class="prow"><span>${u}</span><b>${fmt(v)}</b></div>`).join('')}</div>`,
    bills:()=>`<div class="card"><h2>Latest bills</h2>
-    <table><tr><th>Invoice</th><th>Customer</th><th class="n">Total</th><th class="n">Owing</th></tr>
+    <table><tr><th>Invoice</th><th>Customer</th><th class="n">Total</th><th class="n">Outstanding</th></tr>
     ${_ds.slice(-6).reverse().map(s=>`<tr><td><a href="#" data-act="invoice" data-no="${s.no}">${s.no}</a></td>
       <td>${C(s.customerId).name}</td><td class="n">${fmt(s.total)}</td><td class="n">${s.balance?fmt(s.balance):'—'}</td></tr>`).join('')}</table></div>`,
    low:()=>`<div class="card"><h2>Running low</h2>
@@ -16599,8 +16599,8 @@ function everything(){
    <div class="daygrid" style="margin-bottom:14px">
     ${dayTile('In the drawer', cash, 'counted under Day book', '')}
     ${dayTile('In the banks', bankTotal, `${banks.length} account${banks.length === 1 ? '' : 's'}`, 'b')}
-    ${dayTile('Customers owe us', owedToUs, lateTotal > 0.005 ? `${fmt(lateTotal)} of it over 60 days` : 'none of it badly late', lateTotal > 0.005 ? 'r' : 'g')}
-    ${dayTile('We owe suppliers', owedByUs, reqs.length ? `${reqs.length} asking to be paid` : 'nobody asking', 'y')}
+    ${dayTile('Customer outstanding', owedToUs, lateTotal > 0.005 ? `${fmt(lateTotal)} of it over 60 days` : 'none of it badly late', lateTotal > 0.005 ? 'r' : 'g')}
+    ${dayTile('Supplier outstanding', owedByUs, reqs.length ? `${reqs.length} asking to be paid` : 'nobody asking', 'y')}
     ${dayTile('Stock at cost', stockVal, `${prods.length} items${low.length ? ` · ${low.length} running low` : ''}`, 'g')}
    </div>
 
@@ -16736,7 +16736,7 @@ function pos(){
      <div class="cp-l">Customer <b>F7</b></div>
      <div class="cp-n">${c.name}</div>
      <div class="cp-s">${c.id===1?'Walk-in · retail prices · tap to choose'
-       :`${c.phone} · ${c.level} prices · owes ${fmt(partyBal('C',c.id))} of ${fmt(c.limit)}${(c.points||0)>0?` · ${fq(c.points)} pts`:''}`}</div>
+       :`${c.phone} · ${c.level} prices · — outstanding ${fmt(partyBal('C',c.id))} of ${fmt(c.limit)}${(c.points||0)>0?` · ${fq(c.points)} pts`:''}`}</div>
     </button>
     <button class="till-held ${heldAll.length?'has-held':''}" data-act="showHeld" title="The bills on hold — see what is on each and bring one back (F4)">HELD<i>F4</i>${heldAll.length?`<b>${heldAll.length}</b>`:''}</button>
     <button class="till-hold" data-act="hold" ${L.length?'':'disabled'} title="Put this bill aside, or make it a quotation (Ctrl+H)">HOLD<i>Ctrl+H</i></button>
@@ -17108,7 +17108,7 @@ function cpDraw(focus){
     el.innerHTML=head+`<input id="cpQ" class="cp-q" placeholder="Name or mobile…" autocomplete="off" value="${noteEsc(ONA.q)}">
       <div class="cp-label">${ONA.q.trim()?'Customers':'Your regular credit customers'}</div>
       <div class="cp-list">${list.map((x,i)=>{ const ow=partyBal('C',x.id);
-        return `<button class="cp-row ${i===ONA.sel?'on':''}" data-cp-cust="${x.id}"><b>${noteEsc(x.name)}</b><span class="cp-ow">${ow>0.005?'owes '+money2(ow):'clear'}</span>
+        return `<button class="cp-row ${i===ONA.sel?'on':''}" data-cp-cust="${x.id}"><b>${noteEsc(x.name)}</b><span class="cp-ow">${ow>0.005?'outstanding '+money2(ow):'clear'}</span>
           <span class="cp-sub">${noteEsc(x.phone||'no mobile')}${x.limit?' · limit '+money2(x.limit):''}</span>${x.limit?cpMeter(x,false):''}</button>` }).join('')
         ||`<div class="muted">${ONA.q.trim()?'Nobody matches that.':'No credit customers yet — search, or add a new one.'}</div>`}</div>
       <div class="cp-foot"><button class="btn ghost sm" data-cp="new">New customer…</button>
@@ -17127,11 +17127,11 @@ function cpDraw(focus){
   const how=ONA.how, PAPERS=[['a5','Large A5'],['r80','Small 80mm'],...(c.phone?[['sms','e-Bill text']]:[]),['none','No print']];
   el.innerHTML=head+`<div class="cp-who"><div><b>${noteEsc(c.name)}</b><span class="muted">${noteEsc(c.phone||'no mobile')} · ${c.level||'retail'} prices</span></div>
       <button class="btn ghost sm" data-cp="change">Someone else</button></div>
-    <div class="cp-figs"><div><span>Owes now</span><b>${money2(owes)}</b></div><div><span>On account now</span><b>${money2(onAcct)}</b></div>
-      <div class="${over?'bad':''}"><span>Will owe</span><b>${money2(will)}</b></div></div>
+    <div class="cp-figs"><div><span>Outstanding now</span><b>${money2(owes)}</b></div><div><span>On account now</span><b>${money2(onAcct)}</b></div>
+      <div class="${over?'bad':''}"><span>Outstanding after</span><b>${money2(will)}</b></div></div>
     ${c.limit?cpMeter(c,true)+`<div class="muted cp-lim">Limit ${money2(c.limit)}${over?'':' · '+money2(Math.max(0,c.limit-owes-onAcct))+' left after this bill'}</div>`:''}
     ${held>0.005?`<div class="muted">They have ${money2(held)} in credit with the shop — it comes off this first.</div>`:''}
-    <div class="cp-pills cp-sites"><span class="muted">site</span>${sites.map(x=>`<button class="btn ghost sm ${ONA.site===x.id?'on':''}" data-cp-site="${x.id}" title="${noteEsc(x.address||'')}">${noteEsc(x.name)}${+x.limit>0?` · owes ${money2(siteOwed(c.id,x.id))}`:''}</button>`).join('')}
+    <div class="cp-pills cp-sites"><span class="muted">site</span>${sites.map(x=>`<button class="btn ghost sm ${ONA.site===x.id?'on':''}" data-cp-site="${x.id}" title="${noteEsc(x.address||'')}">${noteEsc(x.name)}${+x.limit>0?` · — outstanding ${money2(siteOwed(c.id,x.id))}`:''}</button>`).join('')}
       ${ONA.addSite?`<input id="cpSiteNew" placeholder="e.g. Kandy Rd house" maxlength="60" style="width:180px;margin:0"><button class="btn sm" data-cp="siteadd">Add</button>`
         :`<button class="btn ghost sm" data-cp="sitenew">+ New site</button>`}
       ${ONA.site?'<button class="btn ghost sm" data-cp-site="">No site</button>':''}</div>
@@ -17206,7 +17206,7 @@ function cpSave(){
       if(allowedBy){ inv.limitBy=allowedBy; if(allowedBy!==S.user.name){ notify('warn',`${allowedBy} let ${S.user.name} put ${inv.no} on ${c.name}'s account past their limit`,'customers'); S.notif[0].forUser=allowedBy } }
       cpClose(); CS.paper=null; render(); persist(true);
       billSaved(inv);
-      toast(`${inv.no} on ${c.name}'s account${paid>0.005?` · ${money2(paid)} paid now`:''} — they owe ${money2(partyBal('C',c.id))}`,'ok');
+      toast(`${inv.no} on ${c.name}'s account${paid>0.005?` · ${money2(paid)} paid now`:''} — outstanding ${money2(partyBal('C',c.id))}`,'ok');
       printAnim(inv,paper);
     }catch(e){ if(ONA) ONA.busy=false; toast(e.message) }
   });
@@ -17498,7 +17498,7 @@ function posQuick(){
       <button class="${!credit?'on':''}" data-act="qMode" data-v="cash">CASH BILL</button>
       <button class="${credit?'on':''}" data-act="qMode" data-v="credit">CREDIT BILL</button></div>
      <button class="qwho" data-act="pickCust">
-      <b>${c.name}</b><span>${c.id===1?(credit?'tap to choose who — a credit bill needs a customer':'walk-in · tap to choose'):`${c.phone} · owes ${fmt(partyBal('C',c.id))} of ${fmt(c.limit)}`}</span></button>
+      <b>${c.name}</b><span>${c.id===1?(credit?'tap to choose who — a credit bill needs a customer':'walk-in · tap to choose'):`${c.phone} · — outstanding ${fmt(partyBal('C',c.id))} of ${fmt(c.limit)}`}</span></button>
      <button class="qwho ${S.pos.salesman?'has-salesman':''}" data-act="pickSalesman" hidden style="display:none">
       <span class="muted">Salesperson:</span> <b style="color:var(--ink)">${S.pos.salesman || 'None (No Salesperson)'}</b> <span class="tag sm" style="margin-left:6px">${S.pos.salesman?'Change':'F3'}</span>
      </button>
@@ -17572,7 +17572,7 @@ function qDone(){
     let override=false;
     if(partyBal('C',c.id)+total>c.limit){
       if(!can('overLimit')) return toast(`${c.name} would go past their ${fmt(c.limit)} limit — ask a manager`);
-      if(!confirm(`${c.name} owes ${fmt(partyBal('C',c.id))} against a limit of ${fmt(c.limit)}.\nThis bill takes them to ${fmt(partyBal('C',c.id)+total)}. Allow it?`)) return;
+      if(!confirm(`${c.name} — outstanding ${fmt(partyBal('C',c.id))} against a limit of ${fmt(c.limit)}.\nThis bill takes them to ${fmt(partyBal('C',c.id)+total)}. Allow it?`)) return;
       override=true;
     }
     return endBillAsk(()=>qComplete([{method:'CREDIT',amount:0}],override,0));
@@ -17822,7 +17822,7 @@ function openPay(resume){
     }
     if(cr>0.005&&partyBal('C',cust.id)+cr>cust.limit&&!override){
       if(!can('overLimit')){ stop(); m.remove(); return toast(`${cust.name} would go past their ${fmt(cust.limit)} limit — ask a manager`) }
-      if(!confirm(`${cust.name} owes ${fmt(partyBal('C',cust.id))} against a limit of ${fmt(cust.limit)}.\nThis bill takes them to ${fmt(partyBal('C',cust.id)+cr)}. Allow it?`)){ taken=taken.filter(p=>p.method!=='CREDIT'); draw(); return }
+      if(!confirm(`${cust.name} — outstanding ${fmt(partyBal('C',cust.id))} against a limit of ${fmt(cust.limit)}.\nThis bill takes them to ${fmt(partyBal('C',cust.id)+cr)}. Allow it?`)){ taken=taken.filter(p=>p.method!=='CREDIT'); draw(); return }
       override=true;
     }
     const change=Math.max(0,-left());
@@ -18135,7 +18135,7 @@ function posClassic(){
     <button class="till-held ${S.heldBills&&S.heldBills.length?'has-held':''}" data-act="showHeld" title="The bills on hold — see what is on each and bring one back (F5, Ctrl+R)">HELD<i>F5</i>${(S.heldBills&&S.heldBills.length)?`<b>${S.heldBills.length}</b>`:''}</button>
     <div class="till-who ${c.id===1?'':'named'}" data-act="pickCust" role="button" title="Change customer (F4)">
      <b>${c.id===1?'WALK-IN CUSTOMER':c.name.toUpperCase()}</b>
-     <em>${c.id===1?'no account · tap or F4 to choose':`${c.phone||''} · owes ${fmt(owed)} of ${fmt(c.limit)}${owed>c.limit?' · over limit':''}`}</em>
+     <em>${c.id===1?'no account · tap or F4 to choose':`${c.phone||''} · — outstanding ${fmt(owed)} of ${fmt(c.limit)}${owed>c.limit?' · over limit':''}`}</em>
      <span>cashier <b>${S.user.name}</b>${S.pos.salesman?` · sales: <b>${S.pos.salesman}</b>`:''}</span>
      <button class="till-whobtn" data-act="pickCust" title="Choose the customer (F4)">${c.id===1?'Choose customer':'Change customer'} <i>F4</i></button>
     </div>
@@ -18944,7 +18944,7 @@ function showHeldBillsModal(initIdx = 0){
       <div class="hb-p-header">
         <div class="hb-p-customer">
           <div class="hb-p-cname">${(c.name || 'WALK-IN').toUpperCase()}</div>
-          <div class="hb-p-cmeta">${c.id === 1 ? 'Walk-in customer · Retail prices' : `${c.phone || 'No phone'} · Owes ${fmt(owed)} of ${fmt(c.limit)}`}</div>
+          <div class="hb-p-cmeta">${c.id === 1 ? 'Walk-in customer · Retail prices' : `${c.phone || 'No phone'} · Outstanding ${fmt(owed)} of ${fmt(c.limit)}`}</div>
         </div>
         <div class="hb-p-meta">
           ${b.ref ? `<div><span>Reference:</span> <b>${b.ref}</b></div>` : ''}
@@ -19502,7 +19502,7 @@ function pickCustomer(after){
     m.querySelector('#cl').innerHTML=`<table>
       <tr class="rowlink" data-cid="1"><td><b>Walk-in customer</b><div class="muted">no account, retail prices</div></td><td></td><td class="n"></td></tr>
       ${hits.map(c=>`<tr class="rowlink" data-cid="${c.id}"><td><b>${c.name}</b><div class="muted">${c.phone||'no mobile'} · ${c.code}</div></td>
-        <td>${c.level}</td><td class="n">${partyBal('C',c.id)>0?'owes '+fmt(partyBal('C',c.id)):'<span class="muted">clear</span>'}</td></tr>`).join('')}
+        <td>${c.level}</td><td class="n">${partyBal('C',c.id)>0?'outstanding '+fmt(partyBal('C',c.id)):'<span class="muted">clear</span>'}</td></tr>`).join('')}
       ${v&&!hits.length?`<tr><td colspan="3" class="muted">Nobody matches that — add them below.</td></tr>`:''}</table>`;
     m.querySelectorAll('[data-cid]').forEach(r=>r.onclick=()=>pick(+r.dataset.cid));
     cur=v&&hits.length?1:0; mark();            // typing lands on the first match; empty lands on walk-in
@@ -19660,7 +19660,7 @@ function askBillCustomer(done){
     const hits=v?S.customers.filter(c=>c.id!==1&&c.active!==false&&custMatch(c,v)).slice(0,8):[];
     m.querySelector('#bqL').innerHTML=v?`<table>
       ${hits.map(c=>`<tr class="rowlink" data-bqid="${c.id}"><td><b>${c.name}</b><div class="muted">${c.phone||'no mobile'} · ${c.code||''}</div></td>
-        <td>${c.level}</td><td class="n">${partyBal('C',c.id)>0?'owes '+fmt(partyBal('C',c.id)):'<span class="muted">clear</span>'}</td></tr>`).join('')}
+        <td>${c.level}</td><td class="n">${partyBal('C',c.id)>0?'outstanding '+fmt(partyBal('C',c.id)):'<span class="muted">clear</span>'}</td></tr>`).join('')}
       ${hits.length?'':'<tr><td colspan="3" class="muted">Nobody matches that yet.</td></tr>'}</table>`:'';
     m.querySelectorAll('[data-bqid]').forEach(r=>r.onclick=()=>take(+r.dataset.bqid));
     box.style.display=(v&&!hits.length)?'':'none';
@@ -20744,8 +20744,8 @@ function prnModal(supplierId){
         <td class="n">${fmt(l.qty*l.cost)}</td>
         <td><button class="btn ghost sm" data-prx="${i}">✕</button></td></tr>`}).join('')
        ||'<tr><td colspan="6" class="muted">Nothing on it yet.</td></tr>'}</table>
-     <div class="paytop" style="margin-top:10px"><div class="pt-l"><span>Coming off what we owe them</span><b>${fmt(tot)}</b></div>
-      <div class="pt-r"><span>They are owed ${fmt(partyBal('S',+m.querySelector('#prSup').value))} now</span>
+     <div class="paytop" style="margin-top:10px"><div class="pt-l"><span>Coming off their outstanding</span><b>${fmt(tot)}</b></div>
+      <div class="pt-r"><span>Outstanding to them ${fmt(partyBal('S',+m.querySelector('#prSup').value))} now</span>
        <span>after this, ${fmt(Math.max(0,partyBal('S',+m.querySelector('#prSup').value)-tot))}</span></div></div>
      <div class="f" style="margin-top:8px"><label>Why are they going back?</label><input id="prWhy" placeholder="e.g. 5 bags torn, wrong shade sent"></div>
      <div style="display:flex;justify-content:flex-end;gap:8px">
@@ -20789,7 +20789,7 @@ function prnModal(supplierId){
     notify('order',`${fmt(total)} of goods went back to ${SU(sid).name.split(/[–(]/)[0].trim()}`,'suppliers');
     if(SU(sid).phone&&CFG.msg.autoOrder) supSms(SU(sid).phone,`${CFG.shop.name}: ${no} — ${fmt(total)} of goods returned${why?' ('+why+')':''}. Please issue a credit note.`);
     m.remove(); render(); prnPrint(no);
-    toast(`${no} — ${fmt(total)} off what we owe them`);
+    toast(`${no} — ${fmt(total)} off their outstanding`);
   };
   draw(); q.focus();
 }
@@ -21547,11 +21547,11 @@ function bills(){
       <button class="btn ghost sm" data-act="billCustAll">Every bill again</button></div>`:''}
     <div class="chips">${[[0,'Today'],[1,'Yesterday'],[7,'7 days'],[30,'30 days']].map(d=>`<button class="${dayIs(d[0])?'on':''}" data-act="billDay" data-d="${d[0]}">${d[1]}</button>`).join('')}<button class="${!billFrom&&!billTo?'on':''}" data-act="billAllDates">All time</button>
      <span class="bl-dates"><input id="billFrom" type="date" value="${billFrom}" title="From"><span>–</span><input id="billTo" type="date" value="${billTo}" title="To"></span></div>
-    <div class="chips" style="margin-bottom:6px">${[['all','All'],['cash','Cash'],['credit','Credit'],['unpaid','Still owing'],['undelivered',`Not delivered${(n=>n?' · '+n:'')(undeliveredBills().length)}`]].map(o=>`<button class="${billType===o[0]?'on':''}" data-act="billKind" data-v="${o[0]}">${o[1]}</button>`).join('')}
+    <div class="chips" style="margin-bottom:6px">${[['all','All'],['cash','Cash'],['credit','Credit'],['unpaid','Outstanding'],['undelivered',`Not delivered${(n=>n?' · '+n:'')(undeliveredBills().length)}`]].map(o=>`<button class="${billType===o[0]?'on':''}" data-act="billKind" data-v="${o[0]}">${o[1]}</button>`).join('')}
      <select id="billBy" class="bl-by"><option value="all">Any cashier</option>${cashiers.map(x=>`<option ${billBy===x?'selected':''}>${x}</option>`).join('')}</select>
      ${filtered?`<button class="clear" data-act="billClear" style="color:var(--chip-rust)">Clear</button>`:''}</div>
     <div class="bl-count"><span><b>${list.length}</b> bill${list.length===1?'':'s'} · ${fmt(sum.total)} billed</span>
-     <span>${sum.bal?`<b style="color:var(--chip-rust)">${fmt(sum.bal)}</b> owing`:'<span class="muted">nothing owing</span>'}</span></div>
+     <span>${sum.bal?`<b style="color:var(--chip-rust)">${fmt(sum.bal)}</b> outstanding`:'<span class="muted">nothing outstanding</span>'}</span></div>
     <div class="bl-rows" id="billRows">
      ${list.slice(0,billLimit).map(s=>{const c=C(s.customerId)||{name:'—'}, oncredit=s.type==='CREDIT';
        return `<div class="bl-row ${inv&&s.no===inv.no?'sel':''} ${oncredit?'oncredit':''}" data-act="billSel" data-no="${s.no}" tabindex="-1">
@@ -21560,7 +21560,7 @@ function bills(){
        <div class="bl-who"><b class="${c.id===1?'walk':''}">${c.id===1?`Walk-in${s.phone?' · '+s.phone:''}`:`<a href="#" data-act="billCust" data-id="${c.id}" title="every bill of theirs">${c.name}</a>`}</b>
         <span class="bl-no2">${s.no}${c.id!==1&&c.phone?' · '+c.phone:''}</span>
         <span class="muted">${billUndelivered(s)?'<b style="color:var(--chip-rust)">not delivered</b> · ':''}${s.lines.length} line${s.lines.length===1?'':'s'} · ${s.by}${(s.remade||[]).length?' · re-made':''}${(s.edits||[]).length?' · corrected':''}</span></div>
-       <div class="bl-amt"><b>${fmt(s.total)}</b>${s.balance>0?`<i class="owe">${fmt(s.balance)} owing</i>`:s.type==='CREDIT'?'<i class="ok">credit · paid</i>':'<i class="ok">cash</i>'}${gpSeen()?(gpOdd(s)?'<i class="gp odd" title="The cost written on a line is far above what it sold for — check it">GP · cost looks wrong</i>':(()=>{const g=gpOf(s.lines,s.billDisc);return `<i class="gp ${g.gp<0?'neg':''}">GP ${fmt(g.gp)} · ${g.pct}%</i>`})()):''}</div></div>`}).join('')
+       <div class="bl-amt"><b>${fmt(s.total)}</b>${s.balance>0?`<i class="owe">${fmt(s.balance)} outstanding</i>`:s.type==='CREDIT'?'<i class="ok">credit · paid</i>':'<i class="ok">cash</i>'}${gpSeen()?(gpOdd(s)?'<i class="gp odd" title="The cost written on a line is far above what it sold for — check it">GP · cost looks wrong</i>':(()=>{const g=gpOf(s.lines,s.billDisc);return `<i class="gp ${g.gp<0?'neg':''}">GP ${fmt(g.gp)} · ${g.pct}%</i>`})()):''}</div></div>`}).join('')
       ||`<div class="muted" style="padding:20px 8px">No bill matches that. Try the last few digits of the number, or their mobile.</div>`}
      ${list.length>billLimit?`<div style="padding:8px"><button class="btn ghost sm" data-act="billMore">Show 150 more</button> <span class="muted">of ${list.length}</span></div>`:''}
     </div>
@@ -21629,7 +21629,7 @@ function billDetail(inv){
     <div class="net"><span>Net total</span><b>${money2(inv.total)}</b></div>
     <div class="paid"><span>Paid</span><b>${money2(inv.paid)}</b></div>
     <div class="${inv.balance>0?'owe':''}"><span>Balance</span><b>${money2(inv.balance)}</b></div>
-    ${prev?`<div><span>Other bills owing</span><b>${money2(prev)}</b></div>`:''}
+    ${prev?`<div><span>Other bills outstanding</span><b>${money2(prev)}</b></div>`:''}
    </div>
    <div class="bl-lines"><table class="till-tbl"><tr><th>CODE</th><th>ITEM</th><th class="n">QTY</th><th class="n">MRP</th><th class="n">PRICE</th><th class="n">DISC</th><th class="n">AMOUNT</th></tr>
     ${inv.lines.map(l=>{const p=P(l.pid)||NOPROD;return `<tr><td class="c">${p.num||p.code}</td><td class="d">${lineName(l)}${lineFrom(l,inv)?` <b>[issue from ${lineFrom(l,inv)}]</b>`:''}${l.serials&&l.serials.length?`<div class="muted">S/N ${l.serials.join(', ')}</div>`:''}</td>
@@ -22592,7 +22592,7 @@ function supPortalSet(s,field,value){
 }
 function applySaleAdjust(no,v,why,note,by){
   const inv=S.sales.find(x=>x.no===no); if(!inv) throw new Error('Bill '+no+' not found');
-  if(v>inv.balance+0.005) throw new Error('More than is owing on '+no);
+  if(v>inv.balance+0.005) throw new Error('More than is outstanding on '+no);
   const c=C(inv.customerId);
   inv.balance=+(inv.balance-v).toFixed(2);
   inv.adjustments=(inv.adjustments||[]).concat([{amount:v,why,note,date:D(today),by:by||S.user.name}]);
@@ -22603,7 +22603,7 @@ function applySaleAdjust(no,v,why,note,by){
 function applyPurAdjust(no,v,why,note,by){
   const pur=S.purchases.find(x=>x.no===no); if(!pur) throw new Error('Purchase '+no+' not found');
   const sp=SU(pur.supplierId), owing=pur.total-pur.paid;
-  if(v>owing+0.005) throw new Error('More than is owing on '+pur.supInv);
+  if(v>owing+0.005) throw new Error('More than is outstanding on '+pur.supInv);
   pur.total=+(pur.total-v).toFixed(2);
   pur.adjustments=(pur.adjustments||[]).concat([{amount:v,why,note,date:D(today),by:by||S.user.name}]);
   const part=purCostDown(pur,v);
@@ -22818,15 +22818,15 @@ function customers(){
    <div class="card cu-list">
     <div class="cu-strip">
      <div>Customers<b>${all.length}</b></div>
-     <div>Owed to us<b title="${fmt(totOwed)}">${totOwed>=1e6?'Rs '+(totOwed/1e6).toFixed(2)+'M':totOwed>=1e5?'Rs '+Math.round(totOwed/1e3)+'k':fmt(totOwed)}</b></div>
+     <div>Outstanding<b title="${fmt(totOwed)}">${totOwed>=1e6?'Rs '+(totOwed/1e6).toFixed(2)+'M':totOwed>=1e5?'Rs '+Math.round(totOwed/1e3)+'k':fmt(totOwed)}</b></div>
      <div>${nLate?'Over 60 days':'Over limit'}<b style="color:${(nLate||nOver)?'var(--chip-rust)':'var(--chip-green)'}">${nLate||nOver||'none'}</b></div>
     </div>
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
      <input id="custQ" value="${custQ}" placeholder="Name, mobile, code, address…" autocomplete="off"><span class="search-k"><i class="kbd">↑↓</i><i class="kbd">Enter</i></span></div>
-    <div class="chips">${[['all','All'],['owing','Owing'],['overdue','60+ days'],['over','Over limit'],['wholesale','Wholesale'],['online','Website'],['portal','Portal'],['nophone','No mobile']]
+    <div class="chips">${[['all','All'],['owing','Outstanding'],['overdue','60+ days'],['over','Over limit'],['wholesale','Wholesale'],['online','Website'],['portal','Portal'],['nophone','No mobile']]
       .map(f=>`<button class="${custFilter===f[0]?'on':''}" data-custfilter="${f[0]}">${f[1]}</button>`).join('')}</div>
     <div class="chips" style="margin-bottom:6px"><span class="muted" style="align-self:center">Sort</span>
-     ${[['owed','Balance'],['oldest','Oldest debt'],['recent','Recent'],['name','Name']].map(f=>`<button class="${custSort===f[0]?'on':''}" data-custsort="${f[0]}">${f[1]}</button>`).join('')}</div>
+     ${[['owed','Outstanding'],['oldest','Oldest debt'],['recent','Recent'],['name','Name']].map(f=>`<button class="${custSort===f[0]?'on':''}" data-custsort="${f[0]}">${f[1]}</button>`).join('')}</div>
     <div class="muted" style="margin:0 0 4px 4px">${list.length} of ${all.length}</div>
     <div class="cu-rows" id="custRows">${list.map(x=>{const o=partyBal('C',x.id), over=o>x.limit, ag=custAge(x.id), seen=custLastSeen(x.id);
       return `<div class="cu-row ${x.id===custSel?'sel':''} ${x.portal?'haspage':''}" data-act="cust" data-id="${x.id}" tabindex="-1">
@@ -22867,7 +22867,7 @@ function customerPanel(c){
      <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag ${c.level==='wholesale'?'blue':'ok'}">${c.level} prices</span>${overLimit?'<span class="tag bad">over the limit</span>':''}${ag.old>0?'<span class="tag bad">has 60+ day debt</span>':''}${c.portal?'<span class="tag page">own page on</span>':''}${c.online?'<span class="tag warn">from the website</span>':''}${first?`<span class="muted" style="font-size:12px;align-self:center">customer since ${first}</span>`:''}</div></div></div></div>
 
    <div class="cu-kpis">
-    <div class="kpi ${overLimit?'r':owed>0?'y':'g'}"><div class="l">Outstanding</div><div class="v ${fmt(owed).length>14?'small':''}">${fmt(owed)}</div><div class="s">${open.length?`${open.length} unpaid bill${open.length===1?'':'s'} · oldest ${ag.oldest} days`:'nothing owing'}</div>
+    <div class="kpi ${overLimit?'r':owed>0?'y':'g'}"><div class="l">Outstanding</div><div class="v ${fmt(owed).length>14?'small':''}">${fmt(owed)}</div><div class="s">${open.length?`${open.length} unpaid bill${open.length===1?'':'s'} · oldest ${ag.oldest} days`:'nothing outstanding'}</div>
      ${owed>0?`<div class="agebars" title="up to 30 · 31–60 · over 60 days"><i style="width:${ag.now/owed*100}%;background:var(--chip-green)"></i><i style="width:${ag.mid/owed*100}%;background:var(--chip-yellow)"></i><i style="width:${ag.old/owed*100}%;background:var(--chip-rust)"></i></div>`:''}
      ${c.limit>0?`<div class="kpi-lim"><div class="bar"><i class="${overLimit?'bad':used>80?'warn':''}" style="width:${used}%"></i></div>
        <span>${overLimit?`${fmt(owed-c.limit)} over the ${fmt(c.limit)} limit`:`${fmt(c.limit-owed)} of the ${fmt(c.limit)} limit left`}</span></div>`:''}</div>
@@ -22921,7 +22921,7 @@ function portalBar(kind,p){
    <div class="pb-t"><b>Their own outstanding page${on?'':' is off'}</b>
     <span>${on
       ? `${who} sign${kind==='C'?'':'s'} in with a code texted to ${p.phone||'their mobile'} and see${kind==='C'?'':'s'} every unpaid bill${kind==='S'?(p.showAccounts?', payments and cheques':' — payments and cheques are hidden'):''}. ${p.lastLogin?'Last opened '+p.lastLogin+'.':'Not opened yet.'}`
-      : `Switch it on and ${who.toLowerCase()} can check what ${kind==='C'?'they owe':'we owe them'} without phoning the shop.`}</span></div>
+      : `Switch it on and ${who.toLowerCase()} can check what ${kind==='C'?'outstanding':'outstanding to them'} without phoning the shop.`}</span></div>
    <div class="pb-a">
     ${kind==='S'&&on?`<label class="chk"><input type="checkbox" ${p.showAccounts?'checked':''} data-act="supShow" data-id="${p.id}"> show bills and payments</label>`:''}
     <button class="btn ${on?'ghost':'tape'} sm" data-act="${kind==='C'?'custPortal':'supEnable'}" data-id="${p.id}">${on?'Switch off':'Switch on'}</button>
@@ -23110,7 +23110,7 @@ async function custLoginToggle(cid,lid,on,kind){
 }
 function custOverview(c,inv,open,rc,webOrders,ag,owed){
   const ev=[
-    ...inv.map(s=>({date:s.date,k:'bill',t:`Bill ${s.no}${s.type==='CREDIT'?' on account':''}${s.balance>0?` — ${fmt(s.balance)} still owing`:''}`,a:fmt(s.total),no:s.no,act:'invoice'})),
+    ...inv.map(s=>({date:s.date,k:'bill',t:`Bill ${s.no}${s.type==='CREDIT'?' on account':''}${s.balance>0?` — ${fmt(s.balance)} outstanding`:''}`,a:fmt(s.total),no:s.no,act:'invoice'})),
     ...inv.flatMap(s=>(s.adjustments||[]).map(a=>({date:a.date,k:'adj',t:`${ADJ_REASONS.find(r=>r[0]===a.why)?.[1]||a.why} on ${s.no}${a.note?' — '+a.note:''}`,a:'− '+fmt(a.amount)}))),
     ...rc.map(p=>({date:p.date,k:'in',t:`Payment ${p.no} · ${p.method.toLowerCase()}${p.ref?' '+p.ref:''}${(p.against||[]).length?' against '+p.against.join(', '):''}${p.advance>0?' · '+fmt(p.advance)+' held as credit':''}`,a:fmt(p.amount),no:p.no,act:'rcpt'})),
     ...webOrders.map(o=>({date:o.date,k:'web',t:`Website order ${o.no} — ${({placed:'with the shop',accepted:'being picked',ready:'ready',despatched:'on the way',done:'delivered',collected:'collected',rejected:'not accepted',cancelled:'cancelled'})[o.status]||o.status}${o.invoice?' · billed as '+o.invoice:''}`,a:fmt(o.total)})),
@@ -23118,10 +23118,10 @@ function custOverview(c,inv,open,rc,webOrders,ag,owed){
   return `<div class="two-col">
    <div>
     <h2 style="font-size:15px">Unpaid bills</h2>
-    ${open.length?`<table class="cu-tbl"><tr><th>Bill</th><th>Date</th><th class="n">Owed</th><th>Age</th></tr>
+    ${open.length?`<table class="cu-tbl"><tr><th>Bill</th><th>Date</th><th class="n">Outstanding</th><th>Age</th></tr>
      ${open.sort((a,b)=>a.date.localeCompare(b.date)).map(s=>{const d=daysAgo(s.date);return `<tr><td><a href="#" data-act="invoice" data-no="${s.no}">${s.no}</a></td><td>${s.date}</td><td class="n"><b>${fmt(s.balance)}</b>${s.paid?`<div class="muted">of ${fmt(s.total)}</div>`:''}</td><td><span class="tag ${d>60?'bad':d>30?'warn':'ok'}">${d}d</span></td></tr>`}).join('')}
      <tr><td colspan="2"><b>Total</b></td><td class="n"><b>${fmt(owed)}</b></td><td></td></tr></table>`
-     :'<div class="card note" style="background:var(--tint-green);border-color:var(--chip-green)"><b>Account clear.</b> <span class="muted">Nothing owing.</span></div>'}
+     :'<div class="card note" style="background:var(--tint-green);border-color:var(--chip-green)"><b>Account clear.</b> <span class="muted">Nothing outstanding.</span></div>'}
    </div>
    <div><h2 style="font-size:15px">What has been happening</h2>
     ${ev.length?`<div class="tl">${ev.map(e=>`<div class="ev ${e.k}"><span class="d">${e.date}</span><span class="t">${e.act?`<a href="#" data-act="${e.act}" data-no="${e.no}" style="border:0">${e.t}</a>`:e.t}</span><span class="a">${e.a}</span></div>`).join('')}</div>`
@@ -23132,11 +23132,11 @@ function custBills(c,inv){
   const list=inv.filter(s=>custBillsF==='all'||(custBillsF==='unpaid'?s.balance>0:s.balance<=0));
   return `<div class="chips" style="margin-bottom:8px">${[['all','All'],['unpaid','Unpaid'],['paid','Paid']].map(f=>`<button class="${custBillsF===f[0]?'on':''}" data-custbills="${f[0]}">${f[1]}</button>`).join('')}
     <span class="muted" style="align-self:center;margin-left:auto">${list.length} bill${list.length===1?'':'s'} · ${fmt(list.reduce((a,s)=>a+s.total,0))}</span></div>
-   <table class="cu-tbl"><tr><th>Bill</th><th>Date</th><th>Items</th><th class="n">Total</th><th class="n">Paid</th><th class="n">Still owed</th><th>Status</th><th></th></tr>
+   <table class="cu-tbl"><tr><th>Bill</th><th>Date</th><th>Items</th><th class="n">Total</th><th class="n">Paid</th><th class="n">Outstanding</th><th>Status</th><th></th></tr>
    ${list.map(s=>{const d=daysAgo(s.date);return `<tr><td><a href="#" data-act="invoice" data-no="${s.no}">${s.no}</a>${(s.adjustments||[]).length?`<div class="muted">${s.adjustments.map(a=>(ADJ_REASONS.find(r=>r[0]===a.why)?.[1]||a.why).toLowerCase()+' '+fmt(a.amount)).join(', ')}</div>`:''}</td>
      <td>${s.date}<div class="muted">${agoTxt(s.date)}</div></td><td class="muted">${(s.lines||[]).length} line${(s.lines||[]).length===1?'':'s'}${s.by?' · '+s.by:''}</td>
      <td class="n">${fmt(s.total)}</td><td class="n">${fmt(s.paid)}</td><td class="n">${s.balance>0?`<b style="color:${d>60?'var(--chip-rust)':'inherit'}">${fmt(s.balance)}</b>`:'—'}</td>
-     <td>${s.balance>0?`<span class="tag ${d>60?'bad':d>30?'warn':'warn'}">${d>60?'overdue':'owing'} · ${d}d</span>`:'<span class="tag ok">paid</span>'}${s.overLimit?' <span class="tag bad">over limit</span>':''}</td>
+     <td>${s.balance>0?`<span class="tag ${d>60?'bad':d>30?'warn':'warn'}">${d>60?'overdue':'outstanding'} · ${d}d</span>`:'<span class="tag ok">paid</span>'}${s.overLimit?' <span class="tag bad">over limit</span>':''}</td>
      <td><div class="rowacts"><button class="btn ghost sm" data-act="billSms" data-no="${s.no}" ${c.phone?'':'disabled'}>Text link</button>${can('cancelBill')||can('adjustInvoice')?`<button class="btn ghost sm" data-act="billEdit" data-no="${s.no}">Edit</button>`:''}</div></td></tr>`}).join('')||'<tr><td colspan="8" class="muted">No bills here.</td></tr>'}</table>`;
 }
 function custPayments(c,rc){
@@ -23227,11 +23227,11 @@ function custModal(id,preset){
         const fields={}; changed.forEach(k=>fields[k]=now[k]);
         asks.push(requestApproval('custEdit',
           `Change ${c.name}: ${changed.map(k=>`${LABEL[k].toLowerCase()} ${was[k]?`“${was[k]}”`:'(empty)'} → ${now[k]?`“${now[k]}”`:'(empty)'}`).join(', ')}`,
-          `${c.code||''}${c.phone?' · '+c.phone:''} · ${S.sales.filter(s=>s.customerId===c.id).length} bills · owes ${fmt(partyBal('C',c.id))}`,
+          `${c.code||''}${c.phone?' · '+c.phone:''} · ${S.sales.filter(s=>s.customerId===c.id).length} bills · — outstanding ${fmt(partyBal('C',c.id))}`,
           {cid:c.id,fields}));
       } else if(changed.length){ Object.assign(c,now) }
       if(termsChanged&&needsApproval('custTerms')){
-        asks.push(requestApproval('custTerms',`Change ${c.name}'s terms: limit ${fmt(c.limit)} → ${fmt(limit)}, ${c.level} → ${level} prices`,`owes ${fmt(partyBal('C',c.id))} now`,{cid:c.id,limit,level}));
+        asks.push(requestApproval('custTerms',`Change ${c.name}'s terms: limit ${fmt(c.limit)} → ${fmt(limit)}, ${c.level} → ${level} prices`,`outstanding ${fmt(partyBal('C',c.id))} now`,{cid:c.id,limit,level}));
       } else if(termsChanged){ Object.assign(c,{level,limit}) }
       const ledgerChanged=(c.ledger||'')!==ledger||(c.tin||'')!==tin; c.ledger=ledger; if(tin) c.tin=tin; else delete c.tin;
       m.remove(); render();
@@ -23256,7 +23256,7 @@ const ADJ_REASONS=[['return','Goods returned'],['discount','Discount agreed afte
 function adjustSaleModal(no,after){
   const inv=S.sales.find(x=>x.no===no), c=C(inv.customerId);
   const m=modal(`<h2>Change what bill ${inv.no} is worth</h2>
-   <div class="muted">${c.name} · ${inv.date} · billed ${fmt(inv.total)}, ${fmt(inv.paid)} paid, <b>${fmt(inv.balance)}</b> still owing</div>
+   <div class="muted">${c.name} · ${inv.date} · billed ${fmt(inv.total)}, ${fmt(inv.paid)} paid, <b>${fmt(inv.balance)}</b> outstanding</div>
    <div class="grid3" style="margin-top:10px">
     <div class="f"><label>Take off</label><input id="ajAmt" type="number" placeholder="0.00"></div>
     <div class="f"><label>Why</label><select id="ajWhy">${ADJ_REASONS.map(r=>`<option value="${r[0]}">${r[1]}</option>`).join('')}</select></div>
@@ -23270,7 +23270,7 @@ function adjustSaleModal(no,after){
     <button class="btn tape" id="ajOk">Apply the change</button></div>`);
   const amt=m.querySelector('#ajAmt');
   const show=()=>{const v=+amt.value||0;
-    m.querySelector('#ajOut').innerHTML=v>0?`Owing on this bill becomes <b>${fmt(Math.max(0,inv.balance-v))}</b>, and ${c.name} owes <b>${fmt(Math.max(0,partyBal('C',c.id)-v))}</b> in total.`:'&nbsp;'};
+    m.querySelector('#ajOut').innerHTML=v>0?`Outstanding on this bill becomes <b>${fmt(Math.max(0,inv.balance-v))}</b>, and ${c.name} — outstanding <b>${fmt(Math.max(0,partyBal('C',c.id)-v))}</b> in total.`:'&nbsp;'};
   amt.oninput=show; show();
   m.querySelectorAll('[data-ajq]').forEach(b=>b.onclick=()=>{
     const q=b.dataset.ajq;
@@ -23278,9 +23278,9 @@ function adjustSaleModal(no,after){
   m.querySelector('#ajOk').onclick=()=>{
     const v=+amt.value||0;
     if(!(v>0))return toast('Enter how much to take off');
-    if(v>inv.balance+0.005)return toast('That is more than is owing on this bill');
+    if(v>inv.balance+0.005)return toast('That is more than is outstanding on this bill');
     const why=m.querySelector('#ajWhy').value, note=(m.querySelector('#ajNote').value||'').trim();
-    if(needsApproval('billAdjust')) return requestApproval('billAdjust',`Take ${fmt(v)} off bill ${inv.no} for ${c.name} — ${ADJ_REASONS.find(r=>r[0]===why)[1].toLowerCase()}`,`${note?note+' · ':''}bill ${fmt(inv.total)}, ${fmt(inv.balance)} owing`,{no:inv.no,amount:v,why,note});
+    if(needsApproval('billAdjust')) return requestApproval('billAdjust',`Take ${fmt(v)} off bill ${inv.no} for ${c.name} — ${ADJ_REASONS.find(r=>r[0]===why)[1].toLowerCase()}`,`${note?note+' · ':''}bill ${fmt(inv.total)}, ${fmt(inv.balance)} outstanding`,{no:inv.no,amount:v,why,note});
     applySaleAdjust(inv.no,v,why,note,S.user.name);
     m.remove(); render(); toast(`${fmt(v)} off ${inv.no}`);
     if(after) after();
@@ -23288,8 +23288,8 @@ function adjustSaleModal(no,after){
 }
 function adjustPurchaseModal(no,after){
   const pur=S.purchases.find(x=>x.no===no), sp=SU(pur.supplierId), owing=pur.total-pur.paid;
-  const m=modal(`<h2>Change what we owe on ${pur.supInv}</h2>
-   <div class="muted">${sp.name} · ${pur.date} · billed ${fmt(pur.total)}, ${fmt(pur.paid)} paid, <b>${fmt(owing)}</b> still owing</div>
+  const m=modal(`<h2>Change the outstanding on ${pur.supInv}</h2>
+   <div class="muted">${sp.name} · ${pur.date} · billed ${fmt(pur.total)}, ${fmt(pur.paid)} paid, <b>${fmt(owing)}</b> outstanding</div>
    <div class="grid3" style="margin-top:10px">
     <div class="f"><label>Take off</label><input id="apAmt" type="number" placeholder="0.00"></div>
     <div class="f"><label>Why</label><select id="apWhy">${ADJ_REASONS.map(r=>`<option value="${r[0]}">${r[1]}</option>`).join('')}</select></div>
@@ -23301,15 +23301,15 @@ function adjustPurchaseModal(no,after){
     <button class="btn tape" id="apOk">Apply the change</button></div>`);
   const amt=m.querySelector('#apAmt');
   const show=()=>{const v=+amt.value||0;
-    m.querySelector('#apOut').innerHTML=v>0?`Owing on this bill becomes <b>${fmt(Math.max(0,owing-v))}</b>, and we would owe ${sp.name.split(' ')[0]} <b>${fmt(Math.max(0,partyBal('S',sp.id)-v))}</b> in all.`:'&nbsp;'};
+    m.querySelector('#apOut').innerHTML=v>0?`Outstanding on this bill becomes <b>${fmt(Math.max(0,owing-v))}</b>, and we would owe ${sp.name.split(' ')[0]} <b>${fmt(Math.max(0,partyBal('S',sp.id)-v))}</b> in all.`:'&nbsp;'};
   amt.oninput=show; show();
   m.querySelector('[data-apq]').onclick=()=>{amt.value=owing.toFixed(2);show()};
   m.querySelector('#apOk').onclick=()=>{
     const v=+amt.value||0;
     if(!(v>0))return toast('Enter how much to take off');
-    if(v>owing+0.005)return toast('That is more than is owing on this bill');
+    if(v>owing+0.005)return toast('That is more than is outstanding on this bill');
     const why=m.querySelector('#apWhy').value, note=(m.querySelector('#apNote').value||'').trim();
-    if(needsApproval('purAdjust')) return requestApproval('purAdjust',`Take ${fmt(v)} off ${sp.name}'s bill ${pur.supInv} — ${ADJ_REASONS.find(r=>r[0]===why)[1].toLowerCase()}`,`${note?note+' · ':''}bill ${fmt(pur.total)}, ${fmt(owing)} owing`,{no:pur.no,amount:v,why,note});
+    if(needsApproval('purAdjust')) return requestApproval('purAdjust',`Take ${fmt(v)} off ${sp.name}'s bill ${pur.supInv} — ${ADJ_REASONS.find(r=>r[0]===why)[1].toLowerCase()}`,`${note?note+' · ':''}bill ${fmt(pur.total)}, ${fmt(owing)} outstanding`,{no:pur.no,amount:v,why,note});
     applyPurAdjust(pur.no,v,why,note,S.user.name);
     m.remove(); render(); toast(`${fmt(v)} off ${pur.supInv}`);
     if(after) after();
@@ -23327,7 +23327,7 @@ function custPayModal(id){
   const c=C(id);
   let sel=new Set(), q='', parts=[], mode=null, typed=null, firstFocus=true;
   const m=modal(`<div class="pay-win">
-   <div class="pay-top"><div><h2 style="margin:0">Payment from ${c.name}</h2><div class="muted">${c.phone||'no mobile'} · ${c.code} · owes <b>${fmt(partyBal('C',id))}</b></div></div>
+   <div class="pay-top"><div><h2 style="margin:0">Payment from ${c.name}</h2><div class="muted">${c.phone||'no mobile'} · ${c.code} · — outstanding <b>${fmt(partyBal('C',id))}</b></div></div>
     <div class="pay-keys"><span><i class="kbd">Enter</i>cash</span><span><i class="kbd">F8</i>cheque</span><span><i class="kbd">F9</i>card</span><span><i class="kbd">B</i>bank</span><span><i class="kbd">Del</i>undo</span><span><i class="kbd">F12</i>complete</span><span><i class="kbd">Esc</i>close</span></div></div>
    <div id="payBody"></div></div>`); npAdd(m);
   m.classList.add('wide');
@@ -23351,7 +23351,7 @@ function custPayModal(id){
      <div class="pay-bills">
       <div class="pay-h">Unpaid bills <span class="muted">tick the ones this pays — none ticked settles the oldest first</span></div>
       <input id="iq" value="${q}" placeholder="Find a bill by number or date…" autocomplete="off">
-      <div class="pay-list"><table><tr><th></th><th>Invoice</th><th>Date</th><th class="n">Billed</th><th class="n">Still owed</th><th></th></tr>
+      <div class="pay-list"><table><tr><th></th><th>Invoice</th><th>Date</th><th class="n">Billed</th><th class="n">Outstanding</th><th></th></tr>
        ${list.map(s=>{const d=Math.round((today-new Date(s.date))/864e5);return `<tr class="${sel.has(s.no)?'on':''}"><td><input type="checkbox" data-pick="${s.no}" ${sel.has(s.no)?'checked':''} style="width:auto"></td>
         <td>${s.no}${(s.adjustments||[]).length?`<div class="muted">${s.adjustments.map(a=>ADJ_REASONS.find(r=>r[0]===a.why)[1].toLowerCase()+' '+fmt(a.amount)).join(', ')}</div>`:''}</td>
         <td>${s.date}<div class="muted">${d}d</div></td><td class="n muted">${fmt(s.total)}</td><td class="n"><b>${fmt(s.balance)}</b></td>
@@ -23480,7 +23480,7 @@ function statement(id,mode){
    ${shown.map(r=>`<tr><td>${r.date}</td><td>${r.desc}</td><td>${r.ref||''}</td><td align="right">${r.dr?r.dr.toFixed(2):''}</td><td align="right">${r.cr?r.cr.toFixed(2):''}</td><td align="right">${r.run.toFixed(2)}</td></tr>`).join('')||'<tr><td colspan="6">No movement in this period.</td></tr>'}
    <tr><td colspan="5" align="right"><b>Balance due</b></td><td align="right"><b>${owed.toFixed(2)}</b></td></tr></table>
    ${open.length?`<div style="margin-top:12px"><b>Unpaid bills</b></div>
-   <table width="100%" style="font-size:12.5px"><tr><th align="left">Invoice</th><th align="left">Date</th><th align="right">Total</th><th align="right">Paid</th><th align="right">Owed</th><th align="right">Days</th></tr>
+   <table width="100%" style="font-size:12.5px"><tr><th align="left">Invoice</th><th align="left">Date</th><th align="right">Total</th><th align="right">Paid</th><th align="right">Outstanding</th><th align="right">Days</th></tr>
    ${open.map(s=>`<tr><td>${s.no}</td><td>${s.date}</td><td align="right">${s.total.toFixed(2)}</td><td align="right">${s.paid.toFixed(2)}</td><td align="right">${s.balance.toFixed(2)}</td><td align="right">${Math.round((today-new Date(s.date))/864e5)}</td></tr>`).join('')}</table>
    <div style="margin-top:6px;font-size:12px">Up to 30 days ${ag.now.toFixed(2)} · 31–60 days ${ag.mid.toFixed(2)} · over 60 days <b>${ag.old.toFixed(2)}</b></div>`:'<div style="margin-top:10px">Nothing outstanding — thank you.</div>'}
    <div style="margin-top:10px">Amount due in words: <i>${words(owed)} rupees only</i></div></div>
@@ -24033,7 +24033,7 @@ function billHtml(inv,f='a5'){
      <div class="sb-stars">${'*'.repeat(46)}</div>${vatOn()?`<div class="sb-tot"><span>Incl. VAT ${+CFG.tax.rate}% Rs.</span><i>:</i><b>${money2(vatIn(inv.total))}</b></div><div class="sb-tot"><span>VAT Reg No</span><i>:</i><b>${escM(CFG.shop.vat)}</b></div>${!walk&&c.tin?`<div class="sb-tot"><span>Customer VAT No</span><i>:</i><b>${escM(c.tin)}</b></div>`:''}`:''}`,
     paid:credit?`<div class="sb-tot"><span>Credit Rs.</span><i>:</i><b>${money2(inv.balance)}</b></div>${inv.paid>0?`<div class="sb-tot"><span>Paid Rs.</span><i>:</i><b>${money2(inv.paid)}</b></div>`:''}
       ${!walk&&CFG.bill.showOutstanding!==false?`<div class="sb-tot"><span>Previous Outstanding</span><i>:</i><b>${money2(prev)}</b></div><div class="sb-tot"><span>Total Outstanding Rs.</span><i>:</i><b>${money2(prev+inv.balance)}</b></div>`:''}
-      ${inv.reprint&&Math.abs(inv.balanceNow-inv.balance)>0.005?`<div class="sb-tot bold"><span>Still owing on this bill</span><i>:</i><b>${money2(inv.balanceNow)}</b></div>`:''}`
+      ${inv.reprint&&Math.abs(inv.balanceNow-inv.balance)>0.005?`<div class="sb-tot bold"><span>Outstanding on this bill</span><i>:</i><b>${money2(inv.balanceNow)}</b></div>`:''}`
      :`<div class="sb-tot"><span>${payWord} Payment Rs.</span><i>:</i><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div class="sb-tot"><span>Change Rs.</span><i>:</i><b>${money2(inv.paid-inv.total)}</b></div>`:''}`,
     barcode:`<div class="sb-bc">${barcode128(inv.no,40)}</div>`,
     sign:`<div class="sb-sign"><span>${B.signLeft||'Authorized By'}</span><span>${B.signRight||'Checked By'}</span></div>`,
@@ -24285,7 +24285,7 @@ function returnModal(no){
       <input class="rt-find" id="rtQ" value="${escM(q)}" placeholder="Bill number, customer or mobile…" autocomplete="off">
       <div class="rt-list">${list.map(s=>{ const c=C(s.customerId)||{name:'Cash customer'}, back=Object.keys(returnedFrom(s)).length;
         return `<button type="button" class="rt-bill" data-no="${escM(s.no)}"><span><b>${escM(s.no)}</b> · ${escM(c.name)}<br><small>${escM(s.date)} · ${(s.lines||[]).filter(l=>l.qty>0).length} line(s)${back?' · some already returned':''}${age(s.date)>(+CFG.bill.returnDays||7)?` · <b style="color:var(--chip-rust)">${age(s.date)} days old</b>`:''}</small></span>
-          <span class="r">${fmt(s.total)}<br><small>${s.balance>0.005?fmt(s.balance)+' owing':s.type==='CREDIT'?'on account · paid':'cash'}</small></span></button>` }).join('')
+          <span class="r">${fmt(s.total)}<br><small>${s.balance>0.005?fmt(s.balance)+' outstanding':s.type==='CREDIT'?'on account · paid':'cash'}</small></span></button>` }).join('')
         ||'<div class="muted" style="padding:16px">No bill matches that.</div>'}</div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><button type="button" class="btn ghost" id="rtNoBill">Return without a bill</button>
         <span class="muted" style="font-size:12.5px">No bill to go by — pick the customer and the items.</span></div>
@@ -24308,7 +24308,7 @@ function returnModal(no){
     const draw=()=>{
       const t=total(), n=rows.filter(r=>q[r.i]>0).length;
       body.innerHTML=`<div class="rt-head"><span><b>${escM(inv.no)}</b> · ${escM(inv.date)} · ${escM(named?c.name:'Cash customer')}</span>
-          <span class="muted">bill ${fmt(inv.total)}${inv.balance>0.005?' · '+fmt(inv.balance)+' still owing':''} · <a href="#" id="rtOther">another bill</a></span></div>
+          <span class="muted">bill ${fmt(inv.total)}${inv.balance>0.005?' · '+fmt(inv.balance)+' outstanding':''} · <a href="#" id="rtOther">another bill</a></span></div>
         ${old>win?`<div class="card note" style="margin-bottom:10px;border-color:var(--chip-rust)">This bill is <b>${old} days</b> old — the shop takes returns within ${win} days. Go on only if you agree to it.</div>`:''}
         <table class="rt-tbl"><tr><th>Item</th><th class="n hide-s">Sold</th><th class="n hide-s">Back already</th><th class="n">Coming back</th><th class="n">Each</th><th class="n">Amount</th></tr>
          ${rows.map(r=>`<tr class="${q[r.i]>0?'on':''}"><td>${escM(lineName(r.l))}</td><td class="n hide-s">${fq(r.l.qty)}</td><td class="n hide-s">${done[r.i]?fq(done[r.i]):'—'}</td>
@@ -24319,7 +24319,7 @@ function returnModal(no){
           <label style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:13px">Why <select id="rtWhy">${RET_WHY.map(w=>`<option ${w===why?'selected':''}>${w}</option>`).join('')}</select></label></div>
         <div class="rt-how">
           <label class="${how==='account'?'on':''} ${named?'':'off'}"><input type="radio" name="rtHow" value="account" ${how==='account'?'checked':''} ${named?'':'disabled'}>
-            <span><b>Take it off their account</b><small>${named?`They owe ${fmt(Math.max(0,partyBal('C',c.id)))} now — this comes off it${inv.balance>0.005?', this bill first':''}`:'Only for a named customer'}</small></span></label>
+            <span><b>Take it off their account</b><small>${named?`Outstanding ${fmt(Math.max(0,partyBal('C',c.id)))} now — this comes off it${inv.balance>0.005?', this bill first':''}`:'Only for a named customer'}</small></span></label>
           <label class="${how==='cash'?'on':''}"><input type="radio" name="rtHow" value="cash" ${how==='cash'?'checked':''}>
             <span><b>Give the money back</b><small>Cash out of the drawer</small></span></label></div>
         <div class="rt-foot"><div><div class="muted" style="font-size:12.5px">${n?`${n} item${n===1?'':'s'} coming back`:'Nothing ticked yet'}${named&&c.phone&&CFG.msg.autoReturn!==false?' · they will be texted':''}</div>
@@ -24373,10 +24373,10 @@ function returnNoBill(){
     const cl=cq.trim().toLowerCase(), cs=cl?S.customers.filter(x=>x.id!==1&&x.active!==false&&(String(x.name).toLowerCase().includes(cl)||String(x.phone||'').replace(/\D/g,'').includes(cl.replace(/\D/g,'')||'#'))).slice(0,8):[];
     const il=iq.trim().toLowerCase(), hits=il?S.products.filter(p=>p.active!==false&&(p.name.toLowerCase().includes(il)||String(p.code||'').toLowerCase()===il||String(p.barcode||'')===iq.trim()||String(p.num||'')===iq.trim()||(p.short||'').toLowerCase()===il)).slice(0,8):[];
     body.innerHTML=`
-      <div class="rt-head"><span>Customer: <b>${escM(named()?c.name:'Walk-in / cash customer')}</b>${named()?` · owes ${fmt(Math.max(0,partyBal('C',cid)))}`:''}</span>
+      <div class="rt-head"><span>Customer: <b>${escM(named()?c.name:'Walk-in / cash customer')}</b>${named()?` · — outstanding ${fmt(Math.max(0,partyBal('C',cid)))}`:''}</span>
         ${named()?'<a href="#" id="rnWalk">walk-in instead</a>':''}</div>
       ${named()?'':`<input class="rt-find" id="rnCq" value="${escM(cq)}" placeholder="Find the customer — name or mobile (leave empty for a walk-in)" autocomplete="off">
-        ${cs.length?`<div class="rt-list" style="max-height:180px;margin-bottom:10px">${cs.map(x=>`<button type="button" class="rt-bill" data-cid="${x.id}"><span><b>${escM(x.name)}</b><br><small>${escM(x.phone||'')}</small></span><span class="r"><small>owes</small><br>${fmt(Math.max(0,partyBal('C',x.id)))}</span></button>`).join('')}</div>`:''}`}
+        ${cs.length?`<div class="rt-list" style="max-height:180px;margin-bottom:10px">${cs.map(x=>`<button type="button" class="rt-bill" data-cid="${x.id}"><span><b>${escM(x.name)}</b><br><small>${escM(x.phone||'')}</small></span><span class="r"><small>outstanding</small><br>${fmt(Math.max(0,partyBal('C',x.id)))}</span></button>`).join('')}</div>`:''}`}
       <input class="rt-find" id="rnIq" value="${escM(iq)}" placeholder="Add an item — name, code or scan the barcode" autocomplete="off">
       ${hits.length?`<div class="rt-list" style="max-height:200px;margin-bottom:10px">${hits.map(p=>`<button type="button" class="rt-bill" data-pid="${p.id}"><span><b>${escM(p.name)}</b><br><small>${escM(p.code||'')} · ${escM(p.unit||'')}</small></span><span class="r">${fmt(priceOf(p))}</span></button>`).join('')}</div>`:''}
       ${lines.length?`<table class="rt-tbl"><tr><th>Item</th><th class="n">Coming back</th><th class="n">Each</th><th class="n">Amount</th><th></th></tr>
@@ -24388,7 +24388,7 @@ function returnNoBill(){
       <div style="display:flex;justify-content:flex-end;margin-top:10px"><label style="display:flex;gap:6px;align-items:center;font-size:13px">Why <select id="rnWhy">${RET_WHY.map(w=>`<option ${w===why?'selected':''}>${w}</option>`).join('')}</select></label></div>
       <div class="rt-how">
         <label class="${how==='account'?'on':''} ${named()?'':'off'}"><input type="radio" name="rnHow" value="account" ${how==='account'?'checked':''} ${named()?'':'disabled'}>
-          <span><b>Take it off their account</b><small>${named()?'Off what they owe — their oldest bills first':'Only for a named customer'}</small></span></label>
+          <span><b>Take it off their account</b><small>${named()?'Off their outstanding — their oldest bills first':'Only for a named customer'}</small></span></label>
         <label class="${how==='cash'?'on':''}"><input type="radio" name="rnHow" value="cash" ${how==='cash'?'checked':''}>
           <span><b>Give the money back</b><small>Cash out of the drawer</small></span></label></div>
       <div class="rt-foot"><div><div class="muted" style="font-size:12.5px">${lines.length?`${lines.length} item${lines.length===1?'':'s'} coming back`:'Nothing yet'}${named()&&c.phone&&CFG.msg.autoReturn!==false?' · they will be texted':''}</div>
@@ -24453,7 +24453,7 @@ function rtCustModal(){
   const pick=(id)=>{ RT.cid=id; RT.lines.forEach(x=>{ if(!x.typed) x.price=rtPriceOf(P(x.pid)) }); m.remove(); render() };
   const draw=()=>{ const v=q.value.trim().toLowerCase(), d=v.replace(/\D/g,'');
     const hits=(S.customers||[]).filter(c=>c.id!==1&&c.active!==false&&(!v||String(c.name).toLowerCase().includes(v)||(d&&String(c.phone||'').replace(/\D/g,'').includes(d)))).slice(0,10);
-    list.innerHTML=hits.map((c,i)=>`<button type="button" class="rt2-hit ${i===0&&v?'hi':''}" data-cid="${c.id}"><span><b>${escM(c.name)}</b><small>${escM(c.phone||'no mobile')}</small></span><span class="r">owes ${fmt(Math.max(0,partyBal('C',c.id)))}</span></button>`).join('')||'<div class="rt2-none">Nobody by that name or mobile.</div>';
+    list.innerHTML=hits.map((c,i)=>`<button type="button" class="rt2-hit ${i===0&&v?'hi':''}" data-cid="${c.id}"><span><b>${escM(c.name)}</b><small>${escM(c.phone||'no mobile')}</small></span><span class="r">outstanding ${fmt(Math.max(0,partyBal('C',c.id)))}</span></button>`).join('')||'<div class="rt2-none">Nobody by that name or mobile.</div>';
     list.querySelectorAll('[data-cid]').forEach(b=>b.onclick=()=>pick(+b.dataset.cid)) };
   q.oninput=draw; q.onkeydown=e=>{ if(e.key==='Enter'){ const b=list.querySelector('[data-cid]'); if(b) b.click() } };
   m.querySelector('#rcw').onclick=()=>pick(1);
@@ -24517,7 +24517,7 @@ function returnsPage(){
     <div class="sum-top"><span>RETURN</span><b>${n?`${n} item${n===1?'':'s'}`:'nothing yet'}</b></div>
     <div class="sum-block">
      <div class="sum-line"><span>Customer</span><b>${escM(named?c.name:'Walk-in')}</b></div>
-     ${named?`<div class="sum-line faint"><span>Owes now</span><b>${fmt(Math.max(0,partyBal('C',RT.cid)))}</b></div>`:''}
+     ${named?`<div class="sum-line faint"><span>Outstanding now</span><b>${fmt(Math.max(0,partyBal('C',RT.cid)))}</b></div>`:''}
      ${RT.mode==='free'?`<div class="sum-line"><span></span><span><a href="#" data-act="rtCustPick" style="font-size:11.5px">${named?'someone else':'choose the customer'}</a>${named?` · <a href="#" data-act="rtWalk" style="font-size:11.5px">walk-in</a>`:''}</span></div>`:''}
      <div class="sum-line ${RT.inv?'':'faint'}"><span>Bill</span><b>${RT.inv?escM(RT.inv.no):(RT.mode==='free'?'no bill':'—')}</b></div>
      ${RT.inv?`<div class="sum-line faint"><span>${escM(RT.inv.date)}</span><b>${fmt(RT.inv.total)}</b></div>`:''}
@@ -24527,7 +24527,7 @@ function returnsPage(){
     <div class="sum-net"><span>REFUND</span><b>${money2(t)}</b></div>
     ${RT.err?`<div class="sum-over">${escM(RT.err)}</div>`:''}
     <div class="sum-acts">
-     <button class="sum-credit" data-act="rtGo" data-how="account" ${t>0&&named&&!RT.busy?'':'disabled'}><b>OFF THEIR ACCOUNT</b><span>${named?(RT.inv&&RT.inv.balance>0.005?'this bill first, then the oldest':'off what they owe'):'needs a named customer'}</span></button>
+     <button class="sum-credit" data-act="rtGo" data-how="account" ${t>0&&named&&!RT.busy?'':'disabled'}><b>OFF THEIR ACCOUNT</b><span>${named?(RT.inv&&RT.inv.balance>0.005?'this bill first, then the oldest':'off their outstanding'):'needs a named customer'}</span></button>
      <button class="sum-pay" data-act="rtGo" data-how="cash" ${t>0&&!RT.busy?'':'disabled'}><b>CASH BACK</b><span>out of the drawer${named&&c.phone&&CFG.msg.autoReturn!==false?' · they are texted':''}</span></button>
     </div>
    </div></div>`;
@@ -25303,7 +25303,7 @@ function words(n){ n=Math.floor(n); if(n===0)return 'zero'; const a=['','one','t
      weeks, multiplied by a season figure set per month, because the off season is
      a fact about the calendar and not something to be discovered after it starts.
 
-   * WHAT GOES OUT. Our own cheques not yet cleared, the bill parts still owing on
+   * WHAT GOES OUT. Our own cheques not yet cleared, the bill parts outstanding on
      their due dates, the running average of expenses, and the wages at month end.
 
    Nothing here posts anything. It reads the books and says what the next weeks
@@ -25792,7 +25792,7 @@ function termsTab(){
   return `<div class="card">
     <h2>How long each supplier gives us</h2>
     <div class="muted">The standing number of days, and any kind of goods they treat differently. This is what puts the due date on every bill part, so it is worth getting right.</div>
-    <table style="margin-top:8px"><tr><th>Supplier</th><th class="n">Usually</th><th>Different for</th><th class="n">Owed now</th><th></th></tr>
+    <table style="margin-top:8px"><tr><th>Supplier</th><th class="n">Usually</th><th>Different for</th><th class="n">Outstanding now</th><th></th></tr>
     ${list.map(s=>{ const ov=supTermList(s).filter(t=>cats.includes(t.cat)||true);
       return `<tr>
        <td><b>${s.name}</b><div class="muted">${s.code||''}</div></td>
@@ -25997,15 +25997,15 @@ function suppliers(){
    <div class="card cu-list">
     <div class="cu-strip">
      <div>Suppliers<b>${all.length}</b></div>
-     <div>We owe<b title="${fmt(totOwed)}" style="color:${totOwed>0?'var(--chip-rust)':'var(--chip-green)'}">${compact(totOwed)}</b></div>
+     <div>Outstanding<b title="${fmt(totOwed)}" style="color:${totOwed>0?'var(--chip-rust)':'var(--chip-green)'}">${compact(totOwed)}</b></div>
      <div>${nLate?'Over 60 days':'Cheques out'}<b title="${fmt(chqOut)}">${nLate||compact(chqOut)}</b></div>
     </div>
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
      <input id="supQ" value="${supQ}" placeholder="Name, contact, phone, code…" autocomplete="off"><span class="search-k"><i class="kbd">↑↓</i><i class="kbd">Enter</i></span></div>
-    <div class="chips">${[['all','All'],['owing','We owe'],['overdue','60+ days'],['cheques','Cheques out'],['orders','Orders waiting'],['portal','Portal'],['clear','Settled']]
+    <div class="chips">${[['all','All'],['owing','Outstanding'],['overdue','60+ days'],['cheques','Cheques out'],['orders','Orders waiting'],['portal','Portal'],['clear','Settled']]
       .map(f=>`<button class="${supFilter===f[0]?'on':''}" data-supfilter="${f[0]}">${f[1]}</button>`).join('')}</div>
     <div class="chips" style="margin-bottom:6px"><span class="muted" style="align-self:center">Sort</span>
-     ${[['owed','We owe'],['oldest','Oldest bill'],['recent','Recent'],['name','Name']].map(f=>`<button class="${supSort===f[0]?'on':''}" data-supsort="${f[0]}">${f[1]}</button>`).join('')}</div>
+     ${[['owed','Outstanding'],['oldest','Oldest bill'],['recent','Recent'],['name','Name']].map(f=>`<button class="${supSort===f[0]?'on':''}" data-supsort="${f[0]}">${f[1]}</button>`).join('')}</div>
     <div class="muted" style="margin:0 0 4px 4px">${list.length} of ${all.length}</div>
     <div class="cu-rows">${list.map(x=>{const o=partyBal('S',x.id), ag=supAge(x.id), seen=supLastSeen(x.id), pc=supChequesOut(x).length, ord=S.orders.filter(od=>od.sid===x.id&&(od.status==='pending'||od.unreadShop)).length;
       return `<div class="cu-row ${x.id===supSel?'sel':''} ${x.enabled?'haspage':''}" data-act="sup" data-id="${x.id}" tabindex="-1">
@@ -26137,7 +26137,7 @@ function supplierPanel(s){
      <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag blue">terms ${s.days||0} days</span>${ag.old>0?'<span class="tag bad">bills over 60 days</span>':''}${pend.length?`<span class="tag warn">${pend.length} cheque${pend.length===1?'':'s'} out</span>`:''}${s.enabled?'<span class="tag page">own page on</span>':''}${waiting?`<span class="tag warn">${waiting} order${waiting===1?'':'s'} waiting</span>`:''}${first?`<span class="muted" style="font-size:12px;align-self:center">supplier since ${first}</span>`:''}</div></div></div></div>
 
    <div class="cu-kpis">
-    <div class="kpi ${ag.old>0?'r':owed>0?'y':'g'}"><div class="l">We owe</div><div class="v ${fmt(owed).length>14?'small':''}">${fmt(owed)}</div><div class="s">${open.length?`${open.length} unpaid bill${open.length===1?'':'s'} · oldest ${ag.oldest} days`:'nothing owing'}</div>
+    <div class="kpi ${ag.old>0?'r':owed>0?'y':'g'}"><div class="l">Outstanding</div><div class="v ${fmt(owed).length>14?'small':''}">${fmt(owed)}</div><div class="s">${open.length?`${open.length} unpaid bill${open.length===1?'':'s'} · oldest ${ag.oldest} days`:'nothing outstanding'}</div>
      ${owed>0?`<div class="agebars" title="up to 30 · 31–60 · over 60 days"><i style="width:${ag.now/owed*100}%;background:var(--chip-green)"></i><i style="width:${ag.mid/owed*100}%;background:var(--chip-yellow)"></i><i style="width:${ag.old/owed*100}%;background:var(--chip-rust)"></i></div>`:''}</div>
     <div class="kpi y"><div class="l">Cheques out</div><div class="v ${fmt(pend.reduce((a,c)=>a+c.amount,0)).length>14?'small':''}">${fmt(pend.reduce((a,c)=>a+c.amount,0))}</div><div class="s">${pend.length?`${pend.length} not yet cleared`:'none pending'}</div></div>
     <div class="kpi g"><div class="l">Last payment</div><div class="v ${lastPay&&fmt(lastPay.total).length>14?'small':''}">${lastPay?fmt(lastPay.total):'—'}</div><div class="s">${lastPay?`${lastPay.date} · ${lastPay.lines.map(l=>l.method.toLowerCase()).join('+')} · ${agoTxt(lastPay.date)}`:'nothing paid yet'}</div></div>
@@ -26156,7 +26156,7 @@ function supplierPanel(s){
 }
 function supOverview(s,pur,open,pay,chq,orders,owed){
   const ev=[
-    ...pur.map(p=>({date:p.date,k:'bill',t:`Their bill ${p.supInv} (${p.no})${p.total-p.paid>0.005?` — ${fmt(p.total-p.paid)} still owing`:''}`,a:fmt(p.total)})),
+    ...pur.map(p=>({date:p.date,k:'bill',t:`Their bill ${p.supInv} (${p.no})${p.total-p.paid>0.005?` — ${fmt(p.total-p.paid)} outstanding`:''}`,a:fmt(p.total)})),
     ...pur.flatMap(p=>(p.adjustments||[]).map(a=>({date:a.date,k:'adj',t:`${ADJ_REASONS.find(r=>r[0]===a.why)?.[1]||a.why} on ${p.supInv}${a.note?' — '+a.note:''}`,a:'− '+fmt(a.amount)}))),
     ...pay.map(p=>({date:p.date,k:'in',t:`Paid ${p.voucher} · ${p.lines.map(l=>l.method.toLowerCase()+(l.no?' #'+l.no:'')).join(', ')}`,a:fmt(p.total),no:p.no,act:'supVoucher'})),
     ...chq.filter(c=>['CLEARED','BOUNCED','CANCELLED'].includes(c.status)).map(c=>({date:c.changed||c.date,k:c.status==='CLEARED'?'in':'adj',t:`Cheque ${c.no} ${c.status.toLowerCase()}`,a:fmt(c.amount)})),
@@ -26165,10 +26165,10 @@ function supOverview(s,pur,open,pay,chq,orders,owed){
   return `<div class="two-col">
    <div>
     <h2 style="font-size:15px">Unpaid bills</h2>
-    ${open.length?`<table class="cu-tbl"><tr><th>Their invoice</th><th>Date</th><th class="n">Owing</th><th>Age</th></tr>
+    ${open.length?`<table class="cu-tbl"><tr><th>Their invoice</th><th>Date</th><th class="n">Outstanding</th><th>Age</th></tr>
      ${open.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(p=>{const d=daysAgo(p.date), due=Math.max(0,(s.days||0)-d);return `<tr><td>${p.supInv}<div class="muted">${p.no}</div></td><td>${p.date}</td><td class="n"><b>${fmt(p.total-p.paid)}</b>${p.paid?`<div class="muted">of ${fmt(p.total)}</div>`:''}</td><td><span class="tag ${d>60?'bad':d>(s.days||30)?'warn':'ok'}">${d}d</span>${due?`<div class="muted">${due}d to terms</div>`:''}</td></tr>`}).join('')}
      <tr><td colspan="2"><b>Total</b></td><td class="n"><b>${fmt(owed)}</b></td><td></td></tr></table>`
-     :'<div class="card note" style="background:var(--tint-green);border-color:var(--chip-green)"><b>Settled.</b> <span class="muted">Nothing owing to them.</span></div>'}
+     :'<div class="card note" style="background:var(--tint-green);border-color:var(--chip-green)"><b>Settled.</b> <span class="muted">Nothing outstanding to them.</span></div>'}
    </div>
    <div><h2 style="font-size:15px">What has been happening</h2>
     ${ev.length?`<div class="tl">${ev.map(e=>`<div class="ev ${e.k}"><span class="d">${e.date}</span><span class="t">${e.act?`<a href="#" data-act="${e.act}" data-no="${e.no}" style="border:0">${e.t}</a>`:e.t}</span><span class="a">${e.a}</span></div>`).join('')}</div>`
@@ -26186,7 +26186,7 @@ function supBills(s,pur){
   const list=pur.filter(p=>supBillsF==='all'||(supBillsF==='unpaid'?p.total-p.paid>0.005:p.total-p.paid<=0.005));
   return `<div class="chips" style="margin-bottom:8px">${[['all','All'],['unpaid','Unpaid'],['paid','Paid']].map(f=>`<button class="${supBillsF===f[0]?'on':''}" data-supbills="${f[0]}">${f[1]}</button>`).join('')}
     <span class="muted" style="align-self:center;margin-left:auto">${list.length} bill${list.length===1?'':'s'} · ${fmt(list.reduce((a,p)=>a+p.total,0))}</span></div>
-   <table class="cu-tbl"><tr><th>Their invoice</th><th>GRN</th><th>Date</th><th>Items</th><th class="n">Total</th><th class="n">Paid</th><th class="n">Owing</th><th>Status</th><th></th></tr>
+   <table class="cu-tbl"><tr><th>Their invoice</th><th>GRN</th><th>Date</th><th>Items</th><th class="n">Total</th><th class="n">Paid</th><th class="n">Outstanding</th><th>Status</th><th></th></tr>
    ${list.map(p=>{const d=daysAgo(p.date), ow=p.total-p.paid;
      const owingParts=purchaseParts(p).filter(x=>x.owing>0.005);
      const nextDue=owingParts.map(x=>x.due).sort()[0]||null;         // the soonest part still owed
@@ -26195,7 +26195,7 @@ function supBills(s,pur){
      <td>${p.no}</td><td>${p.date}<div class="muted">${agoTxt(p.date)}</div></td>
      <td class="muted">${(p.lines||[]).length} line${(p.lines||[]).length===1?'':'s'}${supBillParts(p)}</td>
      <td class="n">${fmt(p.total)}</td><td class="n">${fmt(p.paid)}</td><td class="n">${ow>0.005?`<b style="color:${d>60?'var(--chip-rust)':'inherit'}">${fmt(ow)}</b>`:'—'}</td>
-     <td>${ow>0.005?`<span class="tag ${late&&d>60?'bad':late?'warn':'ok'}">${late?'past its date':'owing'}${nextDue?` · due ${nextDue}`:` · ${d}d`}</span>`:'<span class="tag ok">paid</span>'}</td>
+     <td>${ow>0.005?`<span class="tag ${late&&d>60?'bad':late?'warn':'ok'}">${late?'past its date':'outstanding'}${nextDue?` · due ${nextDue}`:` · ${d}d`}</span>`:'<span class="tag ok">paid</span>'}</td>
      <td>${can('adjustInvoice')?`<button class="btn ghost sm" data-act="purEdit" data-no="${p.no}">Change</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="9" class="muted">No bills here.</td></tr>'}</table>`;
 }
 function supPayments(s,pay){
@@ -26402,7 +26402,7 @@ function supPayModal(id){
       <div class="muted" style="margin:8px 0">Tick what this payment is for — leave them all empty to settle the
        oldest first. Look at each one before you go on: anything short delivered, a price agreed afterwards or a
        discount they owe comes off here, not out of the cheque.</div>
-      <table><tr><th></th><th>Their invoice</th><th>GRN</th><th>Date</th><th class="n">Billed</th><th class="n">Already off</th><th class="n">Owing</th><th></th></tr>
+      <table><tr><th></th><th>Their invoice</th><th>GRN</th><th>Date</th><th class="n">Billed</th><th class="n">Already off</th><th class="n">Outstanding</th><th></th></tr>
       ${bills.map(p=>{
         const off=(p.adjustments||[]).reduce((a,x)=>a+(+x.amount||0),0);
         const late=deAgo(p.date)-(+s.days||0);
@@ -26779,7 +26779,7 @@ function labelTotal(){ return LAB.queue.reduce((a,x)=>a+x.copies,0) }
 /* ---- taking a damaged piece in, sending it on, and the label that goes on the goods ---- */
 function damageModal(){
   const m=modal(`<h2>Something arrived damaged</h2>
-   <div class="muted" style="margin-bottom:10px">It comes off the floor and off what we owe the supplier straight away.</div>
+   <div class="muted" style="margin-bottom:10px">It comes off the floor and off the supplier's outstanding straight away.</div>
    <div class="grid2">
     <div class="f"><label>Item</label><input id="dmItem" placeholder="type a name or code…" autocomplete="off"><div id="dmHits" class="hits"></div></div>
     <div class="f"><label>Back to</label><select id="dmSup">${S.suppliers.filter(s=>s.active!==false).map(s=>`<option value="${s.id}">${s.name}</option>`).join('')}</select></div></div>
@@ -27755,7 +27755,7 @@ function receiveChequeModal(prefill={}){
    <div class="grid3" style="margin-top:10px">
     <div class="f"><label>From</label><select id="rcWho">
       <option value="">— choose a customer —</option>
-      ${S.customers.filter(c=>c.id!==1).map(c=>`<option value="${c.id}" ${prefill.cid===c.id?'selected':''}>${c.name}${partyBal('C',c.id)>0?' · owes '+fmt(partyBal('C',c.id)):''}</option>`).join('')}
+      ${S.customers.filter(c=>c.id!==1).map(c=>`<option value="${c.id}" ${prefill.cid===c.id?'selected':''}>${c.name}${partyBal('C',c.id)>0?' · outstanding '+fmt(partyBal('C',c.id)):''}</option>`).join('')}
       <option value="other">Someone else (one-off receipt)</option></select></div>
     <div class="f"><label>Cheque number</label><input id="rcNo" placeholder="e.g. 118822"></div>
     <div class="f"><label>Drawn on</label><input id="rcBank" placeholder="e.g. BOC Hingurakgoda" list="bankList">
@@ -27865,7 +27865,7 @@ function endorseModal(no){
   const m=modal(`<h2>Pass cheque ${ch.no} to a supplier</h2>
    <div class="muted">${ch.party} · ${ch.bank} · dated ${ch.date} · ${fmt(ch.amount)}. The cheque leaves the shop and comes off what you owe them.</div>
    <div class="grid2" style="margin-top:10px">
-    <div class="f"><label>Supplier</label><select id="enSup">${S.suppliers.map(s=>`<option value="${s.id}">${s.name} — owes them ${fmt(partyBal('S',s.id))}</option>`).join('')}</select></div>
+    <div class="f"><label>Supplier</label><select id="enSup">${S.suppliers.map(s=>`<option value="${s.id}">${s.name} — — outstanding to them ${fmt(partyBal('S',s.id))}</option>`).join('')}</select></div>
     <div class="f"><label>Date handed over</label><input id="enDate" type="date" value="${D(today)}"></div></div>
    <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button>
     <button class="btn tape" id="enOk">Hand it over and print a voucher</button></div>`); npAdd(m);
@@ -28250,7 +28250,7 @@ function csDlvToggle(){ S.pos.toDeliver=!S.pos.toDeliver; render(); toast(S.pos.
 function billDeliverDone(no){
   const inv=S.sales.find(x=>x.no===no); if(!inv) return; const c=C(inv.customerId)||{};
   const m=modal(`<h2>🚚 Delivered · ${noteEsc(no)}</h2>
-   <div class="muted">${noteEsc(c.id===1?'Walk-in customer':c.name||'')} · billed ${inv.date} · ${inv.lines.length} line${inv.lines.length===1?'':'s'}${+inv.balance>0.005?' · '+money2(inv.balance)+' still owing':''}</div>
+   <div class="muted">${noteEsc(c.id===1?'Walk-in customer':c.name||'')} · billed ${inv.date} · ${inv.lines.length} line${inv.lines.length===1?'':'s'}${+inv.balance>0.005?' · '+money2(inv.balance)+' outstanding':''}</div>
    <div class="grid2" style="margin-top:10px"><div class="f"><label>Taken by — driver or staff (optional)</label><input id="ddWith" maxlength="60" autocomplete="off"></div>
     <div class="f"><label>Received by (optional)</label><input id="ddWho" maxlength="60" autocomplete="off"></div></div>
    <label class="chk"><input type="checkbox" id="ddPrint" checked> Print a delivery note for the signature</label>
@@ -28282,7 +28282,7 @@ function dlvSlipPrint(no){
    <table class="sb-items"><tr><th class="l">#&nbsp; Item</th><th></th><th></th><th>Qty</th></tr>
     ${lines.map((l,k)=>`<tr class="nm"><td colspan="3">${k+1})&nbsp; ${noteEsc(lineName(l).toUpperCase())}</td><td>${fq(l.qty)}</td></tr>`).join('')}</table>
    <div class="sb-rule"></div>
-   ${+inv.balance>0.005?`<div style="text-align:center;font-weight:700">STILL OWING ON THIS BILL: Rs ${money2(inv.balance)}</div><div class="sb-rule"></div>`:''}
+   ${+inv.balance>0.005?`<div style="text-align:center;font-weight:700">OUTSTANDING ON THIS BILL: Rs ${money2(inv.balance)}</div><div class="sb-rule"></div>`:''}
    <div class="sb-sign"><span>Delivered By</span><span>Received By</span></div>
    <div class="sb-foot">Goods received in good order.</div>
   </div>`;
@@ -28370,7 +28370,7 @@ function dlvPage(){
     <div style="display:flex;gap:6px;flex-wrap:wrap">${drivers().map(d=>`<button class="btn ghost sm" data-act="dlvDriver" data-id="${d.id}">🚚 ${noteEsc(d.name)}</button>`).join('')}<button class="btn ghost sm" data-act="dlvDriver" data-id="">+ Driver</button></div></div>
    ${(()=>{ const ud=undeliveredBills().sort((a,b)=>a.date.localeCompare(b.date)); if(!ud.length) return '';
      return `<div class="card" style="margin-bottom:10px;border-left:4px solid #8a5d06"><b style="font-size:15px">Bills not delivered yet</b> <span class="muted">· ${ud.length} · oldest first</span>
-      <div style="overflow-x:auto;margin-top:8px"><table><tr><th>Billed</th><th>Bill</th><th>Customer</th><th class="n">Total</th><th class="n">Owing</th><th></th></tr>
+      <div style="overflow-x:auto;margin-top:8px"><table><tr><th>Billed</th><th>Bill</th><th>Customer</th><th class="n">Total</th><th class="n">Outstanding</th><th></th></tr>
       ${ud.map(s=>{ const c=C(s.customerId)||{name:'—'}, age=Math.round((new Date(D(today))-new Date(s.date))/864e5), pl=(S.deliveries||[]).find(d=>d.bill===s.no&&d.status!=='cancelled');
         return `<tr><td>${s.date}${age>0?` <span class="tag ${age>2?'bad':'warn'}">${age} day${age===1?'':'s'}</span>`:''}</td><td><a href="#" data-act="billOpen" data-no="${s.no}">${s.no}</a></td>
          <td><b>${noteEsc(c.id===1?'Walk-in'+(s.phone?' · '+s.phone:''):c.name)}</b><div class="muted">${noteEsc(c.id!==1?c.phone||'':'')}${s.undeliveredBy?' · taken by '+noteEsc(s.undeliveredBy):''}</div></td>
@@ -28584,7 +28584,7 @@ function custSites(c){
   const card=(x)=>{ const bills=siteBills(c.id,x.id), owed=siteOwed(c.id,x.id), tot=bills.reduce((a,s)=>a+(+s.total||0),0), last=bills.slice(-1)[0];
     return `<div class="card" style="margin:0${x.active===false?';opacity:.6':''}"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
       <div><b style="font-size:15px">${noteEsc(x.name)}</b>${x.active===false?' <span class="tag">closed</span>':''}<div class="muted">${noteEsc(x.address||'no address')}${+x.limit>0?' · limit '+money2(x.limit):''}</div></div>
-      <div style="text-align:right"><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em">owes</div><b style="font-size:18px;color:${owed>0.005?'var(--chip-rust)':'inherit'}">${money2(owed)}</b></div></div>
+      <div style="text-align:right"><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em">outstanding</div><b style="font-size:18px;color:${owed>0.005?'var(--chip-rust)':'inherit'}">${money2(owed)}</b></div></div>
       <div class="muted" style="margin-top:6px">${bills.length} bill${bills.length===1?'':'s'} · ${money2(tot)} in all${last?' · last '+last.date:''}</div>
       ${+x.limit>0?`<div class="cp-meter" style="margin-top:6px"><i style="width:${Math.min(100,owed/x.limit*100)}%"></i></div>`:''}
       <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap"><button class="btn ghost sm" data-act="siteStmt" data-id="${c.id}" data-s="${x.id}">Statement</button>
@@ -28734,7 +28734,7 @@ function tradesPage(){
 }
 
 /* ================== CREDIT FOLLOW-UP ==================
-   Customers who owe are reminded by the server once a day, by themselves, when the oldest unpaid bill
+   Customers with an outstanding are reminded by the server once a day, by themselves, when the oldest unpaid bill
    reaches each step (7, 30, 60 days to start with) — once per step for a debt — and sent a statement
    on the shop's day of the month. The server sends, so it happens whether or not a till is open, and
    never twice. This page sets it up, shows who owes and what each has been told, and sends one by hand.
@@ -28785,8 +28785,8 @@ function duesPage(){
      <button class="btn ghost" data-act="duStmt">Send everyone their statement now</button>
      <button class="btn ghost" data-act="duReload">Refresh</button></div>`:'<div class="muted" style="margin-top:8px">The owner or an admin changes these.</div>'}
    </div>
-   <div class="card" style="margin-bottom:12px"><h2 style="margin-top:0">Who owes</h2>
-    ${owing.length?`<div style="overflow-x:auto"><table><tr><th>Customer</th><th>Mobile</th><th class="n">Owes</th><th>Oldest bill</th><th>Told</th><th>Next</th><th></th></tr>
+   <div class="card" style="margin-bottom:12px"><h2 style="margin-top:0">Outstanding</h2>
+    ${owing.length?`<div style="overflow-x:auto"><table><tr><th>Customer</th><th>Mobile</th><th class="n">Outstanding</th><th>Oldest bill</th><th>Told</th><th>Next</th><th></th></tr>
      ${owing.map(x=>{ const c=x.c, l=last.get(String(c.id)), p=planBy.get(String(c.id)), s=stepOf(x.a.oldest), stop=dueStopped(c);
        return `<tr><td><b>${noteEsc(c.name)}</b>${stop?' <span class="tag bad">credit stopped</span>':''}${c.noRemind?' <span class="tag">not reminded</span>':''}</td>
         <td>${noteEsc(c.phone||'—')}</td><td class="n">${money2(x.owed)}</td><td>${ageTag(x.a.oldest)}</td>
@@ -28794,10 +28794,10 @@ function duesPage(){
         <td>${c.noRemind?'—':p?`<b>${DUE_KIND[p.kind]}</b> today`:s<st.length?`at ${st[s]} days`:'<span class="muted">all steps sent</span>'}</td>
         <td style="white-space:nowrap">${boss&&c.phone?`<button class="btn ghost sm" data-act="duOne" data-id="${c.id}">Remind now</button>`:''}
          <button class="btn ghost sm" data-act="duQuiet" data-id="${c.id}">${c.noRemind?'Remind again':"Don't remind"}</button></td></tr>` }).join('')}</table></div>`
-     :'<div class="muted">Nobody owes the shop anything.</div>'}
+     :'<div class="muted">Nothing outstanding.</div>'}
    </div>
    <div class="card"><h2 style="margin-top:0">What has gone out</h2>
-    ${(d.log||[]).length?`<div style="overflow-x:auto"><table><tr><th>When</th><th>Customer</th><th>What</th><th class="n">Owed</th><th>Days</th><th></th></tr>
+    ${(d.log||[]).length?`<div style="overflow-x:auto"><table><tr><th>When</th><th>Customer</th><th>What</th><th class="n">Outstanding</th><th>Days</th><th></th></tr>
      ${d.log.slice(0,60).map(l=>`<tr><td>${when(l.at)}</td><td>${noteEsc(l.name||'')}<div class="muted">${noteEsc(l.phone||'')}</div></td><td>${DUE_KIND[l.kind]||l.kind}</td><td class="n">${money2(l.amount)}</td><td>${l.days??''}</td>
        <td>${l.ok?'<span class="tag ok">sent</span>':`<span class="tag bad">not sent</span><div class="muted" style="font-size:12px">${noteEsc(l.note||'')}</div>`}</td></tr>`).join('')}</table></div>`
      :`<div class="muted">${DUES.loading?'Fetching…':'Nothing sent yet.'}</div>`}
@@ -28990,7 +28990,7 @@ function cbLeafModal(id,no){
   const un=q('#clUndo'); if(un) un.onclick=()=>{ delete bk.marks[no]; m.remove(); persist(true); render(); toast(`Cheque ${no} is blank again`) };
   const wr=q('#clWrite'); if(wr) wr.onclick=()=>{ m.remove(); cbWriteModal(bk.bankId,no) };
   const cl=q('#clClear'); if(cl) cl.onclick=()=>{ try{ chequeStatus(c,'CLEARED') }catch(e){ return toast(e.message) } m.remove(); persist(true); render(); toast(`Cheque ${no} cleared`) };
-  const cc=q('#clCancel'); if(cc) cc.onclick=()=>{ if(!confirm(`Cancel cheque ${no} to ${c.payee} for ${fmt(c.amount)}? ${c.supplierId?'It goes back onto what you owe them.':'The entry it made is reversed.'}`)) return;
+  const cc=q('#clCancel'); if(cc) cc.onclick=()=>{ if(!confirm(`Cancel cheque ${no} to ${c.payee} for ${fmt(c.amount)}? ${c.supplierId?'It goes back onto their outstanding.':'The entry it made is reversed.'}`)) return;
     try{ chequeStatus(c,'CANCELLED') }catch(e){ return toast(e.message) } m.remove(); persist(true); render(); toast(`Cheque ${no} cancelled`) };
 }
 
@@ -29167,8 +29167,8 @@ function acctHealth(){
   add('tb','Trial balance comes to nothing',[...acs].reduce((a,k)=>a+bal(k),0),0);
   const unc=(S.purchases||[]).filter(p=>p.amountOnly&&!(p.lines||[]).length).reduce((a,p)=>a+p.total,0);
   add('stock','Stock on the floor at cost = Inventory account',S.products.reduce((a,p)=>a+(+p.stock||0)*(+p.cost||0),0)+unc,bal('1200'),'stock',unc?`includes ${money2(unc)} of invoices booked by total, goods still to count in`:'');
-  add('ar','What customers owe = Accounts receivable',S.customers.reduce((a,c)=>a+partyBal('C',c.id),0),bal('1100'));
-  add('ap','What we owe suppliers = Accounts payable',S.suppliers.reduce((a,x)=>a+partyBal('S',x.id),0),-bal('2100'));
+  add('ar','Customer outstanding = Accounts receivable',S.customers.reduce((a,c)=>a+partyBal('C',c.id),0),bal('1100'));
+  add('ap','Supplier outstanding = Accounts payable',S.suppliers.reduce((a,x)=>a+partyBal('S',x.id),0),-bal('2100'));
   const cb=S.customers.filter(c=>c.id!==1).map(c=>({c,open:S.sales.filter(x=>x.customerId===c.id).reduce((a,x)=>a+(+x.balance||0),0),led:Math.max(0,partyBal('C',c.id))})).filter(x=>Math.abs(x.open-x.led)>0.02);
   add('custBills','Customers\' open bills = their accounts',cb.reduce((a,x)=>a+x.open,0),cb.reduce((a,x)=>a+x.led,0),'custBills',cb.slice(0,4).map(x=>`${x.c.name}: bills ${money2(x.open)}, account ${money2(x.led)}`).join(' · '));
   const sb=S.suppliers.map(x=>({x,open:supBillsOpen(x.id).reduce((a,p)=>a+(p.total-p.paid),0),led:partyBal('S',x.id)})).filter(y=>Math.abs(y.open-y.led)>0.02);
@@ -29251,7 +29251,7 @@ function bulkSmsModal(){
      <div class="bk-who">${[['cust','All customers'],['sup','All suppliers'],['both','Customers & suppliers'],['pick','Choose customers']].map(([k,l])=>`<button class="${BK.who===k?'on':''}" data-bkwho="${k}">${l}</button>`).join('')}</div>
      ${BK.who==='pick'?`<div class="bk-pick"><div class="bk-bar"><input id="bkQ" placeholder="Find a customer by name or number…" value="${noteEsc(BK.q)}">
         <button class="btn ghost sm" id="bkAll">Tick these ${people.length}</button><button class="btn ghost sm" id="bkNone">Untick all</button><span class="muted">${BK.picked.size} ticked</span></div>
-        <div class="bk-list">${people.slice(0,400).map(p=>`<label class="bk-row"><input type="checkbox" data-bkp="${p.k}" ${BK.picked.has(p.k)?'checked':''}><b>${noteEsc(p.name)}</b><span>${noteEsc(p.phone||'no number')}</span><span class="${p.owes>0.5?'rust':'muted'}">${p.owes>0.5?'owes '+money2(p.owes):''}</span></label>`).join('')||'<div class="muted" style="padding:10px">No customer matches.</div>'}</div></div>`
+        <div class="bk-list">${people.slice(0,400).map(p=>`<label class="bk-row"><input type="checkbox" data-bkp="${p.k}" ${BK.picked.has(p.k)?'checked':''}><b>${noteEsc(p.name)}</b><span>${noteEsc(p.phone||'no number')}</span><span class="${p.owes>0.5?'rust':'muted'}">${p.owes>0.5?'outstanding '+money2(p.owes):''}</span></label>`).join('')||'<div class="muted" style="padding:10px">No customer matches.</div>'}</div></div>`
        :`<div class="bk-bar"><label class="chk"><input type="checkbox" id="bkOwe" ${BK.owe?'checked':''}> Only those with a balance</label>
           ${BK.who!=='sup'?`<select id="bkLvl"><option value="">Retail and wholesale</option><option value="retail" ${BK.lvl==='retail'?'selected':''}>Retail customers only</option><option value="wholesale" ${BK.lvl==='wholesale'?'selected':''}>Wholesale customers only</option></select>`:''}</div>`}
      <div class="bk-grid">
@@ -29338,11 +29338,11 @@ document.addEventListener('change',e=>{ const k=e.target&&e.target.dataset&&e.ta
 const REPORTS=[
   ['Business overview',[['pl','Profit and Loss'],['bs','Balance Sheet'],['cashflow','Statement of Cash Flows'],
     ['daybook','Day Book — one day, everything'],['salesday','Sales by Day']]],
-  ['Who owes you',[['arage','A/R Ageing Summary'],['aragedet','A/R Ageing Detail'],['ar','Customer Balance Summary'],
+  ['Customer outstanding',[['arage','A/R Ageing Summary'],['aragedet','A/R Ageing Detail'],['ar','Customer Balance Summary'],
     ['openinv','Open Invoices'],['collect','Collections Report'],['custstmt','Customer Balance Detail']]],
   ['Sales and customers',[['salescust','Sales by Customer Summary'],['salesitem','Sales by Product Summary'],
     ['disc','Discounts and Returns'],['salesuser','Sales by Cashier'],['salesprofit','Profit by Salesman']]],
-  ['What you owe',[['apage','A/P Ageing Summary'],['ap','Supplier Balance Summary'],['unpaid','Unpaid Bills'],
+  ['Your outstanding',[['apage','A/P Ageing Summary'],['ap','Supplier Balance Summary'],['unpaid','Unpaid Bills'],
     ['purchsup','Purchases by Supplier'],['chq','Cheque Register']]],
   ['Expenses and cash',[['exp','Expenses by Category'],['cash','Cash and Bank Movement'],['daycash','Cash in Hand — day by day']]],
   ['Products and stock',[['stockval','Inventory Valuation Summary'],['stockmove','Stock Movement Detail'],
@@ -29394,7 +29394,7 @@ function reportData(){
       .sort((a,b)=>a.date.localeCompare(b.date))
       .map(x=>{const c=C(x.customerId), age=days(x.date);
         return [x.no,x.date,c.name,money(x.total),money(x.paid),money(x.balance),age+' d'+(age>60?' ⚠':'')]});
-    return t(['Invoice','Date','Customer','Billed','Paid','Still owed','Age'],rows,
+    return t(['Invoice','Date','Customer','Billed','Paid','Outstanding','Age'],rows,
       ['','','Total',money(rows.reduce((a,r)=>a+num(r[3]),0)),money(rows.reduce((a,r)=>a+num(r[4]),0)),
        money(rows.reduce((a,r)=>a+num(r[5]),0)),''],
       'Every bill with something still on it, oldest first.');
@@ -29410,7 +29410,7 @@ function reportData(){
         money(over),oldest.no+' · '+days(oldest.date)+' d']);
     });
     rows.sort((a,b)=>num(b[4])-num(a[4]));
-    return t(['Customer','Phone','Open bills','Owed','Over 30 days','Oldest'],rows,
+    return t(['Customer','Phone','Open bills','Outstanding','Over 30 days','Oldest'],rows,
       ['','','',money(rows.reduce((a,r)=>a+num(r[3]),0)),money(rows.reduce((a,r)=>a+num(r[4]),0)),''],
       'Who to ring today — worst first, with a number to ring.');
   }
@@ -29446,7 +29446,7 @@ function reportData(){
       .map(x=>{const sp=SU(x.supplierId), age=days(x.date);
         return [x.supInv||x.no,x.date,sp.name,money(x.total),money(x.paid),money(x.total-x.paid),
           age+' d'+(age>sp.days?' ⚠ past terms':'')]});
-    return t(['Their invoice','Date','Supplier','Billed','Paid','Still owed','Age'],rows,
+    return t(['Their invoice','Date','Supplier','Billed','Paid','Outstanding','Age'],rows,
       ['','','Total',money(rows.reduce((a,r)=>a+num(r[3]),0)),money(rows.reduce((a,r)=>a+num(r[4]),0)),
        money(rows.reduce((a,r)=>a+num(r[5]),0)),''],
       'Every supplier bill still open, with a mark against anything past their terms.');
@@ -29706,7 +29706,7 @@ function reportData(){
       .sort((a,b)=>partyBal('C',b.id)-partyBal('C',a.id))
       .map(c=>{const open=S.sales.filter(s=>s.customerId===c.id&&s.balance>0);
         return [c.name,c.phone||'',open.length,open.length?days(open.sort((a,b)=>a.date.localeCompare(b.date))[0].date)+' days':'',money(partyBal('C',c.id)),money(c.limit)]});
-    return t(['Customer','Phone','Bills open','Oldest','Owes','Their limit'],rows,
+    return t(['Customer','Phone','Bills open','Oldest','Outstanding','Their limit'],rows,
       ['Total','','','',money(S.customers.reduce((a,c)=>a+Math.max(0,partyBal('C',c.id)),0)),'']);
   }
   case 'arage':{
@@ -29717,7 +29717,7 @@ function reportData(){
     const tot=[0,1,2,3].map(i=>S.customers.reduce((a,c)=>{
       const o=S.sales.filter(s=>s.customerId===c.id&&s.balance>0);
       return a+o.reduce((x,s)=>{const d=days(s.date);const k=d<=30?0:d<=60?1:d<=90?2:3;return x+(k===i?s.balance:0)},0)},0));
-    return t(['Customer','Up to 30 days','31 to 60','61 to 90','Over 90','Owed'],rows,
+    return t(['Customer','Up to 30 days','31 to 60','61 to 90','Over 90','Outstanding'],rows,
       ['Total',...tot.map(money),money(tot.reduce((a,v)=>a+v,0))],
       'Counted from the date of each bill.');
   }
@@ -29725,7 +29725,7 @@ function reportData(){
     const rows=S.suppliers.filter(s=>partyBal('S',s.id)>0).sort((a,b)=>partyBal('S',b.id)-partyBal('S',a.id))
       .map(s=>{const open=S.purchases.filter(p=>p.supplierId===s.id&&p.total-p.paid>0.005);
         return [s.name,s.contact||'',open.length,s.days+' days',money(partyBal('S',s.id))]});
-    return t(['Supplier','Who we deal with','Bills open','Their terms','We owe'],rows,
+    return t(['Supplier','Who we deal with','Bills open','Their terms','Outstanding'],rows,
       ['Total','','','',money(S.suppliers.reduce((a,s)=>a+Math.max(0,partyBal('S',s.id)),0))]);
   }
   case 'apage':{
@@ -29734,7 +29734,7 @@ function reportData(){
       const b=o.reduce((a,p)=>{const d=days(p.date), owed=p.total-p.paid;
         if(d<=30)a[0]+=owed; else if(d<=60)a[1]+=owed; else if(d<=90)a[2]+=owed; else a[3]+=owed; return a},[0,0,0,0]);
       return [s.name,money(b[0]),money(b[1]),money(b[2]),money(b[3]),money(b[0]+b[1]+b[2]+b[3])]});
-    return t(['Supplier','Up to 30 days','31 to 60','61 to 90','Over 90','We owe'],rows,null,
+    return t(['Supplier','Up to 30 days','31 to 60','61 to 90','Over 90','Outstanding'],rows,null,
       'Cheques already written but not yet cleared are still counted as owed.');
   }
   case 'salescust':{
@@ -29798,7 +29798,7 @@ function reportData(){
     S.purchases.filter(p=>inRange(p.date)).forEach(p=>{by[p.supplierId]=by[p.supplierId]||{n:0,v:0,paid:0};
       by[p.supplierId].n++; by[p.supplierId].v+=p.total; by[p.supplierId].paid+=p.paid});
     const rows=Object.entries(by).sort((a,b)=>b[1].v-a[1].v).map(([k,v])=>[SU(+k).name,v.n,money(v.v),money(v.paid),money(v.v-v.paid)]);
-    return t(['Supplier','Bills','Bought','Paid','Still owing'],rows,
+    return t(['Supplier','Bills','Bought','Paid','Outstanding'],rows,
       ['Total','',money(Object.values(by).reduce((a,v)=>a+v.v,0)),money(Object.values(by).reduce((a,v)=>a+v.paid,0)),'']);
   }
   case 'reorder':{
@@ -31885,7 +31885,7 @@ document.addEventListener('click',e=>{
     darkToggle:()=>darkSet(!darkOn(),a),
     duSave:()=>duesSave(), duReload:()=>{ DUES.data=null; DUES.err=''; duesLoad(); render() },
     duRun:()=>{ if(!confirm('Send today\'s reminders now?')) return; duesApi('/run',{method:'POST',body:'{}'}).then(j=>{ toast(`${j.sent} sent${j.failed?', '+j.failed+' did not go':''}`,j.failed?'warn':'ok'); DUES.data=null; duesLoad() }).catch(e=>toast(e.message)) },
-    duStmt:()=>{ if(!confirm('Text every customer who owes their statement now?')) return; duesApi('/run',{method:'POST',body:JSON.stringify({statements:true})}).then(j=>{ toast(`${j.sent} sent${j.failed?', '+j.failed+' did not go':''}`,j.failed?'warn':'ok'); DUES.data=null; duesLoad() }).catch(e=>toast(e.message)) },
+    duStmt:()=>{ if(!confirm('Text every customer with an outstanding balance their statement now?')) return; duesApi('/run',{method:'POST',body:JSON.stringify({statements:true})}).then(j=>{ toast(`${j.sent} sent${j.failed?', '+j.failed+' did not go':''}`,j.failed?'warn':'ok'); DUES.data=null; duesLoad() }).catch(e=>toast(e.message)) },
     duOne:()=>{ const c=C(+a.dataset.id); duesApi('/one',{method:'POST',body:JSON.stringify({cid:String(c.id)})}).then(()=>{ toast('Reminder texted to '+c.name,'ok'); DUES.data=null; duesLoad() }).catch(e=>{ toast(e.message); DUES.data=null; duesLoad() }) },
     duQuiet:()=>{ const c=C(+a.dataset.id); c.noRemind=!c.noRemind; persist(true); render(); toast(c.noRemind?c.name+' will not be reminded':c.name+' will be reminded again') },
     ctrOpen:()=>ctrOpenNow(), ctrOpenNow:()=>ctrOpenNow(), ctrCount:()=>ctrOpenSheet(), ctrClose:()=>{ ctrStep=1; ctrCloseSheet() },
@@ -32004,7 +32004,7 @@ document.addEventListener('click',e=>{
       const known=inv.phone||c.phone; if(known) return send(known);
       askNumber(inv,'text',send); },
     custPortal:()=>{const c=C(+a.dataset.id);
-      if(needsApproval('custPortal')) return requestApproval('custPortal',`Switch ${c.portal?'off':'on'} the outstanding page for ${c.name}`,`${c.name} · ${c.phone||'no mobile'} · owes ${fmt(partyBal('C',c.id))}`,{cid:c.id,on:!c.portal});
+      if(needsApproval('custPortal')) return requestApproval('custPortal',`Switch ${c.portal?'off':'on'} the outstanding page for ${c.name}`,`${c.name} · ${c.phone||'no mobile'} · — outstanding ${fmt(partyBal('C',c.id))}`,{cid:c.id,on:!c.portal});
       custPortalSet(c,!c.portal);
       render(); drawPhone(); if(!c.portal) toast('Outstanding page switched off')},   // switching on says its own piece, with the sign-in
     apOk:()=>decideApproval(a.dataset.id,true,($('#apn-'+a.dataset.id)||{}).value),

@@ -74,7 +74,7 @@ await pg.click(`[data-act="billDlvDone"][data-no="${no}"]`); await wait(400);
 await pg.type('#ddWith', 'Nuwan'); await pg.type('#ddWho', 'Mr Silva'); await pg.keyboard.press('Enter'); await wait(400);
 ok(await pg.evaluate(no => { const s = window.eval('S').sales.find(x => x.no === no); return !window.eval('billUndelivered')(s) && !!s.deliveredAt && s.deliveredWith === 'Nuwan' && s.receivedBy === 'Mr Silva' }, no), 'Delivered ✓ takes it off the list, with when, who took it and who received it');
 const slip = await pg.evaluate(() => window.__slips);
-ok(slip.length === 1 && slip[0].f === 'r80' && /DELIVERY NOTE/.test(slip[0].html) && slip[0].html.includes(no) && /NUWAN/.test(slip[0].html) && /MR SILVA/.test(slip[0].html) && /Cement 5 bags/i.test(slip[0].html) && /STILL OWING/.test(slip[0].html), 'a DELIVERY NOTE prints on the 80mm: the bill, the items, who took and received it, what is still owing', slip.length + ' slip(s)');
+ok(slip.length === 1 && slip[0].f === 'r80' && /DELIVERY NOTE/.test(slip[0].html) && slip[0].html.includes(no) && /NUWAN/.test(slip[0].html) && /MR SILVA/.test(slip[0].html) && /Cement 5 bags/i.test(slip[0].html) && /OUTSTANDING ON THIS BILL/.test(slip[0].html), 'a DELIVERY NOTE prints on the 80mm: the bill, the items, who took and received it, what is still owing', slip.length + ' slip(s)');
 fs.writeFileSync(OUT + '/dlv-slip.html', slip[0] ? slip[0].html : '');
 const again = await pg.evaluate(no => { const inv = window.eval('S').sales.find(x => x.no === no); return window.eval('billHtml')(inv, 'a5') }, no);
 ok(/DELIVERED/.test(again) && !/NOT DELIVERED YET/.test(again) && /Mr Silva/.test(again), 'printed again, the bill says when it was delivered and to whom');

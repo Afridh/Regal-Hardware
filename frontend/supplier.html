@@ -445,7 +445,7 @@ function dash(badge){
   const name=(st.rep||me.supplier.name.split(/[–(]/)[0].trim()).split(/\s+/)[0];
   const box=(go,n,label,hot,isMoney)=>`<button data-go="${go}" class="${hot?'hot':''}"><b data-count="${n}"${isMoney?' data-money="1"':''}>${isMoney?money(n).replace('Rs ',''):n}</b><span>${label}</span></button>`;
   return `<div class="dash"><small>${h<12?'Good morning':h<17?'Good afternoon':'Good evening'}</small><h2>${esc(name)} 👋</h2>
-    <div class="nums">${box('orders',badge.orders,'orders to answer',badge.orders>0)}${box('pending',(me.sent||[]).filter(o=>!['revised','received'].includes(o.status)&&!o.grn).length,'pending with the shop',badge.pending>0)}${box('pay',owed,'Rs the shop owes you',badge.pay>0,true)}</div></div>`;
+    <div class="nums">${box('orders',badge.orders,'orders to answer',badge.orders>0)}${box('pending',(me.sent||[]).filter(o=>!['revised','received'].includes(o.status)&&!o.grn).length,'pending with the shop',badge.pending>0)}${box('pay',owed,'Rs outstanding to you',badge.pay>0,true)}</div></div>`;
 }
 /* numbers run up to their value when a page opens */
 function countUp(root){
@@ -766,7 +766,7 @@ function pay(){
      <h2>Your bills at the shop</h2>
      <div class="muted" style="margin-bottom:10px">Tick the bills you want paid. If a figure is wrong — a credit note, a short delivery — put what it should be and say why.</div>
      <div class="tblwrap"><table class="paytbl">
-      <tr><th></th><th>Invoice</th><th class="n">Amount</th><th class="n">Days</th><th class="n">Owing</th><th class="n">Asking for</th></tr>
+      <tr><th></th><th>Invoice</th><th class="n">Amount</th><th class="n">Days</th><th class="n">Outstanding</th><th class="n">Asking for</th></tr>
       ${bills.map(b=>{ const p=picked[b.no], on=!!p, already=false;
         return `<tr class="${on?'on':''}">
         <td><input type="checkbox" data-paypick="${esc(b.no)}" ${on?'checked':''} ${already?'disabled':''}></td>
@@ -812,7 +812,7 @@ function account(){
    ${teamCard()}
    <div class="card"><h2>${esc(s.name)}</h2>
     <div class="kv"><span class="muted">Contact on file</span><b>${esc(s.contact||'—')}</b></div><div class="kv"><span class="muted">Mobile</span><b>${esc(s.phone||'—')}</b></div><div class="kv"><span class="muted">Credit period</span><b>${s.terms?s.terms+' days':'—'}</b></div>
-    <div class="kv"><span class="muted">The shop owes you</span><b>${money(s.owed)}</b></div></div>
+    <div class="kv"><span class="muted">Outstanding to you</span><b>${money(s.owed)}</b></div></div>
    ${damageCard()}
    <div class="card"><h2>${esc(me.shop.name)}</h2><div class="muted">${esc(me.shop.addr||'')}</div>${me.shop.phone?`<div style="margin-top:8px"><a class="btn" href="tel:${esc(me.shop.phone)}">📞 ${esc(me.shop.phone)}</a></div>`:''}</div>`;
 }
@@ -915,8 +915,8 @@ function damageCard(){
   const tag=(s)=>{ const d=DMG_SAID[s]||['',''];  return `<span class="tag ${d[1]}">${d[0]||esc(s)}</span>` };
   return `<div class="card"><h2>Damaged goods</h2>
    <div class="muted" style="margin-bottom:10px">${list.length} item${list.length===1?'':'s'} of yours came in
-    broken or faulty, worth ${money(st.me.damageValue||0)}. That has already been taken off what the shop
-    owes you above. Ring the counter if you want to see them.</div>
+    broken or faulty, worth ${money(st.me.damageValue||0)}. That has already been taken off your outstanding
+    above. Ring the counter if you want to see them.</div>
    <button class="btn dark" data-go="dmg">See and answer them</button></div>`;
 }
 /* Every return of theirs: open ones first, with an answer for each. Their answer goes to the shop, which
@@ -931,13 +931,13 @@ function dmgPage(){
       <div class="muted">${esc(d.no)} · ${esc(d.code)} · ${esc(d.date)}${['held','sent'].includes(d.status)?' · waiting '+d.days+' day'+(d.days===1?'':'s'):''}</div></div>${tag(d.status)}</div>
     <div style="margin:6px 0">${d.warranty?'<span class="tag warn">a customer brought it back under warranty</span>':'<span class="tag">arrived damaged</span>'}</div>
     <div>${esc(d.fault||d.reason)}${d.itemSerial?' · S/N '+esc(d.itemSerial):''}${d.note?'<div class="muted">'+esc(d.note)+'</div>':''}</div>
-    <div class="kv"><span class="muted">Worth</span><b>${money(d.value)}${d.offBill?'':' <span class="muted">(not taken off what the shop owes you — a replacement piece is needed)</span>'}</b></div>
+    <div class="kv"><span class="muted">Worth</span><b>${money(d.value)}${d.offBill?'':' <span class="muted">(not taken off your outstanding — a replacement piece is needed)</span>'}</b></div>
     ${d.said?`<div class="notice">${said[d.said.action]||esc(d.said.action)}${d.said.ref?' — credit note '+esc(d.said.ref):''}${d.said.note?' — '+esc(d.said.note):''}</div>`
       :d.asked?'<div class="notice">Your answer is with the shop.</div>'
       :['held','sent'].includes(d.status)?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${DMG_ANS.map(([k,l])=>`<button class="btn ${k==='reject'?'':'dark'}" data-dans="${esc(d.no)}|${k}">${l}</button>`).join('')}</div>`:''}
   </div>`;
   return `${me.damageHold?`<div class="notice" style="margin-bottom:12px"><b>Payments are on hold</b> while ${open.length} return${open.length===1?' is':'s are'} open. Answer each one below — the shop releases payments once they are settled.</div>`:''}
-   <div class="card"><div class="kv"><span class="muted">Open returns</span><b>${open.length}</b></div><div class="kv"><span class="muted">Already off what the shop owes you</span><b>${money(me.damageValue||0)}</b></div></div>
+   <div class="card"><div class="kv"><span class="muted">Open returns</span><b>${open.length}</b></div><div class="kv"><span class="muted">Already off your outstanding</span><b>${money(me.damageValue||0)}</b></div></div>
    ${open.length?open.map(row).join(''):'<div class="card muted">Nothing open — thank you.</div>'}
    ${done.length?`<h2 style="margin-top:18px">Settled lately</h2>${done.map(row).join('')}`:''}`;
 }

@@ -93,8 +93,8 @@ const agrees = await pg.evaluate(() => {
   const cust = S.customers.filter(c => c.id !== 1).reduce((a, c) => a + Math.max(0, partyBal('C', c.id)), 0);
   const sup = S.suppliers.reduce((a, s) => a + Math.max(0, partyBal('S', s.id)), 0);
   return { drawer: num('IN THE DRAWER'), cash: bal('1010', D(today)),
-    owed: num('CUSTOMERS OWE US'), cust: +cust.toFixed(2),
-    owing: num('WE OWE SUPPLIERS'), sup: +sup.toFixed(2) };
+    owed: num('CUSTOMER OUTSTANDING'), cust: +cust.toFixed(2),
+    owing: num('SUPPLIER OUTSTANDING'), sup: +sup.toFixed(2) };
 });
 ok(Math.abs(agrees.drawer - agrees.cash) < 0.005, 'the drawer figure is the journal, not a copy', JSON.stringify(agrees.drawer));
 ok(Math.abs(agrees.owed - agrees.cust) < 0.005, 'and so is what customers owe', JSON.stringify({ shown: agrees.owed, books: agrees.cust }));

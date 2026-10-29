@@ -95,7 +95,7 @@ ok(got.length === 4, 'and its own run sent nothing already sent');
 // the page
 await pg.evaluate(() => { window.eval('DUES').data = null; window.eval('go')('dues') }); await wait(1500);
 const page = await pg.evaluate(() => document.getElementById('main').innerText);
-ok(/Credit follow-up/.test(page) && /Who owes/.test(page) && /What has gone out/.test(page), 'the Credit follow-up page shows who owes and what has gone out');
+ok(/Credit follow-up/.test(page) && /Outstanding/.test(page) && /What has gone out/.test(page), 'the Credit follow-up page shows who owes and what has gone out');
 ok(/Final reminder/.test(page) && /sent/.test(page), 'with each reminder that went');
 await pg.screenshot({ path: OUT + '/dues-page.png', fullPage: true });
 

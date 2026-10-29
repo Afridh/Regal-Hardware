@@ -219,7 +219,7 @@ body[data-tab="me"] #account [data-pane]:not([data-pane="me"]){display:none}
   <!-- signing in -->
   <div id="signin" class="hide">
    <div class="hero"><span class="fl" style="right:16px;top:14px">🧾</span><span class="fl" style="right:64px;bottom:16px;animation-delay:-2s">🛠️</span><span class="fl" style="right:8px;bottom:58px;animation-delay:-4s;font-size:24px">🔩</span>
-     <b>Your account</b><p>What you owe, every bill line by line, and telling the shop you have paid. Any time, from your phone.</p>
+     <b>Your account</b><p>Your outstanding, every bill line by line, and telling the shop you have paid. Any time, from your phone.</p>
      <div class="feat"><span>🧾 Your bills</span><span>💸 Say you paid</span><span>📈 Ageing</span></div></div>
    <div class="card">
     <h2 id="siTitle">Your account</h2>
@@ -299,7 +299,7 @@ body[data-tab="me"] #account [data-pane]:not([data-pane="me"]){display:none}
   <nav class="tabbar hide" id="tabbar"><button data-tab="home"><span class="ic">🏠</span>Home</button><button data-tab="stmt"><span class="ic">📄</span>Statement</button><button data-tab="pay"><span class="ic">💸</span>Pay</button><button data-tab="me"><span class="ic">👤</span>Account</button></nav>
   <div id="account" class="hide">
     <div class="owed" data-pane="home">
-      <div class="l">You owe</div>
+      <div class="l">Your outstanding</div>
       <div class="v" id="owed">—</div>
       <div class="s" id="owedSub"></div>
       <div class="bands" id="bands"></div>
@@ -307,7 +307,7 @@ body[data-tab="me"] #account [data-pane]:not([data-pane="me"]){display:none}
 
     <div class="card" data-pane="home">
       <h2>Unpaid bills</h2>
-      <div id="bills"><div class="muted">Nothing owing — thank you.</div></div>
+      <div id="bills"><div class="muted">Nothing outstanding — thank you.</div></div>
     </div>
 
     <div id="billBox" class="billbox hide">
@@ -397,7 +397,7 @@ async function openBill(no) {
       ${b.billDisc > 0 ? `<div class="btot"><span>Discount</span><b>− ${money(b.billDisc)}</b></div>` : ''}
       <div class="btot big"><span>Total</span><b>${money(b.total)}</b></div>
       <div class="btot"><span>Paid</span><b>${money(b.paid)}</b></div>
-      ${b.balance > 0.005 ? `<div class="btot due"><span>Still owing</span><b>${money(b.balance)}</b></div>` : '<div class="btot"><span>Settled</span><b>✓</b></div>'}`;
+      ${b.balance > 0.005 ? `<div class="btot due"><span>Outstanding</span><b>${money(b.balance)}</b></div>` : '<div class="btot"><span>Settled</span><b>✓</b></div>'}`;
   } catch (e) { body.innerHTML = `<div class="msg bad">${e.message}</div>` }
 }
 function closeBill() { document.getElementById('billBox').classList.add('hide') }
@@ -587,7 +587,7 @@ function drawStmt() {
     .map(([k, l]) => `<button type="button" class="${stmtRange === k ? 'on' : ''}" data-r="${k}">${l}</button>`).join('');
   $('#stmtChips').querySelectorAll('[data-r]').forEach(b => b.onclick = () => { stmtRange = b.dataset.r; drawStmt() });
   $('#stmtSum').innerHTML = `<div><span>Brought forward</span><b>${money(opening)}</b></div><div><span>Billed</span><b>${money(billed)}</b></div>
-    <div><span>Paid &amp; returned</span><b class="good">${money(settled)}</b></div><div><span>You owe now</span><b class="${closing > 0.005 ? 'due' : 'good'}">${money(Math.max(0, closing))}</b></div>`;
+    <div><span>Paid &amp; returned</span><b class="good">${money(settled)}</b></div><div><span>Outstanding now</span><b class="${closing > 0.005 ? 'due' : 'good'}">${money(Math.max(0, closing))}</b></div>`;
   $('#stmtRows').innerHTML = (from ? `<div class="st-row open"><div><div class="no">Brought forward</div><div class="d">before ${from}</div></div><div class="amt"><b>${money(opening)}</b></div></div>` : '')
     + (shown.length ? shown.slice().reverse().map(r => { const k = KIND[r.kind] || KIND.other;
       return `<div class="st-row ${r.kind}" ${r.kind === 'bill' || r.kind === 'return' ? `data-bill="${r.ref}" role="button" tabindex="0"` : ''}>
@@ -639,14 +639,14 @@ async function load() {
   $('#owed').textContent = money(j.owed); countUp($('#owed'), j.owed);
   $('#owedSub').textContent = j.open.length
     ? `${j.open.length} unpaid bill${j.open.length === 1 ? '' : 's'}${j.limit ? ' · limit ' + money(j.limit) : ''}`
-    : 'nothing owing — thank you';
+    : 'nothing outstanding — thank you';
   const bands = [['d0', 'Up to 30 days'], ['d30', '31 – 60 days'], ['d60', '61 – 90 days'], ['d90', 'Over 90 days']];
   $('#bands').innerHTML = j.owed > 0 ? bands.map(([k, l]) =>
     `<div class="band ${k === 'd60' || k === 'd90' ? 'late' : ''}"><span>${l}</span><b>${j.ageing[k] > 0 ? money(j.ageing[k]) : '—'}</b></div>`).join('') : '';
   $('#bills').innerHTML = j.open.length ? j.open.map(s => `<div class="bill open" data-bill="${s.no}" tabindex="0" role="button">
       <div><div class="no">${s.no} <span class="seeit">see it</span></div><div class="d">${s.date} · ${s.lines} line${s.lines === 1 ? '' : 's'} ${ageTag(s.days)}</div></div>
       <div class="amt"><b>${money(s.balance)}</b>${s.paid ? `<div class="d">of ${money(s.total)}</div>` : ''}</div></div>`).join('')
-    : '<div class="empty"><div>🎉</div><b>Nothing owing</b>Thank you — your account is clear.</div>';
+    : '<div class="empty"><div>🎉</div><b>Nothing outstanding</b>Thank you — your account is clear.</div>';
   $('#bills').querySelectorAll('[data-bill]').forEach(el => {
     el.onclick = () => openBill(el.dataset.bill);
     el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBill(el.dataset.bill) } };
