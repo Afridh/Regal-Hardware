@@ -5376,7 +5376,9 @@ function receivePurchase({supplierId,supInv,lines,other=0,date=D(today),pay,file
     if(p.serialised&&l.serials) addSerials(l.pid,l.serials,pur.no,landed) }
   post(date,'Purchase '+pur.no,pur.no,[{ac:'1200',dr:total},{ac:'2100',cr:total,party:{type:'S',id:supplierId}}]);
   postCostGap(date,'Cost of goods sold before '+pur.no+' came in',pur.no,gapC);
-  if(pay&&pay.amount>0){
+  if(pay&&pay.amount>0&&dmgHold(supplierId).length){ pur.payHeld=true;
+    notify('money',`${pur.no}: not paid — ${(SU(supplierId)||{}).name||'the supplier'} has damage returns open`,'damages') }
+  else if(pay&&pay.amount>0){
     const sp=SU(supplierId);
     if(!payGate('supPay',`Pay ${escM(sp?sp.name:'supplier')}: ${fmt(pay.amount)} for ${pur.no}`,payWhat([pay]),
       {supplierId,amount:+pay.amount,lines:[pay],against:[pur.no],date},{keep:true})) paySupplier({supplierId,date,lines:[pay]});
@@ -5763,7 +5765,8 @@ function quickPurModal(sid){
   };
   $$('qpInv').focus();
 }
-function paySupplier({supplierId,date=D(today),lines,notes='',against=[]}){
+function paySupplier({supplierId,date=D(today),lines,notes='',against=[],allowDamage=false}){
+  dmgPayCheck(supplierId,allowDamage);   // a damage return open with them: no payment, unless the owner said so
   const total=+lines.reduce((a,l)=>a+l.amount,0).toFixed(2);
   const pv={no:next('PAY'),date,supplierId,total,lines,notes,voucher:next('VCH')};
   S.payments.push(pv);
@@ -5865,16 +5868,17 @@ function damageSet(no,status,note){
   const was=d.status; d.status=status;
   d.events=(d.events||[]).concat([{at:Date.now(),what:DMG_STATUS[status][0],by:S.user.name,note:note||''}]);
   if(status==='sent') d.sentDate=D(today);
-  if(status==='refused'&&was!=='refused'){
+  if(status==='refused'&&was!=='refused'&&!d.noPost){
     // they will not take it, so it becomes ours to lose: put the claim back and expense it
     post(D(today),'Damage turned down '+d.no,d.no,[{ac:'5200',dr:d.value},{ac:'2100',cr:d.value,party:{type:'S',id:d.sid}}]);
     supReopen(d.sid,d.value);
   }
-  if(was==='refused'&&status!=='refused'){
+  if(was==='refused'&&status!=='refused'&&!d.noPost){
     post(D(today),'Damage claim back on '+d.no,d.no,[{ac:'2100',dr:d.value,party:{type:'S',id:d.sid}},{ac:'5200',cr:d.value}]);
     supSettle(d.sid,d.value);
   }
-  if(status==='replaced'){ const p=P(d.pid); const gapC=avgIn(p,d.qty,d.cost); move(d.pid,d.qty,'DAMAGE-REPLACED',d.no,d.cost,D(today));
+  if(status==='replaced'&&d.custWait&&was!=='replaced'){ d.toHand=true; d.custWait=false }   // the supplier's piece is for the customer
+  if(status==='replaced'&&!d.noPost){ const p=P(d.pid); const gapC=avgIn(p,d.qty,d.cost); move(d.pid,d.qty,'DAMAGE-REPLACED',d.no,d.cost,D(today));
     post(D(today),'Replacement for '+d.no,d.no,[{ac:'1200',dr:d.value},{ac:'2100',cr:d.value,party:{type:'S',id:d.sid}}]);
     postCostGap(D(today),'Cost of goods sold before '+d.no+' was replaced',d.no,gapC);
     supReopen(d.sid,d.value); }
@@ -5884,6 +5888,175 @@ function damageSet(no,status,note){
 const damageValue=(sid)=>S.damages.filter(d=>d.sid===sid&&['held','sent'].includes(d.status))
   .reduce((a,d)=>a+d.value,0);
 const damageOpen=(sid)=>S.damages.filter(d=>d.sid===sid&&['held','sent'].includes(d.status));
+
+/* ================== WARRANTY REPLACEMENTS AND THE SUPPLIER'S SIDE OF A DAMAGE RETURN ==================
+   A customer brings back something faulty under warranty. It is taken back against the bill (or the
+   serial) it was sold on, booked to the supplier it came from, and either:
+     · replaced now from the shelf — the new piece leaves stock and its value comes off what we owe the
+       supplier, exactly as a piece that arrived broken does; or
+     · the customer waits for the supplier's replacement — nothing moves in the books; when the supplier's
+       piece comes it goes straight to the customer (Hand over), and the customer is texted.
+   Either way the faulty piece gets a label with a barcode, the customer gets a slip, and the supplier is
+   texted. While a supplier has a return open, payments to them are held (CFG.dmg.holdPay): the owner
+   can still pay anyway, and it is written in the trail. The supplier sees every return on their page
+   and can answer it there (services: routes/supplier.js, kind 'dmgreply'). */
+const dmgCfg=()=>({holdPay:true,textSup:true,...(CFG.dmg||{})});
+const dmgHold=(sid)=>dmgCfg().holdPay===false?[]:damageOpen(sid);
+const dmgDays=(d)=>Math.max(0,Math.round((new Date(D(today))-new Date(d.date))/864e5));
+const dmgOwner=()=>!!(S.user&&['Super Admin','Owner','Admin'].includes(S.user.role));
+function dmgPayCheck(sid,allow){
+  const h=dmgHold(sid); if(!h.length||allow) return;
+  throw new Error(`Payments to ${(SU(sid)||{}).name||'this supplier'} are on hold: ${h.length} damage return${h.length===1?'':'s'} open (${fmt(h.reduce((a,d)=>a+(+d.value||0),0))}). Settle them under Damage returns first — or the owner can pay anyway.`);
+}
+function addWarrantyReturn({pid,sid,qty=1,fault='',cid=null,bill='',serial='',buyDate='',warrantyTo='',giveNow=true,note=''}){
+  const p=P(pid); if(!p) throw new Error('Pick the item that came back');
+  if(!SU(sid)) throw new Error('Which supplier does it go back to?');
+  qty=+qty; if(!(qty>0)) throw new Error('Quantity must be above zero');
+  if(!String(fault||'').trim()) throw new Error('What is wrong with it?');
+  let d;
+  if(giveNow){
+    if(qty>p.stock+1e-9) throw new Error(`Only ${fq(p.stock)} ${p.unit} of ${p.name} on the shelf to give — choose "The customer waits for the supplier"`);
+    d=addSupplierDamage({pid,sid,qty,reason:'Warranty — faulty',note});
+  } else {
+    d={no:next('DMG'),date:D(today),pid,sid,qty,reason:'Warranty — faulty',note:note||'',value:+(qty*p.cost).toFixed(2),cost:p.cost,
+      status:'held',by:S.user.name,noPost:true,custWait:true};
+    d.serial=damageSerial(d); S.damages.push(d);
+    notify('stock',`${p.name} taken back under warranty — ${(C(cid)||{}).name||'a customer'} waits for ${SU(sid).name}'s replacement`,'damages');
+  }
+  Object.assign(d,{src:'warranty',cid:cid||null,bill:bill||'',itemSerial:serial||'',buyDate:buyDate||'',warrantyTo:warrantyTo||'',fault:String(fault).trim()});
+  d.events=[{at:Date.now(),what:giveNow?'Taken back from the customer — a replacement given from the shelf':'Taken back from the customer — they wait for the supplier\'s replacement',by:S.user.name}];
+  return d;
+}
+/* a customer who was waiting is given a piece from the shelf after all: from now on it is booked as any other */
+function dmgGiveNow(no){
+  const d=S.damages.find(x=>x.no===no); if(!d||!d.custWait||!['held','sent'].includes(d.status)) return;
+  const p=P(d.pid); if(!p) return;
+  if(d.qty>p.stock+1e-9) return toast(`Only ${fq(p.stock)} ${p.unit} of ${p.name} on the shelf`,'warn');
+  const v=+(d.qty*p.cost).toFixed(2);
+  move(d.pid,-d.qty,'DAMAGE',d.no,p.cost,D(today));
+  post(D(today),'Warranty replacement given '+d.no,d.no,[{ac:'2100',dr:v,party:{type:'S',id:d.sid}},{ac:'1200',cr:v}]);
+  supSettle(d.sid,v);
+  Object.assign(d,{value:v,cost:p.cost,noPost:false,custWait:false,gaveAt:apStamp()});
+  d.events.push({at:Date.now(),what:'Replacement given to the customer from the shelf',by:S.user.name});
+  persist(true); render(); toast(`${d.no}: replacement given from the shelf`,'ok');
+}
+/* the supplier's replacement has come for a customer who was waiting: it goes to them */
+function dmgHandOver(no){
+  const d=S.damages.find(x=>x.no===no); if(!d||!d.toHand) return;
+  d.toHand=false; d.handedAt=apStamp();
+  d.events.push({at:Date.now(),what:'The supplier\'s replacement handed to the customer',by:S.user.name});
+  persist(true); render(); toast(`${d.no}: handed over`,'ok');
+  dmgSlip(no);
+}
+function dmgText(list){
+  const s=SU(list[0].sid)||{};
+  if(list.length===1){ const d=list[0], p=P(d.pid)||{};
+    return tpl('dmgSupplier',{shop:CFG.shop.name,supplier:s.name||'',no:d.no,code:d.serial||d.no,item:p.name||'',qty:fq(d.qty),
+      why:[d.src==='warranty'?'returned by a customer under warranty':'arrived damaged',d.fault||d.reason,d.note].filter(Boolean).join(' — '),link:supLink()}) }
+  return `${CFG.shop.name}: ${list.length} damage returns of yours are waiting —\n`+list.map((d,i)=>`${i+1}. ${d.no} · ${(P(d.pid)||{}).name||''} × ${fq(d.qty)}${d.fault?' ('+d.fault+')':''}`).join('\n')
+    +`\nPlease arrange a replacement or a credit note. Details on your page: ${supLink()}`;
+}
+function dmgTellSup(nos,how){
+  const list=nos.map(n=>S.damages.find(x=>x.no===n)).filter(Boolean); if(!list.length) return false;
+  const s=SU(list[0].sid); if(!s||!s.phone){ toast(`No mobile on file for ${s?s.name:'the supplier'}`,'warn'); return false }
+  const body=dmgText(list); if(how==='wa') supWa(s.phone,body); else supSms(s.phone,body);
+  list.forEach(d=>{ d.told=(d.told||[]).concat([{at:apStamp(),how:how==='wa'?'wa':'sms',by:S.user.name}]);
+    d.events=(d.events||[]).concat([{at:Date.now(),what:`${s.name} told by ${how==='wa'?'WhatsApp':'text'}`,by:S.user.name}]) });
+  persist(true); render(); toast(`${s.name} told about ${list.length} return${list.length===1?'':'s'}`,'ok'); return true;
+}
+/* the customer's slip on the 80mm roll: what was taken back, what they got (or wait for), and the code */
+function dmgSlip(no){
+  const d=S.damages.find(x=>x.no===no); if(!d) return;
+  const p=P(d.pid)||{}, c=C(d.cid)||{}, SH=CFG.shop, B=CFG.bill, sc=Math.max(0.6,Math.min(2,(+B.r80Scale||100)/100));
+  const state=d.handedAt?`REPLACEMENT HANDED OVER ${noteEsc(d.handedAt)}`:d.custWait||d.toHand?'WE WILL CALL YOU WHEN THE REPLACEMENT ARRIVES — KEEP THIS SLIP':'REPLACEMENT GIVEN TODAY';
+  const inner=`<div class="print r80 sb80" data-scale="${sc}" style="zoom:${sc};width:calc(302px / ${sc});font-family:${billFontCss(B.r80Font)}">
+   <div class="sb-name">${noteEsc(SH.name||'')}</div>
+   <div class="sb-addr">${noteEsc((SH.addr||'').toUpperCase())}</div>
+   <div class="sb-phone">${noteEsc(SH.phone||'')}</div>
+   <div style="text-align:center;font-weight:800;font-size:16px;letter-spacing:.12em;border:2px solid #000;padding:3px 0;margin:4px 0 6px">WARRANTY RETURN</div>
+   <div class="sb-kv"><span>Return No :</span><b>${noteEsc(d.no)}</b><span>${noteEsc(d.date)}</span></div>
+   ${d.bill?`<div class="sb-kv"><span>Bought on :</span><b>${noteEsc(d.bill)}</b><span>${noteEsc(d.buyDate||'')}</span></div>`:''}
+   ${c.id&&c.id!==1?`<div class="sb-kv"><span>Customer :</span><b>${noteEsc((c.name||'').toUpperCase())}</b><span>${noteEsc(c.phone||'')}</span></div>`:''}
+   ${d.warrantyTo?`<div class="sb-kv"><span>Warranty to :</span><b>${noteEsc(d.warrantyTo)}</b><span></span></div>`:''}
+   <div class="sb-rule"></div>
+   <table class="sb-items"><tr><th class="l">Item</th><th></th><th></th><th>Qty</th></tr>
+    <tr class="nm"><td colspan="3">${noteEsc(String(p.name||'').toUpperCase())}${d.itemSerial?`<div>S/N ${noteEsc(d.itemSerial)}</div>`:''}</td><td>${fq(d.qty)}</td></tr></table>
+   <div>Fault: ${noteEsc(d.fault||d.reason||'')}</div>
+   <div class="sb-rule"></div>
+   <div style="text-align:center;font-weight:700">${state}</div>
+   <div class="sb-bc">${barcode128(d.serial||d.no,40)}</div>
+   <div class="sb-sign"><span>Taken By (${noteEsc(d.by||'')})</span><span>Customer</span></div>
+  </div>`;
+  printPaper(printDocument(inner,'r80'),'r80','WR-'+d.no,()=>paperFallback(inner,'r80'));
+}
+/* Taking a faulty item back from a customer under warranty */
+function warrantyModal(){
+  const sups=S.suppliers.filter(s=>s.active!==false);
+  const m=modal(`<h2>🛡 Warranty return — a customer brings something back</h2>
+   <div class="muted" style="margin-bottom:10px">Scan or type the bill number (or the serial) it was sold on — the item, customer, warranty and supplier fill in.</div>
+   <div class="grid2"><div class="f"><label>Sold on — bill no or serial</label><input id="wrSold" placeholder="scan the bill, then Enter" autocomplete="off"></div>
+    <div class="f"><label>&nbsp;</label><div id="wrSoldOut" class="muted" style="padding:9px 0">not known — pick the item below</div></div></div>
+   <div id="wrLines"></div>
+   <div class="grid2"><div class="f" style="position:relative"><label>Item</label><input id="wrItem" placeholder="type a name or code…" autocomplete="off"><div id="wrHits" class="hits"></div></div>
+    <div class="f" style="position:relative"><label>Customer — name or mobile</label><input id="wrCust" placeholder="type a name or 07…" autocomplete="off"><div id="wrCHits" class="hits"></div></div></div>
+   <div class="grid3"><div class="f"><label>How many</label><input id="wrQty" type="number" min="0" step="any" value="1"></div>
+    <div class="f"><label>Serial on it</label><input id="wrSer" placeholder="if it has one"></div>
+    <div class="f"><label>Back to supplier</label><select id="wrSup"><option value="">— choose —</option>${sups.map(s=>`<option value="${s.id}">${escM(s.name)}</option>`).join('')}</select></div></div>
+   <div class="f"><label>What is wrong</label><input id="wrFault" placeholder="e.g. motor does not start, leaking at the joint"></div>
+   <div id="wrWar" class="jb-war muted"></div>
+   <div class="jb-wsel" style="margin-top:8px"><span>The customer</span>
+    <label class="on"><input type="radio" name="wrGive" value="now" checked> <b>Gets a replacement now</b> <small id="wrStock">from the shelf</small></label>
+    <label><input type="radio" name="wrGive" value="wait"> <b>Waits for the supplier</b> <small>we call them when it comes</small></label></div>
+   <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px">
+    <label class="chk" style="margin:0"><input type="checkbox" id="wrText" ${dmgCfg().textSup?'checked':''}> Text the supplier</label>
+    <label class="chk" style="margin:0"><input type="checkbox" id="wrLbl" checked> Print the barcode label</label>
+    <label class="chk" style="margin:0"><input type="checkbox" id="wrSlip" checked> Print the customer's slip</label></div>
+   <div class="muted" id="wrMsg" style="margin-top:6px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="wrOk">Take it back</button></div>`);
+  const g=id=>m.querySelector('#'+id);
+  let pid=null, cid=null, bill='', buyDate='', wTo='';
+  const stockNote=()=>{ const p=pid&&P(pid); g('wrStock').textContent=p?`${fq(p.stock)} ${p.unit} on the shelf`:'from the shelf';
+    if(p&&p.stock<(+g('wrQty').value||1)){ const w=m.querySelector('[name=wrGive][value=wait]'); w.checked=true; m.querySelectorAll('[name=wrGive]').forEach(r=>r.closest('label').classList.toggle('on',r.checked)) } };
+  const war=()=>{ const el=g('wrWar'); if(!wTo){ el.innerHTML=''; el.className='jb-war muted'; return }
+    const ok=wTo>=D(today); el.className='jb-war '+(ok?'ok':'bad');
+    el.innerHTML=ok?`<b>Under warranty</b> until ${wTo}${buyDate?' · bought '+buyDate:''}`:`<b>Out of warranty</b> since ${wTo} — take it back only if the supplier will accept it`; };
+  const takeItem=(id,months)=>{ pid=id; const p=P(id); g('wrItem').value=p?p.name:''; g('wrHits').innerHTML='';
+    const sp=lastSupplier(id); if(sp) g('wrSup').value=sp.id;
+    if(months&&buyDate) wTo=addMonths(buyDate,months); else if(!months&&p&&p.warrantyMonths&&buyDate) wTo=addMonths(buyDate,p.warrantyMonths);
+    war(); stockNote() };
+  const takeCust=(id)=>{ cid=id; const c=C(id); g('wrCust').value=c?c.name+(c.phone?' · '+c.phone:''):''; g('wrCHits').innerHTML='' };
+  g('wrSold').onkeydown=e=>{ if(e.key!=='Enter') return; e.preventDefault();
+    const f=jobFindSale(g('wrSold').value), out=g('wrSoldOut'), ln=g('wrLines'); ln.innerHTML='';
+    if(!f){ out.innerHTML='<span class="tag bad">not found</span> pick the item below'; return }
+    bill=f.bill||''; buyDate=f.buyDate||''; if(f.customerId) takeCust(f.customerId);
+    if(!f.lines){ out.innerHTML=`Serial <b>${escM(f.serial)}</b>${bill?' · bill '+escM(bill):''}`; g('wrSer').value=f.serial; wTo=f.warrantyTo||''; takeItem(f.pid,f.warrantyMonths); return }
+    out.innerHTML=`Bill <b>${escM(f.bill)}</b> of ${escM(f.buyDate)} · ${f.lines.length} item${f.lines.length===1?'':'s'}`;
+    if(f.lines.length===1){ wTo=f.lines[0].warrantyTo||''; takeItem(f.lines[0].pid,f.lines[0].warrantyMonths) }
+    else { ln.innerHTML=`<div class="jb-pick">Which one? ${f.lines.map((l,i)=>`<button class="btn ghost sm" data-wl="${i}">${escM(l.item)}</button>`).join('')}</div>`;
+      ln.querySelectorAll('[data-wl]').forEach(b=>b.onclick=()=>{ const l=f.lines[+b.dataset.wl]; wTo=l.warrantyTo||''; takeItem(l.pid,l.warrantyMonths); ln.innerHTML='' }) } };
+  g('wrItem').oninput=()=>{ const q=g('wrItem').value.trim().toLowerCase(); pid=null; if(q.length<2) return g('wrHits').innerHTML='';
+    const found=S.products.filter(p=>p.active!==false&&((p.name||'').toLowerCase().includes(q)||String(p.code||'').toLowerCase().includes(q)||String(p.num||'')===q||String(p.barcode||'')===q)).slice(0,6);
+    g('wrHits').innerHTML=found.map(p=>`<button type="button" data-pid="${p.id}">${escM(p.name)} <span class="muted">${escM(p.code||'')} · ${fq(p.stock)} ${escM(p.unit||'')}</span></button>`).join('');
+    g('wrHits').querySelectorAll('[data-pid]').forEach(b=>b.onclick=()=>takeItem(+b.dataset.pid)) };
+  g('wrCust').oninput=()=>{ const q=g('wrCust').value.trim().toLowerCase(), dg=q.replace(/\D/g,''); cid=null; if(q.length<2) return g('wrCHits').innerHTML='';
+    const found=S.customers.filter(c=>c.id!==1&&((c.name||'').toLowerCase().includes(q)||(dg.length>=3&&String(c.phone||'').includes(dg)))).slice(0,6);
+    g('wrCHits').innerHTML=found.map(c=>`<button type="button" data-cid="${c.id}">${escM(c.name)} <span class="muted">${escM(c.phone||'')}</span></button>`).join('');
+    g('wrCHits').querySelectorAll('[data-cid]').forEach(b=>b.onclick=()=>takeCust(+b.dataset.cid)) };
+  g('wrQty').oninput=stockNote;
+  m.querySelectorAll('[name=wrGive]').forEach(r=>r.onchange=()=>m.querySelectorAll('[name=wrGive]').forEach(x=>x.closest('label').classList.toggle('on',x.checked)));
+  g('wrOk').onclick=()=>{
+    try{
+      const d=addWarrantyReturn({pid,sid:+g('wrSup').value,qty:+g('wrQty').value||0,fault:g('wrFault').value,cid,bill,serial:g('wrSer').value.trim(),buyDate,warrantyTo:wTo,
+        giveNow:(m.querySelector('[name=wrGive]:checked')||{}).value!=='wait'});
+      m.remove(); persist(true); render();
+      toast(`${d.no} taken back — ${d.custWait?'the customer waits for the supplier':'replacement given'}`,'ok');
+      if(g('wrText').checked) dmgTellSup([d.no]);
+      if(g('wrSlip').checked) dmgSlip(d.no);
+      if(g('wrLbl').checked) damageLabel(d.no);
+    }catch(e){ g('wrMsg').textContent=e.message }
+  };
+  g('wrSold').focus();
+}
 
 /* ================== JOB NOTES: SOMETHING LEFT IN FOR REPAIR ==================
    A customer leaves a machine on the counter. It is not stock and it is not a sale — it is theirs and
@@ -6073,6 +6246,8 @@ const CFG={
  scale:{on:true,prefix:'20,21,22,23,24,25,26,27,28,29',plu:5,digits:5,price:false,baud:9600,ask:''},
  // deliveries: the usual charge, the time slots, and whether the customer is texted when it is on the way
  dlv:{charge:0,slots:['Morning','Afternoon','Evening'],sms:true},
+ // damage & warranty returns: hold supplier payments while one is open; text the supplier when one is raised
+ dmg:{holdPay:true,textSup:true},
  trade:{rate:2,sms:true,kinds:['Mason','Electrician','Plumber','Carpenter','Painter','Welder','Other']},
  tpl:{
   cashSale:{label:'Cash bill',vars:'{shop} {invoice} {total} {link} {customer}',
@@ -6115,6 +6290,12 @@ const CFG={
   planLate:{label:'Easy payments — part late',vars:'{shop} {part} {parts} {amount} {due} {paid} {total} {link}',
     text:'Part {part} of {parts} of your easy-payment plan, {amount}, was due on {due} and is not paid yet.\nPaid so far: {paid} of {total}.\nPlease pay at your earliest. Details: {link}'},
   // sent by the server when the driver presses "On the way" on their phone (services: routes/deliveries.js)
+  // to the supplier when a damage or warranty return is raised (and from the Damage returns page)
+  dmgSupplier:{label:'Damage return — to the supplier',vars:'{shop} {supplier} {no} {code} {item} {qty} {why} {link}',
+    text:'{shop}: damage return {no} ({code}) — {item} × {qty}, {why}.\nPlease arrange a replacement or a credit note. See it on your page: {link}'},
+  // to the customer when the supplier's replacement has come in
+  dmgReady:{label:'Warranty — replacement is here',vars:'{shop} {customer} {item} {no}',
+    text:'Dear {customer}, the replacement for your {item} (return {no}) is here. Please bring your slip to collect it.'},
   dlvOut:{label:'Delivery — on the way',vars:'{shop} {no} {driver} {codPart}',text:'Your delivery {no} is on the way with {driver}.{codPart}'},
   hireDue:{label:'Tool hire — due back',vars:'{shop} {customer} {item} {due} {days}',
     text:'A reminder: the {item} you hired is due back{dueWhen}.\nIt is charged by the day until it comes back.\nPlease bring it in, or call us to keep it longer.'},
@@ -7103,7 +7284,7 @@ const TPL_ONELINE={cashSale:'Thank you for your purchase. Your bill {invoice} fo
   orderReceived:'Your goods have been received as {grn}.',
   dailySummary:'Today — sales {sales}, cash {cash}, credit {credit}, expenses {expenses}. Customers owe {outstanding}.'};
 // who each template is written to, for its preview and its test
-const TPL_AUD={closingSummary:'owner',repairSupplier:'supplier',orderAccepted:'supplier',orderRejected:'supplier',orderAdjusted:'supplier',orderReceived:'supplier',ownerBill:'owner',dailySummary:'owner'};
+const TPL_AUD={dmgSupplier:'supplier',dmgReady:'customer',closingSummary:'owner',repairSupplier:'supplier',orderAccepted:'supplier',orderRejected:'supplier',orderAdjusted:'supplier',orderReceived:'supplier',ownerBill:'owner',dailySummary:'owner'};
 function labelSampleBill(inv){
   const c=C(inv.customerId), credit=inv.balance>0;
   const cols=[CFG.bill.showCode&&'CODE','DESCRIPTION','QTY',CFG.bill.showUom&&'UOM',CFG.bill.showMrp&&'MRP','PRICE','AMOUNT'].filter(Boolean);
@@ -8853,6 +9034,7 @@ function prIssue(r){
     const line={ method:how, bank:+g('piBank').value||1, amount:+amt.toFixed(2),
       date:how==='CHEQUE'?(g('piDate').value||D(today)):D(today), no:(g('piRef').value||'').trim()||undefined };
     try{
+      dmgPayCheck(r.sid,false);
       if(payGate('supPay',`Hand ${escM(sp.name)} ${fmt(amt)} (payment request)`,payWhat([line]),
         {supplierId:r.sid,amount:+amt.toFixed(2),lines:[line],against,notes:`Payment request ${r.id}`,prId:r.id,date:D(today)})){ m.remove(); render(); return }
       const pv = paySupplier({ supplierId:r.sid, lines:[line], against, notes:`Payment request ${r.id}` });
@@ -13116,6 +13298,7 @@ function renderNow(){
   }
   document.querySelectorAll('[data-custfilter]').forEach(b=>b.onclick=()=>{custFilter=b.dataset.custfilter;render()});
   document.querySelectorAll('[data-dmgtab]').forEach(b=>b.onclick=()=>{dmgTab=b.dataset.dmgtab;render()});
+  document.querySelectorAll('[data-dmgsrc]').forEach(b=>b.onclick=()=>{dmgSrc=b.dataset.dmgsrc;render()});
   document.querySelectorAll('[data-docstate]').forEach(b=>b.onclick=()=>{docState=b.dataset.docstate;docSel=null;render()});
   {
     const dq=document.getElementById('docQ');
@@ -21668,7 +21851,7 @@ function applyApproval(a){
       setTimeout(()=>{ try{ receiptVoucherCombined(rvs,true) }catch(e){} },80);
       break }
     case 'supPay':{ const sp=SU(d.supplierId); if(!sp) throw new Error('Supplier no longer exists');
-      const pv=paySupplier({supplierId:sp.id,lines:d.lines||[],against:d.against||[],notes:d.notes||'',date:d.date||D(today)});
+      const pv=paySupplier({supplierId:sp.id,lines:d.lines||[],against:d.against||[],notes:d.notes||'',date:d.date||D(today),allowDamage:!!d.allowDamage});
       pv.paidBy=a.by;
       if(d.prId){ const r=payReqs().find(x=>x.id===d.prId); if(r){ r.status='issued';
         r.pay={date:d.date||D(today),what:payWhat(d.lines||[]),voucher:pv.voucher,by:a.by,no:pv.no}; prStep(r,'issued',payWhat(d.lines||[])) } }
@@ -25752,6 +25935,7 @@ function chequePlanModal(sid,amount,from,pur){
     if(!split.length) return toast('Nothing to write');
     try{
       const ls=split.map(x=>({method:'CHEQUE',bank:+bank,date:x.date,amount:x.amount})), sum=+ls.reduce((a,x)=>a+x.amount,0).toFixed(2), sp=SU(sid);
+      dmgPayCheck(sid,false);
       if(payGate('supPay',`Pay ${escM(sp?sp.name:'supplier')}: ${fmt(sum)} in ${ls.length} cheque${ls.length===1?'':'s'}`,payWhat(ls),
         {supplierId:sid,amount:sum,lines:ls,against:pur?[pur]:[],date:D(today)})){ m.remove(); render(); return }
       const pv=paySupplier({supplierId:sid,lines:ls,
@@ -25959,7 +26143,7 @@ function supplierPanel(s){
     <div class="kpi g"><div class="l">Last payment</div><div class="v ${lastPay&&fmt(lastPay.total).length>14?'small':''}">${lastPay?fmt(lastPay.total):'—'}</div><div class="s">${lastPay?`${lastPay.date} · ${lastPay.lines.map(l=>l.method.toLowerCase()).join('+')} · ${agoTxt(lastPay.date)}`:'nothing paid yet'}</div></div>
     ${(()=>{const dv=damageValue(s.id),dn=damageOpen(s.id);return dv>0?`<div class="kpi r"><div class="l">Damaged, back to them</div>
       <div class="v ${fmt(dv).length>14?'small':''}">${fmt(dv)}</div>
-      <div class="s"><a href="#" data-view="damages">${dn.length} piece${dn.length===1?'':'s'} · ${dn.filter(d=>d.status==='held').length} still here</a></div></div>`:''})()}
+      <div class="s"><a href="#" data-view="damages">${dn.length} piece${dn.length===1?'':'s'} · ${dn.filter(d=>d.status==='held').length} still here</a>${dmgHold(s.id).length?' · <b style="color:var(--chip-rust,#C0442C)">payments on hold</b>':''}</div></div>`:''})()}
     <div class="kpi b"><div class="l">Bought in all</div><div class="v ${fmt(bought).length>14?'small':''}">${fmt(bought)}</div><div class="s">${pur.length} GRN${pur.length===1?'':'s'} · paid ${fmt(paidTot)}</div></div>
    </div>
 
@@ -26197,6 +26381,7 @@ function supPayModal(id){
   const openBills=()=>S.purchases.filter(p=>p.supplierId===id&&p.total-p.paid>0.005).sort((a,b)=>a.date.localeCompare(b.date));
   const picked=()=>{ const b=openBills(); return sel.size?b.filter(p=>sel.has(p.no)):b };
   const total=()=>+picked().reduce((a,p)=>a+(p.total-p.paid),0).toFixed(2);
+  let dmgOk=false;
 
   const m=modal('<div id="spBody"></div>'); npAdd(m);
   const $=(x)=>m.querySelector(x);
@@ -26208,6 +26393,11 @@ function supPayModal(id){
      <div class="muted">Outstanding ${fmt(owe)} across ${bills.length} bill${bills.length===1?'':'s'} ·
        usually ${s.days} days${supTermList(s).length?', '+supTermList(s).map(x=>x.cat+' '+x.days+'d').join(', '):''}</div>
      <div class="sp-steps"><span class="on">1 · The bills, and whether they are right</span><span>2 · How it is paid</span></div>
+     ${(()=>{ const h=dmgHold(id); if(!h.length) return '';
+       return `<div class="card" style="margin:10px 0;border-left:4px solid var(--chip-rust,#C0442C)"><b style="color:var(--chip-rust,#C0442C)">Payments on hold — ${h.length} damage return${h.length===1?'':'s'} open (${fmt(h.reduce((a,d)=>a+(+d.value||0),0))})</b>
+        <div class="muted" style="margin-top:4px">${h.slice(0,5).map(d=>`${d.no} · ${escM((P(d.pid)||{}).name||'')} × ${fq(d.qty)} · ${dmgDays(d)} days`).join('<br>')}${h.length>5?'<br>and '+(h.length-5)+' more':''}</div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn ghost sm" data-act="supDamage">Open Damage returns</button>
+        ${dmgOwner()?`<label class="chk" style="margin:0"><input type="checkbox" id="spDmgOk" ${dmgOk?'checked':''}> Pay anyway — I know about these</label>`:'<span class="muted">Only the owner can pay while these are open.</span>'}</div></div>` })()}
      ${bills.length?`
       <div class="muted" style="margin:8px 0">Tick what this payment is for — leave them all empty to settle the
        oldest first. Look at each one before you go on: anything short delivered, a price agreed afterwards or a
@@ -26236,6 +26426,8 @@ function supPayModal(id){
       cb.checked?sel.add(cb.dataset.sbill):sel.delete(cb.dataset.sbill); drawBills() });
     m.querySelectorAll('[data-sadj]').forEach(b=>b.onclick=()=>adjustPurchaseModal(b.dataset.sadj,()=>{
       sel.delete(b.dataset.sadj); drawBills() }));     // a bill settled by the change drops out of its own accord
+    const dok=$('#spDmgOk'); if(dok) dok.onchange=()=>{ dmgOk=dok.checked; drawBills() };
+    if(dmgHold(id).length&&!dmgOk&&$('#spGo')) $('#spGo').disabled=true;
     const go=$('#spGo'); if(go) go.onclick=()=>{
       const t=total();
       lines=[{method:'CHEQUE',bank:bank0,amount:t,
@@ -26283,8 +26475,9 @@ function supPayModal(id){
       const sum=+ls.reduce((a,l)=>a+(+l.amount||0),0).toFixed(2);
       if(sum>t+0.005) return toast(`That is ${fmt(sum-t)} more than the bills come to`);
       { const sp=SU(id); if(payGate('supPay',`Pay ${escM(sp?sp.name:'supplier')}: ${fmt(sum)}`,payWhat(ls)+(sel.size?' · for '+[...sel].map(escM).join(', '):''),
-          {supplierId:id,amount:sum,lines:JSON.parse(JSON.stringify(ls)),against:[...sel],date:D(today)})){ m.remove(); render(); return } }
-      const pv=paySupplier({supplierId:id,lines:ls,against:[...sel]});
+          {supplierId:id,amount:sum,lines:JSON.parse(JSON.stringify(ls)),against:[...sel],date:D(today),allowDamage:dmgOk})){ m.remove(); render(); return } }
+      const pv=paySupplier({supplierId:id,lines:ls,against:[...sel],allowDamage:dmgOk});
+      if(dmgOk&&dmgHold(id).length) try{ logTrail('other',`${pv.no}: ${s.name} paid ${fmt(sum)} with ${dmgHold(id).length} damage return(s) open — the owner said pay anyway`,{ref:pv.no,amount:sum}) }catch(e){}
       const chq=ls.filter(l=>l.method==='CHEQUE').length;
       m.remove(); render(); supplierVoucher(pv,true);
       toast(`${pv.no} saved · ${chq} cheque${chq===1?'':'s'} ready to print`);
@@ -26630,6 +26823,7 @@ function damageMoveModal(no){
   const opts=[['sent','Sent back to them'],['credited','They credited us'],['replaced','They replaced it'],['refused','They would not take it'],['held','Back in the bin']];
   const m=modal(`<h2>${d.no} — ${(P(d.pid)||{}).name||''}</h2>
    <div class="muted" style="margin-bottom:10px">${fq(d.qty)} ${(P(d.pid)||{}).unit||''} · ${fmt(d.value)} · ${SU(d.sid)?SU(d.sid).name:''}</div>
+   ${(d.events||[]).length?`<div class="muted" style="max-height:130px;overflow:auto;margin-bottom:8px;font-size:12.5px">${d.events.map(e=>`<div>${new Date(e.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})} · ${escM(e.what)}${e.note?' — '+escM(e.note):''} <span>(${escM(e.by||'')})</span></div>`).join('')}</div>`:''}
    <div class="f"><label>Where is it now</label><select id="dvTo">${opts.map(([k,l])=>`<option value="${k}" ${d.status===k?'selected':''}>${l}</option>`).join('')}</select></div>
    <div class="f"><label>Note</label><input id="dvNote" placeholder="credit note number, who took it…"></div>
    <div class="muted" style="margin-top:6px">Turning it down puts the money back on us as a loss. Replaced puts the piece back on the floor.</div>
@@ -26638,6 +26832,7 @@ function damageMoveModal(no){
     <button class="btn tape" id="dvOk">Save</button></div>`);
   m.querySelector('#dvOk').onclick=()=>{
     try{ damageSet(no,m.querySelector('#dvTo').value,m.querySelector('#dvNote').value);
+      if(d.toHand&&!d.readyTold){ const c=C(d.cid); d.readyTold=true; if(c&&c.phone) sms(c.phone,tpl('dmgReady',{customer:c.name,item:(P(d.pid)||{}).name||'item',no:d.no}),'customer') }
       m.remove(); persist(true); render(); toast(d.no+' updated','ok');
     }catch(e){ toast(e.message,'bad') }
   };
@@ -26696,40 +26891,63 @@ function damageScanModal(){
   m.querySelector('#dsCode').focus();
 }
 
-/* ================== DAMAGE RETURNS ==================
-   The bin by the goods door. Everything in it belongs to a supplier and is waiting to go back. */
-let dmgTab='held', dmgScan='';
+/* ================== DAMAGE & WARRANTY RETURNS ==================
+   Everything that has to go back to a supplier: pieces that arrived broken, and faulty pieces customers
+   brought back under warranty. Open returns by supplier (and whose payments are held), each return with
+   how long it has waited, what the supplier said, and the customer it belongs to. */
+let dmgTab='held', dmgScan='', dmgSrc='all';
 function damages(){
-  const all=S.damages.filter(d=>d.sid);                 // older write-offs had no supplier
+  const every=S.damages.filter(d=>d.sid);                 // older write-offs had no supplier
+  const all=every.filter(d=>dmgSrc==='all'||(dmgSrc==='warranty'?d.src==='warranty':d.src!=='warranty'));
   const by=(k)=>all.filter(d=>d.status===k);
-  const shown=dmgTab==='all'?all:by(dmgTab);
-  const worth=(list)=>list.reduce((a,d)=>a+d.value,0);
-  const tabs=[['held','In the bin'],['sent','Sent back'],['credited','Credited'],['replaced','Replaced'],['refused','Turned down'],['all','Everything']];
-  return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Damage returns
-    <span style="display:flex;gap:6px">
+  const open=all.filter(d=>['held','sent'].includes(d.status)), toHand=all.filter(d=>d.toHand);
+  const shown=dmgTab==='all'?all:dmgTab==='hand'?toHand:dmgTab==='open'?open:by(dmgTab);
+  const worth=(list)=>list.reduce((a,d)=>a+(+d.value||0),0);
+  const oldest=open.reduce((a,d)=>Math.max(a,dmgDays(d)),0);
+  const custWait=all.filter(d=>(d.custWait&&['held','sent'].includes(d.status))||d.toHand);
+  const sups=[...new Set(open.map(d=>d.sid))].map(sid=>({s:SU(sid)||{id:sid,name:'—'},list:open.filter(d=>d.sid===sid)})).sort((a,b)=>worth(b.list)-worth(a.list));
+  const tabs=[['open','Open'],['held','In the bin'],['sent','Sent back'],...(toHand.length?[['hand','To hand over']]:[]),['credited','Credited'],['replaced','Replaced'],['refused','Turned down'],['all','Everything']];
+  const said={replace:'will replace',credit:'will credit',collected:'collected it',reject:'will not accept'};
+  return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Damage &amp; warranty returns
+    <span style="display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn ghost" data-act="dmgScan">Scan a label</button>
-      <button class="btn tape" data-act="dmgNew">+ Damaged item</button></span></h1>
+      <button class="btn ghost" data-act="dmgNew">+ Arrived damaged</button>
+      <button class="btn tape" data-act="dmgWarranty">+ Warranty return</button></span></h1>
   <div class="row" style="gap:12px;flex-wrap:wrap;margin-bottom:12px">
-    ${stat('In the bin',fmt(worth(by('held'))),by('held').length+' piece'+(by('held').length===1?'':'s'))}
-    ${stat('Sent back, not settled',fmt(worth(by('sent'))),by('sent').length+' waiting on a supplier')}
-    ${stat('Settled this way',fmt(worth(by('credited'))+worth(by('replaced'))),'credited or replaced')}
-    ${stat('Our loss',fmt(worth(by('refused'))),'they would not take it','bad')}
+    ${stat('Open',fmt(worth(open)),open.length+' return'+(open.length===1?'':'s')+' with '+sups.length+' supplier'+(sups.length===1?'':'s'),'y')}
+    ${stat('Waiting longest',oldest+' day'+(oldest===1?'':'s'),'the oldest open return',oldest>30?'r':'b')}
+    ${stat('Customers waiting',custWait.length,toHand.length?toHand.length+' replacement'+(toHand.length===1?'':'s')+' here to hand over':'for a supplier\'s replacement','b')}
+    ${stat('Our loss',fmt(worth(by('refused'))),'they would not take it','r')}
   </div>
-  <div class="chips">${tabs.map(([k,l])=>`<button class="${dmgTab===k?'on':''}" data-dmgtab="${k}">${l} ${k==='all'?all.length:by(k).length}</button>`).join('')}</div>
+  <div class="chips">${[['all','All'],['warranty','From customers (warranty)'],['stock','Arrived damaged']].map(([k,l])=>`<button class="${dmgSrc===k?'on':''}" data-dmgsrc="${k}">${l}</button>`).join('')}</div>
+  ${sups.length?`<div class="card" style="margin-top:10px"><b style="font-size:15px">Open, by supplier</b>${dmgCfg().holdPay!==false?' <span class="muted">· payments to these suppliers are on hold until their returns are settled</span>':''}
+   <div style="overflow-x:auto;margin-top:8px"><table><tr><th>Supplier</th><th class="n">Open</th><th class="n">Worth</th><th class="n">Oldest</th><th>Last told</th><th></th></tr>
+   ${sups.map(({s,list})=>{ const told=list.map(d=>(d.told||[]).slice(-1)[0]).filter(Boolean).map(x=>x.at).sort().pop();
+     return `<tr><td><b>${escM(s.name)}</b><div class="muted">${escM(s.phone||'no mobile')}</div></td><td class="n">${list.length}</td><td class="n">${fmt(worth(list))}</td>
+      <td class="n">${list.reduce((a,d)=>Math.max(a,dmgDays(d)),0)} days</td><td>${told?escM(told):'<span class="muted">not yet</span>'}</td>
+      <td style="white-space:nowrap"><button class="btn ghost sm" data-act="dmgTellAll" data-sid="${s.id}" ${s.phone?'':'disabled'}>Text them the list</button> <button class="btn ghost sm wa" data-act="dmgTellAll" data-sid="${s.id}" data-how="wa" ${s.phone?'':'disabled'}>${WA_ICON} WhatsApp</button></td></tr>` }).join('')}
+   </table></div></div>`:''}
+  <div class="chips" style="margin-top:10px">${tabs.map(([k,l])=>`<button class="${dmgTab===k?'on':''}" data-dmgtab="${k}">${l} ${k==='all'?all.length:k==='open'?open.length:k==='hand'?toHand.length:by(k).length}</button>`).join('')}</div>
   <div class="card" style="margin-top:10px">
-  ${shown.length?`<table class="tbl"><tr><th>Note</th><th>Item</th><th class="n">Qty</th><th class="n">Worth</th><th>Back to</th><th>Why</th><th>Where it is</th><th></th></tr>
-    ${shown.slice().reverse().map(d=>{const p=P(d.pid)||{},s=SU(d.sid)||{};return `<tr>
-      <td><b>${d.no}</b><div class="muted">${d.date} · <code>${d.serial||''}</code></div></td>
-      <td>${p.name||'—'}<div class="muted">${p.code||''}</div></td>
-      <td class="n">${fq(d.qty)} ${p.unit||''}</td>
-      <td class="n">${fmt(d.value)}</td>
-      <td>${s.name||'—'}</td>
-      <td>${d.reason||''}${d.note?`<div class="muted">${d.note}</div>`:''}</td>
+  ${shown.length?`<div style="overflow-x:auto"><table class="tbl"><tr><th>Return</th><th>Item</th><th class="n">Qty</th><th class="n">Worth</th><th>Supplier</th><th>Customer</th><th class="n">Days</th><th>Where it is</th><th></th></tr>
+    ${shown.slice().reverse().map(d=>{const p=P(d.pid)||{},s=SU(d.sid)||{},c=d.cid?C(d.cid):null,open1=['held','sent'].includes(d.status);return `<tr>
+      <td><b>${d.no}</b> ${d.src==='warranty'?'<span class="tag blue">warranty</span>':'<span class="tag">arrived damaged</span>'}<div class="muted">${d.date} · <code>${d.serial||''}</code></div></td>
+      <td>${escM(p.name||'—')}<div class="muted">${escM(d.fault||d.reason||'')}${d.itemSerial?' · S/N '+escM(d.itemSerial):''}${d.note?' · '+escM(d.note):''}</div></td>
+      <td class="n">${fq(d.qty)} ${escM(p.unit||'')}</td>
+      <td class="n">${fmt(d.value)}${d.noPost?'<div class="muted">not off their bill</div>':''}</td>
+      <td>${escM(s.name||'—')}${d.supSaid?`<div class="muted">said: <b>${said[d.supSaid.action]||escM(d.supSaid.action)}</b>${d.supSaid.ref?' · '+escM(d.supSaid.ref):''}${d.supSaid.note?' · '+escM(d.supSaid.note):''}</div>`:''}${(d.told||[]).length?`<div class="muted">told ${escM(d.told.slice(-1)[0].at)}</div>`:''}</td>
+      <td>${c?`<b>${escM(c.name)}</b><div class="muted">${escM(c.phone||'')}${d.bill?' · '+escM(d.bill):''}</div>`:d.src==='warranty'?'<span class="muted">walk-in</span>':'<span class="muted">—</span>'}
+        ${d.custWait&&open1?'<span class="tag warn">waiting for it</span>':d.toHand?'<span class="tag bad">here — hand over</span>':d.handedAt?`<span class="tag ok">handed ${escM(d.handedAt)}</span>`:d.src==='warranty'?'<span class="tag ok">replaced at the counter</span>':''}</td>
+      <td class="n">${open1?dmgDays(d):'—'}</td>
       <td><span class="tag ${DMG_STATUS[d.status][1]}">${DMG_STATUS[d.status][0]}</span></td>
       <td class="n" style="white-space:nowrap">
         <button class="btn ghost sm" data-act="dmgLabel" data-no="${d.no}">Label</button>
-        <button class="btn ghost sm" data-act="dmgMove" data-no="${d.no}">Move on</button></td></tr>`}).join('')}</table>`
-   :'<div class="muted">Nothing here. Anything that arrives broken goes in with <b>+ Damaged item</b>.</div>'}
+        ${d.src==='warranty'?`<button class="btn ghost sm" data-act="dmgSlip" data-no="${d.no}">Slip</button>`:''}
+        ${open1?`<button class="btn ghost sm" data-act="dmgTell" data-no="${d.no}" ${s.phone?'':'disabled'}>Text</button>`:''}
+        ${d.custWait&&open1?`<button class="btn ghost sm" data-act="dmgGive" data-no="${d.no}">Give from shelf</button>`:''}
+        ${d.toHand?`<button class="btn tape sm" data-act="dmgHand" data-no="${d.no}">Hand over</button>`:''}
+        <button class="btn ghost sm" data-act="dmgMove" data-no="${d.no}">Move on</button></td></tr>`}).join('')}</table></div>`
+   :'<div class="muted">Nothing here. A faulty piece a customer brings back goes in with <b>+ Warranty return</b>; anything that arrives broken with <b>+ Arrived damaged</b>.</div>'}
   </div>`;
 }
 
@@ -31739,7 +31957,8 @@ document.addEventListener('click',e=>{
     newDN:()=>newDNModal(+a.dataset.id||undefined),
     purMatch:()=>matchNoteModal(a.dataset.no),
     purFiles:()=>{ const pu=S.purchases.find(x=>x.no===a.dataset.no); if(pu) purFilesModal(pu) },
-    dmgLabel:()=>damageLabel(a.dataset.no), dmgScan:()=>damageScanModal(),
+    dmgLabel:()=>damageLabel(a.dataset.no), dmgWarranty:()=>warrantyModal(), dmgSlip:()=>dmgSlip(a.dataset.no), dmgTell:()=>dmgTellSup([a.dataset.no],a.dataset.how),
+    dmgTellAll:()=>dmgTellSup(damageOpen(+a.dataset.sid).map(d=>d.no),a.dataset.how), dmgGive:()=>dmgGiveNow(a.dataset.no), dmgHand:()=>dmgHandOver(a.dataset.no), dmgScan:()=>damageScanModal(),
     jobNew:()=>jobModal(), jobMove:()=>jobMoveModal(a.dataset.no),
     jobLabel:()=>jobLabel(a.dataset.no),
     jobSheet:()=>jobSheetPrint(a.dataset.no),

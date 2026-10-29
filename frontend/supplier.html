@@ -352,7 +352,7 @@ const tag=s=>{const x=STATUS[s]||['',s];return `<span class="tag ${x[0]}">${esc(
 const ACT={sent:'Order sent',accepted:'Accepted',changes:'Asked for a change',dispatched:'Dispatched',received:'Goods received',cancelled:'Cancelled',uploaded:'Order sent in',rejected:'Not accepted',adjusted:'Change requested',comment:''};
 
 /* ---- the five pages, one menu ---- */
-const MENU=[['orders','📥','Orders From Shop','From shop'],['create','➕','Create new order','Create'],['pending','⏳','Pending Orders','Pending'],['history','🗂️','Order History','History'],['stock','📦','Your stock','Stock'],['pay','💳','Payment Request','Payment'],['prices','📄','Price lists','Prices'],['account','👤','Account','Account']];
+const MENU=[['orders','📥','Orders From Shop','From shop'],['create','➕','Create new order','Create'],['pending','⏳','Pending Orders','Pending'],['history','🗂️','Order History','History'],['stock','📦','Your stock','Stock'],['pay','💳','Payment Request','Payment'],['dmg','⚠️','Damage returns','Damages'],['prices','📄','Price lists','Prices'],['account','👤','Account','Account']];
 /* Their stock is always in the menu. The shop opens it a day at a time (Suppliers → Show them their stock,
    or Approvals when they ask from here); while it is shut the page lets them ask. */
 const stockOpen=()=>!!(st.me&&+st.me.stockUntil>Date.now());
@@ -374,7 +374,7 @@ function render(){
   if(!st.me){ nav.style.display='none'; document.body.classList.remove('in'); m.innerHTML='<div class="skel" style="height:150px;border-radius:20px"></div><div class="skel"></div><div class="skel"></div>'; return }
   document.body.classList.add('in');
   const me=st.me;
-  const badge={orders:me.pos.filter(o=>NEEDS_ME.includes(o.status)).length, pending:(me.sent||[]).filter(o=>o.status==='adjusted').length, pay:(me.payReqs||[]).filter(r=>r.status==='ready').length};
+  const badge={orders:me.pos.filter(o=>NEEDS_ME.includes(o.status)).length, pending:(me.sent||[]).filter(o=>o.status==='adjusted').length, pay:(me.payReqs||[]).filter(r=>r.status==='ready').length, dmg:(me.damages||[]).filter(d=>['held','sent'].includes(d.status)&&!d.said&&!d.asked).length};
   const menu=MENU;
   if(!menu.some(x=>x[0]===st.tab)) st.tab='orders';
   nav.style.display='';
@@ -383,7 +383,7 @@ function render(){
   const title=(MENU.find(x=>x[0]===st.tab)||[])[2]||'';
   // the page animates in when it is opened, not when the 15-second refresh redraws it
   const fresh=st.shown!==st.tab; st.shown=st.tab; m.classList.toggle('enter',fresh);
-  m.innerHTML=(st.tab==='orders'?dash(badge):'')+`<h1 class="ptitle">${esc(title)}</h1>`+(st.flash?`<div class="flash">${st.flash}</div>`:'')+({orders:ordersPage,create:createPage,pending:pendingPage,history:historyPage,stock:stockPage,pay,prices:pricesPage,account})[st.tab]();
+  m.innerHTML=(st.tab==='orders'?dash(badge):'')+`<h1 class="ptitle">${esc(title)}</h1>`+(st.flash?`<div class="flash">${st.flash}</div>`:'')+({orders:ordersPage,create:createPage,pending:pendingPage,history:historyPage,stock:stockPage,pay,dmg:dmgPage,prices:pricesPage,account})[st.tab]();
   $$('[data-go]',m).forEach(b=>b.onclick=()=>{st.tab=b.dataset.go; st.flash=''; render(); window.scrollTo(0,0)});
   if(fresh) countUp(m);
   bind(); pricesBind();
@@ -831,6 +831,7 @@ async function changePass(){
 
 function bind(){
   const m=$('#main');
+  $$('[data-dans]',m).forEach(b=>b.onclick=()=>{ const [no,a]=b.dataset.dans.split('|'); dmgAnswer(no,a) });
   // orders from the shop
   $$('[data-done]',m).forEach(b=>b.onclick=()=>completeOrder(b.dataset.done,false));
   $$('[data-edit]',m).forEach(b=>b.onclick=()=>{ const o=st.me.pos.find(x=>x.no===b.dataset.edit); st.edit=st.edit||{};
@@ -909,18 +910,43 @@ function bind(){
 const DMG_SAID={held:['Waiting to go back','warn'],sent:['Sent back to you','blue'],
   refused:['You turned it down','bad'],credited:['Credited','ok'],replaced:['Replaced','ok']};
 function damageCard(){
-  const list=st.me.damages||[];
+  const list=(st.me.damages||[]).filter(d=>['held','sent'].includes(d.status));
   if(!list.length) return '';
   const tag=(s)=>{ const d=DMG_SAID[s]||['',''];  return `<span class="tag ${d[1]}">${d[0]||esc(s)}</span>` };
   return `<div class="card"><h2>Damaged goods</h2>
    <div class="muted" style="margin-bottom:10px">${list.length} item${list.length===1?'':'s'} of yours came in
     broken or faulty, worth ${money(st.me.damageValue||0)}. That has already been taken off what the shop
     owes you above. Ring the counter if you want to see them.</div>
-   <table class="paytbl">
-    <tr><th>What</th><th class="n">How many</th><th class="n">Worth</th><th></th></tr>
-    ${list.map(d=>`<tr><td><b>${esc(d.item)}</b><div class="muted">${esc(d.date)}${d.reason?' · '+esc(d.reason):''}</div></td>
-     <td class="n">${d.qty}</td><td class="n">${money(d.value)}</td><td>${tag(d.status)}</td></tr>`).join('')}
-   </table></div>`;
+   <button class="btn dark" data-go="dmg">See and answer them</button></div>`;
+}
+/* Every return of theirs: open ones first, with an answer for each. Their answer goes to the shop, which
+   moves the return on (sent back, credited, replaced) — the status here follows the shop's. */
+const DMG_ANS=[['replace','We will replace it'],['credit','We will credit it'],['collected','We have collected it'],['reject','Not accepted']];
+function dmgPage(){
+  const me=st.me, list=me.damages||[], open=list.filter(d=>['held','sent'].includes(d.status)), done=list.filter(d=>!['held','sent'].includes(d.status));
+  const tag=(s)=>{ const d=DMG_SAID[s]||['',''];  return `<span class="tag ${d[1]}">${d[0]||esc(s)}</span>` };
+  const said={replace:'You said you will replace it',credit:'You said you will credit it',collected:'You said you have collected it',reject:'You said it is not accepted'};
+  const row=(d)=>`<div class="card">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b>${esc(d.item)}</b> × ${d.qty}
+      <div class="muted">${esc(d.no)} · ${esc(d.code)} · ${esc(d.date)}${['held','sent'].includes(d.status)?' · waiting '+d.days+' day'+(d.days===1?'':'s'):''}</div></div>${tag(d.status)}</div>
+    <div style="margin:6px 0">${d.warranty?'<span class="tag warn">a customer brought it back under warranty</span>':'<span class="tag">arrived damaged</span>'}</div>
+    <div>${esc(d.fault||d.reason)}${d.itemSerial?' · S/N '+esc(d.itemSerial):''}${d.note?'<div class="muted">'+esc(d.note)+'</div>':''}</div>
+    <div class="kv"><span class="muted">Worth</span><b>${money(d.value)}${d.offBill?'':' <span class="muted">(not taken off what the shop owes you — a replacement piece is needed)</span>'}</b></div>
+    ${d.said?`<div class="notice">${said[d.said.action]||esc(d.said.action)}${d.said.ref?' — credit note '+esc(d.said.ref):''}${d.said.note?' — '+esc(d.said.note):''}</div>`
+      :d.asked?'<div class="notice">Your answer is with the shop.</div>'
+      :['held','sent'].includes(d.status)?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${DMG_ANS.map(([k,l])=>`<button class="btn ${k==='reject'?'':'dark'}" data-dans="${esc(d.no)}|${k}">${l}</button>`).join('')}</div>`:''}
+  </div>`;
+  return `${me.damageHold?`<div class="notice" style="margin-bottom:12px"><b>Payments are on hold</b> while ${open.length} return${open.length===1?' is':'s are'} open. Answer each one below — the shop releases payments once they are settled.</div>`:''}
+   <div class="card"><div class="kv"><span class="muted">Open returns</span><b>${open.length}</b></div><div class="kv"><span class="muted">Already off what the shop owes you</span><b>${money(me.damageValue||0)}</b></div></div>
+   ${open.length?open.map(row).join(''):'<div class="card muted">Nothing open — thank you.</div>'}
+   ${done.length?`<h2 style="margin-top:18px">Settled lately</h2>${done.map(row).join('')}`:''}`;
+}
+async function dmgAnswer(no,action){
+  const ask=action==='credit'?'The credit note number':action==='reject'?'Why is it not accepted?':'A note for the shop (optional)';
+  const v=prompt(ask,''); if(v===null) return;
+  const body={action}; if(action==='credit') body.ref=v.trim(); else body.note=v.trim();
+  try{ await api('/dmg/'+encodeURIComponent(no)+'/respond',{method:'POST',body}); toast('Sent to the shop'); await load() }
+  catch(e){ toast(e.message) }
 }
 function shrink(file){ return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{ const sc=Math.min(1,1600/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc); const g=c.getContext('2d'); g.drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src); res(c.toDataURL('image/jpeg',0.82)) }; img.onerror=rej; img.src=URL.createObjectURL(file) }) }
 /* Signing in: by the user name the shop gave you, or the old way with the mobile on file and a

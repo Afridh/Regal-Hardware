@@ -214,6 +214,16 @@ export async function injectSupplierInbox(data) {
         date: d.date || localDate(), time: d.time || localTime(), lines: +d.lines || 0, rep: d.rep || '' });
       if (S.supStockLog.length > 800) S.supStockLog.length = 800;
       added++;
+    } else if (row.kind === 'dmgreply') {
+      const d = row.data, dm = (S.damages || []).find(x => x.no === d.no && x.sid === row.sid);
+      if (!dm) { orphans.push(row.id); continue; }
+      if ((dm.events || []).some(e => e.inboxId === row.id)) continue;
+      const said = { replace: 'will replace it', credit: 'will credit it', collected: 'have collected it', reject: 'will not accept it' }[d.action] || d.action;
+      dm.events = dm.events || [];
+      dm.events.push({ at: new Date(row.created_at).getTime(), inboxId: row.id, what: `${name} say they ${said}`, note: [d.ref ? 'credit note ' + d.ref : '', d.note].filter(Boolean).join(' · '), by: d.rep || name });
+      dm.supSaid = { action: d.action, note: d.note || '', ref: d.ref || '', at: localDate(), rep: d.rep || '' };
+      S.notif.unshift({ id: 'n' + row.id.toString(36) + 'd', kind: 'info', text: `${name} on damage return ${dm.no}: they ${said}${d.ref ? ' (credit note ' + d.ref + ')' : ''}`, view: 'damages', at: localTime(), read: false });
+      added++;
     } else if (row.kind === 'reply') {
       const d = row.data, po = S.orders.find(o => o.no === d.no && o.dir === 'OUT');
       // an order that was thrown away: nothing to attach to. It is let go, or the till would be told
@@ -252,6 +262,7 @@ export async function markSupplierImported(data) {
   const ids = new Set();
   for (const o of (S.orders || [])) { if (o.inboxId) ids.add(o.inboxId); for (const e of (o.events || [])) if (e.inboxId) ids.add(e.inboxId); }
   for (const p of (S.payReqs || [])) if (p.inboxId) ids.add(p.inboxId);
+  for (const d of (S.damages || [])) for (const e of (d.events || [])) if (e.inboxId) ids.add(e.inboxId);   // answers on damage returns
   for (const x of (S.supStockLog || [])) if (x.inboxId) ids.add(x.inboxId);     // who read the shelves
   for (const s of (S.suppliers || [])) for (const p of (s.priceLists || [])) { if (p.inboxId) ids.add(p.inboxId); if (p.dropInbox) ids.add(p.dropInbox); }
   for (const a of (S.approvals || [])) if (a.supInbox) ids.add(a.supInbox);
@@ -522,11 +533,20 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
   /* What of theirs came in broken. The value was taken off what the shop owes them the moment it
      was raised, so it is already inside the "owed" figure above — a rep who cannot see why the
      figure moved rings the counter, and this is the answer without the phone call. */
-  const damages = (S.damages || []).filter(d => d.sid === sup.id && d.status !== 'credited' && d.status !== 'replaced')
-    .map(d => ({ no: d.no, date: d.date, item: ((S.products || []).find(p => p.id === d.pid) || {}).name || 'an item',
-                 qty: +d.qty || 0, value: +d.value || 0, reason: d.reason || '', status: d.status }))
+  // every return of theirs still open, and those settled in the last 120 days; a warranty return the customer
+  // waits on was not taken off what the shop owes them (noPost), so it is not counted in that figure
+  const since = new Date(Date.now() - 120 * 864e5).toISOString().slice(0, 10), todayD = localDate();
+  const damages = (S.damages || []).filter(d => d.sid === sup.id && (['held', 'sent', 'refused'].includes(d.status) || String(d.date) >= since))
+    .map(d => ({ no: d.no, code: d.serial || d.no, date: d.date, item: ((S.products || []).find(p => p.id === d.pid) || {}).name || 'an item',
+                 qty: +d.qty || 0, value: +d.value || 0, reason: d.reason || '', fault: d.fault || '', note: d.note || '', status: d.status,
+                 warranty: d.src === 'warranty', offBill: !d.noPost, itemSerial: d.itemSerial || '',
+                 days: Math.max(0, Math.round((new Date(todayD) - new Date(d.date)) / 864e5)),
+                 said: d.supSaid ? { action: d.supSaid.action, note: d.supSaid.note || '', ref: d.supSaid.ref || '', at: d.supSaid.at } : null,
+                 asked: pending.some(p => p.kind === 'dmgreply' && p.data?.no === d.no) }))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
-  const damageValue = Math.round(damages.reduce((a, d) => a + d.value, 0) * 100) / 100;
+  const openDmg = damages.filter(d => ['held', 'sent'].includes(d.status));
+  const damageValue = Math.round(openDmg.filter(d => d.offBill).reduce((a, d) => a + d.value, 0) * 100) / 100;
+  const damageHold = CFG.dmg?.holdPay !== false && openDmg.length > 0;
 
   // their price lists: what the shop holds (theirs and the shop's own copies), and what is still on its way
   const dropping = new Set(pending.filter(p => p.kind === 'pricedrop').map(p => +p.data.fileId));
@@ -539,7 +559,7 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
   const me = req.sup.lid ? (await listLogins(LOGINS, sup.id)).find(x => Number(x.id) === req.sup.lid) : null;
   res.json({ ok: true, supplier: { name: sup.name, contact: sup.contact || '', phone: sup.phone || '', terms: sup.days || 0, owed: Math.round((cr - dr) * 100) / 100, showAccount: true },
     login: me ? { username: me.username, name: me.name || '', role: me.role || '', own: !!me.own_hash } : null,
-    bills, payReqs, damages, damageValue, priceLists,
+    bills, payReqs, damages, damageValue, damageHold, priceLists,
     // when the shop's door onto their stock closes; the page shows the tab only while it is open
     stockUntil: +sup.stockUntil || 0, stockAsk,
     shop: { name: CFG.shop?.name || 'Regal Hardware', phone: CFG.shop?.phone || '', addr: CFG.shop?.addr || '' }, rep: req.sup.rep || '', pos, sent });
@@ -725,6 +745,24 @@ r.post('/hide', supAuth, asyncHandler(async (req, res) => {
   await ensureSupplierTables();
   await query(`INSERT INTO sup_hidden (sid, ref) VALUES ($1, $2)`, [req.sup.sid, ref]);
   res.json({ ok: true });
+}));
+
+/** The supplier's answer to a damage return: they will replace it, will credit it (a credit note number),
+    have collected it, or will not accept it (say why). The shop moves the return on itself. */
+r.post('/dmg/:no/respond', supAuth, asyncHandler(async (req, res) => {
+  const action = String(req.body?.action || '');
+  if (!['replace', 'credit', 'collected', 'reject'].includes(action)) throw new HttpError(400, 'action must be replace, credit, collected or reject');
+  const S = (await books())?.S || {};
+  const d = (S.damages || []).find(x => x.no === req.params.no && x.sid === req.sup.sid);
+  if (!d) throw new HttpError(404, 'No such return of yours');
+  if (!['held', 'sent'].includes(d.status)) throw new HttpError(400, 'That return is settled');
+  const note = String(req.body?.note || '').trim().slice(0, 300), ref = String(req.body?.ref || '').trim().slice(0, 60);
+  if (action === 'reject' && !note) throw new HttpError(400, 'Say why it is not accepted');
+  if (action === 'credit' && !ref) throw new HttpError(400, 'The credit note number, please');
+  await ensureSupplierTables();
+  const { rows: [{ id }] } = await query(`INSERT INTO sup_inbox (sid, kind, data) VALUES ($1, 'dmgreply', $2) RETURNING id`,
+    [req.sup.sid, JSON.stringify({ no: d.no, action, note, ref, rep: req.sup.rep || '' })]);
+  res.json({ ok: true, id });
 }));
 
 /** The supplier's answer to an order the shop sent: accepted / changes / dispatched (+ invoice no). */
