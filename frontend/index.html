@@ -5243,6 +5243,8 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   inv.lines.forEach(l=>{ if(isOpenLine(l)) return; const pp=P(l.pid);
     if(pp.stock<=pp.min&&pp.stock+l.qty>pp.min) notify('stock',`${pp.name} is down to ${fq(pp.stock)} ${pp.unit}`,'inventory') });
   if(overLimit) notify('warn',`${c.name} was let past their credit limit`,'customers');
+  // cash handed back for goods returned (not taken off an account)
+  if(total<-0.005&&!acct) try{ logTrail('cashRefund',`${inv.no} — ${money2(-total)} back to ${c?c.name:'a walk-in'}${returnOf?' (from '+returnOf+')':''}`,{amount:-total,ref:inv.no,who:c?c.name:''}) }catch(e){}
   const v={invoice:inv.no,total:fmt(total),balance:fmt(credit),link:inv.link,
     customer:c?c.name:'Cash customer',outstanding:fmt(partyBal('C',(c||{}).id))};
   if(total<-0.005){ if(c&&c.id!==1&&c.phone&&CFG.msg.autoReturn!==false){
@@ -13748,7 +13750,10 @@ function camExtras(){
      <div class="f"><label>Cash bill pictures kept (days)</label><input type="number" min="1" max="366" data-camcfg="cashDays" value="${noteEsc(c.cashDays||31)}"></div>
      <div class="f"><label>Credit bill pictures and clip kept (days)</label><input type="number" min="1" max="366" data-camcfg="creditDays" value="${noteEsc(c.creditDays||122)}"></div>
      <div class="f"><label>Credit bill clip (seconds, 0 = none)</label><input type="number" min="0" max="120" data-camcfg="creditClip" value="${noteEsc(c.creditClip===undefined||c.creditClip===''?30:c.creditClip)}"></div></div>
-    <div class="muted" style="font-size:12px">After that they are removed from the shop server by themselves. The recorder's own recording is not touched — it keeps what it keeps (about 20 days).</div></div>
+    <div class="muted" style="font-size:12px">After that they are removed from the shop server by themselves. The recorder's own recording is not touched — it keeps what it keeps (about 20 days).</div>
+    <label class="chk" style="margin-top:10px"><input type="checkbox" data-camcfg="flagOn" ${c.flagOn!==false?'checked':''}> Keep a clip when something risky happens at the till — a bill cleared, a line taken off, a held bill thrown away, a saved bill changed, a big discount, a sale under cost, cash given back — and tell the owner</label>
+    <div class="grid2"><div class="f"><label>A big discount is (% of the bill)</label><input type="number" min="1" max="100" data-camcfg="flagDisc" value="${noteEsc(c.flagDisc||10)}"></div>
+     <div class="f"><label>A line taken off counts from (Rs)</label><input type="number" min="0" data-camcfg="flagLine" value="${noteEsc(c.flagLine||1000)}"></div></div></div>
    <div class="card"><h2 style="margin-top:0">Alarms</h2>
     <div class="muted" style="margin-bottom:8px">What the recorder raises — movement, a line crossed, a camera covered, a disk fault — shows in the bell and the Action centre. Movement while the shop is open is customers, so it is only told when the shop is shut.</div>
     <label class="chk"><input type="checkbox" data-camcfg="alerts" ${c.alerts!==false?'checked':''}> Show the recorder's alarms here</label>
@@ -17571,6 +17576,9 @@ function finishTillBill({cust,pays,override=false,note=''}){
     throw e }
   if(retired) inv=finishRemake(retired,inv);
   if(note.trim()) inv.note=note.trim();
+  // a big discount on this bill (lines and the bill together, against what the lines came to)
+  try{ const gross=inv.lines.reduce((a,l)=>a+Math.max(0,l.qty*l.price),0), off=inv.lines.reduce((a,l)=>a+(+l.disc||0),0)+(+inv.billDisc||0), pct=gross>0?off/gross*100:0;
+    if(off>0.005&&pct>=(+camCfg().flagDisc||10)) logTrail('bigDisc',`${inv.no} — ${money2(off)} off ${money2(gross)} (${pct.toFixed(1)}%)`,{amount:off,ref:inv.no,who:C(inv.customerId).name}) }catch(e){}
   if(S.pos.fromDoc){ const dd=S.docs.find(x=>x.no===S.pos.fromDoc); if(dd){ dd.status='billed'; dd.invoice=inv.no } }
   webBilled(inv);
   clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
@@ -17716,6 +17724,7 @@ function belowCostAsk(p,net,then){
       m.querySelector('#bcMsg').textContent=tries>=3?'Three wrong. Put the price back and ask them to come over.':'That PIN is not right.';
       m.querySelector('#bcMsg').style.color='var(--chip-rust)'; if(tries>=3){pin.disabled=true} return }
     notify('warn',`${u.name} allowed ${S.user.name} to sell ${p.name} at ${money2(net)} — cost ${money2(p.cost)}`,'bills');
+    try{ logTrail('underCost',`${p.name} at ${money2(net)} — cost ${money2(p.cost)} · allowed by ${u.name}`,{amount:Math.max(0,p.cost-net)}) }catch(e){}
     S.notif[0].forUser=u.name;
     m.remove(); then(u.name);
     toast(`Allowed by ${u.name} — they have been told`);
@@ -18247,6 +18256,26 @@ function logTrail(kind,what,opts){
     at:d.toISOString(),date:D(today),time:d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),
     by:(S.user&&S.user.name)||'?',till:S.terminal||'T1',kind,what,...(opts||{})});
   if(S.trail.length>TRAIL_KEEP) S.trail.length=TRAIL_KEEP;
+  try{ camFlag(S.trail[0]) }catch(e){}
+}
+/* The moments worth a picture: the counter camera keeps a clip of them (and three stills) for as long as
+   a credit bill's, and the owner is told. A line taken off counts only from the shop's amount up — a
+   cashier corrects a mistyped item many times a day — and a held bill or a cleared bill only with
+   something on it. Switched off, or with no counter camera, nothing is asked of the cameras. */
+const CAM_FLAG_KINDS=['holdDiscard','billCleared','lineOff','billEdit','billRemade','bigDisc','underCost','cashRefund'];
+function camFlag(e){
+  const c=camCfg();
+  if(!e||!CAM_FLAG_KINDS.includes(e.kind)||c.flagOn===false||!c.counter) return;
+  if(e.kind==='lineOff'&&(+e.amount||0)<(+c.flagLine||1000)) return;
+  if(!(window.regalBridge&&regalBridge.online())) return;
+  e.cam={ch:String(c.counter),ref:'TR-'+e.id};
+  camApi('shot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ch:c.counter,ref:e.cam.ref,count:3,credit:true,at:Date.parse(e.at)||Date.now()})}).catch(()=>{});
+  notify('warn',`📹 ${(TRAIL_KINDS[e.kind]||[e.kind])[0]} — ${e.what} · ${e.by}, ${e.till} ${e.time}`,'trail',{forApprovers:true,camRef:e.cam.ref,trailId:e.id});
+}
+function camTrail(id){
+  const e=(S.trail||[]).find(x=>x.id===id); if(!e) return toast('That entry is gone');
+  camWindow({ref:(e.cam&&e.cam.ref)||'TR-'+e.id,when:new Date(e.at),date:e.date,title:(TRAIL_KINDS[e.kind]||[e.kind])[0],
+    sub:`${noteEsc(e.what)} · ${noteEsc(e.by)} at ${noteEsc(e.till)} · ${e.date} ${e.time}`});
 }
 const TRAIL_KINDS={
   holdDiscard:['Held bill thrown away','bad'],
@@ -18254,6 +18283,9 @@ const TRAIL_KINDS={
   lineOff:['Line taken off a bill','warn'],
   billEdit:['Saved bill opened to be changed','warn'],
   billRemade:['Bill re-made','bad'],
+  bigDisc:['Big discount given','warn'],
+  underCost:['Sold under cost','bad'],
+  cashRefund:['Cash handed back for a return','warn'],
   docClosed:['Quotation or delivery note closed','warn'],
   supStock:['Supplier let in to see their stock','info'],
   cashup:['Drawer counted','info'],
@@ -21252,13 +21284,19 @@ const bcStamp=(d)=>`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}$
 const camPlayUrl=(c,at,secs)=>`${CAM_HELPER}/playback?host=${encodeURIComponent(c.host||'auto')}&port=${c.port||80}&ch=${c.channel||101}&rtsp=${c.rtsp||554}&fps=${CAM_FPS}&start=${bcStamp(at)}&secs=${secs}`;
 async function billCam(no){
   const inv=S.sales.find(x=>x.no===no); if(!inv) return toast('No such bill');
-  const when=billMoment(inv);
+  return camWindow({ref:inv.no,when:billMoment(inv),date:inv.date,title:inv.no+' on camera',
+    sub:`${inv.date} ${inv.time||''} · ${noteEsc(C(inv.customerId).name||'')} · ${fmt(inv.total)} · by ${noteEsc(inv.by||'')}`});
+}
+/* The camera window for any moment: a bill, or something on the owner's Trail. ref is what the server
+   keeps the pictures and the clip under; when is the moment to play the recording from. */
+async function camWindow(o){
+  const when=o.when;
   const cams=camList();
   let pick=null; try{ pick=localStorage.getItem(BC_KEY) }catch(e){}
   let cam=cams.find(c=>String(c.id)===String(pick))||cams[0], off=-30, mode='rec';
   const SECS=180;
   const m=modal(`<div class="bc-top">
-     <div><h2>${inv.no} on camera</h2><div class="muted">${inv.date} ${inv.time||''} · ${noteEsc(C(inv.customerId).name||'')} · ${fmt(inv.total)} · by ${noteEsc(inv.by||'')}</div></div>
+     <div><h2>${noteEsc(o.title)}</h2><div class="muted">${o.sub||''}</div></div>
      <div class="bc-right"><div class="bc-tabs"><button data-mode="rec">▶ Recording</button><button data-mode="shots">🖼 Saved with the bill</button></div>
       <button class="btn ghost sm" data-act="closeModal">Close <i class="kbd">Esc</i></button></div></div>
     <div class="bc-cams" id="bcCams"></div>
@@ -21290,14 +21328,14 @@ async function billCam(no){
   /* the few pictures the helper kept with the bill on the shop's server — seen from anywhere */
   const shots=async()=>{
     stop(); say('Fetching what was kept with this bill…');
-    try{ const r=await camApi('shots/'+encodeURIComponent(inv.no)); const j=await r.json();
+    try{ const r=await camApi('shots/'+encodeURIComponent(o.ref)); const j=await r.json();
       if(mode!=='shots'||!document.body.contains(m)) return;
       const pics=j.shots||[], clips=j.clips||[], pend=j.clip&&(j.clip.state==='new'||j.clip.state==='taking')?j.clip:null;
       const until=[...clips,...pics].map(x=>x.until).filter(Boolean).sort().pop();
       m.querySelector('#bcKeep').textContent=until?'Kept until '+new Date(until).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'';
       if(!pics.length&&!clips.length) return say(pend?'<b>The clip is being made</b>From the recorder, about a quarter of an hour after the bill — look again then.'
         :'<b>Nothing was kept with this bill</b>The shop PC may have been off then, or no counter camera is chosen in Settings → Cameras.'
-          +(inv.date<D(new Date(Date.now()-31*864e5))?'<br>Or its time is up: a cash bill\'s pictures are kept for a month, a credit bill\'s for four.':''));
+          +((o.date||D(today))<D(new Date(Date.now()-31*864e5))?'<br>Or its time is up: a cash bill\'s pictures are kept for a month, a credit bill\'s for four.':''));
       say(''); img.classList.add('wait');
       // the clip big (a credit bill), or the first picture; everything kept as a thumbnail underneath to switch to
       const items=[...clips.map(c=>({k:'v',u:c.url,at:c.at})),...pics.map(s=>({k:'i',u:s.url,at:s.at}))];
@@ -21931,7 +21969,7 @@ function trail(){
          <td>${r.who||'—'}</td>
          <td class="n">${money0(r.amount)}</td>
          <td>${r.by}${r.till?`<em style="display:block;font-style:normal;font-size:10.5px;color:var(--steel)">till ${r.till}</em>`:''}</td>
-         <td class="n" style="white-space:nowrap">${r.bill?`<button class="btn ghost sm" data-act="trShow" data-id="${r.id}">Look at it</button>${(r.kind==='holdDiscard'||r.kind==='billCleared')?`<button class="btn ghost sm" data-act="trBack" data-id="${r.id}">Put it back</button>`:''}`:''}</td></tr>`}).join('')}
+         <td class="n" style="white-space:nowrap">${r.cam?`<button class="btn ghost sm" data-act="trCam" data-id="${r.id}" title="What the counter camera saw">📹 Watch</button>`:''}${r.bill?`<button class="btn ghost sm" data-act="trShow" data-id="${r.id}">Look at it</button>${(r.kind==='holdDiscard'||r.kind==='billCleared')?`<button class="btn ghost sm" data-act="trBack" data-id="${r.id}">Put it back</button>`:''}`:''}</td></tr>`}).join('')}
      </table>${all.length>400?`<div class="muted" style="margin-top:8px">Showing the newest 400 of ${all.length}.</div>`:''}`
     :'<div class="muted" style="padding:20px">Nothing here yet — nothing has been thrown away or changed.</div>'}
    </div>
@@ -30710,6 +30748,7 @@ document.addEventListener('click',e=>{
     pcGive:()=>pettyGiveModal(a.dataset.who||''), pcExp:()=>pettyExpenseModal(a.dataset.id), pcSettle:()=>pettySettleModal(a.dataset.id), pcUndo:()=>pettyUndo(a.dataset.id,a.dataset.no),
     catMgr:()=>categoriesModal(), catTidy:()=>tidyCatalogModal(),
     pcSubmit:()=>pettySubmitModal(a.dataset.id),
+    trCam:()=>camTrail(a.dataset.id),
     duSave:()=>duesSave(), duReload:()=>{ DUES.data=null; DUES.err=''; duesLoad(); render() },
     duRun:()=>{ if(!confirm('Send today\'s reminders now?')) return; duesApi('/run',{method:'POST',body:'{}'}).then(j=>{ toast(`${j.sent} sent${j.failed?', '+j.failed+' did not go':''}`,j.failed?'warn':'ok'); DUES.data=null; duesLoad() }).catch(e=>toast(e.message)) },
     duStmt:()=>{ if(!confirm('Text every customer who owes their statement now?')) return; duesApi('/run',{method:'POST',body:JSON.stringify({statements:true})}).then(j=>{ toast(`${j.sent} sent${j.failed?', '+j.failed+' did not go':''}`,j.failed?'warn':'ok'); DUES.data=null; duesLoad() }).catch(e=>toast(e.message)) },
