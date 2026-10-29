@@ -351,6 +351,13 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .upd-out p{margin:6px 0}.upd-out .upd-ok{color:var(--ok,#1a7f37)}.upd-out .upd-warn{color:var(--warn,#9a6700)}
 /* the on-account panel: a sheet down the right of the till, the bill still in view */
 .modal.cp-modal{justify-content:flex-end;align-items:stretch;padding:0;background:rgba(16,22,20,.32)}
+/* the cheque calendar */
+.chq-cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-top:10px}
+.chq-cal-h{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--steel);font-weight:700;padding:0 4px}
+.chq-cal-d{min-height:58px;border:1px solid var(--line);border-radius:8px;padding:4px 6px;display:flex;flex-direction:column;gap:1px;background:#fff}
+.chq-cal-d span{font-size:11px;color:var(--steel)}.chq-cal-d b{font-family:Archivo,sans-serif;font-size:13px}.chq-cal-d i{font-style:normal;font-size:11px;color:var(--steel)}
+.chq-cal-d.past{opacity:.55}.chq-cal-d.has{background:#F6F9FC;border-color:#BFD0E2}
+.chq-cal-d.has.past{opacity:1;background:var(--tint-rust,#FBE4DE);border-color:#F0B9AC}.chq-cal-d.today{box-shadow:inset 0 0 0 2px #1f3b5a}
 .modal.cp-modal .box.cp-sheet{width:min(470px,100vw);min-width:0;max-width:none;max-height:none;height:100%;border-radius:0;border-top:0;border-left:4px solid #1f3b5a;
   display:flex;flex-direction:column;gap:11px;padding:48px 18px 16px;overflow-y:auto;animation:cpIn .18s ease-out}   /* clear of the online badge across the top */
 @keyframes cpIn{from{transform:translateX(28px);opacity:.5}to{transform:none;opacity:1}}
@@ -17536,7 +17543,7 @@ function openPay(resume){
 
   const chequeForm=(amt)=>{
     m._busy=true;
-    stage.querySelector('.payw-m').innerHTML=`<div class="pw-form"><b>Cheque for ${money2(amt)}</b>
+    stage.querySelector('.payw-m').innerHTML=`<div class="pw-form"><b>Cheque for ${money2(amt)}</b>${chqWarn(c())}
       <label>Cheque number</label><input id="cqNo" placeholder="e.g. 118822">
       <label>Drawn on</label><input id="cqBank" placeholder="e.g. BOC Hingurakgoda" list="bankList4">
        <datalist id="bankList4">${['BOC','Peoples Bank','HNB','Commercial Bank','Sampath','NSB','NDB','Seylan','DFCC','Pan Asia','Amana Bank'].map(b=>`<option>${b}</option>`).join('')}</datalist>
@@ -23080,7 +23087,7 @@ function custPayModal(id){
   const subForm=()=>{
     const banks=S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('');
     const amtF=`<div class="f"><label>Amount</label><input id="sfAmt" type="number" step="any" value="${left()||''}"></div>`;
-    if(mode==='CHEQUE') return `<div class="pay-sub"><div class="pay-h">Cheque</div>${amtF}
+    if(mode==='CHEQUE') return `<div class="pay-sub"><div class="pay-h">Cheque</div>${chqWarn(c)}${amtF}
       <div class="grid2"><div class="f"><label>Cheque number</label><input id="sfNo" placeholder="e.g. 556201" autocomplete="off"></div>
        <div class="f"><label>Cheque date</label><input id="sfDate" type="date" value="${D(today)}"></div></div>
       <div class="f"><label>Drawn on (their bank)</label><input id="sfBank" placeholder="e.g. HNB Kaduruwela" list="sfBanks" autocomplete="off"><datalist id="sfBanks">${[...new Set(S.cheques.filter(x=>x.dir==='RECEIVED').map(x=>x.bank).filter(Boolean))].map(b=>`<option value="${b}">`).join('')}</datalist></div>
@@ -27482,6 +27489,9 @@ function depositModal(no){
     try{chequeStatus(ch,'DEPOSITED',ch.deposited)}catch(e){m.remove();return toast(e.message)} m.remove(); render(); toast(`${fmt(ch.amount)} banked into ${B(ch.depositTo).name}`);
   };
 }
+/* their cheques have bounced before: said where a cheque is being taken from them */
+function chqWarn(c){ if(!c||c.id===1||!(+c.bounces>0)) return '';
+  return `<div class="cp-warn" style="margin:6px 0">⚠ ${+c.bounces} cheque${+c.bounces===1?' from them has':'s from them have'} bounced${c.lastBounce?', the last on '+c.lastBounce:''}. Cash or a transfer is safer.</div>` }
 function bounceModal(no,dir){
   const ch=S.cheques.find(c=>c.dir===dir&&c.no===no);
   const m=modal(`<h2>Cheque ${ch.no} bounced</h2>
@@ -27490,7 +27500,7 @@ function bounceModal(no,dir){
     <div class="f"><label>Bank charge, if any</label><input id="bcAmt" type="number" value="0"></div>
     <div class="f"><label>Charged to</label><select id="bcBank">${S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select></div></div>
    <div class="f"><label>Reason given</label><input id="bcWhy" placeholder="e.g. funds not available" value="funds not available"></div>
-   ${dir==='RECEIVED'?`<label class="chk"><input type="checkbox" id="bcSms" checked> text the customer</label>`:''}
+   ${dir==='RECEIVED'?`<label class="chk"><input type="checkbox" id="bcBack" checked> put the bank charge on their account (a bill they owe)</label><label class="chk"><input type="checkbox" id="bcSms" checked> text the customer</label>`:''}
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button>
     <button class="btn tape" id="bcOk">Record the bounce</button></div>`);
   m.querySelector('#bcOk').onclick=()=>{
@@ -27498,6 +27508,12 @@ function bounceModal(no,dir){
     ch.note=(ch.note?ch.note+' · ':'')+'bounced: '+why;
     try{chequeStatus(ch,'BOUNCED')}catch(e){m.remove();return toast(e.message)}
     if(charge>0) addExpense({cat:'6090',amount:charge,method:'BANK',bank:+m.querySelector('#bcBank').value,desc:`Bank charge — cheque ${ch.no} returned`});
+    if(dir==='RECEIVED'){ const cb=ch.customerId?C(ch.customerId):S.customers.find(x=>x.name===ch.party);
+      if(cb&&cb.id!==1){ cb.bounces=(+cb.bounces||0)+1; cb.lastBounce=D(today);
+        // the charge back from them: a small bill on their account, so it shows on their statement and is followed up
+        const back=m.querySelector('#bcBack');
+        if(charge>0&&back&&back.checked) try{ completeSale({lines:[{pid:OPEN_PID,name:`Returned cheque charge — ${ch.no}`,qty:1,price:+charge.toFixed(2),disc:0,open:true}],
+          customerId:cb.id,pays:[{method:'CREDIT',amount:0}],override:true}) }catch(e){ toast('The charge did not go on their account: '+e.message) } } }
     const smsBox=m.querySelector('#bcSms');
     if(dir==='RECEIVED'&&smsBox&&smsBox.checked){ const c=S.customers.find(x=>x.name===ch.party);
       if(c&&c.phone) sms(c.phone,`Your cheque has been returned by the bank.\nCheque No: ${ch.no}\nAmount: ${fmt(ch.amount)}\nReason: ${why}\nBalance now: ${fmt(partyBal('C',c.id))}\nPlease call the shop.`,'customer') }
@@ -27531,6 +27547,21 @@ function endorseModal(no){
 /* ---- cheques coming in ---- */
 let chqDay=null, chqPicked=new Set(), chqScope='day';
 window.chqState=()=>({day:chqDay,picked:chqPicked,scope:chqScope}); // exposed for tests
+/* What to bank, day by day: the customers' cheques in hand by the date written on them, for the next six
+   weeks; any whose date has come and are still in the drawer are to bank now. */
+function chqCalendar(rec){
+  const inHand=rec.filter(c=>c.status==='RECEIVED'), t0=D(today), now=inHand.filter(c=>String(c.date)<=t0);
+  const start=new Date(today); start.setDate(start.getDate()-((start.getDay()+6)%7));      // from this Monday
+  const days=[...Array(42)].map((_,i)=>{ const d=new Date(start); d.setDate(d.getDate()+i); const ds=D(d);
+    const got=inHand.filter(c=>String(c.date)===ds); return {ds,d,got,v:got.reduce((a,c)=>a+(+c.amount||0),0)} });
+  return `<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
+     <h2 style="margin:0">Cheques to bank</h2>
+     <span class="muted">${now.length?`<b style="color:var(--chip-rust)">${now.length} to bank now · ${money2(now.reduce((a,c)=>a+c.amount,0))}</b> · `:''}${inHand.length} in the drawer · ${money2(inHand.reduce((a,c)=>a+c.amount,0))}</span></div>
+    <div class="chq-cal">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(w=>`<div class="chq-cal-h">${w}</div>`).join('')}
+     ${days.map(x=>`<div class="chq-cal-d ${x.ds===t0?'today':''} ${x.ds<t0?'past':''} ${x.got.length?'has':''}" title="${x.got.map(c=>`${c.no} · ${c.party||''} · ${fmt(c.amount)}`).join('\n')}">
+       <span>${x.d.getDate()}${x.d.getDate()===1||x===days[0]?' '+x.d.toLocaleDateString('en-GB',{month:'short'}):''}</span>
+       ${x.got.length?`<b>${money2(x.v)}</b><i>${x.got.length} cheque${x.got.length===1?'':'s'}</i>`:''}</div>`).join('')}</div></div>`;
+}
 function chequesIn(){
   const rec=S.cheques.filter(c=>c.dir==='RECEIVED');
   rec.forEach(c=>{ if(!c.recvDate) c.recvDate=c.date });   // older rows predate the field
@@ -27585,6 +27616,7 @@ function chequesIn(){
    ${stat('Cleared',fmt(sum(cleared)),`${cleared.length} settled`,'g')}
    ${stat('Bounced',fmt(sum(bounced)),bounced.length?'chase these':'none','r')}
   </div>
+  ${chqCalendar(rec)}
 
   <div class="card" style="margin-bottom:12px">
    <div class="dayhead">
