@@ -6063,6 +6063,10 @@ const CFG={
  // smart reorder (Purchasing): sales looked at (days), stock to hold after the goods come (days), a supplier's
  // usual delivery time unless set on them (days), and when an item counts as not selling (days)
  reorder:{days:60,cover:14,lead:7,dead:90},
+ /* VAT and SSCL. Nothing changes until the shop's VAT number is put in (Shop details). Shelf prices include
+    VAT, so a bill's VAT is the part of its total that is tax: total × rate ÷ (100 + rate). SSCL is reported
+    on the turnover without VAT, only when switched on. Reports only — the books are not changed by it. */
+ tax:{rate:18,sscl:false,ssclRate:2.5},
  // deliveries: the usual charge, the time slots, and whether the customer is texted when it is on the way
  dlv:{charge:0,slots:['Morning','Afternoon','Evening'],sms:true},
  trade:{rate:2,sms:true,kinds:['Mason','Electrician','Plumber','Carpenter','Painter','Welder','Other']},
@@ -6547,7 +6551,7 @@ function settingsTabs(){
 function settings(){
   const tabs=settingsTabs();
   const fld=(path,label,hint='',type='text')=>{
-    const [g,k]=path.split('.'); const val=g==='web'?S.web.settings[k]:CFG[g][k];
+    const [g,k]=path.split('.'); const val=g==='web'?S.web.settings[k]:(CFG[g]||{})[k];
     return `<div class="f"><label>${label}</label>
       ${type==='check'?`<label class="chk"><input type="checkbox" data-set="${path}" ${val?'checked':''}> ${hint}</label>`
       :`<input data-set="${path}" ${type==='number'?'type="number"':''} value="${String(val??'').replace(/"/g,'&quot;')}">${hint?`<div class="muted">${hint}</div>`:''}`}</div>`};
@@ -6561,6 +6565,10 @@ function settings(){
     ${fld('shop.line1','Bill strapline, first line')}
     ${fld('shop.line2','Bill strapline, second line')}
     ${fld('shop.owner','Owner mobile for the daily summary')}
+    <div class="card" style="margin-top:12px"><b>VAT and SSCL</b>
+     <div class="grid3">${fld('shop.vat','VAT registration number','Put in only if the shop is VAT registered — bills then become TAX INVOICES and show the VAT')}${fld('tax.rate','VAT rate %','Shelf prices include it','number')}${fld('tax.ssclRate','SSCL rate %','On the turnover without VAT','number')}</div>
+     ${fld('tax.sscl','SSCL','The shop pays SSCL — show it on the VAT & SSCL return','check')}
+     <div class="muted">The VAT & SSCL return is under Reports → For my accountant. Have your accountant check the figures before you file.</div></div>
     <div class="card note" style="margin-top:10px">These go straight onto every bill, voucher and statement. Print one after changing to check the fit.</div>
     ${isSuperUser()?`<div class="card note" style="border:1px solid var(--chip-rust,#C0442C);margin-top:16px">
       <b style="color:var(--chip-rust,#C0442C)">Delete everything & start fresh</b>
@@ -22923,12 +22931,13 @@ function custModal(id,preset){
     <div class="f"><label>Prices</label><select id="cmLevel"><option value="retail" ${!c||c.level==='retail'?'selected':''}>Retail</option><option value="wholesale" ${c&&c.level==='wholesale'?'selected':''}>Wholesale</option></select></div>
     <div class="f"><label>Credit limit (Rs)</label><input id="cmLimit" type="number" step="1000" value="${c?c.limit:25000}"></div></div>
    <div class="f" style="max-width:260px"><label>Ledger No <span class="muted">(their page in the ledger book)</span></label><input id="cmLedger" value="${c?escM(c.ledger||''):''}" placeholder="e.g. 45 or L-12"></div>
+   <div class="f" style="max-width:260px"><label>VAT No <span class="muted">(a VAT-registered business — printed on its tax invoices)</span></label><input id="cmTin" value="${c?escM(c.tin||''):''}" placeholder="e.g. 114567890-7000"></div>
    <div class="f"><label>Notes for the counter</label><textarea id="cmNotes" rows="2" placeholder="e.g. pays by cheque at month end · ask for Sunil">${c?(c.notes||''):''}</textarea></div>
    <div class="muted" id="cmMsg"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="cmOk">${c?'Save':'Add customer'}</button></div>`);
   const g=id2=>m.querySelector('#'+id2);
   const save=()=>{
-    const ledger=g('cmLedger').value.trim();
+    const ledger=g('cmLedger').value.trim(), tin=g('cmTin').value.trim();
     const name=g('cmName').value.trim(), phone=g('cmPhone').value.trim(), addr=g('cmAddr').value.trim(), email=g('cmEmail').value.trim(), level=g('cmLevel').value, limit=+g('cmLimit').value||0, notes=g('cmNotes').value.trim();
     if(!name){ g('cmMsg').textContent='A name is needed.'; g('cmName').focus(); return }
     if(email&&!isEmail(email)){ g('cmMsg').textContent='Enter an email like name@company.lk, or leave it empty.'; g('cmEmail').focus(); return }
@@ -22954,11 +22963,11 @@ function custModal(id,preset){
       if(termsChanged&&needsApproval('custTerms')){
         asks.push(requestApproval('custTerms',`Change ${c.name}'s terms: limit ${fmt(c.limit)} → ${fmt(limit)}, ${c.level} → ${level} prices`,`owes ${fmt(partyBal('C',c.id))} now`,{cid:c.id,limit,level}));
       } else if(termsChanged){ Object.assign(c,{level,limit}) }
-      const ledgerChanged=(c.ledger||'')!==ledger; if(ledgerChanged) c.ledger=ledger;
+      const ledgerChanged=(c.ledger||'')!==ledger||(c.tin||'')!==tin; c.ledger=ledger; if(tin) c.tin=tin; else delete c.tin;
       m.remove(); render();
       if(asks.length) return;                                  // requestApproval has already said so
       toast(changed.length||termsChanged||ledgerChanged?'Saved':'Nothing changed'); return }
-    const nc={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),name,phone,address:addr,email,level,limit,notes,ledger,portal:false,lastLogin:null,points:0};
+    const nc={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),name,phone,address:addr,email,level,limit,notes,ledger,...(tin?{tin}:{}),portal:false,lastLogin:null,points:0};
     S.customers.push(nc); custSel=nc.id; custQ=''; custFilter='all'; custTab='overview'; m.remove(); render(); toast(`${name} added`);
   };
   g('cmOk').onclick=save;
@@ -23751,7 +23760,7 @@ function billHtml(inv,f='a5'){
      ${disc>0?`<div class="sb-tot bold"><span>- Line Discount ${discPct.toFixed(2)} %</span><i>:</i><b>${money2(disc)}</b></div>`:''}
      <div class="sb-stars">${'*'.repeat(46)}</div>
      <div class="sb-net"><span>Invoice Total Rs.</span><i>:</i><b>${money2(inv.total)}</b></div>
-     <div class="sb-stars">${'*'.repeat(46)}</div>`,
+     <div class="sb-stars">${'*'.repeat(46)}</div>${vatOn()?`<div class="sb-tot"><span>Incl. VAT ${+CFG.tax.rate}% Rs.</span><i>:</i><b>${money2(vatIn(inv.total))}</b></div><div class="sb-tot"><span>VAT Reg No</span><i>:</i><b>${escM(CFG.shop.vat)}</b></div>${!walk&&c.tin?`<div class="sb-tot"><span>Customer VAT No</span><i>:</i><b>${escM(c.tin)}</b></div>`:''}`:''}`,
     paid:credit?`<div class="sb-tot"><span>Credit Rs.</span><i>:</i><b>${money2(inv.balance)}</b></div>${inv.paid>0?`<div class="sb-tot"><span>Paid Rs.</span><i>:</i><b>${money2(inv.paid)}</b></div>`:''}
       ${!walk&&CFG.bill.showOutstanding!==false?`<div class="sb-tot"><span>Previous Outstanding</span><i>:</i><b>${money2(prev)}</b></div><div class="sb-tot"><span>Total Outstanding Rs.</span><i>:</i><b>${money2(prev+inv.balance)}</b></div>`:''}
       ${inv.reprint&&Math.abs(inv.balanceNow-inv.balance)>0.005?`<div class="sb-tot bold"><span>Still owing on this bill</span><i>:</i><b>${money2(inv.balanceNow)}</b></div>`:''}`
@@ -23800,7 +23809,7 @@ function billHtml(inv,f='a5'){
   const brandH=on('brand')&&B.a5Lockup!==false?`<div class="x-brand"><img class="x-lockup" src="${REGAL_LOCKUP}" alt="${esc5(nm)}"></div>`:on('brand')?`<div class="x-brand">${B.showLogo!==false?`<div class="x-mark">${logo(46)}</div>`:''}<div class="x-name"><div class="x-nm"><span class="blk">${esc5(nmA)}</span> ${esc5(nmB)}</div>${(SH.sinhala||SHOP.sinhala)?`<div class="x-sin">${SH.sinhala||SHOP.sinhala}</div>`:''}</div></div>`:'';
   const shopH=on('addr')?`<div class="x-shop"><div class="x-line">${esc5(addrTxt)}</div>${phoneTxt?`<div class="x-phone">☎ ${esc5(phoneTxt)}</div>`:''}${strap?`<div class="x-strap">${esc5(strap)}</div>`:''}${ids?`<div class="x-ids">${ids}</div>`:''}</div>`:'<div class="x-shop"></div>';
   const qrH=on('qr')&&!dk?`<div class="x-qrs">${qr(inv.no,50)}${qr('c'+inv.no,50)}</div>`:'';
-  const custLine=walk?'':[c.phone?`Mob ${c.phone}`:'',c.nic?`NIC ${c.nic}`:''].filter(Boolean).map(esc5).join(' · ');
+  const custLine=walk?'':[c.phone?`Mob ${c.phone}`:'',c.nic?`NIC ${c.nic}`:'',c.tin?`VAT No ${c.tin}`:''].filter(Boolean).map(esc5).join(' · ');
   const bandH=(dk?`<div style="text-align:center;font-weight:800;font-size:22px;letter-spacing:.35em;border:2px solid #000;padding:4px 0;margin:8px 0 2px">${dk.label.toUpperCase()}</div>`:'')+(on('meta')?`<div class="x-band">
     <div class="x-inv"><div class="x-ttl">${title}</div><div class="x-no"><span>${dk?dk.label:'Invoice'} No.</span> ${esc5(inv.no)}</div></div>
     <div class="x-kv">${kv(dk?'Date':'Date / Time',dk?esc5(inv.date||''):when)}${B.showCashier!==false?kv(dk?'Prepared By':'Invoice By',esc5((inv.by||'').toUpperCase())):''}${dk?kv('Valid for',(inv.valid||CFG.bill.quoteDays||14)+' days'):kv('Payment',credit?'CREDIT':esc5(payWord.toUpperCase()))}${inv.ledger?kv('Ledger No',esc5(inv.ledger)):''}${inv.vehicle?kv('Vehicle / Ref',esc5(inv.vehicle)):''}${(dk?'':kv('Terminal',esc5(inv.terminal||S.terminal||'')))}</div>
@@ -23809,11 +23818,12 @@ function billHtml(inv,f='a5'){
   /* the remarks box only when something was written on the bill at the till */
   const laterH=(inv.lines||[]).some(l=>+l.later>0)?`<div class="x-box x-rem"><div class="x-bh">GOODS NOT ISSUED — TO COLLECT LATER</div><div class="x-bb">${inv.lines.filter(l=>+l.later>0).map(l=>`${esc5(lineName(l).toUpperCase())} — ${fq(+l.later)}`).join('<br>')}<br><i>Bring this bill to collect them.</i></div></div>`:'';
   const remH=laterH+(inv.note?`<div class="x-box x-rem"><div class="x-bh">REMARKS</div><div class="x-bb">${esc5(inv.note)}</div></div>`:'');
-  const subH=`<div class="x-box x-sub"><div class="x-bh">SUB TOTAL</div><div class="x-bb"><div><span>Lines</span><b>${inv.lines.length}</b></div><div><span>Quantity</span><b>${fq(qtyAll)}</b></div><div><span>Gross value</span><b>${money2(gross)}</b></div>${disc>0.005?`<div><span>Discount</span><b>− ${money2(disc)}</b></div>`:''}<div class="net"><span>Net</span><b>${money2(inv.total)}</b></div></div></div>`;
+  const subH=`<div class="x-box x-sub"><div class="x-bh">SUB TOTAL</div><div class="x-bb"><div><span>Lines</span><b>${inv.lines.length}</b></div><div><span>Quantity</span><b>${fq(qtyAll)}</b></div><div><span>Gross value</span><b>${money2(gross)}</b></div>${disc>0.005?`<div><span>Discount</span><b>− ${money2(disc)}</b></div>`:''}<div class="net"><span>Net</span><b>${money2(inv.total)}</b></div>${vatOn()?`<div><span>Value excl. VAT</span><b>${money2(inv.total-vatIn(inv.total))}</b></div><div><span>VAT ${+CFG.tax.rate}%</span><b>${money2(vatIn(inv.total))}</b></div>`:''}</div></div>`;
   const paidH=dk?`<div><span>Quoted on</span><b>${esc5(inv.date||'')}</b></div><div><span>Holds good for</span><b>${inv.valid||CFG.bill.quoteDays||14} days</b></div>`:credit?`<div><span>Paid now</span><b>${money2(inv.paid)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div>`
     :`<div><span>${esc5(payWord)} received</span><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div><span>Change</span><b>${money2(inv.paid-inv.total)}</b></div>`:''}`;
   const osH=(credit&&!walk&&on('outstanding'))?`<div class="x-box x-osb"><div class="x-bh">ACCOUNT OUTSTANDING</div><div class="x-bb"><div><span>Previous outstanding</span><b>${money2(prev)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div><div class="tot"><span>TOTAL OUTSTANDING</span><b>${money2(prev+inv.balance)}</b></div></div></div>`:'';
-  const totH=`<div class="x-tot"><div class="x-paid">${paidH}</div><div class="x-grand"><span>${dk?dk.label.toUpperCase()+' TOTAL':'INVOICE TOTAL'}</span><b><small>LKR</small> ${money2(inv.total)}</b></div></div>`;
+  const vatH=vatOn()&&!dk?`<div><span>Value excl. VAT</span><b>${money2(inv.total-vatIn(inv.total))}</b></div><div><span>VAT ${+CFG.tax.rate}%</span><b>${money2(vatIn(inv.total))}</b></div>`:'';
+  const totH=`<div class="x-tot"><div class="x-paid">${paidH}${vatH}</div><div class="x-grand"><span>${dk?dk.label.toUpperCase()+' TOTAL':'INVOICE TOTAL'}</span><b><small>LKR</small> ${money2(inv.total)}</b></div></div>`;
   const termsH=dk?`<div class="x-terms"><b>Note:</b> This is a quotation, not a bill. Prices hold for ${inv.valid||CFG.bill.quoteDays||14} days and depend on stock at the time of order.</div>`:`<div class="x-terms">${(on('note')&&B.footer)?`<b>Terms:</b> ${esc5(B.footer.replace('{days}',B.returnDays))}`:''}</div>`;
   const signH=on('signs')?`<div class="x-sign"><div>${esc5((B.signLeft||'Authorised By').toUpperCase())}</div><div>${esc5((B.signRight||'Received By').toUpperCase())}</div></div>`:'';
   return `<div class="print a5 sbx x-${{bands:'modern x-bands',bw:'standard x-bw',boxed:'standard x-bw x-boxed'}[a5Style()]||a5Style()}" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5});font-family:${billFontCss(B.a5Font)};${a5SizeVars()}">
@@ -25979,6 +25989,7 @@ function supModal(id,preset){
     <div class="f"><label>Phone</label><input id="smPhone" value="${s?(s.phone||''):(qIsPhone?q:'')}" placeholder="07XXXXXXXX" inputmode="tel"></div>
     <div class="f"><label>Payment terms (days)</label><input id="smDays" type="number" value="${s?(s.days||30):30}"></div></div>
    <div class="f" style="max-width:260px"><label>Ledger No <span class="muted">(their page in the ledger book)</span></label><input id="smLedger" value="${s?escM(s.ledger||''):''}" placeholder="e.g. 12 or C-4"></div>
+   <div class="f" style="max-width:260px"><label>VAT No <span class="muted">(if they are VAT registered — their bills then count as input VAT)</span></label><input id="smTin" value="${s?escM(s.tin||''):''}" placeholder="e.g. 104512345-7000"></div>
    <div class="grid2">
     <div class="f"><label>Address</label><input id="smAddr" value="${s?(s.address||'').replace(/"/g,'&quot;'):''}" placeholder="Town, road"></div>
     <div class="f"><label>Email <span class="muted">(payment vouchers go here as PDFs)</span></label><input id="smEmail" type="email" value="${s?(s.email||'').replace(/"/g,'&quot;'):''}" placeholder="accounts@supplier.lk"></div></div>
@@ -25993,11 +26004,11 @@ function supModal(id,preset){
     if(phone&&!/^0\d{6,9}$/.test(phone)){ g('smMsg').textContent='Enter a phone like 0771234567, or leave it empty.'; g('smPhone').focus(); return }
     const dup=S.suppliers.find(x=>x.name.toLowerCase()===name.toLowerCase()&&x.id!==(s?s.id:-1));
     if(dup){ g('smMsg').textContent=`${dup.name} is already on the list.`; return }
-    const ledger=g('smLedger').value.trim();
-    if(s){ const oldName=s.name; Object.assign(s,{name,contact,phone,days,address:addr,email,notes,ledger});
+    const ledger=g('smLedger').value.trim(), tin=g('smTin').value.trim();
+    if(s){ const oldName=s.name; Object.assign(s,{name,contact,phone,days,address:addr,email,notes,ledger,tin});
       if(oldName!==name) S.cheques.forEach(c=>{ if(c.dir==='ISSUED'&&c.party===oldName) c.party=name });   // cheques are filed by name
       m.remove(); render(); toast('Saved'); return }
-    const ns={id:Math.max(0,...S.suppliers.map(x=>x.id))+1,code:'S'+String(S.suppliers.length+1).padStart(4,'0'),name,contact,phone,days,address:addr,email,notes,ledger,pin:'',showAccounts:false,enabled:false,lastLogin:null};
+    const ns={id:Math.max(0,...S.suppliers.map(x=>x.id))+1,code:'S'+String(S.suppliers.length+1).padStart(4,'0'),name,contact,phone,days,address:addr,email,notes,ledger,tin,pin:'',showAccounts:false,enabled:false,lastLogin:null};
     S.suppliers.push(ns); supSel=ns.id; supQ=''; supFilter='all'; supTab='overview'; m.remove(); render(); toast(`${name} added`);
   };
   g('smOk').onclick=save;
@@ -28972,8 +28983,11 @@ const REPORTS=[
   ['The shops',[['byshop','Sales by Shop'],['shopitem','What each shop sells']]],
   ['Payroll',[['pay','Payroll Summary'],['att','Attendance Summary']]],
   ['For my accountant',[['tb','Trial Balance'],['gl','General Ledger'],['journal','Journal'],
-    ['txlist','Transaction List by Date'],['audit','Audit Log — what was changed']]]];
+    ['txlist','Transaction List by Date'],['vat','VAT & SSCL return'],['audit','Audit Log — what was changed']]]];
 const inRange=(d)=>(!repFrom||d>=repFrom)&&(!repTo||d<=repTo);
+const vatOn=()=>!!String((CFG.shop||{}).vat||'').trim()&&(+(CFG.tax||{}).rate||0)>0;
+/* the VAT inside an amount that already includes it */
+const vatIn=(amt)=>{ const r=+(CFG.tax||{}).rate||0; return r>0?(+amt||0)*r/(100+r):0 };
 function accBalRange(ac){
   let v=0; S.journal.forEach(j=>{ if(!inRange(j.date))return; j.lines.forEach(l=>{ if(l.ac===ac) v+=l.dr-l.cr }) });
   return v;
@@ -29123,6 +29137,20 @@ function reportData(){
       ['Total',rows.reduce((a,r)=>a+ +r[1],0),money(rows.reduce((a,r)=>a+num(r[2]),0)),'',
        money(rows.reduce((a,r)=>a+num(r[4]),0)),money(rows.reduce((a,r)=>a+num(r[5]),0)),''],
       'Who took what, what they gave away, and what it earned.');
+  }
+  case 'vat':{
+    /* By month. Sales include VAT (shelf prices do), so the output VAT is the tax part of what was billed;
+       the input VAT is the tax part of the bills from suppliers that have a VAT number. */
+    const tx=CFG.tax||{}, by={}, row=m=>by[m]=by[m]||{s:0,p:0};
+    S.sales.filter(x=>inRange(x.date)).forEach(x=>{ row(x.date.slice(0,7)).s+=+x.total||0 });
+    (S.purchases||[]).filter(p=>inRange(p.date)&&!(p.onNote&&!p.invoiced)).forEach(p=>{ const sp=SU(p.supplierId); if(sp&&String(sp.tin||'').trim()) row(p.date.slice(0,7)).p+=+p.total||0 });
+    const rows=Object.entries(by).sort().reverse().map(([m,v])=>{ const out=vatIn(v.s), inp=vatIn(v.p), base=v.s-out;
+      return [new Date(m+'-01').toLocaleDateString('en-GB',{month:'long',year:'numeric'}),money(v.s),money(base),money(out),money(v.p),money(inp),money(out-inp),...(tx.sscl?[money(base*(+tx.ssclRate||0)/100)]:[])] });
+    const sum=i=>money(rows.reduce((a,r)=>a+num(r[i]),0));
+    const pre=vatOn()?'':`<div class="card note" style="margin-bottom:10px">The shop has no VAT number yet — put it in under Settings → Shop details to make the bills tax invoices. The figures below use ${+tx.rate||0}%.</div>`;
+    return {pre,...t(['Month','Sales incl. VAT','Sales excl. VAT','Output VAT','Purchases (VAT suppliers)','Input VAT','VAT payable',...(tx.sscl?[`SSCL ${+tx.ssclRate||0}%`]:[])],rows,
+      ['Total',sum(1),sum(2),sum(3),sum(4),sum(5),sum(6),...(tx.sscl?[sum(7)]:[])],
+      `VAT at ${+tx.rate||0}% inside the prices. Input VAT counts only suppliers with a VAT number on their page. Have your accountant check before filing.`)};
   }
   case 'catprofit': case 'brandprofit':{
     const byBrand=repKey==='brandprofit', by={};
