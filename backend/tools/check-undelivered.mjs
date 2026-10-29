@@ -58,6 +58,9 @@ ok(/Not delivered · 1/.test(chip || ''), 'the chip says how many', chip);
 await pg.evaluate(no => { window.eval('billSel=' + JSON.stringify(no)); window.eval('render')() }, no); await wait(400);
 ok(await pg.evaluate(() => /not delivered/.test(document.querySelector('.bl-head').textContent) && !!document.querySelector('[data-act="billDlvDone"]')), 'the bill says not delivered, with Delivered ✓');
 await pg.screenshot({ path: OUT + '/undel-bills.png' });
+// the printed bills say so
+const printed = await pg.evaluate(no => { const inv = window.eval('S').sales.find(x => x.no === no); return { a5: window.eval('billHtml')(inv, 'a5'), r80: window.eval('billHtml')(inv, 'r80') } }, no);
+ok(/GOODS NOT DELIVERED YET/.test(printed.a5) && /GOODS NOT DELIVERED YET/.test(printed.r80), 'the A5 bill and the 80mm receipt both print GOODS NOT DELIVERED YET');
 
 // and at the top of Deliveries
 await pg.evaluate(() => { window.eval('dlvDay = null'); window.eval('go')('dlv') }); await wait(500);
@@ -65,9 +68,20 @@ const dtext = await pg.evaluate(() => document.querySelector('#main').innerText)
 ok(/Bills not delivered yet/.test(dtext) && dtext.includes(no), 'Deliveries shows it under Bills not delivered yet');
 await pg.screenshot({ path: OUT + '/undel-dlv.png' });
 
-// Delivered ✓
+// Delivered ✓: who took it, who received it, and the delivery note prints
+await pg.evaluate(() => { window.__slips = []; window.eval('printPaper = (html, f, no) => { window.__slips.push({ html, f, no }) }') });
 await pg.click(`[data-act="billDlvDone"][data-no="${no}"]`); await wait(400);
-ok(await pg.evaluate(no => { const s = window.eval('S').sales.find(x => x.no === no); return !window.eval('billUndelivered')(s) && !!s.deliveredAt }, no), 'Delivered ✓ takes it off the list, with when and who');
+await pg.type('#ddWith', 'Nuwan'); await pg.type('#ddWho', 'Mr Silva'); await pg.keyboard.press('Enter'); await wait(400);
+ok(await pg.evaluate(no => { const s = window.eval('S').sales.find(x => x.no === no); return !window.eval('billUndelivered')(s) && !!s.deliveredAt && s.deliveredWith === 'Nuwan' && s.receivedBy === 'Mr Silva' }, no), 'Delivered ✓ takes it off the list, with when, who took it and who received it');
+const slip = await pg.evaluate(() => window.__slips);
+ok(slip.length === 1 && slip[0].f === 'r80' && /DELIVERY NOTE/.test(slip[0].html) && slip[0].html.includes(no) && /NUWAN/.test(slip[0].html) && /MR SILVA/.test(slip[0].html) && /Cement 5 bags/i.test(slip[0].html) && /STILL OWING/.test(slip[0].html), 'a DELIVERY NOTE prints on the 80mm: the bill, the items, who took and received it, what is still owing', slip.length + ' slip(s)');
+fs.writeFileSync(OUT + '/dlv-slip.html', slip[0] ? slip[0].html : '');
+const again = await pg.evaluate(no => { const inv = window.eval('S').sales.find(x => x.no === no); return window.eval('billHtml')(inv, 'a5') }, no);
+ok(/DELIVERED/.test(again) && !/NOT DELIVERED YET/.test(again) && /Mr Silva/.test(again), 'printed again, the bill says when it was delivered and to whom');
+await pg.evaluate(no => { window.eval("billType='all'"); window.eval('billSel=' + JSON.stringify(no)); window.eval('go')('bills') }, no); await wait(400);
+await pg.click(`[data-act="billDlvSlip"][data-no="${no}"]`); await wait(300);
+ok(await pg.evaluate(() => window.__slips.length) === 2, 'Delivery note on the bill prints it again');
+await pg.evaluate(() => { window.eval('go')('dlv') }); await wait(400);
 ok(!/Bills not delivered yet/.test(await pg.evaluate(() => document.querySelector('#main').innerText)), 'the Deliveries list is empty again');
 
 // an ordinary bill put on the list afterwards, then a driver's delivery of it

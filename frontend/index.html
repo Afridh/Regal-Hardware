@@ -20781,6 +20781,17 @@ const WARR_PERIODS=['0','3 MONTHS','6 MONTHS','1 YEAR','2 YEARS','3 YEARS','LIFE
 const billWarrLine=(l)=>{ const t=[l.warranty&&l.warranty!=='0'?'WARRANTY: '+l.warranty:'',(l.serials&&l.serials.length)?'S/N: '+l.serials.join(', '):''].filter(Boolean).join('  |  ');
   return (t?`<tr class="wr"><td colspan="4">${noteEsc(t)}</td></tr>`:'')+(+l.later>0?`<tr class="wr"><td colspan="4"><b>** NOT ISSUED — ${fq(+l.later)} TO COLLECT LATER **</b></td></tr>`:'') };
 // under the items: the goods the customer comes back for
+/* on the bill itself: not delivered yet (a phone order), or when it was delivered */
+const billDlvNote=(inv,a5)=>{ if(!inv||!inv.undelivered) return '';
+  const c=C(inv.customerId)||{}, addr=c.id!==1&&c.address?c.address:'';
+  if(billUndelivered(inv)){
+    const say=`To be delivered${addr?' to '+noteEsc(addr):''}. The goods come with a delivery note to sign.`;
+    return a5?`<div class="x-box x-rem"><div class="x-bh">GOODS NOT DELIVERED YET</div><div class="x-bb">${say}</div></div>`
+      :`<div style="border:1.5px solid #000;padding:3px 5px;margin:4px 0;font-weight:700">GOODS NOT DELIVERED YET<div style="font-weight:400;font-size:.9em">${say}</div></div>` }
+  if(inv.deliveredAt){ const say=`Delivered ${noteEsc(inv.deliveredAt)}${inv.receivedBy?' · received by '+noteEsc(inv.receivedBy):''}`;
+    return a5?`<div class="x-box x-rem"><div class="x-bh">DELIVERED</div><div class="x-bb">${say}</div></div>`:`<div style="margin:4px 0;font-weight:700">${say.toUpperCase()}</div>` }
+  return '';
+};
 const billLaterNote=(inv)=>{ const L=(inv.lines||[]).filter(l=>+l.later>0); if(!L.length) return '';
   return `<div style="border:1.5px solid #000;padding:3px 5px;margin:4px 0;font-weight:700">GOODS NOT ISSUED — TO COLLECT LATER:${L.map(l=>`<div style="font-weight:400">${noteEsc(lineName(l).toUpperCase())} — ${fq(+l.later)}</div>`).join('')}<div style="font-weight:400;font-size:.9em">Bring this bill to collect them.</div></div>` };
 function csWarranty(i){
@@ -21424,7 +21435,7 @@ function billDetail(inv){
      ${inv.balance>0?`<button class="btn tape sm" data-act="custPay" data-id="${inv.customerId}">Take payment</button>`:''}
      ${+inv.balance>0.005&&inv.customerId!==1&&!(S.plans||[]).some(p=>p.status!=='closed'&&(p.bills||[]).includes(inv.no))?`<button class="btn ghost sm" data-act="planNew" data-no="${inv.no}">Easy payments</button>`:''}
      ${(S.deliveries||[]).some(d=>d.bill===inv.no&&d.status!=='cancelled')?'':`<button class="btn ghost sm" data-act="dlvNew" data-no="${inv.no}">Deliver</button>`}
-     ${billUndelivered(inv)?`<button class="btn tape sm" data-act="billDlvDone" data-no="${inv.no}" title="The goods have gone to the customer">Delivered ✓</button>`:inv.deliveredAt?'':`<button class="btn ghost sm" data-act="billDlvNot" data-no="${inv.no}" title="The goods are still here — put it on the Not delivered list">Not delivered yet</button>`}
+     ${billUndelivered(inv)?`<button class="btn tape sm" data-act="billDlvDone" data-no="${inv.no}" title="The goods have gone to the customer">Delivered ✓</button>`:inv.deliveredAt?(inv.undelivered?`<button class="btn ghost sm" data-act="billDlvSlip" data-no="${inv.no}" title="Print the delivery note again">Delivery note</button>`:''):`<button class="btn ghost sm" data-act="billDlvNot" data-no="${inv.no}" title="The goods are still here — put it on the Not delivered list">Not delivered yet</button>`}
      <button class="btn ghost sm" data-act="billCopy" data-no="${inv.no}">Bill again</button>
      ${canEdit?`<button class="btn ghost sm" data-act="billEdit" data-no="${inv.no}">Edit in the till</button><button class="btn ghost sm" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}</div>
    </div>
@@ -23831,7 +23842,7 @@ function billHtml(inv,f='a5'){
      ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td></tr>
       <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l"></td><td>${l.qty.toFixed(3)}</td><td>${money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>${billWarrLine(l)}`}).join('')}
      </table>`,
-    totals:`${billLaterNote(inv)}<div class="sb-rule"></div>
+    totals:`${billDlvNote(inv)}${billLaterNote(inv)}<div class="sb-rule"></div>
      <div class="sb-tot"><span>Gross Total Rs.</span><i>:</i><b>${money2(gross)}</b></div>
      ${disc>0?`<div class="sb-tot bold"><span>- Line Discount ${discPct.toFixed(2)} %</span><i>:</i><b>${money2(disc)}</b></div>`:''}
      <div class="sb-stars">${'*'.repeat(46)}</div>
@@ -23893,7 +23904,7 @@ function billHtml(inv,f='a5'){
    </div>`:'');
   /* the remarks box only when something was written on the bill at the till */
   const laterH=(inv.lines||[]).some(l=>+l.later>0)?`<div class="x-box x-rem"><div class="x-bh">GOODS NOT ISSUED — TO COLLECT LATER</div><div class="x-bb">${inv.lines.filter(l=>+l.later>0).map(l=>`${esc5(lineName(l).toUpperCase())} — ${fq(+l.later)}`).join('<br>')}<br><i>Bring this bill to collect them.</i></div></div>`:'';
-  const remH=laterH+(inv.note?`<div class="x-box x-rem"><div class="x-bh">REMARKS</div><div class="x-bb">${esc5(inv.note)}</div></div>`:'');
+  const remH=billDlvNote(inv,true)+laterH+(inv.note?`<div class="x-box x-rem"><div class="x-bh">REMARKS</div><div class="x-bb">${esc5(inv.note)}</div></div>`:'');
   const subH=`<div class="x-box x-sub"><div class="x-bh">SUB TOTAL</div><div class="x-bb"><div><span>Lines</span><b>${inv.lines.length}</b></div><div><span>Quantity</span><b>${fq(qtyAll)}</b></div><div><span>Gross value</span><b>${money2(gross)}</b></div>${disc>0.005?`<div><span>Discount</span><b>− ${money2(disc)}</b></div>`:''}<div class="net"><span>Net</span><b>${money2(inv.total)}</b></div>${vatOn()?`<div><span>Value excl. VAT</span><b>${money2(inv.total-vatIn(inv.total))}</b></div><div><span>VAT ${+CFG.tax.rate}%</span><b>${money2(vatIn(inv.total))}</b></div>`:''}</div></div>`;
   const paidH=dk?`<div><span>Quoted on</span><b>${esc5(inv.date||'')}</b></div><div><span>Holds good for</span><b>${inv.valid||CFG.bill.quoteDays||14} days</b></div>`:credit?`<div><span>Paid now</span><b>${money2(inv.paid)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div>`
     :`<div><span>${esc5(payWord)} received</span><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div><span>Change</span><b>${money2(inv.paid-inv.total)}</b></div>`:''}`;
@@ -28018,6 +28029,47 @@ let dlvDay=null;
 const billUndelivered=(inv)=>!!(inv&&inv.undelivered&&!inv.deliveredAt&&!(S.deliveries||[]).some(d=>d.bill===inv.no&&d.status==='delivered'));
 const undeliveredBills=()=>S.sales.filter(billUndelivered);
 function csDlvToggle(){ S.pos.toDeliver=!S.pos.toDeliver; render(); toast(S.pos.toDeliver?'Not delivered — this bill goes on the Not delivered list':'Delivered with the customer, as usual') }
+function billDeliverDone(no){
+  const inv=S.sales.find(x=>x.no===no); if(!inv) return; const c=C(inv.customerId)||{};
+  const m=modal(`<h2>🚚 Delivered · ${noteEsc(no)}</h2>
+   <div class="muted">${noteEsc(c.id===1?'Walk-in customer':c.name||'')} · billed ${inv.date} · ${inv.lines.length} line${inv.lines.length===1?'':'s'}${+inv.balance>0.005?' · '+money2(inv.balance)+' still owing':''}</div>
+   <div class="grid2" style="margin-top:10px"><div class="f"><label>Taken by — driver or staff (optional)</label><input id="ddWith" maxlength="60" autocomplete="off"></div>
+    <div class="f"><label>Received by (optional)</label><input id="ddWho" maxlength="60" autocomplete="off"></div></div>
+   <label class="chk"><input type="checkbox" id="ddPrint" checked> Print a delivery note for the signature</label>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="ddOk">Delivered (Enter)</button></div>`);
+  const ok=()=>{ const w=m.querySelector('#ddWith').value.trim(), r=m.querySelector('#ddWho').value.trim(), pr=m.querySelector('#ddPrint').checked;
+    if(w) inv.deliveredWith=w; if(r) inv.receivedBy=r;
+    m.remove(); billDeliverMark(no,true); if(pr) dlvSlipPrint(no) };
+  m.querySelector('#ddOk').onclick=ok;
+  m.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); ok() } }));
+  m.querySelector('#ddWith').focus();
+}
+/* the delivery note, on the 80mm roll: what went, to whom, and two signatures */
+function dlvSlipPrint(no){
+  const inv=S.sales.find(x=>x.no===no); if(!inv) return toast('That bill is not in the books','warn');
+  const c=C(inv.customerId)||{}, SH=CFG.shop, B=CFG.bill, sc=Math.max(0.6,Math.min(2,(+B.r80Scale||100)/100));
+  const lines=(inv.lines||[]).filter(l=>+l.qty>0);
+  const inner=`<div class="print r80 sb80" data-scale="${sc}" style="zoom:${sc};width:calc(302px / ${sc});font-family:${billFontCss(B.r80Font)}">
+   <div class="sb-name">${noteEsc(SH.name||'')}</div>
+   <div class="sb-addr">${noteEsc((SH.addr||'').toUpperCase())}</div>
+   <div class="sb-phone">${noteEsc(SH.phone||'')}</div>
+   <div style="text-align:center;font-weight:800;font-size:16px;letter-spacing:.12em;border:2px solid #000;padding:3px 0;margin:4px 0 6px">DELIVERY NOTE</div>
+   <div class="sb-kv"><span>Bill No :</span><b>${noteEsc(inv.no)}</b><span>${noteEsc(inv.date)}</span></div>
+   <div class="sb-kv"><span>Delivered :</span><b>${noteEsc(inv.deliveredAt||apStamp())}</b><span></span></div>
+   ${c.id===1?(inv.phone?`<div class="sb-kv"><span>Customer :</span><b>${noteEsc(inv.phone)}</b><span></span></div>`:'')
+     :`<div class="sb-kv"><span>Customer :</span><b>${noteEsc((c.name||'').toUpperCase())}</b><span>${noteEsc(c.phone||'')}</span></div>${c.address?`<div class="sb-kv"><span>Address :</span><b>${noteEsc(c.address)}</b><span></span></div>`:''}`}
+   ${inv.deliveredWith?`<div class="sb-kv"><span>Taken by :</span><b>${noteEsc(inv.deliveredWith.toUpperCase())}</b><span></span></div>`:''}
+   ${inv.receivedBy?`<div class="sb-kv"><span>Received by :</span><b>${noteEsc(inv.receivedBy.toUpperCase())}</b><span></span></div>`:''}
+   <div class="sb-rule"></div>
+   <table class="sb-items"><tr><th class="l">#&nbsp; Item</th><th></th><th></th><th>Qty</th></tr>
+    ${lines.map((l,k)=>`<tr class="nm"><td colspan="3">${k+1})&nbsp; ${noteEsc(lineName(l).toUpperCase())}</td><td>${fq(l.qty)}</td></tr>`).join('')}</table>
+   <div class="sb-rule"></div>
+   ${+inv.balance>0.005?`<div style="text-align:center;font-weight:700">STILL OWING ON THIS BILL: Rs ${money2(inv.balance)}</div><div class="sb-rule"></div>`:''}
+   <div class="sb-sign"><span>Delivered By</span><span>Received By</span></div>
+   <div class="sb-foot">Goods received in good order.</div>
+  </div>`;
+  printPaper(printDocument(inner,'r80'),'r80','DN-'+inv.no,()=>paperFallback(inner,'r80'));
+}
 function billDeliverMark(no,done){
   const inv=S.sales.find(x=>x.no===no); if(!inv) return;
   if(done){ inv.deliveredAt=apStamp(); inv.deliveredBy=S.user.name }
@@ -31160,7 +31212,7 @@ document.addEventListener('click',e=>{
     privacyTry:()=>{ go('dashboard'); privacyToggle() },
     csLevel:()=>{ posSetLevel(posLevel()==='wholesale'?'retail':'wholesale'); const q2=$('#csQ'); if(q2&&!CS.pid) q2.focus() },
     csPaper:()=>csSetPaper(csPaper()==='a5'?'r80':'a5'),
-    csDlvToggle:()=>csDlvToggle(), billDlvDone:()=>billDeliverMark(a.dataset.no,true), billDlvNot:()=>billDeliverMark(a.dataset.no,false), billOpen:()=>{ billSel=a.dataset.no; billQ=''; billType='all'; go('bills') },
+    csDlvToggle:()=>csDlvToggle(), billDlvDone:()=>billDeliverDone(a.dataset.no), billDlvSlip:()=>dlvSlipPrint(a.dataset.no), billDlvNot:()=>billDeliverMark(a.dataset.no,false), billOpen:()=>{ billSel=a.dataset.no; billQ=''; billType='all'; go('bills') },
     csPaperSet:()=>csSetPaper(CS.paper===a.dataset.k&&a.dataset.k==='none'?null:a.dataset.k),
     invMore:()=>{ invLimit+=200; const keep=$('#main').scrollTop; render(); $('#main').scrollTop=keep },
     tdNew:()=>tenderModal(null), tdEdit:()=>tenderModal(a.dataset.id), tdSel:()=>{ tdSel=a.dataset.id; tdLineQ=''; render() }, tdFilter:()=>{ tdFilter=a.dataset.v; render() },
