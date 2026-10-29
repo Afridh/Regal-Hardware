@@ -24405,6 +24405,7 @@ function productModal(pid){
     ${f('pshort','Short code',p?(p.short||''):'','text','Type this at the till and press Enter — e.g. cem')}
     <div class="f"><label>Warranty given, in months <span class="muted">— 1200 for lifetime</span></label><input id="pwar" type="number" value="${p?(p.warrantyMonths||0):0}"></div>
     <div class="f"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="pser" ${p&&p.serialised?'checked':''}> every piece has a serial number</label></div>
+    <div class="f"><label>Brand <span class="muted">— empty: the first word of the name</span></label><input id="pbrand" value="${noteEsc(p?p.brand||'':'')}" placeholder="${noteEsc(p?brandOf({name:p.name}):'e.g. Tokyo')}" autocomplete="off"></div>
     <div class="f"><label>Product number</label><input value="${p?p.num:nextNum()}" readonly><div class="muted">Four figures, given by the system — also works at the till</div></div>
    </div>
    <div class="grid3">
@@ -24476,6 +24477,7 @@ function productModal(pid){
       retail:g('pretail'),wholesale:g('pwhole')||g('pretail'),min:g('pmin'),short,num:p?p.num:nextNum(),
       webPrice:g('pweb')>0?+(+g('pweb')).toFixed(2):0,              // nought means: sell online at the counter price
       warrantyMonths:g('pwar'),serialised:m.querySelector('#pser').checked,desc:m.querySelector('#pdesc').value.trim(),
+      brand:(m.querySelector('#pbrand').value||'').trim().replace(/\s+/g,' '),
       tiers:tiers.filter(t=>+t.min>0&&+t.price>0).map(t=>({min:+t.min,price:+t.price,label:(t.label||'').trim()}))};
     const photo=m.querySelector('#pphotoFile').files[0];
     const sendPhoto=pid=>{ if(photo) shopMediaUpload('p:'+pid,photo,900).then(()=>toast('Photo is on the site')).catch(e=>toast('Photo not saved: '+e.message)) };
@@ -28609,18 +28611,33 @@ function messages(){ loadWaInbox();
 /* ---- reports ---- */
 /* ====================== REPORTS ====================== */
 let repKey='pl', repFrom='', repTo='', repAcc='', repQ='';
+/* An item's brand: the one set on it, or else the first word of its name ("TOKYO Super Cement" → Tokyo). */
+function brandOf(p){ const b=String((p&&p.brand)||'').trim(); if(b) return b;
+  const w=String((p&&p.name)||'').trim().split(/[\s\-–(,]+/)[0]||'Others'; return w.charAt(0).toUpperCase()+w.slice(1).toLowerCase() }
+/* each sold line with what it really brought in (its own discount, and its share of the bill's) and its cost */
+function profitLines(pick){
+  const out=[];
+  for(const inv of S.sales){ if(!pick(inv)) continue;
+    const ls=(inv.lines||[]).filter(l=>l.pid&&!isOpenLine(l)), sub=ls.reduce((a,l)=>a+(+l.qty||0)*(+l.price||0)-(+l.disc||0),0);
+    const share=sub>0?Math.min(1,(+inv.billDisc||0)/sub):0;
+    for(const l of ls){ const net=((+l.qty||0)*(+l.price||0)-(+l.disc||0))*(1-share); out.push({inv,l,net,cost:(+l.qty||0)*(+l.cost||0)}) } }
+  return out;
+}
+const salesCommCfg=()=>({rate:0,base:'profit',...(CFG.salesComm||{})});
+document.addEventListener('change',e=>{ const k=e.target&&e.target.dataset&&e.target.dataset.salescomm; if(!k) return;
+  CFG.salesComm={...salesCommCfg(),[k]:k==='rate'?Math.max(0,+e.target.value||0):e.target.value}; persist(true); render() });
 const REPORTS=[
   ['Business overview',[['pl','Profit and Loss'],['bs','Balance Sheet'],['cashflow','Statement of Cash Flows'],
     ['daybook','Day Book — one day, everything'],['salesday','Sales by Day']]],
   ['Who owes you',[['arage','A/R Ageing Summary'],['aragedet','A/R Ageing Detail'],['ar','Customer Balance Summary'],
     ['openinv','Open Invoices'],['collect','Collections Report'],['custstmt','Customer Balance Detail']]],
   ['Sales and customers',[['salescust','Sales by Customer Summary'],['salesitem','Sales by Product Summary'],
-    ['disc','Discounts and Returns'],['salesuser','Sales by Cashier']]],
+    ['disc','Discounts and Returns'],['salesuser','Sales by Cashier'],['salesprofit','Profit by Salesman']]],
   ['What you owe',[['apage','A/P Ageing Summary'],['ap','Supplier Balance Summary'],['unpaid','Unpaid Bills'],
     ['purchsup','Purchases by Supplier'],['chq','Cheque Register']]],
   ['Expenses and cash',[['exp','Expenses by Category'],['cash','Cash and Bank Movement'],['daycash','Cash in Hand — day by day']]],
   ['Products and stock',[['stockval','Inventory Valuation Summary'],['stockmove','Stock Movement Detail'],
-    ['reorder','Below Reorder Level'],['prodprofit','Profit by Product']]],
+    ['reorder','Below Reorder Level'],['prodprofit','Profit by Product'],['catprofit','Profit by Category'],['brandprofit','Profit by Brand']]],
   ['The shops',[['byshop','Sales by Shop'],['shopitem','What each shop sells']]],
   ['Payroll',[['pay','Payroll Summary'],['att','Attendance Summary']]],
   ['For my accountant',[['tb','Trial Balance'],['gl','General Ledger'],['journal','Journal'],
@@ -28775,6 +28792,34 @@ function reportData(){
       ['Total',rows.reduce((a,r)=>a+ +r[1],0),money(rows.reduce((a,r)=>a+num(r[2]),0)),'',
        money(rows.reduce((a,r)=>a+num(r[4]),0)),money(rows.reduce((a,r)=>a+num(r[5]),0)),''],
       'Who took what, what they gave away, and what it earned.');
+  }
+  case 'catprofit': case 'brandprofit':{
+    const byBrand=repKey==='brandprofit', by={};
+    profitLines(x=>inRange(x.date)).forEach(r=>{ const p=P(r.l.pid); if(!p) return; const k=byBrand?brandOf(p):(p.cat||'Others');
+      const v=by[k]=by[k]||{items:new Set(),q:0,v:0,c:0}; v.items.add(p.id); v.q+=+r.l.qty||0; v.v+=r.net; v.c+=r.cost });
+    const rows=Object.entries(by).map(([k,v])=>[k,String(v.items.size),fq(v.q),money(v.v),money(v.c),money(v.v-v.c),v.v?(((v.v-v.c)/v.v)*100).toFixed(1)+'%':'—'])
+      .sort((a,b)=>num(b[5])-num(a[5]));
+    return t([byBrand?'Brand':'Category','Items','Sold','Sales','Cost','Profit','Margin'],rows,
+      ['Total','','',money(rows.reduce((a,r)=>a+num(r[3]),0)),money(rows.reduce((a,r)=>a+num(r[4]),0)),money(rows.reduce((a,r)=>a+num(r[5]),0)),''],
+      byBrand?'Which brands make the money. A brand is the one set on the item, or else the first word of its name.':'Which categories make the money — best at the top. A bill discount is shared across its lines.');
+  }
+  case 'salesprofit':{
+    const sc=salesCommCfg(), by={};
+    S.sales.filter(x=>inRange(x.date)).forEach(inv=>{ const who=inv.salesman||inv.by||'—'; const v=by[who]=by[who]||{bills:0,v:0,c:0};
+      if(+inv.total>0) v.bills++;
+      profitLines(x=>x===inv).forEach(r=>{ v.v+=r.net; v.c+=r.cost }) });
+    const rows=Object.entries(by).map(([who,v])=>{ const prof=v.v-v.c, u=S.users.find(x=>x.name===who), rate=u&&u.commRate!=null&&u.commRate!==''?+u.commRate:+sc.rate||0;
+      const comm=(sc.base==='sales'?v.v:prof)*rate/100;
+      return [who,String(v.bills),money(v.v),money(v.c),money(prof),v.v?((prof/v.v)*100).toFixed(1)+'%':'—',rate+'%',money(Math.max(0,comm))] })
+      .sort((a,b)=>num(b[4])-num(a[4]));
+    // the commission controls go above the report (r.pre), the table as every report's
+    const pre=`<div class="card note" style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">Commission
+       <input type="number" step="0.1" min="0" data-salescomm="rate" value="${+sc.rate||0}" style="width:80px;margin:0">% of
+       <select data-salescomm="base" style="width:auto;margin:0"><option value="profit" ${sc.base!=='sales'?'selected':''}>the profit they made</option><option value="sales" ${sc.base==='sales'?'selected':''}>what they sold</option></select>
+       <span class="muted">— a person's own rate (Users &amp; permissions) wins. "Who sold it" on the bill, or else the cashier.</span></div>`;
+    return {pre,...t(['Salesman','Bills','Sales','Cost','Profit','Margin','Rate','Commission'],rows,
+        ['Total','',money(rows.reduce((a,r)=>a+num(r[2]),0)),money(rows.reduce((a,r)=>a+num(r[3]),0)),money(rows.reduce((a,r)=>a+num(r[4]),0)),'','',money(rows.reduce((a,r)=>a+num(r[7]),0))],
+        'What each person sold, the profit in it, and their commission.')};
   }
   case 'prodprofit':{
     const by={};
@@ -29080,6 +29125,7 @@ function reports(){
        <button data-act="repRange" data-r="all">Everything</button></div></div>
      <button class="btn ghost" style="margin-left:auto;align-self:flex-end" onclick="window.print()">Print</button>
     </div>
+    ${r.pre||''}
     <div class="rep">
      <div class="rep-h"><div><b>${CFG.shop.name}</b><div class="muted">${name} · ${range}</div></div>
       <div class="muted" style="text-align:right">Run ${D(today)}<br>by ${S.user.name}</div></div>
@@ -29618,6 +29664,7 @@ function userModal(name){
     <div class="f"><label>Role</label><select id="uRole">${availableRoles.map(r=>`<option value="${r}" ${(u&&u.role===r)||(!u&&r===initRole)?'selected':''}>${roleLabel(r)}</option>`).join('')}</select>
      <div class="muted" id="uRoleDesc" style="margin-top:4px">${noteEsc((roleDefFor(u?u.role:initRole)||{}).desc||'')}</div>
      <div class="muted">Changing the role ticks that role's usual boxes</div></div>
+    <div class="f"><label>Commission % <span class="muted">— empty: the shop's rate (Reports → Profit by Salesman)</span></label><input id="uComm" type="number" step="0.1" min="0" value="${u&&u.commRate!=null&&u.commRate!==''?u.commRate:''}" placeholder="the shop's rate"></div>
     <div class="f" id="uSalesIdBox" style="${isSalesman?'':'display:none'}">
      <label>Sales ID</label>
      <input id="uSalesId" value="${autoSalesId}" readonly style="background:var(--tint-blue);font-weight:700;color:var(--ink);cursor:default">
@@ -29754,6 +29801,8 @@ function userModal(name){
     const oldName = u ? u.name : null;
     const lowerNm = nm.toLowerCase().trim();
     markUserDirty(nm, oldName);
+    // their own commission rate, set once the user is saved (new or changed)
+    { const commV=((m.querySelector('#uComm')||{}).value||'').trim(); setTimeout(()=>{ const uu=S.users.find(x=>x.name===nm); if(!uu) return; if(commV==='') delete uu.commRate; else uu.commRate=Math.max(0,+commV||0); persist(true) },0) }
     S.deletedUsers = (S.deletedUsers || []).filter(x => x !== lowerNm);
     try {
       let lsDel = JSON.parse(localStorage.getItem('regal_deleted_users') || '[]');
