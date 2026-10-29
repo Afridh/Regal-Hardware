@@ -9,10 +9,10 @@
 const API = 'https://api.anthropic.com/v1/messages';
 const VERSION = '2023-06-01';
 
-/* Sonnet reasons over figures far better than the cheaper models, and getting a number
-   wrong is the one thing this must not do. ANTHROPIC_MODEL=claude-haiku-4-5-20251001
-   makes it much cheaper for lighter work such as writing posts. */
-const FALLBACK_MODEL = 'claude-sonnet-5';
+/* Claude Opus 5.5 by default: getting a number wrong is the one thing this must not do. It is only ever
+   asked by the owner and the admins, so it is a handful of questions a day. ANTHROPIC_MODEL overrides it
+   (claude-sonnet-5-5 costs half as much; claude-haiku-5-5 far less, for lighter work such as posts). */
+const FALLBACK_MODEL = 'claude-opus-5-5';
 
 /* vercel.json allows the function 30 seconds. Give up at 25 so the shop gets a straight
    answer about what went wrong instead of the host cutting the connection. */
@@ -32,6 +32,9 @@ const aiWorkspace = () => String(process.env.ANTHROPIC_WORKSPACE_ID || '').trim(
    and where it cannot be (Opus 5.5, Sonnet 5.5, Fable, Haiku 5.5) the answer is given room for it. */
 const takesTemperature = m => /^claude-(3|haiku-4-5|sonnet-4-[56]|opus-4-[56])/.test(m);
 const thinkingCanBeOff = m => /^claude-(sonnet-5|opus-5)$/.test(m);
+/* A model that may decline a question on safety grounds (stop_reason "refusal") is asked with Anthropic's
+   server-side fallback on: a declined question is answered by another model within the same call. */
+const takesFallback = m => /^claude-(opus-5-5|sonnet-5-5|fable-5-1)$/.test(m);
 
 const fail = (status, message, code) => Object.assign(new Error(message), { status, code, expose: true });
 
@@ -47,9 +50,14 @@ export async function askClaude({ system, messages, maxTokens = 1000, temperatur
   const request = { model, max_tokens: maxTokens, system, messages };
   if (takesTemperature(model)) request.temperature = temperature;
   else if (thinkingCanBeOff(model)) request.thinking = { type: 'disabled' };
-  else request.max_tokens = Math.max(maxTokens, 8000);       // room for the thinking it always does
+  else {
+    request.max_tokens = Math.max(maxTokens, 8000);           // room for the thinking it always does
+    // said, not left to the default (on Opus 5.5 that is medium): thorough enough for figures, inside 25 seconds
+    request.output_config = { effort: 'medium' };
+  }
   const headers = { 'content-type': 'application/json', 'anthropic-version': VERSION, 'x-api-key': aiKey() };
   if (aiWorkspace()) headers['anthropic-workspace-id'] = aiWorkspace();
+  if (takesFallback(model)) { headers['anthropic-beta'] = 'server-side-fallback-2026-07-01'; request.fallbacks = 'default'; }
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), BUDGET_MS);
@@ -75,6 +83,8 @@ export async function askClaude({ system, messages, maxTokens = 1000, temperatur
     throw fail(502, `Claude refused the question (${res.status}).` + (said ? ' ' + said.slice(0, 200) : ''), 'refused');
   }
 
+  // declined on safety grounds, by every model it was passed to: said plainly, not shown as an empty answer
+  if (body?.stop_reason === 'refusal') throw fail(422, 'Claude would not answer that one. Ask it another way, or about the figures directly.', 'refusal');
   const text = (body?.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
   if (!text) throw fail(502, 'Claude sent nothing back. Try asking again.', 'empty');
 
