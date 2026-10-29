@@ -3733,6 +3733,7 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .sum-pay:hover,.sum-credit:hover{filter:brightness(1.07)}
 .sum-pay:disabled,.sum-credit:disabled{opacity:.45;box-shadow:none;cursor:default;filter:none}
 .sum-more{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.sum-more .sum-trade{grid-column:1/-1}.sum-more .sum-trade.on{border-color:#B7791F;background:#FFF7E6}
 .sum-more button{border:1px solid var(--line);background:#fff;border-radius:var(--r);padding:5px 4px;
  font:inherit;font-size:11px;cursor:pointer;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sum-more button:hover{background:var(--tint-blue);border-color:var(--chip-blue)}
@@ -4921,7 +4922,7 @@ const peekBillNo=()=>billNoFrom(billSeqNow()+1);      // what the next bill will
 const next=(k)=>{
   if(k==='INV'){ const seq=billSeqNow()+1; S.seqBy[billKey()]=seq; return billNoFrom(seq) }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',JOB:'JOB-',JE:'JE-',ISN:'ISN-'}[k];if(!(S.seq[k]>0))S.seq[k]=1;return p+String(S.seq[k]++).padStart(5,'0')};
 
-const GL = {'2050':'Customer advances','1010':'Cash in hand','1015':'Petty cash with staff','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1023':'Bank account 4','1024':'Bank account 5','1025':'Bank account 6','1026':'Bank account 7','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2120':'Goods received, invoice to come','2150':'Cash borrowed and lent (the circle)','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other'};
+const GL = {'2050':'Customer advances','1010':'Cash in hand','1015':'Petty cash with staff','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1023':'Bank account 4','1024':'Bank account 5','1025':'Bank account 6','1026':'Bank account 7','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2120':'Goods received, invoice to come','2150':'Cash borrowed and lent (the circle)','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other','6120':'Tradesman commission'};
 function post(date,desc,ref,lines){ // lines: [{ac,dr,cr,party}]
   const dr=lines.reduce((a,l)=>a+(l.dr||0),0), cr=lines.reduce((a,l)=>a+(l.cr||0),0);
   if(Math.abs(dr-cr)>0.005) throw new Error('Unbalanced journal '+desc+' '+dr+'/'+cr);
@@ -5236,7 +5237,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
     else if(p.method==='POINTS')jl.push({ac:'6110',dr:p.amount});          // points spent: the shop bears the cost
     else if(p.method==='VOUCHER')jl.push({ac:'2060',dr:p.amount}); }        // voucher spent: the liability comes down
   if(credit>0.005) jl.push({ac:'1100',dr:credit,party:{type:'C',id:customerId}});
-  if(returnOf) inv.returnOf=returnOf;
+  if(returnOf){ inv.returnOf=returnOf; const ob=S.sales.find(x=>x.no===returnOf); if(ob&&ob.trade){ inv.trade=ob.trade; inv.tradeRate=ob.tradeRate } }   // goods back off a tradesman's bill come off their commission too
   if(returnWhy) inv.returnWhy=returnWhy;
   if(acct){ inv.toAccount=acct.amt;
     if(acct.onBills>0.005) jl.push({ac:'1100',cr:acct.onBills,party:{type:'C',id:customerId}});
@@ -6051,6 +6052,8 @@ const CFG={
  // credit follow-up (the server sends these — backend/src/services/dues.js): reminders when the oldest unpaid
  // bill reaches each step in days, a monthly statement, and new credit stopped past stopDays (0 = never)
  dues:{on:false,at:'10:00',steps:[7,30,60],monthly:true,monthDay:1,stopDays:0},
+ // tradesmen who bring customers (Customers → Tradesmen): their commission, in % of the bill, unless set per person
+ trade:{rate:2,sms:true,kinds:['Mason','Electrician','Plumber','Carpenter','Painter','Welder','Other']},
  tpl:{
   cashSale:{label:'Cash bill',vars:'{shop} {invoice} {total} {link} {customer}',
     text:'Thank you for your purchase.\nBill No: {invoice}\nAmount: {total}\nView your bill: {link}'},
@@ -6083,6 +6086,11 @@ const CFG={
   statement:{label:'Customer statement',vars:'{shop} {customer} {count} {outstanding} {link}',
     text:'Here is your account summary.\nAccount: {customer}\nUnpaid bills: {count}\nTotal outstanding: {outstanding}\nView details: {link}'},
   // the credit follow-up's three reminders (the server keeps the same defaults in services/dues.js)
+  // to a tradesman (they start "Dear …", so they go as written — no customer greeting)
+  tradeThanks:{label:'Tradesman — thank you for a customer',vars:'{shop} {name} {customer} {invoice} {total} {earn} {pendingPart} {due}',
+    text:'Dear {name},\nThank you for sending {customer} to us.\nBill: {invoice} · {total}\nYou earn: {earn}{pendingPart}\nWaiting for you to collect: {due}\n\n{shop}'},
+  tradeStatement:{label:'Tradesman — statement',vars:'{shop} {name} {month} {earned} {paid} {due}',
+    text:'Dear {name},\nYour commission with us.\nThis month: {month}\nEarned so far: {earned}\nPaid to you: {paid}\nWaiting for you to collect: {due}\n\n{shop}'},
   dueRemind1:{label:'Credit follow-up — first reminder',vars:'{shop} {customer} {count} {days} {outstanding} {link}',
     text:'A gentle reminder about your account.\nUnpaid bills: {count}\nOldest: {days} days\nTotal outstanding: {outstanding}\nView or pay: {link}'},
   dueRemind2:{label:'Credit follow-up — overdue',vars:'{shop} {customer} {count} {days} {outstanding} {link}',
@@ -12319,7 +12327,7 @@ const $=(s)=>document.querySelector(s);
 const views=[
  ['updates','What is new'],['actions','Action centre'],
  ['grp','Sell'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills'],['receipts','Take a payment','F7'],['docs','Quotes & delivery notes'],['collect','Goods to collect'],['counter','Open & close'],['cashup','Day book'],
- ['grp','Customers'],['customers','Customers','F8'],['dues','Credit follow-up'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],
+ ['grp','Customers'],['customers','Customers','F8'],['dues','Credit follow-up'],['trades','Tradesmen'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],
  ['grp','Buying'],['suppliers','Suppliers','F12'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Payment requests'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels','F11'],
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['chqbooks','Cheque books'],['petty','Petty cash'],['expenses','Expenses'],['accounting','Accounting'],
@@ -12398,7 +12406,8 @@ function allowed(v){
   if(v === 'actions') return true;
   if(v === 'leave') return true;            // everybody asks for their own days off
   if(v === 'petty') return String(S.user.role||'').toLowerCase()!=='salesman'||(S.petty||[]).some(p=>p.status==='open'&&p.who===S.user.name);   // Sales staff: only while holding some            // the counter hands it out; whoever holds some puts in what they spent
-  if(v === 'dues') return allowed('customers');   // who owes and what they have been told — whoever looks after customers
+  if(v === 'dues') return allowed('customers');
+  if(v === 'trades') return allowed('customers');   // the tradesmen who send customers, and what they are owed   // who owes and what they have been told — whoever looks after customers
   if(v === 'collect') return allowed('pos')||allowed('bills');   // goods paid for and waiting to be collected
   if(v === 'returns') return allowed('pos');  // whoever may bill may take goods back          // everyone has one; each item on it keeps to the page it comes from
   if(v === 'issues'||v === 'transfers') return typeof extMulti==='function'&&extMulti();   // nothing to see with one shop
@@ -12487,6 +12496,7 @@ const ICONS={
   receipts:'M4 5h16v14H4zM4 10h16M8 15h4',
   customers:'M9 11a4 4 0 100-8 4 4 0 000 8zM3 21a6 6 0 0112 0M17 8h4M19 6v4',
   dues:'M12 8v4l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0zM4 4l3 3M20 4l-3 3',
+  trades:'M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z',
   suppliers:'M3 8h11v9H3zM14 11h4l3 3v3h-7zM6.5 20a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17.5 20a1.5 1.5 0 100-3 1.5 1.5 0 000 3z',
   orders:'M8 4h9l3 4v12H8zM8 4H4v16h4M12 11h5M12 15h5',
   inventory:'M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10',
@@ -12976,7 +12986,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     try{ mn.innerHTML = r() }
     catch(err){
@@ -17608,6 +17618,8 @@ function finishTillBill({cust,pays,override=false,note=''}){
     throw e }
   if(retired) inv=finishRemake(retired,inv);
   if(note.trim()) inv.note=note.trim();
+  // brought by a tradesman: the bill keeps who, and the rate it was earned at; they are thanked
+  if(S.pos.trade){ const tr=tradeOf(S.pos.trade); if(tr){ inv.trade=tr.id; inv.tradeRate=+(tr.rate??tradeCfg().rate)||0; try{ tradeTell(inv) }catch(e){} } }
   // a big discount on this bill (lines and the bill together, against what the lines came to)
   try{ const gross=inv.lines.reduce((a,l)=>a+Math.max(0,l.qty*l.price),0), off=inv.lines.reduce((a,l)=>a+(+l.disc||0),0)+(+inv.billDisc||0), pct=gross>0?off/gross*100:0;
     if(off>0.005&&pct>=(+camCfg().flagDisc||10)) logTrail('bigDisc',`${inv.no} — ${money2(off)} off ${money2(gross)} (${pct.toFixed(1)}%)`,{amount:off,ref:inv.no,who:C(inv.customerId).name}) }catch(e){}
@@ -17966,6 +17978,7 @@ function posClassic(){
        <button data-act="doc" data-k="QUOTE" ${L.length?'':'disabled'} title="Make it a quotation — Ctrl+Q"><b>Quotation</b><s>Quote</s><i>Ctrl+Q</i></button>
        <button data-act="doc" data-k="DN" ${L.length?'':'disabled'} title="A delivery note for these goods"><b>Delivery note</b><s>D/Note</s><i>print</i></button>
        <button data-act="proofA5" ${L.length?'':'disabled'} title="See the bill before it is made"><b>Check bill</b><s>Check</s><i>preview</i></button>
+       ${(()=>{ const tr=S.pos.trade&&tradeOf(S.pos.trade); return `<button class="sum-trade ${tr?'on':''}" data-act="tradePick" title="The mason, electrician or plumber who sent this customer — they earn their commission"><b>${tr?'🔧 '+noteEsc(tr.name):'Brought by…'}</b><s>Brought</s><i>${tr?noteEsc(tr.kind||'')+' · '+(+tr.rate||tradeCfg().rate)+'%':'mason, electrician…'}</i></button>` })()}
       </div>
      </div>
     </div>
@@ -18396,6 +18409,7 @@ function holdCurrentBill(notify = true, ref){
     ref: ref || (notify ? '' : 'Pushed aside by a recall'),
     customer: S.pos.customer,
     salesman: S.pos.salesman || null,
+    trade: S.pos.trade || null,
     lines: JSON.parse(JSON.stringify(S.pos.lines)),
     billDisc: S.pos.billDisc || 0,
     editing: S.pos.editing || null,
@@ -18462,6 +18476,7 @@ function recallHeldBill(which){
     lines: bill.lines || [],
     customer: bill.customer || null,
     salesman: bill.salesman || null,
+    trade: bill.trade || null,
     billDisc: bill.billDisc || 0,
     sel: bill.lines && bill.lines.length ? 0 : -1,
     entry: null,
@@ -27706,6 +27721,122 @@ function pettySettleModal(id){
   };
 }
 
+/* ================== TRADESMEN ==================
+   Masons, electricians, plumbers, painters who send customers to the shop. Put on a bill as "Brought by",
+   they earn their rate (the shop's, or their own) on what the bill comes to after discounts. On a credit
+   bill the share of what is still owed waits until the customer pays; goods brought back come off it.
+   They are texted a thank-you with what they earned, and paid out from the till or the bank (a voucher,
+   and the books: 6120 Tradesman commission). The bill keeps the rate it was earned at, so changing a
+   rate later does not change what was earned before. */
+const tradeCfg=()=>({rate:2,sms:true,kinds:['Mason','Electrician','Plumber','Carpenter','Painter','Welder','Other'],...(CFG.trade||{})});
+const tradeList=()=>{ if(!Array.isArray(S.trades)) S.trades=[]; return S.trades };
+const tradeOf=id=>tradeList().find(x=>x.id===id);
+const tradePays=()=>{ if(!Array.isArray(S.tradePays)) S.tradePays=[]; return S.tradePays };
+function tradeTotals(id){
+  let earned=0,pending=0,sales=0,bills=0,month=0; const mk=D(today).slice(0,7);
+  for(const s of S.sales){ if(s.trade!==id) continue; const r=(+s.tradeRate||0)/100, tot=+s.total||0, bal=Math.max(0,+s.balance||0);
+    sales+=tot; if(tot>0) bills++; earned+=(tot-bal)*r; pending+=bal*r; if(String(s.date).slice(0,7)===mk) month+=tot*r }
+  const paid=tradePays().filter(p=>p.tid===id).reduce((a,p)=>a+(+p.amount||0),0);
+  return {earned:+earned.toFixed(2),pending:+pending.toFixed(2),sales:+sales.toFixed(2),bills,paid:+paid.toFixed(2),due:+Math.max(0,earned-paid).toFixed(2),month:+month.toFixed(2)};
+}
+function tradeTell(inv){
+  const tr=tradeOf(inv.trade); if(!tr||!tr.phone||tradeCfg().sms===false||!(+inv.total>0)) return;
+  const tot=tradeTotals(tr.id), r=(+inv.tradeRate||0)/100, c=C(inv.customerId);
+  sms(tr.phone,tpl('tradeThanks',{name:tr.name.split(' ')[0],customer:!c||c.id===1?'a customer':c.name,invoice:inv.no,total:fmt(inv.total),earn:fmt(inv.total*r),
+    pendingPart:+inv.balance>0.005?`\n(${fmt(inv.balance*r)} of it once they have paid)`:'',due:fmt(tot.due)}),'customer');
+}
+function tradePick(){
+  const kinds=tradeCfg().kinds;
+  const m=modal(`<h2>Brought by</h2><div class="muted">The mason, electrician or plumber who sent this customer — they earn their commission on this bill.</div>
+   <input id="tpQ" placeholder="Name, trade or mobile…" autocomplete="off" style="margin-top:8px"><div id="tpL" style="margin-top:8px;max-height:300px;overflow:auto"></div>
+   <div class="card note" style="margin-top:10px"><b>Someone new</b><div class="grid3" style="margin-top:6px">
+    <div class="f"><label>Name</label><input id="tpN" autocomplete="off"></div><div class="f"><label>Mobile</label><input id="tpP" inputmode="tel" placeholder="07…" autocomplete="off"></div>
+    <div class="f"><label>Trade</label><select id="tpK">${kinds.map(k=>`<option>${noteEsc(k)}</option>`).join('')}</select></div></div>
+    <button class="btn tape sm" id="tpAdd">Add and put on this bill</button> <span class="muted" id="tpMsg"></span></div>
+   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px"><button class="btn ghost" id="tpNone">Nobody</button><span class="muted">↑ ↓ to move · Enter to pick</span></div>`);
+  const q=m.querySelector('#tpQ'); let cur=0, hits=[];
+  const pick=(id)=>{ S.pos.trade=id||null; m.remove(); render(); const tr=id&&tradeOf(id); toast(tr?`Brought by ${tr.name} — ${+tr.rate||tradeCfg().rate}% on this bill`:'Nobody brought this one','ok'); const qq=$('#csQ'); if(qq) qq.focus() };
+  const draw=()=>{ const v=q.value.trim().toLowerCase();
+    hits=tradeList().filter(x=>x.active!==false&&(!v||(x.name+' '+(x.kind||'')+' '+(x.phone||'')).toLowerCase().includes(v)));
+    cur=Math.min(cur,Math.max(0,hits.length-1));
+    m.querySelector('#tpL').innerHTML=hits.length?`<table>${hits.map((x,i)=>{ const tt=tradeTotals(x.id); return `<tr class="rowlink ${i===cur?'on':''}" data-tp="${x.id}"><td><b>${noteEsc(x.name)}</b><div class="muted">${noteEsc(x.kind||'')} · ${noteEsc(x.phone||'no mobile')}</div></td><td class="n">${+x.rate||tradeCfg().rate}%</td><td class="n muted">${tt.bills} bill${tt.bills===1?'':'s'}</td></tr>` }).join('')}</table>`
+      :`<div class="muted">${v?'Nobody by that name — add them below.':'No tradesmen yet — add the first below.'}</div>`;
+    m.querySelectorAll('[data-tp]').forEach(r=>r.onclick=()=>pick(r.dataset.tp));
+    if(!/^\d/.test(v)) m.querySelector('#tpN').value=q.value.trim(); else m.querySelector('#tpP').value=q.value.trim() };
+  q.oninput=()=>{ cur=0; draw() };
+  q.onkeydown=e=>{ e.stopPropagation();
+    if(e.key==='ArrowDown'){ e.preventDefault(); cur=Math.min(hits.length-1,cur+1); draw() }
+    if(e.key==='ArrowUp'){ e.preventDefault(); cur=Math.max(0,cur-1); draw() }
+    if(e.key==='Enter'){ e.preventDefault(); if(hits[cur]) pick(hits[cur].id) }
+    if(e.key==='Escape'){ e.preventDefault(); m.remove() } };
+  m.querySelector('#tpNone').onclick=()=>pick(null);
+  m.querySelector('#tpAdd').onclick=()=>{ const name=m.querySelector('#tpN').value.trim(), phone=m.querySelector('#tpP').value.replace(/[^\d+]/g,'');
+    if(!name) return m.querySelector('#tpMsg').textContent='A name is needed.';
+    if(phone&&!/^(0\d{9}|\+?94\d{9})$/.test(phone)) return m.querySelector('#tpMsg').textContent='That mobile does not look right — 07XXXXXXXX.';
+    const x={id:'tr'+Date.now().toString(36),name,phone,kind:m.querySelector('#tpK').value,rate:tradeCfg().rate,active:true,since:D(today),by:S.user.name};
+    tradeList().push(x); persist(true); pick(x.id) };
+  draw(); q.focus();
+}
+function tradeEdit(id){
+  const x=id?tradeOf(id):{name:'',phone:'',kind:tradeCfg().kinds[0],rate:tradeCfg().rate,active:true};
+  const m=modal(`<h2>${id?'Edit '+noteEsc(x.name):'A new tradesman'}</h2>
+   <div class="grid2"><div class="f"><label>Name</label><input id="teN" value="${noteEsc(x.name)}"></div><div class="f"><label>Mobile</label><input id="teP" inputmode="tel" value="${noteEsc(x.phone||'')}"></div></div>
+   <div class="grid3"><div class="f"><label>Trade</label><select id="teK">${tradeCfg().kinds.map(k=>`<option ${k===x.kind?'selected':''}>${noteEsc(k)}</option>`).join('')}</select></div>
+    <div class="f"><label>Commission (% of the bill)</label><input id="teR" type="number" step="0.1" min="0" max="50" value="${+x.rate||0}"></div>
+    <div class="f"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="teA" ${x.active!==false?'checked':''}> Still bringing customers</label></div></div>
+   <div class="muted">A new rate counts from the next bill — what was earned before stays as it was.</div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="teOk">Save</button></div>`);
+  m.querySelector('#teOk').onclick=()=>{ const name=m.querySelector('#teN').value.trim(); if(!name) return toast('A name is needed');
+    const v={name,phone:m.querySelector('#teP').value.replace(/[^\d+]/g,''),kind:m.querySelector('#teK').value,rate:Math.max(0,+m.querySelector('#teR').value||0),active:m.querySelector('#teA').checked};
+    if(id) Object.assign(x,v); else tradeList().push({id:'tr'+Date.now().toString(36),...v,since:D(today),by:S.user.name});
+    m.remove(); persist(true); render(); toast('Saved','ok') };
+}
+function tradePay(id){
+  const x=tradeOf(id), tt=tradeTotals(id); if(!x) return;
+  const m=modal(`<h2>Pay ${noteEsc(x.name)}</h2><div class="muted">Earned ${money2(tt.earned)} · paid ${money2(tt.paid)} · waiting ${money2(tt.due)}${tt.pending>0.005?` · ${money2(tt.pending)} more once their customers pay`:''}</div>
+   <div class="grid3" style="margin-top:10px"><div class="f"><label>Amount</label><input id="tyA" type="number" step="any" value="${tt.due}"></div>
+    <div class="f"><label>From</label><select id="tyF"><option value="cash">Cash drawer</option>${S.banks.map(b=>`<option value="${b.id}">${noteEsc(b.name)}</option>`).join('')}</select></div>
+    <div class="f"><label>Note</label><input id="tyN" placeholder="optional"></div></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="tyOk">Pay</button></div>`); npAdd(m);
+  m.querySelector('#tyOk').onclick=()=>{ const amt=+(+m.querySelector('#tyA').value||0).toFixed(2), from=m.querySelector('#tyF').value, note=m.querySelector('#tyN').value.trim();
+    if(!(amt>0)) return toast('Put in the amount');
+    const ref=next('VCH');
+    tradePays().push({id:'tp'+Date.now().toString(36),tid:id,date:D(today),amount:amt,from,note,ref,by:S.user.name});
+    post(D(today),`Commission to ${x.name}${note?' — '+note:''}`,ref,[{ac:'6120',dr:amt},from==='cash'?{ac:'1010',cr:amt}:{ac:B(+from).ac,cr:amt}]);
+    m.remove(); persist(true); render(); toast(`${money2(amt)} paid to ${x.name}`,'ok');
+    voucherPrint({title:'Commission Voucher',no:ref,date:D(today),payee:x.name,payeeLabel:'PAID TO',payeeSub:`${x.kind||''}${x.phone?' · '+x.phone:''}`,amount:amt,totalLabel:'COMMISSION PAID',
+      rows:[['Earned to date',fmt(tt.earned)],['Paid before',fmt(tt.paid)],['Still waiting after this',fmt(Math.max(0,tt.due-amt))],['Paid from',from==='cash'?'Cash drawer':B(+from).name],['Note',note||'—'],['Paid by',S.user.name]],thirdSign:'RECEIVED BY'});
+  };
+}
+function tradeStatement(id){
+  const x=tradeOf(id), tt=tradeTotals(id); if(!x||!x.phone) return toast('No mobile number');
+  sms(x.phone,tpl('tradeStatement',{name:x.name.split(' ')[0],month:fmt(tt.month),earned:fmt(tt.earned),paid:fmt(tt.paid),due:fmt(tt.due)}),'customer');
+  toast('Statement texted to '+x.name,'ok');
+}
+function tradesPage(){
+  const all=tradeList(), rows=all.map(x=>({x,tt:tradeTotals(x.id)})).sort((a,b)=>b.tt.month-a.tt.month||b.tt.due-a.tt.due);
+  const due=rows.reduce((a,r)=>a+r.tt.due,0), month=rows.reduce((a,r)=>a+r.tt.month,0), mk=D(today).slice(0,7);
+  const brought=S.sales.filter(s=>s.trade&&String(s.date).slice(0,7)===mk&&+s.total>0);
+  const paidM=tradePays().filter(p=>String(p.date).slice(0,7)===mk).reduce((a,p)=>a+p.amount,0);
+  return `<h1>Tradesmen</h1>
+   <div class="row" style="margin-bottom:12px">
+    ${stat('Brought this month',brought.length+' bill'+(brought.length===1?'':'s'),money2(brought.reduce((a,s)=>a+s.total,0))+' of sales','b')}
+    ${stat('Earned this month',money2(month),'commission on those bills','g')}
+    ${stat('Waiting to be paid',money2(due),rows.filter(r=>r.tt.due>0.005).length+' to pay',due>0.005?'y':'g')}
+    ${stat('Paid this month',money2(paidM),'from the till or the bank','b')}
+   </div>
+   <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Who sends customers</h2>
+     <div style="display:flex;gap:8px;align-items:center"><span class="muted">Everyone earns ${tradeCfg().rate}% unless set per person</span><button class="btn tape" data-act="tradeNew">Add a tradesman</button></div></div>
+    ${rows.length?`<div style="overflow-x:auto;margin-top:10px"><table><tr><th>Name</th><th>Trade</th><th>Mobile</th><th class="n">Rate</th><th class="n">Bills</th><th class="n">Sales</th><th class="n">Earned</th><th class="n">Once paid</th><th class="n">Paid</th><th class="n">Waiting</th><th></th></tr>
+     ${rows.map(({x,tt})=>`<tr${x.active===false?' style="opacity:.55"':''}><td><b>${noteEsc(x.name)}</b></td><td>${noteEsc(x.kind||'')}</td><td>${noteEsc(x.phone||'—')}</td><td class="n">${+x.rate||0}%</td>
+       <td class="n">${tt.bills}</td><td class="n">${money2(tt.sales)}</td><td class="n">${money2(tt.earned)}</td><td class="n muted">${tt.pending>0.005?money2(tt.pending):'—'}</td><td class="n">${money2(tt.paid)}</td>
+       <td class="n"><b>${money2(tt.due)}</b></td>
+       <td style="white-space:nowrap">${tt.due>0.005?`<button class="btn tape sm" data-act="tradePay" data-id="${x.id}">Pay</button>`:''}${x.phone?` <button class="btn ghost sm" data-act="tradeStmt" data-id="${x.id}">Text statement</button>`:''} <button class="btn ghost sm" data-act="tradeEdit" data-id="${x.id}">Edit</button></td></tr>`).join('')}</table></div>`
+     :'<div class="muted" style="margin-top:10px">Nobody yet. Add them here, or straight from the till: press <b>Brought by…</b> on a bill.</div>'}
+   </div>`;
+}
+
 /* ================== CREDIT FOLLOW-UP ==================
    Customers who owe are reminded by the server once a day, by themselves, when the oldest unpaid bill
    reaches each step (7, 30, 60 days to start with) — once per step for a debt — and sent a statement
@@ -30781,6 +30912,7 @@ document.addEventListener('click',e=>{
     catMgr:()=>categoriesModal(), catTidy:()=>tidyCatalogModal(),
     pcSubmit:()=>pettySubmitModal(a.dataset.id),
     trCam:()=>camTrail(a.dataset.id),
+    tradePick:()=>tradePick(), tradeNew:()=>tradeEdit(null), tradeEdit:()=>tradeEdit(a.dataset.id), tradePay:()=>tradePay(a.dataset.id), tradeStmt:()=>tradeStatement(a.dataset.id),
     darkToggle:()=>darkSet(!darkOn(),a),
     duSave:()=>duesSave(), duReload:()=>{ DUES.data=null; DUES.err=''; duesLoad(); render() },
     duRun:()=>{ if(!confirm('Send today\'s reminders now?')) return; duesApi('/run',{method:'POST',body:'{}'}).then(j=>{ toast(`${j.sent} sent${j.failed?', '+j.failed+' did not go':''}`,j.failed?'warn':'ok'); DUES.data=null; duesLoad() }).catch(e=>toast(e.message)) },
