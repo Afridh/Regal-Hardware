@@ -16832,6 +16832,8 @@ function cpClose(){ document.removeEventListener('keydown',cpKey,true); const el
 const cpTotal=()=>csTotals().net;
 const cpPaid=()=>Math.max(0,Math.min(+ONA.paid||0,cpTotal()));
 const cpOver=(c)=>partyBal('C',c.id)+(cpTotal()-cpPaid())>c.limit+0.005;
+/* a site with a limit of its own: what that site owes, with this bill on it */
+const cpSiteOver=(c)=>{ const st=ONA&&ONA.site&&siteOf(c,ONA.site); if(!st||!(+st.limit>0)) return 0; const o=siteOwed(c.id,st.id)+(cpTotal()-cpPaid()); return o>st.limit+0.005?+(o-st.limit).toFixed(2):0 };
 function cpList(){
   const v=ONA.q.trim().toLowerCase();
   if(!v) return cpRegulars();
@@ -16863,7 +16865,8 @@ function cpDraw(focus){
     return;
   }
   const owes=partyBal('C',c.id), paid=cpPaid(), onAcct=+(T-paid).toFixed(2), held=Math.max(0,custCredit(c.id));
-  const will=+(owes+Math.max(0,onAcct-held)).toFixed(2), stopD=dueStopped(c), over=cpOver(c)||(!!stopD&&onAcct>0.005), covered=paid>=T-0.005;
+  const will=+(owes+Math.max(0,onAcct-held)).toFixed(2), stopD=dueStopped(c), siteOver=cpSiteOver(c), over=cpOver(c)||siteOver>0||(!!stopD&&onAcct>0.005), covered=paid>=T-0.005;
+  const sites=(c.sites||[]).filter(x=>x.active!==false);
   // the server checks the PIN when the till is online, so the till need not hold anyone's PIN itself
   const admins=S.users.filter(u=>u.active!==false&&(u.perms||[]).includes('overLimit')&&u.name!==S.user.name&&((window.regalBridge&&regalBridge.online&&regalBridge.online())||u.pinHash||u.passHash||u.pass));
   const banks=S.banks||[];
@@ -16874,6 +16877,11 @@ function cpDraw(focus){
       <div class="${over?'bad':''}"><span>Will owe</span><b>${money2(will)}</b></div></div>
     ${c.limit?cpMeter(c,true)+`<div class="muted cp-lim">Limit ${money2(c.limit)}${over?'':' · '+money2(Math.max(0,c.limit-owes-onAcct))+' left after this bill'}</div>`:''}
     ${held>0.005?`<div class="muted">They have ${money2(held)} in credit with the shop — it comes off this first.</div>`:''}
+    <div class="cp-pills cp-sites"><span class="muted">site</span>${sites.map(x=>`<button class="btn ghost sm ${ONA.site===x.id?'on':''}" data-cp-site="${x.id}" title="${noteEsc(x.address||'')}">${noteEsc(x.name)}${+x.limit>0?` · owes ${money2(siteOwed(c.id,x.id))}`:''}</button>`).join('')}
+      ${ONA.addSite?`<input id="cpSiteNew" placeholder="e.g. Kandy Rd house" maxlength="60" style="width:180px;margin:0"><button class="btn sm" data-cp="siteadd">Add</button>`
+        :`<button class="btn ghost sm" data-cp="sitenew">+ New site</button>`}
+      ${ONA.site?'<button class="btn ghost sm" data-cp-site="">No site</button>':''}</div>
+    ${siteOver?`<div class="cp-warn">Over the site's own limit by ${money2(siteOver)}.</div>`:''}
     ${stopD?`<div class="cp-warn">New credit is stopped: their oldest unpaid bill is ${stopD} days old (Credit follow-up stops it after ${+dueCfgNow().stopDays}).</div>`:''}
     ${over&&!covered?(ONA.allowedBy?`<div class="cp-ok">${cpOver(c)?`Over the limit by ${money2(owes+onAcct-c.limit)}`:'Credit stopped'} — allowed by ${noteEsc(ONA.allowedBy)}</div>`
       :can('overLimit')?`<div class="cp-warn">${cpOver(c)?`Over their limit by ${money2(owes+onAcct-c.limit)}.`:'Let this bill go on account anyway?'} <button class="btn sm" data-cp="allow">Allow it</button></div>`
@@ -16922,6 +16930,7 @@ function cpSave(){
   if(paid>=T-0.005) return toast('That covers the whole bill — use TAKE PAYMENT (F10)');
   if(cpOver(c)&&!ONA.allowedBy) return toast(`${c.name} would go past their limit — allow it first`);
   if(dueStopped(c)&&paid<T-0.005&&!ONA.allowedBy) return toast(`New credit is stopped for ${c.name} — allow it first`);
+  if(cpSiteOver(c)&&!ONA.allowedBy) return toast('Over the site\'s limit — allow it first');
   if(paid>0.005&&how==='CHEQUE'&&!String(ONA.ref).trim()) return toast('Put the cheque number in');
   const pays=[];
   if(paid>0.005){
@@ -16936,7 +16945,9 @@ function cpSave(){
   if(ONA.askSales) S.pos.salesman=ONA.soldBy||null;
   (ONA.askSales?(go=>go()):endBillAsk)(()=>{
     try{
-      const inv=finishTillBill({cust:c,pays,override:!!allowedBy,note:taken?'Taken by: '+taken:''});
+      const st=ONA.site&&siteOf(c,ONA.site);
+      const inv=finishTillBill({cust:c,pays,override:!!allowedBy,note:[st?'Site: '+st.name:'',taken?'Taken by: '+taken:''].filter(Boolean).join(' · ')});
+      if(st) inv.site=st.id;
       if(taken) inv.takenBy=taken;
       if(allowedBy){ inv.limitBy=allowedBy; if(allowedBy!==S.user.name){ notify('warn',`${allowedBy} let ${S.user.name} put ${inv.no} on ${c.name}'s account past their limit`,'customers'); S.notif[0].forUser=allowedBy } }
       cpClose(); CS.paper=null; render(); persist(true);
@@ -16960,18 +16971,24 @@ function cpKey(ev){
     if(k==='Enter'){ stopIt(); if(list[ONA.sel]) cpPick(list[ONA.sel].id); return }
     return;
   }
+  // Enter in the new-site box adds the site; it must not save the bill
+  if(k==='Enter'&&tg&&tg.id==='cpSiteNew'){ stopIt(); const add=document.querySelector('[data-cp="siteadd"]'); if(add) add.click(); return }
   if(k==='Enter'&&!(tg&&(tg.id==='cpPin'||tg.tagName==='SELECT'||tg.tagName==='BUTTON'))){ stopIt(); ONA.paid=(document.getElementById('cpPaid')||{}).value||ONA.paid; return cpSave() }
 }
 document.addEventListener('click',e=>{
-  const b=e.target.closest&&e.target.closest('.cp-modal [data-cp],.cp-modal [data-cp-cust],.cp-modal [data-cp-how],.cp-modal [data-cp-paper]'); if(!b||!ONA) return;
+  const b=e.target.closest&&e.target.closest('.cp-modal [data-cp],.cp-modal [data-cp-cust],.cp-modal [data-cp-how],.cp-modal [data-cp-paper],.cp-modal [data-cp-site]'); if(!b||!ONA) return;
   e.preventDefault();
   if(b.dataset.cpCust) return cpPick(+b.dataset.cpCust);
   if(b.dataset.cpHow){ ONA.how=b.dataset.cpHow; return cpDraw() }
+  if(b.dataset.cpSite!==undefined){ ONA.site=b.dataset.cpSite||null; ONA.allowedBy=null; return cpDraw() }
   if(b.dataset.cpPaper){ ONA.paper=b.dataset.cpPaper; return cpDraw() }
   const a=b.dataset.cp;
   if(a==='close') return cpClose();
   if(a==='change'){ ONA.cust=null; ONA.allowedBy=null; return cpDraw(true) }
   if(a==='half'){ ONA.paid=String(+(cpTotal()/2).toFixed(2)); return cpDraw(true) }
+  if(a==='sitenew'){ ONA.addSite=true; cpDraw(); const i=document.getElementById('cpSiteNew'); if(i){ i.focus(); i.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); document.querySelector('[data-cp="siteadd"]').click() } } } return }
+  if(a==='siteadd'){ const v=((document.getElementById('cpSiteNew')||{}).value||'').trim(); if(!v) return toast('Name the site');
+    const c=C(ONA.cust); c.sites=c.sites||[]; const x={id:'st'+Date.now().toString(36),name:v,active:true,since:D(today)}; c.sites.push(x); ONA.site=x.id; ONA.addSite=false; persist(true); return cpDraw(true) }
   if(a==='nothing'){ ONA.paid=''; return cpDraw(true) }
   if(a==='allow'){ ONA.allowedBy=S.user.name; return cpDraw(true) }
   if(a==='pin') return cpPin();
@@ -22499,7 +22516,7 @@ function customerPanel(c){
   const used=c.limit>0?Math.min(100,Math.round(owed/c.limit*100)):0;
   const webOrders=S.web.orders.filter(o=>o.cid===c.id);
   const notices=S.notices.filter(n=>n.kind==='customer'&&n.cid===c.id&&n.status==='open');
-  const tabs=[['overview','Overview'],['bills','Bills',inv.length],['payments','Payments',rc.length],['notes','Notes',partyNoteList('C',c.id).length],['statement','Statement'],['details','Details']];
+  const tabs=[['overview','Overview'],['bills','Bills',inv.length],['sites','Sites',(c.sites||[]).filter(x=>x.active!==false).length],['payments','Payments',rc.length],['notes','Notes',partyNoteList('C',c.id).length],['statement','Statement'],['details','Details']];
   return `${portalBar('C',c)}
    <div class="cu-head ${c.portal?'haspage':''}">
     <div class="cu-acts">
@@ -22557,7 +22574,7 @@ function customerPanel(c){
    ${custLoginsPanel(c)}
 
    <div class="cu-tabs">${tabs.map(t=>`<button class="${custTab===t[0]?'on':''}" data-custtab="${t[0]}">${t[1]}${t[2]!==undefined?`<i>${t[2]}</i>`:''}</button>`).join('')}</div>
-   <div class="cu-tab-body" key="${custTab}">${({overview:()=>custOverview(c,inv,open,rc,webOrders,ag,owed),bills:()=>custBills(c,inv),payments:()=>custPayments(c,rc),notes:()=>partyNotesPanel('C',c.id),statement:()=>custStatement(c),details:()=>custDetails(c)})[custTab]()}</div>`;
+   <div class="cu-tab-body" key="${custTab}">${({overview:()=>custOverview(c,inv,open,rc,webOrders,ag,owed),bills:()=>custBills(c,inv),sites:()=>custSites(c),payments:()=>custPayments(c,rc),notes:()=>partyNotesPanel('C',c.id),statement:()=>custStatement(c),details:()=>custDetails(c)})[custTab]()}</div>`;
 }
 /* ---- "their own outstanding page" — the bar at the top of a customer's or a supplier's card ----
    It is the first thing on the page because it is the thing that stops the phone calls: on, and they
@@ -27721,6 +27738,52 @@ function pettySettleModal(id){
   };
 }
 
+/* ================== SITES ==================
+   A builder with several jobs keeps them apart: each credit bill can go to a site ("Kandy Rd house"),
+   chosen in the on-account panel. Each site has its own balance — the unpaid bills on it — an optional
+   limit of its own, and a statement. A payment still settles the customer's oldest bills first, which
+   brings each site's balance down with them. */
+const siteOf=(c,id)=>((c&&c.sites)||[]).find(x=>x.id===id);
+const siteBills=(cid,sid)=>S.sales.filter(s=>s.customerId===cid&&(sid?s.site===sid:!s.site));
+const siteOwed=(cid,sid)=>+siteBills(cid,sid).reduce((a,s)=>a+Math.max(0,+s.balance||0),0).toFixed(2);
+function custSites(c){
+  const sites=c.sites||[], none=siteBills(c.id,null).filter(s=>+s.balance>0.005);
+  const card=(x)=>{ const bills=siteBills(c.id,x.id), owed=siteOwed(c.id,x.id), tot=bills.reduce((a,s)=>a+(+s.total||0),0), last=bills.slice(-1)[0];
+    return `<div class="card" style="margin:0${x.active===false?';opacity:.6':''}"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+      <div><b style="font-size:15px">${noteEsc(x.name)}</b>${x.active===false?' <span class="tag">closed</span>':''}<div class="muted">${noteEsc(x.address||'no address')}${+x.limit>0?' · limit '+money2(x.limit):''}</div></div>
+      <div style="text-align:right"><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em">owes</div><b style="font-size:18px;color:${owed>0.005?'var(--chip-rust)':'inherit'}">${money2(owed)}</b></div></div>
+      <div class="muted" style="margin-top:6px">${bills.length} bill${bills.length===1?'':'s'} · ${money2(tot)} in all${last?' · last '+last.date:''}</div>
+      ${+x.limit>0?`<div class="cp-meter" style="margin-top:6px"><i style="width:${Math.min(100,owed/x.limit*100)}%"></i></div>`:''}
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap"><button class="btn ghost sm" data-act="siteStmt" data-id="${c.id}" data-s="${x.id}">Statement</button>
+       <button class="btn ghost sm" data-act="siteEdit" data-id="${c.id}" data-s="${x.id}">Edit</button></div></div>` };
+  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+     <div class="muted">Each credit bill can go to one of their sites — chosen in the On account panel (F6). A payment settles the oldest bills first, whichever site.</div>
+     <button class="btn tape" data-act="siteEdit" data-id="${c.id}" data-s="">Add a site</button></div>
+   ${sites.length?`<div class="grid3">${sites.map(card).join('')}</div>`:'<div class="card muted">No sites yet.</div>'}
+   ${none.length?`<div class="card" style="margin-top:10px"><b>Bills on no site</b><div class="muted">${none.length} unpaid · ${money2(none.reduce((a,s)=>a+s.balance,0))}</div></div>`:''}`;
+}
+function siteEdit(cid,sid){
+  const c=C(cid), x=sid?siteOf(c,sid):{name:'',address:'',limit:0,active:true};
+  const m=modal(`<h2>${sid?'Edit '+noteEsc(x.name):'A new site for '+noteEsc(c.name)}</h2>
+   <div class="grid2"><div class="f"><label>Site</label><input id="seN" value="${noteEsc(x.name)}" placeholder="e.g. Kandy Rd house"></div><div class="f"><label>Address</label><input id="seA" value="${noteEsc(x.address||'')}"></div></div>
+   <div class="grid2"><div class="f"><label>Its own limit (0 = only the customer's)</label><input id="seL" type="number" min="0" value="${+x.limit||0}"></div>
+    <div class="f"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="seO" ${x.active!==false?'checked':''}> The job is still going</label></div></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="seOk">Save</button></div>`);
+  m.querySelector('#seOk').onclick=()=>{ const name=m.querySelector('#seN').value.trim(); if(!name) return toast('Name the site');
+    const v={name,address:m.querySelector('#seA').value.trim(),limit:Math.max(0,+m.querySelector('#seL').value||0),active:m.querySelector('#seO').checked};
+    c.sites=c.sites||[]; if(sid) Object.assign(x,v); else c.sites.push({id:'st'+Date.now().toString(36),...v,since:D(today)});
+    m.remove(); persist(true); render(); toast('Saved','ok') };
+}
+function siteStatement(cid,sid){
+  const c=C(cid), x=siteOf(c,sid); if(!x) return;
+  const bills=siteBills(cid,sid), open=bills.filter(s=>+s.balance>0.005), owed=siteOwed(cid,sid);
+  voucherPrint({view:true,title:'Site Statement',no:x.name,date:D(today),payee:c.name,payeeLabel:'CUSTOMER',payeeSub:`site: ${x.name}${x.address?' · '+x.address:''}`,
+    amount:owed,totalLabel:'SITE OUTSTANDING',
+    rows:[['Bills to this site',String(bills.length)],['Billed in all',fmt(bills.reduce((a,s)=>a+(+s.total||0),0))],['Unpaid bills',String(open.length)],
+      ['Customer\'s whole account',fmt(partyBal('C',c.id))],...(+x.limit>0?[['Site limit',fmt(x.limit)]]:[])],
+    linesLabel:'Unpaid bills on this site',lines:open.map(s=>[`${s.no} · ${s.date}`,s.balance]),thirdSign:'CUSTOMER'});
+}
+
 /* ================== TRADESMEN ==================
    Masons, electricians, plumbers, painters who send customers to the shop. Put on a bill as "Brought by",
    they earn their rate (the shop's, or their own) on what the bill comes to after discounts. On a credit
@@ -30912,6 +30975,7 @@ document.addEventListener('click',e=>{
     catMgr:()=>categoriesModal(), catTidy:()=>tidyCatalogModal(),
     pcSubmit:()=>pettySubmitModal(a.dataset.id),
     trCam:()=>camTrail(a.dataset.id),
+    siteEdit:()=>siteEdit(+a.dataset.id,a.dataset.s||null), siteStmt:()=>siteStatement(+a.dataset.id,a.dataset.s),
     tradePick:()=>tradePick(), tradeNew:()=>tradeEdit(null), tradeEdit:()=>tradeEdit(a.dataset.id), tradePay:()=>tradePay(a.dataset.id), tradeStmt:()=>tradeStatement(a.dataset.id),
     darkToggle:()=>darkSet(!darkOn(),a),
     duSave:()=>duesSave(), duReload:()=>{ DUES.data=null; DUES.err=''; duesLoad(); render() },
