@@ -4927,9 +4927,9 @@ const billNoFrom=(seq)=>billPlain()
   : `${CFG.bill.prefix||'INVM-'}${S.terminal}-${userUid()}-${String(seq).padStart(5,'0')}`;
 const peekBillNo=()=>billNoFrom(billSeqNow()+1);      // what the next bill will be called
 const next=(k)=>{
-  if(k==='INV'){ const seq=billSeqNow()+1; S.seqBy[billKey()]=seq; return billNoFrom(seq) }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',JOB:'JOB-',JE:'JE-',ISN:'ISN-'}[k];if(!(S.seq[k]>0))S.seq[k]=1;return p+String(S.seq[k]++).padStart(5,'0')};
+  if(k==='INV'){ const seq=billSeqNow()+1; S.seqBy[billKey()]=seq; return billNoFrom(seq) }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',JOB:'JOB-',JE:'JE-',ISN:'ISN-',HIRE:'HIRE-'}[k];if(!(S.seq[k]>0))S.seq[k]=1;return p+String(S.seq[k]++).padStart(5,'0')};
 
-const GL = {'2050':'Customer advances','1010':'Cash in hand','1015':'Petty cash with staff','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1023':'Bank account 4','1024':'Bank account 5','1025':'Bank account 6','1026':'Bank account 7','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2120':'Goods received, invoice to come','2150':'Cash borrowed and lent (the circle)','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other','6120':'Tradesman commission'};
+const GL = {'2050':'Customer advances','1010':'Cash in hand','1015':'Petty cash with staff','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1023':'Bank account 4','1024':'Bank account 5','1025':'Bank account 6','1026':'Bank account 7','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2120':'Goods received, invoice to come','2150':'Cash borrowed and lent (the circle)','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other','6120':'Tradesman commission','2070':'Hire deposits held'};
 function post(date,desc,ref,lines){ // lines: [{ac,dr,cr,party}]
   const dr=lines.reduce((a,l)=>a+(l.dr||0),0), cr=lines.reduce((a,l)=>a+(l.cr||0),0);
   if(Math.abs(dr-cr)>0.005) throw new Error('Unbalanced journal '+desc+' '+dr+'/'+cr);
@@ -6097,6 +6097,8 @@ const CFG={
     text:'Here is your account summary.\nAccount: {customer}\nUnpaid bills: {count}\nTotal outstanding: {outstanding}\nView details: {link}'},
   // the credit follow-up's three reminders (the server keeps the same defaults in services/dues.js)
   // to a tradesman (they start "Dear …", so they go as written — no customer greeting)
+  hireDue:{label:'Tool hire — due back',vars:'{shop} {customer} {item} {due} {days}',
+    text:'A reminder: the {item} you hired is due back{dueWhen}.\nIt is charged by the day until it comes back.\nPlease bring it in, or call us to keep it longer.'},
   tradeThanks:{label:'Tradesman — thank you for a customer',vars:'{shop} {name} {customer} {invoice} {total} {earn} {pendingPart} {due}',
     text:'Dear {name},\nThank you for sending {customer} to us.\nBill: {invoice} · {total}\nYou earn: {earn}{pendingPart}\nWaiting for you to collect: {due}\n\n{shop}'},
   tradeStatement:{label:'Tradesman — statement',vars:'{shop} {name} {month} {earned} {paid} {due}',
@@ -12339,7 +12341,7 @@ const $=(s)=>document.querySelector(s);
    role's sections — SECTIONS below — and does not depend on these headings.) */
 const views=[
  ['updates','What is new'],['actions','Action centre'],
- ['grp','Sell'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills'],['receipts','Take a payment','F7'],['docs','Quotes & delivery notes'],['collect','Goods to collect'],['counter','Open & close'],['cashup','Day book'],
+ ['grp','Sell'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills'],['receipts','Take a payment','F7'],['docs','Quotes & delivery notes'],['collect','Goods to collect'],['hire','Tool hire'],['counter','Open & close'],['cashup','Day book'],
  ['grp','Customers'],['customers','Customers','F8'],['dues','Credit follow-up'],['trades','Tradesmen'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],
  ['grp','Buying'],['suppliers','Suppliers','F12'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Payment requests'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels','F11'],
@@ -12420,6 +12422,7 @@ function allowed(v){
   if(v === 'leave') return true;            // everybody asks for their own days off
   if(v === 'petty') return String(S.user.role||'').toLowerCase()!=='salesman'||(S.petty||[]).some(p=>p.status==='open'&&p.who===S.user.name);   // Sales staff: only while holding some            // the counter hands it out; whoever holds some puts in what they spent
   if(v === 'dues') return allowed('customers');
+  if(v === 'hire') return allowed('pos');           // whoever bills can hire out and take back
   if(v === 'trades') return allowed('customers');   // the tradesmen who send customers, and what they are owed   // who owes and what they have been told — whoever looks after customers
   if(v === 'collect') return allowed('pos')||allowed('bills');   // goods paid for and waiting to be collected
   if(v === 'returns') return allowed('pos');  // whoever may bill may take goods back          // everyone has one; each item on it keeps to the page it comes from
@@ -12509,6 +12512,7 @@ const ICONS={
   receipts:'M4 5h16v14H4zM4 10h16M8 15h4',
   customers:'M9 11a4 4 0 100-8 4 4 0 000 8zM3 21a6 6 0 0112 0M17 8h4M19 6v4',
   dues:'M12 8v4l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0zM4 4l3 3M20 4l-3 3',
+  hire:'M3 17h4l2-6h6l2 6h4M7 17a2 2 0 104 0M13 17a2 2 0 104 0M9 11V6h6v5',
   trades:'M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z',
   suppliers:'M3 8h11v9H3zM14 11h4l3 3v3h-7zM6.5 20a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17.5 20a1.5 1.5 0 100-3 1.5 1.5 0 000 3z',
   orders:'M8 4h9l3 4v12H8zM8 4H4v16h4M12 11h5M12 15h5',
@@ -12999,7 +13003,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,hire:hirePage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     try{ mn.innerHTML = r() }
     catch(err){
@@ -27894,6 +27898,117 @@ function pettySettleModal(id){
   };
 }
 
+/* ================== TOOL HIRE ==================
+   Things the shop hires out by the day — a concrete mixer, scaffolding, a breaker. Out: who has it, how
+   many, until when, and the deposit taken (held in 2070, not takings). Back: the days are counted (part of a
+   day is a day), the charge is a bill at the till like any other, and the deposit is set against it — the
+   screen says exactly what to give back or to take. What is past its day is shown, and can be texted. */
+let hireTab='out';
+const hireItems=()=>{ if(!Array.isArray(S.hireItems)) S.hireItems=[]; return S.hireItems };
+const hires=()=>{ if(!Array.isArray(S.hires)) S.hires=[]; return S.hires };
+const hireOut=(itemId)=>hires().filter(h=>h.status==='out'&&h.item===itemId).reduce((a,h)=>a+(+h.units||0),0);
+const hireDays=(h,at)=>Math.max(1,Math.ceil(((at||Date.now())-Date.parse(h.outAt))/864e5));
+function hirePage(){
+  const items=hireItems(), out=hires().filter(h=>h.status==='out'), back=hires().filter(h=>h.status==='back').slice(-60).reverse(), t0=D(today);
+  const late=out.filter(h=>h.due<t0), dueToday=out.filter(h=>h.due===t0), held=out.reduce((a,h)=>a+(+h.deposit||0),0);
+  const tabs=[['out','Out now',out.length],['back','Back',back.length],['items','What we hire',items.length]];
+  const body=hireTab==='items'?`<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn tape" data-act="hireItem" data-id="">Add something to hire</button></div>
+      ${items.length?`<div class="card" style="overflow-x:auto"><table><tr><th>Item</th><th class="n">We have</th><th class="n">Out</th><th class="n">A day</th><th class="n">Deposit</th><th></th></tr>
+       ${items.map(x=>`<tr${x.active===false?' style="opacity:.55"':''}><td><b>${noteEsc(x.name)}</b></td><td class="n">${+x.units||0}</td><td class="n">${hireOut(x.id)}</td><td class="n">${money2(x.rate)}</td><td class="n">${money2(x.deposit)}</td>
+        <td><button class="btn ghost sm" data-act="hireItem" data-id="${x.id}">Edit</button></td></tr>`).join('')}</table></div>`:'<div class="card muted">Nothing to hire yet — add the mixer, the scaffolding…</div>'}`
+    :hireTab==='back'?(back.length?`<div class="card" style="overflow-x:auto"><table><tr><th>No.</th><th>Who</th><th>What</th><th>Out</th><th>Back</th><th class="n">Days</th><th class="n">Charged</th><th>Bill</th></tr>
+       ${back.map(h=>`<tr><td>${h.no}</td><td>${noteEsc(h.who)}</td><td>${noteEsc(h.itemName)} × ${h.units}</td><td>${h.outAt.slice(0,10)}</td><td>${(h.backAt||'').slice(0,10)}</td><td class="n">${h.days}</td><td class="n">${money2(h.charge)}</td><td>${h.bill||''}</td></tr>`).join('')}</table></div>`:'<div class="card muted">Nothing has come back yet.</div>')
+    :(out.length?`<div class="card" style="overflow-x:auto"><table><tr><th>No.</th><th>Who</th><th>What</th><th>Out</th><th>Due back</th><th class="n">Days so far</th><th class="n">So far</th><th class="n">Deposit</th><th></th></tr>
+       ${out.sort((a,b)=>a.due.localeCompare(b.due)).map(h=>{ const d=hireDays(h), so=d*h.rate*h.units;
+         return `<tr><td>${h.no}</td><td><b>${noteEsc(h.who)}</b><div class="muted">${noteEsc(h.phone||'')}</div></td><td>${noteEsc(h.itemName)} × ${h.units}</td><td>${h.outAt.slice(0,10)}</td>
+          <td>${h.due<t0?`<span class="tag bad">${h.due} · late</span>`:h.due===t0?`<span class="tag warn">today</span>`:h.due}</td><td class="n">${d}</td><td class="n">${money2(so)}</td><td class="n">${money2(h.deposit)}</td>
+          <td style="white-space:nowrap"><button class="btn tape sm" data-act="hireBack" data-id="${h.id}">It is back</button>${h.phone?` <button class="btn ghost sm" data-act="hireRemind" data-id="${h.id}">Text</button>`:''}</td></tr>` }).join('')}</table></div>`
+      :'<div class="card muted">Nothing is out.</div>');
+  return `<h1>Tool hire</h1>
+   <div class="row" style="margin-bottom:12px">
+    ${stat('Out now',out.reduce((a,h)=>a+(+h.units||0),0),out.length+' hire'+(out.length===1?'':'s'),'b')}
+    ${stat('Due back today',dueToday.length,dueToday.length?dueToday.map(h=>h.who).slice(0,2).join(', '):'none','y')}
+    ${stat('Late',late.length,late.length?'past their day — charged until back':'none',late.length?'r':'g')}
+    ${stat('Deposits held',money2(held),'given back, less the charge, when it comes back','b')}
+   </div>
+   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+    <div class="cu-tabs" style="margin:0">${tabs.map(x=>`<button class="${hireTab===x[0]?'on':''}" data-act="hireTab" data-t="${x[0]}">${x[1]}<i>${x[2]}</i></button>`).join('')}</div>
+    <button class="btn tape" data-act="hireNew" ${items.filter(x=>x.active!==false).length?'':'disabled title="Add what you hire first"'}>Hire something out</button></div>
+   ${body}`;
+}
+function hireItemEdit(id){
+  const x=id?hireItems().find(i=>i.id===id):{name:'',units:1,rate:0,deposit:0,active:true};
+  const m=modal(`<h2>${id?'Edit '+noteEsc(x.name):'Something to hire'}</h2>
+   <div class="grid2"><div class="f"><label>What it is</label><input id="hiN" value="${noteEsc(x.name)}" placeholder="e.g. Concrete mixer (half bag)"></div><div class="f"><label>How many we have</label><input id="hiU" type="number" min="1" value="${+x.units||1}"></div></div>
+   <div class="grid3"><div class="f"><label>Charge a day</label><input id="hiR" type="number" min="0" step="any" value="${+x.rate||0}"></div><div class="f"><label>Deposit (each)</label><input id="hiD" type="number" min="0" step="any" value="${+x.deposit||0}"></div>
+    <div class="f"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="hiA" ${x.active!==false?'checked':''}> Still hired out</label></div></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="hiOk">Save</button></div>`);
+  m.querySelector('#hiOk').onclick=()=>{ const name=m.querySelector('#hiN').value.trim(); if(!name) return toast('Say what it is');
+    const v={name,units:Math.max(1,Math.round(+m.querySelector('#hiU').value||1)),rate:Math.max(0,+m.querySelector('#hiR').value||0),deposit:Math.max(0,+m.querySelector('#hiD').value||0),active:m.querySelector('#hiA').checked};
+    if(id) Object.assign(x,v); else hireItems().push({id:'hi'+Date.now().toString(36),...v});
+    m.remove(); persist(true); render(); toast('Saved','ok') };
+}
+function hireNew(){
+  const items=hireItems().filter(x=>x.active!==false);
+  const m=modal(`<h2>Hire something out</h2>
+   <div class="grid2"><div class="f"><label>What</label><select id="hnI">${items.map(x=>`<option value="${x.id}">${noteEsc(x.name)} — ${(+x.units||0)-hireOut(x.id)} free · ${money2(x.rate)} a day</option>`).join('')}</select></div>
+    <div class="f"><label>How many</label><input id="hnU" type="number" min="1" value="1"></div></div>
+   <div class="grid2"><div class="f"><label>Customer (name)</label><input id="hnW" list="hnWho" placeholder="name or account" autocomplete="off"><datalist id="hnWho">${S.customers.filter(c=>c.id!==1&&c.active!==false).slice(0,400).map(c=>`<option value="${noteEsc(c.name)}">`).join('')}</datalist></div>
+    <div class="f"><label>Mobile</label><input id="hnP" inputmode="tel" placeholder="07…"></div></div>
+   <div class="grid3"><div class="f"><label>For how many days</label><input id="hnDays" type="number" min="1" value="1"></div><div class="f"><label>Deposit taken</label><input id="hnDep" type="number" min="0" step="any"></div>
+    <div class="f"><label>ID seen (NIC / licence)</label><input id="hnId" placeholder="optional"></div></div>
+   <div class="muted" id="hnSum"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="hnOk">Hire it out</button></div>`);
+  const g=id=>m.querySelector('#'+id);
+  const sum=()=>{ const it=hireItems().find(x=>x.id===g('hnI').value)||{}, u=Math.max(1,+g('hnU').value||1), d=Math.max(1,+g('hnDays').value||1);
+    if(!g('hnDep').dataset.touched) g('hnDep').value=(+it.deposit||0)*u;
+    g('hnSum').textContent=`${u} × ${money2(it.rate)} a day × ${d} day${d===1?'':'s'} = ${money2(u*d*(+it.rate||0))} if back on time · ${(+it.units||0)-hireOut(it.id)} free now` };
+  ['hnI','hnU','hnDays'].forEach(id=>g(id).oninput=sum); g('hnDep').oninput=()=>{ g('hnDep').dataset.touched='1' };
+  g('hnW').onchange=()=>{ const c=S.customers.find(x=>x.name===g('hnW').value); if(c&&c.phone&&!g('hnP').value) g('hnP').value=c.phone };
+  sum();
+  g('hnOk').onclick=()=>{ const it=hireItems().find(x=>x.id===g('hnI').value), u=Math.max(1,Math.round(+g('hnU').value||1)), d=Math.max(1,Math.round(+g('hnDays').value||1));
+    const who=g('hnW').value.trim(), dep=Math.max(0,+g('hnDep').value||0);
+    if(!it) return toast('Pick what is going out'); if(!who) return toast('Who is taking it?');
+    if(u>(+it.units||0)-hireOut(it.id)) return toast(`Only ${(+it.units||0)-hireOut(it.id)} free`);
+    const c=S.customers.find(x=>x.name===who&&x.id!==1), due=new Date(today); due.setDate(due.getDate()+d);
+    const h={id:'hr'+Date.now().toString(36),no:next('HIRE'),item:it.id,itemName:it.name,units:u,rate:+it.rate||0,who,cid:c?c.id:null,phone:g('hnP').value.replace(/[^\d+]/g,''),
+      idSeen:g('hnId').value.trim(),outAt:new Date().toISOString(),due:D(due),deposit:dep,status:'out',by:S.user.name};
+    hires().push(h);
+    if(dep>0) post(D(today),`Hire deposit ${h.no} — ${who}`,h.no,[{ac:'1010',dr:dep},{ac:'2070',cr:dep}]);
+    m.remove(); persist(true); render(); toast(`${it.name} × ${u} out to ${who} until ${h.due}${dep?' · deposit '+money2(dep)+' held':''}`,'ok') };
+}
+function hireBack(id){
+  const h=hires().find(x=>x.id===id); if(!h) return;
+  const days=hireDays(h), charge=+(days*h.rate*h.units).toFixed(2), dep=+h.deposit||0, diff=+(dep-charge).toFixed(2), c=h.cid?C(h.cid):null;
+  const m=modal(`<h2>${noteEsc(h.itemName)} × ${h.units} is back</h2>
+   <div class="muted">${noteEsc(h.who)} · out ${h.outAt.slice(0,10)} ${new Date(h.outAt).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · due ${h.due}</div>
+   <div class="cp-figs" style="margin-top:10px"><div><span>Days</span><b>${days}</b></div><div><span>Charge</span><b>${money2(charge)}</b></div><div><span>Deposit held</span><b>${money2(dep)}</b></div></div>
+   <div class="${diff>=0?'cp-ok':'cp-warn'}" style="margin-top:10px;font-size:15px">${diff>=0?`Give back ${money2(diff)} of the deposit`:`Take ${money2(-diff)} more`}</div>
+   ${diff<0&&c?`<label class="chk" style="margin-top:8px"><input type="checkbox" id="hbAcc"> put the ${money2(-diff)} on ${noteEsc(c.name)}'s account instead</label>`:''}
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Not yet</button><button class="btn tape" id="hbOk">Done — it is back</button></div>`);
+  npAdd(m);
+  m.querySelector('#hbOk').onclick=()=>{
+    const acc=m.querySelector('#hbAcc')&&m.querySelector('#hbAcc').checked;
+    try{
+      // the deposit comes out of what is held — counted as cash again — and the charge is a bill paid from it
+      if(dep>0) post(D(today),`Hire deposit back ${h.no}`,h.no+'-D',[{ac:'2070',dr:dep},{ac:'1010',cr:dep}]);
+      const pays=acc?[{method:'CASH',amount:Math.min(charge,dep)},{method:'CREDIT',amount:0}]:[{method:'CASH',amount:charge}];
+      const inv=charge>0?completeSale({lines:[{pid:OPEN_PID,name:`Hire — ${h.itemName} × ${h.units}, ${days} day${days===1?'':'s'} (${h.no})`,qty:1,price:charge,disc:0,open:true}],
+        customerId:acc&&c?c.id:(c?c.id:1),pays:pays.filter(p=>p.method==='CREDIT'||p.amount>0),override:true}):null;
+      Object.assign(h,{status:'back',backAt:new Date().toISOString(),days,charge,bill:inv?inv.no:'',settled:diff>=0?'gave back '+money2(diff):(acc?'on account '+money2(-diff):'took '+money2(-diff))});
+      m.remove(); persist(true); render();
+      toast(diff>=0?`Back — give ${money2(diff)} back to ${h.who}`:`Back — ${acc?money2(-diff)+' on their account':'take '+money2(-diff)}`,'ok');
+      if(inv&&!npTake()) printAnim(inv,(CFG.done&&CFG.done.cashDefault)||'r80');
+    }catch(e){ toast(e.message) }
+  };
+}
+function hireRemind(id){
+  const h=hires().find(x=>x.id===id); if(!h||!h.phone) return;
+  const late=h.due<D(today);
+  sms(h.phone,tpl('hireDue',{customer:h.who,item:h.itemName,due:h.due,days:String(hireDays(h)),dueWhen:late?` — it was due on ${h.due}`:` on ${h.due}`}),'customer');
+  toast('Texted '+h.who,'ok');
+}
+
 /* ================== SITES ==================
    A builder with several jobs keeps them apart: each credit bill can go to a site ("Kandy Rd house"),
    chosen in the on-account panel. Each site has its own balance — the unpaid bills on it — an optional
@@ -31180,6 +31295,7 @@ document.addEventListener('click',e=>{
     trCam:()=>camTrail(a.dataset.id),
     siteEdit:()=>siteEdit(+a.dataset.id,a.dataset.s||null), siteStmt:()=>siteStatement(+a.dataset.id,a.dataset.s),
     roMake:()=>roMake(+a.dataset.id||a.dataset.id),
+    hireTab:()=>{ hireTab=a.dataset.t; render() }, hireItem:()=>hireItemEdit(a.dataset.id||null), hireNew:()=>hireNew(), hireBack:()=>hireBack(a.dataset.id), hireRemind:()=>hireRemind(a.dataset.id),
     tradePick:()=>tradePick(), tradeNew:()=>tradeEdit(null), tradeEdit:()=>tradeEdit(a.dataset.id), tradePay:()=>tradePay(a.dataset.id), tradeStmt:()=>tradeStatement(a.dataset.id),
     darkToggle:()=>darkSet(!darkOn(),a),
     duSave:()=>duesSave(), duReload:()=>{ DUES.data=null; DUES.err=''; duesLoad(); render() },
