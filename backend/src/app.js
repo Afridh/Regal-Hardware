@@ -33,6 +33,7 @@ import custRoutes from './routes/customer.js';
 import aiRoutes from './routes/ai.js';
 import alexaRoutes from './routes/alexa.js';
 import maintenanceRoutes from './routes/maintenance.js';
+import dueRoutes from './routes/dues.js';
 import { maintenanceGate } from './lib/maintenance.js';
 
 if (!process.env.JWT_SECRET) console.error('JWT_SECRET is not set (copy .env.example to .env, or set it in the host\'s environment)');
@@ -76,6 +77,7 @@ app.use('/api/files', fileRoutes);
 app.use('/api/print', printRoutes);
 app.use('/api/display', displayRoutes);      // the customer's screen at the counter (regalhw.lk/count1)
 app.use('/api/presence', presenceRoutes);    // who is signed in right now (the Super Admin sees them)
+app.use('/api/dues', dueRoutes);             // credit follow-up: reminders to customers who owe
 app.use('/api/cams', camRoutes);              // the cameras, seen from anywhere (the camera helper calls out)
 // the Echo in the office: Amazon calls this, and the till reports what the books cannot see
 app.use('/api/alexa', alexaRoutes);

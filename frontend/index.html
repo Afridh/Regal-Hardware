@@ -5199,6 +5199,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
     const p=P(l.pid), net=(l.qty*l.price-(l.disc||0))/l.qty;
     if(net<p.cost-0.005&&!l.belowCost&&!override&&!(CFG.stock&&CFG.stock.allowBelowCost)) throw new Error(`${p.name} is under cost — an admin has to allow it`) });
   let overLimit=false;
+  if(credit>0.005&&!override&&typeof dueStopped==='function'&&dueStopped(C(customerId))) throw new Error(`New credit is stopped for ${C(customerId).name} — their oldest bill is too old. A manager has to allow it`);
   if(credit>0.005){ const c=C(customerId);
     if(partyBal('C',c.id)+credit>c.limit){
       if(!override) throw new Error(`${c.name} would go past their ${fmt(c.limit)} limit — a manager has to allow it`);
@@ -6032,6 +6033,9 @@ const CFG={
  mail:{host:'',port:587,user:'',pass:'',from:'',cc:'',autoInvoice:true,autoVoucher:true},   // outgoing email — quotations, credit invoices and vouchers go from here
  privacy:{on:false,key:'ctrl+shift+x',pct:35,hideCredit:true,minutes:20,dot:true},   // the privacy screen (owner only)
  shift:{url:'',user:'',autoPull:true},              // where the attendance records live — empty is this server
+ // credit follow-up (the server sends these — backend/src/services/dues.js): reminders when the oldest unpaid
+ // bill reaches each step in days, a monthly statement, and new credit stopped past stopDays (0 = never)
+ dues:{on:false,at:'10:00',steps:[7,30,60],monthly:true,monthDay:1,stopDays:0},
  tpl:{
   cashSale:{label:'Cash bill',vars:'{shop} {invoice} {total} {link} {customer}',
     text:'Thank you for your purchase.\nBill No: {invoice}\nAmount: {total}\nView your bill: {link}'},
@@ -6063,6 +6067,13 @@ const CFG={
     text:'Thank you, we have received your payment.\nAmount: {amount}\nReceipt No: {receipt}\nBalance now: {outstanding}'},
   statement:{label:'Customer statement',vars:'{shop} {customer} {count} {outstanding} {link}',
     text:'Here is your account summary.\nAccount: {customer}\nUnpaid bills: {count}\nTotal outstanding: {outstanding}\nView details: {link}'},
+  // the credit follow-up's three reminders (the server keeps the same defaults in services/dues.js)
+  dueRemind1:{label:'Credit follow-up — first reminder',vars:'{shop} {customer} {count} {days} {outstanding} {link}',
+    text:'A gentle reminder about your account.\nUnpaid bills: {count}\nOldest: {days} days\nTotal outstanding: {outstanding}\nView or pay: {link}'},
+  dueRemind2:{label:'Credit follow-up — overdue',vars:'{shop} {customer} {count} {days} {outstanding} {link}',
+    text:'Your account is now overdue.\nUnpaid bills: {count}\nOldest: {days} days\nTotal outstanding: {outstanding}\nPlease settle at your earliest. Details: {link}'},
+  dueRemind3:{label:'Credit follow-up — final reminder',vars:'{shop} {customer} {count} {days} {outstanding} {link}',
+    text:'Final reminder: your account is long overdue.\nOldest bill: {days} days\nTotal outstanding: {outstanding}\nNew credit may be paused until it is settled. Details: {link}'},
   portalInvite:{label:'Inviting a customer to their page',vars:'{shop} {customer} {link}',
     text:'You can now check your account with us at any time.\nLink: {link}\nSign in with a code we text you.'},
   portalLogin:{label:'A sign-in given to a customer’s person',vars:'{shop} {customer} {who} {user} {pass} {link}',
@@ -12293,7 +12304,7 @@ const $=(s)=>document.querySelector(s);
 const views=[
  ['updates','What is new'],['actions','Action centre'],
  ['grp','Sell'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills'],['receipts','Take a payment','F7'],['docs','Quotes & delivery notes'],['collect','Goods to collect'],['counter','Open & close'],['cashup','Day book'],
- ['grp','Customers'],['customers','Customers','F8'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],
+ ['grp','Customers'],['customers','Customers','F8'],['dues','Credit follow-up'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],
  ['grp','Buying'],['suppliers','Suppliers','F12'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Payment requests'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels','F11'],
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['chqbooks','Cheque books'],['petty','Petty cash'],['expenses','Expenses'],['accounting','Accounting'],
@@ -12372,6 +12383,7 @@ function allowed(v){
   if(v === 'actions') return true;
   if(v === 'leave') return true;            // everybody asks for their own days off
   if(v === 'petty') return String(S.user.role||'').toLowerCase()!=='salesman'||(S.petty||[]).some(p=>p.status==='open'&&p.who===S.user.name);   // Sales staff: only while holding some            // the counter hands it out; whoever holds some puts in what they spent
+  if(v === 'dues') return allowed('customers');   // who owes and what they have been told — whoever looks after customers
   if(v === 'collect') return allowed('pos')||allowed('bills');   // goods paid for and waiting to be collected
   if(v === 'returns') return allowed('pos');  // whoever may bill may take goods back          // everyone has one; each item on it keeps to the page it comes from
   if(v === 'issues'||v === 'transfers') return typeof extMulti==='function'&&extMulti();   // nothing to see with one shop
@@ -12459,6 +12471,7 @@ const ICONS={
   docs:'M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h4',
   receipts:'M4 5h16v14H4zM4 10h16M8 15h4',
   customers:'M9 11a4 4 0 100-8 4 4 0 000 8zM3 21a6 6 0 0112 0M17 8h4M19 6v4',
+  dues:'M12 8v4l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0zM4 4l3 3M20 4l-3 3',
   suppliers:'M3 8h11v9H3zM14 11h4l3 3v3h-7zM6.5 20a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17.5 20a1.5 1.5 0 100-3 1.5 1.5 0 000 3z',
   orders:'M8 4h9l3 4v12H8zM8 4H4v16h4M12 11h5M12 15h5',
   inventory:'M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10',
@@ -12929,7 +12942,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     try{ mn.innerHTML = r() }
     catch(err){
@@ -16803,7 +16816,7 @@ function cpDraw(focus){
     return;
   }
   const owes=partyBal('C',c.id), paid=cpPaid(), onAcct=+(T-paid).toFixed(2), held=Math.max(0,custCredit(c.id));
-  const will=+(owes+Math.max(0,onAcct-held)).toFixed(2), over=cpOver(c), covered=paid>=T-0.005;
+  const will=+(owes+Math.max(0,onAcct-held)).toFixed(2), stopD=dueStopped(c), over=cpOver(c)||(!!stopD&&onAcct>0.005), covered=paid>=T-0.005;
   // the server checks the PIN when the till is online, so the till need not hold anyone's PIN itself
   const admins=S.users.filter(u=>u.active!==false&&(u.perms||[]).includes('overLimit')&&u.name!==S.user.name&&((window.regalBridge&&regalBridge.online&&regalBridge.online())||u.pinHash||u.passHash||u.pass));
   const banks=S.banks||[];
@@ -16814,9 +16827,10 @@ function cpDraw(focus){
       <div class="${over?'bad':''}"><span>Will owe</span><b>${money2(will)}</b></div></div>
     ${c.limit?cpMeter(c,true)+`<div class="muted cp-lim">Limit ${money2(c.limit)}${over?'':' · '+money2(Math.max(0,c.limit-owes-onAcct))+' left after this bill'}</div>`:''}
     ${held>0.005?`<div class="muted">They have ${money2(held)} in credit with the shop — it comes off this first.</div>`:''}
-    ${over&&!covered?(ONA.allowedBy?`<div class="cp-ok">Over the limit by ${money2(owes+onAcct-c.limit)} — allowed by ${noteEsc(ONA.allowedBy)}</div>`
-      :can('overLimit')?`<div class="cp-warn">Over their limit by ${money2(owes+onAcct-c.limit)}. <button class="btn sm" data-cp="allow">Allow it</button></div>`
-      :`<div class="cp-warn">Over their limit by ${money2(owes+onAcct-c.limit)} — an admin lets it through with their PIN.
+    ${stopD?`<div class="cp-warn">New credit is stopped: their oldest unpaid bill is ${stopD} days old (Credit follow-up stops it after ${+dueCfgNow().stopDays}).</div>`:''}
+    ${over&&!covered?(ONA.allowedBy?`<div class="cp-ok">${cpOver(c)?`Over the limit by ${money2(owes+onAcct-c.limit)}`:'Credit stopped'} — allowed by ${noteEsc(ONA.allowedBy)}</div>`
+      :can('overLimit')?`<div class="cp-warn">${cpOver(c)?`Over their limit by ${money2(owes+onAcct-c.limit)}.`:'Let this bill go on account anyway?'} <button class="btn sm" data-cp="allow">Allow it</button></div>`
+      :`<div class="cp-warn">${cpOver(c)?`Over their limit by ${money2(owes+onAcct-c.limit)}`:'Credit is stopped'} — an admin lets it through with their PIN.
          ${admins.length?`<div class="cp-pin"><select id="cpWho">${admins.map(u=>`<option value="${noteEsc(u.name)}">${noteEsc(u.name)}</option>`).join('')}</select>
            <input id="cpPin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off"><button class="btn sm" data-cp="pin">Allow</button></div><span id="cpPinMsg"></span>`
            :'<div>Nobody here may allow it — take part of it now, or ask the owner.</div>'}</div>`):''}
@@ -16835,7 +16849,7 @@ function cpDraw(focus){
       ${covered?'<div class="cp-warn">That covers the whole bill — use TAKE PAYMENT (F10) instead.</div>':''}
     </div>
     <div class="cp-pills"><span class="muted">bill</span>${PAPERS.map(([k,l])=>`<button class="btn ghost sm ${ONA.paper===k?'on':''}" data-cp-paper="${k}">${l}</button>`).join('')}</div>
-    <button class="cp-save" data-cp="save" ${(over&&!ONA.allowedBy)||covered?'disabled':''}>
+    <button class="cp-save" data-cp="save" ${(over&&!covered&&!ONA.allowedBy)||covered?'disabled':''}>
       <b>${paid>0.005?`Take ${money2(paid)} · rest on account`:'Save on account'}</b><span>${ONA.paper==='none'?'no print':({a5:'large A5 bill',r80:'80mm receipt',sms:'e-bill by text'})[ONA.paper]||'print'} · Enter</span></button>`;
   const bind=(id,fn,ev='input')=>{ const i=el.querySelector('#'+id); if(i) i.addEventListener(ev,()=>fn(i.value)) };
   bind('cpPaid',v=>{ ONA.paid=v.replace(/[^\d.]/g,'') },'input'); bind('cpPaid',()=>cpDraw(),'change');
@@ -16860,6 +16874,7 @@ function cpSave(){
   const c=C(ONA.cust), T=cpTotal(), paid=+cpPaid().toFixed(2), how=ONA.how;
   if(paid>=T-0.005) return toast('That covers the whole bill — use TAKE PAYMENT (F10)');
   if(cpOver(c)&&!ONA.allowedBy) return toast(`${c.name} would go past their limit — allow it first`);
+  if(dueStopped(c)&&paid<T-0.005&&!ONA.allowedBy) return toast(`New credit is stopped for ${c.name} — allow it first`);
   if(paid>0.005&&how==='CHEQUE'&&!String(ONA.ref).trim()) return toast('Put the cheque number in');
   const pays=[];
   if(paid>0.005){
@@ -17481,7 +17496,13 @@ function openPay(resume){
       return endBillAsk(()=>{ m._busy=false; finish() }) }
     const cust=c(); const cr=credit();
     let override=false;
-    if(cr>0.005&&partyBal('C',cust.id)+cr>cust.limit){
+    const stopD=cr>0.005?dueStopped(cust):0;
+    if(stopD){
+      if(!can('overLimit')){ stop(); m.remove(); return toast(`New credit is stopped for ${cust.name} — their oldest bill is ${stopD} days old. Ask a manager.`) }
+      if(!confirm(`New credit is stopped for ${cust.name}: their oldest unpaid bill is ${stopD} days old.\nLet this bill go on account anyway?`)){ taken=taken.filter(p=>p.method!=='CREDIT'); draw(); return }
+      override=true;
+    }
+    if(cr>0.005&&partyBal('C',cust.id)+cr>cust.limit&&!override){
       if(!can('overLimit')){ stop(); m.remove(); return toast(`${cust.name} would go past their ${fmt(cust.limit)} limit — ask a manager`) }
       if(!confirm(`${cust.name} owes ${fmt(partyBal('C',cust.id))} against a limit of ${fmt(cust.limit)}.\nThis bill takes them to ${fmt(partyBal('C',cust.id)+cr)}. Allow it?`)){ taken=taken.filter(p=>p.method!=='CREDIT'); draw(); return }
       override=true;
@@ -27615,6 +27636,85 @@ function pettySettleModal(id){
   };
 }
 
+/* ================== CREDIT FOLLOW-UP ==================
+   Customers who owe are reminded by the server once a day, by themselves, when the oldest unpaid bill
+   reaches each step (7, 30, 60 days to start with) — once per step for a debt — and sent a statement
+   on the shop's day of the month. The server sends, so it happens whether or not a till is open, and
+   never twice. This page sets it up, shows who owes and what each has been told, and sends one by hand.
+   New credit can be stopped for anyone whose oldest bill is past a number of days (the credit panel and
+   the payment screen then need an admin, as for the limit). */
+let DUES={data:null,err:'',loading:false};
+const dueCfgNow=()=>({on:false,at:'10:00',steps:[7,30,60],monthly:true,monthDay:1,stopDays:0,...(CFG.dues||{})});
+/* new credit stopped: their oldest unpaid bill is past the shop's limit in days */
+function dueStopped(c){ const n=+dueCfgNow().stopDays||0; if(!n||!c||c.id===1) return 0; const o=custAge(c.id).oldest||0; return o>n?o:0 }
+const duesApi=(p,opts)=>fetch('/api/dues'+p,{...(opts||{}),headers:{'Content-Type':'application/json','Authorization':'Bearer '+(window.regalBridge?regalBridge.token():''),...((opts||{}).headers||{})}}).then(async r=>{ const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||('The server said '+r.status)); return j });
+function duesLoad(){ if(DUES.loading) return; DUES.loading=true;
+  duesApi('').then(j=>{ DUES.data=j; DUES.err='' }).catch(e=>{ DUES.err=e.message }).finally(()=>{ DUES.loading=false; if(S.view==='dues') render() }) }
+const DUE_KIND={remind1:'First reminder',remind2:'Overdue',remind3:'Final reminder',statement:'Statement'};
+function duesPage(){
+  if(!DUES.data&&!DUES.err) duesLoad();
+  const cfg=dueCfgNow(), st=(cfg.steps||[7,30,60]).map(Number), boss=ownerOnly(), d=DUES.data||{log:[],plan:[],runs:[]};
+  const owing=S.customers.filter(c=>c.id!==1&&c.active!==false).map(c=>({c,a:custAge(c.id)})).filter(x=>x.a.n>0)
+    .map(x=>({...x,owed:x.a.now+x.a.mid+x.a.late+x.a.vold})).sort((a,b)=>b.a.oldest-a.a.oldest||b.owed-a.owed);
+  const total=owing.reduce((s,x)=>s+x.owed,0), late=owing.filter(x=>x.a.oldest>30), stopped=owing.filter(x=>dueStopped(x.c));
+  const month=D(today).slice(0,7), thisMonth=(d.log||[]).filter(l=>l.ok&&String(l.at).slice(0,7)===month).length;
+  const last=new Map(); (d.log||[]).forEach(l=>{ if(!last.has(String(l.cid))) last.set(String(l.cid),l) });
+  const planBy=new Map((d.plan||[]).map(p=>[String(p.cid),p]));
+  const stepOf=(days)=>{ let s=0; st.forEach((n,i)=>{ if(days>=n) s=i+1 }); return s };
+  const when=(x)=>{ const v=new Date(x); return isNaN(v)?'':v.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' '+v.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) };
+  const ageTag=(n)=>`<span class="tag ${n>60?'bad':n>30?'warn':'ok'}">${n} day${n===1?'':'s'}</span>`;
+  return `<h1>Credit follow-up</h1>
+   <div class="row" style="margin-bottom:12px">
+    ${stat('Owed by customers',money2(total),owing.length+' customer'+(owing.length===1?'':'s'),'b')}
+    ${stat('Over 30 days',late.length,late.length?money2(late.reduce((s,x)=>s+x.owed,0)):'nobody','r')}
+    ${stat('Reminders this month',thisMonth,cfg.on?'sent by the server':'switched off',cfg.on?'g':'y')}
+    ${stat('To go today',(d.plan||[]).length,cfg.on?'from '+cfg.at:'when switched on',(d.plan||[]).length?'y':'g')}
+   </div>
+   ${DUES.err?`<div class="card note" style="border-left:3px solid var(--chip-rust);margin-bottom:12px"><b>Could not reach the server</b><div class="muted">${noteEsc(DUES.err)} — the reminders are sent by the server; this page shows what it has done.</div></div>`:''}
+   <div class="card" style="margin-bottom:12px">
+    <h2 style="margin-top:0">Reminders, by themselves</h2>
+    <div class="muted" style="margin-bottom:10px">Once a day the server texts everyone whose oldest unpaid bill has reached a step, once for each step until that bill is paid, using the wording under Settings → Messages (<i>Credit follow-up</i>). Customers marked <b>Don't remind</b> are left out.</div>
+    <label class="chk"><input type="checkbox" id="duOn" ${cfg.on?'checked':''} ${boss?'':'disabled'}> Send reminders by themselves</label>
+    <div class="grid3" style="margin-top:8px">
+     <div class="f"><label>Each day from</label><input type="time" id="duAt" value="${noteEsc(cfg.at)}" ${boss?'':'disabled'}></div>
+     <div class="f"><label>Remind at (days the oldest bill is owed)</label><div style="display:flex;gap:6px">${[0,1,2].map(i=>`<input type="number" min="1" id="duS${i}" value="${st[i]||''}" ${boss?'':'disabled'} style="min-width:0">`).join('')}</div></div>
+     <div class="f"><label>Stop new credit after (days, 0 = never)</label><input type="number" min="0" id="duStop" value="${+cfg.stopDays||0}" ${boss?'':'disabled'}></div></div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+     <label class="chk" style="margin:0"><input type="checkbox" id="duMon" ${cfg.monthly?'checked':''} ${boss?'':'disabled'}> A statement every month, on day</label>
+     <input type="number" min="1" max="28" id="duDay" value="${+cfg.monthDay||1}" style="width:70px" ${boss?'':'disabled'}></div>
+    ${boss?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+     <button class="btn tape" data-act="duSave">Save</button>
+     <button class="btn ghost" data-act="duRun" ${(d.plan||[]).length?'':'disabled'}>Send today's ${(d.plan||[]).length} now</button>
+     <button class="btn ghost" data-act="duStmt">Send everyone their statement now</button>
+     <button class="btn ghost" data-act="duReload">Refresh</button></div>`:'<div class="muted" style="margin-top:8px">The owner or an admin changes these.</div>'}
+   </div>
+   <div class="card" style="margin-bottom:12px"><h2 style="margin-top:0">Who owes</h2>
+    ${owing.length?`<div style="overflow-x:auto"><table><tr><th>Customer</th><th>Mobile</th><th class="n">Owes</th><th>Oldest bill</th><th>Told</th><th>Next</th><th></th></tr>
+     ${owing.map(x=>{ const c=x.c, l=last.get(String(c.id)), p=planBy.get(String(c.id)), s=stepOf(x.a.oldest), stop=dueStopped(c);
+       return `<tr><td><b>${noteEsc(c.name)}</b>${stop?' <span class="tag bad">credit stopped</span>':''}${c.noRemind?' <span class="tag">not reminded</span>':''}</td>
+        <td>${noteEsc(c.phone||'—')}</td><td class="n">${money2(x.owed)}</td><td>${ageTag(x.a.oldest)}</td>
+        <td>${l?`${DUE_KIND[l.kind]||l.kind} · ${when(l.at)}${l.ok?'':' <span class="tag bad">not sent</span>'}`:'<span class="muted">nothing yet</span>'}</td>
+        <td>${c.noRemind?'—':p?`<b>${DUE_KIND[p.kind]}</b> today`:s<st.length?`at ${st[s]} days`:'<span class="muted">all steps sent</span>'}</td>
+        <td style="white-space:nowrap">${boss&&c.phone?`<button class="btn ghost sm" data-act="duOne" data-id="${c.id}">Remind now</button>`:''}
+         <button class="btn ghost sm" data-act="duQuiet" data-id="${c.id}">${c.noRemind?'Remind again':"Don't remind"}</button></td></tr>` }).join('')}</table></div>`
+     :'<div class="muted">Nobody owes the shop anything.</div>'}
+   </div>
+   <div class="card"><h2 style="margin-top:0">What has gone out</h2>
+    ${(d.log||[]).length?`<div style="overflow-x:auto"><table><tr><th>When</th><th>Customer</th><th>What</th><th class="n">Owed</th><th>Days</th><th></th></tr>
+     ${d.log.slice(0,60).map(l=>`<tr><td>${when(l.at)}</td><td>${noteEsc(l.name||'')}<div class="muted">${noteEsc(l.phone||'')}</div></td><td>${DUE_KIND[l.kind]||l.kind}</td><td class="n">${money2(l.amount)}</td><td>${l.days??''}</td>
+       <td>${l.ok?'<span class="tag ok">sent</span>':`<span class="tag bad">not sent</span><div class="muted" style="font-size:12px">${noteEsc(l.note||'')}</div>`}</td></tr>`).join('')}</table></div>`
+     :`<div class="muted">${DUES.loading?'Fetching…':'Nothing sent yet.'}</div>`}
+   </div>`;
+}
+function duesSave(){
+  const v=id=>(document.getElementById(id)||{}).value, ch=id=>!!(document.getElementById(id)||{}).checked;
+  const steps=[0,1,2].map(i=>Math.round(+v('duS'+i)||0)).filter(n=>n>0).sort((a,b)=>a-b);
+  if(!steps.length) return toast('Put in at least one day to remind at');
+  CFG.dues={...dueCfgNow(),on:ch('duOn'),at:v('duAt')||'10:00',steps,monthly:ch('duMon'),monthDay:Math.min(28,Math.max(1,Math.round(+v('duDay')||1))),stopDays:Math.max(0,Math.round(+v('duStop')||0))};
+  persist(true); toast(CFG.dues.on?`Saved — reminders go out each day from ${CFG.dues.at}`:'Saved — reminders are switched off','ok');
+  setTimeout(()=>{ DUES.data=null; duesLoad() },2500);      // the server reads the saved books
+}
+
 function pettyPage(){
   const may=pettyMayGive(), all=pettyList(), open=pettyOpen().filter(p=>may||canApprove()||pettyMine(p));
   const t=D(today), out=open.reduce((a,p)=>a+pettyLeft(p),0);
@@ -30610,6 +30710,11 @@ document.addEventListener('click',e=>{
     pcGive:()=>pettyGiveModal(a.dataset.who||''), pcExp:()=>pettyExpenseModal(a.dataset.id), pcSettle:()=>pettySettleModal(a.dataset.id), pcUndo:()=>pettyUndo(a.dataset.id,a.dataset.no),
     catMgr:()=>categoriesModal(), catTidy:()=>tidyCatalogModal(),
     pcSubmit:()=>pettySubmitModal(a.dataset.id),
+    duSave:()=>duesSave(), duReload:()=>{ DUES.data=null; DUES.err=''; duesLoad(); render() },
+    duRun:()=>{ if(!confirm('Send today\'s reminders now?')) return; duesApi('/run',{method:'POST',body:'{}'}).then(j=>{ toast(`${j.sent} sent${j.failed?', '+j.failed+' did not go':''}`,j.failed?'warn':'ok'); DUES.data=null; duesLoad() }).catch(e=>toast(e.message)) },
+    duStmt:()=>{ if(!confirm('Text every customer who owes their statement now?')) return; duesApi('/run',{method:'POST',body:JSON.stringify({statements:true})}).then(j=>{ toast(`${j.sent} sent${j.failed?', '+j.failed+' did not go':''}`,j.failed?'warn':'ok'); DUES.data=null; duesLoad() }).catch(e=>toast(e.message)) },
+    duOne:()=>{ const c=C(+a.dataset.id); duesApi('/one',{method:'POST',body:JSON.stringify({cid:String(c.id)})}).then(()=>{ toast('Reminder texted to '+c.name,'ok'); DUES.data=null; duesLoad() }).catch(e=>{ toast(e.message); DUES.data=null; duesLoad() }) },
+    duQuiet:()=>{ const c=C(+a.dataset.id); c.noRemind=!c.noRemind; persist(true); render(); toast(c.noRemind?c.name+' will not be reminded':c.name+' will be reminded again') },
     ctrOpen:()=>ctrOpenNow(), ctrOpenNow:()=>ctrOpenNow(), ctrCount:()=>ctrOpenSheet(), ctrClose:()=>{ ctrStep=1; ctrCloseSheet() },
     cbNew:()=>cbNewModal(), cbWrite:()=>cbWriteModal(), cbDel:()=>cbDelete(a.dataset.id),
     cbOpen:()=>{ CB.book=CB.book===a.dataset.id?null:a.dataset.id; render() },
