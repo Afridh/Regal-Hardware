@@ -3305,6 +3305,7 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-paper i{font-style:normal;font-size:9.5px;letter-spacing:.08em;padding:2px 8px;border-radius:99px;color:#B09A9D;border:1px solid var(--line);transition:all .15s}
 .till-paper i.on{background:#1f3b5a;color:#fff;border-color:#1f3b5a;font-weight:700}
 .till-paper i.np.on{background:#8a2a1c;border-color:#8a2a1c}
+.till-paper i.nd.on{background:#8a5d06;border-color:#8a5d06;color:#fff;font-weight:700}
 .np-box{margin:10px 0 0;color:var(--steel)}
 .till-paper:hover i:not(.on){border-color:var(--steel);color:var(--ink)}
 .till-date{flex:0 0 auto;background:#fff;border-radius:var(--r);padding:6px 14px;text-align:center}
@@ -17705,6 +17706,7 @@ function finishTillBill({cust,pays,override=false,note=''}){
     throw e }
   if(retired) inv=finishRemake(retired,inv);
   if(note.trim()) inv.note=note.trim();
+  if(S.pos.toDeliver){ inv.undelivered=true; inv.undeliveredBy=S.user.name }   // over the phone: the goods are still here
   // brought by a tradesman: the bill keeps who, and the rate it was earned at; they are thanked
   if(S.pos.trade){ const tr=tradeOf(S.pos.trade); if(tr){ inv.trade=tr.id; inv.tradeRate=+(tr.rate??tradeCfg().rate)||0; try{ tradeTell(inv) }catch(e){} } }
   // a big discount on this bill (lines and the bill together, against what the lines came to)
@@ -17959,7 +17961,7 @@ function posClassic(){
      <div class="till-clock"><span id="posClockTime">${now.toLocaleTimeString('en-GB',{hour12:true})}</span><em id="posClockDay">${now.getDate()}</em></div></div>
     <div class="till-no ${S.pos.editing?'editing':''}">
      <b>${S.pos.editing||nextNo}</b>
-     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Which prices this bill uses — Ctrl+Shift+R for retail, Ctrl+Shift+W for wholesale, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><span class="till-paper" title="Which bill prints after payment — Ctrl+Shift+N for the normal 80mm receipt, Ctrl+Shift+L for the large A5 bill, or no print at all for this bill"><i data-act="csPaperSet" data-k="r80" class="${!csNoPrint()&&csPaper()==='r80'?'on':''}">SMALL BILL</i><i data-act="csPaperSet" data-k="a5" class="${!csNoPrint()&&csPaper()==='a5'?'on':''}">LARGE BILL</i><i data-act="csPaperSet" data-k="none" class="np ${csNoPrint()?'on':''}">NO PRINT</i></span>`}<div class="onl-brk"><span data-onl>${onlSlot()}</span>${breakStrip()}</div></div>
+     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Which prices this bill uses — Ctrl+Shift+R for retail, Ctrl+Shift+W for wholesale, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><span class="till-paper" title="Which bill prints after payment — Ctrl+Shift+N for the normal 80mm receipt, Ctrl+Shift+L for the large A5 bill, or no print at all for this bill"><i data-act="csPaperSet" data-k="r80" class="${!csNoPrint()&&csPaper()==='r80'?'on':''}">SMALL BILL</i><i data-act="csPaperSet" data-k="a5" class="${!csNoPrint()&&csPaper()==='a5'?'on':''}">LARGE BILL</i><i data-act="csPaperSet" data-k="none" class="np ${csNoPrint()?'on':''}">NO PRINT</i></span><span class="till-paper" title="The goods have not gone with the customer yet — a bill over the phone. It waits on the Not delivered list. Ctrl+Shift+D"><i data-act="csDlvToggle" class="nd ${S.pos.toDeliver?'on':''}">NOT DELIVERED</i></span>`}<div class="onl-brk"><span data-onl>${onlSlot()}</span>${breakStrip()}</div></div>
    </div>
 
 
@@ -21312,6 +21314,7 @@ function billHit(s,q){
   if(billType==='cash'&&s.type!=='CASH')return false;
   if(billType==='credit'&&s.type!=='CREDIT')return false;
   if(billType==='unpaid'&&!(s.balance>0))return false;
+  if(billType==='undelivered'&&!billUndelivered(s))return false;
   if(billBy!=='all'&&s.by!==billBy)return false;
   if(billCust&&s.customerId!==billCust)return false;             // every bill of one customer, picked from the list
   if(!q)return true;
@@ -21350,7 +21353,7 @@ function bills(){
       <button class="btn ghost sm" data-act="billCustAll">Every bill again</button></div>`:''}
     <div class="chips">${[[0,'Today'],[1,'Yesterday'],[7,'7 days'],[30,'30 days']].map(d=>`<button class="${dayIs(d[0])?'on':''}" data-act="billDay" data-d="${d[0]}">${d[1]}</button>`).join('')}<button class="${!billFrom&&!billTo?'on':''}" data-act="billAllDates">All time</button>
      <span class="bl-dates"><input id="billFrom" type="date" value="${billFrom}" title="From"><span>–</span><input id="billTo" type="date" value="${billTo}" title="To"></span></div>
-    <div class="chips" style="margin-bottom:6px">${[['all','All'],['cash','Cash'],['credit','Credit'],['unpaid','Still owing']].map(o=>`<button class="${billType===o[0]?'on':''}" data-act="billKind" data-v="${o[0]}">${o[1]}</button>`).join('')}
+    <div class="chips" style="margin-bottom:6px">${[['all','All'],['cash','Cash'],['credit','Credit'],['unpaid','Still owing'],['undelivered',`Not delivered${(n=>n?' · '+n:'')(undeliveredBills().length)}`]].map(o=>`<button class="${billType===o[0]?'on':''}" data-act="billKind" data-v="${o[0]}">${o[1]}</button>`).join('')}
      <select id="billBy" class="bl-by"><option value="all">Any cashier</option>${cashiers.map(x=>`<option ${billBy===x?'selected':''}>${x}</option>`).join('')}</select>
      ${filtered?`<button class="clear" data-act="billClear" style="color:var(--chip-rust)">Clear</button>`:''}</div>
     <div class="bl-count"><span><b>${list.length}</b> bill${list.length===1?'':'s'} · ${fmt(sum.total)} billed</span>
@@ -21362,7 +21365,7 @@ function bills(){
        ${/* who it was for reads first and biggest; the number and the rest sit under it */''}
        <div class="bl-who"><b class="${c.id===1?'walk':''}">${c.id===1?`Walk-in${s.phone?' · '+s.phone:''}`:`<a href="#" data-act="billCust" data-id="${c.id}" title="every bill of theirs">${c.name}</a>`}</b>
         <span class="bl-no2">${s.no}${c.id!==1&&c.phone?' · '+c.phone:''}</span>
-        <span class="muted">${s.lines.length} line${s.lines.length===1?'':'s'} · ${s.by}${(s.remade||[]).length?' · re-made':''}${(s.edits||[]).length?' · corrected':''}</span></div>
+        <span class="muted">${billUndelivered(s)?'<b style="color:var(--chip-rust)">not delivered</b> · ':''}${s.lines.length} line${s.lines.length===1?'':'s'} · ${s.by}${(s.remade||[]).length?' · re-made':''}${(s.edits||[]).length?' · corrected':''}</span></div>
        <div class="bl-amt"><b>${fmt(s.total)}</b>${s.balance>0?`<i class="owe">${fmt(s.balance)} owing</i>`:s.type==='CREDIT'?'<i class="ok">credit · paid</i>':'<i class="ok">cash</i>'}${gpSeen()?(gpOdd(s)?'<i class="gp odd" title="The cost written on a line is far above what it sold for — check it">GP · cost looks wrong</i>':(()=>{const g=gpOf(s.lines,s.billDisc);return `<i class="gp ${g.gp<0?'neg':''}">GP ${fmt(g.gp)} · ${g.pct}%</i>`})()):''}</div></div>`}).join('')
       ||`<div class="muted" style="padding:20px 8px">No bill matches that. Try the last few digits of the number, or their mobile.</div>`}
      ${list.length>billLimit?`<div style="padding:8px"><button class="btn ghost sm" data-act="billMore">Show 150 more</button> <span class="muted">of ${list.length}</span></div>`:''}
@@ -21403,7 +21406,7 @@ function billDetail(inv){
   const prev=c.id&&c.id!==1?partyBal('C',c.id)-inv.balance:0;
   const canEdit=can('cancelBill')||can('adjustInvoice');
   return `<div class="bl-head">
-    <div><div class="bl-no">${inv.no}</div><div class="muted">${inv.date} ${inv.time||''} · by <b>${inv.by}</b> · ${inv.type==='CREDIT'?'<span class="tag warn">credit</span>':'<span class="tag ok">cash</span>'}${(inv.remade||[]).length?` <span class="tag warn">re-made ${inv.remade.length}×</span>`:''}${(inv.edits||[]).length?' <span class="tag warn">corrected</span>':''}</div></div>
+    <div><div class="bl-no">${inv.no}</div><div class="muted">${inv.date} ${inv.time||''} · by <b>${inv.by}</b> · ${inv.type==='CREDIT'?'<span class="tag warn">credit</span>':'<span class="tag ok">cash</span>'}${billUndelivered(inv)?' <span class="tag bad">not delivered</span>':inv.undelivered&&inv.deliveredAt?` <span class="tag ok">delivered ${inv.deliveredAt}</span>`:''}${(inv.remade||[]).length?` <span class="tag warn">re-made ${inv.remade.length}×</span>`:''}${(inv.edits||[]).length?' <span class="tag warn">corrected</span>':''}</div></div>
     <div class="bl-cust">${avatarOf(c)}<div><b>${c.name}</b><span class="muted">${c.phone||(c.id===1?'walk-in':'no mobile')}${c.id&&c.id!==1?` · <a href="#" data-act="cust" data-id="${c.id}">their account</a>`:''}</span></div></div>
    </div>
    <div class="bl-tiles">
@@ -21421,6 +21424,7 @@ function billDetail(inv){
      ${inv.balance>0?`<button class="btn tape sm" data-act="custPay" data-id="${inv.customerId}">Take payment</button>`:''}
      ${+inv.balance>0.005&&inv.customerId!==1&&!(S.plans||[]).some(p=>p.status!=='closed'&&(p.bills||[]).includes(inv.no))?`<button class="btn ghost sm" data-act="planNew" data-no="${inv.no}">Easy payments</button>`:''}
      ${(S.deliveries||[]).some(d=>d.bill===inv.no&&d.status!=='cancelled')?'':`<button class="btn ghost sm" data-act="dlvNew" data-no="${inv.no}">Deliver</button>`}
+     ${billUndelivered(inv)?`<button class="btn tape sm" data-act="billDlvDone" data-no="${inv.no}" title="The goods have gone to the customer">Delivered ✓</button>`:inv.deliveredAt?'':`<button class="btn ghost sm" data-act="billDlvNot" data-no="${inv.no}" title="The goods are still here — put it on the Not delivered list">Not delivered yet</button>`}
      <button class="btn ghost sm" data-act="billCopy" data-no="${inv.no}">Bill again</button>
      ${canEdit?`<button class="btn ghost sm" data-act="billEdit" data-no="${inv.no}">Edit in the till</button><button class="btn ghost sm" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}</div>
    </div>
@@ -28008,6 +28012,18 @@ function pettySettleModal(id){
    here: for an account customer it is their payment against the bill; for a walk-in the delivery charge
    becomes a cash bill. A charge for an account customer is a small bill on their account when planned. */
 let dlvDay=null;
+/* A bill whose goods have not gone yet — taken over the phone, paid or on account. NOT DELIVERED on the till
+   (Ctrl+Shift+D) marks it, or "Not delivered yet" on the bill afterwards. It stays on the Not delivered list
+   (Bills, and the top of Deliveries) until someone marks it delivered, or a driver's delivery of it is done. */
+const billUndelivered=(inv)=>!!(inv&&inv.undelivered&&!inv.deliveredAt&&!(S.deliveries||[]).some(d=>d.bill===inv.no&&d.status==='delivered'));
+const undeliveredBills=()=>S.sales.filter(billUndelivered);
+function csDlvToggle(){ S.pos.toDeliver=!S.pos.toDeliver; render(); toast(S.pos.toDeliver?'Not delivered — this bill goes on the Not delivered list':'Delivered with the customer, as usual') }
+function billDeliverMark(no,done){
+  const inv=S.sales.find(x=>x.no===no); if(!inv) return;
+  if(done){ inv.deliveredAt=apStamp(); inv.deliveredBy=S.user.name }
+  else { inv.undelivered=true; inv.undeliveredBy=S.user.name; delete inv.deliveredAt; delete inv.deliveredBy }
+  persist(true); render(); toast(done?`${no} marked delivered`:`${no} is on the Not delivered list`,'ok');
+}
 const dlvCfg=()=>({charge:0,slots:['Morning','Afternoon','Evening'],sms:true,...(CFG.dlv||{})});
 const dlvAll=()=>{ if(!Array.isArray(S.deliveries)) S.deliveries=[]; return S.deliveries };
 const drivers=()=>{ if(!Array.isArray(S.drivers)) S.drivers=[]; return S.drivers };
@@ -28076,12 +28092,20 @@ function dlvPage(){
    <div class="row" style="margin-bottom:12px">
     ${stat('This day',list.length,list.filter(d=>d.status==='delivered').length+' delivered','b')}
     ${stat('On the way',list.filter(d=>d.status==='out').length,'with the drivers','y')}
-    ${stat('Not delivered',list.filter(d=>d.status==='failed').length,'to plan again','r')}
+    ${stat('Bills not delivered',undeliveredBills().length,list.filter(d=>d.status==='failed').length+' could not be delivered today','r')}
     ${stat('Cash with drivers',money2(cashOut.reduce((a,d)=>a+(+d.collected||0),0)),cashOut.length+' to hand in','g')}
    </div>
    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
     <div class="chips" style="margin:0">${days.map((x,i)=>`<button class="${x===day?'on':''}" data-act="dlvDay" data-d="${x}">${i===0?'Today':i===1?'Tomorrow':new Date(x).toLocaleDateString('en-GB',{weekday:'short',day:'numeric'})}</button>`).join('')}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">${drivers().map(d=>`<button class="btn ghost sm" data-act="dlvDriver" data-id="${d.id}">🚚 ${noteEsc(d.name)}</button>`).join('')}<button class="btn ghost sm" data-act="dlvDriver" data-id="">+ Driver</button></div></div>
+   ${(()=>{ const ud=undeliveredBills().sort((a,b)=>a.date.localeCompare(b.date)); if(!ud.length) return '';
+     return `<div class="card" style="margin-bottom:10px;border-left:4px solid #8a5d06"><b style="font-size:15px">Bills not delivered yet</b> <span class="muted">· ${ud.length} · oldest first</span>
+      <div style="overflow-x:auto;margin-top:8px"><table><tr><th>Billed</th><th>Bill</th><th>Customer</th><th class="n">Total</th><th class="n">Owing</th><th></th></tr>
+      ${ud.map(s=>{ const c=C(s.customerId)||{name:'—'}, age=Math.round((new Date(D(today))-new Date(s.date))/864e5), pl=(S.deliveries||[]).find(d=>d.bill===s.no&&d.status!=='cancelled');
+        return `<tr><td>${s.date}${age>0?` <span class="tag ${age>2?'bad':'warn'}">${age} day${age===1?'':'s'}</span>`:''}</td><td><a href="#" data-act="billOpen" data-no="${s.no}">${s.no}</a></td>
+         <td><b>${noteEsc(c.id===1?'Walk-in'+(s.phone?' · '+s.phone:''):c.name)}</b><div class="muted">${noteEsc(c.id!==1?c.phone||'':'')}${s.undeliveredBy?' · taken by '+noteEsc(s.undeliveredBy):''}</div></td>
+         <td class="n">${money2(s.total)}</td><td class="n">${+s.balance>0.005?money2(s.balance):'—'}</td>
+         <td style="white-space:nowrap">${pl?`<span class="tag">${pl.no} · ${pl.date}</span>`:`<button class="btn ghost sm" data-act="dlvNew" data-no="${s.no}">Plan delivery</button>`} <button class="btn tape sm" data-act="billDlvDone" data-no="${s.no}">Delivered ✓</button></td></tr>` }).join('')}</table></div></div>` })()}
    ${cashOut.length?`<div class="card note" style="margin-bottom:10px"><b>Cash to hand in</b>${cashOut.map(d=>`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-top:6px"><span>${d.no} · ${noteEsc(d.who)} · ${money2(d.collected)} · ${noteEsc((drivers().find(x=>x.id===d.driver)||{}).name||'')}</span><button class="btn tape sm" data-act="dlvHandIn" data-id="${d.id}">Handed in</button></div>`).join('')}</div>`:''}
    ${list.length?[...byDrv.entries()].map(([k,ds])=>{ const dr=drivers().find(x=>x.id===k); ds.sort((a,b)=>(a.order||0)-(b.order||0));
      return `<div class="card" style="margin-bottom:10px"><b style="font-size:15px">${dr?'🚚 '+noteEsc(dr.name):'No driver yet'}</b> <span class="muted">· ${ds.length} stop${ds.length===1?'':'s'}</span>
@@ -31136,6 +31160,7 @@ document.addEventListener('click',e=>{
     privacyTry:()=>{ go('dashboard'); privacyToggle() },
     csLevel:()=>{ posSetLevel(posLevel()==='wholesale'?'retail':'wholesale'); const q2=$('#csQ'); if(q2&&!CS.pid) q2.focus() },
     csPaper:()=>csSetPaper(csPaper()==='a5'?'r80':'a5'),
+    csDlvToggle:()=>csDlvToggle(), billDlvDone:()=>billDeliverMark(a.dataset.no,true), billDlvNot:()=>billDeliverMark(a.dataset.no,false), billOpen:()=>{ billSel=a.dataset.no; billQ=''; billType='all'; go('bills') },
     csPaperSet:()=>csSetPaper(CS.paper===a.dataset.k&&a.dataset.k==='none'?null:a.dataset.k),
     invMore:()=>{ invLimit+=200; const keep=$('#main').scrollTop; render(); $('#main').scrollTop=keep },
     tdNew:()=>tenderModal(null), tdEdit:()=>tenderModal(a.dataset.id), tdSel:()=>{ tdSel=a.dataset.id; tdLineQ=''; render() }, tdFilter:()=>{ tdFilter=a.dataset.v; render() },
@@ -31750,6 +31775,7 @@ document.addEventListener('keydown',e=>{
     if(k==='r'){ e.preventDefault(); posSetLevel('retail');    toast('Retail prices on this bill');    return }
     if(k==='l'){ e.preventDefault(); csSetPaper('a5');  render(); toast('Large bill — A5 will print'); return }
     if(k==='n'){ e.preventDefault(); csSetPaper('r80'); render(); toast('Normal bill — 80mm receipt will print'); return }
+    if(k==='d'){ e.preventDefault(); csDlvToggle(); return }
   }   // retail ⇄ wholesale for the bill
   if(e.key==='Escape'){
     if(document.getElementById('poModal')||document.getElementById('ordModal')) return;   // the order popups close themselves
