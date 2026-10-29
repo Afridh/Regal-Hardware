@@ -19,6 +19,8 @@ export const DUE_TPL = {
   dueRemind1: 'A gentle reminder about your account.\nUnpaid bills: {count}\nOldest: {days} days\nTotal outstanding: {outstanding}\nView or pay: {link}',
   dueRemind2: 'Your account is now overdue.\nUnpaid bills: {count}\nOldest: {days} days\nTotal outstanding: {outstanding}\nPlease settle at your earliest. Details: {link}',
   dueRemind3: 'Final reminder: your account is long overdue.\nOldest bill: {days} days\nTotal outstanding: {outstanding}\nNew credit may be paused until it is settled. Details: {link}',
+  planDue: 'A reminder: part {part} of {parts} of your easy-payment plan, {amount}, is due on {due}.\nPaid so far: {paid} of {total}.\nDetails: {link}',
+  planLate: 'Part {part} of {parts} of your easy-payment plan, {amount}, was due on {due} and is not paid yet.\nPaid so far: {paid} of {total}.\nPlease pay at your earliest. Details: {link}',
   statement: 'Here is your account summary.\nAccount: {customer}\nUnpaid bills: {count}\nTotal outstanding: {outstanding}\nView details: {link}',
 };
 
@@ -64,6 +66,16 @@ export function dueList(data) {
   });
 }
 
+/* An easy-payment plan's parts: what has been paid toward its bills (they come down as the customer pays,
+   oldest first), against each part's running total. The first part not covered is the next due. Keep in
+   step with planState() in frontend/index.html. */
+export function planState(S, p) {
+  const owed = (p.bills || []).reduce((a, no) => { const s = (S.sales || []).find(x => x.no === no); return a + Math.max(0, +(s && s.balance) || 0); }, 0);
+  const paid = Math.max(0, Math.min(+p.total || 0, (+p.total || 0) - owed));
+  let cum = 0; const parts = (p.parts || []).map((x, i) => { cum += +x.amount || 0; return { ...x, i, cum, paid: paid >= cum - 0.005 }; });
+  return { paid: +paid.toFixed(2), next: parts.find(x => !x.paid) || null, parts, done: parts.every(x => x.paid) };
+}
+
 /* what would go out today — each customer's highest step reached and not yet sent for this debt, and
    (on the statement day) a statement for everyone who owes and has not had this month's */
 export async function duePlan(data, { force = false } = {}) {
@@ -72,8 +84,21 @@ export async function duePlan(data, { force = false } = {}) {
   const { rows: sent } = await query(`SELECT cid, cycle, step FROM due_sent`);
   const had = new Set(sent.map(r => `${r.cid}|${r.cycle}|${r.step}`));
   const month = today().slice(0, 7), isDay = +today().slice(8, 10) === Math.min(28, Math.max(1, +cfg.monthDay || 1));
+  // customers on an easy-payment plan are reminded by their plan, not by how old their bills are
+  const plans = ((data.S && data.S.plans) || []).filter(p => p && p.status !== 'closed');
+  const onPlan = new Set(plans.map(p => String(p.cid)));
+  for (const p of plans) {
+    const c = list.find(x => x.cid === String(p.cid)) || (data.S.customers || []).filter(x => x.id === p.cid).map(x => ({ cid: String(x.id), name: x.name, phone: x.phone || '', noRemind: !!x.noRemind, link: dueList({ ...data, S: { ...data.S, sales: [{ customerId: x.id, balance: 1, date: today(), no: '-' }] } })[0]?.link }))[0];
+    if (!c || !c.phone || c.noRemind) continue;
+    const st = planState(data.S, p), n = st.next; if (!n) continue;
+    const until = Math.floor((Date.parse(n.due) - Date.parse(today())) / 864e5);
+    const base = { ...c, plan: p, part: n.i + 1, parts: st.parts.length, amount: +n.amount || 0, due: n.due, paid: st.paid, total: +p.total || 0, days: Math.max(0, -until), owed: +p.total - st.paid, count: 1 };
+    if (until < 0 && !had.has(`${c.cid}|P${p.id}#${n.i}|late`)) plan.push({ ...base, kind: 'planLate', cycle: `P${p.id}#${n.i}`, key: 'late' });
+    else if (until >= 0 && until <= 2 && !had.has(`${c.cid}|P${p.id}#${n.i}|pre`)) plan.push({ ...base, kind: 'planDue', cycle: `P${p.id}#${n.i}`, key: 'pre' });
+  }
   for (const c of list) {
     if (!c.phone || c.noRemind) continue;
+    if (onPlan.has(c.cid)) continue;
     let step = 0; st.forEach((d, i) => { if (c.days >= d) step = i + 1; });
     if (step && !had.has(`${c.cid}|${c.oldestNo}|s${step}`)) { plan.push({ ...c, kind: 'remind' + step, step, cycle: c.oldestNo, key: 's' + step }); continue; }
     if (cfg.monthly && (isDay || force === 'statement') && !had.has(`${c.cid}|M${month}|stmt`)) plan.push({ ...c, kind: 'statement', cycle: 'M' + month, key: 'stmt' });
@@ -86,10 +111,11 @@ export async function dueSend(data, plan, send) {
   await ensure();
   let ok = 0, bad = 0;
   for (const p of plan.slice(0, 300)) {
-    const key = p.kind === 'statement' ? 'statement' : 'dueRemind' + p.step;
+    const key = p.kind === 'statement' ? 'statement' : (p.kind === 'planDue' || p.kind === 'planLate') ? p.kind : 'dueRemind' + p.step;
     const tpl = (data.CFG && data.CFG.tpl && data.CFG.tpl[key] && data.CFG.tpl[key].text) || DUE_TPL[key];
     const shop = (data.CFG && data.CFG.shop && data.CFG.shop.name) || '';
-    const body = letter(data.CFG, 'customer', fill(tpl, { shop, customer: p.name, count: p.count, days: p.days, outstanding: money(p.owed), link: p.link }));
+    const body = letter(data.CFG, 'customer', fill(tpl, { shop, customer: p.name, count: p.count, days: p.days, outstanding: money(p.owed), link: p.link,
+      part: p.part, parts: p.parts, amount: money(p.amount), due: p.due, paid: money(p.paid), total: money(p.total) }));
     try {
       await send((data.CFG && data.CFG.msg) || {}, p.phone, body);
       await query(`INSERT INTO due_sent (cid, cycle, step) VALUES ($1, $2, $3)`, [p.cid, p.cycle, p.key]).catch(() => {});

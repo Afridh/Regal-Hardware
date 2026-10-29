@@ -6097,6 +6097,13 @@ const CFG={
     text:'Here is your account summary.\nAccount: {customer}\nUnpaid bills: {count}\nTotal outstanding: {outstanding}\nView details: {link}'},
   // the credit follow-up's three reminders (the server keeps the same defaults in services/dues.js)
   // to a tradesman (they start "Dear …", so they go as written — no customer greeting)
+  // easy-payment plans: made at the till; the reminders before each part and when one is late are the server's (same defaults)
+  planMade:{label:'Easy payments — plan made',vars:'{shop} {customer} {parts} {amount} {due} {total} {link}',
+    text:'Your easy-payment plan is set up.\n{parts} monthly parts of {amount}, the first due on {due}.\nTotal: {total}\nDetails: {link}'},
+  planDue:{label:'Easy payments — part due soon',vars:'{shop} {part} {parts} {amount} {due} {paid} {total} {link}',
+    text:'A reminder: part {part} of {parts} of your easy-payment plan, {amount}, is due on {due}.\nPaid so far: {paid} of {total}.\nDetails: {link}'},
+  planLate:{label:'Easy payments — part late',vars:'{shop} {part} {parts} {amount} {due} {paid} {total} {link}',
+    text:'Part {part} of {parts} of your easy-payment plan, {amount}, was due on {due} and is not paid yet.\nPaid so far: {paid} of {total}.\nPlease pay at your earliest. Details: {link}'},
   hireDue:{label:'Tool hire — due back',vars:'{shop} {customer} {item} {due} {days}',
     text:'A reminder: the {item} you hired is due back{dueWhen}.\nIt is charged by the day until it comes back.\nPlease bring it in, or call us to keep it longer.'},
   tradeThanks:{label:'Tradesman — thank you for a customer',vars:'{shop} {name} {customer} {invoice} {total} {earn} {pendingPart} {due}',
@@ -12342,7 +12349,7 @@ const $=(s)=>document.querySelector(s);
 const views=[
  ['updates','What is new'],['actions','Action centre'],
  ['grp','Sell'],['pos','POS billing','F3'],['returns','Returns'],['bills','Bills'],['receipts','Take a payment','F7'],['docs','Quotes & delivery notes'],['collect','Goods to collect'],['hire','Tool hire'],['counter','Open & close'],['cashup','Day book'],
- ['grp','Customers'],['customers','Customers','F8'],['dues','Credit follow-up'],['trades','Tradesmen'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],
+ ['grp','Customers'],['customers','Customers','F8'],['dues','Credit follow-up'],['plans','Easy payments'],['trades','Tradesmen'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],
  ['grp','Buying'],['suppliers','Suppliers','F12'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Payment requests'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels','F11'],
  ['grp','Money'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['chqbooks','Cheque books'],['petty','Petty cash'],['expenses','Expenses'],['accounting','Accounting'],
@@ -12422,7 +12429,8 @@ function allowed(v){
   if(v === 'leave') return true;            // everybody asks for their own days off
   if(v === 'petty') return String(S.user.role||'').toLowerCase()!=='salesman'||(S.petty||[]).some(p=>p.status==='open'&&p.who===S.user.name);   // Sales staff: only while holding some            // the counter hands it out; whoever holds some puts in what they spent
   if(v === 'dues') return allowed('customers');
-  if(v === 'hire') return allowed('pos');           // whoever bills can hire out and take back
+  if(v === 'hire') return allowed('pos');
+  if(v === 'plans') return allowed('customers');           // whoever bills can hire out and take back
   if(v === 'trades') return allowed('customers');   // the tradesmen who send customers, and what they are owed   // who owes and what they have been told — whoever looks after customers
   if(v === 'collect') return allowed('pos')||allowed('bills');   // goods paid for and waiting to be collected
   if(v === 'returns') return allowed('pos');  // whoever may bill may take goods back          // everyone has one; each item on it keeps to the page it comes from
@@ -12513,6 +12521,7 @@ const ICONS={
   customers:'M9 11a4 4 0 100-8 4 4 0 000 8zM3 21a6 6 0 0112 0M17 8h4M19 6v4',
   dues:'M12 8v4l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0zM4 4l3 3M20 4l-3 3',
   hire:'M3 17h4l2-6h6l2 6h4M7 17a2 2 0 104 0M13 17a2 2 0 104 0M9 11V6h6v5',
+  plans:'M4 6h16M4 12h16M4 18h10M18 16l2 2 3-4',
   trades:'M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z',
   suppliers:'M3 8h11v9H3zM14 11h4l3 3v3h-7zM6.5 20a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17.5 20a1.5 1.5 0 100-3 1.5 1.5 0 000 3z',
   orders:'M8 4h9l3 4v12H8zM8 4H4v16h4M12 11h5M12 15h5',
@@ -13003,7 +13012,7 @@ function renderNow(){
   const mn = document.getElementById('main');
   const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,hire:hirePage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,hire:hirePage,plans:plansPage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     try{ mn.innerHTML = r() }
     catch(err){
@@ -21324,6 +21333,7 @@ function billDetail(inv){
      <button class="btn ghost sm" data-act="billMail" data-no="${inv.no}" title="${isEmail(c.email)?'Email the A5 invoice as a PDF to '+c.email:'Email the A5 invoice as a PDF — their email is asked for'}">Email PDF</button></div>
     <div><span>Change</span>
      ${inv.balance>0?`<button class="btn tape sm" data-act="custPay" data-id="${inv.customerId}">Take payment</button>`:''}
+     ${+inv.balance>0.005&&inv.customerId!==1&&!(S.plans||[]).some(p=>p.status!=='closed'&&(p.bills||[]).includes(inv.no))?`<button class="btn ghost sm" data-act="planNew" data-no="${inv.no}">Easy payments</button>`:''}
      <button class="btn ghost sm" data-act="billCopy" data-no="${inv.no}">Bill again</button>
      ${canEdit?`<button class="btn ghost sm" data-act="billEdit" data-no="${inv.no}">Edit in the till</button><button class="btn ghost sm" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}</div>
    </div>
@@ -27898,6 +27908,76 @@ function pettySettleModal(id){
   };
 }
 
+/* ================== EASY PAYMENTS ==================
+   A bill (or all a customer owes) split into monthly parts. Nothing about how they pay changes: a payment
+   settles their oldest bills first as always, and a part counts as paid once what has been paid toward the
+   plan's bills reaches it. The server reminds them two days before each part and once when one is late
+   (and leaves them out of the ordinary overdue reminders meanwhile). A fee, if any, is a small bill on
+   their account that joins the plan. Keep planState in step with the server's (services/dues.js). */
+const plansAll=()=>{ if(!Array.isArray(S.plans)) S.plans=[]; return S.plans };
+function planState(p){
+  const owed=(p.bills||[]).reduce((a,no)=>{ const s=S.sales.find(x=>x.no===no); return a+Math.max(0,+(s&&s.balance)||0) },0);
+  const paid=Math.max(0,Math.min(+p.total||0,(+p.total||0)-owed));
+  let cum=0; const parts=(p.parts||[]).map((x,i)=>{ cum+=+x.amount||0; return {...x,i,cum,paid:paid>=cum-0.005} });
+  const next=parts.find(x=>!x.paid)||null;
+  return {paid:+paid.toFixed(2),next,parts,done:parts.every(x=>x.paid),late:!!(next&&next.due<D(today))};
+}
+function planNew(no){
+  const inv=S.sales.find(x=>x.no===no); if(!inv) return; const c=C(inv.customerId);
+  const all=S.sales.filter(s=>s.customerId===c.id&&+s.balance>0.005&&!plansAll().some(p=>p.status!=='closed'&&(p.bills||[]).includes(s.no)));
+  const first=new Date(today); first.setDate(first.getDate()+30);
+  const m=modal(`<h2>Easy payments for ${noteEsc(c.name)}</h2>
+   <div class="cp-pills" style="margin-top:6px"><span class="muted">cover</span>
+    <label class="chk" style="margin:0"><input type="radio" name="epW" value="one" checked> this bill — ${money2(inv.balance)}</label>
+    ${all.length>1?`<label class="chk" style="margin:0"><input type="radio" name="epW" value="all"> everything they owe — ${money2(all.reduce((a,s)=>a+s.balance,0))} on ${all.length} bills</label>`:''}</div>
+   <div class="grid3" style="margin-top:8px"><div class="f"><label>Monthly parts</label><input id="epN" type="number" min="2" max="36" value="3"></div>
+    <div class="f"><label>First part due</label><input id="epD" type="date" value="${D(first)}"></div>
+    <div class="f"><label>Plan fee (added to it)</label><input id="epF" type="number" min="0" step="any" value="0"></div></div>
+   <div id="epP"></div>
+   <label class="chk"><input type="checkbox" id="epS" ${c.phone?'checked':'disabled'}> text them the plan${c.phone?'':' (no mobile on file)'}</label>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="epOk">Set it up</button></div>`);
+  const g=id=>m.querySelector('#'+id);
+  const figure=()=>{ const which=(m.querySelector('[name=epW]:checked')||{}).value, bills=which==='all'?all:[inv];
+    const base=bills.reduce((a,s)=>a+Math.max(0,+s.balance||0),0), fee=Math.max(0,+g('epF').value||0), n=Math.max(2,Math.min(36,Math.round(+g('epN').value||2)));
+    const total=+(base+fee).toFixed(2), each=Math.floor(total/n*100)/100, d0=new Date(g('epD').value||D(first));
+    const parts=[...Array(n)].map((_,i)=>{ const d=new Date(d0); d.setMonth(d.getMonth()+i); return {due:D(d),amount:i===n-1?+(total-each*(n-1)).toFixed(2):each} });
+    return {bills,base,fee,total,parts} };
+  const draw=()=>{ const x=figure(); g('epP').innerHTML=`<div class="card" style="margin:8px 0;padding:10px 12px"><b>${x.parts.length} parts · ${money2(x.total)}</b>${x.fee?` <span class="muted">(${money2(x.base)} + ${money2(x.fee)} fee)</span>`:''}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${x.parts.map((p,i)=>`<span class="tag">${i+1}. ${p.due} · ${money2(p.amount)}</span>`).join('')}</div></div>` };
+  m.querySelectorAll('input').forEach(i=>i.addEventListener('input',draw)); m.querySelectorAll('[name=epW]').forEach(i=>i.onchange=draw); draw();
+  g('epOk').onclick=()=>{ const x=figure(); if(!(x.base>0)) return toast('Nothing is owed on that');
+    const id='ep'+Date.now().toString(36), pno='EP-'+String(plansAll().length+1).padStart(4,'0'), bills=x.bills.map(s=>s.no);
+    if(x.fee>0) try{ const fb=completeSale({lines:[{pid:OPEN_PID,name:`Easy-payment plan fee (${pno})`,qty:1,price:+x.fee.toFixed(2),disc:0,open:true}],customerId:c.id,pays:[{method:'CREDIT',amount:0}],override:true}); bills.push(fb.no) }catch(e){ return toast(e.message) }
+    plansAll().push({id,no:pno,cid:c.id,bills,total:x.total,fee:x.fee,parts:x.parts,status:'open',made:D(today),by:S.user.name});
+    if(g('epS').checked&&c.phone) sms(c.phone,tpl('planMade',{customer:c.name,parts:String(x.parts.length),amount:money2(x.parts[0].amount),due:x.parts[0].due,total:money2(x.total),link:myLink(c)}),'customer');
+    m.remove(); persist(true); render(); toast(`${pno}: ${x.parts.length} parts of ${money2(x.parts[0].amount)}, first on ${x.parts[0].due}`,'ok') };
+}
+function planView(id){
+  const p=plansAll().find(x=>x.id===id); if(!p) return; const st=planState(p), c=C(p.cid);
+  modal(`<h2>${p.no} · ${noteEsc(c.name)}</h2><div class="muted">${money2(st.paid)} of ${money2(p.total)} paid · made ${p.made} by ${noteEsc(p.by||'')} · bills ${(p.bills||[]).join(', ')}</div>
+   <table style="margin-top:10px"><tr><th>Part</th><th>Due</th><th class="n">Amount</th><th></th></tr>${st.parts.map(x=>`<tr><td>${x.i+1}</td><td>${x.due}</td><td class="n">${money2(x.amount)}</td>
+     <td>${x.paid?'<span class="tag ok">paid</span>':x.due<D(today)?'<span class="tag bad">late</span>':st.next&&st.next.i===x.i?'<span class="tag warn">next</span>':''}</td></tr>`).join('')}</table>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">${p.status!=='closed'?`<button class="btn ghost" data-act="planClose" data-id="${p.id}">Close the plan</button>`:''}<button class="btn tape" data-act="custPay" data-id="${p.cid}">Take a payment</button></div>`);
+}
+function plansPage(){
+  const list=plansAll().map(p=>({p,st:planState(p),c:C(p.cid)})).filter(x=>x.c);
+  const open=list.filter(x=>x.p.status!=='closed'&&!x.st.done), late=open.filter(x=>x.st.late);
+  const dueWeek=open.filter(x=>x.st.next&&x.st.next.due<=ago(-7)&&!x.st.late);
+  return `<h1>Easy payments</h1>
+   <div class="row" style="margin-bottom:12px">
+    ${stat('Plans running',open.length,money2(open.reduce((a,x)=>a+x.p.total-x.st.paid,0))+' still to come','b')}
+    ${stat('Late',late.length,late.length?money2(late.reduce((a,x)=>a+x.st.next.amount,0))+' overdue parts':'none',late.length?'r':'g')}
+    ${stat('Due in 7 days',dueWeek.length,dueWeek.length?money2(dueWeek.reduce((a,x)=>a+x.st.next.amount,0)):'nothing','y')}
+    ${stat('Finished',list.filter(x=>x.st.done).length,'paid in full','g')}
+   </div>
+   <div class="card"><div class="muted" style="margin-bottom:8px">Set one up from a bill: Bills → the bill → Easy payments. The server reminds them two days before each part, and once if it is late.</div>
+    ${list.length?`<div style="overflow-x:auto"><table><tr><th>Plan</th><th>Customer</th><th class="n">Total</th><th class="n">Paid</th><th>Next part</th><th></th></tr>
+     ${list.sort((a,b)=>(a.st.next?a.st.next.due:'9')<(b.st.next?b.st.next.due:'9')?-1:1).map(x=>`<tr${x.p.status==='closed'?' style="opacity:.55"':''}><td>${x.p.no}</td><td><b>${noteEsc(x.c.name)}</b></td><td class="n">${money2(x.p.total)}</td><td class="n">${money2(x.st.paid)}</td>
+       <td>${x.st.done?'<span class="tag ok">paid in full</span>':x.p.status==='closed'?'<span class="tag">closed</span>':`${x.st.next.i+1} of ${x.st.parts.length} · ${money2(x.st.next.amount)} · ${x.st.next.due} ${x.st.late?'<span class="tag bad">late</span>':''}`}</td>
+       <td><button class="btn ghost sm" data-act="planView" data-id="${x.p.id}">Open</button></td></tr>`).join('')}</table></div>`:'<div class="muted">No plans yet.</div>'}
+   </div>`;
+}
+
 /* ================== TOOL HIRE ==================
    Things the shop hires out by the day — a concrete mixer, scaffolding, a breaker. Out: who has it, how
    many, until when, and the deposit taken (held in 2070, not takings). Back: the days are counted (part of a
@@ -28185,7 +28265,7 @@ function dueStopped(c){ const n=+dueCfgNow().stopDays||0; if(!n||!c||c.id===1) r
 const duesApi=(p,opts)=>fetch('/api/dues'+p,{...(opts||{}),headers:{'Content-Type':'application/json','Authorization':'Bearer '+(window.regalBridge?regalBridge.token():''),...((opts||{}).headers||{})}}).then(async r=>{ const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||('The server said '+r.status)); return j });
 function duesLoad(){ if(DUES.loading) return; DUES.loading=true;
   duesApi('').then(j=>{ DUES.data=j; DUES.err='' }).catch(e=>{ DUES.err=e.message }).finally(()=>{ DUES.loading=false; if(S.view==='dues') render() }) }
-const DUE_KIND={remind1:'First reminder',remind2:'Overdue',remind3:'Final reminder',statement:'Statement'};
+const DUE_KIND={remind1:'First reminder',remind2:'Overdue',remind3:'Final reminder',statement:'Statement',planDue:'Plan part due',planLate:'Plan part late'};
 function duesPage(){
   if(!DUES.data&&!DUES.err) duesLoad();
   const cfg=dueCfgNow(), st=(cfg.steps||[7,30,60]).map(Number), boss=ownerOnly(), d=DUES.data||{log:[],plan:[],runs:[]};
@@ -31295,6 +31375,7 @@ document.addEventListener('click',e=>{
     trCam:()=>camTrail(a.dataset.id),
     siteEdit:()=>siteEdit(+a.dataset.id,a.dataset.s||null), siteStmt:()=>siteStatement(+a.dataset.id,a.dataset.s),
     roMake:()=>roMake(+a.dataset.id||a.dataset.id),
+    planNew:()=>planNew(a.dataset.no), planView:()=>planView(a.dataset.id), planClose:()=>{ const p=plansAll().find(x=>x.id===a.dataset.id); if(p&&confirm('Close this plan? Their bills stay owed; the reminders stop.')){ p.status='closed'; p.closed=D(today); closeModals(); persist(true); render() } },
     hireTab:()=>{ hireTab=a.dataset.t; render() }, hireItem:()=>hireItemEdit(a.dataset.id||null), hireNew:()=>hireNew(), hireBack:()=>hireBack(a.dataset.id), hireRemind:()=>hireRemind(a.dataset.id),
     tradePick:()=>tradePick(), tradeNew:()=>tradeEdit(null), tradeEdit:()=>tradeEdit(a.dataset.id), tradePay:()=>tradePay(a.dataset.id), tradeStmt:()=>tradeStatement(a.dataset.id),
     darkToggle:()=>darkSet(!darkOn(),a),
