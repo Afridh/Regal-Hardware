@@ -13,6 +13,7 @@ import { injectCustInbox, markCustImported, pendingCustCount } from './customer.
 import { catchUpLogins } from '../services/portalLogins.js';
 import { stopIfTooMany, wrongTry, rightTry, pinLimits, sendingCode, guardCode } from '../lib/tries.js';
 import { leaveCfg, refuse as leaveRefuse, group as leaveGroup, used as leaveUsed, allow as leaveAllow, LEAVE_TYPES } from '../lib/leaveRules.js';
+import { summaryTick } from '../services/summary.js';
 // everything that arrived from outside the tills — the website's orders, the suppliers', and what a
 // customer said on their own page — in one go
 // Each one on its own, and none of them allowed to fail the books: if an inbox cannot be read, the till
@@ -1173,5 +1174,7 @@ async function breakWatch() {
   }).catch(e => console.warn('break watch: could not mark', e.message));
 }
 if (!process.env.VERCEL && process.env.NODE_ENV !== 'test') setInterval(() => { breakWatch().catch(e => console.warn('break watch:', e.message)); }, 60 * 1000).unref?.();
+// the owner's closing summary, when the day has not been closed by the shop's time (services/summary.js)
+if (!process.env.VERCEL && process.env.NODE_ENV !== 'test') setInterval(() => { summaryTick(sendViaProvider, booksEdit).catch(e => console.warn('closing summary:', e.message)); }, 60 * 1000).unref?.();
 
 export default r;

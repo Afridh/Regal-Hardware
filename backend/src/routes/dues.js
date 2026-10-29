@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { regalAuth, sendViaProvider } from './regal.js';
 import { readBooks, duePlan, dueSend, dueLog, dueTick, dueList, dueCfg } from '../services/dues.js';
+import { query } from '../db.js';
 
 const r = Router();
 const boss = (req) => { const role = String(req.regalUser?.role || '').toLowerCase();
@@ -37,6 +38,13 @@ r.post('/one', regalAuth, asyncHandler(async (req, res) => {
   const out = await dueSend(data, [{ ...c, kind: 'remind' + step, step, cycle: c.oldestNo + '·hand' + Date.now(), key: 's' + step }], sendViaProvider);
   if (!out.sent) throw new HttpError(502, 'It did not go — see the log on the page for why');
   res.json({ ok: true, ...out });
+}));
+
+/* has the server already sent the owner's closing summary for this day? (the till asks before its close sends one) */
+r.get('/summary/:day', regalAuth, asyncHandler(async (req, res) => {
+  const day = String(req.params.day || '').slice(0, 10);
+  const { rows: [x] } = await query(`SELECT ok FROM sum_runs WHERE day = $1`, [day]).catch(() => ({ rows: [] }));
+  res.json({ ok: true, sent: !!(x && x.ok) });
 }));
 
 /* the daily run, on the server's clock (not on serverless hosting, where nothing stays running) */

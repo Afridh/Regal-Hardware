@@ -6118,6 +6118,9 @@ const CFG={
     text:'Your goods have been received.\nGRN No: {grn}'},
   returnReceived:{label:'Goods returned',vars:'{shop} {return} {fromPart} {amount} {how} {outstanding}',
     text:'We have received the goods you returned.\nReturn No: {return}{fromPart}\nAmount: {amount}\n{how}\nBalance now: {outstanding}'},
+  // the owner's closing summary (the server sends the same, with the same defaults, in services/summary.js)
+  closingSummary:{label:'Owner closing summary',vars:'{shop} {date} {bills} {sales} {cash} {credit} {profit} {collected} {expenses} {drawer} {outstanding} {unusual}',
+    text:"Today's summary ({date}):\nBills: {bills}\nSales: {sales}\nCash: {cash} · Credit: {credit}\nProfit: {profit}\nCollected from customers: {collected}\nExpenses: {expenses}\nDrawer: {drawer}\nCustomers owe: {outstanding}\n{unusual}"},
   dailySummary:{label:'Owner summary at close',vars:'{sales} {cash} {credit} {expenses} {outstanding}',
     text:'Today\'s summary:\nSales: {sales}\nCash: {cash}\nCredit: {credit}\nExpenses: {expenses}\nCustomers owe: {outstanding}'}
  }
@@ -7062,7 +7065,7 @@ const TPL_ONELINE={cashSale:'Thank you for your purchase. Your bill {invoice} fo
   orderReceived:'Your goods have been received as {grn}.',
   dailySummary:'Today — sales {sales}, cash {cash}, credit {credit}, expenses {expenses}. Customers owe {outstanding}.'};
 // who each template is written to, for its preview and its test
-const TPL_AUD={repairSupplier:'supplier',orderAccepted:'supplier',orderRejected:'supplier',orderAdjusted:'supplier',orderReceived:'supplier',ownerBill:'owner',dailySummary:'owner'};
+const TPL_AUD={closingSummary:'owner',repairSupplier:'supplier',orderAccepted:'supplier',orderRejected:'supplier',orderAdjusted:'supplier',orderReceived:'supplier',ownerBill:'owner',dailySummary:'owner'};
 function labelSampleBill(inv){
   const c=C(inv.customerId), credit=inv.balance>0;
   const cols=[CFG.bill.showCode&&'CODE','DESCRIPTION','QTY',CFG.bill.showUom&&'UOM',CFG.bill.showMrp&&'MRP','PRICE','AMOUNT'].filter(Boolean);
@@ -14901,18 +14904,39 @@ function deCloseDay(){
   if((CFG.dayend||{}).printSlip!==false) dePrintSheet(d,loc);
 }
 
-/* The owner summary has had a template and a setting for a long time and nothing ever sent
-   it. The close is the moment it is true, so this is where it goes out. */
+/* The owner's closing summary goes out at the close — or, if nobody has closed the day by the time in
+   Settings → Bills, the server sends it (services/summary.js). Whichever goes first marks the day in the
+   books (S.summarySent), and the other then stays quiet. The figures here and the server's are the same:
+   keep closeSummaryVars in step with summaryOf there. */
+const SUM_RISKY={holdDiscard:'held bill thrown away',billCleared:'bill cleared',lineOff:'line taken off',billEdit:'saved bill changed',billRemade:'bill re-made',bigDisc:'big discount',underCost:'sold under cost',cashRefund:'cash given back'};
+function closeSummaryVars(day,rec){
+  const sales=S.sales.filter(s=>String(s.date)===day), sold=sales.filter(s=>+s.total>0);
+  let total=0,cash=0,credit=0,profit=0;
+  for(const s of sales){ total+=+s.total||0; for(const p of s.pays||[]) if(p.method==='CASH') cash+=+p.amount||0; credit+=+(s.credit0??s.balance)||0;
+    const ls=s.lines||[]; profit+=ls.reduce((a,l)=>a+((+l.qty||0)*(+l.price||0)-(+l.disc||0)),0)-(+s.billDisc||0)-ls.reduce((a,l)=>a+(+l.qty||0)*(+l.cost||0),0) }
+  const collected=(S.payments||[]).filter(p=>p.dir==='IN'&&String(p.date)===day).reduce((a,p)=>a+(+p.amount||0),0);
+  const expenses=(S.expenses||[]).filter(e=>String(e.date)===day).reduce((a,e)=>a+(+e.amount||0),0);
+  const owe=(S.customers||[]).filter(c=>c.id!==1).reduce((a,c)=>a+S.sales.filter(s=>s.customerId===c.id).reduce((x,s)=>x+Math.max(0,+s.balance||0),0),0);
+  const close=rec||deList().find(r=>String(r.date)===day);
+  const drawer=close?(Math.abs(+close.diff||0)<0.005?'counted, agreed':`counted, ${money2(Math.abs(close.diff))} ${close.diff>0?'over':'short'}`):'not counted yet';
+  const risky=(S.trail||[]).filter(x=>x.date===day&&SUM_RISKY[x.kind]);
+  const unusual=risky.length?`To look at (${risky.length}${risky.some(x=>x.cam)?', with camera clips':''}):\n`+risky.slice(0,3).map(x=>`- ${SUM_RISKY[x.kind]}: ${x.what} (${x.by})`).join('\n')+(risky.length>3?`\n- and ${risky.length-3} more on the Trail`:''):'Nothing unusual today.';
+  return {date:day,bills:String(sold.length),sales:money2(total),cash:money2(cash),credit:money2(credit),profit:money2(profit),collected:money2(collected),expenses:money2(expenses),drawer,outstanding:money2(owe),unusual};
+}
 function deTellOwner(rec){
-  const m=CFG.msg||{}, to=String(CFG.shop.owner||'').trim();
+  const m=CFG.msg||{}, to=String(CFG.shop.owner||'').trim(), day=rec&&rec.date||D(today);
   if(m.autoSummary===false||!to) return;
-  try{
-    const body=tpl('dailySummary',{ sales:money2(rec.sales), cash:money2(rec.tenders.CASH||0),
-      credit:money2(rec.credit), expenses:money2(rec.expenses),
-      outstanding:money2((S.customers||[]).reduce((a,c)=>a+Math.max(0,partyBal('C',c.id)),0)) });
+  S.summarySent=S.summarySent||{};
+  if(S.summarySent[day]) return;                          // the server sent it already, at the shop's time
+  // the books here may not have caught up with the server yet: ask it straight (no answer — no internet — and it goes from here)
+  const go=()=>{ if(S.summarySent[day]) return; try{
+    const body=tpl('closingSummary',closeSummaryVars(day,rec));
     const by=Object.entries(rec.paidBy||{}).filter(([k])=>k!=='Expenses').map(([k,v])=>`${k}: ${money2(v)}`);
-    sms(to,body+(rec.paidOut?`\n${by.join('\n')}${by.length?'\n':''}All money paid out: ${money2(rec.paidOut)}`:''));
-  }catch(e){ /* the day is closed whether or not the text got out */ }
+    sms(to.split(/[,;\s]+/)[0],body+(rec.paidOut?`\n${by.join('\n')}${by.length?'\n':''}All money paid out: ${money2(rec.paidOut)}`:''),'owner');
+    S.summarySent[day]='till'; persist(true);
+  }catch(e){ /* the day is closed whether or not the text got out */ } };
+  return fetch('/api/dues/summary/'+day,{headers:{'Authorization':'Bearer '+(window.regalBridge?regalBridge.token():'')}}).then(r=>r.ok?r.json():{}).catch(()=>({}))
+    .then(j=>{ if(j&&j.sent){ S.summarySent[day]='server'; persist(true); return } go() });
 }
 
 function dePrintSheet(d,loc){
