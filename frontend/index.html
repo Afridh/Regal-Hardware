@@ -626,6 +626,8 @@ body.privacy nav .navuser{position:relative}
   font-size:10px;font-weight:700;padding:1px 5px;letter-spacing:.04em;vertical-align:middle}
 .retline td{color:#9F1239}
 .tag.ret{background:#FFE4E6;color:#9F1239;border-color:#FDA4AF}
+.lst-band{padding:8px 12px;border-radius:10px;font-weight:800;letter-spacing:.04em;color:#fff;margin-top:6px}.lst-band.black{background:#1d1b1c}.lst-band.red{background:#B3261E}
+.lst-tag{display:inline-block;font-size:11px;font-weight:800;padding:2px 9px;border-radius:99px;color:#fff;vertical-align:middle;letter-spacing:.04em}.lst-tag.black{background:#1d1b1c}.lst-tag.red{background:#B3261E}
 /* ---- the label that goes on damaged goods and on repair jobs ---- */
 .dlbl{width:62mm;border:1px solid #111;border-radius:4px;padding:8px 9px;font-family:Archivo,sans-serif;
   color:#000;background:#fff}
@@ -5171,6 +5173,8 @@ const billLinkFor=()=>{
   return (CFG.shop.web||'regalhw.lk')+'/b/'+Array.from(a).map(n=>n.toString(36)).join('').slice(0,12);
 };
 function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.name,salesman=undefined,override=false,no=null,toAccount=false,returnOf=null,returnWhy=''}){
+  const lg=(typeof listGate==='function'&&!returnOf)?listGate(C(customerId)):null;
+  if(lg===false) throw new Error(`${C(customerId).name} is on the ${listName(C(customerId)).toLowerCase()} — a director has to allow this bill`);
   if(window.privacyOn) throw new Error('Till is busy — try again in a moment');
   if(!lines.length) throw new Error('A bill needs at least one line');
   // a minus quantity is a return: the customer is handing goods back on this same bill
@@ -5270,6 +5274,8 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   inv.lines.forEach(l=>{ if(isOpenLine(l)) return; const pp=P(l.pid);
     if(pp.stock<=pp.min&&pp.stock+l.qty>pp.min) notify('stock',`${pp.name} is down to ${fq(pp.stock)} ${pp.unit}`,'inventory') });
   if(overLimit) notify('warn',`${c.name} was let past their credit limit`,'customers');
+  if(lg&&lg.by){ inv.listBy=lg.by; if(lg.ap) lg.ap.used=inv.no; if(S.pos&&S.pos.listOk&&S.pos.listOk.cid===customerId) delete S.pos.listOk;
+    try{ logTrail('other',`${inv.no} billed to ${C(customerId).name} (${listName(C(customerId)).toLowerCase()}) — allowed by ${lg.by}`,{ref:inv.no,amount:inv.total}) }catch(e){} }
   // cash handed back for goods returned (not taken off an account)
   if(total<-0.005&&!acct) try{ logTrail('cashRefund',`${inv.no} — ${money2(-total)} back to ${c?c.name:'a walk-in'}${returnOf?' (from '+returnOf+')':''}`,{amount:-total,ref:inv.no,who:c?c.name:''}) }catch(e){}
   const v={invoice:inv.no,total:fmt(total),balance:fmt(credit),link:inv.link,
@@ -17200,10 +17206,12 @@ function cpDraw(focus){
   const will=+(owes+Math.max(0,onAcct-held)).toFixed(2), stopD=dueStopped(c), siteOver=cpSiteOver(c), over=cpOver(c)||siteOver>0||(!!stopD&&onAcct>0.005), covered=paid>=T-0.005;
   const sites=(c.sites||[]).filter(x=>x.active!==false);
   // the server checks the PIN when the till is online, so the till need not hold anyone's PIN itself
-  const admins=S.users.filter(u=>u.active!==false&&(u.perms||[]).includes('overLimit')&&u.name!==S.user.name&&((window.regalBridge&&regalBridge.online&&regalBridge.online())||u.pinHash||u.passHash||u.pass));
+  const admins=dirBosses();      // past the limit: the Super Admin, the Owner or an Admin only
+  if(over&&!covered&&!ONA.allowedBy){ const ap=dirApproved('overLimit',c.id); if(ap){ ONA.allowedBy=ap.decidedBy; ONA.overAp=ap.id } }
+  const overAsked=dirAsked('overLimit',c.id);
   const banks=S.banks||[];
   const how=ONA.how, PAPERS=[['a5','Large A5'],['r80','Small 80mm'],...(c.phone?[['sms','e-Bill text']]:[]),['none','No print']];
-  el.innerHTML=head+`<div class="cp-who"><div><b>${noteEsc(c.name)}</b><span class="muted">${noteEsc(c.phone||'no mobile')} · ${c.level||'retail'} prices</span></div>
+  el.innerHTML=head+`<div class="cp-who"><div><b>${noteEsc(c.name)}</b>${custListed(c)?` <span class="lst-tag ${c.list}">${listName(c)}</span>`:''}<span class="muted">${noteEsc(c.phone||'no mobile')} · ${c.level||'retail'} prices</span></div>
       <button class="btn ghost sm" data-cp="change">Someone else</button></div>
     <div class="cp-figs"><div><span>Outstanding now</span><b>${money2(owes)}</b></div><div><span>On account now</span><b>${money2(onAcct)}</b></div>
       <div class="${over?'bad':''}"><span>Outstanding after</span><b>${money2(will)}</b></div></div>
@@ -17216,10 +17224,10 @@ function cpDraw(focus){
     ${siteOver?`<div class="cp-warn">Over the site's own limit by ${money2(siteOver)}.</div>`:''}
     ${stopD?`<div class="cp-warn">New credit is stopped: their oldest unpaid bill is ${stopD} days old (Credit follow-up stops it after ${+dueCfgNow().stopDays}).</div>`:''}
     ${over&&!covered?(ONA.allowedBy?`<div class="cp-ok">${cpOver(c)?`Over the limit by ${money2(owes+onAcct-c.limit)}`:'Credit stopped'} — allowed by ${noteEsc(ONA.allowedBy)}</div>`
-      :can('overLimit')?`<div class="cp-warn">${cpOver(c)?`Over their limit by ${money2(owes+onAcct-c.limit)}.`:'Let this bill go on account anyway?'} <button class="btn sm" data-cp="allow">Allow it</button></div>`
+      :dirBoss()?`<div class="cp-warn">${cpOver(c)?`Over their limit by ${money2(owes+onAcct-c.limit)}.`:'Let this bill go on account anyway?'} <button class="btn sm" data-cp="allow">Allow it</button></div>`
       :`<div class="cp-warn">${cpOver(c)?`Over their limit by ${money2(owes+onAcct-c.limit)}`:'Credit is stopped'} — an admin lets it through with their PIN.
          ${admins.length?`<div class="cp-pin"><select id="cpWho">${admins.map(u=>`<option value="${noteEsc(u.name)}">${noteEsc(u.name)}</option>`).join('')}</select>
-           <input id="cpPin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off"><button class="btn sm" data-cp="pin">Allow</button></div><span id="cpPinMsg"></span>`
+           <input id="cpPin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off"><button class="btn sm" data-cp="pin">Allow</button></div><span id="cpPinMsg"></span>`+(overAsked?'<div class="muted" style="margin-top:4px">Asked — waiting for a director on the Approvals page</div>':'<div style="margin-top:4px"><button class="btn ghost sm" data-cp="askdir">Ask a director for approval</button></div>')
            :'<div>Nobody here may allow it — take part of it now, or ask the owner.</div>'}</div>`):''}
     <div class="cp-part">
       <div class="cp-row2"><label class="f"><span>Paid now</span><input id="cpPaid" inputmode="decimal" placeholder="nothing" value="${noteEsc(ONA.paid)}"></label>
@@ -17248,7 +17256,7 @@ function cpDraw(focus){
 async function cpPin(){
   const el=document.querySelector('.cp-modal'); if(!el||!ONA) return;
   const u=S.users.find(x=>x.name===el.querySelector('#cpWho').value), msg=el.querySelector('#cpPinMsg');
-  if(!u||!(await adminOk(u,el.querySelector('#cpPin').value))){ msg.textContent='That PIN is not right.'; msg.style.color='var(--chip-rust)'; return }
+  if(!u||!dirBoss(u)||!(await adminOk(u,el.querySelector('#cpPin').value))){ msg.textContent='That PIN is not right.'; msg.style.color='var(--chip-rust)'; return }
   ONA.allowedBy=u.name; cpDraw(true);
 }
 function cpPick(id){
@@ -17271,7 +17279,7 @@ function cpSave(){
     else pays.push({method:'CARD',bank:+ONA.bank||1,amount:paid,ref:String(ONA.ref).trim(),kind:how});
   }
   pays.push({method:'CREDIT',amount:0});
-  const taken=String(ONA.takenBy).trim(), paper=ONA.paper, allowedBy=ONA.allowedBy;
+  const taken=String(ONA.takenBy).trim(), paper=ONA.paper, allowedBy=ONA.allowedBy, overAp=ONA.overAp;
   ONA.busy=true;
   // "sold by" was answered in the panel; otherwise the end-of-bill questions, when the shop has them on
   if(ONA.askSales) S.pos.salesman=ONA.soldBy||null;
@@ -17281,7 +17289,7 @@ function cpSave(){
       const inv=finishTillBill({cust:c,pays,override:!!allowedBy,note:[st?'Site: '+st.name:'',taken?'Taken by: '+taken:''].filter(Boolean).join(' · ')});
       if(st) inv.site=st.id;
       if(taken) inv.takenBy=taken;
-      if(allowedBy){ inv.limitBy=allowedBy; if(allowedBy!==S.user.name){ notify('warn',`${allowedBy} let ${S.user.name} put ${inv.no} on ${c.name}'s account past their limit`,'customers'); S.notif[0].forUser=allowedBy } }
+      if(allowedBy){ inv.limitBy=allowedBy; { const ap0=overAp&&(S.approvals||[]).find(x=>x.id===overAp); if(ap0) ap0.used=inv.no } if(allowedBy!==S.user.name){ notify('warn',`${allowedBy} let ${S.user.name} put ${inv.no} on ${c.name}'s account past their limit`,'customers'); S.notif[0].forUser=allowedBy } }
       cpClose(); CS.paper=null; render(); persist(true);
       billSaved(inv);
       toast(`${inv.no} on ${c.name}'s account${paid>0.005?` · ${money2(paid)} paid now`:''} — outstanding ${money2(partyBal('C',c.id))}`,'ok');
@@ -17322,7 +17330,10 @@ document.addEventListener('click',e=>{
   if(a==='siteadd'){ const v=((document.getElementById('cpSiteNew')||{}).value||'').trim(); if(!v) return toast('Name the site');
     const c=C(ONA.cust); c.sites=c.sites||[]; const x={id:'st'+Date.now().toString(36),name:v,active:true,since:D(today)}; c.sites.push(x); ONA.site=x.id; ONA.addSite=false; persist(true); return cpDraw(true) }
   if(a==='nothing'){ ONA.paid=''; return cpDraw(true) }
-  if(a==='allow'){ ONA.allowedBy=S.user.name; return cpDraw(true) }
+  if(a==='allow'){ if(!dirBoss()) return toast('Only the Super Admin or a director can allow this'); ONA.allowedBy=S.user.name; return cpDraw(true) }
+  if(a==='askdir'){ const c=C(ONA.cust); if(!c) return; if(dirAsked('overLimit',c.id)) return toast('Already asked');
+    requestApproval('overLimit',`${c.name}: a bill on account past their limit`,`Outstanding ${money2(partyBal('C',c.id))} · limit ${money2(c.limit)} · this bill ${money2(billTotal())}`,{cid:c.id},{keep:true});
+    toast('Asked — the bill can go once a director says yes','warn'); return cpDraw(true) }
   if(a==='pin') return cpPin();
   if(a==='save') return cpSave();
   if(a==='new'){ cpClose(); return pickCustomer(()=>{ if(S.pos.customer) creditSale() }) }
@@ -17649,7 +17660,8 @@ function qDone(){
     const c=C(S.pos.customer);
     let override=false;
     if(partyBal('C',c.id)+total>c.limit){
-      if(!can('overLimit')) return toast(`${c.name} would go past their ${fmt(c.limit)} limit — ask a manager`);
+      if(!dirBoss()&&!dirApproved('overLimit',c.id)) return toast(`${c.name} would go past their ${fmt(c.limit)} limit — a director has to allow it (On account, F6, to ask)`);
+      { const ap=dirApproved('overLimit',c.id); if(ap&&!dirBoss()) ap.used='till' }
       if(!confirm(`${c.name} — outstanding ${fmt(partyBal('C',c.id))} against a limit of ${fmt(c.limit)}.\nThis bill takes them to ${fmt(partyBal('C',c.id)+total)}. Allow it?`)) return;
       override=true;
     }
@@ -17894,12 +17906,13 @@ function openPay(resume){
     let override=false;
     const stopD=cr>0.005?dueStopped(cust):0;
     if(stopD){
-      if(!can('overLimit')){ stop(); m.remove(); return toast(`New credit is stopped for ${cust.name} — their oldest bill is ${stopD} days old. Ask a manager.`) }
+      if(!dirBoss()&&!dirApproved('overLimit',cust.id)){ stop(); m.remove(); return toast(`New credit is stopped for ${cust.name} — their oldest bill is ${stopD} days old. A director has to allow it.`) }
       if(!confirm(`New credit is stopped for ${cust.name}: their oldest unpaid bill is ${stopD} days old.\nLet this bill go on account anyway?`)){ taken=taken.filter(p=>p.method!=='CREDIT'); draw(); return }
       override=true;
     }
     if(cr>0.005&&partyBal('C',cust.id)+cr>cust.limit&&!override){
-      if(!can('overLimit')){ stop(); m.remove(); return toast(`${cust.name} would go past their ${fmt(cust.limit)} limit — ask a manager`) }
+      if(!dirBoss()&&!dirApproved('overLimit',cust.id)){ stop(); m.remove(); return toast(`${cust.name} would go past their ${fmt(cust.limit)} limit — a director has to allow it (On account, F6, to ask)`) }
+      { const ap=dirApproved('overLimit',cust.id); if(ap&&!dirBoss()) ap.used='till' }
       if(!confirm(`${cust.name} — outstanding ${fmt(partyBal('C',cust.id))} against a limit of ${fmt(cust.limit)}.\nThis bill takes them to ${fmt(partyBal('C',cust.id)+cr)}. Allow it?`)){ taken=taken.filter(p=>p.method!=='CREDIT'); draw(); return }
       override=true;
     }
@@ -19544,6 +19557,8 @@ function smsSentModal(inv,c){
 /* the bill follows the customer: their price list, and each line at what they were charged last time */
 function setBillCustomer(id){
   S.pos.customer=id===1?null:id; S.pos.level=null;
+  if(S.pos.listOk&&S.pos.listOk.cid!==id) delete S.pos.listOk;
+  if(id&&id!==1&&custListed(C(id))) setTimeout(()=>listAsk(C(id)),30);
   S.pos.lines.forEach(l=>{ delete l.fromLast; l.price=priceFor(P(l.pid),l.qty); l.auto=true });
   const n=repriceToCustomer(S.pos.customer,{quiet:true});
   if(CS.pid){ const was=lastPriceFor(CS.pid,S.pos.customer); const p=P(CS.pid); if(was&&CFG.pos.repriceToLast&&was.price>=p.cost-0.005){ CS.price=was.price; CS.auto=false; CS.last=was } else if(CS.auto!==false){ CS.price=priceFor(p,+CS.qty||1); CS.last=was||null } }
@@ -21973,7 +21988,7 @@ function payGate(kind,title,detail,data,opts){
   return true;
 }
 const payWhat=(ls)=>ls.map(l=>`${String(l.method||'').toLowerCase()} ${fmt(l.amount)}${l.ref||l.no?' ('+escM(l.ref||l.no)+')':''}${l.date&&l.date!==D(today)?' dated '+l.date:''}`).join(' + ');
-const APKIND=Object.fromEntries(APPROVAL_KINDS);
+const APKIND={...Object.fromEntries(APPROVAL_KINDS),listBill:'Billing a customer on the black or red list',overLimit:'Credit past a customer’s limit'};
 const canApprove=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||can('approve')));
 const needsApproval=(kind)=>{ const cfg=CFG.approvals||{}; return cfg[kind]!==false&&!canApprove() };
 const apPending=()=>(S.approvals||[]).filter(a=>a.status==='pending');
@@ -21996,6 +22011,7 @@ function applyApproval(a){
     case 'supPortal':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supPortalSet(s,d.field,!!d.value); break }
     case 'supStock':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supStockOpen(s); break }
     case 'leave':{ lvApprove(d.id); break }
+    case 'listBill': case 'overLimit': break;      // the yes itself is what the till looks for (dirApproved)
     case 'stockAdj':{ if(d.phoneIds) phonePost(d.phoneIds,true); else { stkCount={...(d.counts||{})}; postStockTakeNow(d.note||'Stock take') } break }
     case 'salaryAsk':{ const e=(S.employees||[]).find(x=>String(x.id)===String(d.empId))||(S.employees||[]).find(x=>x.name===d.who);
       if(!e) throw new Error('That person is no longer on the staff list');
@@ -22048,11 +22064,76 @@ function salTell(d,ok,note){
   const ph=String((u&&u.phone)||(e&&e.phone)||'').replace(/\D/g,'');
   if(/^0\d{9}$/.test(ph)) try{ sms(ph,txt,'staff') }catch(err){}
 }
+/* ================== THE BLACK AND RED LISTS, AND CREDIT PAST THE LIMIT ==================
+   Only the directors decide these: the Super Admin, the Owner or an Admin. A customer one of them puts
+   on the black list (do not serve) or the red list (take care) cannot be billed until one of them says
+   yes — with their PIN at the counter, or from the Approvals page. Credit past a customer's limit is the
+   same: nobody else's "allow" counts. A yes from the Approvals page holds for three hours, for one bill. */
+const dirBoss=(u)=>['super admin','superadmin','owner','admin'].includes(String(((u||S.user)||{}).role||'').toLowerCase());
+const CUST_LISTS={black:['Black list','do not serve'],red:['Red list','take care']};
+const custListed=(c)=>c&&c.id!==1&&CUST_LISTS[c.list]?c.list:null;
+const listName=(c)=>CUST_LISTS[c.list]?CUST_LISTS[c.list][0]:'';
+const dirBosses=()=>(S.users||[]).filter(u=>u.active!==false&&dirBoss(u)&&u.name!==S.user.name&&((window.regalBridge&&regalBridge.online&&regalBridge.online())||u.pinHash||u.passHash||u.pass));
+/* a director's yes from the Approvals page for this customer, not used yet and under three hours old */
+function dirApproved(kind,cid){
+  const cut=Date.now()-3*3600e3;
+  return (S.approvals||[]).filter(a=>a.kind===kind&&a.status==='approved'&&!a.used&&String((a.data||{}).cid)===String(cid)&&(+a.decidedTs||0)>cut).slice(-1)[0]||null;
+}
+const dirAsked=(kind,cid)=>(S.approvals||[]).find(a=>a.kind===kind&&a.status==='pending'&&String((a.data||{}).cid)===String(cid))||null;
+/* whether a bill for this customer may go: {by} who allowed it, or null when they are on no list */
+function listGate(c){
+  if(!custListed(c)) return null;
+  if(dirBoss()) return {by:S.user.name};
+  if(S.pos&&S.pos.listOk&&S.pos.listOk.cid===c.id) return {by:S.pos.listOk.by};
+  const a=dirApproved('listBill',c.id); if(a) return {by:a.decidedBy,ap:a};
+  return false;
+}
+/* picked on a bill: say so at once, and offer the ways through */
+function listAsk(c){
+  if(!custListed(c)||dirBoss()||(S.pos.listOk&&S.pos.listOk.cid===c.id)||dirApproved('listBill',c.id)) return;
+  const asked=dirAsked('listBill',c.id), boss=dirBosses();
+  const m=modal(`<h2>⛔ ${noteEsc(c.name)} is on the ${listName(c).toLowerCase()}</h2>
+   <div class="lst-band ${c.list}">${listName(c)} — ${CUST_LISTS[c.list][1]}</div>
+   <div style="margin:8px 0">${c.listWhy?`<b>Why:</b> ${noteEsc(c.listWhy)} · `:''}<span class="muted">put there by ${noteEsc(c.listBy||'a director')}${c.listAt?' on '+noteEsc(c.listAt):''}</span></div>
+   <div class="muted">A director — the Super Admin, the Owner or an Admin — has to allow a bill for them.</div>
+   ${boss.length?`<div class="cp-pin" style="margin-top:10px"><select id="lsWho">${boss.map(u=>`<option value="${noteEsc(u.name)}">${noteEsc(u.name)}</option>`).join('')}</select>
+     <input id="lsPin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off"><button class="btn tape sm" id="lsOk">Allow this bill</button></div><div id="lsMsg" class="muted"></div>`:''}
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-wrap:wrap">
+    <button class="btn ghost" id="lsOff">Take them off this bill</button>
+    ${asked?'<span class="tag warn" style="align-self:center">Asked — waiting for a director</span>':'<button class="btn ghost" id="lsAsk">Ask a director for approval</button>'}</div>`);
+  const g=id=>m.querySelector('#'+id);
+  const ok=async()=>{ const u=(S.users||[]).find(x=>x.name===g('lsWho').value);
+    if(!u||!dirBoss(u)||!(await adminOk(u,g('lsPin').value))){ g('lsMsg').textContent='That PIN is not right.'; g('lsMsg').style.color='var(--chip-rust)'; return }
+    S.pos.listOk={cid:c.id,by:u.name}; m.remove(); render(); toast(`${u.name} allowed this bill for ${c.name}`,'ok') };
+  if(g('lsOk')){ g('lsOk').onclick=ok; g('lsPin').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); ok() } }; g('lsPin').focus() }
+  g('lsOff').onclick=()=>{ setBillCustomer(1); m.remove(); render() };
+  if(g('lsAsk')) g('lsAsk').onclick=()=>{ requestApproval('listBill',`Bill ${c.name} — on the ${listName(c).toLowerCase()}`,[c.listWhy,S.pos.lines.length?`${S.pos.lines.length} line${S.pos.lines.length===1?'':'s'} · ${fmt(billTotal())}`:''].filter(Boolean).join(' · '),{cid:c.id},{keep:true});
+    m.remove(); render(); toast('Asked — the bill can go once a director says yes','warn') };
+}
+/* putting a customer on a list, or taking them off: the directors only */
+function custListModal(id){
+  const c=C(id); if(!c||!dirBoss()) return toast('Only the Super Admin or a director can do this');
+  const m=modal(`<h2>${noteEsc(c.name)} — black or red list</h2>
+   <div class="muted" style="margin-bottom:8px">On either list nobody can bill them without a director's yes (PIN at the counter, or the Approvals page).</div>
+   ${[['','On no list','billed as anyone else'],['red','Red list','take care — a director allows each bill'],['black','Black list','do not serve — a director allows each bill']].map(([k,l,d])=>`<label class="chk" style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--line2)"><input type="radio" name="clL" value="${k}" ${(c.list||'')===k?'checked':''}> <span><b>${l}</b> <span class="muted">— ${d}</span></span></label>`).join('')}
+   <div class="f" style="margin-top:8px"><label>Why (shown at the counter)</label><input id="clWhy" maxlength="120" value="${noteEsc(c.listWhy||'')}" placeholder="e.g. cheques returned twice"></div>
+   <div class="muted" id="clMsg"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="clOk">Save</button></div>`);
+  m.querySelector('#clOk').onclick=()=>{
+    const k=(m.querySelector('[name=clL]:checked')||{}).value||'', why=m.querySelector('#clWhy').value.trim();
+    if(k&&!why){ m.querySelector('#clMsg').textContent='Say why — it is what the counter sees.'; return }
+    const was=c.list||'';
+    if(k){ Object.assign(c,{list:k,listWhy:why,listBy:S.user.name,listAt:apStamp()}) } else { delete c.list; delete c.listWhy; c.listOffBy=S.user.name; c.listOffAt=apStamp() }
+    try{ logTrail('other',k?`${c.name} put on the ${CUST_LISTS[k][0].toLowerCase()} — ${why}`:`${c.name} taken off the ${(CUST_LISTS[was]||['list'])[0].toLowerCase()}`,{ref:c.code||String(c.id)}) }catch(e){}
+    m.remove(); persist(true); render(); toast(k?`${c.name} is on the ${CUST_LISTS[k][0].toLowerCase()}`:`${c.name} is on no list`,'ok');
+  };
+}
 function decideApproval(id,ok,note){
   const a=(S.approvals||[]).find(x=>x.id===id); if(!a||a.status!=='pending') return;
   if(!canApprove()) return toast('Only the owner can decide this');
   if(PAY_APPROVALS.includes(a.kind)&&!payBoss()) return toast('Only an Admin or the Super Admin can approve a payment');
-  a.status=ok?'approved':'rejected'; a.decidedBy=S.user.name; a.decidedAt=apStamp(); a.note=(note||'').trim();
+  if((a.kind==='listBill'||a.kind==='overLimit')&&!dirBoss()) return toast('Only the Super Admin or a director can decide this');
+  a.status=ok?'approved':'rejected'; a.decidedBy=S.user.name; a.decidedAt=apStamp(); a.decidedTs=Date.now(); a.note=(note||'').trim();
   if(ok){ try{ applyApproval(a) }catch(e){ a.status='failed'; a.note=(a.note?a.note+' · ':'')+e.message } }
   if(a.kind==='salaryAsk'&&a.status!=='approved') salTell(a.data||{},false,a.note);
   if(a.kind==='leave'&&a.status!=='approved'){ const l=lvList().find(x=>x.id===(a.data||{}).id); if(l&&l.status==='pending'){ l.status='rejected'; l.note=a.note; l.decidedBy=S.user.name; lvTell(l,false,a.note) } }
@@ -23035,9 +23116,10 @@ function customerPanel(c){
      <button class="btn ghost wa" data-act="custWa" data-id="${c.id}" ${c.phone?'':'disabled'} title="Open WhatsApp with them — the statement typed in if they owe">${WA_ICON} WhatsApp</button>
      <button class="btn ghost" data-act="noteAdd" data-ptype="C" data-id="${c.id}">Add a note</button>
      <button class="btn ghost" data-act="custEdit" data-id="${c.id}">Edit <i class="kbd">Ctrl+E</i></button>
+     ${dirBoss()?`<button class="btn ghost" data-act="custList" data-id="${c.id}">${custListed(c)?listName(c)+' — change':'Black / red list…'}</button>`:''}
     </div>
     <div class="cu-id">${avatarOf(c,true)}
-    <div style="min-width:0"><h2>${c.name} <span class="muted" style="font-size:13px;font-weight:400">${c.code}</span></h2>
+    <div style="min-width:0"><h2>${c.name} <span class="muted" style="font-size:13px;font-weight:400">${c.code}</span>${custListed(c)?` <span class="lst-tag ${c.list}" title="${noteEsc(c.listWhy||'')}">${listName(c)}</span>`:''}</h2>
      <div class="muted" style="margin-top:2px">${c.phone?`<a href="tel:${c.phone}" style="border:0">📞 ${c.phone}</a>`:'<span class="tag warn">no mobile</span>'}${c.address?' · '+c.address:''}</div>
      <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag ${c.level==='wholesale'?'blue':'ok'}">${c.level} prices</span>${overLimit?'<span class="tag bad">over the limit</span>':''}${ag.old>0?'<span class="tag bad">has 60+ day debt</span>':''}${c.portal?'<span class="tag page">own page on</span>':''}${c.online?'<span class="tag warn">from the website</span>':''}${first?`<span class="muted" style="font-size:12px;align-self:center">customer since ${first}</span>`:''}</div></div></div></div>
 
@@ -32166,7 +32248,7 @@ document.addEventListener('click',e=>{
     editProd:()=>{ if(S.user&&S.user.role==='Salesman') return toast('Editing products is not open to Salesman'); closeModals(); productModal(+a.dataset.id) },
     prodHist:()=>productHistory(+a.dataset.id),
     custQ:()=>{}, stmtPrint:()=>statement(+a.dataset.id,'print'), stmtSms:()=>statement(+a.dataset.id,'sms'),
-    custNew:()=>custModal(null,a.dataset.q||custQ), custEdit:()=>custModal(+a.dataset.id),
+    custNew:()=>custModal(null,a.dataset.q||custQ), custEdit:()=>custModal(+a.dataset.id), custList:()=>custListModal(+a.dataset.id),
     noteAdd:()=>noteModal(a.dataset.ptype,+a.dataset.id), noteEdit:()=>noteModal(null,null,a.dataset.nid),
     noteDone:()=>noteSettle(a.dataset.nid,true), noteReopen:()=>noteSettle(a.dataset.nid,false),
     noteDel:()=>noteRemove(a.dataset.nid),
