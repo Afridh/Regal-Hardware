@@ -484,7 +484,8 @@
     if (j.rev > rev || j.inbox > 0) {
       if (typing() || tillBusy()) return;                  // never pull the rug while someone is keying a bill
       var who = j.updated_by ? ' by ' + j.updated_by : '', newer = j.rev > rev;
-      if (await pull(true) && newer) say('Books updated' + who);
+      // another till saving is the normal run of the day: said quietly in the status line, never popped up
+      if (await pull(true) && newer) badge('updated ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + who + ' · shared');
     }
   }
   function startPolling() { stopPolling(); pollTimer = setInterval(poll, POLL_MS); }
