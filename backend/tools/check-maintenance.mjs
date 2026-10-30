@@ -12,7 +12,7 @@ let pass = 0, fail = 0; const ok = (c, m, x = '') => { c ? pass++ : fail++; cons
 // the owner, at the till
 const owner = await b.createBrowserContext(); const pg = await owner.newPage(); await pg.setViewport({ width: 1440, height: 1000 });
 const errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('dialog', d => d.accept());
-await pg.goto('http://localhost:4000/pos', { waitUntil: 'networkidle2' });
+await pg.goto((process.env.BASE || 'http://localhost:4000') + '/pos', { waitUntil: 'networkidle2' });
 await pg.waitForFunction(() => document.getElementById('lockScreen') || document.querySelector('#nav button'), { timeout: 25000 });
 if (await pg.$('#lockScreen')) {
   if (!(await pg.$('#lockUser')) && !(await pg.$('#lockPw'))) await pg.evaluate(() => shopLockPassword());
@@ -35,12 +35,12 @@ ok(!!(await pg.$('.mx-link code')), 'the preview link is shown');
 await pg.screenshot({ path: OUT + '/tab-on.png' });
 
 // the owner's browser still gets in
-const r1 = await pg.goto('http://localhost:4000/pos', { waitUntil: 'networkidle2' });
+const r1 = await pg.goto((process.env.BASE || 'http://localhost:4000') + '/pos', { waitUntil: 'networkidle2' });
 ok(r1.status() === 200, 'the owner still opens the till', r1.status());
 
 // a stranger
 const other = await b.createBrowserContext(); const sp = await other.newPage(); await sp.setViewport({ width: 1280, height: 860 });
-for (const p of ['/', '/pos', '/shift', '/my']) { const r = await sp.goto('http://localhost:4000' + p, { waitUntil: 'networkidle2' }); ok(r.status() === 503 && !!(await sp.$('#gearBig')), `a stranger opening ${p} gets the page`, r.status()); }
+for (const p of ['/', '/pos', '/shift', '/my']) { const r = await sp.goto((process.env.BASE || 'http://localhost:4000') + p, { waitUntil: 'networkidle2' }); ok(r.status() === 503 && !!(await sp.$('#gearBig')), `a stranger opening ${p} gets the page`, r.status()); }
 const api = await sp.evaluate(async () => (await fetch('/api/books/regal/rev')).status);
 ok(api === 503, 'and the till API answers 503 (an open till keeps its work)', api);
 await wait(1500);

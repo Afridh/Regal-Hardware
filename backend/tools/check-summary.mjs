@@ -54,7 +54,7 @@ let t1 = null;
 for (let i = 0; i < 16 && !t1; i++) { await wait(5000); t1 = got.find(g => /Today's summary/.test(g.text || '')) }
 ok(!!t1 && t1.to === '94770000009', 'the day not closed by the shop\'s time: the server texts the owner', t1 ? 'to ' + t1.to : 'nothing came');
 ok(!!t1 && /Bills: \d+/.test(t1.text) && /Profit: Rs/.test(t1.text) && /Collected from customers/.test(t1.text) && /Drawer: not counted yet/.test(t1.text), 'with the day\'s figures, profit, money collected and the drawer');
-ok(!!t1 && /To look at \(\d+\):/.test(t1.text) && /bill cleared/.test(t1.text), 'and what is unusual on the Trail', t1 && t1.text.split('\n').slice(-3).join(' / '));
+ok(!!t1 && /To look at \(\d+[^)]*\):/.test(t1.text) && /bill cleared/.test(t1.text), 'and what is unusual on the Trail', t1 && t1.text.split('\n').slice(-3).join(' / '));
 ok(!!t1 && /^Dear Owner,/.test(t1.text), 'laid out as a message to the owner');
 await wait(6000);
 ok(got.filter(g => /Today's summary/.test(g.text || '')).length === 1, 'only once, however many minutes pass');

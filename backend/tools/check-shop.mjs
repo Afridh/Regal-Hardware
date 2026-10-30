@@ -1,7 +1,7 @@
 // The commerce behind the shop site: delivery, stock, codes. Every one of these is checked on the
 // server, because a rule that only lives in the page the customer is holding is not a rule.
 import fs from 'node:fs';
-const BASE='http://localhost:4000';
+const BASE = process.env.BASE || (process.env.BASE || 'http://localhost:4000') + '';
 let pass=0,fail=0; const ok=(c,w,x='')=>{c?(pass++,console.log('PASS '+w+(x?'  '+x:''))):(fail++,console.log('FAIL '+w+(x?'  '+x:'')))};
 
 const tok=(await (await fetch(BASE+'/api/books/login',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -71,6 +71,8 @@ const over=await order({lines:[{pid:p.id,qty:99}],deliver:false,pay:'cod'});
 ok(over.status===409&&/only|short/i.test(over.body.error||''),'an order for more than the shop has is refused',
    over.body.error);
 
+// what the site offers before it: the 8, less anything still promised to orders other tests left open
+const before=((await (await fetch(BASE+'/api/shop/catalog')).json()).products.find(x=>x.id===p.id)||{}).stock;
 const fine=await order({lines:line(3),deliver:true,zone:'z1',pay:'cod',address:'1 Test Lane',code:'BUILDER10'});
 ok(fine.status===200&&fine.body.no,'an order it can fill goes through',fine.body.no);
 ok(fine.body.del===400,'carrying the area’s charge',String(fine.body.del));
@@ -78,7 +80,7 @@ ok(fine.body.del===400,'carrying the area’s charge',String(fine.body.del));
 // what is now promised is gone from the catalogue
 const cat=await (await fetch(BASE+'/api/shop/catalog')).json();
 const seen=cat.products.find(x=>x.id===p.id);
-ok(seen&&seen.stock===5,'what is on that order is taken off what the site offers',`8 → ${seen&&seen.stock}`);
+ok(seen&&seen.stock===before-3,'what is on that order is taken off what the site offers',`${before} → ${seen&&seen.stock}`);
 
 const rest=await order({lines:line(6),deliver:false,pay:'cod'});
 ok(rest.status===409,'and the next customer cannot buy what is already spoken for',rest.body.error);

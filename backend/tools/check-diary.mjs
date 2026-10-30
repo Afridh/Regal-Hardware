@@ -2,7 +2,7 @@
 // ceiling, each on a day that can actually take it.
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
-const BASE='http://localhost:4000';
+const BASE = process.env.BASE || (process.env.BASE || 'http://localhost:4000') + '';
 const exe=['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p=>fs.existsSync(p));
 const b=await puppeteer.launch({executablePath:exe,headless:true,args:['--no-sandbox']});
 const pg=await b.newPage(); await pg.setViewport({width:1500,height:1000});
@@ -11,7 +11,8 @@ let pass=0,fail=0; const ok=(c,w,x='')=>{c?(pass++,console.log('PASS '+w+(x?'  '
 
 await pg.goto(BASE+'/pos',{waitUntil:'networkidle2'});
 await pg.waitForSelector('#lockScreen');
-if(await pg.$('#lockUser')) await pg.type('#lockUser','Afridh'); else await pg.click('[data-user="Afridh"]');
+if(!(await pg.$('#lockUser'))&&!(await pg.$('#lockPw'))) await pg.evaluate(()=>shopLockPassword());
+if(await pg.$('#lockUser')) await pg.type('#lockUser','Afridh');
 await pg.type('#lockPw','Afridh123'); await pg.click('#lockGo');
 await pg.waitForFunction(()=>!document.getElementById('lockScreen'));
 await new Promise(r=>setTimeout(r,800));
@@ -159,9 +160,13 @@ const cal=await pg.evaluate(()=>{
     payee:'Z',amount:600000,status:'ISSUED',party:'Z'}));
   let got=null; diaryPickModal(d,100000,(ds)=>{got=ds});
   const box=document.querySelector('.modal .box');
+  // near a month's end the first free day can be in the next month: turn the page to it, as anyone would
+  const fullHere=()=>[...box.querySelectorAll('td.full')].map(t=>t.title+'|'+t.querySelector('b').textContent);
+  let fullSeen=fullHere();
+  if(diaryNextFree(d,null,100000).slice(0,7)!==d.slice(0,7)){ box.querySelector('#dpNext').click(); fullSeen=fullSeen.concat(fullHere()) }
   const best=[...box.querySelectorAll('td.best')].map(t=>t.querySelector('b').textContent);
   const out={ best, btn:box.querySelector('#dpBest').textContent.trim(),
-    full:[...box.querySelectorAll('td.full')].map(t=>t.querySelector('b').textContent),
+    full:[...new Set(fullSeen)],
     shutClickable:[...box.querySelectorAll('td.shut')].filter(t=>t.hasAttribute('data-dp')).length,
     expect:diaryNextFree(d,null,100000) };
   const pick=box.querySelector('td[data-dp]'); if(pick) pick.click();

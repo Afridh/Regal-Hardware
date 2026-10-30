@@ -4,7 +4,7 @@
 // come back whole, and nothing may ever be saved while the screen is quiet.
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
-const BASE='http://localhost:4000';
+const BASE = process.env.BASE || (process.env.BASE || 'http://localhost:4000') + '';
 const exe=['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p=>fs.existsSync(p));
 const b=await puppeteer.launch({executablePath:exe,headless:true,args:['--no-sandbox']});
 const pg=await b.newPage(); await pg.setViewport({width:1400,height:950});
@@ -13,7 +13,8 @@ let pass=0,fail=0; const ok=(c,w,x='')=>{c?(pass++,console.log('PASS '+w+(x?'  '
 
 await pg.goto(BASE+'/pos',{waitUntil:'networkidle2'});
 await pg.waitForSelector('#lockScreen');
-if(await pg.$('#lockUser')) await pg.type('#lockUser','Afridh'); else await pg.click('[data-user="Afridh"]');
+if(!(await pg.$('#lockUser'))&&!(await pg.$('#lockPw'))) await pg.evaluate(()=>shopLockPassword());
+if(await pg.$('#lockUser')) await pg.type('#lockUser','Afridh');
 await pg.type('#lockPw','Afridh123'); await pg.click('#lockGo');
 await pg.waitForFunction(()=>!document.getElementById('lockScreen'));
 await new Promise(r=>setTimeout(r,900));

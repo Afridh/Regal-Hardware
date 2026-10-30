@@ -1,7 +1,7 @@
 // The Echo in the office. The two that matter most: money is refused without the word, and
 // nothing is answered for a skill that is not the shop's own.
 import fs from 'node:fs';
-const BASE='http://localhost:4000';
+const BASE = process.env.BASE || (process.env.BASE || 'http://localhost:4000') + '';
 let pass=0,fail=0; const ok=(c,w,x='')=>{c?(pass++,console.log('PASS '+w+(x?'  '+x:''))):(fail++,console.log('FAIL '+w+(x?'  '+x:'')))};
 
 const tok=(await (await fetch(BASE+'/api/books/login',{method:'POST',headers:{'Content-Type':'application/json'},

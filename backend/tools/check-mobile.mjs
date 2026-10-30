@@ -2,7 +2,7 @@
 // down it. Checked at the width of a real phone, with touch on.
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
-const BASE='http://localhost:4000';
+const BASE = process.env.BASE || (process.env.BASE || 'http://localhost:4000') + '';
 const exe=['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p=>fs.existsSync(p));
 const b=await puppeteer.launch({executablePath:exe,headless:true,args:['--no-sandbox']});
 let pass=0,fail=0; const ok=(c,w,x='')=>{c?(pass++,console.log('PASS '+w+(x?'  '+x:''))):(fail++,console.log('FAIL '+w+(x?'  '+x:'')))};
