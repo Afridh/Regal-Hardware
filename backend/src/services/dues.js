@@ -133,7 +133,7 @@ export async function dueSend(data, plan, send) {
 /* once a minute: after the shop's time, once a day, if switched on */
 export async function dueTick(send) {
   const data = await readBooks(); if (!data) return;
-  const cfg = dueCfg(data.CFG); if (!cfg.on) return;
+  const cfg = dueCfg(data.CFG); if (!cfg.on || data.CFG?.features?.dues === false) return;   // off, or the feature switched off
   const now = hhmm(); if (now < String(cfg.at || '10:00') || now >= '19:00') return;
   await ensure();
   const day = today();

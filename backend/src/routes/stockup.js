@@ -20,6 +20,7 @@ const REASONS = { add: ['Received', 'Found', 'Returned to the shelf', 'Other'], 
 
 r.get('/me', asyncHandler(async (req, res) => {
   const data = await readBooks(); const S = (data && data.S) || {};
+  if (data?.CFG?.features?.stockphone === false) throw new HttpError(403, 'Stock from phones is switched off at this shop');
   const who = personOf(S, req.query.k); if (!who) throw new HttpError(403, 'This link is not for anyone at this shop — ask the shop for yours');
   const products = (S.products || []).filter(p => p && p.active !== false && p.id > 0).map(p => ({
     id: p.id, name: p.name, code: p.code || '', num: p.num || '', short: p.short || '', barcode: p.barcode || '', barcode2: p.barcode2 || '',
@@ -34,6 +35,7 @@ r.post('/entry', asyncHandler(async (req, res) => {
   if (!['count', 'add', 'remove'].includes(mode)) throw new HttpError(400, 'Count, add or remove?');
   if (!Number.isFinite(qty) || qty < 0 || (mode !== 'count' && qty <= 0) || qty > 1e6) throw new HttpError(400, 'How many?');
   const data = await readBooks(); const S = (data && data.S) || {};
+  if (data?.CFG?.features?.stockphone === false) throw new HttpError(403, 'Stock from phones is switched off at this shop');
   const who = personOf(S, b.k); if (!who) throw new HttpError(403, 'This link is not for anyone at this shop');
   const reason = mode === 'count' ? '' : String(b.reason || '').slice(0, 40);
   if (mode !== 'count' && !reason) throw new HttpError(400, 'Why — received, damaged…?');

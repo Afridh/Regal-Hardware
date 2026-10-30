@@ -21,6 +21,7 @@ const stopView = (d) => ({ id: d.id, no: d.no, who: d.who, phone: d.phone, addre
 
 r.get('/driver', asyncHandler(async (req, res) => {
   const data = await readBooks(); const S = (data && data.S) || {};
+  if (data?.CFG?.features?.dlv === false) throw new HttpError(403, 'Deliveries are switched off at this shop');
   const drv = driverOf(S, req.query.k); if (!drv) throw new HttpError(403, 'This link is not for a driver of this shop — ask the shop for yours');
   const day = today();
   const stops = (S.deliveries || []).filter(d => d.driver === drv.id && (d.date === day || (d.status === 'out' && d.date < day)) && d.status !== 'cancelled')
@@ -32,6 +33,7 @@ r.post('/driver/:id', asyncHandler(async (req, res) => {
   const b = req.body || {}, status = String(b.status || '');
   if (!['out', 'delivered', 'failed'].includes(status)) throw new HttpError(400, 'What happened?');
   const data = await readBooks(); const S = (data && data.S) || {};
+  if (data?.CFG?.features?.dlv === false) throw new HttpError(403, 'Deliveries are switched off at this shop');
   const drv = driverOf(S, b.k); if (!drv) throw new HttpError(403, 'This link is not for a driver of this shop');
   const d0 = (S.deliveries || []).find(x => x.id === req.params.id && x.driver === drv.id);
   if (!d0) throw new HttpError(404, 'That stop is not yours');

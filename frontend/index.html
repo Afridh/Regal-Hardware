@@ -5906,7 +5906,7 @@ const damageOpen=(sid)=>S.damages.filter(d=>d.sid===sid&&['held','sent'].include
    can still pay anyway, and it is written in the trail. The supplier sees every return on their page
    and can answer it there (services: routes/supplier.js, kind 'dmgreply'). */
 const dmgCfg=()=>({holdPay:true,textSup:true,...(CFG.dmg||{})});
-const dmgHold=(sid)=>dmgCfg().holdPay===false?[]:damageOpen(sid);
+const dmgHold=(sid)=>dmgCfg().holdPay===false||!featOn('dmghold')?[]:damageOpen(sid);
 const dmgDays=(d)=>Math.max(0,Math.round((new Date(D(today))-new Date(d.date))/864e5));
 const dmgOwner=()=>!!(S.user&&['Super Admin','Owner','Admin'].includes(S.user.role));
 function dmgPayCheck(sid,allow){
@@ -6736,7 +6736,7 @@ function mxBody(){
     <div class="card note"><b>From the server</b><div class="muted">When the till cannot be reached: <code>node backend/tools/maintenance.mjs on</code> (add <code>--all</code> for everything, <code>--msg "…"</code>, <code>--until 2026-10-28T09:00</code>), <code>… off</code>, <code>… status</code>.</div></div>`;
 }
 function settingsTabs(){
-  return [['screen','My screen'],['app','Windows app'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),...(mxMay()?[['mx','Maintenance']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messages'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['banks','Bank accounts'],['leave','Leave'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  return [['screen','My screen'],['app','Windows app'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),...(mxMay()?[['mx','Maintenance']]:[]),...(superAdmin()?[['features','Features']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messages'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['banks','Bank accounts'],['leave','Leave'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
 }
 function settings(){
   const tabs=settingsTabs();
@@ -7104,6 +7104,11 @@ function settings(){
        key to press.</div></div>
      <div style="display:flex;gap:8px;align-items:center;margin-top:10px"><button class="btn tape" data-act="privacyTry" ${p.on?'':'disabled'}>Try it now</button><span class="muted">Same as pressing the key. Today's figures on the dashboard change at once; press the key to come back.</span></div>`;
   }
+  if(setTab==='features'&&superAdmin()){
+    const on=FEATURES.filter(x=>featOn(x[0])).length;
+    body=`<div class="card note" style="margin-bottom:10px"><b>The advanced parts of the system</b><div class="muted">Switch off what this shop does not use: its page goes from the menu and its buttons from the till, for everybody. Nothing already recorded is lost — switch it back on and it is all there. Only the Super Admin sees this page.</div></div>
+     <div class="card"><div class="muted" style="margin-bottom:6px">${on} of ${FEATURES.length} on</div>
+     ${FEATURES.map(([k,l,d])=>`<label class="chk" style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line2)"><input type="checkbox" data-feat="${k}" ${featOn(k)?'checked':''} style="margin-top:3px"> <span><b>${l}</b><br><span class="muted">${d}</span></span></label>`).join('')}</div>` }
   if(setTab==='approvals'){ const cfg=CFG.approvals||{};
     body=`<div class="card note" style="margin-bottom:10px"><b>Who decides</b><div class="muted">The owner, and anyone given the <i>Approve requests</i> right under Users, can make these changes straight away and decide other people's requests. Everyone else asks, and the change waits on the Approvals page until it is approved.</div></div>
      <div class="muted" style="margin-bottom:6px">These changes need the owner's approval:</div>
@@ -7210,7 +7215,7 @@ function settings(){
     shop:['Name, address and phones as printed','M3 9l2-5h14l2 5M4 9h16v11H4zM9 20v-6h6v6'],bill:['Numbering, formats and the return window',ICONS.bills],layout:['Logo, lines and text size on the bill',ICONS.docs],
     cost:['The code that hides cost on labels',ICONS.labels],msg:['How texts read, their wording, and who gets them',ICONS.messages],
     shift:['The Shift Board, the fingerprint machine and pay','M12 7v5l3 2M12 3a9 9 0 110 18 9 9 0 010-18z'],
-    approvals:['What needs the owner’s nod',ICONS.approvals],buying:['How goods are allowed in',ICONS.purchases],banks:['Accounts, cheque numbers, balances',ICONS.chequesOut],leave:['Days a month, Poya, who may be off together',ICONS.leave],alexa:['What the Echo may say out loud',ICONS.messages],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
+    approvals:['What needs the owner’s nod',ICONS.approvals],features:['Switch the advanced parts on or off',ICONS.approvals],buying:['How goods are allowed in',ICONS.purchases],banks:['Accounts, cheque numbers, balances',ICONS.chequesOut],leave:['Days a month, Poya, who may be off together',ICONS.leave],alexa:['What the Echo may say out loud',ICONS.messages],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
   if(!_setIndexing){
     const searching=setSearch.trim().length>=2;
     body=settingsSearchBox()+(searching?'':body);
@@ -7511,6 +7516,29 @@ function nextEmpId(emps){
   Object.values((S.shift&&S.shift.days)||{}).forEach(day=>Object.keys(day||{}).forEach(k=>{ if(/^\d+$/.test(k)) max=Math.max(max,+k) }));
   return max+1;
 }
+/* The advanced parts of the system, each of which the Super Admin can switch off for this shop. Off, a
+   part's page goes from the menu and its buttons from the till; nothing already recorded is touched, and
+   switching it back on brings it all back as it was. [key, name, what it is, its page] */
+const FEATURES=[
+  ['dues','Credit follow-up','Reminders to customers with an outstanding balance, and stopping credit','dues'],
+  ['trades','Tradesmen','“Brought by…” on the till, their commission and statements','trades'],
+  ['sites','Customer sites','A customer’s building sites on the On account panel',''],
+  ['reorder','Smart reorder','What to order, slow movers and costs gone up, under Purchasing',''],
+  ['hire','Tool hire','Hiring tools out by the day','hire'],
+  ['plans','Easy payments','Splitting a customer’s outstanding into monthly parts','plans'],
+  ['dlv','Deliveries','The delivery board and the drivers’ phone page','dlv'],
+  ['undelivered','Not delivered','Phone orders marked not delivered, their list and the delivery note',''],
+  ['vat','VAT & SSCL','Tax invoices with the VAT, and the VAT return',''],
+  ['scale','Weighing scale','Scale labels at the till, and reading a scale with K',''],
+  ['stockphone','Stock from phones','Staff phone links to count and adjust stock',''],
+  ['warranty','Warranty returns','Taking faulty goods back from customers under warranty',''],
+  ['dmghold','Hold supplier payments','No payment to a supplier while one of their damage returns is open',''],
+  ['camflags','Camera clips of risky actions','Big discounts, sales under cost and cash refunds kept on camera',''],
+  ['profit','Profit reports','Profit by category, by brand and by salesman',''],
+  ['dark','Dark mode','The moon button for a dark screen',''],
+  ['ai','AI support','Asking Claude about the shop','ai']];
+const featOn=(k)=>(((typeof CFG!=='undefined'&&CFG.features)||{})[k]!==false);
+const superAdmin=()=>['super admin','superadmin'].includes(String(S.user&&S.user.role||'').toLowerCase());
 const isSuperUser=()=>['super admin','superadmin','owner'].includes(String(S.user&&S.user.role||'').toLowerCase());
 const isAdminUser=()=>isSuperUser()||String(S.user&&S.user.role||'').toLowerCase()==='admin';
 function syncUsersAndStaff(){
@@ -11187,6 +11215,15 @@ function actionItems(){
       acts:may?[`<input class="act-note" id="apn-${esA(a.id)}" placeholder="Note (optional)">`,actBtn('apOk','Approve',id,'tape'),actBtn('apNo','Turn down',id),actOpen('approvals','All approvals')]
         :[`<span class="muted" style="font-size:12.5px">Waiting for the owner to decide</span>`]});
   }
+  /* counts and adjustments sent from staff phones, one line per person */
+  if(featOn('stockphone')&&typeof phonePending==='function'&&canApprove()){ const by={}; phonePending().filter(e=>!phoneAsked(e)).forEach(e=>{ (by[e.by]=by[e.by]||[]).push(e) });
+    Object.entries(by).forEach(([who,es])=>push({cat:'approve',view:'stocktake',pri:2,key:'stk'+who,decide:true,who,when:es[0].at,tag:'Stock',
+      title:`${who} sent ${es.length} stock entr${es.length===1?'y':'ies'} from the phone`,sub:es.slice(0,4).map(e=>`${e.name}: ${({count:'counted',add:'+',remove:'−'})[e.mode]} ${fq(e.qty)}`).join(' · ')+(es.length>4?' …':''),
+      acts:[actBtn('stkPhPostWho','Post them',`data-who="${esA(who)}"`,'tape'),actOpen('stocktake','Look first')]})) }
+  /* leave asked for that is not already on the list above (asked before approvals took it in) */
+  if(canApprove()) (S.leaves||[]).filter(l=>l.status==='pending'&&!(S.approvals||[]).some(a=>a.status==='pending'&&(a.id===l.apId||(a.kind==='leave'&&(a.data||{}).id===l.id)))).forEach(l=>
+    push({cat:'approve',view:'leave',pri:1,key:'lv'+l.id,decide:true,who:l.who,when:l.at||'',tag:'Leave',title:`${l.who} asks for leave ${l.from===l.to?'on '+l.from:l.from+' to '+l.to}${l.half?' (half day)':''}`,sub:l.reason||'',
+      acts:[actBtn('lvYes','Approve',`data-id="${esA(l.id)}"`,'tape'),actBtn('lvNo','Turn down',`data-id="${esA(l.id)}"`)]}));
   /* staff at the shift clock asking to leave early, or to go out on the shop's business */
   if(canApprove()||swCanApprove()) for(const e of (S.employees||[]).filter(x=>x.active!==false)){
     const r=recFor(day,e.id)||{}, id=`data-id="${e.id}"`;
@@ -12633,6 +12670,7 @@ function roleDefFor(roleName){
 const VIEW_PERM={users:'users',settings:'settings',payroll:'payroll',products:'products',webproducts:'products'};
 function allowed(v){
   if(!S.user || !S.user.name) return false;
+  { const fv=FEATURES.find(x=>x[3]&&x[3]===v); if(fv&&!featOn(fv[0])) return false }   // a feature the Super Admin switched off
   if(v === 'updates') return true;          // what changed is everybody's business
   if(v === 'actions') return true;
   if(v === 'leave') return true;            // everybody asks for their own days off
@@ -12851,7 +12889,7 @@ function renderNav(){
          <div class="navfoot-actions">
            <div class="bellwrap"></div>
            <span class="navsaved" id="savedAtNav">${lastSaved?'saved '+lastSaved.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):''}</span>
-           <button class="navsignout" data-act="darkToggle" title="${darkOn()?'Light mode':'Dark mode'}" aria-label="${darkOn()?'Light mode':'Dark mode'}">
+           <button class="navsignout" data-act="darkToggle" ${featOn('dark')?'':'hidden'} title="${darkOn()?'Light mode':'Dark mode'}" aria-label="${darkOn()?'Light mode':'Dark mode'}">
              ${darkOn()?'<svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
                :'<svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>'}
            </button>
@@ -13475,6 +13513,10 @@ function renderNow(){
     const cc=$('#costCheck'); if(cc) cc.oninput=()=>{ $('#costCheckOut').textContent=cc.value.trim()?costDecode(cc.value):'\u00a0' };
     document.querySelectorAll('[data-tpl]').forEach(el=>{
       el.onchange=()=>{ CFG.tpl[el.dataset.tpl].text=el.value; render(); toast('Wording saved') } });
+    document.querySelectorAll('[data-feat]').forEach(el=>{ el.onchange=()=>{ if(!superAdmin()) return; CFG.features=CFG.features||{}; const k=el.dataset.feat; if(el.checked) delete CFG.features[k]; else CFG.features[k]=false;
+      if(k==='dark'&&!el.checked&&darkOn()) darkSet(false);
+      try{ logTrail('other',`Feature ${(FEATURES.find(x=>x[0]===k)||[0,k])[1]} switched ${el.checked?'on':'off'}`) }catch(e){}
+      persist(true); render(); toast(`${(FEATURES.find(x=>x[0]===k)||[0,k])[1]} ${el.checked?'on':'off'}`,'ok') } });
     document.querySelectorAll('[data-apk]').forEach(el=>{ el.onchange=()=>{ CFG.approvals=CFG.approvals||{}; CFG.approvals[el.dataset.apk]=el.checked; toast(el.checked?'Needs approval from now on':'No approval needed') } });
     const lf=$('#logoFile'); if(lf) lf.onchange=()=>{ const file=lf.files[0]; if(!file) return; const rd=new FileReader();
       rd.onload=()=>{ const img=new Image(); img.onload=()=>{ const sc=Math.min(1,640/img.width,320/img.height); const cv=document.createElement('canvas'); cv.width=Math.max(1,Math.round(img.width*sc)); cv.height=Math.max(1,Math.round(img.height*sc));
@@ -17167,7 +17209,7 @@ function cpDraw(focus){
       <div class="${over?'bad':''}"><span>Outstanding after</span><b>${money2(will)}</b></div></div>
     ${c.limit?cpMeter(c,true)+`<div class="muted cp-lim">Limit ${money2(c.limit)}${over?'':' · '+money2(Math.max(0,c.limit-owes-onAcct))+' left after this bill'}</div>`:''}
     ${held>0.005?`<div class="muted">They have ${money2(held)} in credit with the shop — it comes off this first.</div>`:''}
-    <div class="cp-pills cp-sites"><span class="muted">site</span>${sites.map(x=>`<button class="btn ghost sm ${ONA.site===x.id?'on':''}" data-cp-site="${x.id}" title="${noteEsc(x.address||'')}">${noteEsc(x.name)}${+x.limit>0?` · — outstanding ${money2(siteOwed(c.id,x.id))}`:''}</button>`).join('')}
+    <div class="cp-pills cp-sites" ${featOn('sites')?'':'style="display:none"'}><span class="muted">site</span>${sites.map(x=>`<button class="btn ghost sm ${ONA.site===x.id?'on':''}" data-cp-site="${x.id}" title="${noteEsc(x.address||'')}">${noteEsc(x.name)}${+x.limit>0?` · — outstanding ${money2(siteOwed(c.id,x.id))}`:''}</button>`).join('')}
       ${ONA.addSite?`<input id="cpSiteNew" placeholder="e.g. Kandy Rd house" maxlength="60" style="width:180px;margin:0"><button class="btn sm" data-cp="siteadd">Add</button>`
         :`<button class="btn ghost sm" data-cp="sitenew">+ New site</button>`}
       ${ONA.site?'<button class="btn ghost sm" data-cp-site="">No site</button>':''}</div>
@@ -18180,7 +18222,7 @@ function posClassic(){
      <div class="till-clock"><span id="posClockTime">${now.toLocaleTimeString('en-GB',{hour12:true})}</span><em id="posClockDay">${now.getDate()}</em></div></div>
     <div class="till-no ${S.pos.editing?'editing':''}">
      <b>${S.pos.editing||nextNo}</b>
-     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Which prices this bill uses — Ctrl+Shift+R for retail, Ctrl+Shift+W for wholesale, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><span class="till-paper" title="Which bill prints after payment — Ctrl+Shift+N for the normal 80mm receipt, Ctrl+Shift+L for the large A5 bill, or no print at all for this bill"><i data-act="csPaperSet" data-k="r80" class="${!csNoPrint()&&csPaper()==='r80'?'on':''}">SMALL BILL</i><i data-act="csPaperSet" data-k="a5" class="${!csNoPrint()&&csPaper()==='a5'?'on':''}">LARGE BILL</i><i data-act="csPaperSet" data-k="none" class="np ${csNoPrint()?'on':''}">NO PRINT</i></span><span class="till-paper" title="The goods have not gone with the customer yet — a bill over the phone. It waits on the Not delivered list. Ctrl+Shift+D"><i data-act="csDlvToggle" class="nd ${S.pos.toDeliver?'on':''}">NOT DELIVERED</i></span>`}<div class="onl-brk"><span data-onl>${onlSlot()}</span>${breakStrip()}</div></div>
+     ${S.pos.editing?'<span>EDITING THIS BILL</span>':`<button class="till-level ${posLevel()}" data-act="csLevel" title="Which prices this bill uses — Ctrl+Shift+R for retail, Ctrl+Shift+W for wholesale, or W / R in the price box"><i class="${posLevel()==='retail'?'on':''}">RETAIL</i><i class="${posLevel()==='wholesale'?'on':''}">WHOLESALE</i></button><span class="till-paper" title="Which bill prints after payment — Ctrl+Shift+N for the normal 80mm receipt, Ctrl+Shift+L for the large A5 bill, or no print at all for this bill"><i data-act="csPaperSet" data-k="r80" class="${!csNoPrint()&&csPaper()==='r80'?'on':''}">SMALL BILL</i><i data-act="csPaperSet" data-k="a5" class="${!csNoPrint()&&csPaper()==='a5'?'on':''}">LARGE BILL</i><i data-act="csPaperSet" data-k="none" class="np ${csNoPrint()?'on':''}">NO PRINT</i></span>${featOn('undelivered')?`<span class="till-paper" title="The goods have not gone with the customer yet — a bill over the phone. It waits on the Not delivered list. Ctrl+Shift+D"><i data-act="csDlvToggle" class="nd ${S.pos.toDeliver?'on':''}">NOT DELIVERED</i></span>`:''}`}<div class="onl-brk"><span data-onl>${onlSlot()}</span>${breakStrip()}</div></div>
    </div>
 
 
@@ -18198,7 +18240,7 @@ function posClassic(){
        // mixed into a paint base, a size. The stock and the codes are on the match list above.
        ? `<input id="csName" value="${String(CS.name||(sel.id===OPEN_PID?'':sel.name)).toUpperCase().replace(/"/g,'&quot;')}" ${sel.id===OPEN_PID?'placeholder="OPEN ITEM — type what to call it, then Enter"':''} maxlength="90" spellcheck="false" autocomplete="off" ${CS.nameEdit?'':'readonly title="Press E to change the name on this bill"'}>${(CS.last||sel.serialised)?`<em>${[CS.last?`<b class="lastp">last time ${money2(CS.last.price)} on ${CS.last.no}</b>`:'',sel.serialised?'serial asked on Enter':''].filter(Boolean).join(' · ')}</em>`:''}`
        : '<i>scan or key a code — F1</i>'}</div></div>
-    <label class="f-qty"><span>QTY <i title="Press W for the warranty and serial numbers">W warranty</i>${'serial' in navigator?' <i title="Press K to read the weighing scale">K scale</i>':''}</span><input id="csQty" type="number" step="any" value="${CS.qty}"></label>
+    <label class="f-qty"><span>QTY <i title="Press W for the warranty and serial numbers">W warranty</i>${featOn('scale')&&'serial' in navigator?' <i title="Press K to read the weighing scale">K scale</i>':''}</span><input id="csQty" type="number" step="any" value="${CS.qty}"></label>
     <label class="f-price"><span>PRICE</span><input id="csPrice" type="number" step="any" value="${CS.price||''}"></label>
     <div class="f-mrp"><span>MRP</span><div class="till-ro">${sel?money2(sel.mrp):'—'}</div></div>
     ${CFG.cost&&CFG.cost.atTill&&can('cost')?`<div class="f-cc"><span>COST CODE</span><div class="till-ro till-cc">${sel?(tillCostCode(sel)||'—'):'—'}</div></div>`:''}
@@ -18286,7 +18328,7 @@ function posClassic(){
        <button data-act="doc" data-k="QUOTE" ${L.length?'':'disabled'} title="Make it a quotation — Ctrl+Q"><b>Quotation</b><s>Quote</s><i>Ctrl+Q</i></button>
        <button data-act="doc" data-k="DN" ${L.length?'':'disabled'} title="A delivery note for these goods"><b>Delivery note</b><s>D/Note</s><i>print</i></button>
        <button data-act="proofA5" ${L.length?'':'disabled'} title="See the bill before it is made"><b>Check bill</b><s>Check</s><i>preview</i></button>
-       ${(()=>{ const tr=S.pos.trade&&tradeOf(S.pos.trade); return `<button class="sum-trade ${tr?'on':''}" data-act="tradePick" title="The mason, electrician or plumber who sent this customer — they earn their commission"><b>${tr?'🔧 '+noteEsc(tr.name):'Brought by…'}</b><s>Brought</s><i>${tr?noteEsc(tr.kind||'')+' · '+(+tr.rate||tradeCfg().rate)+'%':'mason, electrician…'}</i></button>` })()}
+       ${!featOn('trades')?'':(()=>{ const tr=S.pos.trade&&tradeOf(S.pos.trade); return `<button class="sum-trade ${tr?'on':''}" data-act="tradePick" title="The mason, electrician or plumber who sent this customer — they earn their commission"><b>${tr?'🔧 '+noteEsc(tr.name):'Brought by…'}</b><s>Brought</s><i>${tr?noteEsc(tr.kind||'')+' · '+(+tr.rate||tradeCfg().rate)+'%':'mason, electrician…'}</i></button>` })()}
       </div>
      </div>
     </div>
@@ -18463,7 +18505,7 @@ function csAskDel(i){
       after that it is read whenever K is pressed. Most counter scales send the weight as a line of text
       ("ST,GS,+  1.235kg"); the last number on a steady line is taken. */
 function scaleLabel(code){
-  const sc=CFG.scale||{}, v=String(code||'').trim(); if(sc.on===false||!/^\d{13}$/.test(v)) return null;
+  const sc=CFG.scale||{}, v=String(code||'').trim(); if(sc.on===false||!featOn('scale')||!/^\d{13}$/.test(v)) return null;
   const pre=String(sc.prefix||'').split(/[,\s]+/).filter(Boolean).find(x=>v.startsWith(x)); if(!pre) return null;
   const n=+sc.plu||5, w=+sc.digits||5; if(pre.length+n+w>12) return null;
   const plu=v.slice(pre.length,pre.length+n), val=+v.slice(pre.length+n,pre.length+n+w), nz=s=>String(s||'').replace(/^0+/,'');
@@ -18675,6 +18717,7 @@ function logTrail(kind,what,opts){
    something on it. Switched off, or with no counter camera, nothing is asked of the cameras. */
 const CAM_FLAG_KINDS=['holdDiscard','billCleared','lineOff','billEdit','billRemade','bigDisc','underCost','cashRefund'];
 function camFlag(e){
+  if(!featOn('camflags')) return;
   const c=camCfg();
   if(!e||!CAM_FLAG_KINDS.includes(e.kind)||c.flagOn===false||!c.counter) return;
   if(e.kind==='lineOff'&&(+e.amount||0)<(+c.flagLine||1000)) return;
@@ -19371,7 +19414,7 @@ function bindClassic(){
       if(e.key==='Escape'){ e.preventDefault(); const q2=$('#csQ'); if(q2){q2.focus();q2.select()} return }
       if(!e.ctrlKey&&!e.altKey&&!e.metaKey&&CS.pid&&e.key.toLowerCase()==='e'){ e.preventDefault(); CS[key]=el.value; editName(); return }   // E: change the item's name on this bill
       if((id==='csQty'||id==='csDisc')&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&CS.pid&&e.key.toLowerCase()==='w'){ e.preventDefault(); CS[key]=el.value; csWarranty(-1); return }
-      if(id==='csQty'&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&CS.pid&&e.key.toLowerCase()==='k'){ e.preventDefault(); scaleWeigh(); return }   // K: the weight from the scale
+      if(id==='csQty'&&featOn('scale')&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&CS.pid&&e.key.toLowerCase()==='k'){ e.preventDefault(); scaleWeigh(); return }   // K: the weight from the scale
       // in the price box, as on the old till: S shows every price this item went for, W / R switch the price list
       if(id==='csPrice'&&!e.ctrlKey&&!e.altKey&&CS.pid&&CS.pid!==OPEN_PID){
         const k=e.key.toLowerCase();
@@ -20849,6 +20892,8 @@ function prnPrint(no){
 const stockers=()=>{ if(!Array.isArray(S.stockers)) S.stockers=[]; return S.stockers };
 const phoneCounts=()=>{ if(!Array.isArray(S.phoneCounts)) S.phoneCounts=[]; return S.phoneCounts };
 const phonePending=()=>phoneCounts().filter(x=>x.status==='pending');
+/* sent for approval and still waiting on it (one turned down can be asked again) */
+const phoneAsked=(e)=>!!(e.apId&&(S.approvals||[]).some(a=>a.id===e.apId&&a.status==='pending'));
 const stkLink=(p)=>((S.web&&S.web.settings&&S.web.settings.domain)||location.host)+'/stockup?k='+p.key;
 /* what an entry changes on the books, worked out now */
 function phoneDiff(e){
@@ -20856,8 +20901,13 @@ function phoneDiff(e){
   if(e.mode==='add') return +e.qty; if(e.mode==='remove') return -e.qty;
   const held=heldMap()[e.pid]||0; return +(+e.qty-(+e.book+held)).toFixed(3);
 }
-function phonePost(ids){
+function phonePost(ids,approved){
   const list=phonePending().filter(x=>ids.includes(x.id)); if(!list.length) return;
+  if(!approved&&needsApproval('stockAdj')){
+    const fresh=list.filter(e=>!phoneAsked(e)); if(!fresh.length) return toast('Already waiting for approval','warn');
+    const a=requestApproval('stockAdj',`Stock from phones — ${fresh.length} entr${fresh.length===1?'y':'ies'} from ${[...new Set(fresh.map(e=>e.by))].join(', ')}`,
+      fresh.slice(0,8).map(e=>`${e.name}: ${({count:'counted',add:'+',remove:'−'})[e.mode]} ${fq(e.qty)}`).join(' · '),{phoneIds:fresh.map(e=>e.id)});
+    fresh.forEach(e=>e.apId=a.id); persist(true); render(); toast('Sent for approval — the stock changes once it is approved','warn'); return }
   const no=next('STK'); let up=0,down=0; const lines=[];
   list.forEach(e=>{ const p=P(e.pid), d=phoneDiff(e);
     if(!p){ e.status='rejected'; e.why='the item is gone'; return }
@@ -20895,6 +20945,7 @@ function stkPerson(id){
     m.querySelector('#spSend').onclick=()=>{ sms(d.phone,`Your stock page for ${CFG.shop.name}: ${stkLink(d)}\nScan an item and send what is there.`,'staff'); toast('Texted to '+d.name,'ok') } }
 }
 function stkPhoneCard(){
+  if(!featOn('stockphone')) return '';
   const pend=phonePending().slice().sort((a,b)=>String(a.at).localeCompare(String(b.at))), ppl=stockers();
   const word={count:'counted',add:'added',remove:'removed'};
   const rows=pend.map(e=>{ const p=P(e.pid), d=phoneDiff(e);
@@ -20969,6 +21020,18 @@ function postStockTake(){
   if(!diffs.length) return toast('Nothing differs from the books');
   const note=prompt('A word about this count — who counted, which aisle, anything unusual','Stock take '+D(today));
   if(note===null) return;
+  if(needsApproval('stockAdj')){
+    const net=diffs.reduce((a,x)=>a+x.d*x.p.cost,0);
+    requestApproval('stockAdj',`Stock take — ${diffs.length} item${diffs.length===1?'':'s'} to adjust, ${fmt(Math.abs(net))} ${net<0?'short':'over'}`,
+      diffs.slice(0,8).map(x=>`${x.p.name}: ${x.d>0?'+':''}${fq(x.d)}`).join(' · ')+(diffs.length>8?` · and ${diffs.length-8} more`:'')+(note?' · '+note:''),
+      {counts:Object.fromEntries(Object.entries(stkCount).filter(([k,v])=>v!=='')),note});
+    stkCount={}; persist(true); render(); toast('Sent for approval — the stock changes once it is approved','warn'); return }
+  postStockTakeNow(note);
+}
+function postStockTakeNow(note){
+  const held=heldMap();
+  const diffs=Object.keys(stkCount).filter(k=>stkCount[k]!==''&&P(+k)).map(k=>{const p=P(+k);return {p,d:+stkCount[k]-(p.stock+(held[p.id]||0))}}).filter(x=>Math.abs(x.d)>1e-9);
+  if(!diffs.length){ stkCount={}; return toast('Nothing differs from the books') }
   const no=next('STK');
   let up=0,down=0;
   diffs.forEach(({p,d})=>{ move(p.id,d,d>0?'ADJUST_UP':'ADJUST_DOWN',no,p.cost); if(d>0) up+=d*p.cost; else down+=(-d)*p.cost });
@@ -21657,7 +21720,7 @@ function bills(){
       <button class="btn ghost sm" data-act="billCustAll">Every bill again</button></div>`:''}
     <div class="chips">${[[0,'Today'],[1,'Yesterday'],[7,'7 days'],[30,'30 days']].map(d=>`<button class="${dayIs(d[0])?'on':''}" data-act="billDay" data-d="${d[0]}">${d[1]}</button>`).join('')}<button class="${!billFrom&&!billTo?'on':''}" data-act="billAllDates">All time</button>
      <span class="bl-dates"><input id="billFrom" type="date" value="${billFrom}" title="From"><span>–</span><input id="billTo" type="date" value="${billTo}" title="To"></span></div>
-    <div class="chips" style="margin-bottom:6px">${[['all','All'],['cash','Cash'],['credit','Credit'],['unpaid','Outstanding'],['undelivered',`Not delivered${(n=>n?' · '+n:'')(undeliveredBills().length)}`]].map(o=>`<button class="${billType===o[0]?'on':''}" data-act="billKind" data-v="${o[0]}">${o[1]}</button>`).join('')}
+    <div class="chips" style="margin-bottom:6px">${[['all','All'],['cash','Cash'],['credit','Credit'],['unpaid','Outstanding'],['undelivered',`Not delivered${(n=>n?' · '+n:'')(undeliveredBills().length)}`]].filter(o=>o[0]!=='undelivered'||featOn('undelivered')).map(o=>`<button class="${billType===o[0]?'on':''}" data-act="billKind" data-v="${o[0]}">${o[1]}</button>`).join('')}
      <select id="billBy" class="bl-by"><option value="all">Any cashier</option>${cashiers.map(x=>`<option ${billBy===x?'selected':''}>${x}</option>`).join('')}</select>
      ${filtered?`<button class="clear" data-act="billClear" style="color:var(--chip-rust)">Clear</button>`:''}</div>
     <div class="bl-count"><span><b>${list.length}</b> bill${list.length===1?'':'s'} · ${fmt(sum.total)} billed</span>
@@ -21726,8 +21789,8 @@ function billDetail(inv){
      <button class="btn ghost sm" data-act="billMail" data-no="${inv.no}" title="${isEmail(c.email)?'Email the A5 invoice as a PDF to '+c.email:'Email the A5 invoice as a PDF — their email is asked for'}">Email PDF</button></div>
     <div><span>Change</span>
      ${inv.balance>0?`<button class="btn tape sm" data-act="custPay" data-id="${inv.customerId}">Take payment</button>`:''}
-     ${+inv.balance>0.005&&inv.customerId!==1&&!(S.plans||[]).some(p=>p.status!=='closed'&&(p.bills||[]).includes(inv.no))?`<button class="btn ghost sm" data-act="planNew" data-no="${inv.no}">Easy payments</button>`:''}
-     ${(S.deliveries||[]).some(d=>d.bill===inv.no&&d.status!=='cancelled')?'':`<button class="btn ghost sm" data-act="dlvNew" data-no="${inv.no}">Deliver</button>`}
+     ${featOn('plans')&&+inv.balance>0.005&&inv.customerId!==1&&!(S.plans||[]).some(p=>p.status!=='closed'&&(p.bills||[]).includes(inv.no))?`<button class="btn ghost sm" data-act="planNew" data-no="${inv.no}">Easy payments</button>`:''}
+     ${!featOn('dlv')||(S.deliveries||[]).some(d=>d.bill===inv.no&&d.status!=='cancelled')?'':`<button class="btn ghost sm" data-act="dlvNew" data-no="${inv.no}">Deliver</button>`}
      ${billUndelivered(inv)?`<button class="btn tape sm" data-act="billDlvDone" data-no="${inv.no}" title="The goods have gone to the customer">Delivered ✓</button>`:inv.deliveredAt?(inv.undelivered?`<button class="btn ghost sm" data-act="billDlvSlip" data-no="${inv.no}" title="Print the delivery note again">Delivery note</button>`:''):`<button class="btn ghost sm" data-act="billDlvNot" data-no="${inv.no}" title="The goods are still here — put it on the Not delivered list">Not delivered yet</button>`}
      <button class="btn ghost sm" data-act="billCopy" data-no="${inv.no}">Bill again</button>
      ${canEdit?`<button class="btn ghost sm" data-act="billEdit" data-no="${inv.no}">Edit in the till</button><button class="btn ghost sm" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}</div>
@@ -21896,7 +21959,8 @@ const APPROVAL_KINDS=[
   ['custNew','Someone asked for a customer account on the site'],
   ['salaryAsk','Salary or an advance asked for at the shift clock'],
   ['custPay','Customer payment taken by someone other than an admin'],
-  ['supPay','Supplier paid by someone other than an admin']];
+  ['supPay','Supplier paid by someone other than an admin'],
+  ['stockAdj','Stock adjusted — a stock take closed, or counts from phones posted']];
 /* Money in and money out. Only the Super Admin, the Owner or an Admin record a payment straight away;
    anyone else's — even someone allowed to approve other things — waits for one of them to say yes, and
    only then does it reach the customer's or supplier's account. */
@@ -21932,6 +21996,7 @@ function applyApproval(a){
     case 'supPortal':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supPortalSet(s,d.field,!!d.value); break }
     case 'supStock':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supStockOpen(s); break }
     case 'leave':{ lvApprove(d.id); break }
+    case 'stockAdj':{ if(d.phoneIds) phonePost(d.phoneIds,true); else { stkCount={...(d.counts||{})}; postStockTakeNow(d.note||'Stock take') } break }
     case 'salaryAsk':{ const e=(S.employees||[]).find(x=>String(x.id)===String(d.empId))||(S.employees||[]).find(x=>x.name===d.who);
       if(!e) throw new Error('That person is no longer on the staff list');
       salTell(d,true);
@@ -22535,7 +22600,7 @@ function approvals(){
           :`<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="tag warn">Not paid in the books yet</span><button class="btn tape sm" data-act="apPayAdv" data-id="${a.id}">Pay it now</button></div>`):''}`}
     </div>`).join('')
     :(apTab==='pending'&&more.length?'':`<div class="card muted">${apTab==='pending'?(mine?'You have nothing waiting.':'Nothing is waiting on you.'):'Nothing decided yet.'}</div>`)}
-   ${apTab==='pending'&&more.length?`<h2 style="margin:18px 0 8px">Also waiting for your decision <span class="muted" style="font-size:13px;font-weight:400">${more.length} · payment requests, supplier orders, payments to check, online orders, staff asks</span></h2>
+   ${apTab==='pending'&&more.length?`<h2 style="margin:18px 0 8px">Also waiting for your decision <span class="muted" style="font-size:13px;font-weight:400">${more.length} · leave, stock counts from phones, payment requests, supplier orders, payments to check, online orders, staff asks</span></h2>
      <div class="act-group">${more.map((x,k)=>actItemHtml(x,k)).join('')}</div>`:''}`;
 }
 /* the doing of each change, shared by the request path and the direct path */
@@ -25822,7 +25887,8 @@ function purchasing(){
               +chqOut.filter(c=>c.date<=ago(-d)).reduce((a,c)=>a+(+c.amount||0),0);
   const RO=reorderData();
   const tabs=[['plan','The plan'],['order','What to order',RO.lines.length],['dead','Not selling',RO.dead.length],['costs','Costs gone up',RO.costs.length],
-              ['due','What falls due',parts.length+chqOut.length],['diary','Cheque diary'],['terms','Credit periods'],['season','Season & rules']];
+              ['due','What falls due',parts.length+chqOut.length],['diary','Cheque diary'],['terms','Credit periods'],['season','Season & rules']].filter(x=>featOn('reorder')||!['order','dead','costs'].includes(x[0]));
+  if(!tabs.some(x=>x[0]===purchTab)) purchTab='plan';
 
   const body=({plan:()=>planTab(L,weeks,cfg),order:()=>roOrderTab(RO),dead:()=>roDeadTab(RO),costs:()=>roCostTab(RO),due:()=>dueTab(parts,chqOut,L),
                diary:()=>diaryTab(),
@@ -27022,7 +27088,7 @@ function damages(){
     <span style="display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn ghost" data-act="dmgScan">Scan a label</button>
       <button class="btn ghost" data-act="dmgNew">+ Arrived damaged</button>
-      <button class="btn tape" data-act="dmgWarranty">+ Warranty return</button></span></h1>
+      ${featOn('warranty')?'<button class="btn tape" data-act="dmgWarranty">+ Warranty return</button>':''}</span></h1>
   <div class="row" style="gap:12px;flex-wrap:wrap;margin-bottom:12px">
     ${stat('Open',fmt(worth(open)),open.length+' return'+(open.length===1?'':'s')+' with '+sups.length+' supplier'+(sups.length===1?'':'s'),'y')}
     ${stat('Waiting longest',oldest+' day'+(oldest===1?'':'s'),'the oldest open return',oldest>30?'r':'b')}
@@ -28354,7 +28420,7 @@ let dlvDay=null;
 /* A bill whose goods have not gone yet — taken over the phone, paid or on account. NOT DELIVERED on the till
    (Ctrl+Shift+D) marks it, or "Not delivered yet" on the bill afterwards. It stays on the Not delivered list
    (Bills, and the top of Deliveries) until someone marks it delivered, or a driver's delivery of it is done. */
-const billUndelivered=(inv)=>!!(inv&&inv.undelivered&&!inv.deliveredAt&&!(S.deliveries||[]).some(d=>d.bill===inv.no&&d.status==='delivered'));
+const billUndelivered=(inv)=>!!(featOn('undelivered')&&inv&&inv.undelivered&&!inv.deliveredAt&&!(S.deliveries||[]).some(d=>d.bill===inv.no&&d.status==='delivered'));
 const undeliveredBills=()=>S.sales.filter(billUndelivered);
 function csDlvToggle(){ S.pos.toDeliver=!S.pos.toDeliver; render(); toast(S.pos.toDeliver?'Not delivered — this bill goes on the Not delivered list':'Delivered with the customer, as usual') }
 function billDeliverDone(no){
@@ -29465,7 +29531,7 @@ const REPORTS=[
    the MRP (a price that went up, a special order), a lower MRP beside it only confuses. 0: show nothing. */
 const mrpShown=(mrp,unit)=>{ const m=+mrp||0; return m>0&&(+unit||0)<=m+0.005?m:0 };
 const inRange=(d)=>(!repFrom||d>=repFrom)&&(!repTo||d<=repTo);
-const vatOn=()=>!!String((CFG.shop||{}).vat||'').trim()&&(+(CFG.tax||{}).rate||0)>0;
+const vatOn=()=>featOn('vat')&&!!String((CFG.shop||{}).vat||'').trim()&&(+(CFG.tax||{}).rate||0)>0;
 /* the VAT inside an amount that already includes it */
 const vatIn=(amt)=>{ const r=+(CFG.tax||{}).rate||0; return r>0?(+amt||0)*r/(100+r):0 };
 function accBalRange(ac){
@@ -29948,7 +30014,7 @@ function reports(){
   <div class="row" style="align-items:flex-start">
    <div class="card" style="flex:0 0 240px">
     ${REPORTS.map(g=>`<div class="repgrp">${g[0]}</div>
-      ${g[1].map(x=>`<button class="repitem ${repKey===x[0]?'on':''}" data-act="repPick" data-k="${x[0]}">${x[1]}</button>`).join('')}`).join('')}
+      ${g[1].filter(x=>(featOn('profit')||!['catprofit','brandprofit','salesprofit'].includes(x[0]))&&(featOn('vat')||x[0]!=='vat')).map(x=>`<button class="repitem ${repKey===x[0]?'on':''}" data-act="repPick" data-k="${x[0]}">${x[1]}</button>`).join('')}`).join('')}
    </div>
    <div class="card flex1">
     <div class="findbar" style="margin-bottom:12px">
@@ -32071,6 +32137,7 @@ document.addEventListener('click',e=>{
     purMatch:()=>matchNoteModal(a.dataset.no),
     purFiles:()=>{ const pu=S.purchases.find(x=>x.no===a.dataset.no); if(pu) purFilesModal(pu) },
     stkPerson:()=>stkPerson(a.dataset.id||null), stkPhPost:()=>phonePost([a.dataset.id]), stkPhRej:()=>phoneReject([a.dataset.id]),
+    stkPhPostWho:()=>phonePost(phonePending().filter(x=>x.by===a.dataset.who&&!phoneAsked(x)).map(x=>x.id)),
     stkPhPostAll:()=>phonePost(phonePending().map(x=>x.id)), stkPhRejAll:()=>phoneReject(phonePending().map(x=>x.id)),
     dmgLabel:()=>damageLabel(a.dataset.no), dmgWarranty:()=>warrantyModal(), dmgSlip:()=>dmgSlip(a.dataset.no), dmgTell:()=>dmgTellSup([a.dataset.no],a.dataset.how),
     dmgTellAll:()=>dmgTellSup(damageOpen(+a.dataset.sid).map(d=>d.no),a.dataset.how), dmgGive:()=>dmgGiveNow(a.dataset.no), dmgHand:()=>dmgHandOver(a.dataset.no), dmgScan:()=>damageScanModal(),
@@ -32161,7 +32228,7 @@ document.addEventListener('keydown',e=>{
     if(k==='r'){ e.preventDefault(); posSetLevel('retail');    toast('Retail prices on this bill');    return }
     if(k==='l'){ e.preventDefault(); csSetPaper('a5');  render(); toast('Large bill — A5 will print'); return }
     if(k==='n'){ e.preventDefault(); csSetPaper('r80'); render(); toast('Normal bill — 80mm receipt will print'); return }
-    if(k==='d'){ e.preventDefault(); csDlvToggle(); return }
+    if(k==='d'&&featOn('undelivered')){ e.preventDefault(); csDlvToggle(); return }
   }   // retail ⇄ wholesale for the bill
   if(e.key==='Escape'){
     if(document.getElementById('poModal')||document.getElementById('ordModal')) return;   // the order popups close themselves
