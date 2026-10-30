@@ -7851,6 +7851,18 @@ async function shiftPushStaff(){
 }
 /* signing in at the till is the same person as the one on the roll: if they are linked and have not
    clocked in today, they are asked once — no walking to the board for it */
+/* Asked only from books that are up to date: a punch made at the shift clock or another till must count.
+   Both ways of signing in come here — they pull the books first, and if the shop's server could not be
+   reached (no recent sync), nobody is asked: the till cannot know, and asking someone already in is wrong. */
+async function clockInAfterSync(userName){
+  const br=window.regalBridge;
+  if(br&&br.online&&br.online()){
+    try{ if(await br.pull(true)) render() }catch(e){}
+    const last=br.lastSync?+br.lastSync()||0:0;
+    if(Date.now()-last>120000) return;          // not heard from the server in two minutes: do not ask
+  }
+  clockInAsk(userName);
+}
 function clockInAsk(userName){
   const e=S.employees.find(x=>x.active!==false&&x.userName===userName);
   if(!e) return;
@@ -14098,7 +14110,12 @@ async function pqLoad(quiet){
   if(!window.regalBridge||!regalBridge.token()){ pqJobs={offline:true}; if(!quiet) render(); return }
   try{
     const r=await fetch('/api/print/queue',{headers:{Authorization:'Bearer '+regalBridge.token()}});
-    const j=await r.json();
+    /* a web page where the queue should be is not the till's server talking — it is the hosting's firewall
+       (a blocked address, or a check page shown to Tor and VPNs), or the server not yet restarted */
+    const raw=await r.text(); let j;
+    try{ j=JSON.parse(raw) }catch(e){ throw new Error(/<!doctype|<html/i.test(raw)
+      ? 'The shop server could not be reached — the hosting firewall answered instead (this connection may be blocked, or this is a Tor/VPN window). Printing goes on only once the counter PC can reach regalhw.lk.'
+      : 'The shop server gave an answer that could not be read (HTTP '+r.status+')') }
     if(!j.ok) throw new Error(j.error||('HTTP '+r.status));
     let st=null;
     try{ const s=await fetch('/api/print/status',{headers:{Authorization:'Bearer '+regalBridge.token()}});
@@ -14135,11 +14152,12 @@ function printq(){
     :s==='taken'?'<span class="tag warn">printing now</span>'
     :'<span class="tag warn">waiting</span>';
 
-  const helper=q.helper
+  const helper=pqErr&&!q.helper?'<span class="tag warn">cannot tell whether the counter helper is running</span>'
+    :q.helper
     ? `<span class="tag ok">the counter helper is running</span>${q.printers&&q.printers.length?` <span class="muted">· ${q.printers.map(noteEsc).join(', ')}</span>`:''}`
     : `<span class="tag bad">the counter helper is not running</span> <span class="muted">· nothing will come out until it is started${q.seen?`, last seen ${Math.round(q.seen/60)} min ago`:''}</span>`;
 
-  return `<h1>Printing <span class="muted" style="font-size:14px">· ${q.waiting} waiting</span></h1>
+  return `<h1>Printing <span class="muted" style="font-size:14px">· ${q.waiting||0} waiting</span></h1>
    <div class="card"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
      ${helper}
      <button class="btn ghost sm" data-act="pqRefresh" style="margin-left:auto">Look again</button></div>
@@ -31270,8 +31288,7 @@ function lockFinish(u){
   /* A till waiting at the lock screen hears nothing from the other tills or the shift clock, so what it
      holds may be old. Bring the books up to date first — a punch made on regalhw.lk/shift a minute ago
      must count — and only then ask whether this person is clocked in. */
-  (async()=>{ try{ if(window.regalBridge&&regalBridge.pull&&regalBridge.online()){ if(await regalBridge.pull(true)) render() } }catch(e){}
-    try{ clockInAsk(u.name) }catch(e){} })();
+  clockInAfterSync(u.name).catch(()=>{});
 }
 /* the welcome that plays as the till opens */
 function pinWelcome(u){
@@ -31623,7 +31640,7 @@ function shopLockPassword(prefill){
       applyLayout();
       go(landingView());
       pinWelcome(u);
-      try { clockInAsk(u.name); } catch(e) {}
+      clockInAfterSync(u.name).catch(()=>{});          // the PIN way too: the books first, then ask
     } catch(err) {
       console.error('Sign-in error:', err);
       msg.textContent = 'Sign in error: ' + (err.message || err);
