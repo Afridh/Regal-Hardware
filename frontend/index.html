@@ -957,6 +957,7 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 .fb-face{font-size:26px;margin-top:2px}
 .fb-note{margin-top:6px;font-style:italic;padding:8px 12px;border-radius:10px;background:var(--panel,#f5f5f5)}
 .fb-a{display:flex;gap:6px;flex-wrap:wrap}
+.fb-note-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:-4px 0 12px}
 @media (max-width:820px){.fb-top{grid-template-columns:1fr}.fb-item{grid-template-columns:1fr}}
 /* ---- the Action centre ---- */
 .act-hero{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:22px 24px;border-radius:16px;margin-bottom:14px;color:#fff;
@@ -6312,7 +6313,7 @@ const CFG={
     texts, so the floor is there to be raised — it is the figure above which the owner would
     want to know without being told. */
  msg:{letterOn:true,greetCustomer:'Dear Customer,',greetSupplier:'Dear Supplier,',greetOwner:'Dear Owner,',greetStaff:'Dear Team Member,',signOff:'Thank you,\n{shop}\n{phone}',
-  provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',supTestOn:true,supTestTo:'0769442270',timeout:30,autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,ownerBills:'all',ownerMin:0,
+  provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',supTestOn:true,supTestTo:'0769442270',timeout:30,autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,fbOwner:true,ownerBills:'all',ownerMin:0,
   waMode:'chat',waPhoneId:'',waToken:'',waWabaId:'',waVerifyToken:'',waAuto:true,waTemplates:{},
    quietFrom:'21:00',quietTo:'07:00'},
  mail:{host:'',port:587,user:'',pass:'',from:'',cc:'',autoInvoice:true,autoVoucher:true},   // outgoing email — quotations, credit invoices and vouchers go from here
@@ -7137,7 +7138,8 @@ function settings(){
      ${fld('msg.autoBill','','Bill link to the customer after every sale','check')}
      ${fld('msg.autoReceipt','','Receipt after a payment is recorded','check')}
      ${fld('msg.autoOrder','','Supplier told when you accept, reject or change an order','check')}
-     ${fld('msg.autoSummary','','Daily summary to the owner at '+CFG.bill.summaryTime,'check')}</div>
+     ${fld('msg.autoSummary','','Daily summary to the owner at '+CFG.bill.summaryTime,'check')}
+     ${fld('msg.fbOwner','','Text the owner each customer rating from an e-bill','check')}</div>
     <h2 style="margin-top:16px">Your own copy of every bill</h2>
     <div class="muted">What went out of the shop while you were not standing in it. It goes to the owner's
       mobile in <b>Shop details</b> — ${CFG.shop.owner||'not set yet'}.</div>
@@ -11357,6 +11359,16 @@ function actionItems(){
       push({cat:'supord',view:'orders',pri:2,key:n.id,who:s.name,when:n.date,title:`${s.name} has a question`,sub:n.text||'',tag:'Question',
         acts:[actOpen('orders','Answer on Supplier orders'),actBtn('noticeDrop','Mark handled',id)]});
     }
+  }
+  /* what customers said from their e-bill, until someone has looked: an unhappy one at the top, to be followed up */
+  for(const x of (S.feedback||[]).filter(f=>!f.seen&&!f.done).slice(0,30)){
+    const id=`data-id="${esA(x.id)}"`, c=x.cid?C(x.cid):null, low=x.stars<=2;
+    push({cat:'customer',view:'feedback',pri:low?1:4,key:x.id,decide:true,who:x.who,when:x.at,
+      title:`${'★'.repeat(x.stars)}${'☆'.repeat(5-x.stars)} ${low?'An unhappy customer':'New feedback'} — ${x.who}`,
+      sub:[`bill ${x.no}`,x.by&&'served by '+x.by,(x.tags||[]).join(', '),x.note&&`“${x.note}”`].filter(Boolean).join(' · '),
+      tag:low?'Unhappy — follow up':'Feedback',
+      acts:[low?actBtn('fbDone','Followed up',id,'tape'):actBtn('fbSeen','Seen',id,'tape'),low?actBtn('fbSeen','Seen — nothing to do',id):'',
+        c&&c.phone?`<a class="btn ghost sm" href="tel:${esA(c.phone)}">Call ${noteEsc(c.name.split(' ')[0])}</a>`:'',actOpen('feedback','All feedback')]});
   }
   /* customers late paying — the oldest debts first */
   if(typeof custAge==='function'){
@@ -22796,7 +22808,10 @@ function feedbackPage(){
     .filter(x=>!q||[x.who,x.no,x.note,x.by,(x.tags||[]).join(' ')].some(v=>String(v||'').toLowerCase().includes(q)));
   const stars=(s,big)=>`<span class="fb-st s${Math.round(s)} ${big?'big':''}">${'★'.repeat(Math.round(s))}<i>${'★'.repeat(5-Math.round(s))}</i></span>`;
   const chip=(k,l,c)=>`<button class="${fbShow===k?'on':''}" data-act="fbShow" data-k="${k}">${l}${c!=null?` <b>${c}</b>`:''}</button>`;
+  const unseen=all.filter(x=>!x.seen&&!x.done).length, texted=(CFG.msg||{}).fbOwner!==false&&CFG.shop.owner;
   return `<h1>Customer feedback <span class="muted" style="font-size:13px;font-weight:400">what customers said from the link on their e-bill</span></h1>
+   <div class="fb-note-bar">${unseen?`<span class="tag warn">${unseen} new — waiting in the Action centre</span> <button class="btn ghost sm" data-act="fbSeenAll">Mark all seen</button>`:'<span class="tag ok">Nothing new</span>'}
+    <span class="muted">${texted?`Each new rating is texted to the owner (${noteEsc(String(CFG.shop.owner).split(/[,;\s]+/)[0])}).`:'The owner is not texted new ratings — switch it on in Settings → Messages.'}</span></div>
    <div class="fb-top">
     <div class="card fb-avg"><small>Average rating</small><b>${n?avg.toFixed(1):'—'}</b>${stars(avg,true)}<span class="muted">${n} rating${n===1?'':'s'} · ${thisMonth.length} this month</span></div>
     <div class="card fb-dist">${dist.map(([s,c])=>`<div class="fb-row"><span>${s} ★</span><i><em class="s${s}" style="width:${n?c/n*100:0}%"></em></i><b>${c}</b></div>`).join('')}</div>
@@ -31801,6 +31816,8 @@ document.addEventListener('click',e=>{
     inTab:()=>{ inTab=a.dataset.t; apTab=inTab==='history'?'done':'pending'; actCat='all'; if(S.view!=='actions') go('actions'); else render() },
     fbShow:()=>{ fbShow=a.dataset.k; render() },
     fbDone:()=>fbFollowUp(a.dataset.id),
+    fbSeen:()=>{ const x=(S.feedback||[]).find(f=>f.id===a.dataset.id); if(!x) return; x.seen={by:S.user.name,at:apStamp()}; persist(true); render() },
+    fbSeenAll:()=>{ (S.feedback||[]).filter(f=>!f.seen&&!f.done).forEach(f=>f.seen={by:S.user.name,at:apStamp()}); persist(true); render(); toast('All marked as seen','ok') },
     fbBill:()=>{ billType='all'; billQ=''; billFrom=''; billTo=''; billSel=a.dataset.no; go('bills') },
     plSeen:()=>{ const p=plOf(SU(+a.dataset.sid)).find(x=>String(x.id)===a.dataset.id); if(p){ delete p.unread; render() } },
     apTab:()=>{ apTab=a.dataset.t; render() },

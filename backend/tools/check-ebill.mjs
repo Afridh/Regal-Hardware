@@ -7,6 +7,10 @@
 //   node backend/tools/check-ebill.mjs
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
+import http from 'node:http';
+// a stand-in text gateway: what would go to the owner's phone comes here instead
+const texts = []; const gw = http.createServer((req, res) => { let b = ''; req.on('data', d => b += d); req.on('end', () => { texts.push(Object.fromEntries(new URLSearchParams(b))); res.setHeader('Content-Type', 'application/json'); res.end('{"success":true}') }) });
+await new Promise(r => gw.listen(4019, '127.0.0.1', r));
 const BASE = process.env.BASE || 'http://localhost:4010';
 const exe = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
 let pass = 0, fail = 0; const ok = (c, m, x = '') => { c ? pass++ : fail++; console.log((c ? 'PASS ' : 'FAIL ') + m + (x ? '  ' + x : '')) };
@@ -32,6 +36,8 @@ const made = await pg.evaluate(async () => {
   document.querySelectorAll('.modal').forEach(m => m.remove()); window.eval("CFG.print.agent=''");
   const S = window.eval('S'), CFG = window.eval('CFG');
   CFG.shop.logo = ''; CFG.shop.sinhala = CFG.shop.sinhala || 'රීගල් හාඩ්වෙයාර්';
+  window.__msg = JSON.parse(JSON.stringify(CFG.msg || {})); window.__owner = CFG.shop.owner;
+  CFG.msg = { ...CFG.msg, live: true, apiUrl: 'http://127.0.0.1:4019/send', apiKey: 'test', provider: 'test', testOnly: '', fbOwner: true }; CFG.shop.owner = '0770000009';
   const p = S.products.find(x => x.active !== false && +x.retail > 100);
   p.mrp = +p.retail + 50;
   const c = S.customers.find(x => x.id !== 1);
@@ -77,6 +83,16 @@ for (let i = 0; i < 10 && !got; i++) { await pg.evaluate(() => window.regalBridg
   got = await pg.evaluate(no => { const S = window.eval('S'); const inv = S.sales.find(s => s.no === no); return inv && inv.feedback ? { fb: inv.feedback, list: (S.feedback || []).length, bell: (S.notif || []).some(n => /★★★★★/.test(n.text) && n.text.includes(no)) } : null }, made.no) }
 ok(got && got.fb.stars === 5 && /paint counter/.test(got.fb.note), 'the till has it on the bill, with their words', JSON.stringify(got && got.fb));
 ok(got && got.bell, 'and a word in the bell');
+// the owner is texted as it comes in
+const toOwner = texts.find(x => x.to === '94770000009' && /★★★★★/.test(x.text || '') && (x.text || '').includes(made.no));
+ok(toOwner && /paint counter/.test(toOwner.text) && /^Dear Owner,/.test(toOwner.text), 'the owner is texted the rating, with their words', toOwner ? toOwner.text.split('\n').slice(1, 3).join(' / ') : `${texts.length} text(s), none to the owner`);
+// and it waits in the Action centre's Decisions tray until someone has looked
+const ac = await pg.evaluate(no => { window.eval("inTab='decide'; actCat='all'; actQ=''"); window.eval('go')('actions');
+  const row = [...document.querySelectorAll('.ib-list .act-item')].find(r => r.innerText.includes(no) && /New feedback/.test(r.innerText));
+  return { row: !!row, seen: !!(row && row.querySelector('[data-act="fbSeen"]')), badge: (document.querySelector('#nav [data-view="actions"] .nbadge') || {}).textContent || '' } }, made.no);
+ok(ac.row && ac.seen && +ac.badge > 0, 'the Action centre shows it under Decisions, with Seen, and the menu counts it', JSON.stringify(ac));
+await pg.evaluate(no => [...document.querySelectorAll('.ib-list .act-item')].find(r => r.innerText.includes(no) && /New feedback/.test(r.innerText)).querySelector('[data-act="fbSeen"]').click(), made.no); await wait(300);
+ok(await pg.evaluate(no => ![...document.querySelectorAll('.ib-list .act-item')].some(r => r.innerText.includes(no) && /New feedback/.test(r.innerText)), made.no), 'Seen: it leaves the tray');
 const rep = await pg.evaluate(() => { window.eval("repKey='feedback'; repFrom=''; repTo=''"); window.eval('go')('reports'); return document.querySelector('#main').innerText });
 ok(/Customer feedback/.test(rep) && /paint counter/.test(rep) && /\d\.\d ★/.test(rep), 'the Customer feedback report shows it, with the average');
 // its own page, under Customers: the average, the spread, what they ticked, who served them, the list
@@ -88,10 +104,14 @@ await pg.screenshot({ path: process.env.SHOT3 || 'feedback.png', fullPage: true 
 // an unhappy one is followed up from there
 const low = await pg.evaluate(() => { const S = window.eval('S'); S.feedback.unshift({ id: 'fbT1', no: S.sales[0].no, who: 'Test buyer', stars: 1, tags: ['Slow service'], note: 'waited 40 minutes', by: 'Afridh', at: '2026-10-30 10:00' });
   window.eval("fbShow='open'"); window.eval('render')(); return document.querySelectorAll('[data-act="fbDone"]').length });
+const top = await pg.evaluate(() => { const x = window.eval('actionItems')().find(i => i.key === 'fbT1'); return x && { pri: x.pri, tag: x.tag, decide: x.decide } });
+ok(top && top.pri === 1 && top.decide && /Unhappy/.test(top.tag), 'an unhappy one is at the top of the Action centre, to be followed up', JSON.stringify(top));
 await pg.$eval('[data-act="fbDone"][data-id="fbT1"]', b => b.click()); await wait(400);
 const fu = await pg.evaluate(() => window.eval('S').feedback.find(x => x.id === 'fbT1').done);
 ok(low === 1 && fu && fu.note === 'Rang them, sorry given', 'an unhappy one: "Followed up", with what was done', JSON.stringify(fu));
-await pg.evaluate(() => { const S = window.eval('S'); S.feedback = S.feedback.filter(x => x.id !== 'fbT1'); window.eval('persist')(true) }); await wait(2500);
+await pg.evaluate(() => { const S = window.eval('S'), CFG = window.eval('CFG'); S.feedback = S.feedback.filter(x => x.id !== 'fbT1');
+  CFG.msg = window.__msg; CFG.shop.owner = window.__owner; window.eval('persist')(true) }); await wait(2500);
+gw.close();
 ok(!errs.length && !perrs.length, 'no script errors', errs.concat(perrs).slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);
 await b.close();

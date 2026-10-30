@@ -383,7 +383,7 @@ r.post('/b/:id/feedback', asyncHandler(async (req, res) => {
   if (id.length < 6) throw new HttpError(404, 'That link is not a bill');
   const stars = Math.round(+req.body?.stars || 0);
   if (!(stars >= 1 && stars <= 5)) throw new HttpError(400, 'Tap the stars to rate your visit');
-  const S = (await books())?.S || {};
+  const data = await books(), S = data?.S || {};
   const inv = (S.sales || []).find(x => String(x.link || '').toLowerCase().endsWith('/' + id));
   if (!inv) throw new HttpError(404, 'That bill is not here — the link may be old, or mistyped');
   if (inv.feedback || await fbWaiting(id)) return res.json({ ok: true, already: true });
@@ -391,6 +391,13 @@ r.post('/b/:id/feedback', asyncHandler(async (req, res) => {
   const note = String(req.body?.note || '').replace(/\s+/g, ' ').trim().slice(0, 300);
   await query(`INSERT INTO cust_inbox (cid, kind, data) VALUES ($1, 'feedback', $2)`, [inv.customerId || 0, JSON.stringify({ no: inv.no, link: id, stars, tags, note })]);
   res.json({ ok: true });
+  const cfg = data?.CFG?.msg || {}, owner = String(data?.CFG?.shop?.owner || '').split(/[,;\s]+/)[0];
+  if (cfg.fbOwner !== false && cfg.live && cfg.apiUrl && cfg.apiKey && owner) {
+    const cust = (S.customers || []).find(x => x.id === inv.customerId);
+    const who = cust && cust.id !== 1 ? cust.name : 'A walk-in customer';
+    const body = `${stars <= 2 ? 'An unhappy customer: ' : ''}${'★'.repeat(stars)}${'☆'.repeat(5 - stars)} from ${who} on bill ${inv.no}${inv.by ? ' (served by ' + inv.by + ')' : ''}${tags.length ? '\n' + tags.join(', ') : ''}${note ? '\n"' + note + '"' : ''}${stars <= 2 ? '\nIt is waiting in the Action centre to be followed up.' : ''}`;
+    sendViaProvider(cfg, owner, letter(data.CFG, 'owner', body)).catch(e => console.error('feedback sms failed', e.message));
+  }
 }));
 
 /** One bill of theirs, line by line. Only ever their own — the account on the token decides. */
