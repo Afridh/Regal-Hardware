@@ -16187,7 +16187,20 @@ function freshSetupScreen(){
    </div>`;
 }
 
+/* one part of the dashboard that could not be drawn: it says so in its own place, the rest carries on */
+function dashBroken(k,e){
+  try{ if(typeof sysLog==='function'&&sysLog.add) sysLog.add('error','Dashboard: '+k+' — '+(e&&e.message)) }catch(x){}
+  return `<div class="card"><h2>${noteEsc(k)}</h2><div class="muted">This part could not be drawn — the rest of the dashboard is fine.</div><div class="muted" style="font-size:12px;margin-top:4px"><code>${noteEsc(String(e&&e.message||e))}</code></div></div>`;
+}
 function dashboard(){
+  try{ return dashboardPage() }
+  catch(e){ console.error('dashboard',e);
+    return `<div class="dash-h"><h1>Dashboard</h1></div><div class="card"><b>The dashboard could not be drawn just now.</b>
+      <div class="muted" style="margin-top:6px">Everything else works — Bills, Reports and the rest are all there. Send this line to support:</div>
+      <div style="margin-top:6px"><code>${noteEsc(String(e&&e.message||e))} · ${noteEsc(String(e&&e.stack||'').split('\n')[1]||'')}</code></div>
+      <div style="margin-top:10px;display:flex;gap:8px"><button class="btn ghost" data-view="reports">Reports</button><button class="btn ghost" data-view="bills">Bills</button></div></div>` }
+}
+function dashboardPage(){
   const _ds=shopSales();      // whichever shop is being looked at
   try{ tenderReminders() }catch(e){}
   if(S.user && /sales/i.test(String(S.user.role || ''))) return salesmanDashboard();
@@ -16465,14 +16478,14 @@ function dashboard(){
    week:()=>`<div class="card"><h2>This week</h2>
     <div class="row">${stat('Sales',fmt(salesWeek),`${weekSales.length} bills`,'y')}${stat('Gross profit',fmt(profitWeek),salesWeek?(profitWeek/salesWeek*100).toFixed(1)+'% margin':'','g')}</div>
     <h2 style="margin-top:12px">Selling best</h2>
-    ${top.map(([pid,v])=>`<div class="pbar"><span>${P(+pid).name.slice(0,26)}</span><i style="--w:${v/topMax*100}%"></i><b>${fmt(v)}</b></div>`).join('')||'<div class="muted">Nothing sold yet.</div>'}</div>`,
+    ${top.map(([pid,v])=>`<div class="pbar"><span>${String((P(+pid)||{name:'(item removed)'}).name).slice(0,26)}</span><i style="--w:${v/topMax*100}%"></i><b>${fmt(v)}</b></div>`).join('')||'<div class="muted">Nothing sold yet.</div>'}</div>`,
    cashier:()=>`<div class="card"><h2>Takings by cashier today</h2>
     ${Object.keys(byCashier).length?barChart(Object.entries(byCashier).map(([u,v])=>({label:u.split(' ')[0],values:[v]})),{h:90}):'<div class="muted">No sales yet today.</div>'}
     ${Object.entries(byCashier).map(([u,v])=>`<div class="prow"><span>${u}</span><b>${fmt(v)}</b></div>`).join('')}</div>`,
    bills:()=>`<div class="card"><h2>Latest bills</h2>
     <table><tr><th>Invoice</th><th>Customer</th><th class="n">Total</th><th class="n">Outstanding</th></tr>
     ${_ds.slice(-6).reverse().map(s=>`<tr><td><a href="#" data-act="invoice" data-no="${s.no}">${s.no}</a></td>
-      <td>${C(s.customerId).name}</td><td class="n">${fmt(s.total)}</td><td class="n">${s.balance?fmt(s.balance):'—'}</td></tr>`).join('')}</table></div>`,
+      <td>${(C(s.customerId)||{name:'—'}).name}</td><td class="n">${fmt(s.total)}</td><td class="n">${s.balance?fmt(s.balance):'—'}</td></tr>`).join('')}</table></div>`,
    low:()=>`<div class="card"><h2>Running low</h2>
     ${low.length?`<table>${low.slice(0,6).map(p=>`<tr><td>${p.name}</td><td class="n">${fq(p.stock)} ${p.unit}</td><td class="n muted">reorder at ${p.min}</td></tr>`).join('')}</table>`
       :'<div class="muted">Everything is above its reorder level.</div>'}</div>`
@@ -16488,7 +16501,8 @@ function dashboard(){
     let body='', pair=[];
     const flush=()=>{ if(pair.length){ body+=`<div class="row dashrow">${pair.join('')}</div>`; pair=[] } };
     keys.forEach(k=>{
-      const out=panels[k](); if(!out) return;                 // a panel with nothing to say draws nothing
+      let out; try{ out=panels[k]() }catch(e){ console.error('dashboard panel',k,e); out=dashBroken(k,e) }
+      if(!out) return;                                        // a panel with nothing to say draws nothing
       if(wide.has(k)){ flush(); body+=`<div class="fade dashwide" style="--i:${i++}">${out}</div>` }
       else { pair.push(`<div class="flex1 fade" style="--i:${i++}">${out}</div>`); if(pair.length===2) flush() }
     });
