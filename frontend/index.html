@@ -8002,10 +8002,13 @@ document.addEventListener('click',e=>{
   if(onlOpen&&!(e.target.closest&&e.target.closest('#onl'))){ onlOpen=false; onlDraw() } });
 setInterval(()=>{ if(!onlList.length) return; const h=document.querySelector('[data-onl]'), el=document.getElementById('onl');
   if(!el||(h?!h.contains(el):el.parentNode!==document.body)) onlDraw() },800);   // the page changed: back on the till's line, or to the top
-setInterval(()=>onlBeat(),20000);
+/* once a minute is plenty — the server keeps someone online for two, and every sync with it counts too;
+   the shop reaches the server from one address, and its firewall blocks what looks like a bot (30 Oct 2026) */
+setInterval(()=>onlBeat(),60000);
 setTimeout(()=>onlBeat(),4000);
 let onlLastView='';
-setInterval(()=>{ if(S.view!==onlLastView&&S.user&&S.user.name){ onlLastView=S.view; onlBeat() } },3000);   // a new page: say so soon
+let onlViewAt=0;
+setInterval(()=>{ if(S.view!==onlLastView&&S.user&&S.user.name&&Date.now()-onlViewAt>15000){ onlLastView=S.view; onlViewAt=Date.now(); onlBeat() } },3000);   // a new page: say so soon, at most every 15 s
 setInterval(()=>{ try{ document.querySelectorAll('[data-brk]').forEach(el=>{ const h=breakStripInner(); if(el.innerHTML!==h) el.innerHTML=h }) }catch(e){} },20000);
 function setRec(ds,id,patch){
   S.shift.days=S.shift.days||{};
@@ -14292,7 +14295,7 @@ function camRemotePage(){
      <button class="btn" data-act="camAgain" style="margin-top:10px">Look again</button></div>${R.ok?camExtras():''}`;
   const cams=R.cameras||[];
   return `<h1>Cameras <span class="muted" style="font-size:14px">· from anywhere · ${cams.length}</span></h1>
-   <div class="muted">${R.recorder?noteEsc(R.recorder.model||'')+' · ':''}a fresh picture about every second, through the shop PC. Nothing is sent when nobody is watching.</div>
+   <div class="muted">${R.recorder?noteEsc(R.recorder.model||'')+' · ':''}a fresh picture every couple of seconds, through the shop PC. Nothing is sent when nobody is watching.</div>
    <div class="camgrid">${cams.map(c=>`<div class="camcard"><div class="cam-h"><b>${noteEsc(camName(c.ch))}</b><span class="muted">ch ${c.ch}</span></div>
      <div class="cam-img"><img data-rcam="${c.ch}" alt=""><div class="cam-wait" data-rwait="${c.ch}">Waking the camera…</div></div></div>`).join('')}</div>
    ${camExtras()}`;
@@ -14302,6 +14305,7 @@ function camRemoteAfter(){
   clearInterval(window._camRemote);
   const tick=async()=>{
     if(S.view!=='cameras'||!(camRemote&&camRemote.alive)){ clearInterval(window._camRemote); return }
+    if(document.hidden) return;                     // nobody looking: ask for nothing
     const els=[...document.querySelectorAll('img[data-rcam]')];
     // only the cameras on screen are asked for — on a phone that is the one being looked at
     const seen=els.filter(im=>{ const b=im.getBoundingClientRect(); return b.bottom>0&&b.top<innerHeight });
@@ -14312,7 +14316,9 @@ function camRemoteAfter(){
         const w=document.querySelector(`[data-rwait="${ch}"]`); if(w) w.style.display=age>8000?'':'none'; if(w&&age>8000) w.textContent='Last picture '+Math.round(age/1000)+'s ago';
       }catch(e){} }));
   };
-  tick(); window._camRemote=setInterval(tick,1000);
+  // every 2 s, not every second: one picture a camera a second from the shop's address was a large part of what
+  // the hosting firewall took for a bot (30 Oct 2026)
+  tick(); window._camRemote=setInterval(tick,2000);
 }
 function camSettingsAfter(){
   document.querySelectorAll('[data-camcfg]').forEach(el=>el.onchange=()=>{ const k=el.dataset.camcfg, c=camCfg();

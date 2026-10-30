@@ -167,7 +167,12 @@ function printRaw(printer, data, name) {
    prints it here. Only outgoing calls, so nothing has to be opened to this PC from outside. */
 const SERVER = String(cfg.server || process.env.PRINT_SERVER || 'http://127.0.0.1:4000').replace(/\/$/, '');
 const KEY = String(cfg.key || process.env.PRINT_DEVICE_KEY || process.env.SHIFT_DEVICE_KEY || '');
-const EVERY = Math.max(1000, +cfg.pollMs || 2000);
+/* every 5 s (never under 3): the shop reaches regalhw.lk from one address, and the hosting firewall blocked it
+   as a bot when the tills and this helper asked every 2 s (30 Oct 2026). A bill printed at this PC does not wait
+   on this — the till hands it to the helper directly; only bills from elsewhere come by the queue. */
+const EVERY = Math.max(3000, +cfg.pollMs || 5000);
+let failing = 0;                                           // the server erroring or out of reach: ask further apart, up to 2 minutes
+const backoff = () => Math.min(120000, EVERY * 2 ** Math.min(++failing, 5));
 let queueSaid = '';
 async function takeJobs() {
   if (!KEY) return;                                        // no key set: the helper only serves this PC
@@ -175,7 +180,7 @@ async function takeJobs() {
     const printers = encodeURIComponent(JSON.stringify({ r80: cfg.r80.printer, a5: cfg.a5.printer, label: (cfg.label && cfg.label.printer) || null }));
     const r = await fetch(`${SERVER}/api/print/next?key=${encodeURIComponent(KEY)}&printers=${printers}`);
     if (!r.ok) { const why = r.status === 403 ? 'the server does not know this key' : 'the server said ' + r.status;
-      if (queueSaid !== why) { queueSaid = why; log('queue:', why) } return }
+      if (queueSaid !== why) { queueSaid = why; log('queue:', why) } return 'err' }
     if (queueSaid) { log('queue: talking to the shop server again'); queueSaid = '' }
     const j = await r.json().catch(() => ({}));
     const job = j && j.job; if (!job) return false;
@@ -216,7 +221,8 @@ async function takeJobs() {
     return true;                                           // there may be another behind it
   } catch (e) {
     const why = 'cannot reach ' + SERVER + ' (' + e.message + ')';
-    if (queueSaid !== why) { queueSaid = why; log('queue:', why) }
+    if (queueSaid !== why) { queueSaid = why; log('queue:', why, '— asking less often until it answers') }
+    return 'err';
   }
 }
 const say = (id, body) => fetch(`${SERVER}/api/print/${id}/done?key=${encodeURIComponent(KEY)}`,
@@ -291,7 +297,8 @@ http.createServer(async (req, res) => {
   if (KEY) {
     log(`Watching ${SERVER} for bills sent from anywhere else`);
     const tick = () => takeJobs()
-      .then(did => did === true ? 0 : EVERY, () => EVERY)   // just printed one? look again at once
+      .then(did => { if (did === 'err') return backoff(); failing = 0; return did === true ? 0 : EVERY },   // just printed one? look again at once
+            e => { if (queueSaid !== 'unreachable') { queueSaid = 'unreachable'; log('queue: cannot reach', SERVER, '(' + e.message + ') — asking less often until it answers') } return backoff() })
       .then(wait => setTimeout(tick, wait));
     tick();
   }

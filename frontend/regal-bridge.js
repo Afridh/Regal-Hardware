@@ -9,7 +9,25 @@
   var KEY = 'regal';                       // books document key on the server
   var TOKEN_KEY = 'regal_token';
   var TERMINAL_KEY = 'regal_terminal';
-  var POLL_MS = 2000;
+  var POLL_MS = 2000;                      // the tick; how often the server is actually asked is pollGap()
+  /* Every till, the print helper and the cameras in the shop reach regalhw.lk from the one internet
+     address. Asking every 2 seconds from each of them was ~3 requests a second, all day, and the
+     hosting's firewall blocked the shop as a bot (30 Oct 2026). So: every 10 s while someone is using
+     this till, every 60 s once nobody has touched it for 5 minutes, and further apart while the server
+     is failing — never hammering it. A save, coming back to the window or a key pressed catches up at once. */
+  var ACTIVE_GAP = 10000, IDLE_GAP = 60000, IDLE_AFTER = 300000, MAX_GAP = 180000;
+  // a server on this machine (the tests, a shop's own PC) has no such firewall: the old quick pace there,
+  // unless asked for the live one (localStorage regal_pace = 'live') to measure it
+  try { if (/^(localhost|127\.|\[::1\])/.test(location.hostname) && localStorage.getItem('regal_pace') !== 'live') ACTIVE_GAP = IDLE_GAP = 2000; } catch (e) {}
+  var lastPollAt = 0, lastInputAt = Date.now(), failStreak = 0;
+  function pollGap() {
+    var gap = Date.now() - lastInputAt > IDLE_AFTER ? IDLE_GAP : ACTIVE_GAP;
+    return failStreak ? Math.min(MAX_GAP, gap * Math.pow(2, failStreak)) : gap;
+  }
+  ['keydown', 'pointerdown', 'touchstart'].forEach(function (ev) {
+    window.addEventListener(ev, function () { var wasIdle = Date.now() - lastInputAt > IDLE_AFTER; lastInputAt = Date.now();
+      if (wasIdle && pollTimer && !failStreak) { lastPollAt = 0; setTimeout(poll, 50); } }, { passive: true, capture: true });
+  });
   // per-device state that must never travel between tills
   /* What stays on the machine it was typed on. The bill being keyed right now (pos) does:
      nobody wants half a bill appearing on the next till. Bills put ON HOLD do not, and used
@@ -448,9 +466,12 @@
     if (!token || busy || document.hidden) return;       // a tab nobody is looking at does not poll
     if (window.privacyOn) return;                          // the privacy screen is up: nothing moves until it is taken down
     if (Date.now() - lastPushAt < 3000) return;          // our own save is still settling
+    if (Date.now() - lastPollAt < pollGap()) return;     // not yet: see pollGap
+    lastPollAt = Date.now();
     renew();                                              // keeps the sign-in alive while the till is in use
     var j = await call('GET', '/books/' + KEY + '/rev');
-    if (j.__status !== 200) return;
+    if (j.__status !== 200) { if (j.__status !== 401) failStreak = Math.min(failStreak + 1, 6); return; }
+    failStreak = 0;
     if (j.rev === rev && !unsynced) lastSyncAt = Date.now();
     // the server answers again and this PC has work it never took: send it now (merged with whatever the
     // other tills did meanwhile), before pulling anything over it
@@ -490,7 +511,7 @@
   }
   function startPolling() { stopPolling(); pollTimer = setInterval(poll, POLL_MS); }
   // a till that comes back to the front catches up at once, not on the next tick
-  document.addEventListener('visibilitychange', function () { if (!document.hidden && pollTimer) poll(); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && pollTimer) { lastInputAt = Date.now(); if (!failStreak) lastPollAt = 0; poll(); } });
   function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
 
   /* ---------------- SMS through the server ---------------- */

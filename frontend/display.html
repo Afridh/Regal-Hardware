@@ -324,17 +324,27 @@ body.paid .party h2 span{animation:bounce .8s cubic-bezier(.2,.9,.25,1.6) both}
     mode = state;
   }
 
+  /* The server holds the question until the bill changes (wait=1), so the next one goes at once. A server
+     that answers "the same" straight back (not yet updated) is asked every 1.5 s while a bill is up and
+     every 4 s otherwise — never the 0.9 s of old, which with the tills got the shop blocked as a bot. */
+  let fails = 0;
   async function poll() {
+    let next = 50; const t0 = Date.now();
     try {
-      const r = await fetch('/api/display/' + encodeURIComponent(screen) + '?since=' + rev, { cache: 'no-store' });
+      const r = await fetch('/api/display/' + encodeURIComponent(screen) + '?since=' + rev + '&wait=1', { cache: 'no-store' });
       const j = await r.json();
-      if (j.ok) { lastOk = Date.now(); if (!j.same) { rev = j.rev; data = j.data; if (data && data.state === 'paid') paidSeen = Date.now(); draw(); } }
-    } catch (e) { }
+      if (j.ok) { fails = 0; lastOk = Date.now(); if (!j.same) { rev = j.rev; data = j.data; if (data && data.state === 'paid') paidSeen = Date.now(); draw(); }
+        else if (Date.now() - t0 < 1500) next = data && data.state && data.state !== 'idle' ? 1500 : 4000; }
+      else next = Math.min(60000, 2000 * 2 ** Math.min(++fails, 5));
+    } catch (e) { next = Math.min(60000, 2000 * 2 ** Math.min(++fails, 5)); }
     const off = Date.now() - lastOk > 8000; $('status').classList.toggle('off', off); $('status').querySelector('span').textContent = off ? 'reconnecting…' : 'counter ' + screen;
     if (data && data.state === 'paid' && mode === 'paid' && Date.now() - paidSeen >= 30000) { data.state = 'idle'; draw(); }
-    setTimeout(poll, 900);
+    // the "paid — thank you" screen clears itself after 30 s, so a held question must not outlast that by much
+    setTimeout(poll, next);
   }
   draw(); poll();
+  // with the question held up to 20 s, the thank-you clears on its own clock rather than on an answer
+  setInterval(() => { if (data && data.state === 'paid' && mode === 'paid' && Date.now() - paidSeen >= 30000) { data.state = 'idle'; draw(); } }, 2000);
 })();
 </script>
 </body>

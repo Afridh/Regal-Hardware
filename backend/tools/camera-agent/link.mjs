@@ -101,23 +101,28 @@ export function startLink({ cfg, here, log, recorder, ffmpeg }) {
   };
 
   /* ---- what is wanted now ---- */
-  let alertsOn = false, bad = 0;
+  /* The shop reaches regalhw.lk from one address; every 2.5 s here (0.7 s while watched), with the tills
+     and the print helper, was blocked by the hosting firewall as a bot (30 Oct 2026). Now every 6 s, every
+     1.5 s while someone watches, and further apart — up to 2 minutes — while the server is failing. */
+  let alertsOn = false, bad = 0, failing = 0;
+  const backoff = () => Math.min(120000, 6000 * 2 ** Math.min(++failing, 5));
   const taking = new Set();
   const loop = async () => {
-    let wait = 2500;
+    let wait = 6000;
     try {
       const r = await fetch(api('jobs'), { signal: AbortSignal.timeout(15000) });
       if (r.status === 403) { if (bad++ % 40 === 0) log('remote: the server refused the key — check "key" (the same as PRINT_DEVICE_KEY on the server)'); wait = 30000; }
       else if (r.status === 404) { if (bad++ % 40 === 0) log('remote: the server does not have the cameras part yet — restart the app there'); wait = 60000; }
+      else if (!r.ok) wait = backoff();                  // the server erroring: ask less often
       else if (r.ok) {
-        bad = 0;
+        bad = 0; failing = 0;
         const j = await r.json();
         if (j.alerts && !alertsOn) { alertsOn = true; listenAlarms(); }
         for (const ch of j.watch || []) {
           const s = await snap(ch);
           if (s.ok) await fetch(api('frame', '&ch=' + ch), { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: s.buf, signal: AbortSignal.timeout(15000) }).catch(() => {});
         }
-        if ((j.watch || []).length) wait = 700;
+        if ((j.watch || []).length) wait = 1500;
         for (const job of j.shots || []) {
           if (taking.has(job.id)) continue; taking.add(job.id);
           (async () => {           // a few stills a moment apart, without holding up the watching
@@ -132,7 +137,7 @@ export function startLink({ cfg, here, log, recorder, ffmpeg }) {
         for (const c of j.clips || []) if (!clipping.has(c.id)) { clipping.add(c.id); clipQueue.push(c); }
         nextClip();
       }
-    } catch (e) { /* the shop's internet blinked — ask again */ }
+    } catch (e) { wait = backoff(); /* the shop's internet blinked, or the server is out of reach — ask again, later each time */ }
     setTimeout(loop, wait);
   };
   loop();
