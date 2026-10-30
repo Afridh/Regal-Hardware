@@ -42,7 +42,11 @@ ok(/updated \d\d:\d\d/.test(status), "till A's status line says it was updated, 
 // the same message four times: one pop-up
 const n = await A.evaluate(async () => { document.getElementById('toasts') && (document.getElementById('toasts').innerHTML = ''); for (let i = 0; i < 4; i++) window.eval('toast')('Saved'); return document.querySelectorAll('#toasts .toast:not(.out)').length });
 ok(n === 1, 'the same message four times shows once', n + ' shown');
-const n2 = await A.evaluate(() => { window.eval('toast')('Something else'); return document.querySelectorAll('#toasts .toast:not(.out)').length });
-ok(n2 === 2, 'a different message still shows beside it');
+// many different messages: still one line — the newest, with how many came
+const r2 = await A.evaluate(() => { for (const m of ['Something else', 'A third thing', 'The newest one']) window.eval('toast')(m);
+  const live = document.querySelectorAll('#toasts .toast:not(.out)'); return { n: live.length, text: live[0] && live[0].querySelector('.tt').textContent, count: live[0] && (live[0].querySelector('.tn') || {}).textContent, h: live[0] && Math.round(live[0].querySelector('.tt').getBoundingClientRect().height) } });
+ok(r2.n === 1 && r2.text === 'The newest one' && r2.count === '4', 'four different messages: one line, the newest, with a count of 4', JSON.stringify(r2));
+const long = await A.evaluate(() => { window.eval('toast')('A very long message that would once have wrapped onto two or three lines across the top of the till screen and pushed things about'); const tt = document.querySelector('#toasts .toast:not(.out) .tt'); return Math.round(tt.getBoundingClientRect().height) });
+ok(long <= 22, 'a long message stays on one line (the whole text on hover)', long + 'px high');
 console.log(`\n${pass} passed, ${fail} failed`);
 await b.close();
