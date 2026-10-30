@@ -16789,7 +16789,7 @@ function pos(){
    </div>
    <div class="card items"><table id="posTable"><tr><th>#</th><th>Item</th><th>Unit</th><th class="n">Qty</th><th class="n">MRP</th><th class="n">Price</th><th class="n">Disc</th><th class="n">Amount</th><th></th></tr>
    ${L.length?L.map((l,i)=>{const p=P(l.pid);return `<tr class="${i===S.pos.sel?'sel':''}${l.qty<0?' retline':''}" data-i="${i}"><td>${i+1}</td><td>${p.name}<div class="muted">${p.code}${CFG.cost.atTill&&can('cost')?` · <span class="cc">${costCode(p.cost)}</span>`:''}${(()=>{const sp=lastSupplier(p.id);return sp?` · <span class="linesup">${sp.name.split(/[–(]/)[0].trim()}</span>`:''})()}</div></td><td>${p.unit}</td><td class="n"><input type="number" step="any" value="${l.qty}" data-edit="qty" data-i="${i}"></td>
-    <td class="n"><span class="muted">${money2(p.mrp)}</span>${p.mrp>l.price?`<div class="savetag sm">−${money2((p.mrp-l.price)*l.qty)}</div>`:''}
+    <td class="n"><span class="muted">${mrpShown(p.mrp,l.price)?money2(p.mrp):'—'}</span>${p.mrp>l.price?`<div class="savetag sm">−${money2((p.mrp-l.price)*l.qty)}</div>`:''}
       ${l.belowCost?`<div class="tag bad" style="margin-top:2px">under cost · ${l.belowCost.split(' ')[0]}</div>`:''}
       ${l.qty>0&&l.qty>p.stock+1e-9?`<div class="tag warn" style="margin-top:2px">only ${fq(p.stock)} on the floor</div>`:''}
       ${l.qty<0?`<div class="tag ret" style="margin-top:2px">returned — back on the floor</div>`:''}</td>
@@ -18217,7 +18217,7 @@ function posClassic(){
           ${!isOpenLine(l)&&l.qty>p.stock+1e-9&&CFG.stock.track!==false?'<span class="tag bad">short on the floor</span>':''}
           ${l.belowCost?'<span class="tag bad">under cost</span>':''}${laterOf(l)?`<span class="tag warn" data-act="csLaterAct" data-i="${i}" style="cursor:pointer" title="L — collect later">📦 ${fq(laterOf(l))} to collect later${l.laterNote?' · '+noteEsc(l.laterNote):''}</span>`:''}</td>
          <td class="n q">${ed?`<input class="ln-in" id="lnQty" type="number" step="any" value="${l.qty}">`:fq(l.qty)}</td>
-         <td class="n mrp">${p.mrp?money2(p.mrp):'—'}</td>
+         <td class="n mrp">${mrpShown(p.mrp,l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)?money2(p.mrp):'—'}</td>
          <td class="n pr">${ed?`<input class="ln-in" id="lnPrice" type="number" step="any" value="${l.price}">`
            :money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td>
          <td class="n ds">${l.disc?(l.discPct?`<b title="${money2(l.disc)}">${l.discPct}%</b>`:money2(l.disc)):'—'}</td>
@@ -19304,6 +19304,7 @@ function bindClassic(){
   const paint=()=>{
     const v=money2(csLineNet());
     if(amt) amt.textContent=v;
+    { const tm=$('#tbMrp'), sp=CS.pid&&P(CS.pid); if(tm&&sp){ const u=(+CS.qty||0)>0?csLineNet()/(+CS.qty):(+CS.price||0); tm.textContent=mrpShown(sp.mrp,u)?money2(sp.mrp):'—' } }
     { const tb=$('#tbDis'), sp=CS.pid&&P(CS.pid); if(tb) tb.textContent=sp?money2(Math.max(0,(+sp.mrp||0)*(+CS.qty||0)-csLineNet())):'0.00' }
     // a % typed: the price box shows the price after the discount (MRP less the %), and goes back when it is cleared
     { const pf=$('#csPrice'), sp=CS.pid&&P(CS.pid); if(pf&&sp&&document.activeElement!==pf){ const d=+CS.disc||0;
@@ -20117,7 +20118,7 @@ function docPrint(no,opts){
   const rows=doc.lines.map((l,i)=>{const p=P(l.pid);return `<tr>
     <td>${i+1}</td><td>${p.code}</td><td class="d">${p.name.toUpperCase()}</td>
     <td class="n">${l.qty.toFixed(2)}</td><td class="u">${p.unit.toUpperCase()}</td>
-    ${doc.kind==='QUOTE'?`<td class="n">${money2(p.mrp)}</td><td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-l.disc)}</td>`
+    ${doc.kind==='QUOTE'?`<td class="n">${mrpShown(p.mrp,l.price)?money2(p.mrp):'—'}</td><td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-l.disc)}</td>`
       :`<td class="n" colspan="3">&nbsp;</td>`}</tr>`}).join('');
   const filler=Array.from({length:Math.max(0,CFG.bill.blankLines-doc.lines.length)},()=>'<tr class="blank"><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join('');
   modal(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
@@ -21728,7 +21729,7 @@ function billDetail(inv){
    </div>
    <div class="bl-lines"><table class="till-tbl"><tr><th>CODE</th><th>ITEM</th><th class="n">QTY</th><th class="n">MRP</th><th class="n">PRICE</th><th class="n">DISC</th><th class="n">AMOUNT</th></tr>
     ${inv.lines.map(l=>{const p=P(l.pid)||NOPROD;return `<tr><td class="c">${p.num||p.code}</td><td class="d">${lineName(l)}${lineFrom(l,inv)?` <b>[issue from ${lineFrom(l,inv)}]</b>`:''}${l.serials&&l.serials.length?`<div class="muted">S/N ${l.serials.join(', ')}</div>`:''}</td>
-      <td class="n">${fq(l.qty)}</td><td class="n">${money2(l.mrp||p.mrp)}</td><td class="n">${money2(l.price)}</td><td class="n">${l.disc?money2(l.disc):'—'}</td><td class="n"><b>${money2(l.qty*l.price-(l.disc||0))}</b></td></tr>`}).join('')}</table></div>
+      <td class="n">${fq(l.qty)}</td><td class="n">${mrpShown(l.mrp||p.mrp,l.qty?(l.qty*l.price-(l.disc||0))/l.qty:l.price)?money2(l.mrp||p.mrp):'—'}</td><td class="n">${money2(l.price)}</td><td class="n">${l.disc?money2(l.disc):'—'}</td><td class="n"><b>${money2(l.qty*l.price-(l.disc||0))}</b></td></tr>`}).join('')}</table></div>
    <div class="bl-foot">
     ${(inv.pays||[]).length?`<div class="bl-pays"><b>How it was paid</b>${inv.pays.map(p=>`<div><span>${p.method}${p.ref?' · '+p.ref:''}${p.bank?' · '+p.bank:''}</span><b>${money2(p.amount)}</b></div>`).join('')}</div>`:''}
     ${(inv.edits||[]).length?`<div class="bl-hist"><b>Corrections</b>${inv.edits.map(e=>`<div class="muted">${e.at||''} ${e.by||''}: ${e.what||e.note||''}</div>`).join('')}</div>`:''}
@@ -24114,7 +24115,7 @@ function billHtml(inv,f='a5'){
      <div class="sb-rule"></div>`,
     items:B.showSaving!==false?`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>MRP</th><th>D.Price</th><th>Amount</th></tr>
      ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td></tr>
-      <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l">${l.qty.toFixed(3)}</td><td>${money2(p.mrp)}</td><td>${money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>${billWarrLine(l)}`}).join('')}
+      <tr class="qt ${anyChecked&&l.checked!==true?'notck':''}"><td class="l">${l.qty.toFixed(3)}</td><td>${(u=>mrpShown(p.mrp,u)?money2(p.mrp):'')(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)}</td><td>${money2(l.qty*l.price-(l.disc||0))}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>${billWarrLine(l)}`}).join('')}
      </table>`
      :`<table class="sb-items"><tr><th class="l">#&nbsp; Desc</th><th>Qty</th><th>Price</th><th>Amount</th></tr>
      ${inv.lines.map((l,i)=>{const p=P(l.pid);return `<tr class="nm"><td colspan="4">${i+1})&nbsp; ${lineName(l).toUpperCase()}${lineFrom(l,inv)?` [ISSUE FROM ${lineFrom(l,inv).toUpperCase()}]`:''}</td></tr>
@@ -24170,7 +24171,7 @@ function billHtml(inv,f='a5'){
     const pct=(x)=>x.toFixed(1).replace(/\.0$/,'')+'%';
     const dsc=l.discPct?pct(+l.discPct):((+l.disc||0)>0.005?money2(l.disc):(mrp>unit+0.005?pct((1-unit/mrp)*100):'—'));
     const extra=[lineFrom(l,inv)?`issue from ${lineFrom(l,inv)}`:'', (l.serials&&l.serials.length)?`S/N ${l.serials.join(', ')}`:'', (l.warranty&&l.warranty!=='0')?`Warranty: ${l.warranty}`:'', +l.later>0?`NOT ISSUED — ${fq(+l.later)} to collect later`:''].filter(Boolean).join(' · ');
-    return `<tr class="${anyChecked&&l.checked!==true?'notck':''}"><td class="c">${i+1}</td>${showCode?`<td class="cd">${esc5(p.num||p.code||'')}</td>`:''}<td class="d"><b>${esc5(lineName(l))}</b>${extra?` <i>${esc5(extra)}</i>`:''}</td>${showUom?`<td class="u">${esc5((p.unit||'').toUpperCase())}</td>`:''}<td class="n">${q.toFixed(q%1?3:2)}</td>${showMrp?`<td class="n mrp">${mrp>0?(mrp>unit+0.005?`<s>${money2(mrp)}</s>`:money2(mrp)):'—'}</td>`:''}<td class="n">${money2(unit)}</td><td class="n amt">${money2(net)}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`; }).join('');
+    return `<tr class="${anyChecked&&l.checked!==true?'notck':''}"><td class="c">${i+1}</td>${showCode?`<td class="cd">${esc5(p.num||p.code||'')}</td>`:''}<td class="d"><b>${esc5(lineName(l))}</b>${extra?` <i>${esc5(extra)}</i>`:''}</td>${showUom?`<td class="u">${esc5((p.unit||'').toUpperCase())}</td>`:''}<td class="n">${q.toFixed(q%1?3:2)}</td>${showMrp?`<td class="n mrp">${mrpShown(mrp,unit)?(mrp>unit+0.005?`<s>${money2(mrp)}</s>`:money2(mrp)):'—'}</td>`:''}<td class="n">${money2(unit)}</td><td class="n amt">${money2(net)}${anyChecked?(l.checked===true?' ✓':' ✗'):''}</td></tr>`; }).join('');
   const brandH=on('brand')&&B.a5Lockup!==false?`<div class="x-brand"><img class="x-lockup" src="${REGAL_LOCKUP}" alt="${esc5(nm)}"></div>`:on('brand')?`<div class="x-brand">${B.showLogo!==false?`<div class="x-mark">${logo(46)}</div>`:''}<div class="x-name"><div class="x-nm"><span class="blk">${esc5(nmA)}</span> ${esc5(nmB)}</div>${(SH.sinhala||SHOP.sinhala)?`<div class="x-sin">${SH.sinhala||SHOP.sinhala}</div>`:''}</div></div>`:'';
   const shopH=on('addr')?`<div class="x-shop"><div class="x-line">${esc5(addrTxt)}</div>${phoneTxt?`<div class="x-phone">☎ ${esc5(phoneTxt)}</div>`:''}${strap?`<div class="x-strap">${esc5(strap)}</div>`:''}${ids?`<div class="x-ids">${ids}</div>`:''}</div>`:'<div class="x-shop"></div>';
   const qrH=on('qr')&&!dk?`<div class="x-qrs">${qr(inv.no,50)}${qr('c'+inv.no,50)}</div>`:'';
@@ -29446,6 +29447,9 @@ const REPORTS=[
   ['Payroll',[['pay','Payroll Summary'],['att','Attendance Summary']]],
   ['For my accountant',[['tb','Trial Balance'],['gl','General Ledger'],['journal','Journal'],
     ['txlist','Transaction List by Date'],['vat','VAT & SSCL return'],['audit','Audit Log — what was changed']]]];
+/* The MRP is shown beside a sold line only when the price charged is not above it — sold for more than
+   the MRP (a price that went up, a special order), a lower MRP beside it only confuses. 0: show nothing. */
+const mrpShown=(mrp,unit)=>{ const m=+mrp||0; return m>0&&(+unit||0)<=m+0.005?m:0 };
 const inRange=(d)=>(!repFrom||d>=repFrom)&&(!repTo||d<=repTo);
 const vatOn=()=>!!String((CFG.shop||{}).vat||'').trim()&&(+(CFG.tax||{}).rate||0)>0;
 /* the VAT inside an amount that already includes it */
