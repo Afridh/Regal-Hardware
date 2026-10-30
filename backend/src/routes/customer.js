@@ -128,7 +128,7 @@ export async function injectCustInbox(data) {
       S.feedback.unshift(fb); if (S.feedback.length > 2000) S.feedback.length = 2000;
       if (inv) inv.feedback = { stars: fb.stars, tags: fb.tags, note: fb.note, at: fb.at };
       S.notif.unshift({ id: 'nfb' + row.id, kind: d.stars <= 2 ? 'warn' : 'info', text: `${'★'.repeat(d.stars)}${'☆'.repeat(5 - d.stars)} from ${fb.who} on bill ${d.no}${fb.note ? ' — “' + fb.note.slice(0, 60) + '”' : ''}`,
-        view: 'reports', rep: 'feedback', at: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: TZ }), read: false });
+        view: 'feedback', at: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: TZ }), read: false });
       added++; continue;
     }
     if (S.notices.some(n => n.inboxId === Number(row.id))) continue;
@@ -343,11 +343,11 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
   const prod = (pid) => (S.products || []).find(x => x.id === pid) || {};
   const cust = (S.customers || []).find(c => c.id === inv.customerId);
   const sh = CFG.shop || {};
-  const logo = /^(data:image\/|https?:\/\/|\/)/.test(String(sh.logo || '')) ? sh.logo : '';
+  const logo = /^(data:image\/|https?:\/\/|\/)/.test(String(sh.logo || '')) ? sh.logo : '/regal-logo.png';
   // an MRP is only worth showing when the price is under it (a line sold above it says nothing)
   const lineMrp = (l) => { const m = +prod(l.pid).mrp || 0; return m > +l.price + 0.005 && l.qty > 0 ? m : 0; };
   const saved = (inv.lines || []).reduce((a, l) => a + (lineMrp(l) ? (lineMrp(l) - l.price) * l.qty : 0) + (l.qty > 0 ? (+l.disc || 0) : 0), 0) + (+inv.billDisc || 0);
-  const fb = inv.feedback || await fbWaiting(inv.no);
+  const fb = inv.feedback || await fbWaiting(id);
   res.json({ ok: true, bill: {
     no: inv.no, date: inv.date, time: inv.time || '', type: inv.type,
     sub: inv.sub, billDisc: inv.billDisc || 0, total: inv.total, paid: inv.paid, balance: inv.balance,
@@ -371,10 +371,10 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
 
 /* What the customer thought of it: one rating a bill, from the same link. It waits in cust_inbox like
    everything else they send, and the next till to read the books puts it on the bill and tells the shop. */
-async function fbWaiting(no) {
+async function fbWaiting(link) {     // by the bill's own link: a bill number can come round again, its link cannot
   await ensureCustTables();
   const { rows } = await query(`SELECT data FROM cust_inbox WHERE kind = 'feedback' ORDER BY id DESC LIMIT 500`);
-  const row = rows.map(r => (typeof r.data === 'string' ? JSON.parse(r.data) : r.data)).find(d => d && d.no === no);
+  const row = rows.map(r => (typeof r.data === 'string' ? JSON.parse(r.data) : r.data)).find(d => d && d.link === link);
   return row || null;
 }
 const FB_TAGS = ['Friendly staff', 'Quick service', 'Good prices', 'Good quality', 'Found everything', 'Helpful advice', 'Slow service', 'Out of stock', 'Price too high', 'Wrong item'];
@@ -386,10 +386,10 @@ r.post('/b/:id/feedback', asyncHandler(async (req, res) => {
   const S = (await books())?.S || {};
   const inv = (S.sales || []).find(x => String(x.link || '').toLowerCase().endsWith('/' + id));
   if (!inv) throw new HttpError(404, 'That bill is not here — the link may be old, or mistyped');
-  if (inv.feedback || await fbWaiting(inv.no)) return res.json({ ok: true, already: true });
+  if (inv.feedback || await fbWaiting(id)) return res.json({ ok: true, already: true });
   const tags = (Array.isArray(req.body?.tags) ? req.body.tags : []).filter(x => FB_TAGS.includes(x)).slice(0, 6);
   const note = String(req.body?.note || '').replace(/\s+/g, ' ').trim().slice(0, 300);
-  await query(`INSERT INTO cust_inbox (cid, kind, data) VALUES ($1, 'feedback', $2)`, [inv.customerId || 0, JSON.stringify({ no: inv.no, stars, tags, note })]);
+  await query(`INSERT INTO cust_inbox (cid, kind, data) VALUES ($1, 'feedback', $2)`, [inv.customerId || 0, JSON.stringify({ no: inv.no, link: id, stars, tags, note })]);
   res.json({ ok: true });
 }));
 

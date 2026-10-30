@@ -331,6 +331,8 @@ function feedbackAfter(b,id){
     try{
       const r=await fetch('/api/my/b/'+encodeURIComponent(id)+'/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stars,tags:[...picked],note:$('#note').value})});
       const j=await r.json().catch(()=>({}));
+      // a server not yet restarted on the new version answers a plain "Not found" for this address
+      if(r.status===404&&j.error==='Not found') throw new Error('The shop is updating its system — please try again in a little while');
       if(!r.ok) throw new Error(j.error||'It did not go — please try again');
       box.innerHTML=thanksHtml(stars,false);
       if(stars>=4){ const rc=box.getBoundingClientRect(); confetti(90,{x:rc.left+rc.width/2,y:rc.top+40});
@@ -353,7 +355,8 @@ function feedbackAfter(b,id){
     $('#shopSi').textContent = sh.sinhala || '';
     $('#shopTags').textContent = sh.tags || sh.line1 || '';
     const ini = (sh.name||'RH').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
-    if (sh.logo) { const im = new Image(); im.alt = sh.name; im.onload = () => { $('#logo').innerHTML = ''; $('#logo').appendChild(im) }; im.src = sh.logo }
+    // the logo set in the till, else the shop's own — the initials only if neither will load
+    { const im = new Image(); im.alt = sh.name; im.onload = () => { $('#logo').innerHTML = ''; $('#logo').appendChild(im) }; im.src = sh.logo || '/regal-logo.png' }
     $('#mk').textContent = ini;
     document.title = sh.name + ' · bill ' + b.no;
     const telNum = firstPhone(sh.phone) || firstPhone(sh.land);

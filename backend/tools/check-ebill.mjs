@@ -13,7 +13,7 @@ let pass = 0, fail = 0; const ok = (c, m, x = '') => { c ? pass++ : fail++; cons
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['--no-sandbox'] });
 const pg = await b.newPage(); await pg.setViewport({ width: 1366, height: 860 });
-const errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('dialog', d => d.accept());
+const errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('dialog', d => d.accept(d.type() === 'prompt' ? 'Rang them, sorry given' : undefined));
 await pg.setRequestInterception(true);
 pg.on('request', rq => { if (/:41\d\d/.test(rq.url()) || (/\/api\/print\b/.test(rq.url()) && rq.method() === 'POST')) return rq.abort(); rq.continue() });
 await pg.goto(BASE + '/pos', { waitUntil: 'networkidle2' });
@@ -26,11 +26,12 @@ if (await pg.$('#lockScreen')) {
 }
 await pg.waitForFunction(() => !document.querySelector('.pin-welcome'), { timeout: 10000 }).catch(() => {});
 
-// a paid bill with a line under its MRP, a logo, and the link it would be texted with
+// a paid bill with a line under its MRP, and the link it would be texted with — no logo set in the
+// till, as in the shop: the page shows the shop's own (regal-logo.png)
 const made = await pg.evaluate(async () => {
   document.querySelectorAll('.modal').forEach(m => m.remove()); window.eval("CFG.print.agent=''");
   const S = window.eval('S'), CFG = window.eval('CFG');
-  CFG.shop.logo = '/favicon-192.png'; CFG.shop.sinhala = CFG.shop.sinhala || 'රීගල් හාඩ්වෙයාර්';
+  CFG.shop.logo = ''; CFG.shop.sinhala = CFG.shop.sinhala || 'රීගල් හාඩ්වෙයාර්';
   const p = S.products.find(x => x.active !== false && +x.retail > 100);
   p.mrp = +p.retail + 50;
   const c = S.customers.find(x => x.id !== 1);
@@ -77,7 +78,20 @@ for (let i = 0; i < 10 && !got; i++) { await pg.evaluate(() => window.regalBridg
 ok(got && got.fb.stars === 5 && /paint counter/.test(got.fb.note), 'the till has it on the bill, with their words', JSON.stringify(got && got.fb));
 ok(got && got.bell, 'and a word in the bell');
 const rep = await pg.evaluate(() => { window.eval("repKey='feedback'; repFrom=''; repTo=''"); window.eval('go')('reports'); return document.querySelector('#main').innerText });
-ok(/Customer feedback/.test(rep) && /paint counter/.test(rep) && /5\.0 ★/.test(rep), 'the Customer feedback report shows it, with the average');
+ok(/Customer feedback/.test(rep) && /paint counter/.test(rep) && /\d\.\d ★/.test(rep), 'the Customer feedback report shows it, with the average');
+// its own page, under Customers: the average, the spread, what they ticked, who served them, the list
+const page = await pg.evaluate(() => { window.eval("fbShow='all'; fbQ=''"); window.eval('go')('feedback');
+  return { menu: !!document.querySelector('#nav [data-view="feedback"]'), text: document.querySelector('#main').innerText, items: document.querySelectorAll('.fb-item').length } });
+ok(page.menu && /Average rating/i.test(page.text) && /paint counter/.test(page.text) && /Friendly staff/.test(page.text) && /By who served them/.test(page.text) && page.items >= 1,
+  'Customers → Customer feedback: the average, the spread, the ticks, by who served, and each rating', JSON.stringify({ menu: page.menu, items: page.items }));
+await pg.screenshot({ path: process.env.SHOT3 || 'feedback.png', fullPage: true });
+// an unhappy one is followed up from there
+const low = await pg.evaluate(() => { const S = window.eval('S'); S.feedback.unshift({ id: 'fbT1', no: S.sales[0].no, who: 'Test buyer', stars: 1, tags: ['Slow service'], note: 'waited 40 minutes', by: 'Afridh', at: '2026-10-30 10:00' });
+  window.eval("fbShow='open'"); window.eval('render')(); return document.querySelectorAll('[data-act="fbDone"]').length });
+await pg.$eval('[data-act="fbDone"][data-id="fbT1"]', b => b.click()); await wait(400);
+const fu = await pg.evaluate(() => window.eval('S').feedback.find(x => x.id === 'fbT1').done);
+ok(low === 1 && fu && fu.note === 'Rang them, sorry given', 'an unhappy one: "Followed up", with what was done', JSON.stringify(fu));
+await pg.evaluate(() => { const S = window.eval('S'); S.feedback = S.feedback.filter(x => x.id !== 'fbT1'); window.eval('persist')(true) }); await wait(2500);
 ok(!errs.length && !perrs.length, 'no script errors', errs.concat(perrs).slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);
 await b.close();

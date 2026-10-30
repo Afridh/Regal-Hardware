@@ -609,7 +609,7 @@ ok('B: cashier cannot open Users', !B.w.allowed('users') && B.w.allowed('pos'));
   B.d.querySelector('[data-act="custPortal"][data-id="2"]').click(); await sleep(30);
   const req0 = (B.w.S.approvals || []).find(a => a.status === 'pending' && a.by === 'Ravi' && a.kind === 'custPortal');
   ok('B: cashier cannot switch a portal — a request is made instead', !!CB(2).portal === wasPortal && !!req0 && (B.w.S.approvals || []).filter(a => a.status === 'pending').length === 1, JSON.stringify((B.w.S.approvals||[]).map(a=>[a.kind,a.status,a.by])));
-  ok('B: menu shows the waiting badge', /nbadge/.test(B.d.querySelector('[data-view="approvals"]').innerHTML));
+  ok('B: menu shows the waiting badge', /nbadge/.test(B.d.querySelector('[data-view="actions"]').innerHTML));
   B.w.go('approvals'); await sleep(30);
   ok('B: cashier sees their request waiting, with no approve button', /Waiting for the owner/.test(B.d.getElementById('main').innerHTML) && !B.d.querySelector('[data-act="apOk"]'));
   B.w.go('dashboard'); A.w.go('dashboard'); await sleep(30);

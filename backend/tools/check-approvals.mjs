@@ -61,8 +61,11 @@ await pg.evaluate(() => { window.eval("apTab='pending'"); window.eval('go')('app
 const apText = await pg.$eval('#main', e => e.innerText);
 ok(new RegExp('asks to see their stock').test(apText), 'the ask is in Approvals');
 await pg.screenshot({ path: OUT + '/approvals.png', fullPage: true });
-ok(/Also waiting for your decision/.test(apText) || !(await pg.evaluate(() => window.eval('decisionsWaiting')().length)), 'the other decisions (payment requests, supplier orders, payments to check…) are listed there too',
-  String(await pg.evaluate(() => window.eval('decisionsWaiting')().map(x => x.tag).join(', '))));
+// one Action centre: its Decisions tray holds the approvals and every other yes-or-no (payment requests,
+// supplier orders, payments to check…), all on the one list
+const tray = await pg.evaluate(() => ({ on: (document.querySelector('.ib-tray.on') || {}).textContent || '', rows: document.querySelectorAll('.ib-list .act-item').length,
+  want: window.eval('apMine')().length + window.eval('decisionsWaiting')().length, view: window.eval('S').view }));
+ok(tray.view === 'actions' && /Decisions/.test(tray.on) && tray.rows === tray.want, 'Approvals opens the Action centre on Decisions, with every decision on one list', JSON.stringify(tray));
 const apId = await pg.evaluate(name => { const a = window.eval('S').approvals.find(x => x.kind === 'supStock' && x.status === 'pending'); return a && a.id }, sup.name);
 await pg.evaluate(id => window.eval('decideApproval')(id, true, ''), apId); await wait(500);
 await pg.evaluate(() => window.eval('persist')(true)); await wait(2500);
