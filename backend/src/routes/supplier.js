@@ -523,7 +523,7 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
   const mine = (S.payReqs || []).filter(x => x.sid === sup.id).map(x => ({
     id: x.id, date: x.date, total: x.total, note: x.note, status: x.status, lines: x.lines,
     events: (x.events || []).map(e => ({ who: e.actor === 'shop' ? (CFG.shop?.name || 'The shop') : e.name, action: e.action, note: e.note, at: e.at })),
-    pay: x.pay || null }));
+    pay: x.pay || null, final: x.final ? { amount: x.final.amount, note: x.final.note || '' } : null, prep: x.prep ? { method: x.prep.method } : null }));
   const waiting = pending.filter(p => p.kind === 'payreq').map(p => ({
     id: 'pending' + p.id, date: p.data.date, total: p.data.total, note: p.data.note, lines: p.data.lines,
     status: 'sent', waiting: true,

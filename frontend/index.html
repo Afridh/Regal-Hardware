@@ -882,6 +882,30 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 @keyframes st-fade{from{opacity:0}}
 @keyframes st-pop{from{opacity:0;transform:scale(.92)}}
 .st-still .st-kpi,.st-still .st-order,.st-still .st-person,.st-still .st-bars i,.st-still .st-minirow,.st-still .pp{animation:none!important}
+/* ---- supplier payments: the seven steps ---- */
+.pr-stages{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.pr-stages button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card,#fff);cursor:pointer;font:inherit;color:inherit;min-width:92px;transition:transform .15s,box-shadow .15s}
+.pr-stages button:hover{transform:translateY(-1px);box-shadow:0 6px 14px rgba(0,0,0,.06)}
+.pr-stages button b{font-size:18px;line-height:1.1}.pr-stages button span{font-size:11.5px;color:var(--muted)}
+.pr-stages button.on{border-color:var(--brand);box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 20%,transparent)}.pr-stages button.on b{color:var(--brand)}
+.prt{--p:0%;position:relative;display:grid;grid-template-columns:repeat(7,1fr);margin:16px 0 6px}
+.prt .prt-line{position:absolute;left:calc(100%/14);right:calc(100%/14);top:14px;height:3px;background:var(--line);border-radius:3px}
+.prt .prt-line::after{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--p);background:#1e8a5a;border-radius:3px;transition:width .8s cubic-bezier(.2,.8,.2,1);animation:prt-grow 1s cubic-bezier(.2,.8,.2,1) both}
+@keyframes prt-grow{from{width:0}}
+.prt-s{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;padding:0 2px}
+.prt-s b{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:12.5px;background:var(--card,#fff);border:2px solid var(--line);color:var(--muted);z-index:1}
+.prt-s span{font-size:11.5px;font-weight:700;line-height:1.2}.prt-s small{font-size:10.5px;color:var(--muted);line-height:1.25}
+.prt-s.done b{background:#1e8a5a;border-color:#1e8a5a;color:#fff}
+.prt-s.now b{border-color:var(--brand);color:var(--brand);box-shadow:0 0 0 0 color-mix(in srgb,var(--brand) 45%,transparent);animation:prt-pulse 1.8s ease-out infinite}
+.prt-s.now span{color:var(--brand)}
+@keyframes prt-pulse{to{box-shadow:0 0 0 10px transparent}}
+.prt.off .prt-line::after{background:#c0392b}
+.prt.sm{margin:6px 0 0;max-width:210px}.prt.sm .prt-line{top:5px;height:2px}.prt.sm .prt-s b{width:12px;height:12px;font-size:0;border-width:2px}
+.pr-next{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 4px;padding:12px 14px;border-radius:12px;background:color-mix(in srgb,var(--brand) 6%,transparent);border:1px dashed color-mix(in srgb,var(--brand) 35%,transparent)}
+.pr-next>div{flex:1;min-width:140px}.pr-next small{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.pr-next b{font-size:15px}
+.pr-fact{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--line2,var(--line));font-size:13.5px}.pr-fact span{color:var(--muted);min-width:130px}.pr-fact em{font-style:normal;color:var(--muted);font-size:12.5px}
+@media (max-width:700px){.prt:not(.sm) .prt-s small{display:none}.prt:not(.sm) .prt-s span{font-size:10px}}
+@media (prefers-reduced-motion:reduce){.prt .prt-line::after,.prt-s.now b{animation:none!important}}
 /* ---- the Action centre: the trays on the left, the list on the right ---- */
 .ib-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:14px}
 .ib-head h1{margin:2px 0 0;padding:0;border:0}
@@ -8876,35 +8900,88 @@ let payMonth=null, paySel=null, payTab='today';
    settled, says a different figure for any of them if they have raised a credit note or
    delivered short, and sends it. It arrives here.
 
-   From there it walks one way, and every step is written against it:
+   From there it walks seven steps, each a button here and a tick on their page:
+   requested → invoices checked → amount finalised → preparing → prepared → ready for collection → issued.
+   Nothing before "issued" touches the books: a request is a conversation about money, not the money itself,
+   and a bill the supplier disputes is still changed where bills are changed, on their card. */
 
-     asked      the supplier sent it
-     accepted   the owner, an admin or accounts has been through it and agreed
-     ready      the money is put aside and the cheque or cash is waiting — the supplier
-                is told, so they know to come for it
-     issued     accounts has handed it over. This is the only step that moves money:
-                it posts through the same supplier payment the till has always used,
-                so the ledger, the cheque book and the supplier's balance all agree.
-
-   Nothing before "issued" touches the books. A request is a conversation about money,
-   not the money itself — and a bill the supplier disputes is still changed where bills
-   are changed, on their card, so there is one way a bill's value ever moves. */
-
-const PR_FLOW = {
-  sent:     { label: 'Asked for',   tag: 'warn', next: 'Go through it' },
-  accepted: { label: 'Agreed',      tag: 'blue', next: 'Put the money aside' },
-  ready:    { label: 'Ready',       tag: 'ok',   next: 'Hand it over' },
-  issued:   { label: 'Paid',        tag: 'ok',   next: '' },
-  rejected: { label: 'Turned down', tag: 'bad',  next: '' },
-};
-const PR_ACT = { asked:'asked to be paid', accepted:'went through it and agreed', rejected:'turned it down',
-                 ready:'put the money aside', issued:'handed it over', queried:'asked the supplier about it' };
+/* The seven steps a supplier's payment goes through, from their asking to the money in their hand.
+   Each one is a button at the shop and a tick on the supplier's own page, with who did it and when.
+   Only the last, Issued, touches the books. (A request agreed before these steps — status 'accepted' —
+   stands at Amount finalised.) */
+const PR_STAGES = [
+  ['sent',      'Payment requested',    'the supplier asked',            'warn'],
+  ['checked',   'Invoices checked',     'matched to the books',          'blue'],
+  ['final',     'Amount finalised',     'what will be paid is agreed',   'blue'],
+  ['preparing', 'Amount preparing',     'the cheque or cash is made up', 'blue'],
+  ['prepared',  'Amount prepared',      'signed and put aside',          'ok'],
+  ['ready',     'Ready for collection', 'the supplier is told to call',  'ok'],
+  ['issued',    'Issued',               'handed over and posted',        'ok']];
+const prStage = (r) => r.status === 'accepted' ? 'final' : r.status;
+const prIdx = (r) => PR_STAGES.findIndex(s => s[0] === prStage(r));
+const PR_FLOW = Object.fromEntries(PR_STAGES.map(s => [s[0], { label: s[1], tag: s[3] }]).concat([['accepted', { label: 'Amount finalised', tag: 'blue' }], ['rejected', { label: 'Turned down', tag: 'bad' }]]));
+const PR_NEXT = { sent: 'Invoices checked', checked: 'Finalise the amount', final: 'Start preparing', preparing: 'Amount prepared', prepared: 'Ready for collection', ready: 'Issue it' };
+const PR_ACT = { asked: 'asked to be paid', checked: 'checked the invoices', final: 'finalised the amount', accepted: 'finalised the amount', preparing: 'started preparing the amount',
+  prepared: 'prepared the amount', ready: 'made it ready for collection', issued: 'issued it', rejected: 'turned it down', queried: 'asked the supplier about it' };
+const PR_EV_STAGE = { asked: 'sent', accepted: 'final' };
 const payReqs = () => (S.payReqs || []);
-const payReqOpen = () => payReqs().filter(r => ['sent','accepted','ready'].includes(r.status));
+const payReqOpen = () => payReqs().filter(r => !['issued', 'rejected'].includes(r.status));
 const payReqNew = () => payReqs().filter(r => r.status === 'sent').length;
 /* who may move one along: the owner, an admin, or whoever pays the suppliers */
 const canPayReq = () => can('paySupplier') || ownerOnly();
 const prSum = (r) => (r.lines || []).reduce((a, l) => a + (+l.claim || 0), 0);
+/* what will be paid: the finalised amount once there is one, else what they asked for */
+const prAmt = (r) => r.final && +r.final.amount > 0 ? +r.final.amount : prSum(r);
+/* the tracker: seven dots, done ones ticked with who and when, the one it is at pulsing */
+function prTrack(r, small) {
+  const at = prIdx(r), off = r.status === 'rejected';
+  const when = {}; (r.events || []).forEach(e => { const k = PR_EV_STAGE[e.action] || e.action; if (PR_STAGES.some(s => s[0] === k)) when[k] = e });
+  if (!when.sent) when.sent = { name: r.rep || 'their rep', at: r.date ? new Date(r.date + 'T09:00:00').getTime() : 0 };
+  return `<div class="prt ${small ? 'sm' : ''} ${off ? 'off' : ''}" style="--p:${Math.max(0, at) / (PR_STAGES.length - 1) * 100}%"><i class="prt-line"></i>
+    ${PR_STAGES.map(([k, l, d], i) => { const e = when[k], st = off ? (e ? 'done' : '') : i < at || (i === at && k === 'issued') ? 'done' : i === at ? 'now' : '';
+      return `<div class="prt-s ${st}" title="${l}${e ? ' — ' + (e.name || '') + (e.at ? ' · ' + owhen(e.at) : '') : ''}"><b>${st === 'done' ? '✓' : i + 1}</b>${small ? '' : `<span>${l}</span><small>${e && st ? noteEsc(e.name || '') + (e.at ? '<br>' + owhen(e.at) : '') : d}</small>`}</div>` }).join('')}</div>`;
+}
+
+const prepWhat = (p) => p ? `${({ CHEQUE: 'Cheque', CASH: 'Cash', BANK: 'Bank transfer' })[p.method] || p.method}${p.no ? ' ' + p.no : ''}${p.method !== 'CASH' && p.bank && B(p.bank) ? ' · ' + B(p.bank).name : ''}${p.method === 'CHEQUE' && p.date ? ' · dated ' + p.date : ''}` : '';
+/* moving one along: each step is one press; the two that need a figure ask for it */
+function prNext(r){
+  if (!r || !canPayReq()) return;
+  const k = prStage(r), who = SU(r.sid) ? SU(r.sid).name.split(/[–(]/)[0].trim() : 'They';
+  const step = (to, note, msg) => { prStep(r, to, note || ''); r.status = to; render(); toast(msg, 'ok') };
+  if (k === 'sent') {
+    const m = modal(`<h2>Invoices checked</h2><div class="muted">${(r.lines || []).length} bill${(r.lines || []).length === 1 ? '' : 's'} · ${fmt(prSum(r))} asked for. Their invoices match the books?</div>
+      <div class="f" style="margin-top:10px"><label>Note (optional)</label><input id="prN" maxlength="200" placeholder="e.g. all matched to the GRNs"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="prGo">✓ Checked</button></div>`);
+    const go = () => { const n = m.querySelector('#prN').value.trim(); m.remove(); step('checked', n, 'Invoices checked — finalise the amount next') };
+    m.querySelector('#prGo').onclick = go; m.querySelector('#prN').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); go() } }; m.querySelector('#prN').focus();
+  } else if (k === 'checked') {
+    const m = modal(`<h2>Finalise the amount</h2><div class="muted">${who} asked for ${fmt(prSum(r))}. What will be paid?</div>
+      <div class="grid2" style="margin-top:10px"><div class="f"><label>Amount to pay</label><input id="prA" type="number" step="any" value="${prSum(r)}"></div>
+      <div class="f"><label>Note — they see it (optional)</label><input id="prN" maxlength="200" placeholder="e.g. less the damaged tins"></div></div>
+      <div class="muted" id="prM"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="prGo">Finalise</button></div>`); npAdd(m);
+    m.querySelector('#prGo').onclick = () => { const a = +m.querySelector('#prA').value || 0, n = m.querySelector('#prN').value.trim();
+      if (!(a > 0)) return m.querySelector('#prM').textContent = 'An amount is needed.';
+      r.final = { amount: +a.toFixed(2), by: S.user.name, at: apStamp(), note: n }; m.remove();
+      step('final', fmt(a) + (n ? ' — ' + n : ''), `${fmt(a)} finalised — ${who} is told`) };
+    m.querySelector('#prA').select();
+  } else if (k === 'final') step('preparing', '', 'Preparing — mark it prepared when the cheque or cash is made up');
+  else if (k === 'preparing') {
+    const m = modal(`<h2>Amount prepared</h2><div class="muted">${fmt(prAmt(r))} for ${who}. How is it made up?</div>
+      <div class="grid3" style="margin-top:10px">
+       <div class="f"><label>How</label><select id="ppHow"><option value="CHEQUE">Cheque</option><option value="CASH">Cash</option><option value="BANK">Bank transfer</option></select></div>
+       <div class="f"><label>From</label><select id="ppBank">${S.banks.map(b => `<option value="${b.id}">${b.name} — ${b.no}</option>`).join('')}</select></div>
+       <div class="f"><label>Cheque dated</label><input id="ppDate" type="date" value="${D(today)}"></div></div>
+      <div class="f"><label>Cheque number or reference (optional)</label><input id="ppNo" maxlength="40"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="prGo">Prepared</button></div>`);
+    const g = i => m.querySelector('#' + i);
+    g('ppHow').onchange = () => { const h = g('ppHow').value; g('ppDate').disabled = h !== 'CHEQUE'; g('ppBank').disabled = h === 'CASH' };
+    g('prGo').onclick = () => { const h = g('ppHow').value;
+      r.prep = { method: h, bank: h === 'CASH' ? null : +g('ppBank').value || null, date: h === 'CHEQUE' ? g('ppDate').value : '', no: g('ppNo').value.trim(), by: S.user.name, at: apStamp() };
+      m.remove(); step('prepared', prepWhat(r.prep), 'Prepared — make it ready for collection to tell them') };
+  } else if (k === 'prepared') step('ready', '', `Ready for collection — ${who} is told to call in`);
+  else if (k === 'ready') prIssue(r);
+}
 /* Who has been reading the shelves, and when. Open doors are at the top, because that is the thing
    somebody might want to shut. */
 function supstock(){
@@ -8996,11 +9073,12 @@ function supStockRead(sid, lines){
    to open is how a supplier ends up ringing the counter to ask. */
 const supLink = () => String((CFG.shop&&CFG.shop.web)||'regalhw.lk').toLowerCase()+'/supplier';
 const PR_SAID = {
-  accepted: (r)=>`${CFG.shop.name}: your request for ${fmt(r.total)} is agreed. We will tell you when the money is ready.`,
+  final:    (r)=>`${CFG.shop.name}: your invoices are checked — ${fmt(prAmt(r))} will be paid. We will tell you when it is ready for collection.`,
+  accepted: (r)=>`${CFG.shop.name}: your request for ${fmt(prAmt(r))} is agreed. We will tell you when the money is ready.`,
   queried:  (r)=>`${CFG.shop.name}: we have a question about your request for ${fmt(r.total)}. Please open ${supLink()} or ring us.`,
   rejected: (r)=>`${CFG.shop.name}: your request for ${fmt(r.total)} was not agreed. The reason is on ${supLink()}.`,
-  ready:    (r)=>`${CFG.shop.name}: the money for your request, ${fmt(r.total)}, is ready. Please call in for it.`,
-  issued:   (r)=>`${CFG.shop.name}: ${fmt(r.total)} has been paid out against your request. Thank you.`,
+  ready:    (r)=>`${CFG.shop.name}: your payment of ${fmt(prAmt(r))} is ready for collection${r.prep?' ('+({CHEQUE:'cheque',CASH:'cash',BANK:'bank transfer'})[r.prep.method]+')':''}. Please call in for it.`,
+  issued:   (r)=>`${CFG.shop.name}: ${fmt((r.pay&&r.pay.amount)||prAmt(r))} has been issued against your payment request. Thank you.`,
 };
 function prTell(r, action){
   try{
@@ -9019,90 +9097,89 @@ function prStep(r, action, note){
   prTell(r, action);
 }
 
-let prSel = null;
+let prSel = null, prShow = 'open';
 function payreqs(){
-  const list = payReqs().slice().sort((a,b)=>{
-    const rank = s => ({ sent:0, accepted:1, ready:2, issued:3, rejected:4 }[s] ?? 5);
-    return rank(a.status)-rank(b.status) || String(b.date||'').localeCompare(String(a.date||''));
-  });
-  const owedAll = S.suppliers.reduce((a,s)=>a+Math.max(0,partyBal('S',s.id)),0);
-  const waiting = payReqOpen().reduce((a,r)=>a+prSum(r),0);
-  const ready = payReqs().filter(r=>r.status==='ready');
-  const sel = prSel && list.find(r=>r.id===prSel);
-
-  return `<h1>Payment requests</h1>
+  const all = payReqs();
+  const list = all.filter(r => prShow === 'all' || (prShow === 'open' ? !['issued', 'rejected'].includes(r.status) : prStage(r) === prShow))
+    .slice().sort((a, b) => (prIdx(a) < 0 ? 99 : prIdx(a)) - (prIdx(b) < 0 ? 99 : prIdx(b)) || String(b.date || '').localeCompare(String(a.date || '')));
+  const owedAll = S.suppliers.reduce((a, s) => a + Math.max(0, partyBal('S', s.id)), 0);
+  const open = payReqOpen(), ready = all.filter(r => r.status === 'ready');
+  const month = D(today).slice(0, 7), paidMonth = all.filter(r => r.status === 'issued' && String((r.pay || {}).date || '').startsWith(month));
+  const sel = prSel && all.find(r => r.id === prSel);
+  const count = (k) => all.filter(r => prStage(r) === k).length;
+  return `<h1>Supplier payments <span class="muted" style="font-size:13px;font-weight:400">every request, from asked to issued</span></h1>
    <div class="row" style="margin-bottom:12px">
-    ${stat('Waiting on you',payReqNew(),payReqNew()?'gone through nothing yet':'nothing new',payReqNew()?'r':'g')}
-    ${stat('Asked for, not yet paid',fmt(waiting),`${payReqOpen().length} request${payReqOpen().length===1?'':'s'}`,waiting?'y':'g')}
-    ${stat('Ready to hand over',fmt(ready.reduce((a,r)=>a+prSum(r),0)),`${ready.length} waiting to be collected`,ready.length?'b':'g')}
-    ${stat('Owed to suppliers in all',fmt(owedAll),'across every bill','b')}
+    ${stat('New requests', payReqNew(), payReqNew() ? 'invoices to check' : 'nothing new', payReqNew() ? 'r' : 'g')}
+    ${stat('In progress', fmt(open.reduce((a, r) => a + prAmt(r), 0)), `${open.length} request${open.length === 1 ? '' : 's'}`, open.length ? 'y' : 'g')}
+    ${stat('Ready for collection', fmt(ready.reduce((a, r) => a + prAmt(r), 0)), `${ready.length} waiting to be collected`, ready.length ? 'b' : 'g')}
+    ${stat('Issued this month', fmt(paidMonth.reduce((a, r) => a + (+((r.pay || {}).amount) || prAmt(r)), 0)), `${paidMonth.length} paid · owed in all ${fmt(owedAll)}`, 'g')}
    </div>
-   ${canPayReq()?'':'<div class="card note" style="margin-bottom:12px">You can read these. Going through one, putting the money aside or handing it over is for the owner, an admin or accounts.</div>'}
-   ${list.length?`<div class="row" style="align-items:flex-start;gap:14px">
-     <div class="card flex1" style="min-width:300px;padding:0">
-      <table class="cu-tbl"><tr><th>Supplier</th><th>Asked</th><th class="n">Amount</th><th>Where it is</th></tr>
-      ${list.map(r=>{ const sp=SU(r.sid);
-        return `<tr class="rowlink ${r.id===prSel?'sel':''} ${r.unreadShop?'new':''}" data-act="prSel" data-id="${r.id}">
-         <td><b>${sp?sp.name:'Supplier'}</b><div class="muted">${(r.lines||[]).length} bill${(r.lines||[]).length===1?'':'s'} · ${r.rep||''}</div></td>
-         <td>${r.date}<div class="muted">${agoTxt(r.date)}</div></td>
-         <td class="n"><b>${fmt(prSum(r))}</b></td>
-         <td><span class="tag ${(PR_FLOW[r.status]||{}).tag||''}">${(PR_FLOW[r.status]||{}).label||r.status}</span></td></tr>`}).join('')}
-      </table></div>
-     <div class="flex1" style="min-width:320px">${sel?prCard(sel):'<div class="card note">Pick a request on the left to go through it.</div>'}</div>
+   <div class="pr-stages">
+    <button class="${prShow === 'open' ? 'on' : ''}" data-act="prShow" data-k="open"><b>${open.length}</b><span>All open</span></button>
+    ${PR_STAGES.map(([k, l], i) => `<button class="${prShow === k ? 'on' : ''} ${k === 'issued' ? 'end' : ''}" data-act="prShow" data-k="${k}"><b>${count(k)}</b><span>${i + 1}. ${l}</span></button>`).join('')}
+    <button class="${prShow === 'all' ? 'on' : ''}" data-act="prShow" data-k="all"><b>${all.length}</b><span>Everything</span></button>
+   </div>
+   ${canPayReq() ? '' : '<div class="card note" style="margin-bottom:12px">You can follow these. Moving one along is for the owner, an admin or accounts.</div>'}
+   ${all.length ? `<div class="row" style="align-items:flex-start;gap:14px">
+     <div class="card flex1" style="min-width:320px;padding:0">
+      ${list.length ? `<table class="cu-tbl"><tr><th>Supplier</th><th class="n">Amount</th><th>Where it is</th></tr>
+      ${list.map(r => { const sp = SU(r.sid), f = PR_FLOW[r.status] || {};
+        return `<tr class="rowlink ${r.id === prSel ? 'sel' : ''} ${r.unreadShop ? 'new' : ''}" data-act="prSel" data-id="${r.id}">
+         <td><b>${sp ? sp.name : 'Supplier'}</b><div class="muted">${r.date} · ${agoTxt(r.date)} · ${(r.lines || []).length} bill${(r.lines || []).length === 1 ? '' : 's'}</div></td>
+         <td class="n"><b>${fmt(prAmt(r))}</b>${r.final && Math.abs(prAmt(r) - prSum(r)) > 0.005 ? `<div class="muted">asked ${fmt(prSum(r))}</div>` : ''}</td>
+         <td><span class="tag ${f.tag || ''}">${f.label || r.status}</span>${prTrack(r, true)}</td></tr>` }).join('')}
+      </table>` : `<div class="muted" style="padding:18px">Nothing at this step.</div>`}</div>
+     <div class="flex1" style="min-width:340px">${sel ? prCard(sel) : '<div class="card note">Pick a request on the left to move it along.</div>'}</div>
     </div>`
-   :`<div class="card note"><b>Nothing has been asked for.</b>
-     <div class="muted">A supplier with their account page switched on can see what is outstanding, tick the bills they want settled and send a request. It arrives here, and the bell rings for the owner, admins and accounts.</div></div>`}`;
+   : `<div class="card note"><b>Nothing has been asked for.</b>
+     <div class="muted">A supplier with their page switched on ticks the bills they want settled and sends a request. It arrives here, and the bell rings for the owner, admins and accounts.</div></div>`}`;
 }
 
 function prCard(r){
-  const sp = SU(r.sid), f = PR_FLOW[r.status] || {};
+  const sp = SU(r.sid), f = PR_FLOW[r.status] || {}, k = prStage(r);
   const owedNow = sp ? partyBal('S', sp.id) : 0;
-  const differs = (r.lines||[]).filter(l => Math.abs((+l.claim||0)-(+l.owing||0)) > 0.005);
+  const differs = (r.lines || []).filter(l => Math.abs((+l.claim || 0) - (+l.owing || 0)) > 0.005);
+  const open = !['issued', 'rejected'].includes(r.status);
   return `<div class="card">
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
-     <div><h2 style="margin:0">${sp?sp.name:'Supplier'}</h2>
-      <div class="muted">asked ${r.date} by ${r.rep||'their rep'} · they are owed ${fmt(owedNow)} in all</div></div>
-     <span class="tag ${f.tag||''}">${f.label||r.status}</span></div>
-
-    ${r.note?`<div class="card note" style="margin:10px 0">“${String(r.note).replace(/</g,'&lt;')}”</div>`:''}
+     <div><h2 style="margin:0">${sp ? sp.name : 'Supplier'}</h2>
+      <div class="muted">asked ${r.date} by ${r.rep || 'their rep'} · they are owed ${fmt(owedNow)} in all</div></div>
+     <div style="text-align:right"><div style="font-size:22px;font-weight:800">${fmt(prAmt(r))}</div><span class="tag ${f.tag || ''}">${f.label || r.status}</span></div></div>
+    ${prTrack(r)}
+    ${canPayReq() && open && PR_NEXT[k] ? `<div class="pr-next"><div><small>Next step</small><b>${PR_STAGES[prIdx(r) + 1] ? PR_STAGES[prIdx(r) + 1][1] : ''}</b></div>
+      <button class="btn tape" data-act="prNext" data-id="${r.id}">${PR_NEXT[k]} →</button>
+      ${k === 'sent' ? `<button class="btn ghost" data-act="prQuery" data-id="${r.id}">Ask them about it</button>` : ''}
+      ${k !== 'ready' ? `<button class="btn ghost" data-act="prReject" data-id="${r.id}">Turn it down</button>` : ''}</div>` : ''}
+    ${r.note ? `<div class="card note" style="margin:10px 0">“${String(r.note).replace(/</g, '&lt;')}”</div>` : ''}
+    ${r.final ? `<div class="pr-fact"><span>Amount finalised</span><b>${fmt(r.final.amount)}</b><em>${noteEsc(r.final.by || '')}${r.final.note ? ' · ' + noteEsc(r.final.note) : ''}</em></div>` : ''}
+    ${r.prep ? `<div class="pr-fact"><span>Prepared as</span><b>${noteEsc(prepWhat(r.prep))}</b><em>${noteEsc(r.prep.by || '')}</em></div>` : ''}
 
     <table style="margin-top:10px"><tr><th>Their invoice</th><th>GRN</th><th class="n">Invoice</th><th class="n">Days</th><th class="n">Outstanding</th><th class="n">Asked for</th><th></th></tr>
-     ${(r.lines||[]).map(l=>{ const gap=(+l.claim||0)-(+l.owing||0);
-       const days=l.date?Math.max(0,Math.floor((today-new Date(l.date+'T00:00:00'))/864e5)):null, terms=sp?(+sp.days||0):0;
-       return `<tr><td><b>${l.supInv||'—'}</b><div class="muted">${l.date||''}</div></td>
-        <td>${l.no}</td><td class="n">${fmt(l.billed||l.owing)}</td>
-        <td class="n">${days===null?'—':days+'d'}${terms?`<div class="muted">of ${terms}d credit</div>${days>terms?`<span class="tag bad">${days-terms}d over</span>`:''}`:''}</td>
+     ${(r.lines || []).map(l => { const gap = (+l.claim || 0) - (+l.owing || 0);
+       const days = l.date ? Math.max(0, Math.floor((today - new Date(l.date + 'T00:00:00')) / 864e5)) : null, terms = sp ? (+sp.days || 0) : 0;
+       return `<tr><td><b>${l.supInv || '—'}</b><div class="muted">${l.date || ''}</div></td>
+        <td>${l.no}</td><td class="n">${fmt(l.billed || l.owing)}</td>
+        <td class="n">${days === null ? '—' : days + 'd'}${terms ? `<div class="muted">of ${terms}d credit</div>${days > terms ? `<span class="tag bad">${days - terms}d over</span>` : ''}` : ''}</td>
         <td class="n muted">${fmt(l.owing)}</td>
-        <td class="n"><b>${fmt(l.claim)}</b>${Math.abs(gap)>0.005?`<div class="tag ${gap<0?'warn':'bad'}">${gap<0?fmt(-gap)+' less':fmt(gap)+' more'}</div>`:''}</td>
-        <td>${l.note?`<span class="muted">${String(l.note).replace(/</g,'&lt;')}</span>`:''}</td></tr>`}).join('')}
+        <td class="n"><b>${fmt(l.claim)}</b>${Math.abs(gap) > 0.005 ? `<div class="tag ${gap < 0 ? 'warn' : 'bad'}">${gap < 0 ? fmt(-gap) + ' less' : fmt(gap) + ' more'}</div>` : ''}</td>
+        <td>${l.note ? `<span class="muted">${String(l.note).replace(/</g, '&lt;')}</span>` : ''}</td></tr>` }).join('')}
      <tr class="tot"><td colspan="5"><b>Asked for in all</b></td><td class="n"><b>${fmt(prSum(r))}</b></td><td></td></tr></table>
 
-    ${differs.length?`<div class="card note" style="margin-top:10px;border-left:3px solid var(--chip-rust)">
-      <b>${differs.length} bill${differs.length===1?' is':'s are'} not the figure on the books.</b>
+    ${differs.length ? `<div class="card note" style="margin-top:10px;border-left:3px solid var(--chip-rust)">
+      <b>${differs.length} bill${differs.length === 1 ? ' is' : 's are'} not the figure on the books.</b>
       <div class="muted">Nothing here changes a bill. If they are right, change the bill on their card — <b>Suppliers → their bills → Change it</b> — and the figures will agree.</div>
-      ${canPayReq()?`<button class="btn ghost sm" data-act="sup" data-id="${r.sid}" style="margin-top:6px">Open ${sp?sp.name.split(/[–(]/)[0].trim():'them'}</button>`:''}</div>`:''}
+      ${canPayReq() ? `<button class="btn ghost sm" data-act="sup" data-id="${r.sid}" style="margin-top:6px">Open ${sp ? sp.name.split(/[–(]/)[0].trim() : 'them'}</button>` : ''}</div>` : ''}
 
-    ${r.pay?`<div class="card note" style="margin-top:10px"><b>Handed over ${r.pay.date}</b>
-      <div class="muted">${r.pay.what} · voucher ${r.pay.voucher||'—'}${r.pay.by?' · by '+r.pay.by:''}</div></div>`:''}
+    ${r.pay ? `<div class="card note" style="margin-top:10px"><b>Issued ${r.pay.date}</b>
+      <div class="muted">${r.pay.what} · voucher ${r.pay.voucher || '—'}${r.pay.by ? ' · by ' + r.pay.by : ''}</div></div>` : ''}
 
-    <div class="ev" style="margin-top:12px">
-     ${(r.events||[]).slice().reverse().map(e=>`<div style="padding:6px 0;border-top:1px solid var(--line2)">
-       <b>${e.actor==='shop'?e.name:(e.name||'Their rep')}</b> <span class="muted">· ${owhen(e.at)}</span>
-       <div class="muted">${PR_ACT[e.action]||e.action}${e.note?': '+String(e.note).replace(/</g,'&lt;'):''}</div></div>`).join('')}
+    <div class="ev" style="margin-top:12px"><b style="font-size:13px">What happened</b>
+     ${(r.events || []).slice().reverse().map(e => `<div style="padding:6px 0;border-top:1px solid var(--line2)">
+       <b>${e.actor === 'shop' ? e.name : (e.name || 'Their rep')}</b> <span class="muted">· ${owhen(e.at)}</span>
+       <div class="muted">${PR_ACT[e.action] || e.action}${e.note ? ': ' + String(e.note).replace(/</g, '&lt;') : ''}</div></div>`).join('')}
     </div>
-
-    ${canPayReq()?`<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
-      ${r.status==='sent'?`<button class="btn tape" data-act="prAccept" data-id="${r.id}">Agree to it</button>
-        <button class="btn ghost" data-act="prQuery" data-id="${r.id}">Ask them about it</button>
-        <button class="btn ghost" data-act="prReject" data-id="${r.id}">Turn it down</button>`:''}
-      ${r.status==='accepted'?`<button class="btn tape" data-act="prReady" data-id="${r.id}">Put the money aside</button>
-        <button class="btn ghost" data-act="prReject" data-id="${r.id}">Turn it down</button>`:''}
-      ${r.status==='ready'?`<button class="btn tape" data-act="prIssue" data-id="${r.id}">Hand it over</button>`:''}
-      ${['issued','rejected'].includes(r.status)?'<span class="muted">Nothing more to do.</span>':''}
-     </div>`:''}
    </div>`;
 }
-
 /* going through one: agree, ask about it, or turn it down */
 function prNote(r, action, title, hint, ok){
   const m = modal(`<h2>${title}</h2>
@@ -9129,21 +9206,22 @@ function prNote(r, action, title, hint, ok){
 /* handing it over: the one step that moves money, through the payment the till already has */
 function prIssue(r){
   const sp = SU(r.sid); if(!sp) return toast('That supplier is gone');
-  const amount = prSum(r);
+  const amount = prAmt(r), pp = r.prep || {};
   const against = (r.lines||[]).map(l=>l.no);
-  const m = modal(`<h2>Hand over ${fmt(amount)} to ${sp.name}</h2>
+  const m = modal(`<h2>Issue ${fmt(amount)} to ${sp.name}</h2>
    <div class="muted">${against.length} bill${against.length===1?'':'s'} · the cheque or the cash goes out now and the books are posted. What is left owing on a bill stays owing.</div>
    <div class="grid3" style="margin-top:10px">
-    <div class="f"><label>How</label><select id="piHow"><option value="CHEQUE">Cheque</option><option value="CASH">Cash</option><option value="BANK">Bank transfer</option></select></div>
-    <div class="f"><label>From</label><select id="piBank">${S.banks.map(b=>`<option value="${b.id}">${b.name} — ${b.no}</option>`).join('')}</select></div>
-    <div class="f"><label>Dated</label><input id="piDate" type="date" value="${D(today)}"></div></div>
+    <div class="f"><label>How</label><select id="piHow">${['CHEQUE','CASH','BANK'].map(v=>`<option value="${v}" ${pp.method===v?'selected':''}>${({CHEQUE:'Cheque',CASH:'Cash',BANK:'Bank transfer'})[v]}</option>`).join('')}</select></div>
+    <div class="f"><label>From</label><select id="piBank">${S.banks.map(b=>`<option value="${b.id}" ${pp.bank===b.id?'selected':''}>${b.name} — ${b.no}</option>`).join('')}</select></div>
+    <div class="f"><label>Dated</label><input id="piDate" type="date" value="${pp.date||D(today)}"></div></div>
    <div class="grid2">
     <div class="f"><label>Amount</label><input id="piAmt" type="number" step="any" value="${amount}"></div>
-    <div class="f"><label>Cheque number or reference</label><input id="piRef" placeholder="left to the bank's next number"></div></div>
+    <div class="f"><label>Cheque number or reference</label><input id="piRef" placeholder="left to the bank's next number" value="${noteEsc(pp.no||'')}"></div></div>
    <div class="muted" id="piMsg"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
     <button class="btn ghost" data-act="closeModal">Cancel</button>
-    <button class="btn tape" id="piGo">Hand it over</button></div>`); npAdd(m);
+    <button class="btn tape" id="piGo">Issue it</button></div>`); npAdd(m);
+  { const chq=(pp.method||'CHEQUE')==='CHEQUE'; m.querySelector('#piDate').disabled=!chq; m.querySelector('#piBank').disabled=pp.method==='CASH' }
   const g = i => m.querySelector('#'+i);
   g('piHow').onchange = () => { const chq=g('piHow').value==='CHEQUE'; g('piDate').disabled=!chq; g('piBank').disabled=g('piHow').value==='CASH' };
   g('piGo').onclick = () => {
@@ -9157,11 +9235,11 @@ function prIssue(r){
         {supplierId:r.sid,amount:+amt.toFixed(2),lines:[line],against,notes:`Payment request ${r.id}`,prId:r.id,date:D(today)})){ m.remove(); render(); return }
       const pv = paySupplier({ supplierId:r.sid, lines:[line], against, notes:`Payment request ${r.id}` });
       r.status='issued';
-      r.pay={ date:D(today), what:`${how.toLowerCase()}${how!=='CASH'?' · '+B(line.bank).name:''} · ${fmt(amt)}`,
+      r.pay={ date:D(today), amount:+amt.toFixed(2), what:`${how.toLowerCase()}${how!=='CASH'?' · '+B(line.bank).name:''} · ${fmt(amt)}`,
               voucher:pv.voucher, by:S.user.name, no:pv.no };
       prStep(r,'issued',`${how.toLowerCase()} ${fmt(amt)}`);
       m.remove(); render(); supplierVoucher(pv,true);
-      toast(`${fmt(amt)} handed to ${sp.name} · voucher ${pv.voucher}`);
+      toast(`${fmt(amt)} issued to ${sp.name} · voucher ${pv.voucher}`);
     }catch(e){ g('piMsg').textContent=e.message }
   };
   g('piAmt').focus();
@@ -11322,15 +11400,14 @@ function actionItems(){
   /* supplier payment requests */
   if(typeof payReqOpen==='function') for(const r of payReqOpen()){
     const s=SU(r.sid)||{name:'Supplier'}, id=`data-id="${esA(r.id)}"`, may=typeof canPayReq==='function'&&canPayReq();
-    const acts=[];
-    if(may&&r.status==='sent') acts.push(actBtn('prAccept','Accept',id,'tape'),actBtn('prQuery','Ask a question',id),actBtn('prReject','Turn down',id));
-    if(may&&r.status==='accepted') acts.push(actBtn('prReady','Ready to pay',id,'tape'),actBtn('prReject','Turn down',id));
-    if(may&&r.status==='ready') acts.push(actBtn('prIssue','Pay it',id,'tape'));
+    const acts=[], k=prStage(r);
+    if(may&&PR_NEXT[k]) acts.push(actBtn('prNext',PR_NEXT[k]+' →',id,'tape'));
+    if(may&&k==='sent') acts.push(actBtn('prQuery','Ask a question',id));
     acts.push(actOpen('payreqs','Open'));
-    push({cat:'suppay',view:'payreqs',pri:r.status==='accepted'?2:1,key:r.id,amount:prSum(r),who:s.name,when:r.date,
-      title:r.status==='ready'?`Pay ${s.name}`:r.status==='accepted'?`Get ${s.name}'s payment ready`:`${s.name} asks to be paid`,
+    push({cat:'suppay',view:'payreqs',pri:k==='sent'||k==='ready'?1:2,key:r.id,amount:prAmt(r),who:s.name,when:r.date,
+      title:k==='sent'?`${s.name} asks to be paid — check the invoices`:k==='ready'?`${s.name} is to collect their payment — issue it`:`${s.name}'s payment: ${PR_FLOW[k].label.toLowerCase()}`,
       sub:`${(r.lines||[]).length} bill${(r.lines||[]).length===1?'':'s'}${r.rep?' · from '+r.rep:''}${r.note?` · “${r.note}”`:''}`,
-      tag:({sent:'New request',accepted:'Accepted',ready:'Ready to pay'})[r.status]||r.status,acts});
+      tag:`${prIdx(r)+1}/7 · ${(PR_FLOW[k]||{}).label||r.status}`,acts});
   }
   /* supplier orders, both ways, and suppliers' questions */
   for(const o of S.orders||[]){
@@ -12673,7 +12750,7 @@ const views=[
  ['grp','Home'],['dashboard','Dashboard','F2'],['actions','Action centre'],['updates','What is new'],
  ['grp','Sales'],['pos','POS billing','F3'],['bills','Bills'],['returns','Returns'],['docs','Quotes & delivery notes'],['collect','Goods to collect'],['dlv','Deliveries'],['hire','Tool hire'],
  ['grp','Customers'],['customers','Customers','F8'],['receipts','Take a payment','F7'],['dues','Credit follow-up'],['plans','Easy payments'],['trades','Tradesmen'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],['feedback','Customer feedback'],
- ['grp','Suppliers & buying'],['suppliers','Suppliers','F12'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Payment requests'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
+ ['grp','Suppliers & buying'],['suppliers','Suppliers','F12'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Supplier payments'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels','F11'],
  ['grp','Cash & banking'],['counter','Open & close'],['cashup','Day book'],['petty','Petty cash'],['expenses','Expenses'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['chqbooks','Cheque books'],['accounting','Accounting'],
  ['grp','Staff'],['payroll','Attendance & pay','F9'],['leave','Leave'],['users','Users & permissions'],
@@ -31629,6 +31706,8 @@ document.addEventListener('click',e=>{
         if(!r.ok||j.ok===false) throw new Error(j.error||('the server said '+r.status));
         await loadCustLogins(id,true,kind); render(); toast('Turned down');
       }catch(e){ toast('Not done: '+e.message) } },
+    prShow:()=>{ prShow=a.dataset.k; render() },
+    prNext:()=>prNext(payReqs().find(x=>x.id===a.dataset.id)),
     prSel:()=>{ prSel=a.dataset.id; const r=payReqs().find(x=>x.id===prSel); if(r) r.unreadShop=false; render() },
     prAccept:()=>{ const r=payReqs().find(x=>x.id===a.dataset.id); if(r&&canPayReq()) prNote(r,'accepted','Agree to this request','anything they should know — optional','Agree to it') },
     prQuery:()=>{ const r=payReqs().find(x=>x.id===a.dataset.id); if(r&&canPayReq()) prNote(r,'queried','Ask them about it','what is not right, or what you need from them','Send it back') },

@@ -71,6 +71,18 @@ input:focus,textarea:focus{outline:none;border-color:var(--yellow);box-shadow:0 
 .photos .ph button{position:absolute;top:2px;right:2px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;cursor:pointer;font-size:12px}
 .snap{width:84px;height:84px;border:2px dashed var(--line);border-radius:8px;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:var(--steel);font-size:11px;gap:2px}
 .snap:hover{border-color:var(--yellow);color:var(--ink)}.snap b{font-size:22px}
+.ptrk{--p:0%;position:relative;display:grid;grid-template-columns:repeat(7,1fr);margin:14px 0 8px}
+.ptrk-l{position:absolute;left:calc(100%/14);right:calc(100%/14);top:12px;height:3px;background:var(--line);border-radius:3px}
+.ptrk-l::after{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--p);background:var(--green);border-radius:3px;animation:ptrkg 1s cubic-bezier(.2,.8,.2,1) both}
+@keyframes ptrkg{from{width:0}}
+.ptrk-s{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px;padding:0 1px}
+.ptrk-s b{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:11.5px;background:#fff;border:2px solid var(--line);color:var(--faint);z-index:1}
+.ptrk-s span{font-size:10.5px;font-weight:700;line-height:1.2;color:var(--steel)}.ptrk-s small{font-size:9.5px;color:var(--faint)}
+.ptrk-s.done b{background:var(--green);border-color:var(--green);color:#fff}.ptrk-s.done span{color:var(--ink)}
+.ptrk-s.now b{border-color:var(--brand);color:var(--brand);animation:ptrkp 1.8s ease-out infinite}.ptrk-s.now span{color:var(--brand)}
+@keyframes ptrkp{0%{box-shadow:0 0 0 0 rgba(174,30,43,.45)}100%{box-shadow:0 0 0 9px rgba(174,30,43,0)}}
+.ptrk.off .ptrk-l::after{background:var(--rust)}
+@media (max-width:480px){.ptrk-s span{font-size:9px}.ptrk-s small{display:none}}
 .steps{display:flex;gap:6px;margin:8px 0}.steps i{flex:1;height:6px;border-radius:99px;background:var(--line)}.steps i.on{background:var(--green)}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:var(--r);box-shadow:0 8px 24px rgba(0,0,0,.25);font-weight:600;z-index:50;max-width:90vw}
 .sheet{position:fixed;inset:0;background:rgba(16,30,34,.55);z-index:40;display:flex;align-items:flex-end;justify-content:center}
@@ -344,8 +356,17 @@ async function askForPerson(){
   finally{ st.busy = false; render() }
 }
 function signOut(redraw=true){ st.token=''; st.me=null; ls.set('token',''); if(redraw) render() }
-const PAYSTATUS={sent:['warn','With the shop'],accepted:['blue','Agreed — being made ready'],ready:['ok','Ready to collect'],issued:['ok','Paid'],rejected:['bad','Turned down']};
-const PAYACT={asked:'Asked to be paid',accepted:'The shop agreed',queried:'The shop asked about it',rejected:'The shop turned it down',ready:'The money is ready',issued:'Handed over'};
+/* the seven steps of a payment, as the shop moves it — the same tracker the shop sees */
+const PSTAGES=[['sent','Payment requested'],['checked','Invoices checked'],['final','Amount finalised'],['preparing','Amount preparing'],['prepared','Amount prepared'],['ready','Ready for collection'],['issued','Issued']];
+const pStage=r=>r.status==='accepted'?'final':r.status;
+const PAYSTATUS={sent:['warn','With the shop'],checked:['blue','Invoices checked'],final:['blue','Amount finalised'],accepted:['blue','Amount finalised'],preparing:['blue','Being prepared'],prepared:['blue','Prepared'],ready:['ok','Ready for collection'],issued:['ok','Issued'],rejected:['bad','Turned down']};
+function payTrack(r){
+  const at=PSTAGES.findIndex(s=>s[0]===pStage(r)), off=r.status==='rejected', when={};
+  (r.events||[]).forEach(e=>{ const k=e.action==='asked'?'sent':e.action==='accepted'?'final':e.action; when[k]=e });
+  return `<div class="ptrk ${off?'off':''}" style="--p:${Math.max(0,at)/(PSTAGES.length-1)*100}%"><i class="ptrk-l"></i>${PSTAGES.map(([k,l],i)=>{ const e=when[k], st=off?(e?'done':''):(i<at||(i===at&&k==='issued'))?'done':i===at?'now':'';
+    return `<div class="ptrk-s ${st}"><b>${st==='done'?'✓':i+1}</b><span>${l}</span>${e&&e.at&&st?`<small>${new Date(e.at).toLocaleDateString('en-GB',{day:'numeric',month:'short'})} ${new Date(e.at).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</small>`:''}</div>` }).join('')}</div>`;
+}
+const PAYACT={asked:'Asked to be paid',checked:'The shop checked your invoices',final:'The shop finalised the amount',preparing:'The shop is preparing the payment',prepared:'The payment is prepared',accepted:'The shop agreed',queried:'The shop asked about it',rejected:'The shop turned it down',ready:'The money is ready',issued:'Handed over'};
 const paytag=s=>{const x=PAYSTATUS[s]||['',s];return `<span class="tag ${x[0]}">${esc(x[1])}</span>`};
 const STATUS={sent:['warn','Waiting for your answer'],accepted:['ok','You confirmed it'],changes:['warn','You asked for a change'],dispatched:['blue','On its way'],received:['ok','Received by the shop'],cancelled:['bad','Cancelled by the shop'],pending:['warn','Waiting for the shop'],rejected:['bad','Not accepted'],adjusted:['warn','Shop asked for a change'],revised:['','Replaced'],completed:['blue','Completed — with the shop for approval'],approved:['ok','Approved']};
 const tag=s=>{const x=STATUS[s]||['',s];return `<span class="tag ${x[0]}">${esc(x[1])}</span>`};
@@ -747,7 +768,7 @@ function pay(){
   const reqs=me.payReqs||[];
   // a bill already asked for is under "Your payment requests", not here; if the shop turns the request
   // down it comes back to this list to be asked for again
-  const asked=new Set(reqs.filter(r=>r.waiting||['sent','accepted','ready','queried'].includes(r.status)).flatMap(r=>(r.lines||[]).map(l=>l.no)));
+  const asked=new Set(reqs.filter(r=>r.waiting||!['rejected','issued'].includes(r.status)).flatMap(r=>(r.lines||[]).map(l=>l.no)));
   const bills=(me.bills||[]).filter(b=>!asked.has(b.no));
   const picked=st.payPick||{};
   const chosen=bills.filter(b=>picked[b.no]);
@@ -785,10 +806,12 @@ function pay(){
      :'<div class="empty"><div>✅</div><b>Nothing outstanding</b><span>Every bill of yours is settled.</span></div>'}
    ${reqs.length?`<h2 style="margin:16px 0 8px">Your payment requests</h2>
     ${reqs.map(r=>`<div class="card o">
-      <div class="h"><div><b>${money(r.total)}</b><div class="muted">${esc(r.date)} · ${(r.lines||[]).length} bill${(r.lines||[]).length===1?'':'s'}</div></div>
+      <div class="h"><div><b>${money(r.final?r.final.amount:r.total)}</b><div class="muted">${esc(r.date)} · ${(r.lines||[]).length} bill${(r.lines||[]).length===1?'':'s'}${r.final&&Math.abs(r.final.amount-r.total)>0.005?` · you asked ${money(r.total)}`:''}</div></div>
        ${r.waiting?'<span class="tag warn">Reaching the shop</span>':paytag(r.status)}</div>
+      ${r.waiting?'':payTrack(r)}
+      ${r.final&&r.final.note?`<div class="notice">The shop: ${esc(r.final.note)}</div>`:''}
       ${r.status==='rejected'?`<div class="notice bad">The shop turned this down${(r.events||[]).filter(e=>e.action==='rejected').slice(-1).map(e=>e.note?': <b>'+esc(e.note)+'</b>':'')[0]||''}. Its bills are back under <b>Your bills at the shop</b> to ask for again.</div>`:''}
-      ${r.status==='ready'?'<div class="notice ok"><b>The money is ready.</b> Call in for the cheque or the cash.</div>':''}
+      ${r.status==='ready'?`<div class="notice ok"><b>Ready for collection.</b> Call in for the ${r.prep?({CHEQUE:'cheque',CASH:'cash',BANK:'payment'})[r.prep.method]||'payment':'cheque or the cash'}.</div>`:''}
       <table>${(r.lines||[]).map(l=>`<tr><td>${esc(l.supInv||l.no)}${l.note?`<div class="muted">${esc(l.note)}</div>`:''}</td><td class="n">${money(l.claim)}</td></tr>`).join('')}</table>
       ${r.pay?`<div class="muted" style="margin-top:6px">Paid ${esc(r.pay.date)} · ${esc(r.pay.what||'')}</div>`:''}
      </div>`).join('')}`:''}`;
