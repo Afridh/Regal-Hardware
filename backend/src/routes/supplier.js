@@ -174,7 +174,7 @@ export async function injectSupplierInbox(data) {
       const d = row.data || {};
       S.approvals.unshift({ id: 'aps' + row.id, supInbox: row.id, kind: 'supPortal', title: `${name} asks to open their supplier page`,
         detail: [d.name && d.name !== name ? d.name : '', d.phone, d.note].filter(Boolean).join(' · '), data: { sid: row.sid, field: 'enabled', value: true },
-        by: (d.name || name) + ' (from the supplier page)', at: new Date(row.created_at).toLocaleString('en-CA', { timeZone: TZ, hour12: false }).slice(0, 16).replace(',', ''), status: 'pending' });
+        by: (d.name || name) + ' (from the supplier page)', at: new Date(row.created_at).toLocaleString('en-CA', { timeZone: TZ, hour12: false }).replace(',', '').slice(0, 16), status: 'pending' });
       S.notif.unshift({ id: 'n' + row.id.toString(36) + 'o', kind: 'approval', text: `${name} asks to open their supplier page`, view: 'approvals', at: localTime(), read: false, forApprovers: true });
       added++;
     } else if (row.kind === 'pricelist' || row.kind === 'pricedrop') {
@@ -202,7 +202,7 @@ export async function injectSupplierInbox(data) {
       S.approvals.unshift({ id: 'apk' + row.id, supInbox: row.id, kind: 'supStock', title: `${name} asks to see their stock`,
         detail: [d.rep, d.note].filter(Boolean).join(' · ') || 'for a day, to write their next order',
         data: { sid: row.sid }, by: (d.rep || name) + ' (from the supplier page)',
-        at: new Date(row.created_at).toLocaleString('en-CA', { timeZone: TZ, hour12: false }).slice(0, 16).replace(',', ''), status: 'pending' });
+        at: new Date(row.created_at).toLocaleString('en-CA', { timeZone: TZ, hour12: false }).replace(',', '').slice(0, 16), status: 'pending' });
       S.notif.unshift({ id: 'n' + row.id.toString(36) + 'k', kind: 'approval', text: `${name} asks to see their stock`, view: 'approvals', at: localTime(), read: false, forApprovers: true });
       added++;
     } else if (row.kind === 'stockread') {

@@ -113,8 +113,22 @@ export async function injectCustInbox(data) {
       S.approvals.unshift({ id: 'apc' + row.id, custInbox: Number(row.id), kind: row.kind === 'askopen' ? 'custPortal' : 'custNew',
         title: row.kind === 'askopen' ? `${who} asks to open their page on the site` : `${d.name} asks for an account on the site`,
         detail: [d.phone, d.note].filter(Boolean).join(' · '), data: row.kind === 'askopen' ? { cid: row.cid, on: true } : { name: d.name, phone: d.phone, note: d.note || '' },
-        by: who + ' (from the site)', at: new Date(row.created_at).toLocaleString('en-CA', { timeZone: TZ, hour12: false }).slice(0, 16).replace(',', ''), status: 'pending' });
+        by: who + ' (from the site)', at: new Date(row.created_at).toLocaleString('en-CA', { timeZone: TZ, hour12: false }).replace(',', '').slice(0, 16), status: 'pending' });
       S.notif.unshift({ id: 'nca' + row.id, kind: 'approval', text: row.kind === 'askopen' ? `${who} asks to open their page on the site` : `${d.name} (${d.phone}) asks for an account on the site`, view: 'approvals', at: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: TZ }), read: false, forApprovers: true });
+      added++; continue;
+    }
+    if (row.kind === 'feedback') {
+      S.feedback = S.feedback || [];
+      if (S.feedback.some(x => x.inboxId === Number(row.id))) continue;
+      const d = row.data || {}, inv = (S.sales || []).find(s => s.no === d.no);
+      const c = (S.customers || []).find(x => x.id === row.cid);
+      const fb = { id: 'fb' + row.id, inboxId: Number(row.id), no: d.no, cid: row.cid || null, who: (c && c.id !== 1 && c.name) || 'Walk-in customer',
+        stars: d.stars, tags: d.tags || [], note: d.note || '', by: inv && inv.by || '', total: inv ? inv.total : 0,
+        at: new Date(row.created_at).toLocaleString('en-CA', { timeZone: TZ, hour12: false }).replace(',', '').slice(0, 16) };
+      S.feedback.unshift(fb); if (S.feedback.length > 2000) S.feedback.length = 2000;
+      if (inv) inv.feedback = { stars: fb.stars, tags: fb.tags, note: fb.note, at: fb.at };
+      S.notif.unshift({ id: 'nfb' + row.id, kind: d.stars <= 2 ? 'warn' : 'info', text: `${'★'.repeat(d.stars)}${'☆'.repeat(5 - d.stars)} from ${fb.who} on bill ${d.no}${fb.note ? ' — “' + fb.note.slice(0, 60) + '”' : ''}`,
+        view: 'reports', rep: 'feedback', at: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: TZ }), read: false });
       added++; continue;
     }
     if (S.notices.some(n => n.inboxId === Number(row.id))) continue;
@@ -127,7 +141,8 @@ export async function injectCustInbox(data) {
 export async function markCustImported(data) {
   const S = data?.S; if (!S) return 0;
   const ids = (S.notices || []).map(n => n.inboxId).filter(Boolean)
-    .concat((S.approvals || []).map(a => a.custInbox).filter(Boolean));
+    .concat((S.approvals || []).map(a => a.custInbox).filter(Boolean))
+    .concat((S.feedback || []).map(x => x.inboxId).filter(Boolean));
   if (!ids.length) return 0;
   await ensureCustTables();
   const { rowCount } = await query(`UPDATE cust_inbox SET imported_at = now() WHERE imported_at IS NULL AND id = ANY($1::bigint[])`, [ids]);
@@ -327,6 +342,12 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
   const { rows: [view] } = await query(`SELECT format, html FROM bill_views WHERE id = $1`, [id]).catch(() => ({ rows: [] }));
   const prod = (pid) => (S.products || []).find(x => x.id === pid) || {};
   const cust = (S.customers || []).find(c => c.id === inv.customerId);
+  const sh = CFG.shop || {};
+  const logo = /^(data:image\/|https?:\/\/|\/)/.test(String(sh.logo || '')) ? sh.logo : '';
+  // an MRP is only worth showing when the price is under it (a line sold above it says nothing)
+  const lineMrp = (l) => { const m = +prod(l.pid).mrp || 0; return m > +l.price + 0.005 && l.qty > 0 ? m : 0; };
+  const saved = (inv.lines || []).reduce((a, l) => a + (lineMrp(l) ? (lineMrp(l) - l.price) * l.qty : 0) + (l.qty > 0 ? (+l.disc || 0) : 0), 0) + (+inv.billDisc || 0);
+  const fb = inv.feedback || await fbWaiting(inv.no);
   res.json({ ok: true, bill: {
     no: inv.no, date: inv.date, time: inv.time || '', type: inv.type,
     sub: inv.sub, billDisc: inv.billDisc || 0, total: inv.total, paid: inv.paid, balance: inv.balance,
@@ -335,15 +356,41 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
     lines: (inv.lines || []).map(l => {
       const p = prod(l.pid);
       return { name: l.name || p.name || 'Item', code: p.code || '', unit: p.unit || '',
-        qty: l.qty, price: l.price, disc: l.disc || 0,
+        qty: l.qty, price: l.price, disc: l.disc || 0, mrp: lineMrp(l),
         amount: +(l.qty * l.price - (l.disc || 0)).toFixed(2), returned: l.qty < 0 };
     }),
     pays: (inv.pays || []).map(x => ({ method: x.method, amount: x.amount })),
     paper: view?.format || (inv.paper === 'r80' ? 'r80' : 'a5'),
     html: view?.html || null,
-    shop: { name: CFG.shop?.name || 'Regal Hardware', phone: CFG.shop?.phone || '',
-      land: CFG.shop?.land || '', addr: CFG.shop?.addr || '', web: CFG.shop?.web || '' },
+    saved: +saved.toFixed(2),
+    feedback: fb ? { stars: fb.stars, tags: fb.tags || [], note: fb.note || '' } : null,
+    shop: { name: sh.name || 'Regal Hardware', phone: sh.phone || '', land: sh.land || '', addr: sh.addr || '', web: sh.web || '',
+      logo, sinhala: sh.sinhala || '', near: sh.near || '', tags: sh.tags || '', line1: sh.line1 || '', email: sh.email || '' },
   } });
+}));
+
+/* What the customer thought of it: one rating a bill, from the same link. It waits in cust_inbox like
+   everything else they send, and the next till to read the books puts it on the bill and tells the shop. */
+async function fbWaiting(no) {
+  await ensureCustTables();
+  const { rows } = await query(`SELECT data FROM cust_inbox WHERE kind = 'feedback' ORDER BY id DESC LIMIT 500`);
+  const row = rows.map(r => (typeof r.data === 'string' ? JSON.parse(r.data) : r.data)).find(d => d && d.no === no);
+  return row || null;
+}
+const FB_TAGS = ['Friendly staff', 'Quick service', 'Good prices', 'Good quality', 'Found everything', 'Helpful advice', 'Slow service', 'Out of stock', 'Price too high', 'Wrong item'];
+r.post('/b/:id/feedback', asyncHandler(async (req, res) => {
+  const id = String(req.params.id || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (id.length < 6) throw new HttpError(404, 'That link is not a bill');
+  const stars = Math.round(+req.body?.stars || 0);
+  if (!(stars >= 1 && stars <= 5)) throw new HttpError(400, 'Tap the stars to rate your visit');
+  const S = (await books())?.S || {};
+  const inv = (S.sales || []).find(x => String(x.link || '').toLowerCase().endsWith('/' + id));
+  if (!inv) throw new HttpError(404, 'That bill is not here — the link may be old, or mistyped');
+  if (inv.feedback || await fbWaiting(inv.no)) return res.json({ ok: true, already: true });
+  const tags = (Array.isArray(req.body?.tags) ? req.body.tags : []).filter(x => FB_TAGS.includes(x)).slice(0, 6);
+  const note = String(req.body?.note || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  await query(`INSERT INTO cust_inbox (cid, kind, data) VALUES ($1, 'feedback', $2)`, [inv.customerId || 0, JSON.stringify({ no: inv.no, stars, tags, note })]);
+  res.json({ ok: true });
 }));
 
 /** One bill of theirs, line by line. Only ever their own — the account on the token decides. */

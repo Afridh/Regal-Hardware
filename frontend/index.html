@@ -628,6 +628,7 @@ body.privacy nav .navuser{position:relative}
 .tag.ret{background:#FFE4E6;color:#9F1239;border-color:#FDA4AF}
 .lst-band{padding:8px 12px;border-radius:10px;font-weight:800;letter-spacing:.04em;color:#fff;margin-top:6px}.lst-band.black{background:#1d1b1c}.lst-band.red{background:#B3261E}
 .lst-tag{display:inline-block;font-size:11px;font-weight:800;padding:2px 9px;border-radius:99px;color:#fff;vertical-align:middle;letter-spacing:.04em}.lst-tag.black{background:#1d1b1c}.lst-tag.red{background:#B3261E}
+.fb-st{color:#E59E0B;letter-spacing:1px;white-space:nowrap}.fb-st i{font-style:normal;color:var(--line)}.fb-st.s1,.fb-st.s2{color:var(--chip-rust)}
 /* ---- the label that goes on damaged goods and on repair jobs ---- */
 .dlbl{width:62mm;border:1px solid #111;border-radius:4px;padding:8px 9px;font-family:Archivo,sans-serif;
   color:#000;background:#fff}
@@ -21788,7 +21789,7 @@ function billDetail(inv){
   const prev=c.id&&c.id!==1?partyBal('C',c.id)-inv.balance:0;
   const canEdit=can('cancelBill')||can('adjustInvoice');
   return `<div class="bl-head">
-    <div><div class="bl-no">${inv.no}</div><div class="muted">${inv.date} ${inv.time||''} · by <b>${inv.by}</b> · ${inv.type==='CREDIT'?'<span class="tag warn">credit</span>':'<span class="tag ok">cash</span>'}${billUndelivered(inv)?' <span class="tag bad">not delivered</span>':inv.undelivered&&inv.deliveredAt?` <span class="tag ok">delivered ${inv.deliveredAt}</span>`:''}${(inv.remade||[]).length?` <span class="tag warn">re-made ${inv.remade.length}×</span>`:''}${(inv.edits||[]).length?' <span class="tag warn">corrected</span>':''}</div></div>
+    <div><div class="bl-no">${inv.no}</div><div class="muted">${inv.date} ${inv.time||''} · by <b>${inv.by}</b> · ${inv.type==='CREDIT'?'<span class="tag warn">credit</span>':'<span class="tag ok">cash</span>'}${billUndelivered(inv)?' <span class="tag bad">not delivered</span>':inv.undelivered&&inv.deliveredAt?` <span class="tag ok">delivered ${inv.deliveredAt}</span>`:''}${(inv.remade||[]).length?` <span class="tag warn">re-made ${inv.remade.length}×</span>`:''}${(inv.edits||[]).length?' <span class="tag warn">corrected</span>':''}${inv.feedback?` <span class="tag ${inv.feedback.stars<=2?'bad':'ok'}" title="${noteEsc([(inv.feedback.tags||[]).join(', '),inv.feedback.note].filter(Boolean).join(' — ')||'the customer rated it')}">${'★'.repeat(inv.feedback.stars)} from the customer</span>`:''}</div></div>
     <div class="bl-cust">${avatarOf(c)}<div><b>${c.name}</b><span class="muted">${c.phone||(c.id===1?'walk-in':'no mobile')}${c.id&&c.id!==1?` · <a href="#" data-act="cust" data-id="${c.id}">their account</a>`:''}</span></div></div>
    </div>
    <div class="bl-tiles">
@@ -29599,7 +29600,7 @@ const REPORTS=[
   ['Customer outstanding',[['arage','A/R Ageing Summary'],['aragedet','A/R Ageing Detail'],['ar','Customer Balance Summary'],
     ['openinv','Open Invoices'],['collect','Collections Report'],['custstmt','Customer Balance Detail']]],
   ['Sales and customers',[['salescust','Sales by Customer Summary'],['salesitem','Sales by Product Summary'],
-    ['disc','Discounts and Returns'],['salesuser','Sales by Cashier'],['salesprofit','Profit by Salesman']]],
+    ['disc','Discounts and Returns'],['salesuser','Sales by Cashier'],['salesprofit','Profit by Salesman'],['feedback','Customer feedback']]],
   ['Your outstanding',[['apage','A/P Ageing Summary'],['ap','Supplier Balance Summary'],['unpaid','Unpaid Bills'],
     ['purchsup','Purchases by Supplier'],['chq','Cheque Register']]],
   ['Expenses and cash',[['exp','Expenses by Category'],['cash','Cash and Bank Movement'],['daycash','Cash in Hand — day by day']]],
@@ -29765,6 +29766,14 @@ function reportData(){
       ['Total',rows.reduce((a,r)=>a+ +r[1],0),money(rows.reduce((a,r)=>a+num(r[2]),0)),'',
        money(rows.reduce((a,r)=>a+num(r[4]),0)),money(rows.reduce((a,r)=>a+num(r[5]),0)),''],
       'Who took what, what they gave away, and what it earned.');
+  }
+  case 'feedback':{
+    /* what customers said from their e-bill link: the stars, what they ticked, and their words */
+    const all=(S.feedback||[]).filter(x=>inRange(String(x.at||'').slice(0,10)));
+    const rows=all.map(x=>[x.at,x.no,noteEsc(x.who),noteEsc(x.by||''),`<span class="fb-st s${x.stars}">${'★'.repeat(x.stars)}<i>${'★'.repeat(5-x.stars)}</i></span>`,noteEsc([(x.tags||[]).join(', '),x.note?'“'+x.note+'”':''].filter(Boolean).join(' — '))]);
+    const avg=all.length?all.reduce((a,x)=>a+(+x.stars||0),0)/all.length:0, low=all.filter(x=>x.stars<=2).length;
+    const pre=all.length?`<div class="card" style="margin-bottom:10px;display:flex;gap:24px;flex-wrap:wrap"><div><div class="muted">Average</div><b style="font-size:22px">${avg.toFixed(1)} ★</b></div><div><div class="muted">Ratings</div><b style="font-size:22px">${all.length}</b></div><div><div class="muted">Unhappy (1–2 ★)</div><b style="font-size:22px;color:${low?'var(--chip-rust)':'inherit'}">${low}</b></div></div>`:'';
+    return {pre,...t(['When','Bill','Customer','Served by','Rating','What they said'],rows,null,'Customers rate their visit from the link on their e-bill — one rating a bill.')};
   }
   case 'vat':{
     /* By month. Sales include VAT (shelf prices do), so the output VAT is the tax part of what was billed;
@@ -31904,7 +31913,7 @@ document.addEventListener('click',e=>{
     bellOpen:()=>{S.notifOpen=!S.notifOpen; drawBell()},
     bellClear:()=>{S.notif.forEach(n=>n.read=true); drawBell()},
     bellGo:()=>{const n=S.notif.find(x=>x.id===a.dataset.id); if(!n)return;
-      n.read=true; S.notifOpen=false; if(n.view&&allowed(n.view))go(n.view); else drawBell()},
+      n.read=true; S.notifOpen=false; if(n.rep) repKey=n.rep; if(n.view&&allowed(n.view))go(n.view); else drawBell()},
     dashSet:()=>dashSettings(),
     qCat:()=>{QT.cat=a.dataset.v;render()},
     qAdd:()=>qAdd(+a.dataset.id),
