@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#B3261E">
+<title>Stock</title>
+<link rel="icon" href="regal-logo.png">
+<style>
+/* Stock from a phone: scan (or find) an item, see what the books say, send what is really there.
+   One hand, big buttons, works on a weak signal — what cannot go now waits on the phone and goes later. */
+:root{--red:#B3261E;--ink:#1d1b1c;--steel:#6a6466;--line:#e3dfe0;--bg:#f4f2f2;--ok:#12613d;--okbg:#e3f4ea;--warn:#8a5d06;--warnbg:#fff4df;--blue:#1f3b5a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  padding:0 max(14px,env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}
+header{position:sticky;top:0;z-index:5;background:var(--red);color:#fff;margin:0 calc(-1 * max(14px,env(safe-area-inset-left)));padding:calc(10px + env(safe-area-inset-top)) 16px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+header b{display:block;font-size:18px}header span{opacity:.85;font-size:13px}
+.q{background:rgba(255,255,255,.18);border-radius:99px;padding:3px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+.find{display:flex;gap:8px;margin:12px 0}
+.find input{flex:1;min-height:52px;border:1px solid var(--line);border-radius:14px;padding:8px 14px;font-size:17px;background:#fff}
+.btn{display:flex;align-items:center;justify-content:center;gap:6px;min-height:52px;padding:0 16px;border-radius:14px;border:1px solid var(--line);background:#fff;color:var(--ink);font:700 16px system-ui,sans-serif;cursor:pointer}
+.btn.scan{background:var(--ink);color:#fff;border-color:var(--ink);min-width:110px}
+.btn.go{background:var(--red);border-color:var(--red);color:#fff;width:100%;font-size:18px;min-height:58px}
+.btn:disabled{opacity:.5}
+.hits{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:12px}
+.hit{display:flex;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.hit:last-child{border-bottom:0}.hit small{color:var(--steel);display:block}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+.item b{font-size:18px;display:block}.muted{color:var(--steel);font-size:13px}
+.book{display:flex;justify-content:space-between;align-items:center;background:var(--bg);border-radius:12px;padding:10px 12px;margin:10px 0}
+.book b{font-size:22px}
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0}
+.modes button{min-height:46px;border-radius:12px;border:1px solid var(--line);background:#fff;font:700 15px system-ui,sans-serif;color:var(--ink)}
+.modes button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.qty{display:grid;grid-template-columns:64px 1fr 64px;gap:8px;align-items:center;margin:10px 0}
+.qty button{min-height:60px;border-radius:14px;border:1px solid var(--line);background:#fff;font:800 26px system-ui,sans-serif}
+.qty input{min-height:60px;text-align:center;font:800 28px system-ui,sans-serif;border:2px solid var(--blue);border-radius:14px;width:100%}
+.reasons{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.reasons button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:8px 12px;font:600 14px system-ui,sans-serif}
+.reasons button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.diff{font-weight:700;margin:6px 0}.diff.up{color:var(--ok)}.diff.down{color:var(--red)}
+.log .row{display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)}.log .row:last-child{border-bottom:0}
+.tag{font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--line);white-space:nowrap}
+.tag.pending{background:var(--warnbg);color:var(--warn)}.tag.posted{background:var(--okbg);color:var(--ok)}.tag.rejected{background:#fbe4de;color:var(--red)}.tag.queued{background:#dde7f2;color:var(--blue)}
+.msg{padding:30px 10px;text-align:center;color:var(--steel)}
+.cam{position:fixed;inset:0;background:#000;z-index:20;display:flex;flex-direction:column}
+.cam video{flex:1;width:100%;object-fit:cover}
+.cam .frame{position:absolute;left:12%;right:12%;top:32%;height:22%;border:3px solid rgba(255,255,255,.85);border-radius:14px;box-shadow:0 0 0 2000px rgba(0,0,0,.35)}
+.cam .bar{padding:14px 16px calc(14px + env(safe-area-inset-bottom));background:#111;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;font-weight:600;z-index:30;max-width:90%}
+</style>
+</head>
+<body>
+<header><div><b id="hName">Stock</b><span id="hSub">Loading…</span></div><span class="q" id="hQ" hidden></span></header>
+<div id="app"><div class="msg">Loading…</div></div>
+<script>
+const k = new URLSearchParams(location.search).get('k') || '';
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const fq = n => { const v = +n || 0; return v % 1 ? v.toFixed(3).replace(/0+$/, '') : String(v) };
+const store = { get: (key, d) => { try { const v = localStorage.getItem('stk_' + key); return v == null ? d : JSON.parse(v) } catch (e) { return d } }, set: (key, v) => { try { localStorage.setItem('stk_' + key, JSON.stringify(v)) } catch (e) {} } };
+let data = null, q = '', pick = null, mode = 'count', qty = '', reason = '', busy = false;
+let queue = store.get('queue_' + k.slice(0, 6), []);   // entries that could not go yet
+
+function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2600) }
+function buzz(good) { try { navigator.vibrate && navigator.vibrate(good ? 40 : [80, 60, 80]) } catch (e) {} }
+
+async function load() {
+  try {
+    const r = await fetch('/api/stockup/me?k=' + encodeURIComponent(k)); const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Could not load');
+    data = j; $('#hName').textContent = j.who.name; $('#hSub').textContent = j.shop.name + ' · stock';
+    if (pick) pick = j.products.find(p => p.id === pick.id) || pick;
+    if (!pick || !document.getElementById('qn')) draw();      // never under someone typing a number
+    flush();
+  } catch (e) { if (!data) { $('#app').innerHTML = `<div class="msg">${esc(e.message)}</div>`; $('#hSub').textContent = '' } }
+}
+const nz = s => String(s || '').replace(/^0+/, '');
+function byCode(code) {
+  const v = String(code || '').trim(), lv = v.toLowerCase(); if (!v || !data) return null;
+  const P = data.products;
+  return P.find(p => p.barcode === v || p.barcode2 === v) || (/^\d{8,14}$/.test(v) && P.find(p => (p.barcode && nz(p.barcode) === nz(v)) || (p.barcode2 && nz(p.barcode2) === nz(v))))
+    || P.find(p => String(p.num) === v || p.short.toLowerCase() === lv || p.code.toLowerCase() === lv) || null;
+}
+function hits() {
+  const t = q.trim().toLowerCase(); if (t.length < 2) return [];
+  return data.products.filter(p => p.name.toLowerCase().includes(t) || p.code.toLowerCase().includes(t) || p.short.toLowerCase().startsWith(t) || String(p.num) === t || p.barcode === t).slice(0, 12);
+}
+function choose(p) { pick = p; mode = 'count'; qty = ''; reason = ''; q = ''; draw(); const i = $('#qn'); if (i) i.focus() }
+
+function draw() {
+  const qn = queue.length; $('#hQ').hidden = !qn; $('#hQ').textContent = qn + ' waiting to send';
+  if (!pick) {
+    const list = hits();
+    $('#app').innerHTML = `<div class="find"><input id="q" placeholder="Find an item — name, code, number" value="${esc(q)}" autocomplete="off" enterkeyhint="search"><button class="btn scan" id="scan">📷 Scan</button></div>
+      ${list.length ? `<div class="hits">${list.map(p => `<div class="hit" data-pid="${p.id}"><div><b>${esc(p.name)}</b><small>${esc(p.num || p.code)}${p.short ? ' · ' + esc(p.short) : ''}</small></div><div><b>${fq(p.stock)}</b> <small>${esc(p.unit)}</small></div></div>`).join('')}</div>`
+        : q.trim().length >= 2 ? '<div class="card muted">Nothing matches — try fewer letters, or scan it.</div>' : ''}
+      ${logCard()}`;
+    const i = $('#q'); i.oninput = () => { q = i.value; draw(); const n = $('#q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length) };
+    i.onkeydown = e => { if (e.key === 'Enter') { const p = byCode(i.value) || hits()[0]; if (p) choose(p) } };
+    $('#scan').onclick = scan;
+    document.querySelectorAll('[data-pid]').forEach(h => h.onclick = () => choose(data.products.find(p => p.id === +h.dataset.pid)));
+    return;
+  }
+  const p = pick;
+  const rs = mode === 'count' ? [] : (data.reasons[mode] || []);
+  $('#app').innerHTML = `<div class="card item">
+     <b>${esc(p.name)}</b><div class="muted">${esc(p.num || p.code)}${p.cat ? ' · ' + esc(p.cat) : ''}</div>
+     <div class="book"><span class="muted">On the books</span><span><b>${fq(p.stock)}</b> ${esc(p.unit)}</span></div>
+     <div class="modes">${[['count', 'Count'], ['add', '+ Add'], ['remove', '− Remove']].map(([m, l]) => `<button data-mode="${m}" class="${mode === m ? 'on' : ''}">${l}</button>`).join('')}</div>
+     <div class="muted">${mode === 'count' ? 'How many are really there?' : mode === 'add' ? 'How many came in?' : 'How many went?'}</div>
+     <div class="qty"><button id="minus">−</button><input id="qn" type="number" inputmode="decimal" step="any" min="0" value="${esc(qty)}" placeholder="0"><button id="plus">+</button></div>
+     ${rs.length ? `<div class="reasons">${rs.map(r => `<button data-r="${esc(r)}" class="${reason === r ? 'on' : ''}">${esc(r)}</button>`).join('')}</div>` : ''}
+     <div id="diff"></div>
+     <button class="btn go" id="send" disabled>${busy ? 'Sending…' : 'Send'}</button>
+     <div style="display:flex;gap:8px;margin-top:8px"><button class="btn" id="back" style="flex:1">Back</button><button class="btn scan" id="scan2" style="flex:1">📷 Next</button></div>
+   </div>${logCard()}`;
+  const i = $('#qn'); i.oninput = () => { qty = i.value; live() };
+  i.onkeydown = e => { if (e.key === 'Enter') send() };
+  $('#minus').onclick = () => { qty = String(Math.max(0, (+qty || 0) - 1)); i.value = qty; live() };
+  $('#plus').onclick = () => { qty = String((+qty || 0) + 1); i.value = qty; live() };
+  document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { mode = b.dataset.mode; reason = ''; draw() });
+  document.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { reason = b.dataset.r; document.querySelectorAll('[data-r]').forEach(x => x.classList.toggle('on', x === b)); live() });
+  $('#send').onclick = send; $('#back').onclick = () => { pick = null; draw() }; $('#scan2').onclick = () => { pick = null; scan() };
+  live();
+}
+/* the difference and the Send button follow the number as it is typed — the box itself is never redrawn,
+   so the cursor and the keyboard stay where they are */
+function live() {
+  const p = pick; if (!p || !$('#diff')) return;
+  const n = qty === '' ? null : +qty, rs = mode === 'count' ? [] : (data.reasons[mode] || []);
+  const after = n == null ? null : mode === 'count' ? n : mode === 'add' ? p.stock + n : p.stock - n, d = after == null ? null : +(after - p.stock).toFixed(3);
+  $('#diff').innerHTML = d == null ? '' : d === 0 ? '<div class="diff">Agrees with the books</div>' : `<div class="diff ${d > 0 ? 'up' : 'down'}">${d > 0 ? '+' : ''}${fq(d)} ${esc(p.unit)} — the books become ${fq(after)}</div>`;
+  $('#send').disabled = n == null || !(n >= 0) || (mode !== 'count' && !(n > 0)) || (rs.length && !reason) || busy;
+}
+function logCard() {
+  const rows = queue.map(x => ({ ...x, status: 'queued' })).concat(data.mine || []);
+  if (!rows.length) return '';
+  const word = { count: 'counted', add: 'added', remove: 'removed' }, tag = { pending: 'waiting for the shop', posted: 'done', rejected: 'turned down', queued: 'not sent yet' };
+  return `<div class="card log"><b>Today</b>${rows.slice(0, 30).map(x => `<div class="row"><div>${esc(x.name)}<div class="muted">${word[x.mode]} ${fq(x.qty)}${x.reason ? ' · ' + esc(x.reason) : ''} · ${esc(String(x.at || '').slice(11))}</div></div><span class="tag ${x.status}">${tag[x.status] || x.status}</span></div>`).join('')}</div>`;
+}
+async function post(e) {
+  const r = await fetch('/api/stockup/entry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ k, ...e }) });
+  const j = await r.json().catch(() => ({})); if (!r.ok) { const er = new Error(j.error || 'It did not go'); er.hard = r.status >= 400 && r.status < 500; throw er } return j;
+}
+async function send() {
+  const p = pick; if (!p || busy) return;
+  const e = { cid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), pid: p.id, name: p.name, mode, qty: +qty, reason, at: new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '').slice(0, 16) };
+  busy = true; draw();
+  try { await post(e); buzz(true); toast('Sent — ' + p.name); p.stock = mode === 'count' ? +qty : mode === 'add' ? p.stock + +qty : p.stock - +qty; pick = null; busy = false; await load() }
+  catch (x) { busy = false; if (x.hard) { buzz(false); toast(x.message); draw(); return }
+    queue.push(e); store.set('queue_' + k.slice(0, 6), queue); buzz(true); toast('No signal — kept on the phone, it goes when it can'); pick = null; draw() }
+}
+async function flush() {
+  if (!queue.length) return;
+  const left = [];
+  for (const e of queue) { try { await post(e) } catch (x) { if (!x.hard) left.push(e) } }
+  const sent = queue.length - left.length; queue = left; store.set('queue_' + k.slice(0, 6), queue);
+  if (sent) { toast(sent + ' waiting entr' + (sent === 1 ? 'y' : 'ies') + ' sent'); load() } else if (!document.getElementById('qn')) draw();
+}
+
+/* ---- the camera: the phone's own barcode reader where it has one, a reader loaded once where it has not ---- */
+let zxP = null;
+const zxLoad = () => zxP || (zxP = new Promise((ok, no) => { if (window.ZXing) return ok(window.ZXing);
+  const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+  s.onload = () => window.ZXing ? ok(window.ZXing) : no(new Error('The scanner did not load')); s.onerror = () => { zxP = null; no(new Error('Could not load the scanner — is the phone online?')) }; document.head.appendChild(s) }));
+async function reader() {
+  if ('BarcodeDetector' in window) { try { const want = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'code_93', 'itf', 'codabar', 'qr_code'];
+    const have = await BarcodeDetector.getSupportedFormats(), fm = want.filter(f => have.includes(f));
+    if (fm.length) { const d = new BarcodeDetector({ formats: fm }); return async cv => { const r = await d.detect(cv); return r[0] && r[0].rawValue } } } catch (e) {} }
+  const Z = await zxLoad(), F = Z.BarcodeFormat, hints = new Map();
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.CODE_93, F.ITF, F.CODABAR, F.QR_CODE]); hints.set(Z.DecodeHintType.TRY_HARDER, true);
+  const rd = new Z.MultiFormatReader(); rd.setHints(hints);
+  return async cv => { try { return rd.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(cv)))).getText() } catch (e) { return null } };
+}
+async function scan() {
+  const el = document.createElement('div'); el.className = 'cam';
+  el.innerHTML = `<video playsinline muted></video><div class="frame"></div><div class="bar"><span id="camMsg">Point at the barcode</span><button class="btn" id="camX">Close</button></div>`;
+  document.body.appendChild(el);
+  let stop = false, stream = null; const close = () => { stop = true; try { stream && stream.getTracks().forEach(t => t.stop()) } catch (e) {} el.remove() };
+  $('#camX', el).onclick = () => { close(); draw() };
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
+    const v = $('video', el); v.srcObject = stream; await v.play();
+    const read = await reader(), cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+    const tick = async () => { if (stop) return;
+      if (v.videoWidth) { const w = v.videoWidth, h = v.videoHeight, cw = Math.round(w * .76), ch = Math.round(h * .3);   // the middle of the picture only
+        cv.width = cw; cv.height = ch; cx.drawImage(v, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, cw, ch);
+        const code = await read(cv).catch(() => null);
+        if (code) { const p = byCode(code); if (p) { buzz(true); close(); choose(p); return } buzz(false); $('#camMsg', el).textContent = 'No item has ' + code } }
+      setTimeout(tick, 120) };
+    tick();
+  } catch (e) { close(); toast(e.name === 'NotAllowedError' ? 'Allow the camera to scan' : (e.message || 'The camera did not open')); draw() }
+}
+window.addEventListener('online', flush);
+load(); setInterval(load, 60000);
+</script>
+</body>
+</html>

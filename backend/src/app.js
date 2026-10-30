@@ -35,6 +35,7 @@ import alexaRoutes from './routes/alexa.js';
 import maintenanceRoutes from './routes/maintenance.js';
 import dueRoutes from './routes/dues.js';
 import dlvRoutes from './routes/deliveries.js';
+import stockupRoutes from './routes/stockup.js';
 import { maintenanceGate } from './lib/maintenance.js';
 
 if (!process.env.JWT_SECRET) console.error('JWT_SECRET is not set (copy .env.example to .env, or set it in the host\'s environment)');
@@ -79,6 +80,7 @@ app.use('/api/print', printRoutes);
 app.use('/api/display', displayRoutes);      // the customer's screen at the counter (regalhw.lk/count1)
 app.use('/api/presence', presenceRoutes);    // who is signed in right now (the Super Admin sees them)
 app.use('/api/dlv', dlvRoutes);              // the driver's phone page (regalhw.lk/driver)
+app.use('/api/stockup', stockupRoutes);        // stock counts from a phone (regalhw.lk/stockup)
 app.use('/api/dues', dueRoutes);             // credit follow-up: reminders to customers who owe
 app.use('/api/cams', camRoutes);              // the cameras, seen from anywhere (the camera helper calls out)
 // the Echo in the office: Amazon calls this, and the till reports what the books cannot see
@@ -101,6 +103,7 @@ if (!process.env.VERCEL && fs.existsSync(appDir)) {
   app.get(['/shift', '/shift/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'shift.html')));
   app.get(/^\/count(\d{0,2})\/?$/i, fresh, (_req, res) => res.sendFile(path.join(appDir, 'display.html')));   // a tablet facing the customer
   app.get(['/driver', '/driver/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'driver.html')));   // a driver's stops for the day
+  app.get(['/stockup', '/stockup/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'stock.html')));   // stock counts from a phone
   app.get(['/supplier', '/supplier/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'supplier.html')));
   app.get(['/my', '/my/', '/my/:code'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'my.html')));
   app.get(['/b/:id'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'bill.html')));   // the e-bill link texted to a customer

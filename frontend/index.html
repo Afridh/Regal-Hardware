@@ -20803,6 +20803,79 @@ function prnPrint(no){
     thirdSign:'RECEIVED BY (SUPPLIER)'});
 }
 
+/* ---- stock from a phone ----
+   Each person who counts gets a link of their own (regalhw.lk/stockup?k=…, routes/stockup.js): they scan or
+   find an item, see what the books say, and send a count, or what came in or went out with why. Nothing
+   moves until someone here posts it: a count is set against what the books said at the moment it was
+   counted (so sales since then are not counted twice), an add or a remove is taken as it is. Posting books
+   it as a stock take — the difference at cost to stock adjustments, with who sent it and who posted it. */
+const stockers=()=>{ if(!Array.isArray(S.stockers)) S.stockers=[]; return S.stockers };
+const phoneCounts=()=>{ if(!Array.isArray(S.phoneCounts)) S.phoneCounts=[]; return S.phoneCounts };
+const phonePending=()=>phoneCounts().filter(x=>x.status==='pending');
+const stkLink=(p)=>((S.web&&S.web.settings&&S.web.settings.domain)||location.host)+'/stockup?k='+p.key;
+/* what an entry changes on the books, worked out now */
+function phoneDiff(e){
+  const p=P(e.pid); if(!p) return null;
+  if(e.mode==='add') return +e.qty; if(e.mode==='remove') return -e.qty;
+  const held=heldMap()[e.pid]||0; return +(+e.qty-(+e.book+held)).toFixed(3);
+}
+function phonePost(ids){
+  const list=phonePending().filter(x=>ids.includes(x.id)); if(!list.length) return;
+  const no=next('STK'); let up=0,down=0; const lines=[];
+  list.forEach(e=>{ const p=P(e.pid), d=phoneDiff(e);
+    if(!p){ e.status='rejected'; e.why='the item is gone'; return }
+    if(Math.abs(d)>1e-9){ move(p.id,d,d>0?'ADJUST_UP':'ADJUST_DOWN',no,p.cost); if(d>0) up+=d*p.cost; else down+=(-d)*p.cost;
+      lines.push({pid:p.id,was:+(p.stock-d).toFixed(3),counted:+p.stock,diff:d,cost:p.cost,phone:e.id}) }
+    Object.assign(e,{status:'posted',ref:no,postedBy:S.user.name,postedAt:apStamp(),diff:d}) });
+  if(down>0.005) post(D(today),`Stock from phones ${no} — less than the books`,no,[{ac:'5300',dr:+down.toFixed(2)},{ac:'1200',cr:+down.toFixed(2)}]);
+  if(up>0.005) post(D(today),`Stock from phones ${no} — more than the books`,no,[{ac:'1200',dr:+up.toFixed(2)},{ac:'5300',cr:+up.toFixed(2)}]);
+  const who=[...new Set(list.map(e=>e.by))].join(', ');
+  S.stocktakes.push({no,date:D(today),by:S.user.name,note:`From phones — ${who}`,items:lines.length,short:+down.toFixed(2),over:+up.toFixed(2),lines});
+  S.notif=(S.notif||[]).filter(n=>!(String(n.id).startsWith('nstk')&&!phonePending().some(x=>'nstk'+x.who===n.id)));
+  persist(true); render(); toast(`${no} posted — ${list.length} entr${list.length===1?'y':'ies'} · ${fmt(down)} less, ${fmt(up)} more`,'ok');
+}
+function phoneReject(ids){
+  const list=phonePending().filter(x=>ids.includes(x.id)); if(!list.length) return;
+  if(!confirm(`Turn down ${list.length} entr${list.length===1?'y':'ies'}? The stock stays as it is.`)) return;
+  list.forEach(e=>Object.assign(e,{status:'rejected',postedBy:S.user.name,postedAt:apStamp()}));
+  S.notif=(S.notif||[]).filter(n=>!(String(n.id).startsWith('nstk')&&!phonePending().some(x=>'nstk'+x.who===n.id)));
+  persist(true); render(); toast('Turned down','ok');
+}
+function stkPerson(id){
+  const d=id?stockers().find(x=>x.id===id):{name:'',phone:'',active:true};
+  const m=modal(`<h2>${id?noteEsc(d.name):'Someone to count stock'}</h2>
+   <div class="grid2"><div class="f"><label>Name</label><input id="spN" value="${noteEsc(d.name)}"></div><div class="f"><label>Mobile</label><input id="spP" inputmode="tel" value="${noteEsc(d.phone||'')}"></div></div>
+   ${id?`<div class="f"><label>Their stock page — open it on their phone</label><input readonly value="${noteEsc(stkLink(d))}" onclick="this.select()"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" id="spSend" ${d.phone?'':'disabled'}>Text it to them</button><button class="btn ghost sm" id="spNew">Make a new link (the old one stops)</button>
+     <label class="chk" style="margin:0"><input type="checkbox" id="spA" ${d.active!==false?'checked':''}> can still send</label></div>`:''}
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Close</button><button class="btn tape" id="spOk">Save</button></div>`);
+  m.querySelector('#spOk').onclick=()=>{ const name=m.querySelector('#spN').value.trim(); if(!name) return toast('A name is needed');
+    const phone=m.querySelector('#spP').value.replace(/[^\d+]/g,'');
+    if(id){ d.name=name; d.phone=phone; d.active=m.querySelector('#spA').checked }
+    else stockers().push({id:'sk'+Date.now().toString(36),name,phone,key:dlvKey(),active:true});
+    m.remove(); persist(true); render(); toast('Saved','ok') };
+  if(id){ m.querySelector('#spNew').onclick=()=>{ d.key=dlvKey(); persist(true); m.remove(); stkPerson(id); toast('A new link — the old one no longer opens','ok') };
+    m.querySelector('#spSend').onclick=()=>{ sms(d.phone,`Your stock page for ${CFG.shop.name}: ${stkLink(d)}\nScan an item and send what is there.`,'staff'); toast('Texted to '+d.name,'ok') } }
+}
+function stkPhoneCard(){
+  const pend=phonePending().slice().sort((a,b)=>String(a.at).localeCompare(String(b.at))), ppl=stockers();
+  const word={count:'counted',add:'added',remove:'removed'};
+  const rows=pend.map(e=>{ const p=P(e.pid), d=phoneDiff(e);
+    return `<tr><td>${noteEsc(String(e.at).slice(5))}</td><td>${noteEsc(e.by)}</td><td><b>${noteEsc(p?p.name:e.name)}</b>${e.note?`<div class="muted">${noteEsc(e.note)}</div>`:''}</td>
+      <td>${word[e.mode]} <b>${fq(e.qty)}</b> ${noteEsc(e.unit||'')}${e.reason?`<div class="muted">${noteEsc(e.reason)}</div>`:''}</td>
+      <td class="n">${e.mode==='count'?fq(e.book):'—'}</td>
+      <td class="n">${d==null?'—':Math.abs(d)<1e-9?'<span class="tag ok">agrees</span>':`<b class="${d<0?'rust':'green'}">${d>0?'+':''}${fq(d)}</b>`}</td>
+      <td class="n">${d&&p?fmt(Math.abs(d)*p.cost):'—'}</td>
+      <td style="white-space:nowrap"><button class="btn tape sm" data-act="stkPhPost" data-id="${e.id}">Post</button> <button class="btn ghost sm" data-act="stkPhRej" data-id="${e.id}">✕</button></td></tr>` }).join('');
+  return `<div class="card" style="margin-bottom:12px;border-left:4px solid var(--chip-blue,#1f3b5a)">
+   <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><b style="font-size:15px">📱 From phones</b> <span class="muted">· ${pend.length?pend.length+' waiting to be posted':'nothing waiting'}</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${ppl.map(p=>`<button class="btn ghost sm" data-act="stkPerson" data-id="${p.id}" title="Their link">${p.active===false?'⏸':'📱'} ${noteEsc(p.name)}</button>`).join('')}<button class="btn ghost sm" data-act="stkPerson" data-id="">+ Person</button></div></div>
+   ${pend.length?`<div style="overflow-x:auto;margin-top:8px"><table><tr><th>When</th><th>Who</th><th>Item</th><th>Sent</th><th class="n">Books then</th><th class="n">Change</th><th class="n">At cost</th><th></th></tr>${rows}</table></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px"><button class="btn ghost" data-act="stkPhRejAll">Turn all down</button><button class="btn tape" data-act="stkPhPostAll">Post all ${pend.length}</button></div>`
+    :`<div class="muted" style="margin-top:6px">${ppl.length?'Each person opens their own link on their phone, scans an item and sends what is there. It waits here until you post it.':'Add a person, then open their link on their phone: they scan an item, see what the books say, and send the count. It waits here until you post it.'}</div>`}
+  </div>`;
+}
+
 /* ---- counting the floor against the books ---- */
 let stkQ='', stkCount={};
 function stockTake(){
@@ -20814,7 +20887,7 @@ function stockTake(){
   const diffs=counted.map(k=>{const p=P(+k); return {p,c:+stkCount[k],d:+stkCount[k]-onShelf(p)}}).filter(x=>Math.abs(x.d)>1e-9);
   const short=diffs.filter(x=>x.d<0).reduce((a,x)=>a+(-x.d)*x.p.cost,0);
   const over=diffs.filter(x=>x.d>0).reduce((a,x)=>a+x.d*x.p.cost,0);
-  return `<h1>Stock take</h1>
+  return `<h1>Stock take</h1>${stkPhoneCard()}
   <div class="row" style="margin-bottom:12px">
    ${stat('Items counted',counted.length,`of ${S.products.length} on the list`,'b')}
    ${stat('Short on the floor',fmt(short),diffs.filter(x=>x.d<0).length+' item(s)','r')}
@@ -31957,6 +32030,8 @@ document.addEventListener('click',e=>{
     newDN:()=>newDNModal(+a.dataset.id||undefined),
     purMatch:()=>matchNoteModal(a.dataset.no),
     purFiles:()=>{ const pu=S.purchases.find(x=>x.no===a.dataset.no); if(pu) purFilesModal(pu) },
+    stkPerson:()=>stkPerson(a.dataset.id||null), stkPhPost:()=>phonePost([a.dataset.id]), stkPhRej:()=>phoneReject([a.dataset.id]),
+    stkPhPostAll:()=>phonePost(phonePending().map(x=>x.id)), stkPhRejAll:()=>phoneReject(phonePending().map(x=>x.id)),
     dmgLabel:()=>damageLabel(a.dataset.no), dmgWarranty:()=>warrantyModal(), dmgSlip:()=>dmgSlip(a.dataset.no), dmgTell:()=>dmgTellSup([a.dataset.no],a.dataset.how),
     dmgTellAll:()=>dmgTellSup(damageOpen(+a.dataset.sid).map(d=>d.no),a.dataset.how), dmgGive:()=>dmgGiveNow(a.dataset.no), dmgHand:()=>dmgHandOver(a.dataset.no), dmgScan:()=>damageScanModal(),
     jobNew:()=>jobModal(), jobMove:()=>jobMoveModal(a.dataset.no),

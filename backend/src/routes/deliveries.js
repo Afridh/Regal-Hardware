@@ -14,7 +14,7 @@ import { letter } from '../lib/letter.js';
 
 const r = Router();
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
-const stamp = () => new Date().toLocaleString('en-CA', { timeZone: 'Asia/Colombo', hour12: false }).slice(0, 16).replace(',', '');
+const stamp = () => new Date().toLocaleString('en-CA', { timeZone: 'Asia/Colombo', hour12: false }).replace(',', '').slice(0, 16);
 const driverOf = (S, k) => { const key = String(k || '').trim(); return key.length >= 12 ? (S.drivers || []).find(d => d && d.key === key && d.active !== false) : null; };
 const stopView = (d) => ({ id: d.id, no: d.no, who: d.who, phone: d.phone, address: d.address, slot: d.slot, order: d.order || 0, status: d.status,
   cod: +d.cod || 0, note: d.note || '', items: d.items || '', bill: d.bill, collected: d.collected ?? null, at: d.doneAt || null });
