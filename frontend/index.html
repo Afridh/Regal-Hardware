@@ -12917,6 +12917,55 @@ const views=[
  ['grp','Online store'],['site','Online store'],['weborders','Online orders'],['webproducts','Online products'],['social','Social'],
  ['grp','Reports'],['reports','Reports'],['everything','Everything'],['trail','The trail'],['syslog','System log'],['ai','AI support'],
  ['grp','Setup'],['settings','Settings'],['billdesign','Design the bill'],['messages','Messages'],['printq','Printing'],['cameras','Cameras']];
+/* Alt + a letter opens a page from anywhere; Alt + Shift + the same letter adds a new one there (1 Nov 2026).
+   The letters keep clear of the browser's own (Alt+D, E, F) and of the F-keys the pages use. On Bills, Alt+L,
+   S, P and C stay with the bill picked (large, small, look, camera). Ctrl+/ — or F1 off the till and the
+   labels page — shows them all. */
+const ALTKEYS=[
+  ['P','products','Products', ()=>{ if(S.user&&S.user.role==='Salesman') return toast('Adding products is not open to Salesman'); go('products'); productModal() },'Add a product'],
+  ['C','customers','Customers', ()=>{ go('customers'); custModal(null) },'Add a customer'],
+  ['R','receipts','Take a customer payment'],
+  ['S','suppliers','Suppliers', ()=>{ go('suppliers'); supModal(null) },'Add a supplier'],
+  ['Y','payreqs','Supplier payments'],
+  ['G','purchases','Purchases (goods in)', ()=>{ go('purchases'); newPurModal() },'Record a purchase'],
+  ['B','bills','Bills'],
+  ['V','returns','Returns'],
+  ['Q','docs','Quotes & delivery notes'],
+  ['K','stock','Stock on hand'],
+  ['T','stocktake','Stock take'],
+  ['L','labels','Barcode labels'],
+  ['X','expenses','Expenses', ()=>{ go('expenses'); expModal() },'Record an expense'],
+  ['H','chequesIn','Cheques in'],
+  ['J','cashup','Day book'],
+  ['O','counter','Open & close the counter'],
+  ['M','petty','Petty cash'],
+  ['A','actions','Action centre'],
+  ['W','dues','Credit follow-up'],
+  ['Z','reports','Reports']];
+ALTKEYS.forEach(([k,v])=>{ const row=views.find(x=>x[0]===v); if(row&&!row[2]) row[2]='Alt+'+k });
+function shortcutsModal(){
+  const row=(k,l)=>`<tr><td style="white-space:nowrap">${k.split('+').map(x=>`<i class="kbd" style="margin:0 2px 0 0">${x}</i>`).join('+')}</td><td>${l}</td></tr>`;
+  const mine=ALTKEYS.filter(x=>allowed(x[1]));
+  modal(`<h2>⌨ Keyboard shortcuts</h2><div class="muted" style="margin-bottom:10px">From any page. <b>Alt + letter</b> opens the page; <b>Alt + Shift + letter</b> adds a new one there.</div>
+   <div class="grid2" style="align-items:start;gap:14px">
+    <div><table class="tbl">${mine.map(x=>row('Alt+'+x[0],x[2])).join('')}</table></div>
+    <div><table class="tbl">${mine.filter(x=>x[3]).map(x=>row('Alt+Shift+'+x[0],x[4])).join('')}
+     ${row('F2','Dashboard')}${row('F3','POS billing (on the till: who sold it)')}${row('F7','Take a payment')}${row('F8','Customers')}${row('F9','Attendance & pay')}${row('F11','Barcode labels')}${row('F12','Suppliers')}${row('/','Search')}${row('Ctrl+/','This list')}</table>
+     <div class="muted" style="margin-top:8px">On a customer or supplier: <b>F7</b> take/pay money, <b>F6</b> new bill/purchase, <b>Ctrl+N</b> add, <b>Ctrl+E</b> edit.</div></div>
+   </div><div style="text-align:right;margin-top:10px"><button class="btn tape" data-act="closeModal">Close <i class="kbd">Esc</i></button></div>`);
+}
+window.addEventListener('keydown',e=>{
+  if(!S.user||!S.user.name||document.querySelector('.lock')) return;
+  if((e.ctrlKey||e.metaKey)&&!e.altKey&&(e.key==='/'||e.code==='Slash')){ e.preventDefault(); e.stopPropagation(); if(!document.querySelector('.modal')) shortcutsModal(); return }
+  if(e.key==='F1'&&!e.ctrlKey&&!e.altKey&&!['pos','labels'].includes(S.view)&&!document.querySelector('.modal')){ e.preventDefault(); e.stopPropagation(); shortcutsModal(); return }
+  if(!e.altKey||e.ctrlKey||e.metaKey||document.querySelector('.modal')) return;   // Ctrl+Alt is AltGr: a letter being typed
+  const k=(e.code||'').replace(/^Key/,''); if(k.length!==1) return;
+  if(!e.shiftKey&&['bills','recall'].includes(S.view)&&'LSPC'.includes(k)) return;   // the bill picked on Bills keeps these
+  const x=ALTKEYS.find(r=>r[0]===k); if(!x) return;
+  e.preventDefault(); e.stopPropagation();
+  if(!allowed(x[1])) return toast(`${x[2]} is not open to ${S.user.name}`);
+  if(e.shiftKey&&x[3]) x[3](); else if(S.view!==x[1]) go(x[1]);
+},true);
 
 const ownerOnly=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||S.user.role==='Demo Admin'||window.isDemo||(S&&S.isDemo)));
 
