@@ -956,6 +956,12 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 /* ---- getting started ---- */
 .su{max-width:1120px;margin:0 auto}
 .chips button.chip-off{border-style:dashed;color:var(--muted)}.chips button.chip-off.on{border-style:solid;color:inherit}
+/* an update is on the server: a button, never a reload by itself */
+#updReady{position:fixed;left:50%;transform:translateX(-50%);top:50px;z-index:96;display:flex;align-items:center;gap:10px;padding:10px 18px;border:0;border-radius:99px;cursor:pointer;
+ font:700 14px 'IBM Plex Sans',system-ui,sans-serif;color:#fff;background:linear-gradient(135deg,#1E8A5A,#16799B);box-shadow:0 10px 26px rgba(16,30,34,.28);animation:updIn .35s cubic-bezier(.2,.8,.3,1)}
+#updReady:hover{filter:brightness(1.08)}#updReady i{font-style:normal;font-size:17px}#updReady small{font-weight:500;opacity:.85}
+@keyframes updIn{from{opacity:0;transform:translate(-50%,-12px)}to{opacity:1;transform:translate(-50%,0)}}
+@media print{#updReady{display:none!important}}
 #suPill{position:fixed;right:18px;bottom:18px;z-index:60;display:flex;align-items:center;gap:8px;padding:10px 16px;border:0;border-radius:99px;cursor:pointer;font:600 13.5px inherit;color:#fff;
   background:linear-gradient(135deg,#7E141D,#AE1E2B);box-shadow:0 10px 24px -8px rgba(126,20,29,.6);animation:su-in .4s both}
 #suPill b{background:rgba(255,255,255,.2);border-radius:99px;padding:1px 8px;font-size:12px}#suPill span{font-size:15px}#suPill:hover{filter:brightness(1.1)}
@@ -12920,6 +12926,22 @@ function bindPhone(){
   });
 }
 
+/* An update was put on the server. Nothing reloads by itself any more (1 Nov 2026): this button says so,
+   and the new version loads when somebody presses it — with a bill on the till they are asked to finish
+   or hold it first, so nothing being keyed is lost. */
+window.updateReady=function(){
+  if(document.getElementById('updReady')) return;
+  const b=document.createElement('button'); b.id='updReady'; b.type='button';
+  b.innerHTML='<i>⟳</i> Update made — click to update <small>takes a few seconds</small>';
+  b.onclick=()=>{
+    const busy=S&&S.pos&&S.pos.lines&&S.pos.lines.length;
+    if(busy) return toast('Finish or hold the bill on the till first, then press Update','warn');
+    try{ if(typeof persist==='function') persist(true) }catch(e){}
+    b.innerHTML='<i>⟳</i> Updating…'; b.disabled=true;
+    setTimeout(()=>location.reload(),600);
+  };
+  document.body.appendChild(b);
+};
 /* ============================ UI ============================ */
 const $=(s)=>document.querySelector(s);
 /* The menu, under ten headings: what needs a look first (Home), selling, the people we sell to and
@@ -13196,8 +13218,7 @@ async function checkForUpdates(){
   }
   let page=null; try{ page=window.regalBridge&&regalBridge.newerPage?await regalBridge.newerPage():null }catch(e){}
   const busy=!!(S.pos&&S.pos.lines&&S.pos.lines.length);
-  if(page===true&&!busy){ out.push(['ok','A newer till page is on the server — loading it now.']); setTimeout(()=>location.reload(),1500) }
-  else if(page===true) out.push(['warn','A newer till page is on the server — it loads when this bill is done, or press F5.']);
+  if(page===true){ out.push(['ok','An update is on the server — press "Update made — click to update" at the top of the screen when you are ready.']); window.updateReady() }
   else if(page===false) out.push(['ok','The till page is up to date.']);
   else out.push(['warn','Could not reach the server to check the till page.']);
   const box=m.querySelector('.upd-out'); if(box) box.innerHTML=out.map(([k,t])=>`<p class="upd-${k}">${k==='ok'?'✓':'!'} ${t}</p>`).join('');

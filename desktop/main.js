@@ -188,12 +188,12 @@ function updates() {
   let autoUpdater;
   try { ({ autoUpdater } = require('electron-updater')); } catch { return; }
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoInstallOnAppQuit = false;   // never put in by itself (1 Nov 2026): only when Restart and update is pressed
   let asked = false, ready = null;
   const askRestart = async (info) => {
     const r = await dialog.showMessageBox(win, { type: 'info', buttons: ['Restart and update', 'Later'], defaultId: 0, cancelId: 1, title: 'Regal POS',
       message: 'A new version of Regal POS is ready (' + info.version + ').',
-      detail: 'Restart now to use it — it takes a few seconds, and nothing on the till is lost. Choose Later and it is put in the next time Regal POS is closed.' });
+      detail: 'Restart now to use it — it takes a few seconds, and nothing on the till is lost. Choose Later and it waits — nothing changes until you choose Restart and update (Settings → Check for updates asks again).' });
     if (r.response === 0) { win.__closing = true; setImmediate(() => autoUpdater.quitAndInstall(false, true)); }
   };
   autoUpdater.on('update-downloaded', async (info) => {

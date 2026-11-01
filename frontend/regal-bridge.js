@@ -501,12 +501,13 @@
       if (!window.booksUnreadable) say('The books are readable again — this till is saving once more');
       return;
     }
-    // a newer version of the app on the server: reload as soon as the till is idle
+    // a newer version of the app on the server: never loaded by itself (1 Nov 2026) — a button says an update
+    // is there, and it loads when somebody presses it
     if (j.build) {
       if (!build) build = j.build;
       else if (j.build !== build) {
-        if (!typing() && !tillBusy(true) && !(window.S && window.S.pos && window.S.pos.lines && window.S.pos.lines.length)) { say('A newer version is ready — reloading'); setTimeout(function () { location.reload(); }, 900); return; }
-        if (!toldBuild) { toldBuild = true; say('A newer version is ready — it will load when the bill is done, or press F5'); }
+        if (typeof window.updateReady === 'function') window.updateReady();
+        else if (!toldBuild) { toldBuild = true; say('An update is ready — press F5 to load it'); }
       }
     }
     if (j.rev > rev || j.inbox > 0) {
