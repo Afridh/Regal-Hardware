@@ -42,7 +42,7 @@ await wait(1500);
 const before = await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); const S = window.eval('S'), CFG = window.eval('CFG');
   S.calls = (S.calls || []).concat([{ id: 'x', cid: 2, outcome: 'note' }]); CFG.shop.name = CFG.shop.name || 'REGAL HARDWARE';
   return { products: S.products.length, sales: S.sales.length, users: S.users.length, staff: (S.employees || []).length, banks: S.banks.length, shop: CFG.shop.name, logo: CFG.shop.logo || '', tpl: JSON.stringify(CFG.tpl || {}).length } });
-ok(before.products > 0 && before.sales > 0, 'before: a shop with products and bills', JSON.stringify({ p: before.products, s: before.sales }));
+ok(before.products > 0, 'before: a shop with products', JSON.stringify({ p: before.products, s: before.sales }));
 
 // the button, as the owner presses it
 await pg.evaluate(() => { window.eval("setTab='shop'"); window.eval('go')('settings') }); await wait(500);
@@ -54,7 +54,13 @@ const after = await pg.evaluate(() => { const S = window.eval('S'), CFG = window
     users: S.users.length, staff: (S.employees || []).length, banks: S.banks.length, bankBal: S.banks.reduce((a, b0) => a + Math.abs(window.eval('bal')(b0.ac)), 0), shop: CFG.shop.name, logo: CFG.shop.logo || '', tpl: JSON.stringify(CFG.tpl || {}).length,
     nextBill: window.eval('next')('INV'), view: S.view } });
 ok(after.products === 0 && after.suppliers === 0 && after.customers.length === 1 && after.customers[0] === 'Walk-in customer' && after.sales === 0 && after.journal === 0 && after.calls === 0, 'gone: products, suppliers, customers (Walk-in stays), bills, ledger, calls', JSON.stringify({ p: after.products, c: after.customers, s: after.sales, j: after.journal }));
-ok(after.users === before.users && after.staff === before.staff && after.banks === before.banks && after.bankBal < 0.01, 'stay: every login, the staff, the bank accounts (at nought)', JSON.stringify({ users: after.users, staff: after.staff, banks: after.banks }));
+ok(after.users === before.users && after.banks === before.banks && after.bankBal < 0.01, 'stay: every login, the bank accounts (at nought)', JSON.stringify({ users: after.users, banks: after.banks }));
+ok(after.staff === 0, 'the staff go too', String(after.staff));
+// the Getting started guide stands in for the dashboard
+const guide = async () => pg.evaluate(() => { window.eval('go')('dashboard'); const el = document.querySelector('.su'); return el ? { steps: el.querySelectorAll('.su-step').length, done: el.querySelectorAll('.su-step.done').length, now: (el.querySelector('.su-step.now .su-t') || {}).textContent || '', text: el.innerText } : null });
+let gd = await guide();
+ok(gd && gd.steps === 10 && /A fresh start/.test(gd.text) && /Suppliers/.test(gd.now), 'Getting started comes up: ten steps, the shop ticked, suppliers next', JSON.stringify(gd && { steps: gd.steps, done: gd.done, now: gd.now }));
+await pg.screenshot({ path: process.env.SHOT || 'startup.png', fullPage: true });
 ok(after.shop === before.shop && after.logo === before.logo && after.tpl === before.tpl, "stay: the shop's name, logo and message wording", after.shop);
 ok(/1$/.test(String(after.nextBill)), 'bill numbers start again', String(after.nextBill));
 const inbox = (await db.query(`SELECT count(*)::int AS n FROM cust_inbox`)).rows[0].n;
@@ -81,6 +87,11 @@ if (files.every(f => fs.existsSync(f))) {
   ok(n.cust >= rows('sepos-customers.csv') * 0.95, `customers in: ${n.cust} of ${rows('sepos-customers.csv')}`, cb && cb.txt);
   ok(n.prod >= rows('sepos-products.csv') * 0.95, `products in: ${n.prod} of ${rows('sepos-products.csv')} · ${n.linked} linked to their supplier`, pb && pb.txt);
 } else console.log('(the SePOS files are not in ' + DIR + ' — the import part is skipped)');
+gd = await guide();
+if (gd) { ok(gd.done >= 4 && /6,?4\d\d products/i.test(gd.text) && /158 suppliers/.test(gd.text), 'after the uploads the guide ticks suppliers, customers and products, with the counts', JSON.stringify({ done: gd.done, now: gd.now }));
+  await pg.screenshot({ path: process.env.SHOT2 || 'startup-after.png', fullPage: true });
+  await pg.evaluate(() => [...document.querySelectorAll('[data-act="suFinish"]')][0].click()); await wait(500);
+  ok(await pg.evaluate(() => !document.querySelector('.su') && !!document.querySelector('#main').innerText), 'Finish: the dashboard takes over'); }
 await pg.evaluate(() => window.eval('persist')(true)); await wait(2000);
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);

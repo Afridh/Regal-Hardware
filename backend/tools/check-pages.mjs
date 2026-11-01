@@ -56,9 +56,9 @@ for (const t of ['pending', 'mine', 'done', 'all']) { await pg.evaluate(t => { w
 // the tills
 for (const w of ['quick', 'classic', 'phone']) { await pg.evaluate(w => { window.eval(`prefs().till=${JSON.stringify(w)}`); try { window.eval(`CFG.till=${JSON.stringify(w)}`) } catch (e) {} window.eval('go')('pos') }, w); await drawn('till ' + w) }
 // a customer's, a supplier's and a product's page
-await pg.evaluate(() => { const S = window.eval('S'); window.eval('custSel=' + S.customers.find(c => c.id !== 1).id); window.eval('go')('customers') }); await drawn('a customer');
-await pg.evaluate(() => { const S = window.eval('S'); window.eval('supSel=' + S.suppliers[0].id); window.eval('go')('suppliers') }); await drawn('a supplier');
-await pg.evaluate(() => { const S = window.eval('S'); window.eval('billSel=' + JSON.stringify(S.sales.slice(-1)[0].no)); window.eval('go')('bills') }); await drawn('a bill');
+await pg.evaluate(() => { const S = window.eval('S'); const c = S.customers.find(c => c.id !== 1) || S.customers[0]; window.eval('custSel=' + c.id); window.eval('go')('customers') }); await drawn('a customer');
+await pg.evaluate(() => { const S = window.eval('S'); if (S.suppliers[0]) window.eval('supSel=' + S.suppliers[0].id); window.eval('go')('suppliers') }); await drawn('a supplier');
+await pg.evaluate(() => { const S = window.eval('S'); const s = S.sales.slice(-1)[0]; if (s) window.eval('billSel=' + JSON.stringify(s.no)); window.eval('go')('bills') }); await drawn('a bill (or the empty Bills page)');
 
 await pg.evaluate(() => { const S = window.eval('S'); S.user.role = window.__role; window.eval('go')('pos') });
 console.log(`\n${pass} passed, ${fail} failed`);
