@@ -28751,7 +28751,9 @@ function depositSlip(list,bankId,date){
 /* ---- the shop's bank accounts ----
    Each account has a ledger line of its own (1020 onwards), so its balance, the cheques written on
    it and the money banked into it all stay apart. The ledger line carries the account's own name. */
-function syncBankNames(){ for(const b of (S.banks||[])) if(b.ac&&b.name) GL[b.ac]=b.name }
+/* an account's name in the books; two at the same bank and branch carry the last four figures of their number */
+const bankLabel=(b)=>{ const same=(S.banks||[]).filter(x=>x!==b&&String(x.name||'').toLowerCase()===String(b.name||'').toLowerCase()).length; const d=String(b.no||'').replace(/\D/g,''); return same&&d?b.name+' ·'+d.slice(-4):b.name };
+function syncBankNames(){ for(const b of (S.banks||[])) if(b.ac&&b.name) GL[b.ac]=bankLabel(b) }
 function bankFreeAc(){ const used=new Set(S.banks.map(b=>b.ac)); for(let n=1020;n<1100;n++){ const k=String(n); if(k==='1030') continue; if(!used.has(k)&&!(S.journal||[]).some(j=>j.lines.some(l=>l.ac===k))) return k } throw new Error('No ledger number left for another account') }
 const bankUsed=(b)=>(S.journal||[]).some(j=>j.lines.some(l=>l.ac===b.ac))||(S.cheques||[]).some(c=>c.bankId===b.id||c.depositTo===b.id)||(typeof chqBooks==='function'&&chqBooks().some(k=>k.bankId===b.id));
 function bankSettings(){
@@ -28779,8 +28781,9 @@ function bankModal(id){
   q('#bkOk').onclick=()=>{
     const name=q('#bkName').value.trim().replace(/\s+/g,' '), no=q('#bkNo').value.trim(), holder=q('#bkHolder').value.trim(), chq=q('#bkChq').value.replace(/\D/g,'');
     if(name.length<3) return toast('Which bank and branch?');
-    if(S.banks.some(x=>x!==b&&x.name.toLowerCase()===name.toLowerCase())) return toast('There is already an account called '+name);
+    // more than one account at the same bank and branch is fine — the account number tells them apart
     if(no&&S.banks.some(x=>x!==b&&String(x.no).replace(/\D/g,'')===no.replace(/\D/g,'')&&no.replace(/\D/g,''))) return toast('That account number is already on the list');
+    if(S.banks.some(x=>x!==b&&x.name.toLowerCase()===name.toLowerCase()&&(!no.replace(/\D/g,'')||String(x.no||'').replace(/\D/g,'')===no.replace(/\D/g,'')))) return toast('There is already an account at '+name+' — put in this account’s number to tell them apart');
     if(b){ const old=b.name; b.name=name; b.no=no; b.holder=holder; if(chq) b.nextChq=+chq;
       if(old!==name) (S.cheques||[]).forEach(c=>{ if(c.bankId===b.id&&c.bank===old) c.bank=name });
       syncBankNames(); m.remove(); persist(true); render(); return toast('Saved') }
