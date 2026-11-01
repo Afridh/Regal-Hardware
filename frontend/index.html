@@ -7098,10 +7098,10 @@ function settings(){
   }
   if(setTab==='done'){
     const pick=(k,label)=>`<div class="f"><label>${label}</label><select data-set="${k}">
-      ${[['r80','Till receipt (80mm)'],['a5','Printed bill (A5)'],['sms','e-Bill by text']].map(o=>`<option value="${o[0]}" ${CFG.done[k.split('.')[1]]===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>`;
+      ${[...(k==='done.creditDefault'?[]:[['r80','Till receipt (80mm)']]),['a5','Printed bill (A5)'],['sms','e-Bill by text']].map(o=>`<option value="${o[0]}" ${CFG.done[k.split('.')[1]]===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>`;
     body=`<div class="muted" style="margin-bottom:10px">What happens once the money is taken. Every step here can be turned on or off, and the words and timings are yours.</div>
      <h2>Which bill goes out</h2>
-     <div class="grid3">${pick('done.cashDefault','Cash bill, usually')}${pick('done.creditDefault','Credit bill, usually')}
+     <div class="grid3">${pick('done.cashDefault','Cash bill, usually')}${pick('done.creditDefault','Credit bill, usually')}<div class="muted" style="grid-column:1/-1;margin-top:-6px">A credit bill always prints as the large A5 — never the 80mm receipt.</div>
       <div class="f"><label>&nbsp;</label>${fld('done.askSize','','Ask which bill each time (Enter takes the usual one)','check')}</div></div>
      ${fld('done.rememberPick','','Tick "remember my choice" by default on that question','check')}
      <h2 style="margin-top:14px">What is asked once the money is taken</h2>
@@ -17562,7 +17562,7 @@ function cpRegulars(){
 function creditSale(){
   const L=S.pos.lines; if(!L.length) return;
   if(document.querySelector('.cp-modal')) return;
-  const def=CS.paper||(CFG.done&&CFG.done.creditDefault)||'a5';
+  let def=CS.paper||(CFG.done&&CFG.done.creditDefault)||'a5'; if(def==='r80') def='a5';     // credit bills print large
   ONA={q:'',sel:0,cust:S.pos.customer&&S.pos.customer!==1?S.pos.customer:null,paid:'',how:'CASH',bank:(S.banks[0]||{}).id||1,ref:'',
     chqBank:'',chqDate:D(today),takenBy:'',paper:def,allowedBy:null,busy:false,
     // the shop's end-of-bill question "who sold it?" is answered here, not in a second window
@@ -17619,7 +17619,8 @@ function cpDraw(focus){
   if(over&&!covered&&!ONA.allowedBy){ const ap=dirApproved('overLimit',c.id); if(ap){ ONA.allowedBy=ap.decidedBy; ONA.overAp=ap.id } }
   const overAsked=dirAsked('overLimit',c.id);
   const banks=S.banks||[];
-  const how=ONA.how, PAPERS=[['a5','Large A5'],['r80','Small 80mm'],...(c.phone?[['sms','e-Bill text']]:[]),['none','No print']];
+  if(ONA.paper==='r80') ONA.paper='a5';            // credit bills print large
+  const how=ONA.how, PAPERS=[['a5','Large A5'],...(c.phone?[['sms','e-Bill text']]:[]),['none','No print']];
   el.innerHTML=head+`<div class="cp-who"><div><b>${noteEsc(c.name)}</b>${custListed(c)?` <span class="lst-tag ${c.list}">${listName(c)}</span>`:''}<span class="muted">${noteEsc(c.phone||'no mobile')} · ${c.level||'retail'} prices</span></div>
       <button class="btn ghost sm" data-cp="change">Someone else</button></div>
     <div class="cp-figs"><div><span>Outstanding now</span><b>${money2(owes)}</b></div><div><span>On account now</span><b>${money2(onAcct)}</b></div>
@@ -18405,11 +18406,11 @@ function finishTillBill({cust,pays,override=false,note=''}){
 
 function askSize(inv){
   const kind=inv.balance>0?'CREDIT':'CASH';
-  const def=(kind==='CREDIT'?CFG.done.creditDefault:CFG.done.cashDefault) || 'r80';
+  let def=(kind==='CREDIT'?CFG.done.creditDefault:CFG.done.cashDefault) || 'r80'; if(kind==='CREDIT'&&def==='r80') def='a5';
   const c=C(inv.customerId);
   if(typeof CS!=='undefined'&&CS.paper){ const k=CS.paper; CS.paper=null; if(k!=='none') S.pos.lastBill=k; return printAnim(inv,k) }   // picked on the bill itself — no question
   if(!CFG.done.askSize){ S.pos.lastBill=def; return printAnim(inv,def==='sms'&&!c.phone?'r80':def) }
-  const opts=[['r80','1','80mm Till receipt','80mm thermal — quick for the counter'],
+  const opts=[...(kind==='CREDIT'?[]:[['r80','1','80mm Till receipt','80mm thermal — quick for the counter']]),
               ['a5','2','Printed bill','A5 landscape — full bill with outstanding boxes'],
               ['sms','3','e-Bill by text',c.phone?`link to ${maskP(c.phone)}`:'no mobile on file'],
               ['none','4','No print','save the bill — nothing printed']];
@@ -18474,7 +18475,7 @@ function askSize(inv){
       return;
     }
     if(k==='1'||k==='2'||k==='3'||k==='4'){
-      const o=opts[+k-1];
+      const o=opts.find(x=>x[1]===k);
       if(o&&validKeys.includes(o[0])){
         ev.preventDefault(); ev.stopPropagation();
         setCur(o[0]);
@@ -18502,6 +18503,7 @@ function askSize(inv){
 }
 /* the paper comes out of the printer, then the bill is on the screen */
 function printAnim(inv,k){
+  if(k==='r80') k=billPaper(inv,k);
   if(k==='none'){ toast(`${inv.no} saved — not printed. It can be printed later from Sales.`,'ok'); return }
   const c=C(inv.customerId);
   const el=document.createElement('div'); el.className='printing';
@@ -19954,7 +19956,7 @@ function askBill(m,pays,change,c,total,override){
   const finish=(how)=>{
     try{
       const inv=completeSale({lines:S.pos.lines.map(l=>({...l})),customerId:c.id,billDisc:S.pos.billDisc,pays,salesman:S.pos.salesman,override});
-      inv.paper=(how==='a5'||how==='r80')?how:csPaper();     // which bill was printed, so the link shows the same
+      inv.paper=billPaper(inv,(how==='a5'||how==='r80')?how:csPaper());     // which bill was printed, so the link shows the same
       window.__dispChange=change; webBilled(inv);
       if(S.pos.fromDoc){ const dd=S.docs.find(x=>x.no===S.pos.fromDoc);
         if(dd){ dd.status='billed'; dd.invoice=inv.no } }
@@ -22290,6 +22292,7 @@ const billClock=(inv)=>{ const w=billMoment(inv); return w?w.toLocaleTimeString(
 /* Large or small, straight to its printer — no preview to click through. A reprint is marked so. */
 function billPrintNow(no,f){
   const inv=S.sales.find(x=>x.no===no); if(!inv) return toast('No such bill');
+  f=billPaper(inv,f);
   toast(`Printing ${no} — ${f==='a5'?'large A5 bill':'small 80mm receipt'}`,'info');
   printBill({...inv,reprint:!inv.proof},f);
 }
@@ -25043,7 +25046,12 @@ function sampleInvoice(){
     time:now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}),
     proof:true, serial:'TEST' };
 }
+/* A bill on credit always prints large: the A5 carries the outstanding boxes and the customer's signature,
+   which the 80mm roll has no room for (the shop's rule, 1 Nov 2026). A test print is left as asked. */
+const creditBill=inv=>!!inv&&(inv.type==='CREDIT'||(inv.pays||[]).some(p=>p.method==='CREDIT')||+inv.balance>0.005);
+const billPaper=(inv,f)=>f==='r80'&&!(inv&&inv.proof)&&creditBill(inv)?'a5':f;
 function printBill(inv,f='a5'){
+  f=billPaper(inv,f);
   /* the helper on this machine, the shop's queue, then the browser — the order the shop chose */
   printPaper(billDocument(inv,f),f,inv.no,(why)=>printHere(inv,f,why));
 }
@@ -25087,6 +25095,7 @@ function r80Place(pr,page){
   page.textContent=`@page{size:80mm ${mm}mm;margin:0}`;
 }
 function browserPrint(inv,f='a5'){
+  f=billPaper(inv,f);
   const html=billHtml(inv,f);
   const old=document.getElementById('printArea'); if(old) old.remove();
   const el=document.createElement('div'); el.id='printArea'; el.className='printArea '+f;
