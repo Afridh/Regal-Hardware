@@ -86,6 +86,17 @@ h1,h2,h3,.num{font-family:Archivo,system-ui,sans-serif}
 .foot{text-align:center;color:var(--faint);font-size:12px;margin-top:22px}
 .foot button{border:1px solid var(--line);background:var(--white);color:var(--ink);border-radius:99px;padding:7px 14px;font:600 12.5px 'IBM Plex Sans';cursor:pointer;margin:0 4px}
 .shut{max-width:440px;margin:80px auto;text-align:center;padding:30px;background:var(--white);border-radius:16px;box-shadow:var(--shadow)}
+/* the sign-in */
+.login{max-width:400px;margin:-80px auto 0;position:relative;z-index:2;background:var(--white);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:26px 24px 20px;animation:rise .6s var(--ease) both;opacity:0;transform:translateY(14px)}
+.login .lock{width:54px;height:54px;border-radius:16px;display:grid;place-items:center;font-size:24px;background:var(--tint-red);margin:-52px auto 10px;box-shadow:var(--shadow)}
+.login h2{text-align:center;margin:0 0 4px;font-size:21px}.login p{text-align:center;color:var(--steel);margin:0 0 16px;font-size:13.5px}
+.login label{display:block;font-weight:600;font-size:12.5px;color:var(--steel);margin:10px 0 0}.login label small{font-weight:400;color:var(--faint)}
+.login input{display:block;width:100%;margin-top:5px;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);font:600 18px Archivo,sans-serif;letter-spacing:.12em;outline:none;transition:border-color .2s}
+.login input:focus{border-color:var(--brand);background:var(--white)}
+.login .lmsg{min-height:20px;color:var(--rust);font-size:13px;margin-top:10px;text-align:center}
+.login .lgo{display:block;width:100%;margin-top:6px;border:0;border-radius:12px;padding:14px;font:700 15px 'IBM Plex Sans';color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--brand-dark),var(--brand-bright));box-shadow:0 8px 20px rgba(174,30,43,.3)}
+.login .lgo:disabled{opacity:.6}.login .lhelp{text-align:center;color:var(--faint);font-size:12px;margin-top:12px}
+.login.shake{animation:shake .4s;opacity:1;transform:none}@keyframes shake{20%,60%{transform:translateX(-7px)}40%,80%{transform:translateX(7px)}}
 .skel{height:14px;border-radius:7px;background:linear-gradient(90deg,var(--panel),var(--line),var(--panel));background-size:200% 100%;animation:sk 1.2s infinite;margin:8px 0}
 @keyframes sk{to{background-position:-200% 0}}
 @media (max-width:900px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.c8,.c7,.c6,.c5,.c4{grid-column:span 12}}
@@ -215,7 +226,7 @@ h1,h2,h3,.num{font-family:Archivo,system-ui,sans-serif}
           <div class="kv"><span>Stock at cost</span><b>${rs(d.stock.value)}</b></div>
           <div class="kv"><span>Items</span><b>${d.stock.items.toLocaleString('en-LK')}${d.stock.low ? ` · <span class="pill a">${d.stock.low} low</span>` : ''}</b></div></div>
       </div>
-      <div class="foot"><button id="pr">🖨 Print / save as PDF</button><button id="rf">⟳ Refresh now</button>
+      <div class="foot"><button id="pr">🖨 Print / save as PDF</button><button id="rf">⟳ Refresh now</button><button id="so">🔒 Sign out</button>
         <div style="margin-top:10px">Keeps itself up to date every minute while it is open · this link is for ${d.who ? esc(d.who) + ' — please keep it to yourself' : 'directors only'}</div></div>
     </div>`;
     // the moving parts: numbers count up, bars and rings fill
@@ -230,16 +241,60 @@ h1,h2,h3,.num{font-family:Archivo,system-ui,sans-serif}
     f.onchange = pick; t.onchange = pick;
     document.getElementById('pr').onclick = () => window.print();
     document.getElementById('rf').onclick = () => load(true);
+    document.getElementById('so').onclick = () => { store.set(TK, ''); signIn('Signed out.'); };
   }
   function keep() { const u = new URL(location.href); u.searchParams.set('r', range); if (range === 'custom') { u.searchParams.set('from', from); u.searchParams.set('to', to); } else { u.searchParams.delete('from'); u.searchParams.delete('to'); } history.replaceState(null, '', u); }
   function shut(msg) { app.innerHTML = `<div class="shut"><img src="/regal-logo.png" alt="" style="width:56px;border-radius:12px"><h2 style="font-family:Archivo">Directors' report</h2><p style="color:var(--steel)">${esc(msg)}</p></div>`; }
 
+  /* ---- signing in: the user code from the shop's message, and their own PIN (made the first time) ----
+     The sign-in is kept on this device for 12 hours; Sign out ends it. */
+  const TK = 'dirTok:' + K, CK = 'dirCode:' + K;
+  const store = { get: k => { try { return localStorage.getItem(k) || '' } catch (e) { return '' } }, set: (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k) } catch (e) {} } };
+  let signing = false;
+  async function signIn(note) {
+    if (signing) return; signing = true; clearInterval(timer); timer = null; last = null;
+    let h = {};
+    try { const r = await fetch('/api/directors/hello?k=' + encodeURIComponent(K), { cache: 'no-store' }); h = await r.json().catch(() => ({}));
+      if (r.status === 403) { signing = false; return shut(h.error || 'This link is not open any more — ask the shop for a new one.'); }
+      if (!r.ok) throw new Error(); }
+    catch (e) { signing = false; return shut('Could not reach the shop just now. Check the internet and open the link again.'); }
+    const first = !h.hasPin, nm = String(h.name || '').replace(/^(mr|mrs|ms|miss|dr|rev|eng|hon)\.?\s+/i, '').split(' ')[0];   // the name, not the title
+    app.innerHTML = `<div class="hero" style="padding-bottom:110px"><div class="wrap"><div class="brand"><img src="/regal-logo.png" alt=""><div><b>${esc(h.shop)}</b><small>Directors' report</small></div></div></div></div>
+     <div class="wrap"><form class="login" id="lg" autocomplete="off">
+      <div class="lock">🔒</div>
+      <h2>${first ? `Welcome${nm ? ', ' + esc(nm) : ''}` : `Hello${nm ? ' ' + esc(nm) : ''}`}</h2>
+      <p>${first ? 'Type the user code from the shop\'s message, then make a PIN of your own. You will use the two to open the report from now on.' : 'Your user code and PIN, to see the figures.'}</p>
+      <label>User code<input id="lc" value="${esc(store.get(CK))}" placeholder="e.g. RH-7KQ2" autocapitalize="characters" spellcheck="false"></label>
+      <label>${first ? 'Make a PIN' : 'PIN'} <small>${first ? '4 to 6 numbers' : ''}</small><input id="lp" type="password" inputmode="numeric" maxlength="6" placeholder="••••"></label>
+      ${first ? '<label>The same PIN again<input id="lp2" type="password" inputmode="numeric" maxlength="6" placeholder="••••"></label>' : ''}
+      <div class="lmsg" id="lm">${esc(note || '')}</div>
+      <button class="lgo" id="lb">${first ? 'Make my PIN and open the report' : 'Open the report'}</button>
+      <div class="lhelp">${first ? 'Keep the PIN to yourself — the shop does not know it.' : 'Forgotten the PIN? Ask the shop to reset it, then make a new one.'}</div>
+     </form></div>`;
+    const g = id => document.getElementById(id);
+    (g('lc').value ? g('lp') : g('lc')).focus();
+    g('lg').onsubmit = async ev => {
+      ev.preventDefault(); const b = g('lb'); b.disabled = true; g('lm').textContent = '';
+      try {
+        const r = await fetch('/api/directors/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ k: K, code: g('lc').value, pin: g('lp').value, pin2: g('lp2') ? g('lp2').value : undefined }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.token) throw new Error(j.error || 'Could not sign in');
+        store.set(TK, j.token); store.set(CK, g('lc').value.trim().toUpperCase());
+        signing = false; app.innerHTML = ''; await load(true); startLive();
+      } catch (e) { g('lm').textContent = e.message; b.disabled = false; const f = g('lp'); f.value = ''; if (g('lp2')) g('lp2').value = ''; f.focus();
+        g('lg').classList.remove('shake'); void g('lg').offsetWidth; g('lg').classList.add('shake'); }
+    };
+  }
+
   async function load(fresh) {
     if (!K) return shut('This page opens from the link the shop sends you.');
+    if (!store.get(TK)) return signIn();
     const u = `/api/directors/report?k=${encodeURIComponent(K)}&range=${range}${range === 'custom' ? `&from=${from}&to=${to}` : ''}`;
     try {
-      const r = await fetch(u, { cache: 'no-store' }); const j = await r.json().catch(() => ({}));
+      const r = await fetch(u, { cache: 'no-store', headers: { Authorization: 'Bearer ' + store.get(TK) } }); const j = await r.json().catch(() => ({}));
       if (r.status === 403) return shut(j.error || 'This link is not open any more — ask the shop for a new one.');
+      if (r.status === 401) { store.set(TK, ''); return signIn(last ? 'Your sign-in ran out — please sign in again.' : ''); }
       if (!r.ok || !j.ok) throw new Error(j.error || r.status);
       failed = 0;
       if (fresh || !last || JSON.stringify(j) !== JSON.stringify(last)) {
@@ -253,10 +308,10 @@ h1,h2,h3,.num{font-family:Archivo,system-ui,sans-serif}
       if (!last) shut('Could not reach the shop just now. Check the internet and open the link again.');
     }
   }
-  load(true);
   // live: every minute while it is on the screen, and at once when it comes back to the front
-  timer = setInterval(() => { if (!document.hidden) load(false); }, 60000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) load(false); });
+  function startLive() { clearInterval(timer); timer = setInterval(() => { if (!document.hidden && !signing) load(false); }, 60000); }
+  load(true).then(() => { if (!signing) startLive(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !signing && store.get(TK)) load(false); });
 })();
 </script>
 </body>

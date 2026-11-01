@@ -145,13 +145,13 @@ export function reportOf(data, q = {}, who = {}) {
 }
 
 /* the short text a director gets with their link */
-export function textOf(rep, link) {
+export function textOf(rep, link, who = {}, made = true) {
   const m = (n) => 'Rs ' + (+n || 0).toLocaleString('en-LK', { maximumFractionDigits: 0 });
-  return `${rep.shop.name} — ${rep.from === rep.to ? rep.from : rep.from + ' to ' + rep.to}\nSales: ${m(rep.sales.total)} (${rep.sales.bills} bills)\nCollected: ${m(rep.money.collected.total)}\nCustomers owe: ${m(rep.customers.total)}\nWe owe suppliers: ${m(rep.suppliers.total)}\nLive report: ${link}`;
+  return `${rep.shop.name} — ${rep.from === rep.to ? rep.from : rep.from + ' to ' + rep.to}\nSales: ${m(rep.sales.total)} (${rep.sales.bills} bills)\nCollected: ${m(rep.money.collected.total)}\nCustomers owe: ${m(rep.customers.total)}\nWe owe suppliers: ${m(rep.suppliers.total)}\nLive report: ${link}${who.code ? `\nYour user code: ${who.code}${made ? ' — sign in with it and your PIN' : ' — the first time, you make your own PIN'}` : ''}`;
 }
 
 /* the email: the headline figures as a tidy table, and the button to the live page */
-export function mailOf(rep, link) {
+export function mailOf(rep, link, who = {}, made = true) {
   const m = (n) => 'Rs ' + (+n || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const when = rep.from === rep.to ? rep.from : `${rep.from} to ${rep.to}`;
@@ -166,6 +166,7 @@ export function mailOf(rep, link) {
     ${row('Customers owe us', m(rep.customers.total), true)}${row('We owe suppliers', m(rep.suppliers.total), true)}
     ${row('Cheques in hand', m(rep.cheques.inHand))}${row('Cash &amp; banks', m(rep.cash.total))}${row('Stock at cost', m(rep.stock.value))}</table>
     <div style="text-align:center;margin:20px 0 6px"><a href="${esc(link)}" style="display:inline-block;background:#AE1E2B;color:#fff;text-decoration:none;font-weight:700;padding:12px 26px;border-radius:99px">Open the live report</a></div>
+    ${who.code ? `<div style="margin:14px auto 4px;max-width:360px;text-align:center;background:#F6F8F7;border:1px dashed #D8DEDD;border-radius:10px;padding:10px"><div style="color:#5A6E72;font-size:12px">Your user code</div><div style="font-size:22px;font-weight:800;letter-spacing:.12em;color:#201819">${esc(who.code)}</div><div style="color:#5A6E72;font-size:12px">${made ? 'Sign in with it and your PIN.' : 'The first time you open the report, you make your own PIN.'}</div></div>` : ''}
     <div style="text-align:center;color:#8C9CA0;font-size:12px">It shows the figures as they are when you open it, and keeps up while it is open.</div></div></div>`;
-  return { subject: `${rep.shop.name}: directors' report ${when}`, text: textOf(rep, link), html };
+  return { subject: `${rep.shop.name}: directors' report ${when}`, text: textOf(rep, link, who, made), html };
 }

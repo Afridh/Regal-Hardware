@@ -7001,21 +7001,37 @@ function mxBody(){
    they were paid, profit, money in and out, what customers owe and what is owed to suppliers, cheques, cash
    and banks, stock (frontend/directors.html, backend/src/routes/directors.js). Sent by email (the headline
    figures and a button) and/or by text, now or every evening by itself. A link can be changed or switched off. */
-const dirCfg=()=>{ const d=CFG.directors||(CFG.directors={}); if(!Array.isArray(d.list)) d.list=[]; if(d.byMail===undefined) d.byMail=true; if(d.byText===undefined) d.byText=true; return d };
+/* Signing in on the page: their user code (here, sent with the link) and a PIN they make themselves the
+   first time — kept only on the server, so nobody at the shop knows it. Reset PIN lets them make a new one. */
+const dirCode=()=>{ const A='ABCDEFGHJKMNPQRSTUVWXYZ23456789', a=new Uint8Array(4); crypto.getRandomValues(a); return 'RH-'+[...a].map(x=>A[x%A.length]).join('') };
+const dirCfg=()=>{ const d=CFG.directors||(CFG.directors={}); if(!Array.isArray(d.list)) d.list=[]; if(d.byMail===undefined) d.byMail=true; if(d.byText===undefined) d.byText=true;
+  d.list.forEach(x=>{ if(!x.code){ x.code=dirCode(); dirCfg.changed=true } }); return d };
 const dirKey=()=>{ const a=new Uint8Array(18); crypto.getRandomValues(a); return [...a].map(x=>x.toString(36).padStart(2,'0')).join('').slice(0,28) };
 const dirLink=(d)=>location.origin+'/d?k='+encodeURIComponent(d.key);
+let dirPins=null, dirPinsAt=0;   // whose PIN is made, asked of the server when the tab opens
+function dirPinsLoad(){
+  if(Date.now()-dirPinsAt<15000) return; dirPinsAt=Date.now();
+  fetch('/api/directors/pins',{headers:{Authorization:'Bearer '+(window.regalBridge?regalBridge.token():'')}}).then(r=>r.json()).then(j=>{ if(j&&j.ok){ dirPins=j.pins; if(S.view==='settings'&&setTab==='directors') render() } }).catch(()=>{});
+}
 function directorsSettings(){
   const c=dirCfg(), L=c.list;
+  if(dirCfg.changed){ dirCfg.changed=false; setTimeout(()=>persist(true),0) }   // a user code given to one made before codes
+  dirPinsLoad();
+  const pinTag=d=>{ const p=dirPins&&dirPins[d.id]; if(!dirPins) return '<span class="muted">…</span>';
+    return p?(p.locked?'<span class="tag bad" title="Too many wrong PINs — it opens again in 15 minutes">locked</span>':'<span class="tag ok">made</span>'):'<span class="tag warn" title="They make it the first time they open the link">not yet</span>' };
   return `<div class="muted" style="margin-bottom:10px">A live page of the shop's figures for each director, on their own private link — sales and how they were paid, profit, money in and out, what customers owe, what we owe suppliers, cheques, cash and banks, stock. It keeps itself up to date while it is open, and they can look at today, yesterday, the week, the month or any days. Nothing can be changed from it.</div>
    <div class="card" style="padding:0;overflow:auto">
-    <table class="tbl" style="margin:0"><tr><th>Director</th><th>Mobile</th><th>Email</th><th>Sees profit</th><th>Their link</th><th></th></tr>
-    ${L.map(d=>`<tr style="${d.active===false?'opacity:.55':''}"><td><b>${noteEsc(d.name)}</b>${d.active===false?' <span class="tag warn">off</span>':''}</td><td>${noteEsc(d.phone||'—')}</td><td>${noteEsc(d.email||'—')}</td>
+    <table class="tbl" style="margin:0"><tr><th>Director</th><th>User code</th><th>PIN</th><th>Mobile</th><th>Email</th><th>Sees profit</th><th>Their link</th><th></th></tr>
+    ${L.map(d=>`<tr style="${d.active===false?'opacity:.55':''}"><td><b>${noteEsc(d.name)}</b>${d.active===false?' <span class="tag warn">off</span>':''}</td>
+      <td class="mono"><b>${noteEsc(d.code||'')}</b></td><td style="white-space:nowrap">${pinTag(d)} <button class="btn ghost sm" data-act="dirPinReset" data-id="${d.id}" title="They make a new PIN the next time they open the link">Reset PIN</button></td>
+      <td>${noteEsc(d.phone||'—')}</td><td>${noteEsc(d.email||'—')}</td>
       <td><label class="chk" style="margin:0"><input type="checkbox" data-act="dirProfit" data-id="${d.id}" ${d.profit!==false?'checked':''}> yes</label></td>
       <td style="white-space:nowrap"><button class="btn ghost sm" data-act="dirCopy" data-id="${d.id}">Copy</button> <a class="btn ghost sm" href="${noteEsc(dirLink(d))}" target="_blank" rel="noopener" style="border-bottom:0">Open</a></td>
       <td style="white-space:nowrap"><button class="btn tape sm" data-act="dirSend" data-id="${d.id}" ${d.active===false?'disabled':''}>Send now</button>
        <button class="btn ghost sm" data-act="dirEdit" data-id="${d.id}">Edit</button> <button class="btn ghost sm" data-act="dirNewKey" data-id="${d.id}" title="The old link stops working">New link</button>
        <button class="btn ghost sm" data-act="dirOnOff" data-id="${d.id}">${d.active===false?'Switch on':'Switch off'}</button></td></tr>`).join('')
-     ||'<tr><td colspan="6" class="muted" style="padding:14px">No directors yet — add the first one.</td></tr>'}</table></div>
+     ||'<tr><td colspan="8" class="muted" style="padding:14px">No directors yet — add the first one.</td></tr>'}</table></div>
+   <div class="muted" style="margin-top:6px">To open the report they need the link, their <b>user code</b> and a <b>PIN</b>. The first time, they make the PIN themselves — nobody at the shop sees it. A forgotten PIN: <b>Reset PIN</b>, and they make a new one.</div>
    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
     <button class="btn tape" data-act="dirAdd">Add a director</button>
     ${L.some(d=>d.active!==false)?`<button class="btn" data-act="dirSend" data-id="">Send today's report to all of them now</button>
@@ -7043,7 +7059,7 @@ function dirEdit(id){
     if(email&&!isEmail(email)) return g('dnM').textContent='That is not an email address.';
     if(!phone&&!email) return g('dnM').textContent='A mobile or an email, so the link can reach them.';
     if(d) Object.assign(d,{name,phone,email,profit:g('dnPr').checked});
-    else c.list.push({id:'dr'+Date.now().toString(36),name,phone,email,profit:g('dnPr').checked,key:dirKey(),active:true,at:apStamp(),by:S.user.name});
+    else c.list.push({id:'dr'+Date.now().toString(36),name,phone,email,profit:g('dnPr').checked,key:dirKey(),code:dirCode(),active:true,at:apStamp(),by:S.user.name});
     try{ logTrail('other',`Directors' report: ${d?'changed':'added'} ${name}`,{}) }catch(e){}
     m.remove(); persist(true); render(); toast(d?'Saved':`${name} added — their link is ready. Send it now, or copy it.`,'ok') };
 }
@@ -33237,8 +33253,9 @@ document.addEventListener('click',e=>{
     pcGive:()=>pettyGiveModal(a.dataset.who||''), pcExp:()=>pettyExpenseModal(a.dataset.id), pcSettle:()=>pettySettleModal(a.dataset.id), pcUndo:()=>pettyUndo(a.dataset.id,a.dataset.no),
     catMgr:()=>categoriesModal(), catTidy:()=>tidyCatalogModal(),
     dirGo:()=>{ setTab='directors'; go('settings') }, dirAdd:()=>dirEdit(null), dirEdit:()=>dirEdit(a.dataset.id), dirSend:()=>dirSend(a.dataset.id||null),
-    dirCopy:()=>{ const d=dirCfg().list.find(x=>x.id===a.dataset.id); if(!d) return; const l=dirLink(d); (navigator.clipboard?navigator.clipboard.writeText(l):Promise.reject()).then(()=>toast('Link copied — paste it to '+d.name,'ok')).catch(()=>askBox({title:'Their link',body:'Copy it from here',value:l,ok:'Done',cancel:'Close'})) },
+    dirCopy:()=>{ const d=dirCfg().list.find(x=>x.id===a.dataset.id); if(!d) return; const l=`${CFG.shop.name||'Regal Hardware'} — directors' report\n${dirLink(d)}\nYour user code: ${d.code}\nThe first time you open it, you make your own PIN.`; (navigator.clipboard?navigator.clipboard.writeText(l):Promise.reject()).then(()=>toast('Link and user code copied — paste them to '+d.name,'ok')).catch(()=>askBox({title:'Their link',body:'Copy it from here',value:l,ok:'Done',cancel:'Close'})) },
     dirNewKey:()=>{ const d=dirCfg().list.find(x=>x.id===a.dataset.id); if(!d) return; askBox({title:'Make a new link for '+noteEsc(d.name)+'?',body:'The link they have now stops working at once. Send them the new one afterwards.',text:false,ok:'Make a new link'}).then(v=>{ if(v===null) return; d.key=dirKey(); persist(true); render(); toast('New link made — send it to '+d.name,'ok') }) },
+    dirPinReset:()=>{ const d=dirCfg().list.find(x=>x.id===a.dataset.id); if(!d) return; askBox({title:'Reset '+noteEsc(d.name)+"'s PIN?",body:'Their PIN stops working at once, and they are signed out. The next time they open the link they make a new PIN with their user code <b>'+noteEsc(d.code)+'</b>.',text:false,ok:'Reset the PIN'}).then(v=>{ if(v===null) return; d.pinReset=Date.now(); persist(true); dirPinsAt=0; setTimeout(()=>{ dirPinsAt=0; dirPinsLoad() },2500); render(); toast(d.name+' makes a new PIN next time','ok'); try{ logTrail('other',`Directors' report: ${d.name}'s PIN reset`,{}) }catch(e){} }) },
     dirOnOff:()=>{ const d=dirCfg().list.find(x=>x.id===a.dataset.id); if(!d) return; d.active=d.active===false; persist(true); render(); toast(d.active?d.name+"'s link works again":d.name+"'s link is switched off",'ok') },
     dirProfit:()=>{ const d=dirCfg().list.find(x=>x.id===a.dataset.id); if(!d) return; d.profit=!!a.checked; persist(true); toast(d.profit?d.name+' sees the profit':d.name+' no longer sees the profit','ok') },
     codeFix:()=>{ const n=fixCodeClashes(); persist(true); render(); toast(n?`${n} item number${n===1?'':'s'} renumbered — every code finds one product`:'Nothing clashes','ok') },
