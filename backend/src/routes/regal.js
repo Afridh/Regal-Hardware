@@ -795,8 +795,12 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
     const curProducts = Array.isArray(cur?.data?.S?.products) ? cur.data.S.products.length : 0;
     const newProducts = Array.isArray(data.S?.products) ? data.S.products.length : 0;
     const wipeOk = data._allowWipe && (Date.now() - Number(data._allowWipe) < 120000);
-    if (curProducts >= 50 && newProducts < Math.max(1, Math.floor(curProducts * 0.4)) && !wipeOk) {
-      return { blocked: true, rev: curRev, data: cur.data, curProducts, newProducts };
+    // the bills too: they only ever grow — a save that loses most of them is an empty or old till, not the shop
+    const curSales = Array.isArray(cur?.data?.S?.sales) ? cur.data.S.sales.length : 0;
+    const newSales = Array.isArray(data.S?.sales) ? data.S.sales.length : 0;
+    const cuts = (was, now) => was >= 10 && now < Math.max(1, Math.floor(was * 0.4));
+    if ((cuts(curProducts, newProducts) || cuts(curSales, newSales)) && !wipeOk) {
+      return { blocked: true, rev: curRev, data: cur.data, curProducts, newProducts, curSales, newSales };
     }
     delete data._allowWipe;
     let merged = null;
@@ -821,7 +825,7 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
     return { conflict: false, rev: next, merged };
   });
   if (out.blocked) {
-    console.error(`[books guard] blocked a save by ${req.regalUser.name}: products ${out.curProducts} -> ${out.newProducts} (looks like sample data over the real shop)`);
+    console.error(`[books guard] blocked a save by ${req.regalUser.name}: products ${out.curProducts} -> ${out.newProducts}, bills ${out.curSales} -> ${out.newSales} (an empty or old till over the real shop)`);
     const inbox = key === BOOKS_KEY ? await injectInbox(out.data) : 0;
     return res.status(409).json({ error: 'Save blocked to protect the shop — it would have replaced the full product list with sample data. The real books have been reloaded on this till.', rev: out.rev, data: out.data, inbox, blocked: true });
   }

@@ -20,6 +20,12 @@
   // unless asked for the live one (localStorage regal_pace = 'live') to measure it
   try { if (/^(localhost|127\.|\[::1\])/.test(location.hostname) && localStorage.getItem('regal_pace') !== 'live') ACTIVE_GAP = IDLE_GAP = 2000; } catch (e) {}
   var lastPollAt = 0, lastInputAt = Date.now(), failStreak = 0;
+  /* Nothing is saved until this till has heard the books from the server at least once (or been told there are
+     none, or opened its own offline copy). A till just opened holds an empty shop until they come down; a save
+     before then wrote that empty shop over the real one (found 1 Nov 2026, on a small test shop the server's
+     product guard does not cover). The save waits, and goes the moment the books are in. */
+  var heard = false;
+  function nowHeard() { if (heard) return; heard = true; if (typeof window.persist === 'function') setTimeout(function () { window.persist(true); }, 0); }
   function pollGap() {
     var gap = Date.now() - lastInputAt > IDLE_AFTER ? IDLE_GAP : ACTIVE_GAP;
     return failStreak ? Math.min(MAX_GAP, gap * Math.pow(2, failStreak)) : gap;
@@ -207,7 +213,6 @@
      orders from the suppliers never arrived. The two order popups are drawn again from what is kept for
      them, so they do not count either. strict: about to reload the page, when any popup counts. */
   // the last time anybody pressed a key or touched the screen here
-  var lastInputAt = 0;
   ['keydown', 'pointerdown', 'input'].forEach(function (t) { document.addEventListener(t, function () { lastInputAt = Date.now(); }, true); });
   var IDLE_MS = 4000;
   function tillBusy(strict) {
@@ -263,19 +268,19 @@
     if (!token || busy) return false;
     if (Date.now() - lastPushAt < 3000) return false;
     // a bill or an edit made here and not saved yet would be wiped by the server's copy: save first
-    if (!window.booksUnreadable && ((typeof window.hasUnsaved === 'function' && window.hasUnsaved()) || unsynced)) { if (typeof window.persist === 'function') window.persist(true); return false; }
+    if (heard && !window.booksUnreadable && ((typeof window.hasUnsaved === 'function' && window.hasUnsaved()) || unsynced)) { if (typeof window.persist === 'function') window.persist(true); return false; }
     var j = await call('GET', '/books/' + KEY);
     // the books are there but would not come down: nothing may be saved until they do
     if (j.__status !== 200) { window.booksUnreadable = true; return false; }
     window.booksUnreadable = false;
     if (j.data) {
-      rev = j.rev; base = strip(j.data); keepBase(); lastSyncAt = Date.now(); applyRemote(j.data);
+      rev = j.rev; base = strip(j.data); keepBase(); lastSyncAt = Date.now(); applyRemote(j.data); nowHeard();
       if (!quiet) say('Books picked up from the server');
       // orders from the shop site ride in with the books; saving is what hands them to the shop for good
       if (j.inbox > 0) { say(j.inbox === 1 ? 'A new order from the website' : j.inbox + ' new orders from the website'); if (typeof window.persist === 'function') window.persist(true); }
       return true;
     }
-    rev = j.rev || 0; return false;
+    rev = j.rev || 0; nowHeard(); return false;           // the server answered: it has no books yet — this till's are the first
   }
 
   /* ---------------- window.storage : what the app calls ---------------- */
@@ -291,10 +296,10 @@
       var j = await call('GET', '/books/' + KEY);
       // a shop with no books yet answers 200 with nothing, and that is fine \u2014 the till seeds itself.
       // Anything else means the books are there but could not be read, which the till must not paper over.
-      if (j.__status === 200 && !j.data) { window.booksUnreadable = false; return null; }
+      if (j.__status === 200 && !j.data) { window.booksUnreadable = false; nowHeard(); return null; }
       // the server could not be reached at all (no internet) — not the same as the server refusing: open
       // this PC's own copy of the real books, if it has one
-      if (j.__status === 0) { var off = await offlineBooks(); if (off) { window.booksUnreadable = false; return off; } }
+      if (j.__status === 0) { var off = await offlineBooks(); if (off) { window.booksUnreadable = false; setTimeout(nowHeard, 0); return off; } }
       if (j.__status !== 200) {
         // the books are on the server but would not come down. Whoever asked, the till must not now
         // save what it is holding \u2014 that is sample data, and it would wipe the real shop.
@@ -303,6 +308,7 @@
       }
       rev = j.rev;
       window.booksUnreadable = false;                    // they came down: saving is safe again
+      setTimeout(nowHeard, 0);                           // once the till has laid them in, not before
       var d = j.data; if (d && d.S) LOCAL_KEYS.forEach(function (k) { delete d.S[k]; });
       base = JSON.parse(JSON.stringify(d)); keepBase();
       if (window.workingOffline) { window.workingOffline = false; }
@@ -321,6 +327,7 @@
         badge('not saved \u2014 the books did not load');
         return false;
       }
+      if (!heard) { badge('waiting for the books\u2026'); return false; }   // see nowHeard: never before they are in
       idb.put('books', txt);                               // this PC's own copy, internet or not
       if (busy) { pendingSet = txt; return true; }
       busy = true;

@@ -49,6 +49,9 @@ const billOf = (html) => { const m = /<div id="printArea"[^>]*>([\s\S]*)<\/div>\
 async function getBrowser() {
   if (browser && browser.connected) return browser;
   browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox', '--disable-gpu'] });
+  // Chrome gone (closed, crashed, ended from outside): the pages kept open belonged to it — forget them, so the
+  // next bill opens fresh ones in a new Chrome instead of failing on a dead page
+  browser.on('disconnected', () => { held.clear(); browser = null; log('drawing: Chrome closed — a new one opens with the next bill'); });
   return browser;
 }
 

@@ -13569,7 +13569,11 @@ function renderNow(){
   const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions:inbox,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,hire:hirePage,plans:plansPage,dlv:dlvPage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals:()=>{ inTab=apTab==='done'?'history':'decide'; return inbox() },feedback:feedbackPage,startup:startupScreen,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     const sn0=mn.querySelector('.subnav'), snTop=sn0&&sameView?sn0.scrollTop:0;   // the section list keeps where it was scrolled to
-    try{ mn.innerHTML = r(); if(snTop){ const sn1=mn.querySelector('.subnav'); if(sn1) sn1.scrollTop=snTop } }
+    /* the box being typed in keeps its place: a redraw from elsewhere (another tab saving, the books coming in)
+       used to drop the cursor, so letters typed during it landed in the wrong place */
+    const fe=document.activeElement, keep=sameView&&fe&&fe.id&&mn.contains(fe)&&/^(INPUT|TEXTAREA)$/.test(fe.tagName)?{id:fe.id,s:fe.selectionStart,e:fe.selectionEnd}:null;
+    try{ mn.innerHTML = r(); if(snTop){ const sn1=mn.querySelector('.subnav'); if(sn1) sn1.scrollTop=snTop }
+      if(keep){ const ne=document.getElementById(keep.id); if(ne&&ne!==document.activeElement){ ne.focus({preventScroll:true}); try{ if(keep.s!=null) ne.setSelectionRange(Math.min(keep.s,ne.value.length),Math.min(keep.e,ne.value.length)) }catch(e){} } } }
     catch(err){
       /* a page that cannot be drawn used to leave the screen blank, with no way to tell why */
       console.error('Could not draw '+S.view, err);
@@ -13671,7 +13675,7 @@ function renderNow(){
   document.querySelectorAll('[data-supbills]').forEach(b=>b.onclick=()=>{supBillsF=b.dataset.supbills;render()});
   document.querySelectorAll('[data-suprange]').forEach(b=>b.onclick=()=>{supStmtRange=b.dataset.suprange;render()});
   const sq=$('#supQ'); if(sq){
-    sq.oninput=e=>{ supQ=e.target.value; const l=supList(); if(l.length&&!l.some(x=>x.id===supSel)) supSel=l[0].id; render(); const n=$('#supQ'); n.focus(); n.setSelectionRange(n.value.length,n.value.length) };
+    sq.oninput=e=>{ const pos=e.target.selectionStart; supQ=e.target.value; const l=supList(); if(l.length&&!l.some(x=>x.id===supSel)) supSel=l[0].id; render(); const n=$('#supQ'); n.focus(); n.setSelectionRange(pos,pos) };
     sq.onkeydown=e=>{ const l=supList(); const i=l.findIndex(x=>x.id===supSel);
       const mv=(d)=>{ if(!l.length) return; supSel=l[Math.max(0,Math.min(l.length-1,i+d))].id; render(); $('#supQ').focus(); const r=document.querySelector('.cu-row.sel'); if(r&&r.scrollIntoView) r.scrollIntoView({block:'nearest'}) };
       if(e.key==='ArrowDown'){ e.preventDefault(); mv(1); return }
@@ -13744,7 +13748,7 @@ function renderNow(){
     document.querySelectorAll('[data-chqpick]').forEach(cb=>cb.onchange=()=>{
       cb.checked?chqPicked.add(cb.dataset.chqpick):chqPicked.delete(cb.dataset.chqpick); render()});
     const dd=$('#chqDay'); if(dd) dd.onchange=e=>{chqDay=e.target.value;chqScope='day';chqPicked.clear();render()};
-    const cq=$('#chqQ'); if(cq){ cq.oninput=e=>{chqQ=e.target.value;render();const n=$('#chqQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
+    const cq=$('#chqQ'); if(cq){ cq.oninput=e=>{const pos=e.target.selectionStart;chqQ=e.target.value;render();const n=$('#chqQ');n.focus();n.setSelectionRange(pos,pos)};
       if(document.activeElement===document.body&&chqQ)cq.focus() }
     const cs=$('#chqStatus'); if(cs) cs.onchange=e=>{chqStatus=e.target.value;render()};
   }
@@ -13851,7 +13855,7 @@ function renderNow(){
   const pq=$('#prodQ'); if(pq){ pq.value=prodQ; pq.oninput=e=>{prodQ=e.target.value;invLimit=200;render();const n=$('#prodQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body&&prodQ)pq.focus() }
   const cq=$('#custQ'); if(cq){ cq.value=custQ;
-    cq.oninput=e=>{ custQ=e.target.value; const l=custList(); if(l.length&&!l.some(c=>c.id===custSel)) custSel=l[0].id; render(); const n=$('#custQ'); n.focus(); n.setSelectionRange(n.value.length,n.value.length) };
+    cq.oninput=e=>{ const pos=e.target.selectionStart; custQ=e.target.value; const l=custList(); if(l.length&&!l.some(c=>c.id===custSel)) custSel=l[0].id; render(); const n=$('#custQ'); n.focus(); n.setSelectionRange(pos,pos) };
     // arrows walk the list, Enter opens the one they land on, Esc clears the search
     cq.onkeydown=e=>{ const l=custList(); const i=l.findIndex(c=>c.id===custSel);
       if(e.key==='ArrowDown'){ e.preventDefault(); if(l.length){ custSel=l[Math.min(l.length-1,i+1)].id; render(); $('#custQ').focus(); const r=document.querySelector('.cu-row.sel'); if(r&&r.scrollIntoView) r.scrollIntoView({block:'nearest'}) } return }
@@ -23529,7 +23533,7 @@ function customers(){
      <div>${nLate?'Over 60 days':'Over limit'}<b style="color:${(nLate||nOver)?'var(--chip-rust)':'var(--chip-green)'}">${nLate||nOver||'none'}</b></div>
     </div>
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-     <input id="custQ" value="${custQ}" placeholder="Name, mobile, code, address…" autocomplete="off"><span class="search-k"><i class="kbd">↑↓</i><i class="kbd">Enter</i></span></div>
+     <input id="custQ" value="${noteEsc(custQ)}" placeholder="Name, mobile, code, address…" autocomplete="off"><span class="search-k"><i class="kbd">↑↓</i><i class="kbd">Enter</i></span></div>
     <div class="chips">${[['all','All'],['owing','Outstanding'],['overdue','60+ days'],['over','Over limit'],['wholesale','Wholesale'],['online','Website'],['portal','Portal'],['nophone','No mobile']]
       .map(f=>`<button class="${custFilter===f[0]?'on':''}" data-custfilter="${f[0]}">${f[1]}</button>`).join('')}</div>
     <div class="chips" style="margin-bottom:6px"><span class="muted" style="align-self:center">Sort</span>
@@ -26718,7 +26722,7 @@ function suppliers(){
      <div>${nLate?'Over 60 days':'Cheques out'}<b title="${fmt(chqOut)}">${nLate||compact(chqOut)}</b></div>
     </div>
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-     <input id="supQ" value="${supQ}" placeholder="Name, contact, phone, code…" autocomplete="off"><span class="search-k"><i class="kbd">↑↓</i><i class="kbd">Enter</i></span></div>
+     <input id="supQ" value="${noteEsc(supQ)}" placeholder="Name, contact, phone, code…" autocomplete="off"><span class="search-k"><i class="kbd">↑↓</i><i class="kbd">Enter</i></span></div>
     <div class="chips">${[['all','All'],['owing','Outstanding'],['overdue','60+ days'],['cheques','Cheques out'],['orders','Orders waiting'],['portal','Portal'],['clear','Settled']]
       .map(f=>`<button class="${supFilter===f[0]?'on':''}" data-supfilter="${f[0]}">${f[1]}</button>`).join('')}</div>
     <div class="chips" style="margin-bottom:6px"><span class="muted" style="align-self:center">Sort</span>
@@ -33219,6 +33223,8 @@ if(typeof BroadcastChannel !== 'undefined'){
     syncBc.onmessage = async (msg) => {
       if(window.isDemo || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('regal_is_demo') === '1')) return;
       if(msg.data === 'sale_completed' || msg.data === 'books_updated' || msg.data === 'attendance_updated'){
+        // somebody typing here: the other tab's save comes in when they stop for a moment, not under their fingers
+        const a=document.activeElement; if(a&&/^(INPUT|TEXTAREA)$/.test(a.tagName)&&String(a.value||'').length){ clearTimeout(window._bcLater); window._bcLater=setTimeout(()=>syncBc.onmessage(msg),2500); return }
         let pulled = false;
         const online = window.regalBridge && typeof regalBridge.pull === 'function' && regalBridge.online();
         if(online){
