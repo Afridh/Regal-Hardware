@@ -844,6 +844,19 @@ r.delete('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/* A fresh start (Settings → Shop details, "Start fresh"): the till has cleared the business from the books; this clears
+   what the server keeps beside them. Portal sign-ins first of all — they point at customer and supplier numbers
+   the new lists will give out again, so an old login would open a stranger's page. The Super Admin only. */
+const FRESH_TABLES = ['cust_logins', 'sup_logins', 'login_requests', 'cust_inbox', 'sup_inbox', 'sup_hidden', 'sup_media', 'bill_views', 'due_log', 'due_runs', 'due_sent',
+  'sum_runs', 'break_warned', 'display_screens', 'print_jobs', 'shop_orders', 'files', 'shift_photos'];
+r.post('/books/:key/fresh-start', regalAuth, asyncHandler(async (req, res) => {
+  const role = String(req.regalUser?.role || '').toLowerCase();
+  if (!['super admin', 'superadmin', 'owner'].includes(role)) throw new HttpError(403, 'Only the Super Admin can start the shop afresh');
+  const cleared = {};
+  for (const t of FRESH_TABLES) { try { const r2 = await query(`DELETE FROM ${t}`); cleared[t] = r2.rowCount ?? r2.affectedRows ?? 0; } catch { /* a table this server never made */ } }
+  console.log('fresh start by', req.regalUser?.name, JSON.stringify(cleared));
+  res.json({ ok: true, cleared });
+}));
 r.get('/books/:key/history', regalAuth, asyncHandler(async (req, res) => {
   const sql = dbKind === 'mysql'
     ? `SELECT id, rev, saved_at, saved_by, JSON_LENGTH(data, '$.S.products') AS products, JSON_LENGTH(data, '$.S.customers') AS customers, JSON_LENGTH(data, '$.S.sales') AS sales FROM books_history WHERE ${KEY_COL} = $1 ORDER BY id DESC LIMIT 50`

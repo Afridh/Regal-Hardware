@@ -104,6 +104,14 @@ if (want('suppliers')) {
     rows.push([s(v.SupCode), name, s(v.SupCPerson), phone(v.SupMob1, v.SupPhone, v.SupCPersonMob1),
       (+v.CreditTerm ? String(+v.CreditTerm) : ''), addr(v.SupAddress, v.SupAddress2, v.SupAddress3), s(v.SupRemark)]);
   }
+  // a supplier the items still name but SePOS's supplier list no longer has (taken off it) — without a row
+  // here, every product of theirs would be refused on upload ("no supplier called …")
+  const have = new Set(rows.map(r => r[1].trim().toUpperCase()));
+  const named = sql(`SELECT DISTINCT ItemSupName FROM tbl_ItemDet WHERE ItemSupName IS NOT NULL AND LTRIM(RTRIM(ItemSupName)) <> ''`);
+  let added = 0;
+  for (const x of named) { const name = s(x.ItemSupName); if (!name || have.has(name.toUpperCase())) continue;
+    have.add(name.toUpperCase()); rows.push(['', name, '', '', '', '', 'On SePOS items, not on its supplier list']); added++; }
+  if (added) console.log(`    (${added} supplier${added === 1 ? '' : 's'} added that the items name but SePOS's supplier list does not have)`);
   writeCsv('sepos-suppliers.csv', ['Code', 'Name', 'Contact person', 'Phone', 'Payment terms (days)', 'Address', 'Notes'], rows);
 }
 

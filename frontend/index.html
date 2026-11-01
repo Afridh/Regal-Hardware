@@ -6924,12 +6924,12 @@ function settings(){
      <div class="grid3">${fld('scale.baud','Speed (baud)','9600 for most scales','number')}${fld('scale.ask','Send to ask for the weight','Empty if it sends by itself; e.g. W or \\r')}<div class="f"><label>&nbsp;</label><button class="btn ghost" data-act="scaleTest">Test the scale</button></div></div></div>
     <div class="card note" style="margin-top:10px">These go straight onto every bill, voucher and statement. Print one after changing to check the fit.</div>
     ${isSuperUser()?`<div class="card note" style="border:1px solid var(--chip-rust,#C0442C);margin-top:16px">
-      <b style="color:var(--chip-rust,#C0442C)">Delete everything & start fresh</b>
-      <div class="muted" style="margin-top:4px">Removes every product, customer, supplier, bill and member of staff, and clears the shop details — leaving an empty shop and the welcome setup screen. Only your own sign-in and the SMS key are kept. It is saved to the server's history, so it can be put back if it was a mistake.</div>
+      <b style="color:var(--chip-rust,#C0442C)">Start fresh — clear all the business</b>
+      <div class="muted" style="margin-top:4px"><b>Goes:</b> every product, customer and supplier, and every bill, purchase, payment, cheque, stock movement, expense, ledger entry, attendance day and message — and on the server the customer and supplier page sign-ins, messages waiting and e-bills. Bill numbers start again. <b>Stays:</b> the settings and the shop's details (name, logo, the bill), the logins and roles, the staff, the bank accounts (at nought), cheque books, locations and cameras. Every earlier version of the books stays in the server's history. It is saved to the server's history, so it can be put back if it was a mistake.</div>
       <div class="muted" style="margin-top:6px">On the system now: <b>${S.products.length}</b> products · <b>${S.customers.length}</b> customers · <b>${S.suppliers.length}</b> suppliers · <b>${(S.employees||[]).length}</b> staff · <b>${(S.sales||[]).length}</b> bills.</div>
       <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
         <input id="clearWord" placeholder="type CLEAR" autocomplete="off" style="border:1px solid var(--line);border-radius:var(--r);padding:8px;max-width:150px">
-        <button class="btn" data-act="clearShop" style="background:var(--chip-rust,#C0442C);color:#fff;border-color:var(--chip-rust,#C0442C)">Delete everything</button></div>
+        <button class="btn" data-act="clearShop" style="background:var(--chip-rust,#C0442C);color:#fff;border-color:var(--chip-rust,#C0442C)">Clear it all and start fresh</button></div>
     </div>`:''}`;
   if(setTab==='app') body=appDownloadPage();
   if(setTab==='bill') body=`<div class="card note" style="margin-bottom:10px"><b>The bill number</b>
@@ -9946,32 +9946,41 @@ function webTheme(){ const t=S.web.theme=S.web.theme&&typeof S.web.theme==='obje
    out, the key so texting still works once the shop is filled back in. Every save is a new revision
    the server keeps, so even this can be put back if it was a mistake. Owner only, and the word
    CLEAR must be typed, so it cannot happen by a stray tap. */
+/* A FRESH START. Everything the shop did goes — products, customers (bar Walk-in), suppliers and every record
+   of business — and the way it is set up stays: the settings and the shop's details (name, logo, the bill),
+   the logins and roles, the staff, the bank accounts (their balances come back to nought with the ledger),
+   cheque books, locations, cameras and drivers. Bill numbers start again. The server's side — portal sign-ins
+   (they point at customer numbers that will be given out again), messages waiting, e-bill copies, reminders,
+   print jobs — is cleared by POST /api/books/regal/fresh-start. Every earlier revision of the books stays in
+   the server's history, so the owner can still roll back. */
+const FRESH_CLEAR=['sales','purchases','payments','expenses','damages','movements','journal','cheques','docs','orders','prns','stocktakes','counts','serials','jobs','notices',
+  'payruns','advances','vouchers','transfers','notif','approvals','messages','trail','audit','issues','leaves','calls','feedback','payReqs','phoneCounts','heldBills','partyNotes',
+  'petty','plans','hires','hireItems','deliveries','dayends','cashups','trades','tradePays','tenders','circle','supStockLog'];
 function clearShopData(){
   try{ window._allowWipeOnce=Date.now() }catch(e){}
   S.products=[]; S.suppliers=[];
   S.customers=[{id:1,code:'WALKIN',name:'Walk-in customer',phone:'',level:'retail',limit:0,address:'',portal:false,lastLogin:null,points:0}];
-  ['sales','purchases','payments','expenses','damages','movements','journal','cheques','docs','orders','prns','stocktakes','counts','serials','jobs','notices','payruns','advances','vouchers','transfers','notif','approvals','messages','banks','employees'].forEach(k=>{ S[k]=[]; });
+  FRESH_CLEAR.forEach(k=>{ S[k]=[] });
+  S.summarySent={};
   S.web={...(S.web||{}),orders:[],cart:[],session:null};
-  S.shift={...(S.shift||{}),days:{}};
-  S.seq={PRN:1,STK:1,WEB:1,PO:1,QTN:1,DN:1,INV:1,PUR:1,PAY:1,RCT:1,VCH:1,EXP:1,DMG:1,JOB:1,JE:1}; S.seqBy={};
-  // only the owner keeps a sign-in, so nobody is locked out; the other logins go
-  const me=String((S.user&&S.user.name)||'');
-  const keep=(S.users||[]).filter(u=>u&&(String(u.name)===me||/super\s*admin|owner/i.test(u.role||'')));
-  const drop=(S.users||[]).filter(u=>!keep.includes(u)).map(u=>String(u.name||'').toLowerCase().trim()).filter(Boolean);
-  S.deletedUsers=[...new Set([...(S.deletedUsers||[]),...drop])];
-  S.users=keep.length?keep:(S.user?[{name:S.user.name,role:(S.user.role||'Super Admin'),uid:String(S.user.name||'').slice(0,2).toUpperCase(),perms:['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve']}]:[]);
-  // blank the shop's own details, so the fresh setup screen prompts for them
-  CFG.shop={...CFG.shop,name:'',sinhala:'',addr:'',near:'',phone:'',land:'',hours:'',tags:'',line1:'',line2:'',logo:'',owner:''};
+  S.shift={...(S.shift||{}),days:{},imported:null};
+  S.pos={...(S.pos||{}),lines:[],customer:null,billDisc:0,entry:null,sel:-1,listOk:null,toDeliver:false};
+  S.seq={PRN:1,STK:1,WEB:1,PO:1,QTN:1,DN:1,INV:1,PUR:1,PAY:1,RCT:1,VCH:1,EXP:1,DMG:1,BF:1,JOB:1,JE:1,ISN:1,HIRE:1}; S.seqBy={};
+  try{ window.eval("_caKey=''") }catch(e){}
 }
 function clearShopFlow(){
   if(!isSuperUser()) return toast('Only the owner can do this');
   const w=document.getElementById('clearWord'); const word=String(w&&w.value||'').trim().toUpperCase();
   if(word!=='CLEAR') return toast('Type CLEAR in the box first');
-  if(!confirm(`Delete everything and start fresh?\n\nThis removes all ${S.products.length} products, ${S.customers.length} customers, ${S.suppliers.length} suppliers, ${S.sales.length} bills and the staff, and clears the shop details. Your own sign-in and the SMS key are kept. It is saved to the server history, so it can be put back if this is a mistake.`)) return;
+  if(!confirm(`Clear all the business and start fresh?\n\nThis removes all ${S.products.length} products, ${S.customers.length} customers, ${S.suppliers.length} suppliers, ${S.sales.length} bills and the staff, and clears the shop details. Your own sign-in and the SMS key are kept. It is saved to the server history, so it can be put back if this is a mistake.`)) return;
   clearShopData();
   try{ logTrail('clearShop','everything cleared for a fresh start',{amount:null}) }catch(e){}
   setTab='shop'; go('dashboard'); persist(true); render();
-  toast('Done — a fresh, empty shop. Follow the welcome screen to set it up.','ok');
+  // the server's side: portal sign-ins, messages waiting, e-bill copies, reminders, print jobs
+  fetch('/api/books/regal/fresh-start',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+(window.regalBridge?regalBridge.token():'')}})
+    .then(r=>r.json().catch(()=>({}))).then(j=>{ if(!j.ok) throw new Error(j.error||'the server did not clear its side') })
+    .then(()=>toast('A fresh start — the products, customers and suppliers can go in now (Add → Many at once, from Excel)','ok'))
+    .catch(e=>toast('The books are cleared, but the server\'s side was not: '+e.message+' — restart the app and press it again','warn'));
 }
 
 /* ---- seed ---- */
