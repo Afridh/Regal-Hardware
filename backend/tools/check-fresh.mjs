@@ -78,7 +78,12 @@ if (files.every(f => fs.existsSync(f))) {
     const btn = await pg.evaluate(go => { const b = document.querySelector(go); return b ? { off: b.disabled, txt: b.textContent } : null }, go);
     if (btn && !btn.off) { await pg.$eval(go, x => x.click()); await wait(2500) }
     await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove())); return btn };
-  const sb = await up(() => window.eval('bulkPeopleModal')('sup'), '#pbFile', '#pbGo');
+  const sb = await up(() => { window.eval('go')('suppliers'); window.eval('bulkPeopleModal')('sup') }, '#pbFile', '#pbGo');
+  // the upload leaves the till on Suppliers: the way back to Getting started is on the screen, and in the menu
+  const back = await pg.evaluate(() => { window.eval('render')(); const p = document.querySelector('#suPill'); return { pill: p ? p.innerText.replace(/\s+/g, ' ') : '', menu: !!document.querySelector('#nav [data-view="startup"]'), view: window.eval('S').view } });
+  ok(back.view === 'suppliers' && /Getting started 2\/10/.test(back.pill) && back.menu, 'after the supplier upload: "↩ Getting started 2/10" on the screen, and Getting started in the menu', JSON.stringify(back));
+  await pg.$eval('#suPill', x => x.click()); await wait(400);
+  ok(await pg.evaluate(() => window.eval('S').view === 'startup' && !!document.querySelector('.su') && !document.querySelector('#suPill')), 'pressing it brings the guide back');
   const cb = await up(() => window.eval('bulkPeopleModal')('cust'), '#pbFile', '#pbGo');
   const pb = await up(() => window.eval('bulkProductModal')(), '#bFile', '#bGo');
   const n = await pg.evaluate(() => { const S = window.eval('S'); return { sup: S.suppliers.length, cust: S.customers.length - 1, prod: S.products.length, linked: S.products.filter(p => p.supplierId).length } });
@@ -91,7 +96,15 @@ gd = await guide();
 if (gd) { ok(gd.done >= 4 && /6,?4\d\d products/i.test(gd.text) && /158 suppliers/.test(gd.text), 'after the uploads the guide ticks suppliers, customers and products, with the counts', JSON.stringify({ done: gd.done, now: gd.now }));
   await pg.screenshot({ path: process.env.SHOT2 || 'startup-after.png', fullPage: true });
   await pg.evaluate(() => [...document.querySelectorAll('[data-act="suFinish"]')][0].click()); await wait(500);
-  ok(await pg.evaluate(() => !document.querySelector('.su') && !!document.querySelector('#main').innerText), 'Finish: the dashboard takes over'); }
+  ok(await pg.evaluate(() => !document.querySelector('.su') && !!document.querySelector('#main').innerText), 'Finish: the dashboard takes over');
+  const after2 = await pg.evaluate(() => ({ menu: !!document.querySelector('#nav [data-view="startup"]'), pill: !!document.querySelector('#suPill') }));
+  ok(!after2.menu && !after2.pill, 'and once finished, it is out of the menu and off the screen', JSON.stringify(after2));
+  await pg.evaluate(() => { window.eval("setTab='shop'"); window.eval('go')('settings') }); await wait(400);
+  await pg.$eval('[data-act="suAgain"]', x => x.click()); await wait(400);
+  ok(await pg.evaluate(() => window.eval('S').view === 'startup' && !!document.querySelector('.su')), 'Settings → Shop details opens the guide again at any time');
+  // the Settings list: its red heading scrolls with it — nothing passes over it
+  const hd = await pg.evaluate(() => { window.eval('go')('settings'); const h = document.querySelector('.subnav .snhead'); return getComputedStyle(h).position });
+  ok(hd !== 'sticky', 'Settings: the list no longer runs over its heading', hd); }
 await pg.evaluate(() => window.eval('persist')(true)); await wait(2000);
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);

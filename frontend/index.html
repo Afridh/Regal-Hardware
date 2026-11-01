@@ -792,7 +792,6 @@ body.privacy nav .navuser{position:relative}
 /* pages with their own menu down the left (settings, the shop site) */
 .setwrap{display:grid;grid-template-columns:250px 1fr;gap:18px;align-items:start}
 .subnav{position:sticky;top:0;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px;box-shadow:var(--shadow);overflow-x:hidden;overflow-y:auto;max-height:calc(100vh - 40px);overscroll-behavior:contain;scrollbar-width:thin}
-.subnav .snhead{position:sticky;top:-8px;z-index:1}
 .subnav .snhead{padding:12px 12px 14px;margin:-8px -8px 8px;background:linear-gradient(135deg,var(--ink) 0%,#7E141D 100%);color:#fff;border-bottom:3px solid var(--chip-yellow)}
 .subnav .snhead b{display:block;font-family:Archivo,sans-serif;font-size:17px;font-weight:800;letter-spacing:-.01em}
 .subnav .snhead small{display:block;color:#C9B3B6;font-size:11.5px;margin-top:2px}
@@ -916,6 +915,9 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 @media (prefers-reduced-motion:reduce){.prt .prt-line::after,.prt-s.now b{animation:none!important}}
 /* ---- getting started ---- */
 .su{max-width:1120px;margin:0 auto}
+#suPill{position:fixed;right:18px;bottom:18px;z-index:60;display:flex;align-items:center;gap:8px;padding:10px 16px;border:0;border-radius:99px;cursor:pointer;font:600 13.5px inherit;color:#fff;
+  background:linear-gradient(135deg,#7E141D,#AE1E2B);box-shadow:0 10px 24px -8px rgba(126,20,29,.6);animation:su-in .4s both}
+#suPill b{background:rgba(255,255,255,.2);border-radius:99px;padding:1px 8px;font-size:12px}#suPill span{font-size:15px}#suPill:hover{filter:brightness(1.1)}
 .su-hero{position:relative;overflow:hidden;display:flex;justify-content:space-between;align-items:center;gap:20px;padding:26px 28px;border-radius:20px;color:#fff;isolation:isolate;
   background:radial-gradient(120% 140% at 0% 0%,#5a0f17 0%,#2a0c10 55%,#160709 100%);box-shadow:0 18px 40px -16px rgba(126,20,29,.55);animation:su-in .6s cubic-bezier(.2,.8,.2,1) both}
 .su-orb{position:absolute;z-index:-1;border-radius:50%;filter:blur(50px);opacity:.55;animation:su-drift 14s ease-in-out infinite alternate}
@@ -6960,6 +6962,7 @@ function settings(){
      <div class="muted" style="margin:10px 0 6px">A scale cabled to this PC: press <b>K</b> in the quantity box. Chrome asks once which port it is on.</div>
      <div class="grid3">${fld('scale.baud','Speed (baud)','9600 for most scales','number')}${fld('scale.ask','Send to ask for the weight','Empty if it sends by itself; e.g. W or \\r')}<div class="f"><label>&nbsp;</label><button class="btn ghost" data-act="scaleTest">Test the scale</button></div></div></div>
     <div class="card note" style="margin-top:10px">These go straight onto every bill, voucher and statement. Print one after changing to check the fit.</div>
+    ${ownerOnly()?`<div class="card note" style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><b>Getting started</b><div class="muted">The setting-up steps, each ticked as it is done — open it again at any time.</div></div><button class="btn ghost" data-act="suAgain">Open the Getting started guide</button></div>`:''}
     ${isSuperUser()?`<div class="card note" style="border:1px solid var(--chip-rust,#C0442C);margin-top:16px">
       <b style="color:var(--chip-rust,#C0442C)">Start fresh — clear all the business</b>
       <div class="muted" style="margin-top:4px"><b>Goes:</b> every product, customer, supplier and member of staff, and every bill, purchase, payment, cheque, stock movement, expense, ledger entry, attendance day and message — and on the server the customer and supplier page sign-ins, messages waiting and e-bills. Bill numbers start again. <b>Stays:</b> the settings and the shop's details (name, logo, the bill), the logins and roles, the bank accounts (at nought), cheque books, locations and cameras. A Getting started guide then walks the setting up. Every earlier version of the books stays in the server's history. It is saved to the server's history, so it can be put back if it was a mistake.</div>
@@ -12864,7 +12867,7 @@ const $=(s)=>document.querySelector(s);
    is in one place only, under the heading anybody would look for it under. (Who may open what is the
    role's sections — SECTIONS below — and does not depend on these headings.) */
 const views=[
- ['grp','Home'],['dashboard','Dashboard','F2'],['actions','Action centre'],['updates','What is new'],
+ ['grp','Home'],['startup','Getting started'],['dashboard','Dashboard','F2'],['actions','Action centre'],['updates','What is new'],
  ['grp','Sales'],['pos','POS billing','F3'],['bills','Bills'],['returns','Returns'],['docs','Quotes & delivery notes'],['collect','Goods to collect'],['dlv','Deliveries'],['hire','Tool hire'],
  ['grp','Customers'],['customers','Customers','F8'],['receipts','Take a payment','F7'],['dues','Credit follow-up'],['plans','Easy payments'],['trades','Tradesmen'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],['feedback','Customer feedback'],
  ['grp','Suppliers & buying'],['suppliers','Suppliers','F12'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Supplier payments'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
@@ -12942,6 +12945,7 @@ const VIEW_PERM={users:'users',settings:'settings',payroll:'payroll',products:'p
 function allowed(v){
   if(!S.user || !S.user.name) return false;
   { const fv=FEATURES.find(x=>x[3]&&x[3]===v); if(fv&&!featOn(fv[0])) return false }   // a feature the Super Admin switched off
+  if(v === 'startup') return startupOn() && ownerOnly();   // only while setting up, and for the owner or a director
   if(v === 'updates') return true;          // what changed is everybody's business
   if(v === 'actions') return true;
   if(v === 'leave') return true;            // everybody asks for their own days off
@@ -13121,6 +13125,7 @@ ICONS.payreqs='M4 6h16v12H4zM4 10h16M8 14h4M17 3v4M15 5h4';
 ICONS.webproducts='M3 4h18v12H3zM3 8h18M8 20h8M12 16v4M9 12h2M13 12h4';
 ICONS.site='M3 12h18M12 3a15 15 0 010 18M12 3a15 15 0 000 18M12 3a9 9 0 110 18 9 9 0 010-18';
 ICONS.weborders='M8 4h9l3 4v12H8zM8 4H4v16h4M12 11h5M12 15h5';
+ICONS.startup='M12 2l2.4 5.6L20 8.3l-4.3 3.9L17 18l-5-3-5 3 1.3-5.8L4 8.3l5.6-.7z';
 ICONS.feedback='M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3L2.9 9.5l6.3-.9z';
 ICONS.trail='M4 19h4l3-7 3 12 3-9h3M2 5h20';
 const GROUP_ICON={Shop:'M3 9l2-5h14l2 5M4 9h16v11H4z',Stock:ICONS.inventory,Money:ICONS.expenses,People:ICONS.users,Out:ICONS.messages,System:ICONS.settings,Online:ICONS.site};
@@ -13545,6 +13550,15 @@ function render(){
   try{ motionAfter(wasView!==S.view) }catch(e){}
   if(typeof persist==='function'&&S.user&&!S.signedOut) persist();
 }
+/* while the shop is being set up, a way back to Getting started from any page — an upload opens on its own page */
+function suPillSync(){
+  let el=document.getElementById('suPill');
+  const on=!!(S.user&&S.user.name&&!S.signedOut&&typeof startupOn==='function'&&startupOn()&&ownerOnly()&&!['startup','dashboard'].includes(S.view));
+  if(!on){ if(el) el.remove(); return }
+  const st=startupSteps(), d=st.filter(s=>s.done).length;
+  if(!el){ el=document.createElement('button'); el.id='suPill'; el.type='button'; el.onclick=()=>go('startup'); document.body.appendChild(el) }
+  el.innerHTML=`<span>↩</span> Getting started <b>${d}/${st.length}</b>`;
+}
 function renderNow(){
   applyLayout();
   renderNav();
@@ -13552,7 +13566,7 @@ function renderNow(){
   const sameView = _lastRenderView === S.view;
   const keepMainScroll = (sameView && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions:inbox,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,hire:hirePage,plans:plansPage,dlv:dlvPage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals:()=>{ inTab=apTab==='done'?'history':'decide'; return inbox() },feedback:feedbackPage,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions:inbox,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,hire:hirePage,plans:plansPage,dlv:dlvPage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals:()=>{ inTab=apTab==='done'?'history':'decide'; return inbox() },feedback:feedbackPage,startup:startupScreen,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     const sn0=mn.querySelector('.subnav'), snTop=sn0&&sameView?sn0.scrollTop:0;   // the section list keeps where it was scrolled to
     try{ mn.innerHTML = r(); if(snTop){ const sn1=mn.querySelector('.subnav'); if(sn1) sn1.scrollTop=snTop } }
@@ -13573,6 +13587,7 @@ function renderNow(){
     S.view='dashboard'; return render();
   }
   if(typeof ordPopsSync==='function') ordPopsSync();
+  try{ suPillSync() }catch(e){}
   document.body.classList.toggle('csfull',tillNow()==='classic'&&S.view==='pos');
   if(S.view==='pos'){ const w=tillNow();
     if(w==='phone') posPhoneAfter(); else if(w==='quick') bindQuick(); else if(w==='classic') bindClassic(); else posAfter() }
@@ -32446,8 +32461,8 @@ document.addEventListener('click',e=>{
     setupShop:()=>{ setTab='shop'; go('settings') },
     setupMsg:()=>{ setTab='msg'; go('settings') },
     suDo:()=>startupDo(a.dataset.k),
-    suFinish:()=>{ S.startup={...(S.startup||{}),done:apStamp(),doneBy:S.user.name}; persist(true); render(); toast('Setup done — the dashboard is yours','ok') },
-    suAgain:()=>{ S.startup={at:apStamp(),by:S.user.name}; go('dashboard') },
+    suFinish:()=>{ S.startup={...(S.startup||{}),done:apStamp(),doneBy:S.user.name}; persist(true); go('dashboard'); toast('Setup done — the dashboard is yours','ok') },
+    suAgain:()=>{ S.startup={at:apStamp(),by:S.user.name}; persist(true); go('startup') },
     supBulk:()=>{ closeModals(); bulkPeopleModal('sup') },
     camDrop:()=>{ const i=camList().findIndex(c=>String(c.id)===a.dataset.id); if(i>=0) camList().splice(i,1); render() },
     cashSave:()=>cashSave(a.dataset.k),
