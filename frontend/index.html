@@ -629,6 +629,13 @@ body.privacy nav .navuser{position:relative}
 .lst-band{padding:8px 12px;border-radius:10px;font-weight:800;letter-spacing:.04em;color:#fff;margin-top:6px}.lst-band.black{background:#1d1b1c}.lst-band.red{background:#B3261E}
 .lst-tag{display:inline-block;font-size:11px;font-weight:800;padding:2px 9px;border-radius:99px;color:#fff;vertical-align:middle;letter-spacing:.04em}.lst-tag.black{background:#1d1b1c}.lst-tag.red{background:#B3261E}
 .fb-st{color:#E59E0B;letter-spacing:1px;white-space:nowrap}.fb-st i{font-style:normal;color:var(--line)}.fb-st.s1,.fb-st.s2{color:var(--chip-rust)}
+/* ---- calls about what customers owe ---- */
+.cl-who{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;background:var(--panel,#f6f6f6)}
+.cl-outs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.cl-out{display:flex;align-items:center;gap:8px;padding:10px 11px;border:1.5px solid var(--line);border-radius:10px;background:var(--card,#fff);cursor:pointer;font:inherit;font-weight:600;font-size:13px;color:inherit;text-align:left;transition:all .15s}
+.cl-out span{font-size:18px}.cl-out:hover{border-color:var(--brand)}.cl-out.on{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 8%,transparent);color:var(--brand)}
+.cl-card{margin-bottom:10px}.cl-list{margin-top:8px}.cl-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--line2,var(--line));font-size:13.5px}.cl-row:first-child{border-top:0}.cl-ic{font-size:18px;line-height:1.2}
+@media (max-width:640px){.cl-outs{grid-template-columns:repeat(2,1fr)}}
 /* ---- the label that goes on damaged goods and on repair jobs ---- */
 .dlbl{width:62mm;border:1px solid #111;border-radius:4px;padding:8px 9px;font-family:Archivo,sans-serif;
   color:#000;background:#fff}
@@ -11462,6 +11469,12 @@ function actionItems(){
       acts:[low?actBtn('fbDone','Followed up',id,'tape'):actBtn('fbSeen','Seen',id,'tape'),low?actBtn('fbSeen','Seen — nothing to do',id):'',
         c&&c.phone?`<a class="btn ghost sm" href="tel:${esA(c.phone)}">Call ${noteEsc(c.name.split(' ')[0])}</a>`:'',actOpen('feedback','All feedback')]});
   }
+  /* customers to ring back: what they said on the last call has come due */
+  if(typeof callQueue==='function') for(const r of callQueue().filter(r=>r.due<=D(today)).slice(0,30)){ const id=`data-id="${r.c.id}"`, o=CALL_OUT[r.x.outcome];
+    push({cat:'customer',view:'dues',pri:r.ps==='broken'||r.late?1:2,key:'call'+r.x.id,who:r.c.name,when:r.x.at,amount:r.x.outcome==='promise'?r.x.amount:r.owed,
+      title:r.ps==='broken'?`${r.c.name} promised ${fmt(r.x.amount)} by ${r.x.next} — not paid`:r.x.outcome==='promise'?`${r.c.name} promised ${fmt(r.x.amount)} today`:`Call ${r.c.name} — ${o[1].toLowerCase()}`,
+      sub:[r.x.note&&`“${r.x.note}”`,`outstanding ${fmt(r.owed)}`,r.c.cat].filter(Boolean).join(' · '),tag:r.ps==='broken'?'Promise broken':r.late?'Call overdue':'Call today',
+      acts:[actBtn('callLog','Log a call',id,'tape'),r.c.phone?`<a class="btn ghost sm" href="tel:${esA(r.c.phone)}">📞 Call</a>`:'',actOpen('dues','Credit follow-up')]}) }
   /* customers late paying — the oldest debts first */
   if(typeof custAge==='function'){
     const late=(S.customers||[]).filter(c=>c.id!==1).map(c=>({c,bal:partyBal('C',c.id)})).filter(x=>x.bal>0.005)
@@ -23374,6 +23387,7 @@ function customerPanel(c){
      <button class="btn ghost wa" data-act="custWa" data-id="${c.id}" ${c.phone?'':'disabled'} title="Open WhatsApp with them — the statement typed in if they owe">${WA_ICON} WhatsApp</button>
      <button class="btn ghost" data-act="noteAdd" data-ptype="C" data-id="${c.id}">Add a note</button>
      <button class="btn ghost" data-act="custEdit" data-id="${c.id}">Edit <i class="kbd">Ctrl+E</i></button>
+     <button class="btn ghost" data-act="callLog" data-id="${c.id}">📞 Log a call</button>
      ${dirBoss()?`<button class="btn ghost" data-act="custList" data-id="${c.id}">${custListed(c)?listName(c)+' — change':'Black / red list…'}</button>`:''}
     </div>
     <div class="cu-id">${avatarOf(c,true)}
@@ -23400,6 +23414,7 @@ function customerPanel(c){
       ${AGE_BANDS.map(([k,,tone])=>`<i class="${tone}" style="width:${((ag[k]||0)/owed*100)}%"></i>`).join('')}</div>
     </div>`:''}
 
+   ${custCallsCard(c)}
    <div class="cu-small">
     <span><i>Bought in all</i> <b>${fmt(lifetime)}</b> · ${inv.length} bill${inv.length===1?'':'s'}, paid ${fmt(paidTot)}</span>
     ${(typeof extPointsValue==='function'&&(CFG.loyalty||{}).enabled!==false&&((c.points||0)>0||(CFG.loyalty||{}).enabled))
@@ -23715,14 +23730,17 @@ function custModal(id,preset){
    <div class="grid2">
     <div class="f"><label>Prices</label><select id="cmLevel"><option value="retail" ${!c||c.level==='retail'?'selected':''}>Retail</option><option value="wholesale" ${c&&c.level==='wholesale'?'selected':''}>Wholesale</option></select></div>
     <div class="f"><label>Credit limit (Rs)</label><input id="cmLimit" type="number" step="1000" value="${c?c.limit:25000}"></div></div>
+   <div class="f" style="max-width:260px"><label>Category <span class="muted">(for the collector's lists)</span></label><select id="cmCat"><option value="">— none —</option>${custCats().map(k=>`<option ${c&&c.cat===k?'selected':''}>${noteEsc(k)}</option>`).join('')}<option value="__new">+ A new category…</option></select></div>
    <div class="f" style="max-width:260px"><label>Ledger No <span class="muted">(their page in the ledger book)</span></label><input id="cmLedger" value="${c?escM(c.ledger||''):''}" placeholder="e.g. 45 or L-12"></div>
    <div class="f" style="max-width:260px"><label>VAT No <span class="muted">(a VAT-registered business — printed on its tax invoices)</span></label><input id="cmTin" value="${c?escM(c.tin||''):''}" placeholder="e.g. 114567890-7000"></div>
    <div class="f"><label>Notes for the counter</label><textarea id="cmNotes" rows="2" placeholder="e.g. pays by cheque at month end · ask for Sunil">${c?(c.notes||''):''}</textarea></div>
    <div class="muted" id="cmMsg"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="cmOk">${c?'Save':'Add customer'}</button></div>`);
   const g=id2=>m.querySelector('#'+id2);
+  g('cmCat').onchange=()=>{ if(g('cmCat').value!=='__new') return; const k=(prompt('The new category — e.g. Bazaar, Construction, Estate')||'').trim();
+    if(!k){ g('cmCat').value=c&&c.cat||''; return } CFG.custCats=[...new Set(custCats().concat([k]))]; const o=document.createElement('option'); o.textContent=k; g('cmCat').insertBefore(o,g('cmCat').lastElementChild); g('cmCat').value=k };
   const save=()=>{
-    const ledger=g('cmLedger').value.trim(), tin=g('cmTin').value.trim();
+    const ledger=g('cmLedger').value.trim(), tin=g('cmTin').value.trim(), cat=g('cmCat').value==='__new'?'':g('cmCat').value;
     const name=g('cmName').value.trim(), phone=g('cmPhone').value.trim(), addr=g('cmAddr').value.trim(), email=g('cmEmail').value.trim(), level=g('cmLevel').value, limit=+g('cmLimit').value||0, notes=g('cmNotes').value.trim();
     if(!name){ g('cmMsg').textContent='A name is needed.'; g('cmName').focus(); return }
     if(email&&!isEmail(email)){ g('cmMsg').textContent='Enter an email like name@company.lk, or leave it empty.'; g('cmEmail').focus(); return }
@@ -23748,11 +23766,11 @@ function custModal(id,preset){
       if(termsChanged&&needsApproval('custTerms')){
         asks.push(requestApproval('custTerms',`Change ${c.name}'s terms: limit ${fmt(c.limit)} → ${fmt(limit)}, ${c.level} → ${level} prices`,`outstanding ${fmt(partyBal('C',c.id))} now`,{cid:c.id,limit,level}));
       } else if(termsChanged){ Object.assign(c,{level,limit}) }
-      const ledgerChanged=(c.ledger||'')!==ledger||(c.tin||'')!==tin; c.ledger=ledger; if(tin) c.tin=tin; else delete c.tin;
+      const ledgerChanged=(c.ledger||'')!==ledger||(c.tin||'')!==tin||(c.cat||'')!==cat; c.ledger=ledger; if(tin) c.tin=tin; else delete c.tin; if(cat) c.cat=cat; else delete c.cat;
       m.remove(); render();
       if(asks.length) return;                                  // requestApproval has already said so
       toast(changed.length||termsChanged||ledgerChanged?'Saved':'Nothing changed'); return }
-    const nc={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),name,phone,address:addr,email,level,limit,notes,ledger,...(tin?{tin}:{}),portal:false,lastLogin:null,points:0};
+    const nc={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),name,phone,address:addr,email,level,limit,notes,ledger,...(tin?{tin}:{}),...(cat?{cat}:{}),portal:false,lastLogin:null,points:0};
     S.customers.push(nc); custSel=nc.id; custQ=''; custFilter='all'; custTab='overview'; m.remove(); render(); toast(`${name} added`);
   };
   g('cmOk').onclick=save;
@@ -29264,10 +29282,176 @@ const duesApi=(p,opts)=>fetch('/api/dues'+p,{...(opts||{}),headers:{'Content-Typ
 function duesLoad(){ if(DUES.loading) return; DUES.loading=true;
   duesApi('').then(j=>{ DUES.data=j; DUES.err='' }).catch(e=>{ DUES.err=e.message }).finally(()=>{ DUES.loading=false; if(S.view==='dues') render() }) }
 const DUE_KIND={remind1:'First reminder',remind2:'Overdue',remind3:'Final reminder',statement:'Statement',planDue:'Plan part due',planLate:'Plan part late'};
+/* ================== CALLING CUSTOMERS ABOUT WHAT THEY OWE ==================
+   Every call is written down: what they said, and when to come back to it. "Will pay on the 15th" is a
+   promise — kept once the money comes in, broken if the day passes without it. "Call me Monday" puts them
+   on Monday's list. A note is just a note. The Credit follow-up page shows who is due a call today, the
+   promises falling due and the ones broken; the Action centre has today's; the customer's page has the
+   history. Customers also carry a category (Bazaar, Construction…), so a collector goes out with one list. */
+const CALL_OUT = {
+  promise:  ['💰', 'Will pay on a date', 'ok'],
+  later:    ['📞', 'Call later', 'blue'],
+  noanswer: ['🔕', 'No answer', 'warn'],
+  dispute:  ['⚠️', 'Disputes the amount', 'bad'],
+  visit:    ['🛵', 'Collector to visit', 'blue'],
+  note:     ['📝', 'Just a note', '']};
+const CUST_CATS_DEF = ['Bazaar', 'Construction', 'Contractor', 'Hardware shop', 'Individual', 'Government'];
+const custCats = () => { const own = (CFG.custCats && CFG.custCats.length) ? CFG.custCats : CUST_CATS_DEF; const used = S.customers.map(c => c.cat).filter(Boolean); return [...new Set(own.concat(used))] };
+const callsOf = (cid) => (S.calls || []).filter(x => String(x.cid) === String(cid)).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+/* the follow-up a customer is waiting on: the newest call, while it still asks for one */
+function callOpen(cid) {
+  const x = callsOf(cid)[0];
+  return x && !x.closed && x.next && x.outcome !== 'note' ? x : null;
+}
+/* a promise: kept once they have paid that much since, broken when its day passes without */
+/* all a customer has ever paid in: what a call notes when it is made, so only money that comes in after it
+   counts towards the promise — not a payment made earlier the same day */
+const custRecv = (cid) => (S.payments || []).filter(p => p.dir === 'IN' && String(p.customerId) === String(cid)).reduce((a, p) => a + (+p.amount || 0), 0);
+function promiseState(x) {
+  if (!x || x.outcome !== 'promise') return '';
+  const paid = x.recvAt !== undefined ? custRecv(x.cid) - (+x.recvAt || 0)
+    : (S.payments || []).filter(p => p.dir === 'IN' && String(p.customerId) === String(x.cid) && String(p.date) > String(x.date)).reduce((a, p) => a + (+p.amount || 0), 0);
+  if (paid >= (+x.amount || 0.01) - 0.005 || partyBal('C', x.cid) <= 0.005) return 'kept';
+  return D(today) > x.next ? 'broken' : 'waiting';
+}
+const callDueTxt = (d) => { const t = D(today); if (!d) return ''; if (d === t) return 'today'; if (d < t) { const n = Math.round((new Date(t) - new Date(d)) / 864e5); return n === 1 ? 'yesterday' : n + ' days ago' }
+  const n = Math.round((new Date(d) - new Date(t)) / 864e5); return n === 1 ? 'tomorrow' : new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) };
+/* who is waiting on a call, and why: today's and overdue first */
+function callQueue() {
+  const t = D(today), out = [];
+  for (const c of S.customers) { if (c.id === 1 || c.active === false) continue;
+    const x = callOpen(c.id); if (!x) continue;
+    const ps = promiseState(x); if (ps === 'kept') continue;
+    out.push({ c, x, ps, due: x.next, late: x.next < t, today: x.next === t, owed: partyBal('C', c.id) });
+  }
+  return out.sort((a, b) => String(a.due).localeCompare(String(b.due)) || b.owed - a.owed);
+}
+/* writing one down */
+function callLog(cid, preset) {
+  const c = C(cid); if (!c) return;
+  const owed = partyBal('C', c.id), age = custAge(c.id), t = D(today);
+  const plus = (n) => D(new Date(today.getTime() + n * 864e5));
+  const last = callsOf(c.id)[0];
+  let out = preset || 'promise';
+  const m = modal(`<h2>${noteEsc(c.name)} — a call</h2>
+   <div class="cl-who"><div><b>${fmt(owed)}</b> outstanding${age.oldest ? ` · oldest bill ${age.oldest} days` : ''}${c.cat ? ` · <span class="tag">${noteEsc(c.cat)}</span>` : ''}</div>
+    ${c.phone ? `<a class="btn ghost sm" href="tel:${esA(c.phone)}">📞 ${noteEsc(c.phone)}</a>` : '<span class="muted">no mobile on file</span>'}</div>
+   ${last ? `<div class="muted" style="margin:6px 0 2px">Last: ${CALL_OUT[last.outcome][1].toLowerCase()} · ${noteEsc(last.at)} by ${noteEsc(last.by)}${last.note ? ` — “${noteEsc(last.note)}”` : ''}</div>` : ''}
+   <div class="f" style="margin-top:10px"><label>What did they say?</label>
+    <div class="cl-outs">${Object.entries(CALL_OUT).map(([k, v]) => `<button type="button" class="cl-out ${k === out ? 'on' : ''}" data-o="${k}"><span>${v[0]}</span>${v[1]}</button>`).join('')}</div></div>
+   <div class="grid3" id="clF">
+    <div class="f" data-for="promise later noanswer dispute visit"><label id="clDl">Pay on</label><input id="clDate" type="date" min="${t}"></div>
+    <div class="f" data-for="promise"><label>How much</label><input id="clAmt" type="number" step="any" value="${owed > 0 ? owed.toFixed(2) : ''}"></div>
+    <div class="f" data-for="later"><label>At (optional)</label><input id="clTime" type="time"></div></div>
+   <div class="chips" id="clQuick" style="margin:-4px 0 6px"></div>
+   <div class="f"><label>Note</label><textarea id="clNote" rows="2" maxlength="300" placeholder="what was said — e.g. waiting for the site payment, call the son on 077…"></textarea></div>
+   <div class="muted" id="clMsg"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="clOk">Save</button></div>`);
+  const g = i => m.querySelector('#' + i);
+  const quick = { promise: [['In 3 days', 3], ['This Friday', (5 - today.getDay() + 7) % 7 || 7], ['In a week', 7], ['Month end', Math.max(1, new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate() - today.getDate())]],
+    later: [['Tomorrow', 1], ['In 2 days', 2], ['Next week', 7]], noanswer: [['Tomorrow', 1], ['In 2 days', 2]], dispute: [['Tomorrow', 1], ['In 3 days', 3]], visit: [['Today', 0], ['Tomorrow', 1], ['In 2 days', 2]] };
+  const lbl = { promise: 'Pay on', later: 'Call again on', noanswer: 'Try again on', dispute: 'Look at it again on', visit: 'Visit on' };
+  const def = { promise: 3, later: 1, noanswer: 1, dispute: 2, visit: 1 };
+  const show = () => {
+    m.querySelectorAll('.cl-out').forEach(b => b.classList.toggle('on', b.dataset.o === out));
+    m.querySelectorAll('#clF [data-for]').forEach(f => f.style.display = f.dataset.for.split(' ').includes(out) ? '' : 'none');
+    g('clDl').textContent = lbl[out] || '';
+    if (def[out] !== undefined) g('clDate').value = plus(def[out]);
+    g('clQuick').innerHTML = (quick[out] || []).map(([l, n]) => `<button type="button" data-n="${n}">${l}</button>`).join('');
+    g('clQuick').querySelectorAll('[data-n]').forEach(b => b.onclick = () => { g('clDate').value = plus(+b.dataset.n) });
+  };
+  m.querySelectorAll('.cl-out').forEach(b => b.onclick = () => { out = b.dataset.o; show() });
+  show();
+  g('clOk').onclick = () => {
+    const note = g('clNote').value.trim(), next = out === 'note' ? '' : g('clDate').value, amt = +g('clAmt').value || 0;
+    if (out !== 'note' && !next) return g('clMsg').textContent = 'Pick the day.';
+    if (out === 'promise' && !(amt > 0)) return g('clMsg').textContent = 'How much did they say they will pay?';
+    if (out === 'note' && !note) return g('clMsg').textContent = 'Write the note.';
+    S.calls = S.calls || [];
+    // a new call answers the one before it
+    callsOf(c.id).filter(x => !x.closed).forEach(x => { x.closed = true; x.closedBy = 'next call' });
+    const x = { id: 'cl' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), cid: c.id, ts: Date.now(), at: apStamp(), date: t, by: S.user.name,
+      outcome: out, note, next, time: out === 'later' ? g('clTime').value : '', amount: out === 'promise' ? +amt.toFixed(2) : 0, owed: +owed.toFixed(2), recvAt: +custRecv(c.id).toFixed(2) };
+    S.calls.push(x); if (S.calls.length > 5000) S.calls.splice(0, S.calls.length - 5000);
+    try { logTrail('other', `${c.name}: ${CALL_OUT[out][1].toLowerCase()}${out === 'promise' ? ' — ' + fmt(amt) + ' on ' + next : next ? ' — ' + next : ''}${note ? ' · ' + note : ''}`, { ref: c.code || String(c.id), amount: out === 'promise' ? amt : undefined }) } catch (e) {}
+    m.remove(); persist(true); render();
+    toast(out === 'promise' ? `${fmt(amt)} promised for ${callDueTxt(next)} — it comes back then if not paid` : out === 'note' ? 'Note kept' : `Back on the list ${callDueTxt(next)}`, 'ok');
+  };
+  setTimeout(() => (out === 'note' ? g('clNote') : g('clDate')).focus(), 30);
+}
+/* the customer's own page: the calls, newest first */
+function custCallsCard(c) {
+  const list = callsOf(c.id), open = callOpen(c.id), ps = promiseState(open);
+  if (!list.length && partyBal('C', c.id) <= 0.005) return '';
+  return `<div class="card cl-card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+     <h3 style="margin:0">Calls &amp; follow-up</h3>
+     <div style="display:flex;gap:6px;flex-wrap:wrap">${open ? `<span class="tag ${ps === 'broken' ? 'bad' : open.next < D(today) ? 'warn' : 'blue'}">${ps === 'broken' ? 'promise broken' : CALL_OUT[open.outcome][1].toLowerCase()} · ${callDueTxt(open.next)}</span>` : ''}
+      <button class="btn tape sm" data-act="callLog" data-id="${c.id}">+ Log a call</button></div></div>
+    ${list.length ? `<div class="cl-list">${list.slice(0, 8).map(x => { const st = promiseState(x);
+      return `<div class="cl-row"><span class="cl-ic">${CALL_OUT[x.outcome][0]}</span><div><b>${CALL_OUT[x.outcome][1]}</b>${x.outcome === 'promise' ? ` — ${fmt(x.amount)} on ${x.next}` : x.next ? ` — ${x.next}${x.time ? ' ' + x.time : ''}` : ''}
+        ${st ? ` <span class="tag ${st === 'kept' ? 'ok' : st === 'broken' ? 'bad' : 'warn'}">${st === 'kept' ? 'kept' : st === 'broken' ? 'broken' : 'waiting'}</span>` : ''}
+        ${x.note ? `<div>“${noteEsc(x.note)}”</div>` : ''}<div class="muted">${noteEsc(x.at)} · ${noteEsc(x.by)} · owed ${fmt(x.owed)} then</div></div></div>` }).join('')}</div>`
+      : '<div class="muted" style="margin-top:6px">No calls yet. After ringing them, write down what they said — a date they will pay, when to call again, or a note.</div>'}
+   </div>`;
+}
+/* the Credit follow-up page: today's calls, the promises, and the collector's list */
+let callShow = 'due', duCat = '';
+function callsSection() {
+  const q = callQueue(), t = D(today);
+  const due = q.filter(r => r.due <= t), broken = q.filter(r => r.ps === 'broken'), promToday = q.filter(r => r.x.outcome === 'promise' && r.today), soon = q.filter(r => r.due > t);
+  const keptMonth = (S.calls || []).filter(x => x.outcome === 'promise' && String(x.date).slice(0, 7) === t.slice(0, 7) && promiseState(x) === 'kept');
+  const list = callShow === 'due' ? due : callShow === 'broken' ? broken : callShow === 'soon' ? soon : q;
+  const shown = list.filter(r => !duCat || (r.c.cat || '') === duCat);
+  const chip = (k, l, n) => `<button class="${callShow === k ? 'on' : ''}" data-act="callShow" data-k="${k}">${l} <b>${n}</b></button>`;
+  return `<div class="card" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Calls &amp; promises</h2>
+     <span class="muted">${keptMonth.length} promise${keptMonth.length === 1 ? '' : 's'} kept this month</span></div>
+    <div class="row" style="margin:10px 0">
+     ${stat('To call today', due.length, due.filter(r => r.late).length ? due.filter(r => r.late).length + ' overdue' : 'none overdue', due.length ? 'y' : 'g')}
+     ${stat('Promised for today', promToday.length, promToday.length ? fmt(promToday.reduce((a, r) => a + (+r.x.amount || 0), 0)) : 'nothing due', 'b')}
+     ${stat('Promises broken', broken.length, broken.length ? fmt(broken.reduce((a, r) => a + (+r.x.amount || 0), 0)) + ' not paid' : 'none', broken.length ? 'r' : 'g')}
+     ${stat('Coming up', soon.length, 'later this week and on', 'b')}</div>
+    <div class="chips" style="margin:0 0 8px">${chip('due', 'Today &amp; overdue', due.length)}${chip('broken', 'Broken promises', broken.length)}${chip('soon', 'Coming up', soon.length)}${chip('all', 'All', q.length)}</div>
+    ${shown.length ? `<div style="overflow-x:auto"><table><tr><th>Customer</th><th>Category</th><th class="n">Outstanding</th><th>What they said</th><th>Due</th><th></th></tr>
+     ${shown.map(({ c, x, ps, due: d }) => `<tr><td><b>${noteEsc(c.name)}</b><div class="muted">${noteEsc(c.phone || '')}</div></td><td>${c.cat ? `<span class="tag">${noteEsc(c.cat)}</span>` : '<span class="muted">—</span>'}</td>
+       <td class="n">${fmt(partyBal('C', c.id))}</td>
+       <td>${CALL_OUT[x.outcome][0]} ${CALL_OUT[x.outcome][1]}${x.outcome === 'promise' ? ` — <b>${fmt(x.amount)}</b>` : ''}${x.note ? `<div class="muted">“${noteEsc(x.note)}”</div>` : ''}<div class="muted" style="font-size:11.5px">${noteEsc(x.at)} · ${noteEsc(x.by)}</div></td>
+       <td><span class="tag ${ps === 'broken' ? 'bad' : d < t ? 'warn' : d === t ? 'blue' : ''}">${ps === 'broken' ? 'broken · ' : ''}${callDueTxt(d)}${x.time ? ' ' + x.time : ''}</span></td>
+       <td style="white-space:nowrap">${c.phone ? `<a class="btn ghost sm" href="tel:${esA(c.phone)}">Call</a> ` : ''}<button class="btn tape sm" data-act="callLog" data-id="${c.id}">Log a call</button></td></tr>`).join('')}</table></div>`
+      : `<div class="muted">${callShow === 'due' ? 'Nobody to call today. Log a call from the list below — what they say decides when they come back here.' : 'Nothing here.'}</div>`}
+   </div>`;
+}
+/* the collector's sheet: one category (or all), who owes what, where, and what was last said */
+function collectorSheet(cat) {
+  const rows = S.customers.filter(c => c.id !== 1 && c.active !== false && (!cat || (c.cat || '') === cat)).map(c => ({ c, owed: partyBal('C', c.id), a: custAge(c.id), x: callsOf(c.id)[0] }))
+    .filter(r => r.owed > 0.005).sort((a, b) => String(a.c.address || '').localeCompare(String(b.c.address || '')) || b.owed - a.owed);
+  const total = rows.reduce((s, r) => s + r.owed, 0);
+  const w = window.open('', '_blank'); if (!w) return toast('Allow pop-ups to print the collector list', 'warn');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Collection list${cat ? ' — ' + noteEsc(cat) : ''}</title><style>
+   body{font:13px/1.4 Arial,sans-serif;margin:18px;color:#111}h1{font-size:18px;margin:0}.m{color:#555;font-size:12px;margin:2px 0 12px}
+   table{width:100%;border-collapse:collapse}th,td{border:1px solid #bbb;padding:6px 7px;vertical-align:top;text-align:left}th{background:#f1f1f1;font-size:11.5px}
+   td.n{text-align:right;white-space:nowrap}.box{width:90px}.tot td{font-weight:700;background:#fafafa}@media print{button{display:none}}</style></head><body>
+   <button onclick="print()" style="float:right;padding:6px 14px">Print</button>
+   <h1>${noteEsc(CFG.shop.name)} — collection list${cat ? ': ' + noteEsc(cat) : ''}</h1>
+   <div class="m">${D(today)} · ${rows.length} customer${rows.length === 1 ? '' : 's'} · ${fmt(total)} outstanding · collector: ________________</div>
+   <table><tr><th>#</th><th>Customer</th><th>Address / mobile</th><th class="n">Outstanding</th><th>Oldest</th><th>Last said</th><th class="box">Collected</th><th class="box">Note</th></tr>
+   ${rows.map((r, i) => `<tr><td>${i + 1}</td><td><b>${noteEsc(r.c.name)}</b>${r.c.cat && !cat ? `<br><small>${noteEsc(r.c.cat)}</small>` : ''}</td><td>${noteEsc(r.c.address || '')}<br>${noteEsc(r.c.phone || '')}</td>
+     <td class="n">${fmt(r.owed)}</td><td>${r.a.oldest ? r.a.oldest + ' d' : ''}</td>
+     <td>${r.x ? `${CALL_OUT[r.x.outcome][1]}${r.x.outcome === 'promise' ? ' ' + fmt(r.x.amount) + ' on ' + r.x.next : r.x.next ? ' ' + r.x.next : ''}${r.x.note ? '<br><small>' + noteEsc(r.x.note) + '</small>' : ''}` : ''}</td><td></td><td></td></tr>`).join('')}
+   <tr class="tot"><td colspan="3">Total</td><td class="n">${fmt(total)}</td><td colspan="4"></td></tr></table></body></html>`);
+  w.document.close();
+}
+/* the category chips over the outstanding list, each with how many owe */
+function duCatChips(owingAll) {
+  const n = (k) => k === '' ? owingAll.length : k === '-' ? owingAll.filter(x => !x.c.cat).length : owingAll.filter(x => (x.c.cat || '') === k).length;
+  const opts = [['', 'All']].concat(custCats().map(k => [k, k])).concat([['-', 'No category']]);
+  return opts.filter(([k]) => k === '' || n(k)).map(([k, l]) => `<button class="${duCat === k ? 'on' : ''}" data-act="duCat" data-k="${noteEsc(k)}">${noteEsc(l)} <b>${n(k)}</b></button>`).join('');
+}
 function duesPage(){
   if(!DUES.data&&!DUES.err) duesLoad();
   const cfg=dueCfgNow(), st=(cfg.steps||[7,30,60]).map(Number), boss=ownerOnly(), d=DUES.data||{log:[],plan:[],runs:[]};
-  const owing=S.customers.filter(c=>c.id!==1&&c.active!==false).map(c=>({c,a:custAge(c.id)})).filter(x=>x.a.n>0)
+  const owingAll=S.customers.filter(c=>c.id!==1&&c.active!==false).map(c=>({c,a:custAge(c.id)})).filter(x=>x.a.n>0);
+  const owing=owingAll.filter(x=>!duCat||(duCat==='-'?!x.c.cat:(x.c.cat||'')===duCat))
     .map(x=>({...x,owed:x.a.now+x.a.mid+x.a.late+x.a.vold})).sort((a,b)=>b.a.oldest-a.a.oldest||b.owed-a.owed);
   const total=owing.reduce((s,x)=>s+x.owed,0), late=owing.filter(x=>x.a.oldest>30), stopped=owing.filter(x=>dueStopped(x.c));
   const month=D(today).slice(0,7), thisMonth=(d.log||[]).filter(l=>l.ok&&String(l.at).slice(0,7)===month).length;
@@ -29283,6 +29467,7 @@ function duesPage(){
     ${stat('Reminders this month',thisMonth,cfg.on?'sent by the server':'switched off',cfg.on?'g':'y')}
     ${stat('To go today',(d.plan||[]).length,cfg.on?'from '+cfg.at:'when switched on',(d.plan||[]).length?'y':'g')}
    </div>
+   ${callsSection()}
    ${DUES.err?`<div class="card note" style="border-left:3px solid var(--chip-rust);margin-bottom:12px"><b>Could not reach the server</b><div class="muted">${noteEsc(DUES.err)} — the reminders are sent by the server; this page shows what it has done.</div></div>`:''}
    <div class="card" style="margin-bottom:12px">
     <h2 style="margin-top:0">Reminders, by themselves</h2>
@@ -29301,14 +29486,18 @@ function duesPage(){
      <button class="btn ghost" data-act="duStmt">Send everyone their statement now</button>
      <button class="btn ghost" data-act="duReload">Refresh</button></div>`:'<div class="muted" style="margin-top:8px">The owner or an admin changes these.</div>'}
    </div>
-   <div class="card" style="margin-bottom:12px"><h2 style="margin-top:0">Outstanding</h2>
-    ${owing.length?`<div style="overflow-x:auto"><table><tr><th>Customer</th><th>Mobile</th><th class="n">Outstanding</th><th>Oldest bill</th><th>Told</th><th>Next</th><th></th></tr>
+   <div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Outstanding</h2>
+     <button class="btn ghost sm" data-act="duSheet">🖨 Collector's list${duCat&&duCat!=="-"?" — "+noteEsc(duCat):""}</button></div>
+    <div class="chips" style="margin:8px 0">${duCatChips(owingAll)}</div>
+    ${owing.length?`<div style="overflow-x:auto"><table><tr><th>Customer</th><th>Mobile</th><th class="n">Outstanding</th><th>Oldest bill</th><th>Last call</th><th>Told</th><th>Next</th><th></th></tr>
      ${owing.map(x=>{ const c=x.c, l=last.get(String(c.id)), p=planBy.get(String(c.id)), s=stepOf(x.a.oldest), stop=dueStopped(c);
-       return `<tr><td><b>${noteEsc(c.name)}</b>${stop?' <span class="tag bad">credit stopped</span>':''}${c.noRemind?' <span class="tag">not reminded</span>':''}</td>
+       const lc=callsOf(c.id)[0], lps=promiseState(lc);
+       return `<tr><td><b>${noteEsc(c.name)}</b>${c.cat?` <span class="tag">${noteEsc(c.cat)}</span>`:''}${stop?' <span class="tag bad">credit stopped</span>':''}${c.noRemind?' <span class="tag">not reminded</span>':''}</td>
         <td>${noteEsc(c.phone||'—')}</td><td class="n">${money2(x.owed)}</td><td>${ageTag(x.a.oldest)}</td>
+        <td>${lc?`${CALL_OUT[lc.outcome][0]} ${CALL_OUT[lc.outcome][1]}${lc.next?' · '+callDueTxt(lc.next):''}${lps==='broken'?' <span class="tag bad">broken</span>':lps==='kept'?' <span class="tag ok">kept</span>':''}${lc.note?`<div class="muted" style="font-size:12px">“${noteEsc(lc.note.length>50?lc.note.slice(0,50)+'…':lc.note)}”</div>`:''}`:'<span class="muted">not called</span>'}</td>
         <td>${l?`${DUE_KIND[l.kind]||l.kind} · ${when(l.at)}${l.ok?'':' <span class="tag bad">not sent</span>'}`:'<span class="muted">nothing yet</span>'}</td>
         <td>${c.noRemind?'—':p?`<b>${DUE_KIND[p.kind]}</b> today`:s<st.length?`at ${st[s]} days`:'<span class="muted">all steps sent</span>'}</td>
-        <td style="white-space:nowrap">${boss&&c.phone?`<button class="btn ghost sm" data-act="duOne" data-id="${c.id}">Remind now</button>`:''}
+        <td style="white-space:nowrap"><button class="btn tape sm" data-act="callLog" data-id="${c.id}">Log a call</button> ${boss&&c.phone?`<button class="btn ghost sm" data-act="duOne" data-id="${c.id}">Remind now</button>`:''}
          <button class="btn ghost sm" data-act="duQuiet" data-id="${c.id}">${c.noRemind?'Remind again':"Don't remind"}</button></td></tr>` }).join('')}</table></div>`
      :'<div class="muted">Nothing outstanding.</div>'}
    </div>
@@ -32525,6 +32714,10 @@ document.addEventListener('click',e=>{
     prodHist:()=>productHistory(+a.dataset.id),
     custQ:()=>{}, stmtPrint:()=>statement(+a.dataset.id,'print'), stmtSms:()=>statement(+a.dataset.id,'sms'),
     custNew:()=>custModal(null,a.dataset.q||custQ), custEdit:()=>custModal(+a.dataset.id), custList:()=>custListModal(+a.dataset.id),
+    callLog:()=>callLog(+a.dataset.id),
+    callShow:()=>{ callShow=a.dataset.k; render() },
+    duCat:()=>{ duCat=a.dataset.k; render() },
+    duSheet:()=>collectorSheet(duCat==='-'?'':duCat),
     noteAdd:()=>noteModal(a.dataset.ptype,+a.dataset.id), noteEdit:()=>noteModal(null,null,a.dataset.nid),
     noteDone:()=>noteSettle(a.dataset.nid,true), noteReopen:()=>noteSettle(a.dataset.nid,false),
     noteDel:()=>noteRemove(a.dataset.nid),

@@ -59,7 +59,8 @@ const setup = await pg.evaluate(() => {
   cs.forEach((c, i) => { c.phone = phones[i]; c.noRemind = false; c.limit = 10000000;
     const s = S.sales.find(x => x.customerId === c.id) || S.sales[i];
     s.customerId = c.id; s.date = ago(ages[i]); s.balance = 1000 * (i + 1); s.type = 'CREDIT'; });
-  CFG.dues = { on: true, at: '00:00', steps: [7, 30, 60], monthly: false, monthDay: 1, stopDays: 0 };
+  // from 23:59 for now: the server's own once-a-minute look must not send these before the test does (it raced it)
+  CFG.dues = { on: true, at: '23:59', steps: [7, 30, 60], monthly: false, monthDay: 1, stopDays: 0 };
   window.eval("_caKey = ''");   // the ages are cached until a bill or payment is added; the dates were changed in place here
   window.eval('persist')(true);
   return cs.map((c, i) => ({ id: c.id, name: c.name, age: ages[i] }));
@@ -87,6 +88,7 @@ const r3 = await api('/one', { cid: String(setup[1].id) });
 ok(r3.sent === 1 && got.length === 4, '"Remind now" sends one by hand, even after the day\'s run');
 
 // the server's own clock: switched on from 00:00, it has a run for today within a minute
+await pg.evaluate(() => { window.eval('CFG').dues.at = '00:00'; window.eval('persist')(true) });
 let ran = null;
 for (let i = 0; i < 14 && !ran; i++) { await wait(5000); const g = await api(''); ran = (g.runs || []).find(x => String(x.day) === new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' })); }
 ok(!!ran, 'the server runs it by itself once a day (today\'s run is recorded)', ran ? `sent ${ran.sent}` : 'none');
