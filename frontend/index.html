@@ -23135,12 +23135,13 @@ function feedbackPage(){
 function feedbackAfter(){ const el=$('#fbQ'); if(el) el.oninput=()=>{ const p=el.selectionStart; fbQ=el.value; render(); const n=$('#fbQ'); if(n){ n.focus(); n.setSelectionRange(p,p) } } }
 function fbFollowUp(id){
   const x=(S.feedback||[]).find(f=>f.id===id); if(!x) return;
-  const note=prompt(`What was done for ${x.who}? (optional)`,'');
-  if(note===null) return;
-  x.done={by:S.user.name,at:apStamp(),note:String(note).trim().slice(0,200)};
-  try{ logTrail('other',`Feedback on ${x.no} from ${x.who} followed up${x.done.note?' — '+x.done.note:''}`,{ref:x.no}) }catch(e){}
-  persist(true); render(); toast('Marked as followed up','ok');
+  askBox({title:`Followed up — ${noteEsc(x.who)}`,body:x.note?`They said: “${noteEsc(x.note)}”`:'',label:'What was done (optional)',placeholder:'e.g. rang them, sorry given, 5% off next bill',ok:'Mark followed up'}).then(note=>{
+    if(note===null) return;
+    x.done={by:S.user.name,at:apStamp(),note:String(note).trim().slice(0,200)};
+    try{ logTrail('other',`Feedback on ${x.no} from ${x.who} followed up${x.done.note?' — '+x.done.note:''}`,{ref:x.no}) }catch(e){}
+    persist(true); render(); toast('Marked as followed up','ok') });
 }
+
 /* the doing of each change, shared by the request path and the direct path */
 /* ---- switching a page on ----
    Switching it on is the moment the shop hands someone the keys, so the system makes a sign-in for
@@ -23505,10 +23506,32 @@ function custMatch(c,q){
    A customer or supplier the shop no longer deals with is made inactive: off the lists and out of the till's
    pickers, with their bills and balance left on the books. They sit under "Inactive" on the list. Making one
    active again is a decision: someone who may approve does it (and it is written down); anyone else asks. */
-function partyInactive(type,id){
+/* A question in the page's own window: a line of text (or none, for a yes/no). Resolves to the text, or
+   null when cancelled. The browser's prompt()/confirm() are not used for new things: the Regal POS Windows app
+   does not show them, and a browser stops showing them once "do not let this page make more dialogs" is ticked —
+   either way they answered "cancel" at once and the button seemed to do nothing. */
+function askBox({title,body='',label='',value='',placeholder='',ok='OK',cancel='Cancel',text=true,need=false,tone='tape'}){
+  return new Promise(done=>{
+    const m=modal(`<h2 style="margin:0 0 6px">${title}</h2>${body?`<div class="muted" style="margin-bottom:10px">${body}</div>`:''}
+      ${text?`<div class="f"><label>${label}</label><input id="abT" maxlength="160" value="${noteEsc(value)}" placeholder="${noteEsc(placeholder)}" autocomplete="off"></div>`:''}
+      <div class="muted" id="abM" style="min-height:18px"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px"><button class="btn ghost" id="abNo">${cancel}</button><button class="btn ${tone}" id="abGo">${ok}</button></div>`);
+    let over=false; const end=v=>{ if(over) return; over=true; m.remove(); done(v) };
+    const inp=m.querySelector('#abT');
+    const go=()=>{ const v=inp?inp.value.trim():''; if(need&&!v){ m.querySelector('#abM').textContent='Write it first.'; inp.focus(); return } end(v) };
+    m.querySelector('#abGo').onclick=go; m.querySelector('#abNo').onclick=()=>end(null);
+    m.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){ e.preventDefault(); e.stopPropagation(); go() } if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); end(null) } });
+    // the window closed some other way (the ✕, a click outside): a cancel
+    const obs=new MutationObserver(()=>{ if(!document.body.contains(m)){ obs.disconnect(); end(null) } }); obs.observe(document.body,{childList:true,subtree:true});
+    setTimeout(()=>(inp||m.querySelector('#abGo')).focus(),30);
+  });
+}
+async function partyInactive(type,id){
   const x=type==='C'?C(id):SU(id); if(!x) return;
   const owed=type==='C'?partyBal('C',x.id):partyBal('S',x.id);
-  const why=prompt(`Make ${x.name} inactive?\n\nThey leave the ${type==='C'?'customer':'supplier'} list and the till's pickers; their bills${Math.abs(owed)>0.005?' and the '+fmt(Math.abs(owed))+(type==='C'?' they owe':' owed to them'):''} stay on the books. Making them active again needs approval.\n\nWhy (optional):`,'');
+  const why=await askBox({title:`Make ${noteEsc(x.name)} inactive?`,
+    body:`They leave the ${type==='C'?'customer':'supplier'} list and the till's pickers; their bills${Math.abs(owed)>0.005?' and the <b>'+fmt(Math.abs(owed))+'</b>'+(type==='C'?' they owe':' owed to them'):''} stay on the books. Making them active again needs approval.`,
+    label:'Why (optional)',placeholder:'e.g. closed down, moved away',ok:'Make inactive',tone:'tape'});
   if(why===null) return;
   x.active=false; x.inactiveBy=S.user.name; x.inactiveAt=apStamp(); x.inactiveWhy=String(why).trim().slice(0,120);
   try{ logTrail('other',`${x.name} made inactive${x.inactiveWhy?' — '+x.inactiveWhy:''}`,{ref:x.code||String(x.id)}) }catch(e){}
@@ -23524,9 +23547,9 @@ function partyActivateAsk(type,id){
   const x=type==='C'?C(id):SU(id); if(!x) return;
   const asked=(S.approvals||[]).find(a=>a.kind==='partyActive'&&a.status==='pending'&&a.data&&a.data.type===type&&+a.data.id===+id);
   if(asked) return toast('Already asked — it waits in the Action centre');
-  if(canApprove()){ if(!confirm(`Make ${x.name} active again?`)) return;
+  if(canApprove()){ askBox({title:`Make ${noteEsc(x.name)} active again?`,body:'They come back on the list and in the till\'s pickers. It is written on the trail.',text:false,ok:'Make active again'}).then(v=>{ if(v===null) return;
     partyActivate(type,id,S.user.name); if(type==='C'){ custFilter='all'; custSel=x.id } else { supFilter='all'; supSel=x.id }
-    persist(true); render(); return toast(`${x.name} is active again`,'ok') }
+    persist(true); render(); toast(`${x.name} is active again`,'ok') }); return }
   requestApproval('partyActive',`Make ${x.name} active again`,`${type==='C'?'customer':'supplier'} · inactive since ${x.inactiveAt||'?'}${x.inactiveBy?' by '+x.inactiveBy:''}${x.inactiveWhy?' — '+x.inactiveWhy:''}`,{type,id:x.id},{keep:true});
   render();
 }
@@ -23958,7 +23981,7 @@ function custModal(id,preset){
    <div class="muted" id="cmMsg"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="cmOk">${c?'Save':'Add customer'}</button></div>`);
   const g=id2=>m.querySelector('#'+id2);
-  g('cmCat').onchange=()=>{ if(g('cmCat').value!=='__new') return; const k=(prompt('The new category — e.g. Bazaar, Construction, Estate')||'').trim();
+  g('cmCat').onchange=async()=>{ if(g('cmCat').value!=='__new') return; const k=((await askBox({title:'A new customer category',label:'Category',placeholder:'e.g. Bazaar, Construction, Estate',ok:'Add it',need:true}))||'').trim();
     if(!k){ g('cmCat').value=c&&c.cat||''; return } CFG.custCats=[...new Set(custCats().concat([k]))]; const o=document.createElement('option'); o.textContent=k; g('cmCat').insertBefore(o,g('cmCat').lastElementChild); g('cmCat').value=k };
   const save=()=>{
     const ledger=g('cmLedger').value.trim(), tin=g('cmTin').value.trim(), cat=g('cmCat').value==='__new'?'':g('cmCat').value;

@@ -106,7 +106,7 @@ const low = await pg.evaluate(() => { const S = window.eval('S'); S.feedback.uns
   window.eval("fbShow='open'"); window.eval('render')(); return document.querySelectorAll('[data-act="fbDone"]').length });
 const top = await pg.evaluate(() => { const x = window.eval('actionItems')().find(i => i.key === 'fbT1'); return x && { pri: x.pri, tag: x.tag, decide: x.decide } });
 ok(top && top.pri === 1 && top.decide && /Unhappy/.test(top.tag), 'an unhappy one is at the top of the Action centre, to be followed up', JSON.stringify(top));
-await pg.$eval('[data-act="fbDone"][data-id="fbT1"]', b => b.click()); await wait(400);
+await pg.$eval('[data-act="fbDone"][data-id="fbT1"]', b => b.click()); await pg.waitForSelector('#abGo'); await pg.$eval('#abT', (el, v) => { el.value = v }, "Rang them, sorry given"); await pg.$eval('#abGo', x => x.click()); await wait(400);
 const fu = await pg.evaluate(() => window.eval('S').feedback.find(x => x.id === 'fbT1').done);
 ok(low === 1 && fu && fu.note === 'Rang them, sorry given', 'an unhappy one: "Followed up", with what was done', JSON.stringify(fu));
 await pg.evaluate(() => { const S = window.eval('S'), CFG = window.eval('CFG'); S.feedback = S.feedback.filter(x => x.id !== 'fbT1');

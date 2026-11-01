@@ -36,7 +36,7 @@ await pg.evaluate(id => window.eval('custModal')(id), cid); await wait(300);
 await pg.select('#cmCat', 'Construction'); await pg.$eval('#cmOk', x => x.click()); await wait(300);
 ok(await pg.evaluate(id => window.eval('C')(id).cat, cid) === 'Construction', 'the customer form gives them a category');
 await pg.evaluate(id => window.eval('custModal')(id), cid); await wait(300);
-await pg.select('#cmCat', '__new'); await wait(200);
+await pg.select('#cmCat', '__new'); await pg.waitForSelector('#abGo'); await pg.$eval('#abT', (el, v) => { el.value = v }, "Estate"); await pg.$eval('#abGo', x => x.click()); await wait(400);
 const made = await pg.evaluate(() => document.querySelector('#cmCat').value);
 await pg.select('#cmCat', 'Construction'); await pg.$eval('#cmOk', x => x.click()); await wait(300);
 ok(made === 'Estate' && await pg.evaluate(() => window.eval('custCats')().includes('Estate')), 'a new category can be made right there', made);
