@@ -791,7 +791,8 @@ body.privacy nav .navuser{position:relative}
 @media (max-width:1100px){.bl-wrap{grid-template-columns:1fr}.bl-list{position:static;max-height:none}.bl-rows{max-height:50vh}}
 /* pages with their own menu down the left (settings, the shop site) */
 .setwrap{display:grid;grid-template-columns:250px 1fr;gap:18px;align-items:start}
-.subnav{position:sticky;top:0;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px;box-shadow:var(--shadow);overflow:hidden}
+.subnav{position:sticky;top:0;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px;box-shadow:var(--shadow);overflow-x:hidden;overflow-y:auto;max-height:calc(100vh - 40px);overscroll-behavior:contain;scrollbar-width:thin}
+.subnav .snhead{position:sticky;top:-8px;z-index:1}
 .subnav .snhead{padding:12px 12px 14px;margin:-8px -8px 8px;background:linear-gradient(135deg,var(--ink) 0%,#7E141D 100%);color:#fff;border-bottom:3px solid var(--chip-yellow)}
 .subnav .snhead b{display:block;font-family:Archivo,sans-serif;font-size:17px;font-weight:800;letter-spacing:-.01em}
 .subnav .snhead small{display:block;color:#C9B3B6;font-size:11.5px;margin-top:2px}
@@ -811,7 +812,7 @@ body.privacy nav .navuser{position:relative}
 .setbody .sbhead{margin-bottom:12px}
 .setbody .sbhead h1{border:0;padding:0;margin:0 0 2px;font-size:24px}
 .setbody .sbhead .muted{font-size:13px}
-@media (max-width:900px){.setwrap{grid-template-columns:1fr}.subnav{position:static;display:flex;flex-wrap:wrap;gap:4px}.subnav .snhead{flex-basis:100%}.subnav button{width:auto}.subnav button>span small{display:none}}
+@media (max-width:900px){.setwrap{grid-template-columns:1fr}.subnav{position:static;display:flex;flex-wrap:wrap;gap:4px;max-height:none;overflow:visible}.subnav .snhead{flex-basis:100%}.subnav button{width:auto}.subnav button>span small{display:none}}
 .tabs{display:flex;gap:2px;margin-bottom:12px;border-bottom:1.5px solid var(--line)}
 .tabs button{border:0;background:none;padding:8px 13px;cursor:pointer;color:var(--steel);
  border-bottom:2.5px solid transparent;margin-bottom:-1.5px;font-size:13.5px}
@@ -13511,11 +13512,13 @@ function renderNow(){
   applyLayout();
   renderNav();
   const mn = document.getElementById('main');
-  const keepMainScroll = (_lastRenderView === S.view && mn) ? mn.scrollTop : 0;
+  const sameView = _lastRenderView === S.view;
+  const keepMainScroll = (sameView && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
   const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions:inbox,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,hire:hirePage,plans:plansPage,dlv:dlvPage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals:()=>{ inTab=apTab==='done'?'history':'decide'; return inbox() },feedback:feedbackPage,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
-    try{ mn.innerHTML = r() }
+    const sn0=mn.querySelector('.subnav'), snTop=sn0&&sameView?sn0.scrollTop:0;   // the section list keeps where it was scrolled to
+    try{ mn.innerHTML = r(); if(snTop){ const sn1=mn.querySelector('.subnav'); if(sn1) sn1.scrollTop=snTop } }
     catch(err){
       /* a page that cannot be drawn used to leave the screen blank, with no way to tell why */
       console.error('Could not draw '+S.view, err);
