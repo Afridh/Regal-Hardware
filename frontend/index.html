@@ -29880,6 +29880,8 @@ function accBalRange(ac){
 }
 const num=(v)=>+String(v).replace(/[^0-9.-]/g,'')||0;
 const ago2=(d)=>{const x=new Date(d); x.setDate(x.getDate()-1); return D(x)};
+/* a sold line's item for the reports: typed-in items and items since removed have no product to look up */
+const repItem=(k)=>P(+k)||{name:k===OPEN_PID?'Typed-in items (not on the list)':'(an item no longer on the list)',code:'',num:'',unit:''};
 function reportData(){
   const money=v=>fmt(v);
   const t=(cols,rows,foot,note)=>({cols,rows,foot,note});
@@ -30078,8 +30080,8 @@ function reportData(){
     const by={};
     S.sales.filter(x=>inRange(x.date)).forEach(x=>x.lines.forEach(l=>{
       by[l.pid]=by[l.pid]||{q:0,v:0,c:0};
-      by[l.pid].q+=l.qty; by[l.pid].v+=l.qty*l.price-l.disc; by[l.pid].c+=l.qty*l.cost}));
-    const rows=Object.entries(by).map(([pid,v])=>{const pr=P(+pid);
+      by[l.pid].q+=+l.qty||0; by[l.pid].v+=(+l.qty||0)*(+l.price||0)-(+l.disc||0); by[l.pid].c+=(+l.qty||0)*(+l.cost||0)}));
+    const rows=Object.entries(by).map(([pid,v])=>{const pr=repItem(pid);
       return [pr.name,pr.num||pr.code,fq(v.q),money(v.v),money(v.c),money(v.v-v.c),v.v?(((v.v-v.c)/v.v)*100).toFixed(1)+'%':'—']})
       .sort((a,b)=>num(b[5])-num(a[5]));
     return t(['Item','No.','Sold','Sales','Cost','Profit','Margin'],rows,
@@ -30277,9 +30279,10 @@ function reportData(){
   case 'salesitem':{
     const by={};
     S.sales.filter(s=>inRange(s.date)).forEach(s=>s.lines.forEach(l=>{
-      by[l.pid]=by[l.pid]||{q:0,v:0,p:0}; by[l.pid].q+=l.qty; by[l.pid].v+=l.qty*l.price-l.disc;
-      by[l.pid].p+=l.qty*(l.price-l.cost)-l.disc }));
-    const rows=Object.entries(by).sort((a,b)=>b[1].v-a[1].v).map(([k,v])=>{const p=P(+k);
+      const q=+l.qty||0, pr=+l.price||0, d=+l.disc||0;
+      by[l.pid]=by[l.pid]||{q:0,v:0,p:0}; by[l.pid].q+=q; by[l.pid].v+=q*pr-d;
+      by[l.pid].p+=q*(pr-(+l.cost||0))-d }));
+    const rows=Object.entries(by).sort((a,b)=>b[1].v-a[1].v).map(([k,v])=>{const p=repItem(k);
       return [p.name,p.code,fq(v.q)+' '+p.unit,money(v.v),can('profit')?money(v.p):'—',
         can('profit')&&v.v?((v.p/v.v)*100).toFixed(1)+'%':'']});
     const tv=Object.values(by).reduce((a,v)=>a+v.v,0), tp=Object.values(by).reduce((a,v)=>a+v.p,0);
