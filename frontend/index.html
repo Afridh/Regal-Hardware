@@ -7003,9 +7003,11 @@ function mxBody(){
    figures and a button) and/or by text, now or every evening by itself. A link can be changed or switched off. */
 /* Signing in on the page: their user code (here, sent with the link) and a PIN they make themselves the
    first time — kept only on the server, so nobody at the shop knows it. Reset PIN lets them make a new one. */
-const dirCode=()=>{ const A='ABCDEFGHJKMNPQRSTUVWXYZ23456789', a=new Uint8Array(4); crypto.getRandomValues(a); return 'RH-'+[...a].map(x=>A[x%A.length]).join('') };
+// two figures (10–99), none the same as another director's — the link and the PIN do the guarding
+const dirCode=()=>{ const used=new Set(((CFG.directors||{}).list||[]).map(x=>String(x.code||''))); const a=new Uint8Array(1);
+  for(let i=0;i<200;i++){ crypto.getRandomValues(a); const c=String(10+a[0]%90); if(!used.has(c)) return c } return String(10+used.size%90) };
 const dirCfg=()=>{ const d=CFG.directors||(CFG.directors={}); if(!Array.isArray(d.list)) d.list=[]; if(d.byMail===undefined) d.byMail=true; if(d.byText===undefined) d.byText=true;
-  d.list.forEach(x=>{ if(!x.code){ x.code=dirCode(); dirCfg.changed=true } }); return d };
+  d.list.forEach(x=>{ if(!/^\d{2}$/.test(String(x.code||''))){ x.code=dirCode(); dirCfg.changed=true } }); return d };   // the longer RH- codes of the first week become two figures
 const dirKey=()=>{ const a=new Uint8Array(18); crypto.getRandomValues(a); return [...a].map(x=>x.toString(36).padStart(2,'0')).join('').slice(0,28) };
 const dirLink=(d)=>location.origin+'/d?k='+encodeURIComponent(d.key);
 let dirPins=null, dirPinsAt=0;   // whose PIN is made, asked of the server when the tab opens

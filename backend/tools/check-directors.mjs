@@ -34,7 +34,7 @@ await pg.click('[data-act="dirAdd"]'); await wait(250);
 await pg.type('#dnN', 'Mr. Test Director'); await pg.type('#dnP', '0771112223'); await pg.type('#dnE', 'director@example.com');
 await pg.click('#dnOk'); await wait(2500);   // the list reaches the server
 const d = await pg.evaluate(() => { const l = window.eval('CFG').directors.list; return l[0] && { id: l[0].id, key: l[0].key, code: l[0].code, link: window.eval('dirLink')(l[0]) } });
-ok(d && d.key && d.key.length >= 20 && /\/d\?k=/.test(d.link) && /^RH-[A-Z0-9]{4}$/.test(d.code || ''), 'the director is added with a private link and a user code of their own', d && (d.link + ' · ' + d.code));
+ok(d && d.key && d.key.length >= 20 && /\/d\?k=/.test(d.link) && /^\d{2}$/.test(d.code || ''), 'the director is added with a private link and a user code of their own', d && (d.link + ' · ' + d.code));
 // the till's own figures for today, to set the page against
 const till = await pg.evaluate(() => { const S = window.eval('S'), t = window.eval('D')(window.eval('today')); const s = S.sales.filter(x => x.date === t && !window.eval('isBF')(x));
   return { total: +s.reduce((a, x) => a + (+x.total || 0), 0).toFixed(2), owe: +S.customers.filter(c => c.id !== 1).reduce((a, c) => a + Math.max(0, window.eval('partyBal')('C', c.id)), 0).toFixed(2),
@@ -50,7 +50,7 @@ ok(await st(d.key) === 401, 'the figures are not given without signing in');
 const tryIt = async (code, p1, p2) => { await dp.$eval('#lc', (el, v) => { el.value = v }, code); await dp.$eval('#lp', (el, v) => { el.value = v }, p1);
   if (await dp.$('#lp2')) await dp.$eval('#lp2', (el, v) => { el.value = v }, p2 ?? p1); await dp.click('#lb'); await wait(900);
   return dp.evaluate(() => ({ msg: (document.getElementById('lm') || {}).textContent || '', inside: !!document.querySelector('.headline') })) };
-let t1 = await tryIt('RH-ZZZZ', '4826');
+let t1 = await tryIt(d.code === '99' ? '98' : '99', '4826');
 ok(/user code is not right/.test(t1.msg), 'a wrong user code is refused', t1.msg);
 t1 = await tryIt(d.code.toLowerCase(), '1234');
 ok(/Too easy/.test(t1.msg), '1234 is refused as too easy', t1.msg);
