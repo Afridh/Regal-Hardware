@@ -1164,14 +1164,30 @@ r.post('/social/post', regalAuth, asyncHandler(async (req, res) => {
    limit gets one text telling them so (lib/staffTexts.js). The break is marked warnedAt in the books so
    a restart does not tell them twice, and kept here too in case a till's save lays an older copy over it. */
 const breakWarned = new Set();
+/* The hosting restarts the app every five minutes, which empties the set above — so who has been told is
+   also written to the database, and a break is texted about once however often the app starts again. */
+let bwReady = null;
+const bwEnsure = () => (bwReady = bwReady || query(`CREATE TABLE IF NOT EXISTS break_warned (k varchar(80) PRIMARY KEY, at bigint NOT NULL)`)
+  .catch(e => { bwReady = null; throw e; }));
 async function breakWatch() {
   const hr = +new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Colombo', hour12: false }).split(':')[0];
   if (hr < 7 || hr >= 21) return;
   const { rows: [b] } = await query(dbKind === 'mysql' ? 'SELECT data FROM books WHERE `key` = ?' : 'SELECT data FROM books WHERE key = $1', ['regal']);
   const data = asJson(b && b.data); if (!data) return;
-  const list = breakOverTexts(data).filter(t => !breakWarned.has(t.date + '|' + t.empId + '|' + t.start));
+  const keyOf = t => t.date + '|' + t.empId + '|' + t.start;
+  const cand = breakOverTexts(data).filter(t => !breakWarned.has(keyOf(t)));
+  if (!cand.length) return;
+  await bwEnsure();
+  const list = [];
+  for (const t of cand) {
+    const k = keyOf(t); breakWarned.add(k);
+    const { rows: [seen] } = await query(`SELECT k FROM break_warned WHERE k = $1`, [k]);
+    if (seen) continue;                                  // told before this copy of the app started
+    await query(`INSERT INTO break_warned (k, at) VALUES ($1, $2)`, [k, Date.now()]).catch(() => {});
+    list.push(t);
+  }
+  query(`DELETE FROM break_warned WHERE at < $1`, [Date.now() - 3 * 864e5]).catch(() => {});   // three days is plenty
   if (!list.length) return;
-  list.forEach(t => breakWarned.add(t.date + '|' + t.empId + '|' + t.start));
   sendStaffTexts(data, list, sendViaProvider);
   await booksEdit('regal', 'break watch', (d) => {
     const day = d.S?.shift?.days?.[list[0].date] || {};
