@@ -18062,7 +18062,7 @@ function bindQuick(){
     s.onkeydown=e=>{
       if(e.key==='Enter'){ e.preventDefault(); const v=QT.q.trim().toLowerCase(); if(!v){ if(S.pos.lines.length) qDone(); return }
         if(v===openCode()){ QT.q=''; openItemAdd(); return }
-        const hit=S.products.find(p=>(p.short||'')===v||String(p.num||'')===v||p.barcode===v)||S.products.find(p=>p.name.toLowerCase().includes(v)||p.code.toLowerCase().includes(v));
+        const hit=codeExact(v)[0]||S.products.find(p=>p.name.toLowerCase().includes(v)||p.code.toLowerCase().includes(v));
         if(hit) qAdd(hit.id); else toast('No item matches “'+QT.q+'”') }
       if(e.key==='Escape'){ QT.q=''; render() } };
     if(!document.querySelector('.modal')&&document.activeElement===document.body) s.focus();
@@ -18724,10 +18724,43 @@ function posClassic(){
   </div>`;
 }
 
+/* ================== ONE CODE, ONE PRODUCT ==================
+   What is typed or scanned is looked for in this order: barcode, item number, short code, product code — so an
+   old SePOS sticker always finds the product it was printed for. An item number is never handed out that is
+   another product's barcode, short code or code (the SePOS stickers carry 4-digit numbers in the very range the
+   item numbers run in — 2,264 of them did on 1 Nov 2026), the product form refuses a code another product
+   already answers to, and the products page offers to put right any item numbers that clash. */
+const codeNorm=s=>String(s??'').trim().toLowerCase();
+const codesOf=p=>[p.barcode,p.barcode2,p.num,p.short,p.short2,p.code,p.oldCode].map(codeNorm).filter(Boolean);
+function codeTaken(v,exceptId){ const k=codeNorm(v); if(!k) return null; return S.products.find(p=>p.id!==exceptId&&codesOf(p).includes(k))||null }
+function codeExact(q,list){
+  const k=codeNorm(q); if(!k) return [];
+  const L=list||S.products.filter(p=>p.active!==false), out=[];
+  const tiers=[p=>codeNorm(p.barcode)===k||codeNorm(p.barcode2)===k, p=>codeNorm(p.num)===k, p=>codeNorm(p.short)===k||codeNorm(p.short2)===k, p=>codeNorm(p.code)===k||codeNorm(p.oldCode)===k];
+  for(const tier of tiers) for(const p of L) if(tier(p)&&!out.includes(p)) out.push(p);
+  return out;
+}
+/* products whose item number is another product's barcode, short code or code */
+function codeClashes(){
+  const owner={}; S.products.forEach(p=>[p.barcode,p.barcode2,p.short,p.short2,p.code,p.oldCode].map(codeNorm).filter(Boolean).forEach(k=>{ (owner[k]=owner[k]||new Set()).add(p.id) }));
+  return S.products.filter(p=>{ const k=codeNorm(p.num); return k&&owner[k]&&[...owner[k]].some(id=>id!==p.id) });
+}
+function freeNum(used,from=1000){ let n=from; while(used.has(String(n))) n++; used.add(String(n)); return String(n) }
+/* each clashing item number becomes the product's own old sticker number where that is free, else a number
+   nobody answers to */
+function fixCodeClashes(){
+  const bad=codeClashes(); if(!bad.length) return 0;
+  const used=new Set(); S.products.forEach(p=>codesOf(p).forEach(k=>used.add(k)));
+  for(const p of bad){ const own=String(p.barcode||'').trim();
+    p.num=(/^\d{1,7}$/.test(own)&&!S.products.some(x=>x!==p&&(codeNorm(x.num)===own||codeNorm(x.short)===own||codeNorm(x.code)===own)))?own:freeNum(used);
+    used.add(codeNorm(p.num)) }
+  try{ logTrail('other',`${bad.length} item number${bad.length===1?'':'s'} that clashed with other products' barcodes put right`,{}) }catch(e){}
+  return bad.length;
+}
 function csFind(v){
   const q=v.toLowerCase();
   // an exact short code (20ss), item number or barcode comes first — that is what Enter takes
-  const exact=S.products.filter(p=>p.active!==false&&(String(p.num||'')===q||(p.short||'').toLowerCase()===q||(p.short2||'').toLowerCase()===q||p.barcode===q||(p.barcode2||'')===q||String(p.code||'').toLowerCase()===q||(p.oldCode||'').toLowerCase()===q));
+  const exact=codeExact(q);      // barcode, item number, short code, product code — in that order
   const rest=S.products.filter(p=>p.active!==false&&!exact.includes(p)&&((p.short||'').toLowerCase().startsWith(q)||(p.short2||'').toLowerCase().startsWith(q)||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||String(p.num||'').startsWith(q)));
   // short codes that begin with what was typed sit above name matches
   rest.sort((a,b)=>((b.short||'').toLowerCase().startsWith(q)?1:0)-((a.short||'').toLowerCase().startsWith(q)?1:0));
@@ -25556,6 +25589,8 @@ function productModal(pid){
     const short=(m.querySelector('#pshort').value||'').trim().toLowerCase();
     const clash=short&&S.products.find(x=>x.id!==(p?p.id:0)&&(x.short||'').toLowerCase()===short);
     if(clash) return toast(`Short code ${short} is already on ${clash.name}`);
+    { const bar=(m.querySelector('#pbar').value||'').trim(), other=bar&&(!p||codeNorm(p.barcode)!==codeNorm(bar))&&codeTaken(bar,p?p.id:0);
+      if(other) return toast(`Barcode ${bar} is already ${codeNorm(other.barcode)===codeNorm(bar)||codeNorm(other.barcode2)===codeNorm(bar)?'the barcode':'the item number or code'} of ${other.name} — a code finds one product only`) }
     if(!(g('pretail')>0))return toast('Enter the discounted price');
     if(g('pcost')>g('pretail'))return toast('The discounted price is below cost — check it');
     const pcatV=(m.querySelector('#pcat').value||'').trim().replace(/\s+/g,' ')||'Others', pdeptV=m.querySelector('#pdept').value; catalogCfg().deptOf[pcatV]=pdeptV;
@@ -25848,8 +25883,13 @@ function bulkProductModal(){
   m.querySelector('#bGo').onclick=()=>{
     const good=rows.filter(r=>r.what==='new'||r.what==='update'); if(!good.length) return;
     if(!confirm(`Add ${good.filter(r=>r.what==='new').length} product(s)${good.some(r=>r.what==='update')?` and update ${good.filter(r=>r.what==='update').length}`:''}?`)) return;
-    const used=new Set(S.products.map(p=>+p.num||0)); let num=1000;
-    const nextFree=()=>{ while(used.has(num)) num++; used.add(num); return String(num) };
+    // every code already answered to, here and in the sheet: a new item number is none of them
+    const used=new Set(); S.products.forEach(p=>codesOf(p).forEach(k=>used.add(k)));
+    good.forEach(r=>[r.barcode,r.short,r.code].map(codeNorm).filter(Boolean).forEach(k=>used.add(k)));
+    const numsTaken=new Set(S.products.map(p=>codeNorm(p.num)).filter(Boolean));
+    const nextFree=(r)=>{ const own=codeNorm(r&&r.barcode);
+      if(/^\d{1,7}$/.test(own)&&!numsTaken.has(own)){ numsTaken.add(own); return own }      // the old sticker number, typed or scanned, finds it either way
+      const n=freeNum(used); numsTaken.add(n); return n };
     let id=Math.max(0,...S.products.map(x=>x.id)), added=0, updated=0, opening=0;
     for(const r of good){
       if(r.what==='update'){ const p=r.old;
@@ -25859,7 +25899,7 @@ function bulkProductModal(){
         updated++; continue }
       const np={id:++id,stock:0,code:r.code,name:r.name,cat:r.cat||'General',unit:r.unit||'pcs',
         barcode:String(r.barcode||'').trim()||String(8+Math.floor(Math.random()*8.9e11)),
-        mrp:r.mrp,cost:r.cost,retail:r.retail,wholesale:r.wholesale,min:r.min,short:r.short,num:nextFree(),
+        mrp:r.mrp,cost:r.cost,retail:r.retail,wholesale:r.wholesale,min:r.min,short:r.short,num:nextFree(r),
         webPrice:0,warrantyMonths:0,serialised:false,desc:'',tiers:[]};
       if(r.sup) np.supplierId=r.sup.id;
       S.products.push(np); added++;
@@ -27390,7 +27430,8 @@ function inventory(){
   if(invTab==='products'){ const q=prodQ.toLowerCase().trim(); const list=S.products.filter(p=>!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||(p.short||'').toLowerCase()===q||String(p.num||'')===q||p.barcode===q||(p.cat||'').toLowerCase().includes(q));
     if(q) list.sort((a,b)=>((a.short||'').toLowerCase()===q||a.name.toLowerCase().startsWith(q)?0:1)-((b.short||'').toLowerCase()===q||b.name.toLowerCase().startsWith(q)?0:1));
     const shown=list.slice(0,invLimit);
-    body=`<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+    const clashN=isSalesman?0:codeClashes().length;
+    body=`${clashN?`<div class="card" style="background:#FFF4DC;border-color:#F0D08A;margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:240px"><b>${clashN} item number${clashN===1?'':'s'} ${clashN===1?'is':'are'} also another product's barcode or code</b><div class="muted">Typing or scanning that number would find the wrong product. Fix gives each one its own old sticker number where that's free, or a new number no product uses.</div></div><button class="btn tape" data-act="codeFix">Fix ${clashN===1?'it':'them'}</button></div>`:''}<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
       <input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search item name, code, short code, barcode or category…" style="max-width:380px">
       ${!isSalesman?`<button class="btn tape" data-act="newProd">Add a product</button>`:''}
       ${canApprove()?`<button class="btn ghost" data-act="catMgr">Categories</button>${payBoss()?'<button class="btn sm" data-act="catTidy" style="background:#FFF4DC;border-color:#F0D08A;color:#8A5D06">Tidy the categories</button>':''}`:''}
@@ -32851,6 +32892,7 @@ document.addEventListener('click',e=>{
       if(list.has(gname)) list.delete(gname); else list.add(gname); p.navFold=[...list]; try{ persist(true) }catch(e){} renderNav() },
     pcGive:()=>pettyGiveModal(a.dataset.who||''), pcExp:()=>pettyExpenseModal(a.dataset.id), pcSettle:()=>pettySettleModal(a.dataset.id), pcUndo:()=>pettyUndo(a.dataset.id,a.dataset.no),
     catMgr:()=>categoriesModal(), catTidy:()=>tidyCatalogModal(),
+    codeFix:()=>{ const n=fixCodeClashes(); persist(true); render(); toast(n?`${n} item number${n===1?'':'s'} renumbered — every code finds one product`:'Nothing clashes','ok') },
     pcSubmit:()=>pettySubmitModal(a.dataset.id),
     trCam:()=>camTrail(a.dataset.id),
     siteEdit:()=>siteEdit(+a.dataset.id,a.dataset.s||null), siteStmt:()=>siteStatement(+a.dataset.id,a.dataset.s),
