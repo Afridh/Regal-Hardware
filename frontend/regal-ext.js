@@ -380,13 +380,31 @@ function extUseLocation(id) {
 const extLoy = () => CFG.loyalty || (CFG.loyalty = { ...EXT_LOYALTY });
 function extPointsFor(total) { const L = extLoy(); return L.enabled ? Math.floor(total / 100 * (+L.pointsPer100 || 0)) : 0; }
 function extPointsValue(c) { return +((+c.points || 0) * (+extLoy().rupeesPerPoint || 1)).toFixed(2); }
+/* What a bill earns. A product can carry its own points (so many each); a line earns only when it went at the
+   till's own price — the selling or wholesale price, or a price break — with no discount and no price typed in.
+   A bill on credit, or not paid in full, earns nothing, and neither does one with a discount on the whole bill.
+   A line whose product carries no points of its own earns at the shop's rate (points per Rs 100; 0 for none). */
+function extPointsEarned(inv, spent) {
+  const L = extLoy(); if (!L.enabled) return 0;
+  if (inv.type === 'CREDIT' || (+inv.balance || 0) > 0.005 || (+inv.billDisc || 0) > 0.005) return 0;
+  let pts = 0, val = 0;
+  for (const l of inv.lines || []) {
+    if (!(+l.qty > 0) || (+l.disc || 0) > 0.005 || l.fromLast) continue;
+    const p = P(l.pid); if (!p) continue;
+    const own = [p.retail, p.wholesale, typeof priceFor === 'function' ? priceFor(p, l.qty) : null, typeof tierFor === 'function' && tierFor(p, l.qty) ? tierFor(p, l.qty).price : null].filter(v => +v > 0);
+    if (!own.some(v => Math.abs(+v - +l.price) < 0.005)) continue;          // a price typed in: no points
+    if (+p.points > 0) pts += +p.points * +l.qty; else val += +l.qty * +l.price;
+  }
+  pts += Math.floor(Math.max(0, val - (+spent || 0)) / 100 * (+L.pointsPer100 || 0));
+  return +pts.toFixed(2);
+}
 /** Called from completeSale after the bill is posted: earn, and record any points spent. */
 function extAfterSale(inv, c, pays) {
   const L = extLoy();
   const spent = pays.filter(p => p.method === 'POINTS').reduce((a, p) => a + p.amount, 0);
   if (c && c.id !== 1) {
     if (spent > 0) { const pts = +(spent / (+L.rupeesPerPoint || 1)).toFixed(2); c.points = +Math.max(0, (+c.points || 0) - pts).toFixed(2); inv.pointsSpent = pts; }
-    const earned = extPointsFor(inv.total - spent);
+    const earned = extPointsEarned(inv, spent);
     if (earned > 0) { c.points = +((+c.points || 0) + earned).toFixed(2); inv.pointsEarned = earned; }
   }
   pays.filter(p => p.method === 'VOUCHER').forEach(p => extRedeemVoucher(p.code, p.amount, inv));
@@ -489,7 +507,7 @@ function extSettingsBody(tab) {
     return `<div class="muted" style="margin-bottom:10px">Points are earned on every bill to a named customer and spent at the till with the <b>L</b> key. Vouchers are sold under Money → Gift vouchers and spent with <b>V</b>.</div>
      <div class="grid3">
       <div class="f"><label class="chk"><input type="checkbox" data-loy="enabled" ${L.enabled ? 'checked' : ''}> Earn points on bills</label></div>
-      <div class="f"><label>Points per Rs 100</label><input data-loy="pointsPer100" type="number" step="any" value="${L.pointsPer100}"></div>
+      <div class="f"><label>Points per Rs 100 <span class="muted">(items with no points of their own; 0 for none)</span></label><input data-loy="pointsPer100" type="number" step="any" value="${L.pointsPer100}"></div>
       <div class="f"><label>Rupees a point is worth</label><input data-loy="rupeesPerPoint" type="number" step="any" value="${L.rupeesPerPoint}"></div>
       <div class="f"><label>Smallest redemption (points)</label><input data-loy="minRedeem" type="number" value="${L.minRedeem}"></div></div>
      <div class="card note" style="margin-top:10px">Points spent post to <b>6110 Loyalty points redeemed</b>; vouchers sit in <b>2060 Gift vouchers not yet used</b> until they are spent.

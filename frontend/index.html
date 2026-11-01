@@ -17253,6 +17253,14 @@ function tierFor(p,qty){
   const ts=(p.tiers||[]).filter(t=>+t.min>0&&+t.price>0).sort((a,b)=>b.min-a.min);
   return ts.find(t=>qty>=+t.min)||null;
 }
+/* A line's quantity changed (the + and − keys and buttons, a scan, the same item added again). If it was at the
+   price the till set — the ordinary price or a break — it follows the breaks to the new quantity: 49 of an item
+   that is 71.50 from 50 goes back to 75. A price typed in by hand stays as it was. */
+function lineQty(l,q){
+  const p=P(l.pid), sys=p&&!l.fromLast&&l.auto!==false&&Math.abs((+l.price||0)-priceFor(p,+l.qty||0))<0.005;
+  l.qty=+(+q).toFixed(3);
+  if(sys&&l.qty>0) l.price=priceFor(p,l.qty);
+}
 function priceFor(p,qty){
   const t=tierFor(p,qty);
   return t?+t.price:price(p);
@@ -17282,7 +17290,7 @@ function lineDiscount(i){
   m.querySelector('#ldiscOk').onclick=apply; show(); inp.focus(); inp.select();
 }
 function startLine(pid){ S.pos.entry={pid,step:'qty',qty:1,price:priceFor(P(pid),1),disc:0,discRaw:''}; render() }
-function addLine(pid){ const ex=S.pos.lines.find(l=>l.pid===pid); if(ex)ex.qty+=1; else S.pos.lines.push({pid,qty:1,price:price(P(pid)),disc:0}); S.pos.sel=S.pos.lines.length-1; render() }
+function addLine(pid){ const ex=S.pos.lines.find(l=>l.pid===pid); if(ex) lineQty(ex,ex.qty+1); else S.pos.lines.push({pid,qty:1,price:priceFor(P(pid),1),disc:0}); S.pos.sel=S.pos.lines.length-1; render() }
 
 /* OPEN ITEM — something not in the system. Press 1 then Enter at the counter (or the OPEN button),
    type what to call it and a price. It sells at that price and does NOT touch stock, cost or profit:
@@ -17628,8 +17636,8 @@ async function scanOpen(){
     if(k==='on'){ me.miss=''; return scanPanel() }
     if(k==='torch'){ me.torch=!me.torch; b.classList.toggle('on',me.torch); try{ me.stream.getVideoTracks()[0].applyConstraints({advanced:[{torch:me.torch}]}) }catch(err){} return }
     if(!l) return;
-    if(k==='more') l.qty=+(l.qty+1).toFixed(3);
-    if(k==='less'){ if(l.qty>1) l.qty=+(l.qty-1).toFixed(3); else drop() }
+    if(k==='more') lineQty(l,l.qty+1);
+    if(k==='less'){ if(l.qty>1) lineQty(l,l.qty-1); else drop() }
     if(k==='undo') drop();
     render(); scanPanel() });   // what is under the lens stays seen, so it is not added again
   const note=el.querySelector('.scan-note'), video=el.querySelector('video');
@@ -18826,7 +18834,8 @@ function csCommit(){
     const asked=((CS.name||'').trim()&&(CS.name||'').trim().toUpperCase()!==p.name.toUpperCase())?(CS.name||'').trim():null;
     const same=(!serials||!serials.length)?S.pos.lines.findIndex(l=>l.pid===p.id&&Math.abs(l.price-price)<0.005&&(l.warranty||'0')===(CS.warranty||'0')&&!(l.serials&&l.serials.length)&&(l.discPct||0)===(pctGiven||0)&&(l.name||null)===asked&&(l.qty<0)===(qty<0)):-1;
     if(same>=0){
-      const l=S.pos.lines[same]; l.qty=+(l.qty+qty).toFixed(3);
+      const l=S.pos.lines[same], sysBefore=l.auto!==false&&!l.fromLast&&Math.abs(l.price-priceFor(p,l.qty))<0.005, sysNew=CS.auto!==false&&Math.abs(price-priceFor(p,qty))<0.005;
+      l.qty=+(l.qty+qty).toFixed(3); if(sysBefore&&sysNew&&!disc) l.price=priceFor(p,l.qty);
       l.disc=+((l.disc||0)+disc).toFixed(2);          // same price and same % means the same discount per piece, so the rupees simply add up
       if(by) l.belowCost=by; l.auto=Math.abs(price-priceFor(p,l.qty))<0.005;
       // the line just added to comes up to the top, where the newest line sits
@@ -25262,10 +25271,11 @@ function productModal(pid){
     ${f('pretail','Discounted price',p?p.retail:'','number','What you actually charge over the counter')}
     ${f('pwhole','Wholesale price',p?p.wholesale:'','number','For customers on wholesale terms')}
     ${f('pweb','Price on the site',p&&+p.webPrice>0?p.webPrice:'','number','Leave it empty to sell online at the counter price')}
+    ${f('ppoints','Loyalty points (each)',p&&+p.points>0?p.points:'','number','Earned for each one sold — on a bill paid in full, at the price the till sets (not credit, not a price or discount typed in)')}
    </div>
    <div id="pmarg" class="muted"></div>
-   <h2 style="margin-top:12px;font-size:14px">Price breaks</h2>
-   <div class="muted" style="margin-bottom:6px">For goods that are dearer in small pieces — wire off the roll, pipe by the length. Leave it empty and the ordinary price is used.</div>
+   <h2 style="margin-top:12px;font-size:14px">Price breaks — the price by quantity</h2>
+   <div class="muted" style="margin-bottom:6px">The till charges the price of the highest break the quantity reaches. E.g. <b>from 1 → 75</b> and <b>from 50 → 71.50</b>: under 50 bills at 75, 50 and over at 71.50. Leave it empty and the ordinary price is used.</div>
    <table id="ptiers"></table>
    <button class="btn ghost sm" id="ptAdd" style="margin-top:6px">Add a break</button>
    <h2 style="margin-top:14px;font-size:14px">On the website</h2>
@@ -25320,6 +25330,7 @@ function productModal(pid){
       webPrice:g('pweb')>0?+(+g('pweb')).toFixed(2):0,              // nought means: sell online at the counter price
       warrantyMonths:g('pwar'),serialised:m.querySelector('#pser').checked,desc:m.querySelector('#pdesc').value.trim(),
       brand:(m.querySelector('#pbrand').value||'').trim().replace(/\s+/g,' '), plu:(m.querySelector('#pplu').value||'').replace(/\D/g,''),
+      points:g('ppoints')>0?+(+g('ppoints')).toFixed(2):0,
       tiers:tiers.filter(t=>+t.min>0&&+t.price>0).map(t=>({min:+t.min,price:+t.price,label:(t.label||'').trim()}))};
     const photo=m.querySelector('#pphotoFile').files[0];
     const sendPhoto=pid=>{ if(photo) shopMediaUpload('p:'+pid,photo,900).then(()=>toast('Photo is on the site')).catch(e=>toast('Photo not saved: '+e.message)) };
@@ -32241,9 +32252,9 @@ document.addEventListener('click',e=>{
       if(window.regalBridge&&regalBridge.online()) fetch('/api/files/'+p.id,{method:'DELETE',headers:{'Authorization':'Bearer '+regalBridge.token()}}).catch(()=>{}) },
     phAdd:()=>{ addLine(+a.dataset.id); PH.q=''; render();
       const b=document.getElementById('phQ'); if(b) b.focus() },
-    phMore:()=>{ const l=S.pos.lines[+a.dataset.i]; if(!l) return; l.qty=+(l.qty+1).toFixed(3); render() },
+    phMore:()=>{ const l=S.pos.lines[+a.dataset.i]; if(!l) return; lineQty(l,l.qty+1); render() },
     phLess:()=>{ const l=S.pos.lines[+a.dataset.i]; if(!l) return;
-      l.qty=+(l.qty-1).toFixed(3);
+      lineQty(l,l.qty-1);
       if(Math.abs(l.qty)<1e-9) S.pos.lines.splice(+a.dataset.i,1);
       render() },
     phDrop:()=>{ S.pos.lines.splice(+a.dataset.i,1); render() },
@@ -32374,8 +32385,8 @@ document.addEventListener('click',e=>{
     qCat:()=>{QT.cat=a.dataset.v;render()},
     qAdd:()=>qAdd(+a.dataset.id),
     qMode:()=>{QT.mode=a.dataset.v; if(QT.mode==='credit'&&!S.pos.customer){ render(); pickCustomer(()=>render()) } else render()},
-    qLess:()=>{const l=S.pos.lines[+a.dataset.i]; l.qty-=1; if(l.qty<=0) S.pos.lines.splice(+a.dataset.i,1); else if(Math.abs(l.price-priceFor(P(l.pid),l.qty+1))<0.005) l.price=priceFor(P(l.pid),l.qty); render()},
-    qMore:()=>{const l=S.pos.lines[+a.dataset.i]; if(Math.abs(l.price-priceFor(P(l.pid),l.qty))<0.005) l.price=priceFor(P(l.pid),l.qty+1); l.qty+=1; render()},
+    qLess:()=>{const l=S.pos.lines[+a.dataset.i]; if(l.qty-1<=0){ S.pos.lines.splice(+a.dataset.i,1); return render() } lineQty(l,l.qty-1); render()},
+    qMore:()=>{const l=S.pos.lines[+a.dataset.i]; lineQty(l,l.qty+1); render()},
     qEdit:()=>qLineModal(+a.dataset.i),
     qDone:()=>qDone(),
     qDisc:()=>{const v=prompt('Bill discount — Rs or %',S.pos.billDisc||''); if(v===null)return; const sub=S.pos.lines.reduce((a,l)=>a+l.qty*l.price-l.disc,0);
@@ -32864,7 +32875,7 @@ document.addEventListener('keydown',e=>{
     return;
   }
   if(e.key==='+'&&S.pos.sel>=0){e.preventDefault();const l=S.pos.lines[S.pos.sel];const onBill=S.pos.lines.filter(x=>x.pid===l.pid).reduce((a,x)=>a+x.qty,0);
-    if(onBill+1>P(l.pid).stock+1e-9) toast(`Only ${fq(P(l.pid).stock)} ${P(l.pid).unit} in stock`); l.qty++; if(l.auto)l.price=priceFor(P(l.pid),l.qty); render()} if(e.key==='-'&&S.pos.sel>=0){e.preventDefault();const l=S.pos.lines[S.pos.sel];l.qty--;if(l.qty<=0)S.pos.lines.splice(S.pos.sel,1);render()} if(e.key==='Delete'&&S.pos.sel>=0){S.pos.lines.splice(S.pos.sel,1);S.pos.sel=-1;render()} });
+    if(onBill+1>P(l.pid).stock+1e-9) toast(`Only ${fq(P(l.pid).stock)} ${P(l.pid).unit} in stock`); lineQty(l,l.qty+1); render()} if(e.key==='-'&&S.pos.sel>=0){e.preventDefault();const l=S.pos.lines[S.pos.sel];if(l.qty-1<=0)S.pos.lines.splice(S.pos.sel,1); else lineQty(l,l.qty-1);render()} if(e.key==='Delete'&&S.pos.sel>=0){S.pos.lines.splice(S.pos.sel,1);S.pos.sel=-1;render()} });
 $('#logoutBtn').onclick=signOut;
 $('#updBtn').onclick=()=>checkForUpdates();
 /* the dim behind the drawer on a phone & click outside to close */
