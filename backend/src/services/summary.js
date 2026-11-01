@@ -28,7 +28,7 @@ function ensure() {
 /* the day's figures, from the books */
 export function summaryOf(data, day) {
   const S = (data && data.S) || {};
-  const sales = (S.sales || []).filter(s => s && String(s.date) === day);
+  const sales = (S.sales || []).filter(s => s && String(s.date) === day && !s.opening);   // a previous balance brought forward is not a bill of the day
   const sold = sales.filter(s => +s.total > 0);
   let total = 0, cash = 0, credit = 0, profit = 0;
   for (const s of sales) {

@@ -5044,7 +5044,7 @@ const billNoFrom=(seq)=>billPlain()
   : `${CFG.bill.prefix||'INVM-'}${S.terminal}-${userUid()}-${String(seq).padStart(5,'0')}`;
 const peekBillNo=()=>billNoFrom(billSeqNow()+1);      // what the next bill will be called
 const next=(k)=>{
-  if(k==='INV'){ const seq=billSeqNow()+1; S.seqBy[billKey()]=seq; return billNoFrom(seq) }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',JOB:'JOB-',JE:'JE-',ISN:'ISN-',HIRE:'HIRE-'}[k];if(!(S.seq[k]>0))S.seq[k]=1;return p+String(S.seq[k]++).padStart(5,'0')};
+  if(k==='INV'){ const seq=billSeqNow()+1; S.seqBy[billKey()]=seq; return billNoFrom(seq) }const p={PRN:'PRN-',STK:'STK-',WEB:'WEB-',PO:'PO-',QTN:'QTN-',DN:'DN-',INV:'INV-',PUR:'GRN-',PAY:'PV-',RCT:'RV-',VCH:'V-',EXP:'EXP-',DMG:'DMG-',BF:'BF-',JOB:'JOB-',JE:'JE-',ISN:'ISN-',HIRE:'HIRE-'}[k];if(!(S.seq[k]>0))S.seq[k]=1;return p+String(S.seq[k]++).padStart(5,'0')};
 
 const GL = {'2050':'Customer advances','1010':'Cash in hand','1015':'Petty cash with staff','1020':'HNB Kaduruwela','1021':'BOC Polonnaruwa','1022':'Sampath Polonnaruwa','1023':'Bank account 4','1024':'Bank account 5','1025':'Bank account 6','1026':'Bank account 7','1030':'Cheques received','1100':'Accounts receivable','1200':'Inventory','1300':'Employee advances','2100':'Accounts payable','2110':'Cheques issued – uncleared','2120':'Goods received, invoice to come','2150':'Cash borrowed and lent (the circle)','2200':'Salaries payable','3100':'Owner capital','4100':'Sales','4110':'Sales returns','5100':'Cost of goods sold','5200':'Damaged goods loss','6010':'Electricity','6020':'Water','6030':'Rent','6040':'Transport','6050':'Repairs','6060':'Office','6070':'Staff expenses','6080':'Salaries','6090':'Bank charges','6095':'Cash short in the drawer','5300':'Stock adjustments','4900':'Odd money in','6100':'Other','6120':'Tradesman commission','2070':'Hire deposits held'};
 function post(date,desc,ref,lines){ // lines: [{ac,dr,cr,party}]
@@ -5057,6 +5057,48 @@ function bal(ac,upto){ let d=0,c=0; for(const j of S.journal){ if(upto&&j.date>u
 /* balances for every customer and supplier in one pass over the journal — the customer list asks for
    hundreds of them per draw; the journal only grows through post(), so identity + length say when to redo it */
 let _pbArr=null,_pbLen=-1,_pbMap=new Map();
+/* ================== A PREVIOUS BALANCE ==================
+   What a customer owed, or what the shop owed a supplier, before these books began — put in once, as a
+   "Balance brought forward" bill on its date, so it ages, is reminded, can be paid against and shows on the
+   statement like any bill; the books take it against 3100 Opening balances, so it is not a sale or a purchase.
+   The owner, an admin or the Super Admin puts it in; anyone else asks, on the Approvals tray. */
+const salesReal=()=>S.sales.filter(s=>!s.opening&&!(s.by==='SePOS'&&!(s.lines||[]).length&&/brought forward/i.test(s.note||'')));
+function openBalAdd(type,id,amt,date,note,by){
+  amt=+(+amt).toFixed(2); date=date||D(today); by=by||S.user.name;
+  const no=next('BF'), what='Previous balance'+(note?' — '+note:'');
+  if(type==='C'){ const c=C(id); if(!c) throw new Error('That customer is gone');
+    S.sales.push({no,date,type:'CREDIT',customerId:c.id,lines:[],sub:amt,billDisc:0,total:amt,paid:0,balance:amt,pays:[],by,terminal:S.terminal||'',time:'',note:what,opening:true});
+    post(date,`Previous balance brought forward — ${c.name}`,no,[{ac:'1100',dr:amt,party:{type:'C',id:c.id}},{ac:'3100',cr:amt}]);
+    try{ window.eval("_caKey=''") }catch(e){}
+    try{ logTrail('other',`${c.name}: previous balance ${fmt(amt)} brought forward (${no})${note?' — '+note:''}`,{ref:no,amount:amt}) }catch(e){}
+  } else { const s=SU(id); if(!s) throw new Error('That supplier is gone');
+    S.purchases.push({no,date,supplierId:s.id,supInv:'Previous balance',lines:[],other:0,total:amt,paid:0,by,note:what,opening:true});
+    post(date,`Previous balance brought forward — ${s.name}`,no,[{ac:'3100',dr:amt},{ac:'2100',cr:amt,party:{type:'S',id:s.id}}]);
+    try{ logTrail('other',`${s.name}: previous balance ${fmt(amt)} owed to them brought forward (${no})${note?' — '+note:''}`,{ref:no,amount:amt}) }catch(e){}
+  }
+  return no;
+}
+function openBalModal(type,id){
+  const who=type==='C'?C(id):SU(id); if(!who) return;
+  const now=type==='C'?partyBal('C',id):partyBal('S',id), boss=ownerOnly();
+  const had=(type==='C'?S.sales.filter(s=>s.customerId===id):S.purchases.filter(p=>p.supplierId===id)).filter(x=>x.opening);
+  const m=modal(`<h2>Previous balance — ${noteEsc(who.name)}</h2>
+   <div class="muted">${type==='C'?'What they owed before these books began':'What the shop owed them before these books began'} — it goes in as a "Balance brought forward" bill on its date, ${type==='C'?'to be paid, aged and reminded':'to be paid'} like any other, and is not counted as a ${type==='C'?'sale':'purchase'}.</div>
+   <div class="kv" style="margin:10px 0"><span class="muted">${type==='C'?'Outstanding now':'Owed to them now'}</span><b>${fmt(now)}</b></div>
+   ${had.length?`<div class="card note" style="margin-bottom:8px">Already brought forward: ${had.map(x=>`${x.no} · ${x.date} · ${fmt(x.total)}`).join(', ')}</div>`:''}
+   <div class="grid3"><div class="f"><label>Amount (Rs)</label><input id="obAmt" type="number" step="any" placeholder="0.00"></div>
+    <div class="f"><label>As at</label><input id="obDate" type="date" value="${D(today)}" max="${D(today)}"></div>
+    <div class="f"><label>Note (optional)</label><input id="obNote" maxlength="120" placeholder="e.g. from the old book, page 45"></div></div>
+   <div class="muted" id="obMsg">${boss?'':'This goes to the owner or a director to approve first.'}</div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="obOk">${boss?'Bring it forward':'Ask for approval'}</button></div>`); npAdd(m);
+  const g=i=>m.querySelector('#'+i);
+  g('obOk').onclick=()=>{ const amt=+g('obAmt').value||0, date=g('obDate').value||D(today), note=g('obNote').value.trim();
+    if(!(amt>0)) return g('obMsg').textContent='Put in the amount.';
+    if(date>D(today)) return g('obMsg').textContent='A previous balance cannot be dated in the future.';
+    if(!boss){ requestApproval('openBal',`Previous balance for ${who.name}: ${fmt(amt)} as at ${date}`,`${type==='C'?'they owed us':'we owed them'}${note?' · '+note:''}`,{type,id,amt,date,note},{keep:true}); m.remove(); render(); return }
+    const no=openBalAdd(type,id,amt,date,note); m.remove(); persist(true); render(); toast(`${fmt(amt)} brought forward for ${who.name} — ${no}`,'ok') };
+  g('obAmt').focus();
+}
 function partyBalMap(){ const J=S.journal; if(J===_pbArr&&J.length===_pbLen) return _pbMap;
   const m=new Map();
   for(const j of J) for(const l of j.lines){ if(!l.party||l.ac!==(l.party.type==='C'?'1100':'2100')) continue; const k=l.party.type+l.party.id; const v=m.get(k)||[0,0]; v[0]+=l.dr; v[1]+=l.cr; m.set(k,v) }
@@ -16442,7 +16484,8 @@ function dashboardPage(){
   if(S.user && /sales/i.test(String(S.user.role || ''))) return salesmanDashboard();
   if(isFreshShop()) return freshSetupScreen();
   const t=D(today), sum=(a,k)=>a.reduce((x,y)=>x+y[k],0);
-  const ts=_ds.filter(s=>s.date===t);
+  const _dsS=_ds.filter(s=>!s.opening);     // the day's sales: a previous balance brought forward is not one (it stays an open bill)
+  const ts=_dsS.filter(s=>s.date===t);
   const cashS=ts.filter(s=>s.type==='CASH'), credS=ts.filter(s=>s.type==='CREDIT');
   const ar=S.customers.reduce((a,c)=>a+Math.max(0,partyBal('C',c.id)),0);
   const ap=S.suppliers.reduce((a,s)=>a+Math.max(0,partyBal('S',s.id)),0);
@@ -16453,9 +16496,9 @@ function dashboardPage(){
   const claims=S.notices.filter(n=>n.status==='open');
   const noteC=allNotesOpen('C'), noteS=allNotesOpen('S');
   const dates=[...Array(14)].map((_,i)=>ago(13-i));
-  const daily=dates.map(d=>_ds.filter(s=>s.date===d).reduce((a,s)=>a+s.total,0));
-  const dailyCash=dates.map(d=>_ds.filter(s=>s.date===d&&s.type==='CASH').reduce((a,s)=>a+s.total,0));
-  const dailyCred=dates.map(d=>_ds.filter(s=>s.date===d&&s.type==='CREDIT').reduce((a,s)=>a+s.total,0));
+  const daily=dates.map(d=>_dsS.filter(s=>s.date===d).reduce((a,s)=>a+s.total,0));
+  const dailyCash=dates.map(d=>_dsS.filter(s=>s.date===d&&s.type==='CASH').reduce((a,s)=>a+s.total,0));
+  const dailyCred=dates.map(d=>_dsS.filter(s=>s.date===d&&s.type==='CREDIT').reduce((a,s)=>a+s.total,0));
   const avg=daily.slice(0,13).reduce((a,v)=>a+v,0)/13;
   const vsAvg=avg?((daily.at(-1)-avg)/avg*100):0;
   const cash=bal('1010'), banks=S.banks.map(b=>({name:b.name,v:bal(b.ac)}));
@@ -22185,7 +22228,7 @@ function payGate(kind,title,detail,data,opts){
   return true;
 }
 const payWhat=(ls)=>ls.map(l=>`${String(l.method||'').toLowerCase()} ${fmt(l.amount)}${l.ref||l.no?' ('+escM(l.ref||l.no)+')':''}${l.date&&l.date!==D(today)?' dated '+l.date:''}`).join(' + ');
-const APKIND={...Object.fromEntries(APPROVAL_KINDS),listBill:'Billing a customer on the black or red list',overLimit:'Credit past a customer’s limit'};
+const APKIND={...Object.fromEntries(APPROVAL_KINDS),listBill:'Billing a customer on the black or red list',openBal:'A previous balance brought forward',overLimit:'Credit past a customer’s limit'};
 const canApprove=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||can('approve')));
 const needsApproval=(kind)=>{ const cfg=CFG.approvals||{}; return cfg[kind]!==false&&!canApprove() };
 const apPending=()=>(S.approvals||[]).filter(a=>a.status==='pending');
@@ -22208,7 +22251,8 @@ function applyApproval(a){
     case 'supPortal':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supPortalSet(s,d.field,!!d.value); break }
     case 'supStock':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supStockOpen(s); break }
     case 'leave':{ lvApprove(d.id); break }
-    case 'listBill': case 'overLimit': break;      // the yes itself is what the till looks for (dirApproved)
+    case 'listBill': case 'overLimit': break;
+    case 'openBal': openBalAdd(d.type,d.id,d.amt,d.date,d.note,a.by); break;      // the yes itself is what the till looks for (dirApproved)
     case 'stockAdj':{ if(d.phoneIds) phonePost(d.phoneIds,true); else { stkCount={...(d.counts||{})}; postStockTakeNow(d.note||'Stock take') } break }
     case 'salaryAsk':{ const e=(S.employees||[]).find(x=>String(x.id)===String(d.empId))||(S.employees||[]).find(x=>x.name===d.who);
       if(!e) throw new Error('That person is no longer on the staff list');
@@ -22266,6 +22310,7 @@ function salTell(d,ok,note){
    on the black list (do not serve) or the red list (take care) cannot be billed until one of them says
    yes — with their PIN at the counter, or from the Approvals page. Credit past a customer's limit is the
    same: nobody else's "allow" counts. A yes from the Approvals page holds for three hours, for one bill. */
+const listBoss=(u)=>['super admin','superadmin','admin'].includes(String(((u||S.user)||{}).role||'').toLowerCase());
 const dirBoss=(u)=>['super admin','superadmin','owner','admin'].includes(String(((u||S.user)||{}).role||'').toLowerCase());
 const CUST_LISTS={black:['Black list','do not serve'],red:['Red list','take care']};
 const custListed=(c)=>c&&c.id!==1&&CUST_LISTS[c.list]?c.list:null;
@@ -22309,7 +22354,7 @@ function listAsk(c){
 }
 /* putting a customer on a list, or taking them off: the directors only */
 function custListModal(id){
-  const c=C(id); if(!c||!dirBoss()) return toast('Only the Super Admin or a director can do this');
+  const c=C(id); if(!c||!listBoss()) return toast('Only the Super Admin or an Admin (a director) can put a customer on a list');
   const m=modal(`<h2>${noteEsc(c.name)} — black or red list</h2>
    <div class="muted" style="margin-bottom:8px">On either list nobody can bill them without a director's yes (PIN at the counter, or the Approvals page).</div>
    ${[['','On no list','billed as anyone else'],['red','Red list','take care — a director allows each bill'],['black','Black list','do not serve — a director allows each bill']].map(([k,l,d])=>`<label class="chk" style="display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--line2)"><input type="radio" name="clL" value="${k}" ${(c.list||'')===k?'checked':''}> <span><b>${l}</b> <span class="muted">— ${d}</span></span></label>`).join('')}
@@ -23397,7 +23442,8 @@ function customerPanel(c){
      <button class="btn ghost" data-act="noteAdd" data-ptype="C" data-id="${c.id}">Add a note</button>
      <button class="btn ghost" data-act="custEdit" data-id="${c.id}">Edit <i class="kbd">Ctrl+E</i></button>
      <button class="btn ghost" data-act="callLog" data-id="${c.id}">📞 Log a call</button>
-     ${dirBoss()?`<button class="btn ghost" data-act="custList" data-id="${c.id}">${custListed(c)?listName(c)+' — change':'Black / red list…'}</button>`:''}
+     <button class="btn ghost" data-act="openBal" data-pk="C" data-id="${c.id}">Previous balance</button>
+     ${listBoss()?`<button class="btn ghost" data-act="custList" data-id="${c.id}">${custListed(c)?listName(c)+' — change':'Black / red list…'}</button>`:''}
     </div>
     <div class="cu-id">${avatarOf(c,true)}
     <div style="min-width:0"><h2>${c.name} <span class="muted" style="font-size:13px;font-weight:400">${c.code}</span>${custListed(c)?` <span class="lst-tag ${c.list}" title="${noteEsc(c.listWhy||'')}">${listName(c)}</span>`:''}</h2>
@@ -26675,6 +26721,7 @@ function supplierPanel(s){
      <button class="btn ghost" data-act="supTerms" data-id="${s.id}">Credit periods</button>
      <button class="btn ghost" data-act="noteAdd" data-ptype="S" data-id="${s.id}">Add a note</button>
      <button class="btn ghost" data-act="supEdit" data-id="${s.id}">Edit <i class="kbd">Ctrl+E</i></button>
+     <button class="btn ghost" data-act="openBal" data-pk="S" data-id="${s.id}">Previous balance</button>
     </div>
     <div class="cu-id">${avatarOf(s,true)}
     <div style="min-width:0"><h2>${s.name} <span class="muted" style="font-size:13px;font-weight:400">${s.code}</span></h2>
@@ -30111,7 +30158,7 @@ function reportData(){
       null,'Money as it actually moved through the tills and the bank, not what was billed.');
   }
   case 'openinv':{
-    const rows=S.sales.filter(x=>x.balance>0.005&&inRange(x.date))
+    const rows=salesReal().filter(x=>x.balance>0.005&&inRange(x.date))
       .sort((a,b)=>a.date.localeCompare(b.date))
       .map(x=>{const c=C(x.customerId), age=days(x.date);
         return [x.no,x.date,c.name,money(x.total),money(x.paid),money(x.balance),age+' d'+(age>60?' ⚠':'')]});
@@ -30123,7 +30170,7 @@ function reportData(){
   case 'collect':{
     const rows=[];
     S.customers.filter(c=>c.id!==1).forEach(c=>{
-      const open=S.sales.filter(x=>x.customerId===c.id&&x.balance>0.005&&days(x.date)>0);
+      const open=salesReal().filter(x=>x.customerId===c.id&&x.balance>0.005&&days(x.date)>0);
       if(!open.length) return;
       const oldest=open.sort((a,b)=>a.date.localeCompare(b.date))[0];
       const over=open.filter(x=>days(x.date)>30).reduce((a,x)=>a+x.balance,0);
@@ -30138,7 +30185,7 @@ function reportData(){
   case 'aragedet':{
     const rows=[];
     S.customers.filter(c=>c.id!==1).forEach(c=>{
-      const open=S.sales.filter(x=>x.customerId===c.id&&x.balance>0.005).sort((a,b)=>a.date.localeCompare(b.date));
+      const open=salesReal().filter(x=>x.customerId===c.id&&x.balance>0.005).sort((a,b)=>a.date.localeCompare(b.date));
       if(!open.length) return;
       rows.push(['__'+c.name,'','','','','']);
       open.forEach(x=>{const d2=days(x.date);
@@ -30153,7 +30200,7 @@ function reportData(){
     S.customers.filter(c=>c.id!==1&&Math.abs(partyBal('C',c.id))>0.005).forEach(c=>{
       rows.push(['__'+c.name,'','','',money(partyBal('C',c.id))]);
       let run=0;
-      const items=[...S.sales.filter(x=>x.customerId===c.id).map(x=>({d:x.date,r:x.no,w:'Bill',dr:x.total,cr:0})),
+      const items=[...salesReal().filter(x=>x.customerId===c.id).map(x=>({d:x.date,r:x.no,w:'Bill',dr:x.total,cr:0})),
         ...S.payments.filter(pp=>pp.dir==='IN'&&pp.customerId===c.id).map(pp=>({d:pp.date,r:pp.no,w:'Payment '+pp.method.toLowerCase(),dr:0,cr:pp.amount}))]
         .sort((a,b)=>a.d.localeCompare(b.d));
       items.forEach(it=>{run+=it.dr-it.cr; rows.push(['   '+it.r,it.d,it.w,it.dr?money(it.dr):money(-it.cr),money(run)])});
@@ -30180,7 +30227,7 @@ function reportData(){
     const cogsOf=x=>x.lines.reduce((a,l)=>a+l.qty*l.cost,0);
     let tn=0,tv=0,tp=0,tc=0;
     const rows=locs.map(loc=>{
-      const list=S.sales.filter(x=>inRange(x.date)&&shopOf(x)===loc.id);
+      const list=salesReal().filter(x=>inRange(x.date)&&shopOf(x)===loc.id);
       const v=list.reduce((a,x)=>a+x.total,0);
       const p=list.reduce((a,x)=>a+x.total-cogsOf(x),0);
       const cr=list.reduce((a,x)=>a+x.balance,0);
@@ -30198,7 +30245,7 @@ function reportData(){
   case 'shopitem':{
     const locs=(S.locations&&S.locations.length)?S.locations:[{id:0,name:CFG.shop.name||'The shop'}];
     const by=new Map();
-    S.sales.filter(x=>inRange(x.date)).forEach(x=>{ const sh=shopOf(x);
+    salesReal().filter(x=>inRange(x.date)).forEach(x=>{ const sh=shopOf(x);
       x.lines.forEach(l=>{ const r=by.get(l.pid)||{qty:{},val:{},tot:0};
         r.qty[sh]=(r.qty[sh]||0)+l.qty;
         r.val[sh]=(r.val[sh]||0)+l.qty*l.price-l.disc;
@@ -30214,7 +30261,7 @@ function reportData(){
   }
   case 'salesuser':{
     const by={};
-    S.sales.filter(x=>inRange(x.date)).forEach(x=>{
+    salesReal().filter(x=>inRange(x.date)).forEach(x=>{
       const k=x.by; by[k]=by[k]||{n:0,v:0,d:0,p:0};
       by[k].n++; by[k].v+=x.total;
       by[k].d+=x.lines.reduce((a,l)=>a+l.disc,0)+x.billDisc;
@@ -30238,7 +30285,7 @@ function reportData(){
     /* By month. Sales include VAT (shelf prices do), so the output VAT is the tax part of what was billed;
        the input VAT is the tax part of the bills from suppliers that have a VAT number. */
     const tx=CFG.tax||{}, by={}, row=m=>by[m]=by[m]||{s:0,p:0};
-    S.sales.filter(x=>inRange(x.date)).forEach(x=>{ row(x.date.slice(0,7)).s+=+x.total||0 });
+    salesReal().filter(x=>inRange(x.date)).forEach(x=>{ row(x.date.slice(0,7)).s+=+x.total||0 });
     (S.purchases||[]).filter(p=>inRange(p.date)&&!(p.onNote&&!p.invoiced)).forEach(p=>{ const sp=SU(p.supplierId); if(sp&&String(sp.tin||'').trim()) row(p.date.slice(0,7)).p+=+p.total||0 });
     const rows=Object.entries(by).sort().reverse().map(([m,v])=>{ const out=vatIn(v.s), inp=vatIn(v.p), base=v.s-out;
       return [new Date(m+'-01').toLocaleDateString('en-GB',{month:'long',year:'numeric'}),money(v.s),money(base),money(out),money(v.p),money(inp),money(out-inp),...(tx.sscl?[money(base*(+tx.ssclRate||0)/100)]:[])] });
@@ -30260,7 +30307,7 @@ function reportData(){
   }
   case 'salesprofit':{
     const sc=salesCommCfg(), by={};
-    S.sales.filter(x=>inRange(x.date)).forEach(inv=>{ const who=inv.salesman||inv.by||'—'; const v=by[who]=by[who]||{bills:0,v:0,c:0};
+    salesReal().filter(x=>inRange(x.date)).forEach(inv=>{ const who=inv.salesman||inv.by||'—'; const v=by[who]=by[who]||{bills:0,v:0,c:0};
       if(+inv.total>0) v.bills++;
       profitLines(x=>x===inv).forEach(r=>{ v.v+=r.net; v.c+=r.cost }) });
     const rows=Object.entries(by).map(([who,v])=>{ const prof=v.v-v.c, u=S.users.find(x=>x.name===who), rate=u&&u.commRate!=null&&u.commRate!==''?+u.commRate:+sc.rate||0;
@@ -30278,7 +30325,7 @@ function reportData(){
   }
   case 'prodprofit':{
     const by={};
-    S.sales.filter(x=>inRange(x.date)).forEach(x=>x.lines.forEach(l=>{
+    salesReal().filter(x=>inRange(x.date)).forEach(x=>x.lines.forEach(l=>{
       by[l.pid]=by[l.pid]||{q:0,v:0,c:0};
       by[l.pid].q+=+l.qty||0; by[l.pid].v+=(+l.qty||0)*(+l.price||0)-(+l.disc||0); by[l.pid].c+=(+l.qty||0)*(+l.cost||0)}));
     const rows=Object.entries(by).map(([pid,v])=>{const pr=repItem(pid);
@@ -30393,7 +30440,7 @@ function reportData(){
   }
   case 'daybook':{
     const byDay={};
-    S.sales.filter(s=>inRange(s.date)).forEach(s=>{const b=byDay[s.date]=byDay[s.date]||{sales:0,cash:0,credit:0,pur:0,exp:0,rec:0};
+    salesReal().filter(s=>inRange(s.date)).forEach(s=>{const b=byDay[s.date]=byDay[s.date]||{sales:0,cash:0,credit:0,pur:0,exp:0,rec:0};
       b.sales+=s.total; if(s.type==='CASH')b.cash+=s.total; else b.credit+=s.total});
     S.purchases.filter(p=>inRange(p.date)).forEach(p=>{const b=byDay[p.date]=byDay[p.date]||{sales:0,cash:0,credit:0,pur:0,exp:0,rec:0};b.pur+=p.total});
     S.expenses.filter(e=>inRange(e.date)).forEach(e=>{const b=byDay[e.date]=byDay[e.date]||{sales:0,cash:0,credit:0,pur:0,exp:0,rec:0};b.exp+=e.amount});
@@ -30433,18 +30480,18 @@ function reportData(){
   case 'ar':{
     const rows=S.customers.filter(c=>c.id!==1&&partyBal('C',c.id)>0)
       .sort((a,b)=>partyBal('C',b.id)-partyBal('C',a.id))
-      .map(c=>{const open=S.sales.filter(s=>s.customerId===c.id&&s.balance>0);
+      .map(c=>{const open=salesReal().filter(s=>s.customerId===c.id&&s.balance>0);
         return [c.name,c.phone||'',open.length,open.length?days(open.sort((a,b)=>a.date.localeCompare(b.date))[0].date)+' days':'',money(partyBal('C',c.id)),money(c.limit)]});
     return t(['Customer','Phone','Bills open','Oldest','Outstanding','Their limit'],rows,
       ['Total','','','',money(S.customers.reduce((a,c)=>a+Math.max(0,partyBal('C',c.id)),0)),'']);
   }
   case 'arage':{
     const rows=S.customers.filter(c=>c.id!==1&&partyBal('C',c.id)>0).map(c=>{
-      const o=S.sales.filter(s=>s.customerId===c.id&&s.balance>0);
+      const o=salesReal().filter(s=>s.customerId===c.id&&s.balance>0);
       const b=o.reduce((a,s)=>{const d=days(s.date); if(d<=30)a[0]+=s.balance; else if(d<=60)a[1]+=s.balance; else if(d<=90)a[2]+=s.balance; else a[3]+=s.balance; return a},[0,0,0,0]);
       return [c.name,money(b[0]),money(b[1]),money(b[2]),money(b[3]),money(b[0]+b[1]+b[2]+b[3])]});
     const tot=[0,1,2,3].map(i=>S.customers.reduce((a,c)=>{
-      const o=S.sales.filter(s=>s.customerId===c.id&&s.balance>0);
+      const o=salesReal().filter(s=>s.customerId===c.id&&s.balance>0);
       return a+o.reduce((x,s)=>{const d=days(s.date);const k=d<=30?0:d<=60?1:d<=90?2:3;return x+(k===i?s.balance:0)},0)},0));
     return t(['Customer','Up to 30 days','31 to 60','61 to 90','Over 90','Outstanding'],rows,
       ['Total',...tot.map(money),money(tot.reduce((a,v)=>a+v,0))],
@@ -30468,7 +30515,7 @@ function reportData(){
   }
   case 'salescust':{
     const by={};
-    S.sales.filter(s=>inRange(s.date)).forEach(s=>{const k=s.customerId; by[k]=by[k]||{n:0,v:0,p:0};
+    salesReal().filter(s=>inRange(s.date)).forEach(s=>{const k=s.customerId; by[k]=by[k]||{n:0,v:0,p:0};
       by[k].n++; by[k].v+=s.total; by[k].p+=s.lines.reduce((a,l)=>a+l.qty*(l.price-l.cost)-l.disc,0)});
     const rows=Object.entries(by).sort((a,b)=>b[1].v-a[1].v).map(([k,v])=>[C(+k).name,v.n,money(v.v),
       can('profit')?money(v.p):'—',can('profit')&&v.v?((v.p/v.v)*100).toFixed(1)+'%':'']);
@@ -30478,7 +30525,7 @@ function reportData(){
   }
   case 'salesitem':{
     const by={};
-    S.sales.filter(s=>inRange(s.date)).forEach(s=>s.lines.forEach(l=>{
+    salesReal().filter(s=>inRange(s.date)).forEach(s=>s.lines.forEach(l=>{
       const q=+l.qty||0, pr=+l.price||0, d=+l.disc||0;
       by[l.pid]=by[l.pid]||{q:0,v:0,p:0}; by[l.pid].q+=q; by[l.pid].v+=q*pr-d;
       by[l.pid].p+=q*(pr-(+l.cost||0))-d }));
@@ -30491,7 +30538,7 @@ function reportData(){
   }
   case 'salesday':{
     const by={};
-    S.sales.filter(s=>inRange(s.date)).forEach(s=>{by[s.date]=by[s.date]||{n:0,v:0,by:{}};
+    salesReal().filter(s=>inRange(s.date)).forEach(s=>{by[s.date]=by[s.date]||{n:0,v:0,by:{}};
       by[s.date].n++; by[s.date].v+=s.total; by[s.date].by[s.by]=(by[s.date].by[s.by]||0)+s.total});
     const rows=Object.entries(by).sort().reverse().map(([d,v])=>[d,
       new Date(d).toLocaleDateString('en-GB',{weekday:'short'}),v.n,money(v.v),
@@ -30500,7 +30547,7 @@ function reportData(){
       ['Total','',Object.values(by).reduce((a,v)=>a+v.n,0),money(Object.values(by).reduce((a,v)=>a+v.v,0)),'']);
   }
   case 'disc':{
-    const rows=S.sales.filter(s=>inRange(s.date)).filter(s=>s.billDisc||s.lines.some(l=>l.disc)||(s.adjustments||[]).length)
+    const rows=salesReal().filter(s=>inRange(s.date)).filter(s=>s.billDisc||s.lines.some(l=>l.disc)||(s.adjustments||[]).length)
       .map(s=>{const line=s.lines.reduce((a,l)=>a+l.disc,0);
         const adj=(s.adjustments||[]).reduce((a,x)=>a+x.amount,0);
         return [s.date,s.no,C(s.customerId).name,money(line),money(s.billDisc),money(adj),
@@ -30533,7 +30580,7 @@ function reportData(){
   }
   case 'reorder':{
     const rows=S.products.filter(p=>p.stock<=p.min).map(p=>{
-      const sold=S.sales.filter(s=>s.date>=ago(30)).reduce((a,s)=>a+s.lines.filter(l=>l.pid===p.id).reduce((x,l)=>x+l.qty,0),0);
+      const sold=salesReal().filter(s=>s.date>=ago(30)).reduce((a,s)=>a+s.lines.filter(l=>l.pid===p.id).reduce((x,l)=>x+l.qty,0),0);
       const last=S.purchases.filter(pu=>pu.lines.some(l=>l.pid===p.id)).sort((a,b)=>b.date.localeCompare(a.date))[0];
       return [p.code,p.name,fq(p.stock)+' '+p.unit,p.min,fq(sold),last?SU(last.supplierId).name:'—',last?last.date:'—']});
     return t(['Code','Item','On hand','Reorder at','Sold in 30 days','Last bought from','When'],rows,null,
@@ -32724,7 +32771,7 @@ document.addEventListener('click',e=>{
     editProd:()=>{ if(S.user&&S.user.role==='Salesman') return toast('Editing products is not open to Salesman'); closeModals(); productModal(+a.dataset.id) },
     prodHist:()=>productHistory(+a.dataset.id),
     custQ:()=>{}, stmtPrint:()=>statement(+a.dataset.id,'print'), stmtSms:()=>statement(+a.dataset.id,'sms'),
-    custNew:()=>custModal(null,a.dataset.q||custQ), custEdit:()=>custModal(+a.dataset.id), custList:()=>custListModal(+a.dataset.id),
+    custNew:()=>custModal(null,a.dataset.q||custQ), custEdit:()=>custModal(+a.dataset.id), custList:()=>custListModal(+a.dataset.id), openBal:()=>openBalModal(a.dataset.pk,+a.dataset.id),
     callLog:()=>callLog(+a.dataset.id),
     callShow:()=>{ callShow=a.dataset.k; render() },
     duCat:()=>{ duCat=a.dataset.k; render() },
