@@ -915,6 +915,7 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 @media (prefers-reduced-motion:reduce){.prt .prt-line::after,.prt-s.now b{animation:none!important}}
 /* ---- getting started ---- */
 .su{max-width:1120px;margin:0 auto}
+.chips button.chip-off{border-style:dashed;color:var(--muted)}.chips button.chip-off.on{border-style:solid;color:inherit}
 #suPill{position:fixed;right:18px;bottom:18px;z-index:60;display:flex;align-items:center;gap:8px;padding:10px 16px;border:0;border-radius:99px;cursor:pointer;font:600 13.5px inherit;color:#fff;
   background:linear-gradient(135deg,#7E141D,#AE1E2B);box-shadow:0 10px 24px -8px rgba(126,20,29,.6);animation:su-in .4s both}
 #suPill b{background:rgba(255,255,255,.2);border-radius:99px;padding:1px 8px;font-size:12px}#suPill span{font-size:15px}#suPill:hover{filter:brightness(1.1)}
@@ -22358,7 +22359,7 @@ function payGate(kind,title,detail,data,opts){
   return true;
 }
 const payWhat=(ls)=>ls.map(l=>`${String(l.method||'').toLowerCase()} ${fmt(l.amount)}${l.ref||l.no?' ('+escM(l.ref||l.no)+')':''}${l.date&&l.date!==D(today)?' dated '+l.date:''}`).join(' + ');
-const APKIND={...Object.fromEntries(APPROVAL_KINDS),listBill:'Billing a customer on the black or red list',openBal:'A previous balance brought forward',overLimit:'Credit past a customer’s limit'};
+const APKIND={...Object.fromEntries(APPROVAL_KINDS),listBill:'Billing a customer on the black or red list',openBal:'A previous balance brought forward',partyActive:'A customer or supplier made active again',overLimit:'Credit past a customer’s limit'};
 const canApprove=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||can('approve')));
 const needsApproval=(kind)=>{ const cfg=CFG.approvals||{}; return cfg[kind]!==false&&!canApprove() };
 const apPending=()=>(S.approvals||[]).filter(a=>a.status==='pending');
@@ -22382,7 +22383,8 @@ function applyApproval(a){
     case 'supStock':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supStockOpen(s); break }
     case 'leave':{ lvApprove(d.id); break }
     case 'listBill': case 'overLimit': break;
-    case 'openBal': openBalAdd(d.type,d.id,d.amt,d.date,d.note,a.by); break;      // the yes itself is what the till looks for (dirApproved)
+    case 'openBal': openBalAdd(d.type,d.id,d.amt,d.date,d.note,a.by); break;
+    case 'partyActive': partyActivate(d.type,d.id,S.user.name); break;      // the yes itself is what the till looks for (dirApproved)
     case 'stockAdj':{ if(d.phoneIds) phonePost(d.phoneIds,true); else { stkCount={...(d.counts||{})}; postStockTakeNow(d.note||'Stock take') } break }
     case 'salaryAsk':{ const e=(S.employees||[]).find(x=>String(x.id)===String(d.empId))||(S.employees||[]).find(x=>x.name===d.who);
       if(!e) throw new Error('That person is no longer on the staff list');
@@ -23499,8 +23501,41 @@ function custMatch(c,q){
   if(v.length>=2&&!v.includes(' ')&&words.map(w=>w[0]).join('').startsWith(v)) return true;
   return false;
 }
+/* ================== ACTIVE AND INACTIVE ==================
+   A customer or supplier the shop no longer deals with is made inactive: off the lists and out of the till's
+   pickers, with their bills and balance left on the books. They sit under "Inactive" on the list. Making one
+   active again is a decision: someone who may approve does it (and it is written down); anyone else asks. */
+function partyInactive(type,id){
+  const x=type==='C'?C(id):SU(id); if(!x) return;
+  const owed=type==='C'?partyBal('C',x.id):partyBal('S',x.id);
+  const why=prompt(`Make ${x.name} inactive?\n\nThey leave the ${type==='C'?'customer':'supplier'} list and the till's pickers; their bills${Math.abs(owed)>0.005?' and the '+fmt(Math.abs(owed))+(type==='C'?' they owe':' owed to them'):''} stay on the books. Making them active again needs approval.\n\nWhy (optional):`,'');
+  if(why===null) return;
+  x.active=false; x.inactiveBy=S.user.name; x.inactiveAt=apStamp(); x.inactiveWhy=String(why).trim().slice(0,120);
+  try{ logTrail('other',`${x.name} made inactive${x.inactiveWhy?' — '+x.inactiveWhy:''}`,{ref:x.code||String(x.id)}) }catch(e){}
+  if(type==='C'){ custFilter='inactive' } else { supFilter='inactive' }
+  persist(true); render(); toast(`${x.name} is inactive — under Inactive on the list`,'ok');
+}
+function partyActivate(type,id,by){
+  const x=type==='C'?C(id):SU(id); if(!x) throw new Error('No longer on the books');
+  x.active=true; x.activeAgainBy=by||S.user.name; x.activeAgainAt=apStamp(); delete x.inactiveWhy;
+  try{ logTrail('other',`${x.name} made active again${by&&by!==S.user.name?' — approved by '+by:''}`,{ref:x.code||String(x.id)}) }catch(e){}
+}
+function partyActivateAsk(type,id){
+  const x=type==='C'?C(id):SU(id); if(!x) return;
+  const asked=(S.approvals||[]).find(a=>a.kind==='partyActive'&&a.status==='pending'&&a.data&&a.data.type===type&&+a.data.id===+id);
+  if(asked) return toast('Already asked — it waits in the Action centre');
+  if(canApprove()){ if(!confirm(`Make ${x.name} active again?`)) return;
+    partyActivate(type,id,S.user.name); if(type==='C'){ custFilter='all'; custSel=x.id } else { supFilter='all'; supSel=x.id }
+    persist(true); render(); return toast(`${x.name} is active again`,'ok') }
+  requestApproval('partyActive',`Make ${x.name} active again`,`${type==='C'?'customer':'supplier'} · inactive since ${x.inactiveAt||'?'}${x.inactiveBy?' by '+x.inactiveBy:''}${x.inactiveWhy?' — '+x.inactiveWhy:''}`,{type,id:x.id},{keep:true});
+  render();
+}
+const inactiveBand=(type,x)=>x.active===false?`<div class="card note" style="margin-bottom:10px;border-left:4px solid var(--muted);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+   <div><b>Inactive</b><div class="muted">since ${noteEsc(x.inactiveAt||'—')}${x.inactiveBy?' · by '+noteEsc(x.inactiveBy):''}${x.inactiveWhy?' · “'+noteEsc(x.inactiveWhy)+'”':''} — not on the lists or in the till's pickers</div></div>
+   ${(S.approvals||[]).some(a=>a.kind==='partyActive'&&a.status==='pending'&&a.data&&a.data.type===type&&+a.data.id===+x.id)?'<span class="tag warn">asked — waiting for approval</span>'
+     :`<button class="btn tape sm" data-act="partyOn" data-pk="${type}" data-id="${x.id}">${canApprove()?'Make active again':'Ask to make active again'}</button>`}</div>`:'';
 function custList(){
-  let list=S.customers.filter(c=>c.id!==1&&c.active!==false&&custMatch(c,custQ));
+  let list=S.customers.filter(c=>c.id!==1&&(custFilter==='inactive'?c.active===false:c.active!==false)&&custMatch(c,custQ));
   const bal=c=>partyBal('C',c.id);
   if(custFilter==='owing') list=list.filter(c=>bal(c)>0);
   if(custFilter==='overdue') list=list.filter(c=>custAge(c.id).old>0);
@@ -23534,8 +23569,8 @@ function customers(){
     </div>
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
      <input id="custQ" value="${noteEsc(custQ)}" placeholder="Name, mobile, code, address…" autocomplete="off"><span class="search-k"><i class="kbd">↑↓</i><i class="kbd">Enter</i></span></div>
-    <div class="chips">${[['all','All'],['owing','Outstanding'],['overdue','60+ days'],['over','Over limit'],['wholesale','Wholesale'],['online','Website'],['portal','Portal'],['nophone','No mobile']]
-      .map(f=>`<button class="${custFilter===f[0]?'on':''}" data-custfilter="${f[0]}">${f[1]}</button>`).join('')}</div>
+    <div class="chips">${[['all','All'],['owing','Outstanding'],['overdue','60+ days'],['over','Over limit'],['wholesale','Wholesale'],['online','Website'],['portal','Portal'],['nophone','No mobile'],['inactive','Inactive']]
+      .map(f=>`<button class="${custFilter===f[0]?'on':''} ${f[0]==='inactive'?'chip-off':''}" data-custfilter="${f[0]}">${f[1]}${f[0]==='inactive'?` <b>${S.customers.filter(c=>c.id!==1&&c.active===false).length}</b>`:''}</button>`).join('')}</div>
     <div class="chips" style="margin-bottom:6px"><span class="muted" style="align-self:center">Sort</span>
      ${[['owed','Outstanding'],['oldest','Oldest debt'],['recent','Recent'],['name','Name']].map(f=>`<button class="${custSort===f[0]?'on':''}" data-custsort="${f[0]}">${f[1]}</button>`).join('')}</div>
     <div class="muted" style="margin:0 0 4px 4px">${list.length} of ${all.length}</div>
@@ -23599,6 +23634,7 @@ function customerPanel(c){
       ${AGE_BANDS.map(([k,,tone])=>`<i class="${tone}" style="width:${((ag[k]||0)/owed*100)}%"></i>`).join('')}</div>
     </div>`:''}
 
+   ${inactiveBand('C',c)}
    ${custCallsCard(c)}
    <div class="cu-small">
     <span><i>Bought in all</i> <b>${fmt(lifetime)}</b> · ${inv.length} bill${inv.length===1?'':'s'}, paid ${fmt(paidTot)}</span>
@@ -23896,7 +23932,7 @@ function custDetails(c){
      ${webOrders.length?`<tr><th>Website</th><td>${webOrders.length} order${webOrders.length===1?'':'s'} placed online</td></tr>`:''}
     </table>
     <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap"><button class="btn tape" data-act="custEdit" data-id="${c.id}">Edit details</button>
-     ${can('users')||S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'?`<button class="btn ghost" data-act="custRemove" data-id="${c.id}" ${partyBal('C',c.id)>0.005?'disabled title="Settle the account first"':''}>Remove customer</button>`:''}</div></div>
+     ${(can('users')||S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')&&c.active!==false?`<button class="btn ghost" data-act="partyOff" data-pk="C" data-id="${c.id}">Make inactive</button>`:''}</div></div>
    <div><h2 style="font-size:15px">Messages sent</h2>
     ${(S.messages||[]).filter(m=>m.to===c.phone).slice(0,8).map(m=>`<div class="ev" style="padding:6px 0;border-bottom:1px solid var(--line2)"><div class="muted" style="font-size:12px">${m.date||m.at||''} · ${m.status||''}</div><div style="font-size:13px">${m.text||m.message||''}</div></div>`).join('')||'<div class="muted">No texts to this customer yet.</div>'}</div>
   </div>`;
@@ -26688,7 +26724,7 @@ function supAge(id){
 const supLastSeen=(id)=>{ const b=S.purchases.filter(p=>p.supplierId===id).map(p=>p.date), p=S.payments.filter(x=>!x.dir&&x.supplierId===id).map(x=>x.date); return [...b,...p].sort().pop()||null };
 const supChequesOut=(s)=>S.cheques.filter(c=>c.dir==='ISSUED'&&c.party===s.name&&['ISSUED','PRINTED'].includes(c.status));
 function supList(){
-  let list=S.suppliers.filter(x=>x.active!==false&&custMatch(x,supQ));
+  let list=S.suppliers.filter(x=>(supFilter==='inactive'?x.active===false:x.active!==false)&&custMatch(x,supQ));
   const bal=x=>partyBal('S',x.id);
   if(supFilter==='owing') list=list.filter(x=>bal(x)>0);
   if(supFilter==='overdue') list=list.filter(x=>supAge(x.id).old>0);
@@ -26723,8 +26759,8 @@ function suppliers(){
     </div>
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
      <input id="supQ" value="${noteEsc(supQ)}" placeholder="Name, contact, phone, code…" autocomplete="off"><span class="search-k"><i class="kbd">↑↓</i><i class="kbd">Enter</i></span></div>
-    <div class="chips">${[['all','All'],['owing','Outstanding'],['overdue','60+ days'],['cheques','Cheques out'],['orders','Orders waiting'],['portal','Portal'],['clear','Settled']]
-      .map(f=>`<button class="${supFilter===f[0]?'on':''}" data-supfilter="${f[0]}">${f[1]}</button>`).join('')}</div>
+    <div class="chips">${[['all','All'],['owing','Outstanding'],['overdue','60+ days'],['cheques','Cheques out'],['orders','Orders waiting'],['portal','Portal'],['clear','Settled'],['inactive','Inactive']]
+      .map(f=>`<button class="${supFilter===f[0]?'on':''} ${f[0]==='inactive'?'chip-off':''}" data-supfilter="${f[0]}">${f[1]}${f[0]==='inactive'?` <b>${S.suppliers.filter(x=>x.active===false).length}</b>`:''}</button>`).join('')}</div>
     <div class="chips" style="margin-bottom:6px"><span class="muted" style="align-self:center">Sort</span>
      ${[['owed','Outstanding'],['oldest','Oldest bill'],['recent','Recent'],['name','Name']].map(f=>`<button class="${supSort===f[0]?'on':''}" data-supsort="${f[0]}">${f[1]}</button>`).join('')}</div>
     <div class="muted" style="margin:0 0 4px 4px">${list.length} of ${all.length}</div>
@@ -26858,6 +26894,7 @@ function supplierPanel(s){
      <div class="muted" style="margin-top:2px">${s.contact?s.contact+' · ':''}${s.phone?`<a href="tel:${s.phone}" style="border:0">📞 ${s.phone}</a>`:'<span class="tag warn">no phone</span>'}${s.address?' · '+s.address:''}</div>
      <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag blue">terms ${s.days||0} days</span>${ag.old>0?'<span class="tag bad">bills over 60 days</span>':''}${pend.length?`<span class="tag warn">${pend.length} cheque${pend.length===1?'':'s'} out</span>`:''}${s.enabled?'<span class="tag page">own page on</span>':''}${waiting?`<span class="tag warn">${waiting} order${waiting===1?'':'s'} waiting</span>`:''}${first?`<span class="muted" style="font-size:12px;align-self:center">supplier since ${first}</span>`:''}</div></div></div></div>
 
+   ${inactiveBand('S',s)}
    <div class="cu-kpis">
     <div class="kpi ${ag.old>0?'r':owed>0?'y':'g'}"><div class="l">Outstanding</div><div class="v ${fmt(owed).length>14?'small':''}">${fmt(owed)}</div><div class="s">${open.length?`${open.length} unpaid bill${open.length===1?'':'s'} · oldest ${ag.oldest} days`:'nothing outstanding'}</div>
      ${owed>0?`<div class="agebars" title="up to 30 · 31–60 · over 60 days"><i style="width:${ag.now/owed*100}%;background:var(--chip-green)"></i><i style="width:${ag.mid/owed*100}%;background:var(--chip-yellow)"></i><i style="width:${ag.old/owed*100}%;background:var(--chip-rust)"></i></div>`:''}</div>
@@ -26965,7 +27002,7 @@ function supDetails(s,orders){
      ${orders.length?`<tr><th>Orders</th><td>${orders.length} sent to them</td></tr>`:''}
     </table>
     <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap"><button class="btn tape" data-act="supEdit" data-id="${s.id}">Edit details</button>
-     ${S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'?`<button class="btn ghost" data-act="supRemove" data-id="${s.id}" ${partyBal('S',s.id)>0.005?'disabled title="Settle the account first"':''}>Remove supplier</button>`:''}</div>
+     ${(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')&&s.active!==false?`<button class="btn ghost" data-act="partyOff" data-pk="S" data-id="${s.id}">Make inactive</button>`:''}</div>
     ${supPriceListsMini(s)}</div>
    <div><h2 style="font-size:15px">Messages sent</h2>
     ${(S.messages||[]).filter(m=>s.phone&&m.to===s.phone).slice(0,8).map(m=>`<div style="padding:6px 0;border-bottom:1px solid var(--line2)"><div class="muted" style="font-size:12px">${m.at||''} · ${m.status||''}</div><div style="font-size:13px">${m.body||''}</div></div>`).join('')||'<div class="muted">No texts to this supplier yet.</div>'}</div>
@@ -32907,7 +32944,7 @@ document.addEventListener('click',e=>{
     editProd:()=>{ if(S.user&&S.user.role==='Salesman') return toast('Editing products is not open to Salesman'); closeModals(); productModal(+a.dataset.id) },
     prodHist:()=>productHistory(+a.dataset.id),
     custQ:()=>{}, stmtPrint:()=>statement(+a.dataset.id,'print'), stmtSms:()=>statement(+a.dataset.id,'sms'),
-    custNew:()=>custModal(null,a.dataset.q||custQ), custEdit:()=>custModal(+a.dataset.id), custList:()=>custListModal(+a.dataset.id), openBal:()=>openBalModal(a.dataset.pk,+a.dataset.id),
+    custNew:()=>custModal(null,a.dataset.q||custQ), custEdit:()=>custModal(+a.dataset.id), custList:()=>custListModal(+a.dataset.id), openBal:()=>openBalModal(a.dataset.pk,+a.dataset.id), partyOff:()=>partyInactive(a.dataset.pk,+a.dataset.id), partyOn:()=>partyActivateAsk(a.dataset.pk,+a.dataset.id),
     callLog:()=>callLog(+a.dataset.id),
     callShow:()=>{ callShow=a.dataset.k; render() },
     duCat:()=>{ duCat=a.dataset.k; render() },
