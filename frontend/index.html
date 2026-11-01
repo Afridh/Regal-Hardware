@@ -20051,10 +20051,12 @@ function smsSentModal(inv,c){
    once and left alone, so typing a name is never interrupted. */
 /* the bill follows the customer: their price list, and each line at what they were charged last time */
 function setBillCustomer(id){
+  if((id===1?null:id)===S.pos.customer&&S.pos.customer) return 0;   // the same customer again: nothing on the bill changes
   S.pos.customer=id===1?null:id; S.pos.level=null;
   if(S.pos.listOk&&S.pos.listOk.cid!==id) delete S.pos.listOk;
   if(id&&id!==1&&custListed(C(id))) setTimeout(()=>listAsk(C(id)),30);
-  S.pos.lines.forEach(l=>{ delete l.fromLast; l.price=priceFor(P(l.pid),l.qty); l.auto=true });
+  S.pos.lines.forEach(l=>{ if(l.auto===false&&!l.fromLast) return;   // typed by hand: it stays
+    delete l.fromLast; l.price=priceFor(P(l.pid),l.qty); l.auto=true });
   const n=repriceToCustomer(S.pos.customer,{quiet:true});
   if(CS.pid){ const was=lastPriceFor(CS.pid,S.pos.customer); const p=P(CS.pid); if(was&&CFG.pos.repriceToLast&&was.price>=p.cost-0.005){ CS.price=was.price; CS.auto=false; CS.last=was } else if(CS.auto!==false){ CS.price=priceFor(p,+CS.qty||1); CS.last=was||null } }
   return n;
@@ -20946,9 +20948,15 @@ function editSaleModal(no){
     m.querySelectorAll('[data-ep]').forEach(el=>el.onchange=()=>{lines[+el.dataset.ep].price=+el.value||0;draw()});
     m.querySelectorAll('[data-ed]').forEach(el=>el.onchange=()=>{lines[+el.dataset.ed].disc=+el.value||0;draw()});
     m.querySelectorAll('[data-erm]').forEach(b=>b.onclick=()=>{lines.splice(+b.dataset.erm,1);draw()});
+    // pressed straight after typing a price: the box keeps focus, so the window is not redrawn under the click
+    m.querySelector('#esOk').onmousedown=e=>e.preventDefault();
     m.querySelector('#esOk').onclick=save;
   };
   const save=()=>{
+    // what is in the boxes now, typed but not yet left
+    m.querySelectorAll('[data-eq]').forEach(el=>lines[+el.dataset.eq].qty=+el.value||0);
+    m.querySelectorAll('[data-ep]').forEach(el=>lines[+el.dataset.ep].price=+el.value||0);
+    m.querySelectorAll('[data-ed]').forEach(el=>lines[+el.dataset.ed].disc=+el.value||0);
     const why=(m.querySelector('#esWhy').value||'').trim();
     if(!why) return toast('Say why it is being changed — it goes on the record');
     const keep=lines.filter(l=>l.qty>0);
@@ -21085,7 +21093,7 @@ function billToTill(no){
   const go2=()=>{ const why=inp.value.trim();   // a reason is kept with the bill when given; none is fine too
     m.remove();
     if(S.pos.lines.length) holdCurrentBill(false);
-    S.pos={lines:inv.lines.map(l=>({pid:l.pid,qty:l.qty,price:l.price,disc:l.disc||0,warranty:l.warranty,belowCost:l.belowCost})),
+    S.pos={lines:inv.lines.map(l=>({pid:l.pid,qty:l.qty,price:l.price,disc:l.disc||0,warranty:l.warranty,belowCost:l.belowCost,auto:false,...(l.name?{name:l.name}:{}),...(l.discPct!==undefined?{discPct:l.discPct}:{}),...(l.serials?{serials:l.serials.slice()}:{}),...(l.later?{later:l.later,laterNote:l.laterNote}:{})})),
       customer:inv.customerId===1?null:inv.customerId,billDisc:inv.billDisc||0,sel:-1,entry:null,lastBill:S.pos.lastBill,editing:inv.no,editWhy:why};
     if(typeof CS!=='undefined') CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0'};
     logTrail('billEdit',`${no} opened to be changed`,{amount:inv.total,who:c.name,ref:no,why,bill:{ref:no,lines:inv.lines.map(l=>({...l})),customer:inv.customerId,billDisc:inv.billDisc||0,date:new Date().toISOString(),user:inv.by}});
@@ -21933,7 +21941,7 @@ function warrantyCard(no){
 function lastPriceFor(pid,customerId){
   if(!customerId||customerId===1) return null;
   for(let i=S.sales.length-1;i>=0;i--){
-    const s2=S.sales[i]; if(s2.customerId!==customerId) continue;
+    const s2=S.sales[i]; if(s2.customerId!==customerId||(S.pos.editing&&s2.no===S.pos.editing)) continue;
     const l=s2.lines.find(x=>x.pid===pid); if(!l) continue;
     return {price:+(((l.qty*l.price-(l.disc||0))/l.qty).toFixed(2)),date:s2.date,no:s2.no,qty:l.qty};
   }
@@ -21944,6 +21952,7 @@ function repriceToCustomer(id,{quiet=false}={}){
   if(!id||id===1||!CFG.pos.repriceToLast) return 0;
   let n=0; const before=S.pos.lines.map(l=>({pid:l.pid,price:l.price,disc:l.disc,discPct:l.discPct}));
   S.pos.lines.forEach(l=>{
+    if(l.auto===false&&!l.fromLast) return;            // a price typed by hand is never replaced
     const was=lastPriceFor(l.pid,id); if(!was) return;
     if(Math.abs(was.price-l.price)<0.005&&!l.disc) return;
     const p=P(l.pid);
