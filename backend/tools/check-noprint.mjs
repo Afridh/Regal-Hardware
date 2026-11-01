@@ -65,6 +65,8 @@ await pg.type('#avAmt', '250'); await pg.click('.modal .np-chk'); await pg.click
 ok(await printed() === n && !(await pg.$('.modal .voucher')), 'ticked: the advance is paid, no voucher printed or left open');
 ok(await pg.evaluate(() => (window.eval('S').advances || []).some(a => a.amount === 250)), 'and the advance is recorded');
 await pg.evaluate(() => window.eval('advanceModal')(window.eval('S').employees[0].id)); await wait(300);
+ok(await pg.$eval('.modal .np-chk', el => el.checked), 'the next window has No print still ticked (it stays as left on this till)');
+await pg.$eval('.modal .np-chk', el => { if (el.checked) el.click() });
 await pg.type('#avAmt', '260'); await pg.click('#avOk'); await wait(800);
 ok(await printed() === n + 1, 'not ticked: the voucher prints as before'); n = await printed(); await close();
 for (const [what, js] of [['a customer payment', "window.eval('custPayModal')(window.eval('S').customers.find(c=>c.id!==1).id)"],

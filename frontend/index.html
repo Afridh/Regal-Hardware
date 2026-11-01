@@ -6037,7 +6037,7 @@ function paySupplier({supplierId,date=D(today),lines,notes='',against=[],allowDa
   for(const p of [...picked,...rest]){ const a=Math.min(rem,p.total-p.paid); p.paid+=a; rem-=a; if(rem<=0)break }
   return pv;
 }
-function receiveCustomer({customerId,amount,method,bank,ref,against=[],date=D(today),chq}){
+function receiveCustomer({customerId,amount,method,bank,ref,against=[],date=D(today),chq,quiet=false}){
   if(!(amount>0)) throw new Error('A payment needs an amount above zero');
   const owed=Math.max(0,partyBal('C',customerId));
   const onBills=+Math.min(amount,owed).toFixed(2), advance=+(amount-onBills).toFixed(2);
@@ -6055,7 +6055,7 @@ function receiveCustomer({customerId,amount,method,bank,ref,against=[],date=D(to
  for(const s of [...chosen,...rest]){ const a=Math.min(rem,s.balance); s.balance=+(s.balance-a).toFixed(2); s.paid+=a; rem-=a; if(rem<=0)break }
   const c=C(customerId);
   notify('money',`${fmt(amount)} taken from ${c.name}${advance>0?' · '+fmt(advance)+' held as credit':''}`,'receipts');
-  if(CFG.msg.autoReceipt) sms(c.phone,tpl('paymentReceived',{amount:fmt(amount),receipt:rv.no,customer:c.name,outstanding:fmt(partyBal('C',c.id))}));
+  if(CFG.msg.autoReceipt&&!quiet) sms(c.phone,tpl('paymentReceived',{amount:fmt(amount),receipt:rv.no,customer:c.name,outstanding:fmt(partyBal('C',c.id))}));
   return rv;
 }
 /* which changes a cheque may go through — anything else is refused, and the
@@ -6479,7 +6479,7 @@ const CFG={
     texts, so the floor is there to be raised — it is the figure above which the owner would
     want to know without being told. */
  msg:{letterOn:true,greetCustomer:'Dear Customer,',greetSupplier:'Dear Supplier,',greetOwner:'Dear Owner,',greetStaff:'Dear Team Member,',signOff:'Thank you,\n{shop}\n{phone}',
-  provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',supTestOn:true,supTestTo:'0769442270',timeout:30,autoBill:true,autoReceipt:true,autoOrder:true,autoSummary:true,fbOwner:true,ownerBills:'all',ownerMin:0,
+  provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',supTestOn:true,supTestTo:'0769442270',timeout:30,autoBill:true,autoReceipt:true,ownerPays:true,autoOrder:true,autoSummary:true,fbOwner:true,ownerBills:'all',ownerMin:0,
   waMode:'chat',waPhoneId:'',waToken:'',waWabaId:'',waVerifyToken:'',waAuto:true,waTemplates:{},
    quietFrom:'21:00',quietTo:'07:00'},
  mail:{host:'',port:587,user:'',pass:'',from:'',cc:'',autoInvoice:true,autoVoucher:true},   // outgoing email — quotations, credit invoices and vouchers go from here
@@ -6529,6 +6529,8 @@ const CFG={
     text:'A {item} we bought from you has come back from our customer for repair.\nSerial: {serial}\nFault: {fault}\nSold on: {bill} of {buydate} ({warranty})\nOur job No: {job}\nPlease arrange the repair with the company.'},
   ownerBill:{label:'Your own copy of a bill',vars:'{shop} {kind} {invoice} {total} {customer} {by} {balance} {outstanding} {link}',
     text:'{kind}: {invoice}\nAmount: {total}\nCustomer: {customer}\nBilled by: {by}{balancePart}\nView: {link}'},
+  ownerPay:{label:'Your own copy of a payment taken',vars:'{shop} {amount} {receipt} {customer} {how} {by} {outstanding}',
+    text:'Payment received: {amount}\nFrom: {customer}\nPaid by: {how}\nReceipt: {receipt}\nTaken by: {by}\nThey now owe: {outstanding}'},
   billLink:{label:'Resending a bill link',vars:'{shop} {invoice} {total} {balance} {link}',
     text:'Here is your bill.\nBill No: {invoice}\nAmount: {total}{balancePart}\nView your bill: {link}'},
   paymentReceived:{label:'Payment received',vars:'{shop} {amount} {receipt} {outstanding} {customer}',
@@ -6639,12 +6641,14 @@ let npAt=0;
 const npTake=()=>{ const on=npAt&&Date.now()-npAt<20000; npAt=0; return !!on };
 function npAdd(m){
   if(!m||m.querySelector('.np-chk')) return m;
-  const box='<label class="chk np-box"><input type="checkbox" class="np-chk"> <span>No print — save it without printing a voucher</span></label>';
+  let on=false; try{ on=localStorage.getItem('regal.noPrint')==='1' }catch(e){}
+  const box=`<label class="chk np-box"><input type="checkbox" class="np-chk" ${on?'checked':''}> <span>No print — save it without printing a voucher <span class="muted">(stays as you leave it on this till)</span></span></label>`;
   // a window that draws its steps into one part of itself keeps the box outside that part
   const dyn=m.querySelector('#payBody,#spBody'), btn=[...m.querySelectorAll('button.tape')].pop(), row=btn&&btn.parentElement;
   if(dyn) dyn.insertAdjacentHTML('afterend',box);
   else if(row) row.insertAdjacentHTML('beforebegin',box);
   else (m.querySelector('.box')||m).insertAdjacentHTML('beforeend',box);
+  const cb=m.querySelector('.np-chk'); if(cb) cb.addEventListener('change',()=>{ try{ localStorage.setItem('regal.noPrint',cb.checked?'1':'0') }catch(e){} });
   return m;
 }
 // pressed by mouse or by key (Enter, F12 …): what the box says at that moment goes with the save
@@ -6658,9 +6662,9 @@ function voucherPrint(v){
   const lines=(v.lines||[]).map((l,i)=>`<tr><td>${i+1}</td><td>${l[0]}</td><td class="n">${money2(l[1])}</td></tr>`).join('');
   const vm=modal(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
     <h2 style="margin:0">${v.title} — ${v.no}</h2>
-    <div style="display:flex;gap:6px"><button class="btn ${v.view?'tape':''} sm" data-act="rePrintPaper">Print</button>
+    <div style="display:flex;gap:6px"><button class="btn ${v.view?'tape':'ghost'} sm" data-act="rePrintPaper">${v.view?'Print':'Print again'}</button>
      ${v.mail?`<button class="btn ghost sm" id="vMail" title="${v.mail.to?'Email it to '+v.mail.to:'Their email is asked for'}">Email PDF</button>`:''}
-     <button class="btn ghost sm" data-act="closeModal">Close</button></div></div>
+     <button class="btn ${v.view?'ghost':'tape'} sm vclose" data-act="closeModal">Close <i class="kbd">Enter</i></button></div></div>
    <div class="print a5 bill voucher">
     <div class="bhead">
      <div class="bbrand"><div class="bmark">${mark(42)}</div>
@@ -6686,7 +6690,8 @@ function voucherPrint(v){
      <em>PRINTED ${D(today).split('-').reverse().join(' ')} · PAGE 1 OF 1</em></div>
    </div>`);
   const pr=vm&&vm.querySelector('.print'); if(pr){ const inner=pr.outerHTML; window._paperNow={inner,f:'a5',no:v.no};
-    if(!v.view&&!skip) printPaper(printDocument(inner,'a5'),'a5',v.no,()=>paperFallback(inner,'a5'));
+    if(!v.view&&!skip){ printPaper(printDocument(inner,'a5'),'a5',v.no,()=>paperFallback(inner,'a5')); window._paperNow.at=Date.now();
+      setTimeout(()=>{ const cb=vm.querySelector('.vclose'); if(cb) cb.focus() },0) }
     if(skip){ if(v.mail&&v.mail.auto) mailPaperAuto({...v.mail,inner}); vm.remove(); toast(`${v.title} ${v.no} saved — not printed`,'ok'); return }
     if(v.mail){ const b=vm.querySelector('#vMail'); if(b) b.onclick=()=>mailPaperModal({...v.mail,inner}); if(v.mail.auto) mailPaperAuto({...v.mail,inner}); } }
 }
@@ -7314,6 +7319,7 @@ function settings(){
      <div class="f"><label>Tell me about</label>
       <select data-set="msg.ownerBills">${[['all','every bill'],['credit','credit bills only'],['cash','cash bills only'],['off','nothing']]
         .map(o=>`<option value="${o[0]}" ${(CFG.msg.ownerBills||'all')===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select></div>
+     ${fld('msg.ownerPays','','Text me each customer payment taken, too','check')}
      ${fld('msg.ownerMin','Only from this much up','Leave at 0 for all of them. On a busy counter this is what keeps it from being a text a minute.','number')}
     </div>
     <div class="card note" style="margin-top:10px">Sign-in codes always go out, whatever is set here — without them nobody can open their page.</div>
@@ -7477,7 +7483,7 @@ function settings(){
 /* Settings → Messages → WhatsApp: the whole set-up on one screen, in the order Meta wants it done */
 function waSetup(fld){
   const m=CFG.msg, hook=location.origin+'/api/wa/webhook', std=WA_STD_TEMPLATES;
-  const tplKeys=[['cashSale','Cash bill after a sale'],['creditSale','Credit bill after a sale'],['ownerBill','Your own copy of a bill'],['billLink','Bill sent again'],['returnReceived','Goods returned'],['paymentReceived','Payment received'],['statement','Customer statement'],['portalInvite','Invite to their page'],['webOrder','Online order update']];
+  const tplKeys=[['cashSale','Cash bill after a sale'],['creditSale','Credit bill after a sale'],['ownerBill','Your own copy of a bill'],['ownerPay','Your own copy of a payment taken'],['billLink','Bill sent again'],['returnReceived','Goods returned'],['paymentReceived','Payment received'],['statement','Customer statement'],['portalInvite','Invite to their page'],['webOrder','Online order update']];
   const list=waTplList||[]; const approved=list.filter(t=>t.status==='APPROVED');
   return `<div class="wa-steps">
    <div class="wa-step"><b>1</b><div><b>Make the accounts</b><div class="muted">Business portfolio at <a href="https://business.facebook.com" target="_blank">business.facebook.com</a> → app at <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com</a> (type <i>Business</i>) → add the <b>WhatsApp</b> product. Verify the business under Security Centre (registration document + address).</div></div></div>
@@ -7546,7 +7552,7 @@ const TPL_ONELINE={cashSale:'Thank you for your purchase. Your bill {invoice} fo
   orderReceived:'Your goods have been received as {grn}.',
   dailySummary:'Today — sales {sales}, cash {cash}, credit {credit}, expenses {expenses}. Customer outstanding {outstanding}.'};
 // who each template is written to, for its preview and its test
-const TPL_AUD={dmgSupplier:'supplier',dmgReady:'customer',closingSummary:'owner',repairSupplier:'supplier',orderAccepted:'supplier',orderRejected:'supplier',orderAdjusted:'supplier',orderReceived:'supplier',ownerBill:'owner',dailySummary:'owner'};
+const TPL_AUD={dmgSupplier:'supplier',dmgReady:'customer',closingSummary:'owner',repairSupplier:'supplier',orderAccepted:'supplier',orderRejected:'supplier',orderAdjusted:'supplier',orderReceived:'supplier',ownerBill:'owner',ownerPay:'owner',dailySummary:'owner'};
 function labelSampleBill(inv){
   const c=C(inv.customerId), credit=inv.balance>0;
   const cols=[CFG.bill.showCode&&'CODE','DESCRIPTION','QTY',CFG.bill.showUom&&'UOM',CFG.bill.showMrp&&'MRP','PRICE','AMOUNT'].filter(Boolean);
@@ -22581,11 +22587,10 @@ function applyApproval(a){
     case 'custTerms':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); if(d.limit!==undefined) c.limit=+d.limit; if(d.level) c.level=d.level; break }
     case 'custRemove':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); if(partyBal('C',c.id)>0.005) throw new Error('They still owe money'); c.active=false; break }
     case 'custPay':{ const c=C(d.customerId); if(!c) throw new Error('Customer no longer exists');
-      const msgs=S.messages.length;
-      const rvs=(d.parts||[]).map(p=>receiveCustomer({customerId:c.id,amount:+p.amount,method:p.method,bank:p.bank,ref:p.ref,chq:p.chq,against:d.against||[],date:d.date||D(today)}));
+      const rvs=(d.parts||[]).map(p=>receiveCustomer({customerId:c.id,amount:+p.amount,method:p.method,bank:p.bank,ref:p.ref,chq:p.chq,against:d.against||[],date:d.date||D(today),quiet:true}));
       if(d.chqMeta){ const ch=S.cheques.at(-1); if(ch) Object.assign(ch,d.chqMeta,{recvDate:d.date||D(today),manual:true}) }
-      if(d.sms===false) S.messages.splice(0,S.messages.length-msgs);
       rvs.forEach(rv=>{ if(rv) rv.takenBy=a.by });
+      payTexts(rvs,{customer:d.sms!==false});
       setTimeout(()=>{ try{ receiptVoucherCombined(rvs,true) }catch(e){} },80);
       break }
     case 'supPay':{ const sp=SU(d.supplierId); if(!sp) throw new Error('Supplier no longer exists');
@@ -24277,7 +24282,7 @@ function adjustPurchaseModal(no,after){
    F12 completes. */
 function custPayModal(id){
   const c=C(id);
-  let sel=new Set(), q='', parts=[], mode=null, typed=null, firstFocus=true;
+  let sel=new Set(), q='', parts=[], mode=null, typed=null, firstFocus=true, smsOn=true;   // smsOn: the tick survives the window being redrawn
   const m=modal(`<div class="pay-win">
    <div class="pay-top"><div><h2 style="margin:0">Payment from ${c.name}</h2><div class="muted">${c.phone||'no mobile'} · ${c.code} · — outstanding <b>${fmt(partyBal('C',id))}</b></div></div>
     <div class="pay-keys"><span><i class="kbd">Enter</i>cash</span><span><i class="kbd">F8</i>cheque</span><span><i class="kbd">F9</i>card</span><span><i class="kbd">B</i>bank</span><span><i class="kbd">Del</i>undo</span><span><i class="kbd">F12</i>complete</span><span><i class="kbd">Esc</i>close</span></div></div>
@@ -24330,7 +24335,7 @@ function custPayModal(id){
        <div class="${left()>0?'due':'ok'}"><span>${left()>0?'Still to add':paid()>target()+0.005?'Over — held as credit':'Covered'}</span><b>${left()>0?fmt(left()):paid()>target()+0.005?fmt(paid()-target()):'✓'}</b></div>
       </div>
       <div class="pay-foot">
-       <label style="margin:0;display:flex;gap:6px;align-items:center;font-size:12.5px"><input type="checkbox" id="rsms" checked style="width:auto"> text the receipt</label>
+       <label style="margin:0;display:flex;gap:6px;align-items:center;font-size:12.5px"><input type="checkbox" id="rsms" ${smsOn?'checked':''} style="width:auto"> text the receipt</label>
        <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="rok" ${parts.length?'':'disabled'}>Complete <i class="kbd">F12</i></button></div>
       </div>
      </div></div>`;
@@ -24366,10 +24371,9 @@ function custPayModal(id){
     if(!parts.length) return toast('Nothing to record');
     { const c=C(id), sum=parts.reduce((a,p)=>a+(+p.amount||0),0);
       if(payGate('custPay',`Payment from ${escM(c?c.name:'customer')}: ${fmt(sum)}`,payWhat(parts)+(sel.size?' · against '+[...sel].map(escM).join(', '):''),
-        {customerId:id,amount:+sum.toFixed(2),parts:JSON.parse(JSON.stringify(parts)),against:[...sel],date:D(today),sms:!!(g('#rsms')||{}).checked})){ m.remove(); render(); return } }
-    const msgsBefore=S.messages.length;
-    const rvs=parts.map(p=>receiveCustomer({customerId:id,amount:p.amount,method:p.method,bank:p.bank,ref:p.ref,chq:p.chq,against:[...sel]}));
-    if(!g('#rsms').checked) S.messages.splice(0,S.messages.length-msgsBefore);
+        {customerId:id,amount:+sum.toFixed(2),parts:JSON.parse(JSON.stringify(parts)),against:[...sel],date:D(today),sms:smsOn})){ m.remove(); render(); return } }
+    const rvs=parts.map(p=>receiveCustomer({customerId:id,amount:p.amount,method:p.method,bank:p.bank,ref:p.ref,chq:p.chq,against:[...sel],quiet:true}));
+    payTexts(rvs,{customer:smsOn});
     m.remove(); render(); receiptVoucherCombined(rvs,true);
   };
   const bind=()=>{
@@ -24380,6 +24384,7 @@ function custPayModal(id){
     m.querySelectorAll('[data-px]').forEach(b=>b.onclick=()=>{ parts.splice(+b.dataset.px,1); draw(()=>{ const r=g('#ra'); if(r){r.focus();r.select()} }) });
     const ra=g('#ra'); if(ra){ ra.oninput=()=>{typed=ra.value}; ra.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();e.stopPropagation();addCash()} } }
     const ok=g('#rok'); ok.onclick=complete;
+    const rs=g('#rsms'); if(rs) rs.onchange=()=>{ smsOn=rs.checked };
     const sfOk=g('#sfOk'); if(sfOk){ sfOk.onclick=addSub; g('#sfBack').onclick=()=>{ mode=null; draw(()=>{g('#ra').focus()}) };
       // Enter walks the boxes of the sub-form, then adds
       const order=[...m.querySelectorAll('.pay-sub input,.pay-sub select')];
@@ -24397,6 +24402,22 @@ function custPayModal(id){
     if(e.key==='Escape'&&mode){ e.preventDefault(); e.stopPropagation(); mode=null; return draw(()=>{g('#ra').focus()}) }
   },true);
   draw();
+}
+/* The texts for a payment taken, once for the whole of it however many parts it came in (1 Nov 2026):
+   the customer's receipt (when "text the receipt" is ticked and they have a mobile), and the owner's own
+   copy on the owner's mobile (Settings → Messages, "Payments taken"). Returns who was texted. */
+function payTexts(rvs,{customer=true}={}){
+  rvs=(rvs||[]).filter(Boolean); if(!rvs.length) return {};
+  const c=C(rvs[0].customerId); if(!c) return {};
+  const amount=rvs.reduce((a,r)=>a+(+r.amount||0),0), receipt=rvs.map(r=>r.no).join(', '), owes=fmt(partyBal('C',c.id));
+  const how=[...new Set(rvs.map(r=>({CASH:'cash',CHEQUE:'cheque',CARD:'card',BANK:'bank transfer'})[r.method]||String(r.method).toLowerCase()))].join(' + ');
+  const out={};
+  if(customer&&CFG.msg.autoReceipt&&c.phone){ sms(c.phone,tpl('paymentReceived',{amount:fmt(amount),receipt,customer:c.name,outstanding:owes})); out.customer=c.phone }
+  const own=String((CFG.shop&&CFG.shop.owner)||'').split(/[,;\s]+/)[0].replace(/\D/g,'');
+  const same=c.phone&&String(c.phone).replace(/\D/g,'').slice(-9)===own.slice(-9);
+  if(own&&CFG.msg.ownerPays!==false&&!same&&amount>=(+CFG.msg.ownerPayMin||0)){
+    try{ sms(own,tpl('ownerPay',{amount:fmt(amount),receipt,customer:c.name,how,by:rvs[0].takenBy||rvs[0].by||S.user.name,outstanding:owes}),'owner'); out.owner=own }catch(e){} }
+  return out;
 }
 /* one voucher for a payment that came in parts */
 function receiptVoucherCombined(rvs,fresh){
@@ -32601,7 +32622,7 @@ document.addEventListener('click',e=>{
       depositSlip(picked,S.banks[0].id,D(today))},
     credit:()=>creditSale(),
     doc:()=>{ if(a.dataset.k==='QUOTE'){ if(!S.pos.lines.length) return toast('Nothing on the screen to quote for'); return holdAsk('quote') } saveDoc(a.dataset.k) },
-    rePrintPaper:()=>{ const p=window._paperNow; if(p) printPaper(printDocument(p.inner,p.f),p.f,p.no,()=>paperFallback(p.inner,p.f)); },
+    rePrintPaper:()=>{ const p=window._paperNow; if(p&&p.at&&Date.now()-p.at<4000) return toast('It has just been printed — press Print again in a moment for another copy','warn'); if(p) p.at=Date.now(); if(p) printPaper(printDocument(p.inner,p.f),p.f,p.no,()=>paperFallback(p.inner,p.f)); },
     docPrint:()=>docPrint(a.dataset.no),
     docPreview:()=>docPrint(a.dataset.no,{preview:true}),
     docRecall:()=>quoteRecall(),
