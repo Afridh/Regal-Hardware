@@ -22281,29 +22281,49 @@ function bills(){
 /* where a bill is sent: the customer's own mobile as it is now — a number changed on their card is used from
    then on, even for older bills (1 Nov 2026). A number kept on the bill is only for a walk-in, or a customer
    with no mobile on file. */
+function billSendText(inv,to){
+  if(!inv.link){ inv.link=billLinkFor(); persist(true) }   // bills entered before the link existed get one now
+  sendBillView(inv);
+  sms(to,tpl('billLink',{invoice:inv.no,total:fmt(inv.total),balance:fmt(inv.balance),balancePart:inv.balance?'\nStill to pay: '+fmt(inv.balance):'',link:inv.link}),'customer');
+  render(); toast('Sending the bill link to '+to+'…');
+}
+function billSendWa(inv,to){
+  const v={invoice:inv.no,no:inv.no,total:fmt(inv.total),balance:fmt(inv.balance),balancePart:inv.balance>0?`\nStill to pay: ${fmt(inv.balance)}`:'',link:inv.link||''};
+  wa(to,tpl('billLink',v),'billLink',v); render(); toast(CFG.msg.waMode==='cloud'?'Sent on WhatsApp to '+to:'WhatsApp opened with the bill for '+to);
+}
+const billOther=(inv)=>askNumber(inv,'any',{text:to=>billSendText(inv,to),whatsapp:to=>billSendWa(inv,to)});
 const billPhone=(inv)=>{ const c=C(inv.customerId); return (c&&c.id!==1&&c.phone)||inv.phone||'' };
+/* how is 'text', 'whatsapp', or 'any' (Send to another number: both buttons). The number on the customer's
+   card is filled in; any other can be typed. Typed for a customer with a number already, it is used for this
+   send only unless "make it their mobile" is ticked — the way to put right a number entered wrongly. */
 function askNumber(inv,how,send){
   const c=C(inv.customerId)||{id:1,name:'Walk-in'};
-  const m=modal(`<h2>${how==='whatsapp'?'WhatsApp':'Text'} the bill to which number?</h2>
-   <div class="hb-ask"><b>${inv.no}</b><span>${fmt(inv.total)} · ${inv.date} ${inv.time||''}${c.id!==1?' · '+c.name:' · walk-in, no number on the bill'}</span></div>
+  const sends=typeof send==='function'?{[how]:send}:send;
+  const other=how==='any', had=c.id!==1&&c.phone?c.phone:'';
+  const m=modal(`<h2>${other?'Send the bill to another number':how==='whatsapp'?'WhatsApp the bill to which number?':'Text the bill to which number?'}</h2>
+   <div class="hb-ask"><b>${inv.no}</b><span>${fmt(inv.total)} · ${inv.date} ${inv.time||''}${c.id!==1?' · '+noteEsc(c.name)+(had?' · '+had+' on their card':''):' · walk-in'}${inv.phone&&inv.phone!==had?' · last sent to '+inv.phone:''}</span></div>
    <div class="f" style="margin-top:10px"><label>Mobile</label>
-    <input id="anPhone" inputmode="tel" placeholder="07XXXXXXXX" value="${billPhone(inv)}"></div>
-   ${c.id!==1?'<label class="chk"><input type="checkbox" id="anKeep" checked> keep it on '+c.name+'’s card</label>':''}
-   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+    <input id="anPhone" inputmode="tel" placeholder="07XXXXXXXX" value="${other?'':billPhone(inv)}"></div>
+   ${c.id!==1?(had?`<label class="chk"><input type="checkbox" id="anKeep"> also make it ${noteEsc(c.name)}’s mobile, instead of ${had}</label>`:`<label class="chk"><input type="checkbox" id="anKeep" checked> keep it on ${noteEsc(c.name)}’s card</label>`):''}
+   <div class="muted" id="anMsg" style="min-height:18px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;flex-wrap:wrap">
     <button class="btn ghost" id="anNo">Cancel <i class="kbd">Esc</i></button>
-    <button class="btn tape" id="anOk">${how==='whatsapp'?'Open WhatsApp':'Send the text'} <i class="kbd">Enter</i></button></div>`);
+    ${sends.whatsapp?`<button class="btn ${sends.text?'ghost':'tape'}" id="anWa">${WA_ICON} ${sends.text?'WhatsApp':'Open WhatsApp'}</button>`:''}
+    ${sends.text?'<button class="btn tape" id="anOk">Send the text <i class="kbd">Enter</i></button>':''}</div>`);
   const inp=m.querySelector('#anPhone'); inp.focus(); inp.select();
-  const go=()=>{
+  const go=(way)=>{
     const to=inp.value.replace(/[^\d+]/g,'').trim();
-    if(!/^(0\d{9}|\+?94\d{9})$/.test(to)) { inp.focus(); return toast('That is not a mobile number — 07XXXXXXXX','warn') }
-    inv.phone=to;                                   // the bill remembers it, so sending again asks nothing
+    if(!/^(0\d{9}|\+?94\d{9})$/.test(to)) { inp.focus(); m.querySelector('#anMsg').textContent='That is not a mobile number — 07XXXXXXXX'; return }
+    inv.phone=to;                                   // the number this bill last went to
     const keep=m.querySelector('#anKeep');
-    if(keep&&keep.checked&&c.id!==1&&!c.phone) c.phone=to;
-    m.remove(); send(to);
+    if(keep&&keep.checked&&c.id!==1&&c.phone!==to){ const was=c.phone||'';
+      c.phone=to; try{ logTrail('other',`${c.name}: mobile ${was?'changed from '+was+' to':'set to'} ${to} (sending ${inv.no})`,{ref:c.code||String(c.id)}) }catch(e){} }
+    persist(true); m.remove(); sends[way](to);
   };
-  m.querySelector('#anOk').onclick=go;
+  if(m.querySelector('#anOk')) m.querySelector('#anOk').onclick=()=>go('text');
+  if(m.querySelector('#anWa')) m.querySelector('#anWa').onclick=()=>go('whatsapp');
   m.querySelector('#anNo').onclick=()=>m.remove();
-  inp.onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); go() } if(e.key==='Escape'){ e.preventDefault(); m.remove() } };
+  inp.onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); go(sends.text?'text':'whatsapp') } if(e.key==='Escape'){ e.preventDefault(); m.remove() } };
 }
 function billDetail(inv){
   const c=C(inv.customerId)||{id:0,name:'—',phone:''};
@@ -22324,6 +22344,7 @@ function billDetail(inv){
     <div><span>Send</span>
      <button class="btn ghost sm" data-act="billSms" data-no="${inv.no}" title="${billPhone(inv)?'Text the link to '+billPhone(inv):'The number is asked for — this bill has none on it'}">Text e-bill</button>
      <button class="btn ghost sm wa" data-act="billWa" data-no="${inv.no}" title="${billPhone(inv)?'WhatsApp the link to '+billPhone(inv):'The number is asked for — this bill has none on it'}">${WA_ICON} WhatsApp</button>
+     <button class="btn ghost sm" data-act="billOther" data-no="${inv.no}" title="Text or WhatsApp this bill to any number — and put a wrong number on the card right">To another number…</button>
      <button class="btn ghost sm" data-act="billMail" data-no="${inv.no}" title="${isEmail(c.email)?'Email the A5 invoice as a PDF to '+c.email:'Email the A5 invoice as a PDF — their email is asked for'}">Email PDF</button></div>
     <div><span>Change</span>
      ${inv.balance>0?`<button class="btn tape sm" data-act="custPay" data-id="${inv.customerId}">Take payment</button>`:''}
@@ -33228,6 +33249,7 @@ document.addEventListener('click',e=>{
       if(!confirm(`Remove ${c.name} from the customer list? Their bills stay on the books.`)) return;
       if(needsApproval('custRemove')) return requestApproval('custRemove',`Remove ${c.name} from the customer list`,`${c.phone||'no mobile'} · ${S.sales.filter(s=>s.customerId===c.id).length} bills on record`,{cid:c.id});
       c.active=false; custSel=0; render(); toast(`${c.name} removed`) },
+    billOther:()=>{ const inv=S.sales.find(x=>x.no===a.dataset.no); if(inv) billOther(inv) },
     billSms:()=>{const inv=S.sales.find(x=>x.no===a.dataset.no), c=C(inv.customerId);
       // bills entered before the link existed have none, so one is made the first time it is sent
       if(!inv.link){ inv.link=billLinkFor(); persist(true) }
