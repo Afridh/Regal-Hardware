@@ -79,7 +79,7 @@ r.delete('/:id', regalAuth, asyncHandler(async (req, res) => {
 }));
 
 // ---------------------------------------------------------------- email (SMTP, Settings → Messages → Email)
-async function mailCfg() {
+export async function mailCfg() {
   const { rows: [row] } = await query(`SELECT data FROM books WHERE key = 'regal'`);
   const cfg = row?.data?.CFG?.mail || {};
   if (!cfg.host || !cfg.user || !cfg.pass) throw new HttpError(400, 'Email is not set up (Settings → Messages → Email)');
@@ -89,14 +89,14 @@ async function mailCfg() {
    cPanel's discard a message whose From differs from the login at all ("FROM does not match
    SENDER ADDRESS or AUTHENTICATION ID"). "Shown as from" only gives the name in front of it —
    typed as a plain name or as "Name <address>", the name is taken and the address ignored. */
-function fromOf(cfg, shop) {
+export function fromOf(cfg, shop) {
   const raw = String(cfg.from || '').trim();
   const m = raw.match(/^"?([^"<]*?)"?\s*<[^>]*>\s*$/);
   let name = m ? m[1].trim() : (raw && !raw.includes('@') ? raw : '');
   if (!name) name = String(shop.name || 'Regal Hardware').replace(/^REGAL HARDWARE$/, 'Regal Hardware');
   return { name, address: String(cfg.user || '').trim() };
 }
-function transport(cfg) {
+export function transport(cfg) {
   return nodemailer.createTransport({ host: cfg.host, port: +cfg.port || 587, secure: (+cfg.port || 587) === 465 || cfg.secure === true, auth: { user: cfg.user, pass: cfg.pass }, connectionTimeout: 20000 });
 }
 /** { to, cc?, subject, text, html?, fileIds?, attach? } — attachments are files uploaded above, and/or

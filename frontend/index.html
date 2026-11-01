@@ -6996,8 +6996,83 @@ function mxBody(){
       <div class="muted">Keep it to yourself — anyone with it gets past the page.</div></div>`:''}
     <div class="card note"><b>From the server</b><div class="muted">When the till cannot be reached: <code>node backend/tools/maintenance.mjs on</code> (add <code>--all</code> for everything, <code>--msg "…"</code>, <code>--until 2026-10-28T09:00</code>), <code>… off</code>, <code>… status</code>.</div></div>`;
 }
+/* ==================== THE DIRECTORS' REPORT ====================
+   Each director gets a private link (regalhw.lk/d?k=…) to a live page of the shop's figures — sales and how
+   they were paid, profit, money in and out, what customers owe and what is owed to suppliers, cheques, cash
+   and banks, stock (frontend/directors.html, backend/src/routes/directors.js). Sent by email (the headline
+   figures and a button) and/or by text, now or every evening by itself. A link can be changed or switched off. */
+const dirCfg=()=>{ const d=CFG.directors||(CFG.directors={}); if(!Array.isArray(d.list)) d.list=[]; if(d.byMail===undefined) d.byMail=true; if(d.byText===undefined) d.byText=true; return d };
+const dirKey=()=>{ const a=new Uint8Array(18); crypto.getRandomValues(a); return [...a].map(x=>x.toString(36).padStart(2,'0')).join('').slice(0,28) };
+const dirLink=(d)=>location.origin+'/d?k='+encodeURIComponent(d.key);
+function directorsSettings(){
+  const c=dirCfg(), L=c.list;
+  return `<div class="muted" style="margin-bottom:10px">A live page of the shop's figures for each director, on their own private link — sales and how they were paid, profit, money in and out, what customers owe, what we owe suppliers, cheques, cash and banks, stock. It keeps itself up to date while it is open, and they can look at today, yesterday, the week, the month or any days. Nothing can be changed from it.</div>
+   <div class="card" style="padding:0;overflow:auto">
+    <table class="tbl" style="margin:0"><tr><th>Director</th><th>Mobile</th><th>Email</th><th>Sees profit</th><th>Their link</th><th></th></tr>
+    ${L.map(d=>`<tr style="${d.active===false?'opacity:.55':''}"><td><b>${noteEsc(d.name)}</b>${d.active===false?' <span class="tag warn">off</span>':''}</td><td>${noteEsc(d.phone||'—')}</td><td>${noteEsc(d.email||'—')}</td>
+      <td><label class="chk" style="margin:0"><input type="checkbox" data-act="dirProfit" data-id="${d.id}" ${d.profit!==false?'checked':''}> yes</label></td>
+      <td style="white-space:nowrap"><button class="btn ghost sm" data-act="dirCopy" data-id="${d.id}">Copy</button> <a class="btn ghost sm" href="${noteEsc(dirLink(d))}" target="_blank" rel="noopener" style="border-bottom:0">Open</a></td>
+      <td style="white-space:nowrap"><button class="btn tape sm" data-act="dirSend" data-id="${d.id}" ${d.active===false?'disabled':''}>Send now</button>
+       <button class="btn ghost sm" data-act="dirEdit" data-id="${d.id}">Edit</button> <button class="btn ghost sm" data-act="dirNewKey" data-id="${d.id}" title="The old link stops working">New link</button>
+       <button class="btn ghost sm" data-act="dirOnOff" data-id="${d.id}">${d.active===false?'Switch on':'Switch off'}</button></td></tr>`).join('')
+     ||'<tr><td colspan="6" class="muted" style="padding:14px">No directors yet — add the first one.</td></tr>'}</table></div>
+   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+    <button class="btn tape" data-act="dirAdd">Add a director</button>
+    ${L.some(d=>d.active!==false)?`<button class="btn" data-act="dirSend" data-id="">Send today's report to all of them now</button>
+    <a class="btn ghost" href="${noteEsc(dirLink(L.find(d=>d.active!==false)))}" target="_blank" rel="noopener" style="border-bottom:0">See what they see</a>`:''}</div>
+   <h2 style="margin-top:18px">Every evening, by itself</h2>
+   <div class="grid3">
+    <div class="f"><label>&nbsp;</label><label class="chk"><input type="checkbox" data-set="directors.auto" ${c.auto?'checked':''}> Send them the day's report every evening</label></div>
+    <div class="f"><label>At</label><input type="time" data-set="directors.at" value="${noteEsc(c.at||CFG.bill.summaryTime||'19:30')}"></div>
+    <div class="f"><label>How</label><label class="chk"><input type="checkbox" data-set="directors.byMail" ${c.byMail!==false?'checked':''}> by email</label><label class="chk"><input type="checkbox" data-set="directors.byText" ${c.byText!==false?'checked':''}> by text</label></div></div>
+   <div class="muted">Sent from the shop's server once a day, even when no till is open. Email goes out through Settings → Messages → Email; texts through the SMS provider there.</div>`;
+}
+function dirEdit(id){
+  const c=dirCfg(), d=id?c.list.find(x=>x.id===id):null;
+  const m=modal(`<h2>${d?'Edit '+noteEsc(d.name):'Add a director'}</h2>
+   <div class="grid3" style="margin-top:8px"><div class="f"><label>Name</label><input id="dnN" value="${noteEsc(d?d.name:'')}" placeholder="e.g. Mr. Rizwan" autocomplete="off"></div>
+    <div class="f"><label>Mobile</label><input id="dnP" inputmode="tel" value="${noteEsc(d?d.phone||'':'')}" placeholder="07XXXXXXXX"></div>
+    <div class="f"><label>Email</label><input id="dnE" type="email" value="${noteEsc(d?d.email||'':'')}" placeholder="name@example.com"></div></div>
+   <label class="chk"><input type="checkbox" id="dnPr" ${!d||d.profit!==false?'checked':''}> sees the profit and margin</label>
+   <div class="muted" id="dnM" style="min-height:18px"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="dnOk">${d?'Save':'Add — and make their link'}</button></div>`);
+  const g=i=>m.querySelector('#'+i); g('dnN').focus();
+  g('dnOk').onclick=()=>{ const name=g('dnN').value.trim(), phone=g('dnP').value.replace(/[^\d+]/g,''), email=g('dnE').value.trim();
+    if(!name) return g('dnM').textContent='Their name, first.';
+    if(phone&&!/^(0\d{9}|\+?94\d{9})$/.test(phone)) return g('dnM').textContent='That is not a mobile number — 07XXXXXXXX';
+    if(email&&!isEmail(email)) return g('dnM').textContent='That is not an email address.';
+    if(!phone&&!email) return g('dnM').textContent='A mobile or an email, so the link can reach them.';
+    if(d) Object.assign(d,{name,phone,email,profit:g('dnPr').checked});
+    else c.list.push({id:'dr'+Date.now().toString(36),name,phone,email,profit:g('dnPr').checked,key:dirKey(),active:true,at:apStamp(),by:S.user.name});
+    try{ logTrail('other',`Directors' report: ${d?'changed':'added'} ${name}`,{}) }catch(e){}
+    m.remove(); persist(true); render(); toast(d?'Saved':`${name} added — their link is ready. Send it now, or copy it.`,'ok') };
+}
+function dirSend(id){
+  const c=dirCfg(), who=id?c.list.filter(d=>d.id===id):c.list.filter(d=>d.active!==false);
+  if(!who.length) return toast('Add a director first');
+  persist(true);   // the server reads the list from the books
+  const go=async(mail,text)=>{
+    toast('Sending…','info');
+    try{
+      await new Promise(r=>setTimeout(r,1500));   // the list reaches the server first
+      const r=await fetch('/api/directors/send',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+(window.regalBridge?regalBridge.token():'')},body:JSON.stringify({ids:who.map(d=>d.id),range:'today',mail,text})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok||!j.ok) throw new Error(j.error||('the server said '+r.status));
+      modal(`<h2>Directors' report sent</h2><table class="tbl">${j.sent.map(s=>`<tr><td><b>${noteEsc(s.name)}</b></td><td>${s.mail?'✉ '+noteEsc(s.mail):''}</td><td>${s.text?'📱 '+noteEsc(s.text):''}</td></tr>`).join('')}</table>
+        <div style="text-align:right;margin-top:10px"><button class="btn tape" data-act="closeModal">OK</button></div>`);
+      try{ logTrail('other',`Directors' report sent to ${j.sent.map(s=>s.name).join(', ')}`,{}) }catch(e){}
+    }catch(e){ toast('Not sent — '+e.message,'warn') }
+  };
+  const em=who.some(d=>d.email), ph=who.some(d=>d.phone);
+  const m=modal(`<h2>Send today's report${who.length===1?' to '+noteEsc(who[0].name):' to '+who.length+' directors'}</h2>
+   <div class="muted">They get the link to the live page${em?' — by email with the day\'s headline figures':''}.</div>
+   <label class="chk" style="margin-top:8px"><input type="checkbox" id="dsM" ${em?'checked':'disabled'}> by email ${em?'':'<span class="muted">(no email on file)</span>'}</label>
+   <label class="chk"><input type="checkbox" id="dsT" ${ph?'checked':'disabled'}> by text ${ph?'':'<span class="muted">(no mobile on file)</span>'}</label>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="dsGo">Send</button></div>`);
+  m.querySelector('#dsGo').onclick=()=>{ const ml=m.querySelector('#dsM').checked, tx=m.querySelector('#dsT').checked; if(!ml&&!tx) return toast('Email or text?'); m.remove(); go(ml,tx) };
+}
 function settingsTabs(){
-  return [['screen','My screen'],['app','Windows app'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),...(mxMay()?[['mx','Maintenance']]:[]),...(superAdmin()?[['features','Features']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messages'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['banks','Bank accounts'],['leave','Leave'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
+  return [['screen','My screen'],['app','Windows app'],['done','Finishing a bill'],['cameras','Cameras'],...(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin')?[['privacy','Privacy screen']]:[]),...(mxMay()?[['mx','Maintenance']]:[]),...(superAdmin()?[['features','Features']]:[]),['shop','Shop details'],['bill','Bills & vouchers'],['layout','What the bill shows'],['cost','Cost code'],['msg','Messages'],['shift','Attendance'],['approvals','Approvals'],['buying','Buying in'],['banks','Bank accounts'],...(ownerOnly()?[['directors',"Directors' report"]]:[]),['leave','Leave'],['dayend','Day end'],['alexa','The Echo'],...(typeof extSettingsTabs==='function'?extSettingsTabs():[])];
 }
 function settings(){
   const tabs=settingsTabs();
@@ -7416,6 +7491,7 @@ function settings(){
        understands are: how many of something, what something costs, the money questions, and what is
        waiting.</div></div>` }
   if(setTab==='banks') body=bankSettings();
+  if(setTab==='directors') body=directorsSettings();
   if(setTab==='leave') body=leaveSettings();
   if(setTab==='buying'){ const bc=CFG.buying||{};
     body=`<div class="card note" style="margin-bottom:10px"><b>How goods are allowed in</b>
@@ -7479,7 +7555,7 @@ function settings(){
     shop:['Name, address and phones as printed','M3 9l2-5h14l2 5M4 9h16v11H4zM9 20v-6h6v6'],bill:['Numbering, formats and the return window',ICONS.bills],layout:['Logo, lines and text size on the bill',ICONS.docs],
     cost:['The code that hides cost on labels',ICONS.labels],msg:['How texts read, their wording, and who gets them',ICONS.messages],
     shift:['The Shift Board, the fingerprint machine and pay','M12 7v5l3 2M12 3a9 9 0 110 18 9 9 0 010-18z'],
-    approvals:['What needs the owner’s nod',ICONS.approvals],features:['Switch the advanced parts on or off',ICONS.approvals],buying:['How goods are allowed in',ICONS.purchases],banks:['Accounts, cheque numbers, balances',ICONS.chequesOut],leave:['Days a month, Poya, who may be off together',ICONS.leave],alexa:['What the Echo may say out loud',ICONS.messages],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
+    approvals:['What needs the owner’s nod',ICONS.approvals],features:['Switch the advanced parts on or off',ICONS.approvals],buying:['How goods are allowed in',ICONS.purchases],banks:['Accounts, cheque numbers, balances',ICONS.chequesOut],directors:['Live figures by a private link — by email or text',ICONS.reports],leave:['Days a month, Poya, who may be off together',ICONS.leave],alexa:['What the Echo may say out loud',ICONS.messages],dayend:['What shutting up shop insists on',ICONS.cashup],privacy:['One key shows a quieter shop','M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.8 9.8 0 0112 5c5 0 9 4 10 7a11 11 0 01-2.6 3.9M6.6 6.6A11 11 0 002 12c1 3 5 7 10 7a9.6 9.6 0 004.3-1']};
   if(!_setIndexing){
     const searching=setSearch.trim().length>=2;
     body=settingsSearchBox()+(searching?'':body);
@@ -31110,7 +31186,7 @@ function reports(){
   const name=REPORTS.flatMap(g=>g[1]).find(r=>r[0]===repKey)[1];
   const r=reportData();
   const range=repFrom||repTo?`${repFrom||'the start'} to ${repTo||'today'}`:'everything on the system';
-  return `<h1>Reports</h1>
+  return `<h1>Reports${ownerOnly()?'<button class="btn ghost sm" data-act="dirGo" style="float:right;margin-top:4px">📊 Share with directors</button>':''}</h1>
   <div class="row" style="align-items:flex-start">
    <div class="card" style="flex:0 0 240px">
     ${REPORTS.map(g=>`<div class="repgrp">${g[0]}</div>
@@ -33160,6 +33236,11 @@ document.addEventListener('click',e=>{
       if(list.has(gname)) list.delete(gname); else list.add(gname); p.navFold=[...list]; try{ persist(true) }catch(e){} renderNav() },
     pcGive:()=>pettyGiveModal(a.dataset.who||''), pcExp:()=>pettyExpenseModal(a.dataset.id), pcSettle:()=>pettySettleModal(a.dataset.id), pcUndo:()=>pettyUndo(a.dataset.id,a.dataset.no),
     catMgr:()=>categoriesModal(), catTidy:()=>tidyCatalogModal(),
+    dirGo:()=>{ setTab='directors'; go('settings') }, dirAdd:()=>dirEdit(null), dirEdit:()=>dirEdit(a.dataset.id), dirSend:()=>dirSend(a.dataset.id||null),
+    dirCopy:()=>{ const d=dirCfg().list.find(x=>x.id===a.dataset.id); if(!d) return; const l=dirLink(d); (navigator.clipboard?navigator.clipboard.writeText(l):Promise.reject()).then(()=>toast('Link copied — paste it to '+d.name,'ok')).catch(()=>askBox({title:'Their link',body:'Copy it from here',value:l,ok:'Done',cancel:'Close'})) },
+    dirNewKey:()=>{ const d=dirCfg().list.find(x=>x.id===a.dataset.id); if(!d) return; askBox({title:'Make a new link for '+noteEsc(d.name)+'?',body:'The link they have now stops working at once. Send them the new one afterwards.',text:false,ok:'Make a new link'}).then(v=>{ if(v===null) return; d.key=dirKey(); persist(true); render(); toast('New link made — send it to '+d.name,'ok') }) },
+    dirOnOff:()=>{ const d=dirCfg().list.find(x=>x.id===a.dataset.id); if(!d) return; d.active=d.active===false; persist(true); render(); toast(d.active?d.name+"'s link works again":d.name+"'s link is switched off",'ok') },
+    dirProfit:()=>{ const d=dirCfg().list.find(x=>x.id===a.dataset.id); if(!d) return; d.profit=!!a.checked; persist(true); toast(d.profit?d.name+' sees the profit':d.name+' no longer sees the profit','ok') },
     codeFix:()=>{ const n=fixCodeClashes(); persist(true); render(); toast(n?`${n} item number${n===1?'':'s'} renumbered — every code finds one product`:'Nothing clashes','ok') },
     pcSubmit:()=>pettySubmitModal(a.dataset.id),
     trCam:()=>camTrail(a.dataset.id),
