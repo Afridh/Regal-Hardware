@@ -5080,7 +5080,7 @@ tr.cb-on td{background:#FBE4E6}
   opacity:.55;margin:12px 0 4px}
 .bd-reg:first-child{margin-top:0}
 </style>
-<link rel="stylesheet" href="bill-print.css?v=22">
+<link rel="stylesheet" href="bill-print.css?v=23">
 <link rel="stylesheet" href="pos-theme.css?v=1">
 <script src="pos-theme.js?v=1" defer></script>
 </head>
@@ -23349,6 +23349,8 @@ function lvTell(l,ok,note){
     const own=`Leave ${ok?'approved':'turned down'}.\nName: ${l.who} (${lvGroupName(lvGroup(l.who)).toLowerCase()})\nDates: ${when}\nDays: ${days}\nType: ${type}\n${ok?'Approved':'Turned down'} by: ${S.user.name}${!ok&&note?`\nReason: ${note}`:''}`;
     String(CFG.shop.owner).split(/[,;]+/).map(x=>x.trim()).filter(x=>x&&x.replace(/\D/g,'')!==String(ph||'').replace(/\D/g,'')).forEach(p=>{ try{ sms(p,own) }catch(e){} }) }
 }
+/* who may ask for leave in somebody else's name: an approver, or whoever keeps the staff's pay (Accounts) */
+const lvForOthers=()=>canApprove()||can('payroll');
 function lvApprove(id){
   const l=lvList().find(x=>x.id===id); if(!l) throw new Error('That leave is no longer there');
   const c=lvClash(l.from,l.to,l.id,l.who,lvLimit(true)); if(c) throw new Error(lvClashText(c));
@@ -23376,8 +23378,10 @@ setInterval(()=>{ try{ lvRemindTick() }catch(e){} },60000);
 function leavePage(){
   const now=new Date(D(today)+'T00:00:00');
   if(LV.y===null){ LV.y=now.getFullYear(); LV.m=now.getMonth() }
-  // a new person at the till starts from themselves — and only an approver may pick somebody else
-  if(LV.user!==S.user.name||!canApprove()){ if(LV.user!==S.user.name){ LV.from=null; LV.to=null; LV.half=false; LV.reason='' } LV.user=S.user.name; LV.who=S.user.name }
+  // a new person at the till starts from themselves — and only an approver, or whoever keeps the staff's
+  // pay (Accounts), may ask for somebody else
+  const forOthers=lvForOthers();
+  if(LV.user!==S.user.name||!forOthers){ if(LV.user!==S.user.name){ LV.from=null; LV.to=null; LV.half=false; LV.reason='' } LV.user=S.user.name; LV.who=S.user.name }
   const may=canApprove(), cfg=LVC(), lim=lvLimit(may), g=lvGroup(LV.who), sep=cfg.sepGroups!==false;
   const first=new Date(LV.y,LV.m,1), lead=(first.getDay()+6)%7, dim=new Date(LV.y,LV.m+1,0).getDate();
   const todayS=D(today), selDays=LV.from?lvDays(LV.from,LV.to||LV.from):[];
@@ -23416,7 +23420,7 @@ function leavePage(){
     </div>
     <div class="lv-side">
      <div class="card lv-ask"><h2 style="margin-top:0">Ask for leave</h2>
-      ${may?`<div class="f"><label>For</label><select id="lvWho">${lvStaff().map(w=>`<option ${w===LV.who?'selected':''}>${escM(w)}</option>`).join('')}</select></div>`:''}
+      ${forOthers?`<div class="f"><label>For</label><select id="lvWho">${lvStaff().map(w=>`<option ${w===LV.who?'selected':''}>${escM(w)}</option>`).join('')}</select>${!may&&LV.who!==S.user.name?`<div class="muted">Asked in ${escM(LV.who)}’s name — the owner or an admin approves it</div>`:''}</div>`:''}
       <div class="lv-quota"><span class="lv-grp ${g}">${lvGroupName(g)}</span>${cap?`<b>${Math.max(0,cap-used)}</b> of ${cap} day${cap===1?'':'s'} left in ${monthName}${cfg.poya==='within'?' <span class="muted">(Poya counted)</span>':''}`:'<span class="muted">no monthly limit</span>'}</div>
       ${LV.from?`<div class="lv-range"><b>${range}</b><span>${LV.half&&n===1?'half a day':n+' day'+(n===1?'':'s')}</span><a href="#" data-act="lvClear">clear</a></div>`
         :`<div class="muted">Tap a day on the calendar — or a first and a last day for longer.</div>`}
@@ -23431,7 +23435,7 @@ function leavePage(){
      </div>
      ${waiting.length?`<div class="card"><h2 style="margin-top:0">Waiting for a yes <i class="nbadge" style="position:static">${waiting.length}</i></h2>
        ${waiting.map(l=>row(l,may?`<span class="lv-acts"><button class="btn tape sm" data-act="lvYes" data-id="${l.id}">Approve</button><button class="btn ghost sm" data-act="lvNo" data-id="${l.id}">Turn down</button></span>`
-         :l.who===S.user.name?`<span class="lv-acts"><button class="btn ghost sm" data-act="lvCancel" data-id="${l.id}">Cancel</button></span>`:'')).join('')}</div>`:''}
+         :(l.who===S.user.name||l.by===S.user.name)?`<span class="lv-acts"><button class="btn ghost sm" data-act="lvCancel" data-id="${l.id}">Cancel</button></span>`:'')).join('')}</div>`:''}
      <div class="card"><h2 style="margin-top:0">Coming up</h2>${coming.length?coming.map(l=>row(l,(may||l.who===S.user.name)?`<span class="lv-acts"><button class="btn ghost sm" data-act="lvCancel" data-id="${l.id}">Cancel</button></span>`:'')).join(''):'<div class="muted">Nobody is off.</div>'}</div>
      <div class="card"><h2 style="margin-top:0">Your leave</h2>${mine.length?mine.map(l=>row(l)).join(''):'<div class="muted">You have not asked for any.</div>'}</div>
      ${people.length?`<div class="card"><h2 style="margin-top:0">${monthName}</h2>${people.map(x=>`<div class="lv-row"><span class="lv-dot" style="--c:${lvColor(x.w)}"></span><div><b>${escM(x.w)}</b> <span class="lv-grp ${lvGroup(x.w)}">${lvGroupName(lvGroup(x.w))}</span></div>
@@ -23446,12 +23450,12 @@ function leaveAfter(){
 }
 function lvAsk(){
   if(!LV.from) return;
-  const may=canApprove(), from=LV.from, to=LV.to||LV.from, who=may?LV.who:S.user.name, half=LV.half&&from===to;
+  const may=canApprove(), from=LV.from, to=LV.to||LV.from, who=lvForOthers()?LV.who:S.user.name, half=LV.half&&from===to;
   if(from<D(today)) return toast('That day has gone');
   if(!lvDays(from,to).some(d=>!lvPoyaOff(d))) return toast('That is a Poya day — everyone is off already');
   const c=lvClash(from,to,null,who,lvLimit(may)); if(c) return toast(lvClashText(c),'bad');
   const o=lvOver(who,from,to,half,null);
-  if(o&&!may) return toast(lvOverText(o)+' — ask the owner','bad');
+  if(o&&!may) return toast(lvOverText(o,who)+' — ask the owner','bad');
   if(o&&!confirm(lvOverText(o,who)+'.\n\nPut it on anyway?')) return;
   const l={id:'lv'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),who,from,to,type:LV.type,half,reason:LV.reason.trim(),
     status:'pending',by:S.user.name,at:apStamp(),group:lvGroup(who)};
