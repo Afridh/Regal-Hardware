@@ -37,7 +37,7 @@ const sup = await pg.evaluate(() => { document.querySelectorAll('.modal').forEac
 await pg.evaluate(() => { window.asAcc(); window.eval('go')('payreqs') }); await wait(200);
 await pg.click('[data-act="prPrep"]'); await wait(300);
 await pg.select('#ppS', String(sup.id)); await wait(200);
-await pg.$eval('#ppNo', el => { el.value = '000777' });
+await pg.$eval('[data-pp="0.no"]', el => { el.value = '000777' });
 const nm0 = await pg.evaluate(() => window.eval('S').messages.length);
 await pg.click('#ppGo'); await wait(400);
 const r1 = await pg.evaluate((sid, n0) => { const S = window.eval('S'); const r = S.payReqs.filter(x => x.sid === sid && x.source === 'shop').pop(); const ap = S.approvals.find(a => a.id === r.apWait);
@@ -71,10 +71,10 @@ const r4 = await pg.evaluate((id, apId) => { const S = window.eval('S'); const b
   const r = S.payReqs.find(x => x.id === id); return { status: r.status, voucher: r.pay && r.pay.voucher, fell: before - window.eval('partyBal')('S', r.sid) } }, r1.id, r3.apId);
 ok(r4.status === 'issued' && r4.voucher && Math.abs(r4.fell - r1.amt) < 0.01, 'the yes: issued, a voucher, and what is owed to them falls by the amount', JSON.stringify(r4));
 // 4. a director prepares one: ready at once; a "no" leaves it as it was
-const d1 = await pg.evaluate(sid => { const S = window.eval('S'); window.eval('prPrepareNew')(sid); const m = document.querySelector('.modal'); m.querySelector('#ppNo').value = '000888'; m.querySelector('#ppA').value = '1500'; m.querySelector('#ppGo').click();
+const d1 = await pg.evaluate(sid => { const S = window.eval('S'); window.eval('prPrepareNew')(sid); const m = document.querySelector('.modal'); m.querySelector('[data-pp="0.no"]').value = '000888'; m.querySelector('#ppA').value = '1500'; m.querySelector('#ppGo').click();
   const r = S.payReqs.filter(x => x.sid === sid && x.source === 'shop').pop(); return { status: r.status, wait: !!r.apWait } }, sup.id);
 ok(d1.status === 'ready' && !d1.wait, 'a director prepares one: no asking, ready at once', JSON.stringify(d1));
-const no1 = await pg.evaluate(sid => { const S = window.eval('S'); window.asAcc(); window.eval('prPrepareNew')(sid); const m = document.querySelector('.modal'); m.querySelector('#ppNo').value = '000999'; m.querySelector('#ppA').value = '1200'; m.querySelector('#ppGo').click();
+const no1 = await pg.evaluate(sid => { const S = window.eval('S'); window.asAcc(); window.eval('prPrepareNew')(sid); const m = document.querySelector('.modal'); m.querySelector('[data-pp="0.no"]').value = '000999'; m.querySelector('#ppA').value = '1200'; m.querySelector('#ppGo').click();
   const r = S.payReqs.filter(x => x.sid === sid && x.source === 'shop').pop(); window.asMe(); window.eval('decideApproval')(r.apWait, false, 'not this week'); return { status: r.status, wait: !!r.apWait, last: (r.events.pop() || {}).action } }, sup.id);
 ok(no1.status === 'final' && !no1.wait && no1.last === 'declined', 'a director says no: it is not made up, and it says so', JSON.stringify(no1));
 // 5. the supplier's own request: Start preparing by Accounts needs the yes

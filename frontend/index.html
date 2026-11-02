@@ -5632,7 +5632,7 @@ function chqCancelNow(c,why,by){
   chequeStatus(c,'CANCELLED');
   c.cancelWhy=String(why||'').slice(0,160); c.cancelBy=by; c.cancelAt=apStamp();
   // the payment request it paid: back to be made up again
-  const r=payReqs().find(x=>x.pay&&(x.pay.no===c.ref||(x.prep&&x.prep.no&&x.prep.no===c.no&&x.sid===c.supplierId)));
+  const r=payReqs().find(x=>x.pay&&(x.pay.no===c.ref||(x.prep&&x.sid===c.supplierId&&((x.prep.no&&x.prep.no===c.no)||(x.prep.parts||[]).some(p=>p.no===c.no)))));
   if(r&&r.status==='issued'){ r.status='final'; r.events=r.events||[]; r.events.push({actor:'shop',name:by,action:'chqCancelled',note:`cheque ${c.no} — ${c.cancelWhy}`,at:Date.now()}); delete r.pay; delete r.prep }
   try{ logTrail('other',`Cheque ${c.no} (${fmt(c.amount)} to ${c.payee||c.party||''}) cancelled — ${c.cancelWhy}`,{ref:c.no,amount:c.amount}) }catch(e){}
 }
@@ -9249,7 +9249,9 @@ function prTrack(r, small) {
       return `<div class="prt-s ${st}" title="${l}${e ? ' — ' + (e.name || '') + (e.at ? ' · ' + owhen(e.at) : '') : ''}"><b>${st === 'done' ? '✓' : i + 1}</b>${small ? '' : `<span>${l}</span><small>${e && st ? noteEsc(e.name || '') + (e.at ? '<br>' + owhen(e.at) : '') : d}</small>`}</div>` }).join('')}</div>`;
 }
 
-const prepWhat = (p) => p ? `${({ CHEQUE: 'Cheque', CASH: 'Cash', BANK: 'Bank transfer' })[p.method] || p.method}${p.no ? ' ' + p.no : ''}${p.method !== 'CASH' && p.bank && B(p.bank) ? ' · ' + B(p.bank).name : ''}${p.method === 'CHEQUE' && p.date ? ' · dated ' + p.date : ''}` : '';
+const prepOne = (p) => `${({ CHEQUE: 'Cheque', CASH: 'Cash', BANK: 'Bank transfer' })[p.method] || p.method}${p.no ? ' ' + p.no : ''}${p.method !== 'CASH' && p.bank && B(p.bank) ? ' · ' + B(p.bank).name : ''}${p.method === 'CHEQUE' && p.date ? ' · dated ' + p.date : ''}`;
+// a payment made up in several parts — two cheques, or a cheque and cash — says each with its amount
+const prepWhat = (p) => !p ? '' : Array.isArray(p.parts) && p.parts.length > 1 ? p.parts.map(x => prepOne(x) + ' ' + fmt(x.amount)).join(' + ') : prepOne(p);
 /* moving one along: each step is one press; the two that need a figure ask for it */
 function prNext(r){
   if (!r || !canPayReq()) return;
@@ -9432,14 +9434,12 @@ function prPrepareNew(sid){
    <div class="muted" style="margin-bottom:10px">Write the cheque now and keep it until their collector calls. ${payBoss()?'':'A director or admin says yes first.'}</div>
    <div class="f"><label>Supplier</label><select id="ppS">${(sid&&!owed.some(s=>s.id===sid)?[SU(sid)]:[]).concat(owed).filter(Boolean).map(s=>`<option value="${s.id}" ${s.id===cur?'selected':''}>${noteEsc(s.name)} — owed ${fmt(partyBal('S',s.id))}</option>`).join('')}</select></div>
    <div id="ppBills"></div>
-   <div class="grid3" style="margin-top:8px">
-    <div class="f"><label>Amount</label><input id="ppA" type="number" step="any"></div>
-    <div class="f"><label>How</label><select id="ppHow"><option value="CHEQUE">Cheque</option><option value="CASH">Cash</option><option value="BANK">Bank transfer</option></select></div>
-    <div class="f"><label>From</label><select id="ppBank">${S.banks.map(b=>`<option value="${b.id}">${noteEsc(bankLabel?bankLabel(b):b.name)}</option>`).join('')}</select></div></div>
-   <div class="grid3">
-    <div class="f"><label>Cheque number</label><input id="ppNo" maxlength="30" placeholder="as written"></div>
-    <div class="f"><label>Cheque dated</label><input id="ppDate" type="date" value="${D(today)}"></div>
+   <div class="grid2" style="margin-top:8px">
+    <div class="f"><label>Amount to pay</label><input id="ppA" type="number" step="any"></div>
     <div class="f"><label>Note (optional)</label><input id="ppNote" maxlength="160" placeholder="e.g. for the October bills"></div></div>
+   <div class="f"><label>Made up as <span class="muted">— split it over several cheques, or cheque and cash, with + Add another</span></label>
+    <table class="tbl pp-parts"><tr><th>How</th><th>From</th><th>Cheque number</th><th>Dated</th><th class="n">Amount</th><th></th></tr><tbody id="ppParts"></tbody></table>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" type="button" id="ppAdd">＋ Add another cheque</button><span id="ppSum" class="muted"></span></div></div>
    <label class="chk"><input type="checkbox" id="ppTell" checked> Tell them it is ready to collect (a text, and on their page)</label>
    <div class="muted" id="ppM" style="min-height:18px;color:var(--chip-rust)"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="ppGo">${payBoss()?'Prepare it':'Ask for approval'}</button></div>`);
@@ -9450,18 +9450,44 @@ function prPrepareNew(sid){
       :'<div class="muted" style="margin-top:8px">No bills owing to them on the books — the amount goes on account.</div>';
     const sum=()=>{ const s2=[...m.querySelectorAll('[data-pb]:checked')].reduce((a,x)=>{ const p=bills.find(b=>b.no===x.dataset.pb); return a+((+p.total||0)-(+p.paid||0)) },0); g('ppA').value=s2?s2.toFixed(2):'' };
     m.querySelectorAll('[data-pb]').forEach(x=>x.onchange=sum); sum() };
-  g('ppS').onchange=drawBills; drawBills();
-  g('ppHow').onchange=()=>{ const h=g('ppHow').value; g('ppNo').disabled=h==='CASH'; g('ppDate').disabled=h!=='CHEQUE'; g('ppBank').disabled=h==='CASH' };
+  // the parts: one to start with; with one, its amount follows the amount to pay
+  const banks=S.banks.map(b=>`<option value="${b.id}">${noteEsc(bankLabel?bankLabel(b):b.name)}</option>`).join('');
+  let parts=[{method:'CHEQUE',bank:(S.banks[0]||{}).id||null,no:'',date:D(today),amount:''}];
+  const keep=()=>m.querySelectorAll('[data-pp]').forEach(el=>{ const [i,k]=el.dataset.pp.split('.'); parts[+i][k]=el.value });
+  const total=()=>parts.reduce((a,x)=>a+(+x.amount||0),0);
+  const showSum=()=>{ const want=+g('ppA').value||0, got=total(), d=+(want-got).toFixed(2);
+    g('ppSum').innerHTML=parts.length<2?'':Math.abs(d)<0.01?`<span style="color:var(--chip-green)">✓ ${parts.length} parts add up to ${fmt(got)}</span>`:`<span style="color:var(--chip-rust)">${fmt(got)} of ${fmt(want)} — ${d>0?fmt(d)+' still to place':fmt(-d)+' too much'}</span>` };
+  const drawParts=()=>{ g('ppParts').innerHTML=parts.map((x,i)=>`<tr>
+      <td><select data-pp="${i}.method">${['CHEQUE','CASH','BANK'].map(v=>`<option value="${v}" ${x.method===v?'selected':''}>${({CHEQUE:'Cheque',CASH:'Cash',BANK:'Bank transfer'})[v]}</option>`).join('')}</select></td>
+      <td><select data-pp="${i}.bank" ${x.method==='CASH'?'disabled':''}>${banks.replace(`value="${x.bank}"`,`value="${x.bank}" selected`)}</select></td>
+      <td><input data-pp="${i}.no" value="${noteEsc(x.no)}" maxlength="30" placeholder="${x.method==='CHEQUE'?'as written':'reference'}" ${x.method==='CASH'?'disabled':''}></td>
+      <td><input data-pp="${i}.date" type="date" value="${x.date}" ${x.method==='CHEQUE'?'':'disabled'}></td>
+      <td><input data-pp="${i}.amount" type="number" step="any" value="${x.amount}" style="width:120px;text-align:right" ${parts.length<2?'readonly title="the amount to pay — add another to split it"':''}></td>
+      <td>${parts.length>1?`<button class="btn ghost sm" type="button" data-ppx="${i}">✕</button>`:''}</td></tr>`).join('');
+    m.querySelectorAll('[data-pp]').forEach(el=>{ el.oninput=()=>{ keep(); showSum() }; el.onchange=()=>{ keep(); if(el.dataset.pp.endsWith('.method')) drawParts(); showSum() } });
+    m.querySelectorAll('[data-ppx]').forEach(b=>b.onclick=()=>{ keep(); parts.splice(+b.dataset.ppx,1); if(parts.length===1) parts[0].amount=g('ppA').value; drawParts() });
+    showSum() };
+  const follow=()=>{ if(parts.length===1){ parts[0].amount=g('ppA').value; const el=m.querySelector('[data-pp="0.amount"]'); if(el) el.value=g('ppA').value } showSum() };
+  g('ppA').addEventListener('input',follow);
+  g('ppAdd').onclick=()=>{ keep(); const left=+((+g('ppA').value||0)-total()).toFixed(2), last=parts[parts.length-1];
+    parts.push({method:last.method,bank:last.bank,no:'',date:last.date,amount:left>0?left.toFixed(2):''}); drawParts();
+    const el=m.querySelector(`[data-pp="${parts.length-1}.no"]`); if(el) el.focus() };
+  g('ppS').onchange=()=>{ drawBills(); follow() }; drawBills(); drawParts(); follow();
   g('ppGo').onclick=()=>{
-    const sid2=+g('ppS').value, sp=SU(sid2), amt=+g('ppA').value||0, how=g('ppHow').value;
+    const sid2=+g('ppS').value, sp=SU(sid2), amt=+g('ppA').value||0;
     if(!sp) return g('ppM').textContent='Pick the supplier.';
     if(!(amt>0)) return g('ppM').textContent='The amount, please.';
-    if(how==='CHEQUE'&&!g('ppNo').value.trim()) return g('ppM').textContent='The cheque number, as written.';
+    keep(); if(parts.length===1) parts[0].amount=amt;
+    if(Math.abs(total()-amt)>0.009) return g('ppM').textContent=`The parts come to ${fmt(total())} — they must add up to ${fmt(amt)}.`;
+    if(parts.some(x=>!(+x.amount>0))) return g('ppM').textContent='Each part needs its amount.';
+    if(parts.some(x=>x.method==='CHEQUE'&&!String(x.no).trim())) return g('ppM').textContent='Each cheque needs its number, as written.';
+    const nos=parts.filter(x=>x.method==='CHEQUE').map(x=>String(x.no).trim()); if(new Set(nos).size<nos.length) return g('ppM').textContent='Two cheques have the same number.';
+    const pp=parts.map(x=>({method:x.method,bank:x.method==='CASH'?null:+x.bank||null,no:x.method==='CASH'?'':String(x.no).trim(),date:x.method==='CHEQUE'?x.date:'',amount:+(+x.amount).toFixed(2)}));
     const bills=prOwingBills(sid2), picked=[...m.querySelectorAll('[data-pb]:checked')].map(x=>bills.find(b=>b.no===x.dataset.pb)).filter(Boolean);
     const r={id:'PP'+Date.now().toString(36).toUpperCase(),source:'shop',sid:sid2,rep:S.user.name,date:D(today),note:g('ppNote').value.trim(),
       lines:picked.map(p=>({no:p.no,supInv:p.supInv||'',date:p.date,billed:+p.total||0,owing:+((+p.total||0)-(+p.paid||0)).toFixed(2),claim:+((+p.total||0)-(+p.paid||0)).toFixed(2)})),
       total:+amt.toFixed(2),final:{amount:+amt.toFixed(2),by:S.user.name,at:apStamp(),note:''},
-      prep:{method:how,bank:how==='CASH'?null:+g('ppBank').value||null,date:how==='CHEQUE'?g('ppDate').value:'',no:g('ppNo').value.trim(),by:S.user.name,at:apStamp()},
+      prep:{...pp[0],...(pp.length>1?{parts:pp}:{}),by:S.user.name,at:apStamp()},
       tell:g('ppTell').checked,status:'final',events:[{actor:'shop',name:S.user.name,action:'made',note:fmt(amt),at:Date.now()}]};
     S.payReqs=S.payReqs||[]; S.payReqs.push(r); m.remove(); prSel=r.id;
     if(prPrepGate(r,r.tell?'ready':'prepared',`Sent to a director — once they say yes it is ready${r.tell?' and '+sp.name.split(/[–(]/)[0].trim()+' is told':''}`)) return;
@@ -9498,7 +9524,7 @@ function prSlip(r){
   const okBy=((r.events||[]).filter(e=>e.action==='approved').pop()||{}).name||((S.approvals||[]).find(a=>a.data&&a.data.prId===r.id&&a.status==='approved')||{}).decidedBy||(r.final||{}).by||'';
   voucherPrint({view:true,title:'Payment Slip',no:r.id,date:(r.pay&&r.pay.date)||D(today),payee:sp.name,payeeLabel:'PAY TO',
     payeeSub:`${sp.phone||''}${sp.code?' · '+sp.code:''}`,amount:+((r.pay&&r.pay.amount)||prAmt(r)),totalLabel:r.status==='issued'?'AMOUNT PAID':'AMOUNT TO PAY',
-    rows:[['Made up as',noteEsc(p.method?prepWhat(p):(r.pay?r.pay.what:'—'))],...(p.method==='CHEQUE'?[['Cheque number',noteEsc(p.no||'—')],['Cheque dated',p.date||'—']]:[]),
+    rows:[...(Array.isArray(p.parts)&&p.parts.length>1?p.parts.map((x,i)=>[`Part ${i+1}`,`${noteEsc(prepOne(x))} — <b>${fmt(x.amount)}</b>`]):[['Made up as',noteEsc(p.method?prepWhat(p):(r.pay?r.pay.what:'—'))],...(p.method==='CHEQUE'?[['Cheque number',noteEsc(p.no||'—')],['Cheque dated',p.date||'—']]:[])]),
       ['Prepared by',noteEsc(p.by||(r.final||{}).by||'—')],['Approved by',noteEsc(okBy||'—')],['Status',(PR_FLOW[r.status]||{}).label||r.status],
       ...(r.pay?[['Handed over',`${r.pay.date} · voucher ${r.pay.voucher||'—'}`]]:[])],
     linesLabel:'Bills settled',lines:(r.lines||[]).map(l=>[`${l.no}${l.supInv?' · their invoice '+l.supInv:''}${l.date?' · '+l.date:''}`,+l.claim||0]),
@@ -9633,6 +9659,7 @@ function prNote(r, action, title, hint, ok){
 /* handing it over: the one step that moves money, through the payment the till already has */
 function prIssue(r){
   const sp = SU(r.sid); if(!sp) return toast('That supplier is gone');
+  if(r.prep && Array.isArray(r.prep.parts) && r.prep.parts.length > 1) return prIssueParts(r, sp);
   const amount = prAmt(r), pp = r.prep || {};
   const against = (r.lines||[]).map(l=>l.no);
   const m = modal(`<h2>Issue ${fmt(amount)} to ${sp.name}</h2>
@@ -9670,6 +9697,31 @@ function prIssue(r){
     }catch(e){ g('piMsg').textContent=e.message }
   };
   g('piAmt').focus();
+}
+
+function prIssueParts(r, sp){
+  const parts = r.prep.parts, amount = parts.reduce((a, x) => a + (+x.amount || 0), 0), against = (r.lines || []).map(l => l.no);
+  const m = modal(`<h2>Issue ${fmt(amount)} to ${noteEsc(sp.name)}</h2>
+   <div class="muted">${against.length} bill${against.length === 1 ? '' : 's'} · made up in ${parts.length} parts — each goes out as written, and the books are posted.</div>
+   <table class="tbl" style="margin-top:10px"><tr><th>#</th><th>Made up as</th><th class="n">Amount</th></tr>
+    ${parts.map((x, i) => `<tr><td>${i + 1}</td><td>${noteEsc(prepOne(x))}</td><td class="n">${fmt(x.amount)}</td></tr>`).join('')}
+    <tr class="tot"><td></td><td><b>Together</b></td><td class="n"><b>${fmt(amount)}</b></td></tr></table>
+   <div class="muted" id="piMsg"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="piGo">Issue it</button></div>`); npAdd(m);
+  m.querySelector('#piGo').onclick = () => {
+    const lines = parts.map(x => ({ method: x.method, bank: +x.bank || 1, amount: +(+x.amount).toFixed(2), date: x.method === 'CHEQUE' ? (x.date || D(today)) : D(today), no: x.no || undefined }));
+    try {
+      dmgPayCheck(r.sid, false);
+      if (payGate('supPay', `Hand ${escM(sp.name)} ${fmt(amount)} (payment request, ${parts.length} parts)`, payWhat(lines),
+        { supplierId: r.sid, amount: +amount.toFixed(2), lines, against, notes: `Payment request ${r.id}`, prId: r.id, date: D(today) })) { m.remove(); render(); return }
+      const pv = paySupplier({ supplierId: r.sid, lines, against, notes: `Payment request ${r.id}` });
+      r.status = 'issued';
+      r.pay = { date: D(today), amount: +amount.toFixed(2), what: prepWhat(r.prep), voucher: pv.voucher, by: S.user.name, no: pv.no };
+      prStep(r, 'issued', prepWhat(r.prep));
+      m.remove(); render(); supplierVoucher(pv, true);
+      toast(`${fmt(amount)} issued to ${sp.name} in ${parts.length} parts · voucher ${pv.voucher}`);
+    } catch (e) { m.querySelector('#piMsg').textContent = e.message }
+  };
 }
 
 /* ================== SOCIAL ==================
