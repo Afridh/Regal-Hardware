@@ -17840,7 +17840,7 @@ function posAfter(){
   sugList=[]; sugIdx=0; drawSug(); q.value=''; q.focus();
   q.addEventListener('input',()=>{ const v=q.value.trim().toLowerCase();
     const byShort=v?S.products.filter(p=>(p.short||'').toLowerCase()===v||String(p.num||'')===v):[];
-    const rest=v?S.products.filter(p=>!byShort.includes(p)&&(p.name.toLowerCase().includes(v)||p.code.toLowerCase().includes(v)||(p.short||'').toLowerCase().startsWith(v)||String(p.num||'').startsWith(v)||p.barcode===v)):[];
+    const rest=v?prodSearch(S.products.filter(p=>!byShort.includes(p)&&p.active!==false),v):[];
     sugList=[...byShort,...rest].slice(0,8); sugIdx=0; openNav=false; drawSug();
     // a barcode scanner types fast and ends with Enter; an exact hit goes straight to quantity
     const exact=S.products.find(p=>p.barcode===v); if(exact){ q.value=''; sugList=[]; startLine(exact.id) } });
@@ -18444,7 +18444,7 @@ function posQuick(){
   const L=S.pos.lines, c=C(S.pos.customer||1);
   const cats=[...new Set(S.products.map(p=>p.cat))];
   const q=QT.q.trim().toLowerCase();
-  const items=S.products.filter(p=>(!QT.cat||p.cat===QT.cat)&&(!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||(p.short||'')===q||String(p.num||'')===q||String(p.num||'').startsWith(q)))
+  const items=(q?prodSearch(S.products,q):S.products).filter(p=>(!QT.cat||p.cat===QT.cat))
     .sort((a,b)=>a.name.localeCompare(b.name)).slice(0,60);
   const total=billTotal(), sub=L.reduce((a,l)=>a+l.qty*l.price-l.disc,0);
   const credit=QT.mode==='credit';
@@ -19271,13 +19271,39 @@ function fixCodeClashes(){
   try{ logTrail('other',`${bad.length} item number${bad.length===1?'':'s'} that clashed with other products' barcodes put right`,{}) }catch(e){}
   return bad.length;
 }
+/* ================== FINDING A PRODUCT (2 Nov 2026) ==================
+   Typed words are looked for each on its own, in any order — "tokyo 50kg" finds "TOKYO SUPER CEMENT 50KG",
+   "valve 1/2" finds "1/2 BALL VALVE" — in the name, code, short code, item number, barcodes, category and
+   brand; "12mm" also finds "12 mm". Before, the words had to sit together in that order, and only the first
+   twelve of hundreds of matches, in the order the products were entered, were shown — so an item could be
+   on the books and never come up. The best matches now come first: the name starting with what was typed,
+   then the words together, then every word starting a word of the name. */
+const srchNorm=(s)=>String(s??'').toLowerCase().replace(/[‘’'"]/g,'').replace(/\s+/g,' ').trim();
+const srchCompact=(s)=>s.replace(/[\s\-.,()]/g,'');
+const _srchCache=new WeakMap();
+function prodHay(p){
+  const key=[p.name,p.code,p.short,p.short2,p.num,p.barcode,p.barcode2,p.cat,p.brand,p.oldCode].join('|');
+  const c=_srchCache.get(p); if(c&&c.key===key) return c;
+  const name=srchNorm(p.name), hay=srchNorm(key.replace(/\|/g,' ')), out={key,name,hay,compact:srchCompact(hay),words:name.split(/[\s\-\/,.()]+/).filter(Boolean)};
+  _srchCache.set(p,out); return out;
+}
+const srchWords=(q)=>srchNorm(q).split(' ').filter(Boolean);
+function prodMatch(p,q){ const ws=Array.isArray(q)?q:srchWords(q); if(!ws.length) return true; const h=prodHay(p);
+  return ws.every(w=>h.hay.includes(w)||h.compact.includes(srchCompact(w))) }
+/* lower comes first */
+function prodRank(p,q){ const qq=srchNorm(q), ws=srchWords(q), h=prodHay(p);
+  if(h.name.startsWith(qq)) return 0;
+  if(h.name.includes(qq)) return 1;
+  if(ws.every(w=>h.words.some(x=>x.startsWith(w)))) return 2;
+  return 3 }
+function prodSearch(list,q){ const ws=srchWords(q); if(!ws.length) return list;
+  return list.filter(p=>prodMatch(p,ws)).map(p=>[p,prodRank(p,q)]).sort((a,b)=>a[1]-b[1]||((b[0].stock>0)-(a[0].stock>0))||a[0].name.length-b[0].name.length).map(x=>x[0]) }
 function csFind(v){
   const q=v.toLowerCase();
   // an exact short code (20ss), item number or barcode comes first — that is what Enter takes
   const exact=codeExact(q);      // barcode, item number, short code, product code — in that order
-  const rest=S.products.filter(p=>p.active!==false&&!exact.includes(p)&&((p.short||'').toLowerCase().startsWith(q)||(p.short2||'').toLowerCase().startsWith(q)||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||String(p.num||'').startsWith(q)));
-  // short codes that begin with what was typed sit above name matches
-  rest.sort((a,b)=>((b.short||'').toLowerCase().startsWith(q)?1:0)-((a.short||'').toLowerCase().startsWith(q)?1:0));
+  const byShort=S.products.filter(p=>p.active!==false&&!exact.includes(p)&&((p.short||'').toLowerCase().startsWith(q)||(p.short2||'').toLowerCase().startsWith(q)||String(p.num||'').startsWith(q)));
+  const rest=byShort.concat(prodSearch(S.products.filter(p=>p.active!==false&&!exact.includes(p)&&!byShort.includes(p)),q));
   return [...exact,...rest];
 }
 /* a line moves to another place on the bill — by drag, or Ctrl+↑ / Ctrl+↓ on the highlighted one */
@@ -20249,7 +20275,7 @@ function bindClassic(){
       const who=S.pos.customer;
       box.innerHTML=hits.length?`<table><thead><tr><th>CODE</th><th>DESCRIPTION</th>${showCost?'<th>COST</th>':''}
          ${CFG.stock.track===false?'':'<th class="n">STOCK</th>'}<th class="n">MRP</th><th class="n">PRICE</th>${who?`<th class="n">${C(who).name.split(' ')[0].toUpperCase()} PAID</th>`:''}<th>SUPPLIER</th></tr></thead><tbody>
-        ${hits.slice(0,12).map(p=>{const sp=SU(p.supplierId)||lastSupplier(p.id);   // who it is bought from, else who last delivered it
+        ${hits.slice(0,30).map(p=>{const sp=SU(p.supplierId)||lastSupplier(p.id);   // who it is bought from, else who last delivered it
           return `<tr data-act="csPick" data-id="${p.id}">
           <td class="c">${p.short?`<b style="color:var(--chip-blue)">${p.short.toUpperCase()}</b> · `:''}${p.num||p.code}</td>
           <td class="d">${p.name.toUpperCase()}</td>
@@ -21545,7 +21571,7 @@ function editPurchaseModal(no){
     m.querySelector('#epWhy').oninput=e=>{ whyNow=e.target.value };
     const q=m.querySelector('#epQ');
     q.oninput=()=>{ const v=q.value.trim().toLowerCase();
-      const hits=v?S.products.filter(p=>p.name.toLowerCase().includes(v)||String(p.code||'').toLowerCase().includes(v)||(p.short||'').toLowerCase()===v||String(p.num||'')===v).slice(0,6):[];
+      const hits=v?codeExact(v).concat(prodSearch(S.products.filter(p=>p.active!==false),v)).filter((p,i,a)=>a.indexOf(p)===i).slice(0,8):[];
       m.querySelector('#epHits').innerHTML=hits.map(p=>`<button class="btn ghost sm" data-epad="${p.id}" style="margin:3px 3px 0 0">${noteEsc(p.name)} · ${money2(p.cost)}</button>`).join('');
       m.querySelectorAll('[data-epad]').forEach(b=>b.onclick=()=>{ const p=P(+b.dataset.epad);
         if(!lines.some(l=>l.pid===p.id)) lines.push({pid:p.id,qty:1,cost:+p.cost||0}); draw(); const n=m.querySelector('#epQ'); if(n) n.focus() }) };
@@ -21868,8 +21894,7 @@ function prnModal(supplierId){
   const q=m.querySelector('#prQ');
   q.oninput=()=>{
     const v=q.value.trim().toLowerCase();
-    const hits=v?S.products.filter(p=>p.name.toLowerCase().includes(v)||p.code.toLowerCase().includes(v)
-      ||(p.short||'').toLowerCase()===v||String(p.num||'')===v).slice(0,6):[];
+    const hits=v?codeExact(v).concat(prodSearch(S.products.filter(p=>p.active!==false),v)).filter((p,i,a)=>a.indexOf(p)===i).slice(0,8):[];
     m.querySelector('#prHits').innerHTML=hits.map(p=>`<button class="btn ghost sm" data-prad="${p.id}" style="margin:3px 3px 0 0">
       ${p.name} · ${fq(p.stock)} ${p.unit} · ${money2(p.cost)}</button>`).join('');
     m.querySelectorAll('[data-prad]').forEach(b=>b.onclick=()=>{
@@ -28177,8 +28202,7 @@ function inventory(){
   const tabs=isSalesman?[['products','Products'],['stock','Stock']]:[['products','Products'],['stock','Stock'],['ledger','Stock ledger'],['damage','Damaged goods']];
   if(isSalesman&&invTab!=='products'&&invTab!=='stock') invTab='products';
   let body='';
-  if(invTab==='products'){ const q=prodQ.toLowerCase().trim(); const list=S.products.filter(p=>!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||(p.short||'').toLowerCase()===q||String(p.num||'')===q||p.barcode===q||(p.cat||'').toLowerCase().includes(q));
-    if(q) list.sort((a,b)=>((a.short||'').toLowerCase()===q||a.name.toLowerCase().startsWith(q)?0:1)-((b.short||'').toLowerCase()===q||b.name.toLowerCase().startsWith(q)?0:1));
+  if(invTab==='products'){ const q=prodQ.toLowerCase().trim(); const list=q?codeExact(q,S.products).concat(prodSearch(S.products,q)).filter((p,i,a)=>a.indexOf(p)===i):S.products.slice();
     const shown=list.slice(0,invLimit);
     const clashN=isSalesman?0:codeClashes().length;
     body=`${clashN?`<div class="card" style="background:#FFF4DC;border-color:#F0D08A;margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:240px"><b>${clashN} item number${clashN===1?'':'s'} ${clashN===1?'is':'are'} also another product's barcode or code</b><div class="muted">Typing or scanning that number would find the wrong product. Fix gives each one its own old sticker number where that's free, or a new number no product uses.</div></div><button class="btn tape" data-act="codeFix">Fix ${clashN===1?'it':'them'}</button></div>`:''}<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
@@ -28197,10 +28221,10 @@ function inventory(){
       ${!isSalesman?`<td><button class="btn ghost sm" data-act="editProd" data-id="${p.id}">Edit</button></td>`:''}</tr>`).join('')||'<tr><td colspan="13" class="muted">Nothing matches that.</td></tr>'}</table>
      ${moreRows(shown.length,list.length,'invMore')}
      ${!isSalesman?'<div class="muted" style="margin-top:8px">Click an item to see every bill it has been sold on.</div>':''} `}
-  if(invTab==='stock'){ const q=prodQ.toLowerCase().trim(); const list=S.products.filter(p=>!q||p.name.toLowerCase().includes(q)||p.code.toLowerCase().includes(q)||(p.cat||'').toLowerCase().includes(q)); const shown=list.slice(0,invLimit);
+  if(invTab==='stock'){ const q=prodQ.toLowerCase().trim(); const list=q?prodSearch(S.products,q):S.products.slice(); const shown=list.slice(0,invLimit);
     body=`<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search name, code or category…" style="max-width:380px"><span class="muted" style="margin-left:auto">${list.length} products</span></div>
     <table><tr><th>Code</th><th>Product</th><th>Category</th><th class="n">In stock</th><th class="n">Min</th>${!isSalesman?'<th class="n">Cost (avg)</th>':''}<th class="n">Retail</th><th class="n">Wholesale</th>${!isSalesman?'<th class="n">Value</th>':''}</tr>${shown.map(p=>`<tr><td>${p.code}<div class="muted">${p.barcode}</div></td><td>${p.name}</td><td>${p.cat}</td><td class="n">${p.stock<=p.min?'<span class="tag bad">':''}${fq(p.stock)} ${p.unit}${p.stock<=p.min?'</span>':''}</td><td class="n">${p.min}</td>${!isSalesman?`<td class="n">${p.cost.toFixed(2)}</td>`:''}<td class="n">${p.retail.toFixed(2)}</td><td class="n">${p.wholesale.toFixed(2)}</td>${!isSalesman?`<td class="n">${fmt(p.stock*p.cost)}</td>`:''}</tr>`).join('')}${!isSalesman?`<tr><td colspan=8><b>Total stock value${q?' of these':''}</b></td><td class="n"><b>${fmt(list.reduce((a,p)=>a+p.stock*p.cost,0))}</b></td></tr>`:''}</table>${moreRows(shown.length,list.length,'invMore')}` }
-  if(invTab==='ledger') body=`<div class="muted" style="margin-bottom:6px">Every movement has a source document. Nothing changes stock silently.</div><table><tr><th>Date</th><th>Product</th><th>Type</th><th class="n">Qty</th><th class="n">After</th><th class="n">Unit cost</th><th>Reference</th></tr>${S.movements.slice().reverse().slice(0,invLimit).map(m=>`<tr><td>${m.date}</td><td>${P(m.pid).name}</td><td><span class="tag ${m.type==='PURCHASE_VOID'?'warn':m.qty>0?'ok':'bad'}">${m.type==='PURCHASE_VOID'?'ENTRY VOIDED':m.type}</span></td><td class="n">${m.qty>0?'+':''}${fq(m.qty)}</td><td class="n">${fq(m.after)}</td><td class="n">${m.cost.toFixed(2)}</td><td>${m.ref}</td></tr>`).join('')}</table>${moreRows(Math.min(invLimit,S.movements.length),S.movements.length,'invMore')}`;
+  if(invTab==='ledger') body=`<div class="muted" style="margin-bottom:6px">Every movement has a source document. Nothing changes stock silently.</div><table><tr><th>Date</th><th>Product</th><th>Type</th><th class="n">Qty</th><th class="n">After</th><th class="n">Unit cost</th><th>Reference</th></tr>${S.movements.slice().reverse().slice(0,invLimit).map(m=>`<tr><td>${m.date}</td><td>${(P(m.pid)||{name:"(removed item)"}).name}</td><td><span class="tag ${m.type==='PURCHASE_VOID'?'warn':m.qty>0?'ok':'bad'}">${m.type==='PURCHASE_VOID'?'ENTRY VOIDED':m.type}</span></td><td class="n">${m.qty>0?'+':''}${fq(m.qty)}</td><td class="n">${fq(m.after)}</td><td class="n">${m.cost.toFixed(2)}</td><td>${m.ref}</td></tr>`).join('')}</table>${moreRows(Math.min(invLimit,S.movements.length),S.movements.length,'invMore')}`;
   if(invTab==='damage') body=`<div class="card note" style="margin-bottom:10px"><b>This writes the goods off as a loss</b>
     <div class="muted">If the item came from a supplier and could be claimed back, use <b>Damage returns</b> instead —
      it books the value against them from the day it is raised, and prints a label for the piece.
@@ -31575,8 +31599,8 @@ function reportData(){
   }
   case 'stockmove':{
     const rows=S.movements.filter(m=>inRange(m.date)).slice().reverse()
-      .filter(m=>!repQ||P(m.pid).name.toLowerCase().includes(repQ.toLowerCase()))
-      .map(m=>[m.date,P(m.pid).name,m.type,(m.qty>0?'+':'')+fq(m.qty),fq(m.after),can('cost')?money(m.cost):'—',m.ref]);
+      .filter(m=>!repQ||(P(m.pid)||{name:"(removed item)"}).name.toLowerCase().includes(repQ.toLowerCase()))
+      .map(m=>[m.date,(P(m.pid)||{name:"(removed item)"}).name,m.type,(m.qty>0?'+':'')+fq(m.qty),fq(m.after),can('cost')?money(m.cost):'—',m.ref]);
     return t(['Date','Item','What happened','Quantity','Left after','Cost each','Reference'],rows,null,
       'Every movement has a document behind it — nothing changes stock on its own.');
   }
