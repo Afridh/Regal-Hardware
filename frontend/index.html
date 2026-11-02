@@ -26314,7 +26314,8 @@ function productModal(pid,opt){
      <div class="pm-g4">
       ${f('pbar','Barcode',p?p.barcode:nextBarcode(),'text','Scan the sticker, or keep this one','autocomplete="off"')}
       ${f('pshort','Short code',p?(p.short||''):'','text','e.g. cem','autocomplete="off"')}
-      ${f('pcode','Item code',p?p.code:'','text','Empty: the barcode','autocomplete="off"')}
+      <div class="f"><label>Item code</label><input id="pcode" value="${noteEsc(p?p.code:'')}" autocomplete="off">
+       <label class="chk" style="margin-top:4px;font-size:12.5px"><input type="checkbox" id="pcodeBar" ${!p||String(p.code)===String(p.barcode||'')?'checked':''}> same as the barcode</label></div>
       <div class="f"><label>Product number</label><input value="${p?p.num:nextNum()}" readonly style="background:var(--panel)"><div class="muted">Given by the system</div></div>
      </div>
     </section>
@@ -26395,6 +26396,11 @@ function productModal(pid,opt){
     q('pvCat').textContent=[(q('pcat').value||'').trim()||'No category', q('punit').value, (q('psup').value||'').trim()?'from '+q('psup').value.trim():''].filter(Boolean).join(' · ');
     q('pvPrice').textContent=ret?fmt(ret):'Rs —'; q('pvMrp').textContent=mrp>ret&&ret?fmt(mrp):'';
     q('pvCodes').innerHTML=[['',q('pbar').value],['short ',q('pshort').value],['#',p?p.num:nextNum()]].filter(x=>String(x[1]).trim()).map(x=>`<span>${x[0]}${noteEsc(String(x[1]).trim())}</span>`).join('') };
+  // the item code follows the barcode while "same as the barcode" is ticked
+  const codeSync=()=>{ const on=q('pcodeBar').checked; if(on) q('pcode').value=q('pbar').value.trim(); q('pcode').readOnly=on; q('pcode').style.background=on?'var(--panel)':'' };
+  q('pbar').addEventListener('input',codeSync);
+  q('pcodeBar').onchange=()=>{ codeSync(); if(!q('pcodeBar').checked){ q('pcode').focus(); q('pcode').select() } };
+  codeSync();
   m.querySelectorAll('input,textarea').forEach(i=>i.addEventListener('input',marg)); marg();
   m.querySelectorAll('#punitChips [data-u]').forEach(b=>b.onclick=()=>{ q('punit').value=b.dataset.u; m.querySelectorAll('#punitChips [data-u]').forEach(x=>x.classList.toggle('on',x===b)); pv() });
   m.querySelectorAll('#pcatChips [data-c]').forEach(b=>b.onclick=()=>{ q('pcat').value=b.dataset.c; q('pcat').dispatchEvent(new Event('change')); pv() });
@@ -26443,6 +26449,8 @@ function productModal(pid,opt){
       points:g('ppoints')>0?+(+g('ppoints')).toFixed(2):0, supplierId:sup?sup.id:null,
       tiers:tiers.filter(t=>+t.min>0&&+t.price>0).map(t=>({min:+t.min,price:+t.price,label:(t.label||'').trim()}))};
     if(m.querySelector('#pact')) data.active=m.querySelector('#pact').checked;
+    // a code changed on an item keeps the old one, so typing or scanning it still finds the item
+    if(p&&p.code&&codeNorm(p.code)!==codeNorm(code)&&!p.oldCode) data.oldCode=p.code;
     const photo=m.querySelector('#pphotoFile').files[0];
     const sendPhoto=pid=>{ if(photo) shopMediaUpload('p:'+pid,photo,900).then(()=>toast('Photo is on the site')).catch(e=>toast('Photo not saved: '+e.message)) };
     if(p){
@@ -26503,6 +26511,20 @@ function productModal(pid,opt){
     q('psave').onclick=()=>{ const n0=(S.approvals||[]).length; save0(); if(m._again) return;
       if(!document.body.contains(m)||(S.approvals||[]).length>n0){ m.remove(); productModal(null,{pu:true}) } };
   }
+}
+/* The barcode number as the item code, on every product at once (2 Nov 2026). The old code stays on each
+   one (oldCode), so typing or scanning it still finds the item. One whose barcode is already another
+   product's number or code is left alone and counted. */
+function codesToBarcodes(){
+  if(!payBoss()) return toast('Only the Super Admin or an Admin can change every product\'s code');
+  const todo=S.products.filter(p=>String(p.barcode||'').trim()&&codeNorm(p.code)!==codeNorm(p.barcode));
+  if(!todo.length) return toast('Every product\'s item code is already its barcode number','ok');
+  const go=todo.filter(p=>!codeTaken(p.barcode,p.id)), skip=todo.length-go.length;
+  if(!go.length) return toast(`The ${skip} left have a barcode that is another product's code — fix those first`);
+  if(!confirm(`Make the barcode number the item code on ${go.length} product${go.length===1?'':'s'}?\n\nThe old code stays on each one, so typing or scanning it still finds the item.${skip?`\n${skip} ${skip===1?'is':'are'} left alone: the barcode is already another product's code.`:''}`)) return;
+  go.forEach(p=>{ if(p.code&&!p.oldCode) p.oldCode=p.code; p.code=String(p.barcode).trim() });
+  try{ logTrail('other',`Item code set to the barcode number on ${go.length} products${skip?` (${skip} left alone)`:''}`,{ref:'codes'}) }catch(e){}
+  persist(true); render(); toast(`${go.length} product${go.length===1?'':'s'}: the item code is now the barcode number`,'ok');
 }
 /* The shop's categories as they were typed over the years, each with the name it is shown by and the
    department it sits in (Products → Categories at the till changes any of it). Built from the shop's
@@ -28319,7 +28341,7 @@ function inventory(){
     body=`${clashN?`<div class="card" style="background:#FFF4DC;border-color:#F0D08A;margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:240px"><b>${clashN} item number${clashN===1?'':'s'} ${clashN===1?'is':'are'} also another product's barcode or code</b><div class="muted">Typing or scanning that number would find the wrong product. Fix gives each one its own old sticker number where that's free, or a new number no product uses.</div></div><button class="btn tape" data-act="codeFix">Fix ${clashN===1?'it':'them'}</button></div>`:''}<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
       <input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search item name, code, short code, barcode or category…" style="max-width:380px">
       ${!isSalesman?`<button class="btn tape" data-act="newProd">Add a product</button>`:''}
-      ${canApprove()?`<button class="btn ghost" data-act="catMgr">Categories</button>${payBoss()?'<button class="btn sm" data-act="catTidy" style="background:#FFF4DC;border-color:#F0D08A;color:#8A5D06">Tidy the categories</button>':''}`:''}
+      ${canApprove()?`<button class="btn ghost" data-act="catMgr">Categories</button>${payBoss()?'<button class="btn ghost sm" data-act="codesToBar" title="Make the barcode number the item code on every product">Barcode as code</button><button class="btn sm" data-act="catTidy" style="background:#FFF4DC;border-color:#F0D08A;color:#8A5D06">Tidy the categories</button>':''}`:''}
       <span class="muted" style="margin-left:auto">${list.length} of ${S.products.length} products${q?"":" · newest first"}</span></div>
      <table><tr><th>No.</th><th>Code</th><th>Short</th><th>Item</th><th>Supplier</th><th>Unit</th><th class="n">MRP</th>${!isSalesman?`<th class="n">Cost${CFG.cost.inProducts&&can('cost')?' code':''}</th>`:''}<th class="n">Discounted</th><th class="n">Wholesale</th>${!isSalesman?'<th class="n">Margin</th>':''}<th class="n">In stock</th>${!isSalesman?'<th></th>':''}</tr>
      ${shown.map(p=>`<tr class="rowlink" ${!isSalesman?`data-act="prodHist" data-id="${p.id}"`:''}><td><span class="pnum">${p.num||''}</span></td><td>${p.code}${p.barcode&&String(p.barcode)!==String(p.code)?`<div class="muted">${p.barcode}</div>`:''}${p.oldCode?`<div class="muted" style="font-size:11px">was ${p.oldCode}</div>`:''}</td>
@@ -33796,7 +33818,7 @@ document.addEventListener('click',e=>{
     navFold:()=>{ const p=prefs(), gname=a.dataset.g, list=new Set(Array.isArray(p.navFold)?p.navFold:[]);
       if(list.has(gname)) list.delete(gname); else list.add(gname); p.navFold=[...list]; try{ persist(true) }catch(e){} renderNav() },
     pcGive:()=>pettyGiveModal(a.dataset.who||''), pcExp:()=>pettyExpenseModal(a.dataset.id), pcSettle:()=>pettySettleModal(a.dataset.id), pcUndo:()=>pettyUndo(a.dataset.id,a.dataset.no),
-    catMgr:()=>categoriesModal(), catTidy:()=>tidyCatalogModal(),
+    catMgr:()=>categoriesModal(), catTidy:()=>tidyCatalogModal(), codesToBar:()=>codesToBarcodes(),
     quoteSms:()=>quoteSend(a.dataset.no,'text'), quoteWa:()=>quoteSend(a.dataset.no,'wa'), quoteOther:()=>{ const d=S.docs.find(x=>x.no===a.dataset.no); if(!d) return; if(!d.link){ d.link=quoteLinkFor(); persist(true) } const v=()=>({quote:d.no,total:fmt(d.total),until:quoteUntil(d),customer:(C(d.customerId)||{}).name||'',link:d.link}); askNumber({no:d.no,total:d.total,date:d.date,customerId:d.customerId,phone:d.phone},'any',{text:to=>{ d.phone=to; sms(to,tpl('quoteLink',v()),'customer'); persist(true); toast('Quotation texted to '+to,'ok') },whatsapp:to=>{ d.phone=to; wa(to,tpl('quoteLink',v()),'quoteLink',v(),'customer'); persist(true); toast('Quotation on WhatsApp to '+to,'ok') }}) },
     dirGo:()=>{ setTab='directors'; go('settings') }, dirAdd:()=>dirEdit(null), dirEdit:()=>dirEdit(a.dataset.id), dirSend:()=>dirSend(a.dataset.id||null),
     dirCopy:()=>{ const d=dirCfg().list.find(x=>x.id===a.dataset.id); if(!d) return; const l=`${CFG.shop.name||'Regal Hardware'} — directors' report\n${dirLink(d)}\nYour user code: ${d.code}\nThe first time you open it, you make your own PIN.`; (navigator.clipboard?navigator.clipboard.writeText(l):Promise.reject()).then(()=>toast('Link and user code copied — paste them to '+d.name,'ok')).catch(()=>askBox({title:'Their link',body:'Copy it from here',value:l,ok:'Done',cancel:'Close'})) },
