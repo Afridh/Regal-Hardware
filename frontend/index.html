@@ -435,6 +435,15 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .pm-foot .muted{margin-right:auto;font-size:12px}
 .pm-bad{border-color:var(--chip-rust)!important;box-shadow:0 0 0 3px var(--tint-rust)!important}
 @media (max-width:820px){ .pm-body{grid-template-columns:1fr;max-height:none} .pm-side{position:static;order:-1} .pm-photo{height:120px} .pm-g3,.pm-g4{grid-template-columns:1fr 1fr} .pm-head .seg-tabs{display:none} .modal .box.pm-box{overflow:auto} .pm-foot .muted{display:none} }
+/* Take a payment: the heading with its small search box, the matches dropping under it */
+.rec-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding-bottom:9px;border-bottom:2px solid var(--ink)}
+.rec-head h1{margin:0;padding:0;border:0}
+.rec-find{position:relative;width:min(380px,100%)}
+.rec-find input{width:100%;padding:8px 12px;font-size:14px;border-radius:99px}
+.rec-drop{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;background:var(--white);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lift);overflow:hidden;max-height:60vh;overflow-y:auto}
+.rec-drop>div.rowlink{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line2);cursor:pointer}
+.rec-drop>div.rowlink:hover,.rec-drop>div.rowlink.sel{background:var(--panel)}
+.rec-drop span b{display:block}.rec-drop small{color:var(--faint)}.rec-drop em{font-style:normal;font-weight:700;white-space:nowrap}
 /* notices: top centre, one under another, each with its colour and a bar that runs down as it fades */
 #toasts{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:95;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;width:max-content;max-width:min(560px,92vw)}
 .toast{position:relative;display:flex;align-items:center;gap:12px;background:rgba(16,30,34,.94);color:#fff;padding:11px 18px 11px 14px;border-radius:14px;
@@ -14170,7 +14179,7 @@ function receipts(){
        <div class="muted">${c.phone||'no mobile'} · ${c.code} · ${c.level} prices${c.address?' · '+c.address:''}</div></div>
       <div style="display:flex;gap:6px;align-items:center">
        <button class="btn ghost" data-act="recBack">Someone else</button>
-       <button class="btn" style="padding:12px 14px;font-size:15px" data-act="recRemind" data-id="${c.id}" ${c.phone&&owed>0.005?'':'disabled'}>📱 Remind${remindAgo(c)?' <span class="muted" style="font-size:11px">· '+remindAgo(c)+'</span>':''}</button>
+       <button class="btn" style="padding:12px 14px;font-size:15px" data-act="recRemind" data-id="${c.id}" ${c.phone&&owed>0.005?'':'disabled'}>📱 Remind${remindAgo(c)?' <span style="font-size:11px;opacity:.75">· '+remindAgo(c)+'</span>':''}</button>
        <button class="btn tape" style="padding:12px 18px;font-size:15px" data-act="recPay" data-id="${c.id}">💰 Take payment <i class="kbd">F7</i></button></div>
      </div>
 
@@ -14235,24 +14244,20 @@ function receipts(){
         ||'<tr><td colspan="7" class="muted">Nobody here — nothing outstanding in this list.</td></tr>'}</table>
      ${shown.length>recLimit?`<div style="text-align:center;margin-top:8px"><button class="btn ghost" data-act="recMore">Show all ${shown.length}</button></div>`:''}</div>`;
   }
-  return `<h1>Take a payment</h1>
-  <div class="row" style="margin-bottom:12px">
+  // the search is a small box in the heading, its matches dropping under it; a customer picked comes straight
+  // under the heading, the day's figures below (2 Nov 2026: the big search box pushed them down the page)
+  const statsRow=`<div class="row rec-stats" style="margin-bottom:12px">
    ${stat('Collected today',fmt(todays.reduce((a,p)=>a+p.amount,0)),`${todays.length} receipt${todays.length===1?'':'s'}`,'g')}
    ${stat('Cash today',fmt(byMethod.CASH||0),'','y')}
    ${stat('Bank and cheques today',fmt((byMethod.BANK||0)+(byMethod.CHEQUE||0)),'','b')}
    ${stat('Owed by everyone',fmt(S.customers.reduce((a,x)=>a+Math.max(0,partyBal('C',x.id)),0)),`${owing.length} account${owing.length===1?'':'s'}`,'r')}
-  </div>
-
-  <div class="card" style="margin-bottom:12px">
-   <label>Find the customer by name or phone number (F7)</label>
-   <input id="recQ" value="${recQ}" placeholder="e.g. Nimal, 0771234501, C0002" autocomplete="off" style="font-size:17px;padding:11px">
-   ${hits.length?`<table style="margin-top:10px">${hits.map(x=>`<tr class="rowlink ${x.id===recSel?'sel':''}" data-act="recPick" data-id="${x.id}">
-     <td><b>${x.name}</b><div class="muted">${x.phone||'no mobile'} · ${x.code}</div></td>
-     <td class="n">${partyBal('C',x.id)>0?fmt(partyBal('C',x.id)):'<span class="muted">clear</span>'}</td></tr>`).join('')}</table>`
-    :recQ.trim()?'<div class="muted" style="margin-top:8px">Nobody matches that.</div>':''}
-  </div>
-
-  <div class="row" style="align-items:flex-start">${panel}</div>`;
+  </div>`;
+  return `<div class="rec-head"><h1>Take a payment</h1>
+   <div class="rec-find"><input id="recQ" value="${noteEsc(recQ)}" placeholder="🔍 Find a customer — name, mobile or code" autocomplete="off">
+    ${recQ.trim()?`<div class="rec-drop">${hits.slice(0,8).map(x=>`<div class="rowlink ${x.id===recSel?'sel':''}" data-act="recPick" data-id="${x.id}">
+      <span><b>${noteEsc(x.name)}</b><small>${noteEsc(x.phone||'no mobile')} · ${noteEsc(x.code)}</small></span>
+      <em>${partyBal('C',x.id)>0?fmt(partyBal('C',x.id)):'clear'}</em></div>`).join('')||'<div class="muted" style="padding:10px 12px">Nobody matches that.</div>'}${hits.length>8?`<div class="muted" style="padding:6px 12px">and ${hits.length-8} more — type a little more</div>`:''}</div>`:''}</div></div>
+  ${c?`<div class="row" style="align-items:flex-start;margin-bottom:12px">${panel}</div>${statsRow}`:`${statsRow}<div class="row" style="align-items:flex-start">${panel}</div>`}`;
 }
 function receiptsAfter(){
   const q=$('#recQ'); if(!q)return;
@@ -14260,7 +14265,8 @@ function receiptsAfter(){
   q.onkeydown=e=>{ if(e.key==='Enter'){
     const v=recQ.trim().toLowerCase();
     const hits=S.customers.filter(c=>c.id!==1&&c.active!==false&&(typeof custMatch==='function'?custMatch(c,v):(c.name.toLowerCase().includes(v)||(c.phone||'').includes(v))));
-    if(hits.length===1){ recSel=hits[0].id; render() } } };
+    if(hits.length===1){ recSel=hits[0].id; recQ=''; render(); window.scrollTo({top:0}) } }
+    if(e.key==='Escape'&&recQ){ e.preventDefault(); e.stopPropagation(); recQ=''; render(); const n=$('#recQ'); if(n) n.focus() } };
   if(document.activeElement===document.body&&!recSel) q.focus();
 }
 
@@ -32745,7 +32751,7 @@ document.addEventListener('click',e=>{
     billMail:()=>{ const inv=S.sales.find(x=>x.no===a.dataset.no); if(inv) mailInvoice(inv); else toast('No such bill') },
     supVoucher:()=>{const pv=S.payments.find(x=>x.no===a.dataset.no); supplierVoucher(pv)},
     recGo:()=>{recSel=+a.dataset.id; go('receipts')},
-    recPick:()=>{recSel=+a.dataset.id;render()},
+    recPick:()=>{ recSel=+a.dataset.id; recQ=''; render(); try{ (document.getElementById('main')||document.scrollingElement).scrollTo({top:0,behavior:'smooth'}); window.scrollTo({top:0,behavior:'smooth'}) }catch(e){} },
     recBack:()=>{recSel=null;recQ='';render()},
     recPay:()=>custPayModal(+a.dataset.id),
     recVoucher:()=>{const rv=S.payments.find(x=>x.no===a.dataset.no); receiptVoucher(rv)},
