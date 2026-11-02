@@ -79,7 +79,7 @@ const mask = p => digits(p).replace(/^(\d{3})\d{4}(\d{3})$/, '$1••••$2')
 /* Whether a customer's own page (regalhw.lk/my) opens for them: not when the shop has it off. A customer
    asks from their bill's link ("See every bill and payment"), the shop says yes in Approvals, and a text
    tells them it is open — sign in with the mobile and a texted code (2 Nov 2026). */
-export const pageOpen = (S, CFG, c) => !!c && c.id !== 1 && c.portal !== false && !c.portalOff;
+export const pageOpen = (S, CFG, c) => !!c && c.id !== 1 && c.portal === true && !c.portalOff;   // only when the shop has said yes
 /* asked already and waiting: a row not yet taken by a till, or an approval still to be decided */
 async function askWaiting(S, cid) {
   if ((S.approvals || []).some(a => a && a.kind === 'custPortal' && a.status === 'pending' && a.data && a.data.cid === cid)) return true;
