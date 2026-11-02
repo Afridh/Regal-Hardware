@@ -5613,6 +5613,29 @@ const supBillsOpen=(sid)=>S.purchases.filter(p=>p.supplierId===sid&&!(p.onNote&&
 function supSettle(sid,amount){ let rem=+amount;
   for(const p of supBillsOpen(sid).filter(p=>p.total-p.paid>0.005).sort((a,b)=>String(a.date).localeCompare(String(b.date)))){
     const a=Math.min(rem,p.total-p.paid); p.paid=+(p.paid+a).toFixed(2); rem=+(rem-a).toFixed(2); if(rem<=0.005) break } }
+/* A cheque written by mistake (2 Nov 2026): cancelled, not deleted — it stays in the cheque list as CANCELLED
+   with who and why, the payment it made is taken back (what is owed to the supplier goes up again and their
+   bills reopen), and a payment it settled from Supplier payments goes back to be made up again. Asked first,
+   with a reason; a director or admin does it, anyone else's goes to Approvals. */
+function chqCancelAsk(c){
+  if(!c) return;
+  const sp=c.supplierId?SU(c.supplierId):S.suppliers.find(s=>s.name===c.party);
+  askBox({title:`Cancel cheque ${noteEsc(c.no)}?`,
+    body:`${noteEsc(c.payee||c.party||'')} · ${fmt(c.amount)} · ${noteEsc(c.bank||'')} · dated ${c.date}<br>${sp?`The payment is taken back: <b>${fmt(c.amount)}</b> is owed to ${noteEsc(sp.name)} again and their bills open again. `:''}The cheque stays in the list, marked cancelled, with your reason.${payBoss()?'':'<br><b>A director or admin approves it first.</b>'}`,
+    label:'Why is it cancelled?',placeholder:'e.g. written to the wrong supplier, wrong amount',ok:payBoss()?'Cancel the cheque':'Ask for approval',tone:'tape',need:true}).then(why=>{
+    if(why===null) return;
+    if(!payBoss()&&(CFG.approvals||{}).chqCancel!==false){ requestApproval('chqCancel',`Cancel cheque ${escM(c.no)} — ${fmt(c.amount)} to ${escM(c.payee||c.party||'')}`,why,{no:c.no,why}); return }
+    chqCancelNow(c,why,S.user.name); persist(true); render(); toast(`Cheque ${c.no} cancelled${sp?' — '+fmt(c.amount)+' owed to '+sp.name.split(/[–(]/)[0].trim()+' again':''}`,'ok');
+  });
+}
+function chqCancelNow(c,why,by){
+  chequeStatus(c,'CANCELLED');
+  c.cancelWhy=String(why||'').slice(0,160); c.cancelBy=by; c.cancelAt=apStamp();
+  // the payment request it paid: back to be made up again
+  const r=payReqs().find(x=>x.pay&&(x.pay.no===c.ref||(x.prep&&x.prep.no&&x.prep.no===c.no&&x.sid===c.supplierId)));
+  if(r&&r.status==='issued'){ r.status='final'; r.events=r.events||[]; r.events.push({actor:'shop',name:by,action:'chqCancelled',note:`cheque ${c.no} — ${c.cancelWhy}`,at:Date.now()}); delete r.pay; delete r.prep }
+  try{ logTrail('other',`Cheque ${c.no} (${fmt(c.amount)} to ${c.payee||c.party||''}) cancelled — ${c.cancelWhy}`,{ref:c.no,amount:c.amount}) }catch(e){}
+}
 function supReopen(sid,amount){ let rem=+amount;
   for(const p of supBillsOpen(sid).filter(p=>p.paid>0.005).sort((a,b)=>String(b.date).localeCompare(String(a.date)))){
     const a=Math.min(rem,p.paid); p.paid=+(p.paid-a).toFixed(2); rem=+(rem-a).toFixed(2); if(rem<=0.005) break } }
@@ -9206,7 +9229,7 @@ const PR_FLOW = Object.fromEntries(PR_STAGES.map(s => [s[0], { label: s[1], tag:
 const PR_NEXT = { sent: 'Invoices checked', checked: 'Finalise the amount', final: 'Start preparing', preparing: 'Amount prepared', prepared: 'Ready for collection', ready: 'Issue it' };
 const PR_ACT = { asked: 'asked to be paid', checked: 'checked the invoices', final: 'finalised the amount', accepted: 'finalised the amount', preparing: 'started preparing the amount',
   prepared: 'prepared the amount', ready: 'made it ready for collection', issued: 'issued it', rejected: 'turned it down', queried: 'asked the supplier about it',
-  made: 'prepared a payment to them', askedOk: 'asked a director to approve it', approved: 'approved it', declined: 'did not approve it', reminded: 'reminded them to collect it' };
+  made: 'prepared a payment to them', chqCancelled: 'cancelled the cheque — to be made up again', askedOk: 'asked a director to approve it', approved: 'approved it', declined: 'did not approve it', reminded: 'reminded them to collect it' };
 const PR_EV_STAGE = { asked: 'sent', accepted: 'final' };
 const payReqs = () => (S.payReqs || []);
 const payReqOpen = () => payReqs().filter(r => !['issued', 'rejected'].includes(r.status));
@@ -22941,11 +22964,12 @@ const APPROVAL_KINDS=[
   ['custPay','Customer payment taken by someone other than an admin'],
   ['supPay','Supplier paid by someone other than an admin'],
   ['supPayPrep','A supplier payment prepared (cheque written) by someone other than an admin'],
+  ['chqCancel','A cheque we wrote cancelled (the payment taken back)'],
   ['stockAdj','Stock adjusted — a stock take closed, or counts from phones posted']];
 /* Money in and money out. Only the Super Admin, the Owner or an Admin record a payment straight away;
    anyone else's — even someone allowed to approve other things — waits for one of them to say yes, and
    only then does it reach the customer's or supplier's account. */
-const PAY_APPROVALS=['custPay','supPay','supPayPrep'];
+const PAY_APPROVALS=['custPay','supPay','supPayPrep','chqCancel'];
 const payBoss=()=>!!(S.user&&(['super admin','superadmin','owner','admin','demo admin'].includes(String(S.user.role||'').toLowerCase())||window.isDemo));
 function payGate(kind,title,detail,data,opts){
   if(payBoss()||(CFG.approvals||{})[kind]===false) return false;
@@ -23018,6 +23042,7 @@ function applyApproval(a){
         r.pay={date:d.date||D(today),what:payWhat(d.lines||[]),voucher:pv.voucher,by:a.by,no:pv.no}; prStep(r,'issued',payWhat(d.lines||[])) } }
       setTimeout(()=>{ try{ supplierVoucher(pv,true) }catch(e){} },80);
       break }
+    case 'chqCancel':{ const c=S.cheques.find(x=>x.no===d.no&&x.dir==='ISSUED'); if(!c) throw new Error('That cheque is not there any more'); chqCancelNow(c,d.why,a.by+' (approved by '+S.user.name+')'); break }
     case 'supPayPrep':{ const r=payReqs().find(x=>x.id===d.prId); if(!r) throw new Error('That payment is no longer there');
       r.events=r.events||[]; r.events.push({actor:'shop',name:S.user.name,action:'approved',note:'',at:Date.now()}); prMadeUp(r,d.to||'preparing'); break }
     case 'billAdjust': applySaleAdjust(d.no,+d.amount,d.why,d.note,a.by); break;
@@ -30790,10 +30815,11 @@ function chequesOut(){
       : c.status==='PRINTED'
       ? `<button class="btn tape sm" data-act="chqSet" data-no="${c.no}" data-dir="ISSUED" data-st="CLEARED">Cleared</button>
          <button class="btn ghost sm" data-act="chqBounce" data-no="${c.no}" data-dir="ISSUED">Bounced</button>
-         <button class="btn ghost sm" data-act="printChq" data-no="${c.no}">Reprint</button>` : '';
+         <button class="btn ghost sm" data-act="printChq" data-no="${c.no}">Reprint</button>
+         <button class="btn ghost sm" data-act="chqSet" data-no="${c.no}" data-dir="ISSUED" data-st="CANCELLED" title="Written by mistake — cancel it and take the payment back">Cancel</button>` : '';
     return `<tr>
       <td><b>${c.no}</b><div class="muted">${c.bank||'—'}</div></td>
-      <td>${c.payee}<div class="muted">${c.ref||''}</div></td>
+      <td>${c.payee}<div class="muted">${c.ref||''}</div>${c.status==='CANCELLED'&&c.cancelWhy?`<div class="muted">cancelled by ${noteEsc(c.cancelBy||'')}: ${noteEsc(c.cancelWhy)}</div>`:''}</td>
       <td>${c.date}<div>${['CLEARED','BOUNCED','CANCELLED'].includes(c.status)?`<span class="muted">${c.changed||''}</span>`:when}</div></td>
       <td class="n"><b>${fmt(c.amount)}</b></td>
       <td>${tagFor(c.status)}${c.note?`<div class="muted">${c.note}</div>`:''}</td>
@@ -33568,6 +33594,7 @@ document.addEventListener('click',e=>{
     chqNew:()=>receiveChequeModal(), chqDeposit:()=>depositModal(a.dataset.no),
     chqBounce:()=>bounceModal(a.dataset.no,a.dataset.dir), chqEndorse:()=>endorseModal(a.dataset.no),
     chqSet:()=>{const c=S.cheques.find(x=>x.no===a.dataset.no&&x.dir===a.dataset.dir);
+      if(a.dataset.st==='CANCELLED'&&c&&c.dir==='ISSUED') return chqCancelAsk(c);
       closeModals(); try{chequeStatus(c,a.dataset.st)}catch(e){return toast(e.message)} render(); toast(`Cheque ${c.no} · ${a.dataset.st.toLowerCase()}`)},
     chqClear:()=>{chqQ='';chqStatus='all';render()},
     bkEdit:()=>bankModal(a.dataset.id?+a.dataset.id:null), bkDel:()=>bankDelete(+a.dataset.id), bkGo:()=>{ setTab='banks'; go('settings') },
