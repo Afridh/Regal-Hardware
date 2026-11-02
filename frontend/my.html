@@ -425,7 +425,11 @@ async function api(path, body) {
 const steps = ['#stepUser', '#stepForgot', '#stepPhone', '#stepCode', '#stepAsk'];
 const step = (which) => steps.forEach(s => show(s, s === which));
 async function start() {
-  if (token) { try { await load(); return } catch (e) { token = ''; try { localStorage.removeItem(KEY) } catch (e2) {} } }
+  // a sign-in kept on this phone is used only when it is for the account the link names — opened from
+  // someone else's bill, it used to show whoever signed in here last (2 Nov 2026)
+  if (token) { try {
+      if (CODE) { const j0 = await api('/me'); if (String(j0.customer.code || '').toLowerCase() !== CODE.split('.')[0].toLowerCase()) throw new Error('another account') }
+      await load(); return } catch (e) { token = ''; try { localStorage.removeItem(KEY) } catch (e2) {} } }
   show('#signin', true);
   step('#stepUser');
   if (!CODE) { $('#siWho').textContent = 'Sign in with your mobile — we will text you a code. Or use the user name the shop gave you.'; step('#stepPhone'); return }

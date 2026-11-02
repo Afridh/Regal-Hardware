@@ -6485,7 +6485,7 @@ const CFG={
     texts, so the floor is there to be raised — it is the figure above which the owner would
     want to know without being told. */
  msg:{letterOn:true,greetCustomer:'Dear Customer,',greetSupplier:'Dear Supplier,',greetOwner:'Dear Owner,',greetStaff:'Dear Team Member,',signOff:'Thank you,\n{shop}\n{phone}',
-  provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',supTestOn:true,supTestTo:'0769442270',timeout:30,autoBill:true,autoReceipt:true,ownerPays:true,creditPage:true,autoOrder:true,autoSummary:true,fbOwner:true,ownerBills:'all',ownerMin:0,
+  provider:'smslenz.lk',sender:'RegalHW',live:false,apiUrl:'https://smslenz.lk/api',apiKey:'',userId:'',testOnly:'',supTestOn:true,supTestTo:'0769442270',timeout:30,autoBill:true,autoReceipt:true,ownerPays:true,autoOrder:true,autoSummary:true,fbOwner:true,ownerBills:'all',ownerMin:0,
   waMode:'chat',waPhoneId:'',waToken:'',waWabaId:'',waVerifyToken:'',waAuto:true,waTemplates:{},
    quietFrom:'21:00',quietTo:'07:00'},
  mail:{host:'',port:587,user:'',pass:'',from:'',cc:'',autoInvoice:true,autoVoucher:true},   // outgoing email — quotations, credit invoices and vouchers go from here
@@ -6572,6 +6572,8 @@ const CFG={
     text:'Your account is now overdue.\nUnpaid bills: {count}\nOldest: {days} days\nTotal outstanding: {outstanding}\nPlease settle at your earliest. Details: {link}'},
   dueRemind3:{label:'Credit follow-up — final reminder',vars:'{shop} {customer} {count} {days} {outstanding} {link}',
     text:'Final reminder: your account is long overdue.\nOldest bill: {days} days\nTotal outstanding: {outstanding}\nNew credit may be paused until it is settled. Details: {link}'},
+  portalGranted:{label:'Their page opened, as they asked',vars:'{shop} {customer} {link}',
+    text:'Approval granted — you can now see your account with us: every bill, payment and what is outstanding.\nLink: {link}\nOpen it, type your mobile number, and sign in with the code we text you.'},
   portalInvite:{label:'Inviting a customer to their page',vars:'{shop} {customer} {link}',
     text:'You can now check your account with us at any time.\nLink: {link}\nSign in with a code we text you.'},
   portalLogin:{label:'A sign-in given to a customer’s person',vars:'{shop} {customer} {who} {user} {pass} {link}',
@@ -7408,7 +7410,6 @@ function settings(){
     <div class="grid2">
      ${fld('msg.autoBill','','Bill link to the customer after every sale','check')}
      ${fld('msg.autoReceipt','','Receipt after a payment is recorded','check')}
-     ${fld('msg.creditPage','','Credit customers can open their account from the link on a credit bill — their mobile and a texted code','check')}
      ${fld('msg.autoOrder','','Supplier told when you accept, reject or change an order','check')}
      ${fld('msg.autoSummary','','Daily summary to the owner at '+CFG.bill.summaryTime,'check')}
      ${fld('msg.fbOwner','','Text the owner each customer rating from an e-bill','check')}</div>
@@ -7584,7 +7585,7 @@ function settings(){
 /* Settings → Messages → WhatsApp: the whole set-up on one screen, in the order Meta wants it done */
 function waSetup(fld){
   const m=CFG.msg, hook=location.origin+'/api/wa/webhook', std=WA_STD_TEMPLATES;
-  const tplKeys=[['cashSale','Cash bill after a sale'],['creditSale','Credit bill after a sale'],['ownerBill','Your own copy of a bill'],['ownerPay','Your own copy of a payment taken'],['billLink','Bill sent again'],['returnReceived','Goods returned'],['paymentReceived','Payment received'],['statement','Customer statement'],['portalInvite','Invite to their page'],['webOrder','Online order update']];
+  const tplKeys=[['cashSale','Cash bill after a sale'],['creditSale','Credit bill after a sale'],['ownerBill','Your own copy of a bill'],['ownerPay','Your own copy of a payment taken'],['billLink','Bill sent again'],['returnReceived','Goods returned'],['paymentReceived','Payment received'],['statement','Customer statement'],['portalGranted','Their page opened, as they asked'],['portalInvite','Invite to their page'],['webOrder','Online order update']];
   const list=waTplList||[]; const approved=list.filter(t=>t.status==='APPROVED');
   return `<div class="wa-steps">
    <div class="wa-step"><b>1</b><div><b>Make the accounts</b><div class="muted">Business portfolio at <a href="https://business.facebook.com" target="_blank">business.facebook.com</a> → app at <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com</a> (type <i>Business</i>) → add the <b>WhatsApp</b> product. Verify the business under Security Centre (registration document + address).</div></div></div>
@@ -22691,7 +22692,10 @@ function requestApproval(kind,title,detail,data,opts){
 function applyApproval(a){
   const d=a.data||{};
   switch(a.kind){
-    case 'custPortal':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); custPortalSet(c,!!d.on); break }
+    case 'custPortal':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists');
+      // asked for by the customer (from their bill or their page): the page opens and a text says so — sign in with the mobile and a code
+      if(a.custInbox&&d.on){ c.portal=true; delete c.portalOff; if(c.phone) sms(c.phone,tpl('portalGranted',{customer:c.name,link:myLink(c)}),'customer'); break }
+      custPortalSet(c,!!d.on); break }
     case 'supPortal':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supPortalSet(s,d.field,!!d.value); break }
     case 'supStock':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supStockOpen(s); break }
     case 'leave':{ lvApprove(d.id); break }

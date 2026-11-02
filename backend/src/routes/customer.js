@@ -76,11 +76,17 @@ function otpFor(phone, when = Date.now()) {
 const otpOk = (phone, code) => [0, 1].some(back => otpFor(phone, Date.now() - back * OTP_WINDOW_MS) === String(code || '').trim());
 const mask = p => digits(p).replace(/^(\d{3})\d{4}(\d{3})$/, '$1••••$2');
 
-/* Whether a customer's own page (regalhw.lk/my) opens for them. Switched on by the shop, it does. Anyone who
-   buys on credit can also open theirs — from the link on a credit bill, by their mobile and a texted code —
-   unless the shop switched theirs off by hand (c.portalOff) or Settings → Messages says not (2 Nov 2026). */
-const creditBuyer = (S, c) => (S.sales || []).some(s => s && s.customerId === c.id && (s.type === 'CREDIT' || +s.credit0 > 0.005 || +s.balance > 0.005));
-export const pageOpen = (S, CFG, c) => !!c && c.id !== 1 && (c.portal === true || (!c.portalOff && (CFG && CFG.msg && CFG.msg.creditPage) !== false && creditBuyer(S, c)));
+/* Whether a customer's own page (regalhw.lk/my) opens for them: not when the shop has it off. A customer
+   asks from their bill's link ("See every bill and payment"), the shop says yes in Approvals, and a text
+   tells them it is open — sign in with the mobile and a texted code (2 Nov 2026). */
+export const pageOpen = (S, CFG, c) => !!c && c.id !== 1 && c.portal !== false && !c.portalOff;
+/* asked already and waiting: a row not yet taken by a till, or an approval still to be decided */
+async function askWaiting(S, cid) {
+  if ((S.approvals || []).some(a => a && a.kind === 'custPortal' && a.status === 'pending' && a.data && a.data.cid === cid)) return true;
+  await ensureCustTables();
+  const { rows } = await query(`SELECT id FROM cust_inbox WHERE cid = $1 AND kind = 'askopen' AND imported_at IS NULL LIMIT 1`, [cid]);
+  return rows.length > 0;
+}
 /* what a customer owes on the books, from the journal (the till's partyBal) */
 const owesOf = (S, id) => { let v = 0; for (const j of S.journal || []) for (const l of j.lines || []) if (l.party && l.party.type === 'C' && l.party.id === id && l.ac === '1100') v += (+l.dr || 0) - (+l.cr || 0); return +v.toFixed(2); };
 function custAuth(req, _res, next) {
@@ -355,6 +361,7 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
   const lineMrp = (l) => { const m = +prod(l.pid).mrp || 0; return m > +l.price + 0.005 && l.qty > 0 ? m : 0; };
   const saved = (inv.lines || []).reduce((a, l) => a + (lineMrp(l) ? (lineMrp(l) - l.price) * l.qty : 0) + (l.qty > 0 ? (+l.disc || 0) : 0), 0) + (+inv.billDisc || 0);
   const fb = inv.feedback || await fbWaiting(id);
+  const asked = cust && cust.id !== 1 && !pageOpen(S, CFG, cust) ? await askWaiting(S, cust.id) : false;
   res.json({ ok: true, bill: {
     no: inv.no, date: inv.date, time: inv.time || '', type: inv.type,
     sub: inv.sub, billDisc: inv.billDisc || 0, total: inv.total, paid: inv.paid, balance: inv.balance,
@@ -362,7 +369,8 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
     customer: cust && cust.id !== 1 ? { name: cust.name, code: cust.code,
       owes: owesOf(S, cust.id), openBills: (S.sales || []).filter(s => s.customerId === cust.id && +s.balance > 0.005).length,
       // their own page, by their mobile and a texted code: the link that names them when it can
-      page: pageOpen(S, CFG, cust) ? '/my' + (cust.pkey ? '/' + String((cust.code || '') + '.' + cust.pkey).toLowerCase() : '') : null } : null,
+      page: pageOpen(S, CFG, cust) ? '/my' + (cust.pkey ? '/' + String((cust.code || '') + '.' + cust.pkey).toLowerCase() : '') : null,
+      asked, canAsk: /^0\d{9}$/.test(digits(cust.phone)) } : null,
     lines: (inv.lines || []).map(l => {
       const p = prod(l.pid);
       return { name: l.name || p.name || 'Item', code: p.code || '', unit: p.unit || '',
@@ -387,6 +395,23 @@ async function fbWaiting(link) {     // by the bill's own link: a bill number ca
   const row = rows.map(r => (typeof r.data === 'string' ? JSON.parse(r.data) : r.data)).find(d => d && d.link === link);
   return row || null;
 }
+/* "See every bill and payment" on a bill whose customer's page is not open: the ask goes to the shop's
+   Approvals (the same as asking from the page itself); the bill link is theirs, so no code is needed to ask. */
+r.post('/b/:id/ask-open', asyncHandler(async (req, res) => {
+  const id = String(req.params.id || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (id.length < 6) throw new HttpError(404, 'That link is not a bill');
+  const data = await books(), S = data?.S || {};
+  const inv = (S.sales || []).find(x => String(x.link || '').toLowerCase().endsWith('/' + id));
+  if (!inv) throw new HttpError(404, 'That bill is not here — the link may be old, or mistyped');
+  const c = (S.customers || []).find(x => x.id === inv.customerId);
+  if (!c || c.id === 1) throw new HttpError(400, 'This bill is not on an account');
+  if (pageOpen(S, data?.CFG, c)) return res.json({ ok: true, open: true });
+  if (!/^0\d{9}$/.test(digits(c.phone))) throw new HttpError(400, 'The shop has no mobile for this account — please give them a ring');
+  if (await askWaiting(S, c.id)) return res.json({ ok: true, asked: true, already: true });
+  sendingCode(digits(c.phone), req.ip);        // a few asks a quarter hour, like the codes
+  await query(`INSERT INTO cust_inbox (cid, kind, data) VALUES ($1, 'askopen', $2)`, [c.id, JSON.stringify({ phone: c.phone, name: c.name, note: 'asked from bill ' + inv.no })]);
+  res.json({ ok: true, asked: true });
+}));
 const FB_TAGS = ['Friendly staff', 'Quick service', 'Good prices', 'Good quality', 'Found everything', 'Helpful advice', 'Slow service', 'Out of stock', 'Price too high', 'Wrong item'];
 r.post('/b/:id/feedback', asyncHandler(async (req, res) => {
   const id = String(req.params.id || '').replace(/[^a-z0-9]/gi, '').toLowerCase();

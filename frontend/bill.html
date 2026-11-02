@@ -103,6 +103,9 @@ button{font:inherit;color:inherit}
 .acct-owe.ok{background:#E6F4EC}.acct-owe.ok b{color:var(--green);font-size:20px}
 .acct-go{display:block;margin-top:12px;text-align:center;text-decoration:none;color:#fff;font-weight:700;padding:13px 14px;border-radius:14px;background:linear-gradient(135deg,var(--ink),#17343A);box-shadow:0 8px 20px rgba(16,30,34,.2)}
 .acct-go span{display:block;font-weight:400;font-size:12.5px;opacity:.8;margin-top:2px}
+button.acct-go{width:100%;border:0;font:inherit;font-weight:700;cursor:pointer}button.acct-go:disabled{opacity:.6}
+.acct-go.wait{background:#FFF4DC;color:#7A5A05;box-shadow:none;border:1px dashed #F0D08A}
+.acct-msg{color:var(--rust);font-size:13px;text-align:center;margin-top:6px;min-height:0}
 .acts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:30px;animation:fadeUp .6s var(--ease) .9s both}
 .act{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px;border-radius:14px;background:var(--white);border:1px solid var(--line);
   text-decoration:none;color:var(--ink);font-size:12px;font-weight:600;cursor:pointer;transition:transform .2s var(--spring),box-shadow .2s}
@@ -402,12 +405,17 @@ function feedbackAfter(b,id){
         ${b.by ? `<div class="by">Served by ${esc(b.by)}</div>` : ''}
       </div>`;
     /* their whole account, not just this bill: what they owe altogether, and the way into their own page */
-    const c = b.customer, accT = c && (c.owes > 0.005 || c.page) ? `
+    // the way in: open → sign in with the mobile and a code; not open → ask the shop, who texts when it is
+    const c = b.customer;
+    const goT = !c ? '' : c.page ? `<a class="acct-go" href="${esc(c.page)}">See every bill and payment<span>Sign in with your mobile — we text you a code</span></a>`
+      : c.asked ? `<div class="acct-go wait">Asked — waiting for the shop<span>We will text you when your account is open. Then sign in with your mobile and a code.</span></div>`
+      : c.canAsk ? `<button class="acct-go" type="button" id="askOpen">See every bill and payment<span>Ask the shop to open your account — they text you when it is ready</span></button>` : '';
+    const accT = c && (c.owes > 0.005 || goT) ? `
       <div class="acct screenview">
         <div class="acct-h"><span class="acct-ic">${svg('acct')}</span><div><b>Your account</b><small>${esc(c.name)}</small></div></div>
         ${c.owes > 0.005 ? `<div class="acct-owe"><span>Total outstanding</span><b>${money(c.owes)}</b><small>${c.openBills} unpaid bill${c.openBills === 1 ? '' : 's'}, this one included</small></div>`
           : `<div class="acct-owe ok"><span>Your account</span><b>All clear</b><small>nothing outstanding</small></div>`}
-        ${c.page ? `<a class="acct-go" href="${esc(c.page)}">See every bill and payment<span>Sign in with your mobile — we text you a code</span></a>` : ''}
+        ${goT}<div class="acct-msg" id="askMsg"></div>
       </div>` : '';
     const paper = b.html
       ? `<div class="paper forprint"><div class="fit printArea ${b.paper === 'r80' ? 'r80' : 'a5'}">${b.html}</div></div>`
@@ -427,6 +435,14 @@ function feedbackAfter(b,id){
         ${[sh.phone, sh.land].filter(Boolean).map(esc).join(' · ')}${sh.email ? '<br>' + esc(sh.email) : ''}${web ? `<br><a href="${esc(web)}" target="_blank" rel="noopener">${esc(sh.web.replace(/^https?:\/\//,''))}</a>` : ''}</div>`;
     $('#out').innerHTML = pageRule + card + paper + accT + acts + feedbackCard(b) + foot;
     bill = b;
+    { const ask = $('#askOpen'); if (ask) ask.onclick = async () => {
+        ask.disabled = true; $('#askMsg').textContent = '';
+        try { const r = await fetch('/api/my/b/' + encodeURIComponent(id) + '/ask-open', { method: 'POST' }); const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || 'Could not ask just now');
+          if (j.open) { location.href = (b.customer && b.customer.page) || '/my'; return }
+          ask.outerHTML = `<div class="acct-go wait">Asked — waiting for the shop<span>We will text you when your account is open. Then sign in with your mobile and a code.</span></div>`;
+        } catch (e) { ask.disabled = false; $('#askMsg').textContent = e.message }
+      } }
     setTimeout(() => countUp($('#amt'), +b.total || 0, 1400), calm ? 0 : 650);
     feedbackAfter(b, id);
     // a bill paid in full: a little celebration, the first time it is opened on this phone
