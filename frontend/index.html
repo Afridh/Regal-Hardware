@@ -12552,7 +12552,7 @@ function portalDamage(s){
 function portalAccount(s){
   if(!s.showAccounts) return '<div class="card muted">The shop has not switched on account details for your login. You can still send orders and see their answers.</div>';
   const pur=S.purchases.filter(p=>p.supplierId===s.id).sort((a,b)=>b.date.localeCompare(a.date));
-  const pay=S.payments.filter(p=>!p.dir&&p.supplierId===s.id).sort((a,b)=>b.date.localeCompare(a.date));
+  const pay=S.payments.filter(p=>!p.dir&&p.supplierId===s.id).reverse().sort((a,b)=>b.date.localeCompare(a.date));   // the same day: the one taken last first
   const chq=S.cheques.filter(c=>c.dir==='ISSUED'&&c.party===s.name);
   const due=chq.filter(c=>['ISSUED','PRINTED'].includes(c.status)).sort((a,b)=>a.date.localeCompare(b.date));
   const owed=partyBal('S',s.id), age=supAgeing(s.id);
@@ -12790,7 +12790,7 @@ function custBills(c){
      return rows.map(([n,v])=>`<div class="pbar"><span>${n.slice(0,22)}</span><i style="width:${Math.round(v/max*100)}%"></i><b>${fmt(v)}</b></div>`).join('')||'<div class="muted">Nothing yet.</div>'})()}</div>`;
 }
 function custPays(c){
-  const pays=S.payments.filter(p=>p.dir==='IN'&&p.customerId===c.id).sort((a,b)=>b.date.localeCompare(a.date));
+  const pays=S.payments.filter(p=>p.dir==='IN'&&p.customerId===c.id).reverse().sort((a,b)=>b.date.localeCompare(a.date));   // the same day: the one taken last first
   const mine=S.notices.filter(n=>n.cid===c.id);
   return `${mine.length?`<div class="card"><b>Notices you sent</b>
    ${mine.map(n=>`<div class="prow"><div>${n.method}<div class="muted">${n.date} · ${n.ref||'no reference'}</div></div>
@@ -14169,7 +14169,7 @@ function receipts(){
   let panel='';
   if(c){
     const open=S.sales.filter(s=>s.customerId===c.id&&s.balance>0).sort((a,b)=>a.date.localeCompare(b.date));
-    const paid=S.payments.filter(p=>p.dir==='IN'&&p.customerId===c.id).sort((a,b)=>b.date.localeCompare(a.date));
+    const paid=S.payments.filter(p=>p.dir==='IN'&&p.customerId===c.id).reverse().sort((a,b)=>b.date.localeCompare(a.date));   // the same day: the one taken last first
     const owed=partyBal('C',c.id);
     const age=open.reduce((a,s)=>{const d=days(s.date); if(d<=30)a.now+=s.balance; else if(d<=60)a.mid+=s.balance; else a.old+=s.balance; return a},{now:0,mid:0,old:0});
     const over=owed>c.limit;
@@ -14218,7 +14218,7 @@ function receipts(){
     </div>`;
   }else{
     // everyone who owes: each with Take payment and Remind on the row; tick several to remind them together
-    const lastPay=id=>S.payments.filter(p=>p.dir==='IN'&&p.customerId===id).sort((a,b)=>String(b.date).localeCompare(String(a.date)))[0];
+    const lastPay=id=>S.payments.filter(p=>p.dir==='IN'&&p.customerId===id).reverse().sort((a,b)=>String(b.date).localeCompare(String(a.date)))[0];
     const oldest=x=>remindOldest(x);
     const weekAgo=x=>{ const at=remindLast(x); return !at||(today-new Date(String(at).slice(0,10)))/864e5>=7 };
     const shown=owing.filter(x=>recFilter==='all'||(recFilter==='30'&&oldest(x)>30)||(recFilter==='60'&&oldest(x)>60)||(recFilter==='notrem'&&weekAgo(x)));
@@ -24002,7 +24002,7 @@ function customers(){
 function customerPanel(c){
   const inv=S.sales.filter(s=>s.customerId===c.id&&!isBF(s)).sort((a,b)=>b.date.localeCompare(a.date)||b.no.localeCompare(a.no));
   const open=inv.filter(s=>s.balance>0);
-  const rc=S.payments.filter(p=>p.dir==='IN'&&p.customerId===c.id).sort((a,b)=>b.date.localeCompare(a.date));
+  const rc=S.payments.filter(p=>p.dir==='IN'&&p.customerId===c.id).reverse().sort((a,b)=>b.date.localeCompare(a.date));   // the same day: the one taken last first
   const owed=partyBal('C',c.id), ag=custAge(c.id), overLimit=owed>c.limit, credit=custCredit(c.id);
   const lifetime=inv.reduce((a,s)=>a+s.total,0), paidTot=rc.reduce((a,p)=>a+p.amount,0);
   const first=inv.length?inv[inv.length-1].date:null, lastPay=rc[0]||null;
@@ -27387,7 +27387,7 @@ function supPlAfter(){
 function supplierPanel(s){
   const pur=S.purchases.filter(p=>p.supplierId===s.id&&!isBF(p)).sort((a,b)=>b.date.localeCompare(a.date)||b.no.localeCompare(a.no));
   const open=pur.filter(p=>p.total-p.paid>0.005);
-  const pay=S.payments.filter(p=>!p.dir&&p.supplierId===s.id).sort((a,b)=>b.date.localeCompare(a.date));
+  const pay=S.payments.filter(p=>!p.dir&&p.supplierId===s.id).reverse().sort((a,b)=>b.date.localeCompare(a.date));   // the same day: the one taken last first
   const chq=S.cheques.filter(c=>c.dir==='ISSUED'&&c.party===s.name);
   const pend=chq.filter(c=>['ISSUED','PRINTED'].includes(c.status));
   const owed=partyBal('S',s.id), ag=supAge(s.id);

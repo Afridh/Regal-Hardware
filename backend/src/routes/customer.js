@@ -288,7 +288,8 @@ r.get('/me', custAuth, asyncHandler(async (req, res) => {
   const owed = +open.reduce((a, s) => a + s.balance, 0).toFixed(2);
   const band = (lo, hi) => +open.filter(s => s.days > lo && (hi === null || s.days <= hi)).reduce((a, s) => a + s.balance, 0).toFixed(2);
   const pays = (S.payments || []).filter(p => p.dir === 'IN' && p.customerId === c.id)
-    .sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 300)
+    .reverse().sort((a, b) => String(b.date).localeCompare(String(a.date)))   // the same day: the one taken last first
+   .slice(0, 300)
     .map(p => ({ no: p.no, date: p.date, amount: p.amount, method: p.method, ref: p.ref || '', against: p.against || [], advance: +p.advance || 0 }));
   /* The statement: every entry on their account, as the shop's own ledger has it — bills, payments,
      returns, anything taken off — with what they owed after each. What they owe is the account and,
