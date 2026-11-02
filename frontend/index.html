@@ -23334,6 +23334,16 @@ function lvClash(from,to,except,who,limit){
   return null }
 const lvClashText=(c)=>`${c.all.map(l=>l.who).join(' and ')} ${c.all.length===1?'is':'are'} already ${c.all.every(l=>l.status==='approved')?'off':'on'} ${lvNice(c.day)} — ${c.limit===1?'one person':c.limit+' people'} a day${LVC().sepGroups!==false?' ('+lvGroupName(lvGroup(c.all[0].who)).toLowerCase()+'s)':''}`;
 
+/* the person's mobile: on their till user, or on their employee card — matched by the user it is linked to
+   or by the name, whatever the capitals (2 Nov 2026; before, only an exact match was found, so most
+   employees were never texted) */
+function lvPhone(who){
+  const k=String(who||'').toLowerCase().trim(), good=v=>/^(0\d{9}|\+?94\d{9})$/.test(String(v||'').replace(/[^\d+]/g,''))?String(v).replace(/[^\d+]/g,''):'';
+  const u=(S.users||[]).find(x=>String(x.name||'').toLowerCase().trim()===k);
+  const e=(S.employees||[]).find(x=>x.active!==false&&(String(x.userName||'').toLowerCase().trim()===k||String(x.name||'').toLowerCase().trim()===k))
+    ||(S.employees||[]).find(x=>String(x.userName||'').toLowerCase().trim()===k||String(x.name||'').toLowerCase().trim()===k);
+  return good(u&&u.phone)||good(u&&u.mobile)||good(e&&e.phone)||good(e&&e.mobile)||'';
+}
 /* the answer goes to the person, and to the owner: in the bell, and by text */
 function lvTell(l,ok,note){
   const when=l.from===l.to?lvNice(l.from):lvNice(l.from)+' to '+lvNice(l.to), n=lvDayCount(l), days=n===0.5?'half a day':n+' day'+(n===1?'':'s');
@@ -23342,8 +23352,9 @@ function lvTell(l,ok,note){
   const txt=ok?`Your leave has been approved.\nDates: ${when}\nDays: ${days}\nType: ${type}${left!==null?`\nLeave left for ${lvMonthName(ym)}: ${left}`:''}`
     :`Your leave request was not approved.\nDates: ${when}${note?`\nReason: ${note}`:''}`;
   notify(ok?'info':'warn',ok?`Your leave ${when} has been approved`:`Your leave ${when} was not approved${note?' — '+note:''}`,'leave',{forUser:l.who});
-  const u=(S.users||[]).find(x=>x.name===l.who); const ph=u&&(u.phone||((S.employees||[]).find(e=>String(e.userName||e.name)===l.who)||{}).phone);
-  if(ph) try{ sms(ph,txt,'staff') }catch(e){}
+  const ph=lvPhone(l.who);
+  if(ph){ try{ sms(ph,txt,'staff') }catch(e){} }
+  else setTimeout(()=>toast(`No mobile for ${l.who} — they were not texted. Add it on their employee card (People → Attendance & pay).`,'warn'),300);
   notify('people',`${l.who}'s leave ${when} ${ok?'approved':'turned down'} by ${S.user.name}`,'leave',{forApprovers:true});
   if(LVC().tellOwner&&CFG.shop.owner){
     const own=`Leave ${ok?'approved':'turned down'}.\nName: ${l.who} (${lvGroupName(lvGroup(l.who)).toLowerCase()})\nDates: ${when}\nDays: ${days}\nType: ${type}\n${ok?'Approved':'Turned down'} by: ${S.user.name}${!ok&&note?`\nReason: ${note}`:''}`;
@@ -23369,7 +23380,7 @@ function lvRemindTick(){
     const bs=lvNice(D(back)), msg=`Your leave ends today.\nWe look forward to seeing you back at work on ${bs}.`;
     l.endTold=apStamp(); any=true;
     notify('info',`Your leave ends today — back on ${bs}`,'leave',{forUser:l.who});
-    const u=(S.users||[]).find(x=>x.name===l.who); const ph=u&&(u.phone||((S.employees||[]).find(e=>String(e.userName||e.name)===l.who)||{}).phone);
+    const ph=lvPhone(l.who);
     if(ph) try{ sms(ph,msg,'staff') }catch(e){} }
   if(any) try{ persist(true) }catch(e){}
 }

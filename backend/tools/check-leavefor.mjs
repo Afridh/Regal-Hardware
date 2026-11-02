@@ -43,7 +43,24 @@ ok(asked.ap && asked.ap.status === 'pending' && asked.ap.title.startsWith(setup.
 // a cashier asks only for themselves
 const cash = await pg.evaluate(() => { const S = window.eval('S'); S.user = { ...S.user, name: 'Cash Tester', role: 'Cashier', perms: ['receive','discount'] }; window.eval('render')(); return !!document.getElementById('lvWho') });
 ok(!cash, 'a Cashier gets no "For" — only their own leave');
-await pg.evaluate(() => { const S = window.eval('S'); S.user = window.__user; S.leaves = JSON.parse(window.__leaves); S.approvals = JSON.parse(window.__aps); window.eval('go')('pos') });
+await pg.evaluate(() => { const S = window.eval('S'); S.user = window.__user });
+// approved: the employee is texted — the mobile found on their employee card, whatever the capitals of the name
+const told = await pg.evaluate((other, day) => { const S = window.eval('S'); window.__emps = JSON.stringify(S.employees || []); window.__usersK = JSON.stringify(S.users);
+  const u = S.users.find(x => x.name === other); delete u.phone; delete u.mobile;
+  S.employees = (S.employees || []).filter(e => String(e.userName || '').toLowerCase() !== other.toLowerCase() && String(e.name || '').toLowerCase() !== other.toLowerCase());
+  S.employees.push({ id: 99901, name: other.toUpperCase(), phone: '077 123 4599', active: true });
+  const l = S.leaves.filter(x => x.who === other && x.status === 'pending').pop(); const n0 = S.messages.length;
+  window.eval('decideApproval')(l.apId, true, '');
+  const sent = S.messages.slice(0, S.messages.length - n0).filter(m => /leave/i.test(m.body));
+  return { status: l.status, to: sent.map(m => m.to), body: (sent.find(m => m.to === '0771234599') || {}).body || '' } }, setup.other, day);
+ok(told.status === 'approved' && told.to.includes('0771234599') && /approved/i.test(told.body) && /Dates:/.test(told.body), 'approved: the employee gets a text, to the mobile on their employee card', JSON.stringify(told));
+// no mobile anywhere: the one approving is told
+const none = await pg.evaluate(async (other) => { const S = window.eval('S'); S.employees = S.employees.filter(e => e.id !== 99901);
+  const l = { id: 'lvT' + Date.now(), who: other, from: '2026-12-20', to: '2026-12-20', type: 'annual', half: false, reason: '', status: 'pending', by: S.user.name, at: '', group: 'employee' };
+  S.leaves.push(l); window.eval('lvApprove')(l.id); await new Promise(r => setTimeout(r, 600));
+  return (document.getElementById('toasts') || {}).textContent || '' }, setup.other);
+ok(/No mobile for/.test(none), 'no mobile on file: the one approving is told the employee was not texted', none.slice(0, 160));
+await pg.evaluate(() => { const S = window.eval('S'); S.leaves = JSON.parse(window.__leaves); S.approvals = JSON.parse(window.__aps); S.employees = JSON.parse(window.__emps); S.users = JSON.parse(window.__usersK); S.user = window.__user; window.eval('go')('pos') });
 // a line between two items on the large bill
 const lines = await pg.evaluate(() => { const C = window.eval('CFG'); const keep = C.bill.a5Style; const S = window.eval('S'); const inv = S.sales.filter(s => s.lines && s.lines.length > 1).pop();
   const out = {}; for (const st of ['boxed', 'sepos']) { C.bill.a5Style = st; const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:0;top:0;width:794px;height:559px'; d.innerHTML = window.eval('billHtml')(inv, 'a5'); document.body.appendChild(d);
