@@ -327,6 +327,20 @@ r.get('/me', custAuth, asyncHandler(async (req, res) => {
     today: localDate() });
 }));
 
+/* A bill by its link: the one it has, any it had before (a bill re-made keeps them), and — for a link that went
+   out in a text but was never kept on a bill (a re-made bill's texts, before 2 Nov 2026) — the bill that text names. */
+function billByLink(S, id) {
+  const ends = (l) => String(l || '').toLowerCase().endsWith('/' + id);
+  const hit = (S.sales || []).find(x => ends(x.link) || (x.links || []).some(ends));
+  if (hit) return hit;
+  for (const m of S.messages || []) {
+    const body = String(m && m.body || ''); if (!body.toLowerCase().includes('/b/' + id)) continue;
+    const named = (S.sales || []).filter(s => s && s.no && new RegExp('(^|[^\\w-])' + String(s.no).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^\\w-])').test(body));
+    if (named.length === 1) return named[0];
+  }
+  return null;
+}
+
 /** The till stores the bill as it printed it, against the link id it was texted with. */
 r.post('/admin/billview', regalAuth, asyncHandler(async (req, res) => {
   const id = String(req.body?.id || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
@@ -350,7 +364,7 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
   if (id.length < 6) throw new HttpError(404, 'That link is not a bill');
   const data = await books();
   const S = data?.S || {}, CFG = data?.CFG || {};
-  const inv = (S.sales || []).find(x => String(x.link || '').toLowerCase().endsWith('/' + id));
+  const inv = billByLink(S, id);
   if (!inv) throw new HttpError(404, 'That bill is not here — the link may be old, or mistyped');
   // the paper the till drew, if it sent it over: that is what the customer should see
   const { rows: [view] } = await query(`SELECT format, html FROM bill_views WHERE id = $1`, [id]).catch(() => ({ rows: [] }));
@@ -431,7 +445,7 @@ r.post('/b/:id/ask-open', asyncHandler(async (req, res) => {
   const id = String(req.params.id || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
   if (id.length < 6) throw new HttpError(404, 'That link is not a bill');
   const data = await books(), S = data?.S || {};
-  const inv = (S.sales || []).find(x => String(x.link || '').toLowerCase().endsWith('/' + id));
+  const inv = billByLink(S, id);
   if (!inv) throw new HttpError(404, 'That bill is not here — the link may be old, or mistyped');
   const c = (S.customers || []).find(x => x.id === inv.customerId);
   if (!c || c.id === 1) throw new HttpError(400, 'This bill is not on an account');
@@ -449,7 +463,7 @@ r.post('/b/:id/feedback', asyncHandler(async (req, res) => {
   const stars = Math.round(+req.body?.stars || 0);
   if (!(stars >= 1 && stars <= 5)) throw new HttpError(400, 'Tap the stars to rate your visit');
   const data = await books(), S = data?.S || {};
-  const inv = (S.sales || []).find(x => String(x.link || '').toLowerCase().endsWith('/' + id));
+  const inv = billByLink(S, id);
   if (!inv) throw new HttpError(404, 'That bill is not here — the link may be old, or mistyped');
   if (inv.feedback || await fbWaiting(id)) return res.json({ ok: true, already: true });
   const tags = (Array.isArray(req.body?.tags) ? req.body.tags : []).filter(x => FB_TAGS.includes(x)).slice(0, 6);

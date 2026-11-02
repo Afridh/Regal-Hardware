@@ -5506,7 +5506,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   let usedCredit=0;
   if(credit>0.005&&customerId!==1){ const held=custCredit(customerId); usedCredit=+Math.min(held,credit).toFixed(2); if(usedCredit>0.005) credit=+(credit-usedCredit).toFixed(2) }
   const assignedSalesman = salesman !== undefined ? salesman : ((S.pos && S.pos.salesman) || null);
-  const inv={no:no||next('INV'),date,type:(credit>0||acct)?'CREDIT':'CASH',customerId,lines:lines.map(l=>(isOpenLine(l)?{...l,cost:l.price,mrp:l.price,open:true}:{...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,credit0:credit,paid0:paid,...(customerId&&customerId!==1?{prevOut:+Math.max(0,partyBal('C',customerId)).toFixed(2)}:{}),pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,loc:(S.locId||undefined),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}),link:billLinkFor(),serial:(S.serial=(((+S.serial)||((+(CFG.bill&&CFG.bill.serialStart))||0))+1))};
+  const inv={no:no||next('INV'),date,type:(credit>0||acct)?'CREDIT':'CASH',customerId,lines:lines.map(l=>(isOpenLine(l)?{...l,cost:l.price,mrp:l.price,open:true}:{...l,cost:P(l.pid).cost,mrp:P(l.pid).mrp})),sub,billDisc,total,paid,balance:credit,credit0:credit,paid0:paid,...(customerId&&customerId!==1?{prevOut:+Math.max(0,partyBal('C',customerId)).toFixed(2)}:{}),pays,by,salesman:assignedSalesman,overLimit,terminal:S.terminal,loc:(S.locId||undefined),time:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}),link:(remakeLink&&remakeLink.no===no&&remakeLink.link)||billLinkFor(),serial:(S.serial=(((+S.serial)||((+(CFG.bill&&CFG.bill.serialStart))||0))+1))};
   S.sales.push(inv);
   if(typeof BroadcastChannel !== 'undefined'){
     try { bcSend('sale_completed'); }catch(_){}
@@ -21502,7 +21502,7 @@ function editSaleModal(no){
     inv.edits=(inv.edits||[]).concat([{at:D(today),by:S.user.name,why:why+(custChanged?' · moved to '+C(newCust).name:''),from:oldTotal,to:newTotal}]);
     notify('warn',`${S.user.name} changed bill ${inv.no} — ${fmt(oldTotal)} to ${fmt(newTotal)}`,'bills');
     if(c.phone&&CFG.msg.autoBill) sms(c.phone,`Your bill has been corrected.\nBill No: ${inv.no}\nNew amount: ${fmt(newTotal)}${inv.balance?`\nStill to pay: ${fmt(inv.balance)}`:''}${why?`\nReason: ${why}`:''}`,'customer');
-    m.remove(); render(); showInvoice(inv,'r80');
+    m.remove(); render(); showInvoice(inv,'r80'); sendBillView(inv);
     toast(`${inv.no} changed · ${fmt(oldTotal)} to ${fmt(newTotal)}`);
   };
   draw();
@@ -21611,8 +21611,10 @@ function billToTill(no){
   m.querySelector('#ebNo').onclick=()=>m.remove();
   inp.onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); go2() } if(e.key==='Escape'){ e.preventDefault(); m.remove() } };
 }
+let remakeLink=null;   // the link of the bill being re-made, for completeSale to keep
 function retireBill(no){
   const old=S.sales.find(x=>x.no===no); if(!old) return null;
+  remakeLink={no:old.no,link:old.link||null};
   // 1. the stock the old bill took comes back
   old.lines.forEach(l=>move(l.pid,l.qty,'SALE_RETURN',no+' re-made',l.cost));
   // 2. every entry the old bill made is reversed, line for line — before the new one is posted
@@ -21628,7 +21630,8 @@ function finishRemake(r,fresh){
   const use=+Math.min(carry,fresh.balance).toFixed(2);
   if(use>0){ fresh.paid=+(fresh.paid+use).toFixed(2); fresh.balance=+(fresh.balance-use).toFixed(2); fresh.type=fresh.balance>0?'CREDIT':fresh.type; fresh.credit0=fresh.balance; fresh.paid0=fresh.paid }
   fresh.remade=(old.remade||[]).concat([{at:D(today),by:S.user.name,total:old.total,lines:old.lines.length,why:r.why||''}]);
-  fresh.edits=old.edits; fresh.date=old.date; fresh.link=old.link;
+  fresh.edits=old.edits; fresh.date=old.date; if(old.link){ if(fresh.link&&fresh.link!==old.link) fresh.links=(fresh.links||[]).concat([fresh.link]); fresh.link=old.link } remakeLink=null;
+  setTimeout(()=>sendBillView(fresh),50);   // the paper behind the link: the bill as it is now
   S.sales.pop(); S.sales.splice(idx,0,fresh);          // back where the old one sat
   notify('warn',`${S.user.name} re-made bill ${old.no} — ${fmt(old.total)} to ${fmt(fresh.total)}`,'bills');
   logTrail('billRemade',`${old.no} — ${fmt(old.total)} became ${fmt(fresh.total)}`,
