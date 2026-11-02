@@ -23,6 +23,7 @@ if (await pg.$('#lockScreen')) {
   await pg.waitForFunction(() => !document.getElementById('lockScreen'), { timeout: 20000 });
 }
 await wait(1500);
+await pg.evaluate(() => { window.eval('CFG').prodForm = 'simple' });   // this check drives the one-product form (the updater has check-produpd)
 await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); window.__sent = []; window.labelSheet = l => window.__sent.push(l.map(x => ({ pid: x.pid, copies: x.copies }))) });
 
 // 1. a new product, opening stock 6

@@ -24,6 +24,7 @@ if (await pg.$('#lockScreen')) {
   await pg.waitForFunction(() => !document.getElementById('lockScreen'), { timeout: 20000 });
 }
 await wait(1500);
+await pg.evaluate(() => { window.eval('CFG').prodForm = 'simple' });   // this check drives the one-product form (the updater has check-produpd)
 const sup = await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); window.labelSheet = () => {};
   const S = window.eval('S'); const s = S.suppliers.filter(x => x.active !== false); window.eval('go')('products'); return { a: s[0].name, aId: s[0].id, b: s[1].name, bId: s[1].id } });
 const addOne = async (name, supName, again) => {

@@ -45,6 +45,7 @@ ok(JSON.stringify(prod.tiers) && prod.tiers.length === 2 && prod.points === 2, '
 
 // 2. the till follows the quantity, both ways
 const till = await pg.evaluate(id => { const S = window.eval('S'), P = window.eval('P'), priceFor = window.eval('priceFor');
+  document.querySelectorAll('.modal').forEach(m => m.remove());   // the product updater stays open after a save
   window.eval('go')('pos'); S.pos.lines = []; window.eval('qAdd')(id); const l = S.pos.lines[0];
   const at1 = l.price; l.qty = 10; l.price = priceFor(P(id), l.qty); const at10 = l.price;
   return { at1, at10, p49: priceFor(P(id), 49), p50: priceFor(P(id), 50), p60: priceFor(P(id), 60), back: priceFor(P(id), 20) } }, pid).catch(e => ({ err: e.message }));
