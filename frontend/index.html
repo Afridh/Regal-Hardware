@@ -28223,14 +28223,14 @@ function inventory(){
   const tabs=isSalesman?[['products','Products'],['stock','Stock']]:[['products','Products'],['stock','Stock'],['ledger','Stock ledger'],['damage','Damaged goods']];
   if(isSalesman&&invTab!=='products'&&invTab!=='stock') invTab='products';
   let body='';
-  if(invTab==='products'){ const q=prodQ.toLowerCase().trim(); const list=q?codeExact(q,S.products).concat(prodSearch(S.products,q)).filter((p,i,a)=>a.indexOf(p)===i):S.products.slice();
+  if(invTab==='products'){ const q=prodQ.toLowerCase().trim(); const list=q?codeExact(q,S.products).concat(prodSearch(S.products,q)).filter((p,i,a)=>a.indexOf(p)===i):S.products.slice().reverse();   // nothing typed: the newest added on top
     const shown=list.slice(0,invLimit);
     const clashN=isSalesman?0:codeClashes().length;
     body=`${clashN?`<div class="card" style="background:#FFF4DC;border-color:#F0D08A;margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:240px"><b>${clashN} item number${clashN===1?'':'s'} ${clashN===1?'is':'are'} also another product's barcode or code</b><div class="muted">Typing or scanning that number would find the wrong product. Fix gives each one its own old sticker number where that's free, or a new number no product uses.</div></div><button class="btn tape" data-act="codeFix">Fix ${clashN===1?'it':'them'}</button></div>`:''}<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
       <input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search item name, code, short code, barcode or category…" style="max-width:380px">
       ${!isSalesman?`<button class="btn tape" data-act="newProd">Add a product</button>`:''}
       ${canApprove()?`<button class="btn ghost" data-act="catMgr">Categories</button>${payBoss()?'<button class="btn sm" data-act="catTidy" style="background:#FFF4DC;border-color:#F0D08A;color:#8A5D06">Tidy the categories</button>':''}`:''}
-      <span class="muted" style="margin-left:auto">${list.length} of ${S.products.length} products</span></div>
+      <span class="muted" style="margin-left:auto">${list.length} of ${S.products.length} products${q?"":" · newest first"}</span></div>
      <table><tr><th>No.</th><th>Code</th><th>Short</th><th>Item</th><th>Supplier</th><th>Unit</th><th class="n">MRP</th>${!isSalesman?`<th class="n">Cost${CFG.cost.inProducts&&can('cost')?' code':''}</th>`:''}<th class="n">Discounted</th><th class="n">Wholesale</th>${!isSalesman?'<th class="n">Margin</th>':''}<th class="n">In stock</th>${!isSalesman?'<th></th>':''}</tr>
      ${shown.map(p=>`<tr class="rowlink" ${!isSalesman?`data-act="prodHist" data-id="${p.id}"`:''}><td><span class="pnum">${p.num||''}</span></td><td>${p.code}${p.barcode&&String(p.barcode)!==String(p.code)?`<div class="muted">${p.barcode}</div>`:''}${p.oldCode?`<div class="muted" style="font-size:11px">was ${p.oldCode}</div>`:''}</td>
       <td>${p.short?`<span class="shortcode">${p.short}</span>`:'<span class="muted">—</span>'}</td>
