@@ -966,6 +966,7 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 .su{max-width:1120px;margin:0 auto}
 .chips button.chip-off{border-style:dashed;color:var(--muted)}.chips button.chip-off.on{border-style:solid;color:inherit}
 /* an update is on the server: a button, never a reload by itself */
+.sizeq .billpick.qf-pick{grid-template-columns:repeat(5,1fr)}@media (max-width:900px){.sizeq .billpick.qf-pick{grid-template-columns:1fr 1fr}}
 #updReady{position:fixed;left:50%;transform:translateX(-50%);top:50px;z-index:96;display:flex;align-items:center;gap:10px;padding:10px 18px;border:0;border-radius:99px;cursor:pointer;
  font:700 14px 'IBM Plex Sans',system-ui,sans-serif;color:#fff;background:linear-gradient(135deg,#1E8A5A,#16799B);box-shadow:0 10px 26px rgba(16,30,34,.28);animation:updIn .35s cubic-bezier(.2,.8,.3,1)}
 #updReady:hover{filter:brightness(1.08)}#updReady i{font-style:normal;font-size:17px}#updReady small{font-weight:500;opacity:.85}
@@ -20808,6 +20809,9 @@ function tenderEmail(t){
 const DOCK={QUOTE:{label:'Quotation',short:'Quote',seq:'QTN'},DN:{label:'Delivery Note',short:'Delivery note',seq:'DN'}};
 /* A quotation goes to the customer by a link too (regalhw.lk/q/…, the e-bill page in its quotation dress):
    every item with its MRP and our price, what they save, and the day it holds good until (2 Nov 2026). */
+/* the customer and the products of a quotation, safe when either has since gone from the books */
+const docCust=(d)=>C(d.customerId)||C(1)||{id:1,name:'Walk-in customer',phone:''};
+const docProd=(l)=>P(l.pid)||{code:'',name:l.name||'Item',unit:'',mrp:+l.mrp||0};
 const quoteLinkFor=()=>billLinkFor().replace('/b/','/q/');
 const quoteUntil=(d)=>{ const x=new Date(d.date+'T12:00:00'); x.setDate(x.getDate()+(+d.valid||0)); return x.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) };
 function quoteSend(no,how,other){
@@ -20834,14 +20838,62 @@ function saveDoc(kind,ref){
     vehicle:'',note:String(ref||'').trim(),...(kind==='QUOTE'?{link:quoteLinkFor()}:{})};
   S.docs.push(doc);
   clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
-  render(); docPrint(doc.no);
-  toast(`${DOCK[kind].label} ${doc.no} saved for ${c.name}`);
+  render(); if(kind==='QUOTE') quoteFinish(doc); else docPrint(doc.no);
+  if(kind!=='QUOTE') toast(`${DOCK[kind].label} ${doc.no} saved for ${c.name}`);
 }
 /* The quotation as it goes on paper. Small bill selected, it comes off the 80mm roll in the same
    hand as a till receipt; large bill, it is the A5 sheet. The choice is the one already made at the
    top of the till, so nobody has to think about it twice. */
+/* A quotation just saved: the customer's mobile, then how it goes — the large A5 sheet, the small 80mm
+   slip, its link by text or WhatsApp, or nothing for now (2 Nov 2026). One window, a key for each:
+   1 large · 2 small · 3 text · 4 WhatsApp · 5 no print; Enter takes the one lit. */
+function quoteSendTo(d,how,to){
+  if(!d.link){ d.link=quoteLinkFor() }
+  const c=docCust(d), v={quote:d.no,total:fmt(d.total),until:quoteUntil(d),customer:c.id===1?'':c.name,link:d.link};
+  d.phone=to; d.sent=(d.sent||[]).concat([{at:apStamp(),to,how,by:S.user.name}]).slice(-10);
+  if(how==='wa') wa(to,tpl('quoteLink',v),'quoteLink',v,'customer'); else sms(to,tpl('quoteLink',v),'customer');
+  persist(true); toast(`Quotation ${d.no} ${how==='wa'?'on WhatsApp':'texted'} to ${to}`,'ok');
+}
+function quoteFinish(d){
+  const c=docCust(d), had=c.id!==1&&c.phone?c.phone:'';
+  const OPTS=[['a5','1','🖨','Large bill','A5 sheet, every item with its MRP'],['r80','2','🧾','Small bill','80mm slip'],
+    ['text','3','📱','Text the link','to the mobile above'],['wa','4','💬','WhatsApp','the link, on WhatsApp'],['none','5','✕','No print','send or print it later from Quotes']];
+  let cur=csPaper()==='r80'?'r80':'a5';
+  const m=modal(`<div class="sizeq"><h2 style="margin:0 0 2px">Quotation ${d.no} saved</h2>
+   <div class="muted">${c.id===1?'Walk-in':noteEsc(c.name)} · ${fmt(d.total)} · holds good until ${quoteUntil(d)}</div>
+   <div class="f" style="margin-top:12px"><label>Customer's mobile <span class="muted">— for the link, and kept with the quotation</span></label>
+    <input id="qfP" inputmode="tel" placeholder="07XXXXXXXX" value="${noteEsc(had||d.phone||'')}" autocomplete="off"></div>
+   ${c.id!==1&&!had?`<label class="chk"><input type="checkbox" id="qfKeep" checked> keep it on ${noteEsc(c.name)}’s card</label>`:''}
+   <div class="muted" id="qfM" style="min-height:18px;color:var(--chip-rust)"></div>
+   <div class="billpick qf-pick">${OPTS.map(([k,n,ic,l,sub])=>`<button class="pick ${k===cur?'def on':''}" data-qf="${k}"><i>${n}</i><b>${ic} ${l}</b><span>${sub}</span></button>`).join('')}</div></div>`);
+  const ph=m.querySelector('#qfP');
+  const light=(k)=>{ cur=k; m.querySelectorAll('[data-qf]').forEach(b=>{ const on=b.dataset.qf===k; b.classList.toggle('on',on); b.classList.toggle('def',on) }) };
+  const go=(k)=>{
+    const to=ph.value.replace(/[^\d+]/g,'').trim();
+    if(to&&!/^(0\d{9}|\+?94\d{9})$/.test(to)){ m.querySelector('#qfM').textContent='That is not a mobile number — 07XXXXXXXX'; ph.focus(); return }
+    if((k==='text'||k==='wa')&&!to){ m.querySelector('#qfM').textContent='Type their mobile first, to send the link'; ph.focus(); return }
+    if(to){ d.phone=to; const keep=m.querySelector('#qfKeep'); if(keep&&keep.checked&&c.id!==1&&!c.phone){ c.phone=to; try{ logTrail('other',`${c.name}: mobile set to ${to} (quotation ${d.no})`,{ref:c.code||String(c.id)}) }catch(e){} } }
+    stop(); m.remove(); persist(true);
+    if(k==='a5'||k==='r80') docToPaper(d,k);
+    else if(k==='text'||k==='wa') quoteSendTo(d,k,to);
+    else toast(`${d.no} saved — print or send it from Quotes & delivery notes`,'ok');
+    render();
+  };
+  m.querySelectorAll('[data-qf]').forEach(b=>b.onclick=()=>go(b.dataset.qf));
+  const keys=(e)=>{ if(!document.body.contains(m)) return stop();
+    const inBox=e.target===ph;
+    if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); stop(); m.remove(); toast(`${d.no} saved — print or send it from Quotes`,'ok'); return }
+    // Enter after typing the mobile moves to the choices (nothing goes yet); Enter on a choice takes it
+    if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); if(inBox&&ph.value.trim()){ m.querySelector(`[data-qf="${cur}"]`).focus(); return } go(cur); return }
+    if(!inBox&&/^[1-5]$/.test(e.key)){ e.preventDefault(); e.stopPropagation(); go(OPTS[+e.key-1][0]); return }
+    if(!inBox&&(e.key==='ArrowRight'||e.key==='ArrowLeft')){ e.preventDefault(); const i=OPTS.findIndex(o=>o[0]===cur); light(OPTS[(i+(e.key==='ArrowRight'?1:OPTS.length-1))%OPTS.length][0]) }
+    if(inBox&&e.key==='ArrowDown'){ e.preventDefault(); m.querySelector(`[data-qf="${cur}"]`).focus() } };
+  const stop=()=>document.removeEventListener('keydown',keys,true);
+  document.addEventListener('keydown',keys,true);
+  setTimeout(()=>{ if(had) m.querySelector(`[data-qf="${cur}"]`).focus(); else ph.focus() },40);
+}
 function docPaperHtml(doc,f){
-  const c=C(doc.customerId), k=DOCK[doc.kind], SH=CFG.shop, B=CFG.bill;
+  const c=docCust(doc), k=DOCK[doc.kind], SH=CFG.shop, B=CFG.bill;
   const qty=doc.lines.reduce((a,l)=>a+l.qty,0);
   const gross=doc.lines.reduce((a,l)=>a+l.qty*l.price,0);
   const disc=doc.lines.reduce((a,l)=>a+(l.disc||0),0)+(doc.billDisc||0);
@@ -20924,14 +20976,15 @@ function docPrint(no,opts){
   const preview=!!(opts&&opts.preview);
   const f=(opts&&opts.format)||csPaper();
   if(!preview){ const d0=S.docs.find(d=>d.no===no); if(d0) return (opts&&opts.format)?docToPaper(d0,f):docPaperAsk(d0) }
-  const doc=S.docs.find(d=>d.no===no), c=C(doc.customerId), k=DOCK[doc.kind];
+  const doc=S.docs.find(d=>d.no===no); if(!doc) return toast('That quotation is not here any more');
+  const c=docCust(doc), k=DOCK[doc.kind];
   const qty=doc.lines.reduce((a,l)=>a+l.qty,0);
   const gross=doc.lines.reduce((a,l)=>a+l.qty*l.price,0);
   const disc=doc.lines.reduce((a,l)=>a+l.disc,0)+doc.billDisc;
-  const rows=doc.lines.map((l,i)=>{const p=P(l.pid);return `<tr>
-    <td>${i+1}</td><td>${p.code}</td><td class="d">${p.name.toUpperCase()}</td>
-    <td class="n">${l.qty.toFixed(2)}</td><td class="u">${p.unit.toUpperCase()}</td>
-    ${doc.kind==='QUOTE'?`<td class="n">${mrpShown(p.mrp,l.price)?money2(p.mrp):'—'}</td><td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-l.disc)}</td>`
+  const rows=doc.lines.map((l,i)=>{const p=docProd(l);return `<tr>
+    <td>${i+1}</td><td>${p.code||''}</td><td class="d">${noteEsc(lineName(l)||p.name||'Item').toUpperCase()}</td>
+    <td class="n">${l.qty.toFixed(2)}</td><td class="u">${String(p.unit||'').toUpperCase()}</td>
+    ${doc.kind==='QUOTE'?`<td class="n">${+p.mrp>0?money2(p.mrp):'—'}</td><td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-l.disc)}</td>`
       :`<td class="n" colspan="3">&nbsp;</td>`}</tr>`}).join('');
   const filler=Array.from({length:Math.max(0,CFG.bill.blankLines-doc.lines.length)},()=>'<tr class="blank"><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join('');
   modal(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
