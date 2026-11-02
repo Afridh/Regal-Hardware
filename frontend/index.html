@@ -23089,7 +23089,8 @@ const APPROVAL_KINDS=[
   ['supPay','Supplier paid by someone other than an admin'],
   ['supPayPrep','A supplier payment prepared (cheque written) by someone other than an admin'],
   ['chqCancel','A cheque we wrote cancelled (the payment taken back)'],
-  ['stockAdj','Stock adjusted — a stock take closed, or counts from phones posted']];
+  ['stockAdj','Stock adjusted — a stock take closed, or counts from phones posted'],
+  ['pettyBack','Petty cash balance handed in (counted in once approved)']];
 /* Money in and money out. Only the Super Admin, the Owner or an Admin record a payment straight away;
    anyone else's — even someone allowed to approve other things — waits for one of them to say yes, and
    only then does it reach the customer's or supplier's account. */
@@ -23128,6 +23129,10 @@ function applyApproval(a){
     case 'supPortal':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supPortalSet(s,d.field,!!d.value); break }
     case 'supStock':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supStockOpen(s); break }
     case 'leave':{ lvApprove(d.id); break }
+    case 'pettyBack':{ const p=pettyList().find(x=>x.id===d.id); if(!p||p.status!=='open') throw new Error('That petty cash is already closed');
+      if(!p.submitted||p.submitted.apId!==a.id) throw new Error('A newer hand-in replaced this one');
+      pettySettleNow(p,+p.submitted.amount,'cash',+p.submitted.amount<pettyLeft(p)-0.005?'pay':'',a.by+' (approved by '+S.user.name+')');
+      notify('money',`Your petty cash hand-in of ${fmt(p.settled.back)} (${p.no}) is approved and counted in`,'petty',{forUser:p.who}); break }
     case 'listBill': case 'overLimit': break;
     case 'openBal': openBalAdd(d.type,d.id,d.amt,d.date,d.note,a.by); break;
     case 'partyActive': partyActivate(d.type,d.id,S.user.name); break;      // the yes itself is what the till looks for (dirApproved)
@@ -23259,6 +23264,9 @@ function decideApproval(id,ok,note){
   if(ok){ try{ applyApproval(a) }catch(e){ a.status='failed'; a.note=(a.note?a.note+' · ':'')+e.message } }
   if(a.kind==='salaryAsk'&&a.status!=='approved') salTell(a.data||{},false,a.note);
   if(a.kind==='supPayPrep'&&a.status!=='approved'){ const r=payReqs().find(x=>x.id===(a.data||{}).prId); if(r){ delete r.apWait; r.events=r.events||[]; r.events.push({actor:'shop',name:S.user.name,action:'declined',note:a.note||'',at:Date.now()}) } }
+  if(a.kind==='pettyBack'&&a.status!=='approved'){ const p=pettyList().find(x=>x.id===(a.data||{}).id);
+    if(p&&p.status==='open'&&p.submitted&&p.submitted.apId===a.id){ delete p.submitted;
+      notify('warn',`Your petty cash hand-in (${p.no}) was turned down${a.note?' — '+a.note:''} — check it and hand it in again`,'petty',{forUser:p.who}) } }
   if(a.kind==='leave'&&a.status!=='approved'){ const l=lvList().find(x=>x.id===(a.data||{}).id); if(l&&l.status==='pending'){ l.status='rejected'; l.note=a.note; l.decidedBy=S.user.name; lvTell(l,false,a.note) } }
   notify('approval',`${a.status==='approved'?'Approved':a.status==='failed'?'Could not apply':'Turned down'}: ${a.title}${a.note?' — '+a.note:''}`,'approvals',{forUser:a.by});
   render(); toast(a.status==='approved'?'Approved and applied':a.status==='failed'?'Approved but could not be applied — '+a.note:'Turned down');
@@ -30049,15 +30057,42 @@ function pettySubmitModal(id){
   q('#pbOk').onclick=()=>{
     const amount=+(+q('#pbAmt').value||0).toFixed(2), note=q('#pbNote').value.trim();
     if(amount<0) return;
+    // a balance handed in by anyone but the owner or an admin waits for their yes (2 Nov 2026) — approved,
+    // it is counted into the cash drawer and the petty cash closes; turned down, it is theirs to hand in again
+    const old=was&&was.apId&&(S.approvals||[]).find(x=>x.id===was.apId&&x.status==='pending'); if(old){ old.status='cancelled'; old.note='handed in again' }
     p.submitted={amount,note,at:apStamp(),date:D(today),by:S.user.name,expected:exp};
-    notify('cash',`${p.who} handed in ${fmt(amount)} petty cash (${p.no})${Math.abs(amount-exp)>=0.005?' — '+fmt(Math.abs(amount-exp))+(amount<exp?' short':' over'):''} — count it in`,'petty',{forApprovers:true});
+    const gap=+(amount-exp).toFixed(2), gapTxt=Math.abs(gap)>=0.005?` — ${fmt(Math.abs(gap))} ${gap<0?'short':'over'}`:'';
+    if(!payBoss()&&(CFG.approvals||{}).pettyBack!==false){
+      const ap=requestApproval('pettyBack',`${p.who} hands in ${fmt(amount)} petty cash (${p.no})${gapTxt}`,
+        `Given ${fmt(pettyGiven(p))} · spent ${fmt(pettySpent(p))} in ${p.spent.length} expense${p.spent.length===1?'':'s'} · should have ${fmt(exp)}${gap<-0.005?' · the short is taken from their pay (to write it off instead, turn this down and close it at the counter)':''}${note?' · “'+note+'”':''}`,
+        {id:p.id,amount},{keep:true});
+      p.submitted.apId=ap.id;
+      m.remove(); persist(true); render(); toast('Handed in — sent to the owner for approval','ok'); return }
+    notify('cash',`${p.who} handed in ${fmt(amount)} petty cash (${p.no})${gapTxt} — count it in`,'petty',{forApprovers:true});
     m.remove(); persist(true); render(); toast('Handed in — the counter counts it in','ok');
   };
 }
 
+/* counting it back in and closing: the books, a short taken from pay or written off, an over kept */
+function pettySettleNow(p,back,toKey,how,by){
+  const exp=pettyLeft(p), gap=+(back-exp).toFixed(2), to=pettyFrom(toKey); by=by||S.user.name;
+  const jl=[]; if(back>0) jl.push({ac:to.ac,dr:back});
+  if(exp>0.005) jl.push({ac:'1015',cr:exp}); else if(exp<-0.005) jl.push({ac:'1015',dr:-exp});
+  if(gap<-0.005){ if(how==='pay') jl.push({ac:'1300',dr:-gap}); else jl.push({ac:'6095',dr:-gap}) }
+  if(gap>0.005) jl.push({ac:'4900',cr:gap});
+  post(D(today),`Petty cash back from ${p.who} — ${p.no}`,p.no,jl);
+  if(gap<-0.005&&how==='pay'){ const e=(S.employees||[]).find(x=>x.name===p.who||x.userName===p.who);
+    if(e){ const adv={id:'A'+Math.random().toString(36).slice(2,7),empId:e.id,date:D(today),amount:-gap,note:'petty cash short '+p.no,by:S.user.name,recovered:false};
+      S.advances=(S.advances||[]).concat([adv]); e.advance=+((+e.advance||0)-gap).toFixed(2) } }
+  p.status='settled'; p.settled={back,gap,how,into:to.name,date:D(today),at:apStamp(),by};
+  if(Math.abs(gap)>=0.005) notify('cash',`${p.no}: ${p.who} brought back ${fmt(back)}, ${fmt(Math.abs(gap))} ${gap<0?'short'+(how==='pay'?' — from their pay':' — written off'):'over'}`,'petty',{forApprovers:true});
+  return {exp,gap,to};
+}
 function pettySettleModal(id){
   const p=pettyList().find(x=>x.id===id); if(!p||p.status!=='open') return;
   if(!pettyMayGive()) return toast('The money is counted back in at the counter');
+  const waitAp=p.submitted&&p.submitted.apId&&(S.approvals||[]).find(x=>x.id===p.submitted.apId&&x.status==='pending');
+  if(waitAp&&!canApprove()) return toast(`${p.who}'s hand-in is waiting for the owner's approval — once approved it is counted in`);
   const exp=pettyLeft(p);
   const m=modal(`<h2>${noteEsc(p.who)} brings the petty cash back</h2>
    <table style="margin:8px 0"><tr><td>Given</td><td class="n">${fmt(pettyGiven(p))}</td></tr>
@@ -30081,16 +30116,9 @@ function pettySettleModal(id){
     if(back<0) return;
     if(gap<-0.005&&!canApprove()) return toast('It is short — the owner or an admin closes this one');
     const how=gap<-0.005?(m.querySelector('[name="psHow"]:checked')||{}).value||'pay':'';
-    const jl=[]; if(back>0) jl.push({ac:to.ac,dr:back});
-    if(exp>0.005) jl.push({ac:'1015',cr:exp}); else if(exp<-0.005) jl.push({ac:'1015',dr:-exp});
-    if(gap<-0.005){ if(how==='pay') jl.push({ac:'1300',dr:-gap}); else jl.push({ac:'6095',dr:-gap}) }
-    if(gap>0.005) jl.push({ac:'4900',cr:gap});
-    post(D(today),`Petty cash back from ${p.who} — ${p.no}`,p.no,jl);
-    if(gap<-0.005&&how==='pay'){ const e=(S.employees||[]).find(x=>x.name===p.who||x.userName===p.who);
-      if(e){ const adv={id:'A'+Math.random().toString(36).slice(2,7),empId:e.id,date:D(today),amount:-gap,note:'petty cash short '+p.no,by:S.user.name,recovered:false};
-        S.advances=(S.advances||[]).concat([adv]); e.advance=+((+e.advance||0)-gap).toFixed(2) } }
-    p.status='settled'; p.settled={back,gap,how,into:to.name,date:D(today),at:apStamp(),by:S.user.name};
-    if(Math.abs(gap)>=0.005) notify('cash',`${p.no}: ${p.who} brought back ${fmt(back)}, ${fmt(Math.abs(gap))} ${gap<0?'short'+(how==='pay'?' — from their pay':' — written off'):'over'}`,'petty',{forApprovers:true});
+    pettySettleNow(p,back,q('#psTo').value,how);
+    // closed at the counter: a hand-in still waiting for a yes is done with
+    if(waitAp){ waitAp.status='cancelled'; waitAp.note='counted in at the counter by '+S.user.name }
     m.remove(); persist(true); render(); toast(`${p.no} closed — ${fmt(back)} back`,'ok');
     voucherPrint({title:'Petty Cash Settled',no:p.no,date:D(today),payee:p.who,payeeLabel:'ACCOUNTED FOR BY',payeeSub:'petty cash',amount:back,totalLabel:'CASH BACK',
       lines:p.spent.map(x=>[`${x.desc} (${GL[x.cat]})`,x.amount]),linesLabel:'Spent',
@@ -30864,7 +30892,7 @@ function pettyPage(){
       ${p.spent.length?`<table class="pc-exp">${p.spent.map(x=>`<tr><td>${x.at.slice(11)||x.date}</td><td>${noteEsc(x.desc)}<div class="muted">${GL[x.cat]}${x.by!==p.who?' · put in by '+noteEsc(x.by):''}</div></td><td class="n">${fmt(x.amount)}</td>
         <td>${(canApprove()||(x.by===S.user.name&&x.date===t))?`<button class="btn ghost sm" data-act="pcUndo" data-id="${p.id}" data-no="${x.id}" title="Take it off">×</button>`:''}</td></tr>`).join('')}</table>`:'<div class="muted" style="margin:6px 0">Nothing spent yet.</div>'}
       <div class="rowacts" style="margin-top:8px;flex-wrap:wrap">
-       ${p.submitted?`<span class="tag ok" title="${noteEsc(p.submitted.note||'')}">handed in ${fmt(p.submitted.amount)} · ${p.submitted.at.slice(11)}</span>`:(new Date().getHours()>=17&&p.opened<=t?'<span class="tag bad">not handed in yet</span>':'')}
+       ${p.submitted?`<span class="tag ok" title="${noteEsc(p.submitted.note||'')}">handed in ${fmt(p.submitted.amount)} · ${p.submitted.at.slice(11)}</span>${p.submitted.apId&&(S.approvals||[]).some(x=>x.id===p.submitted.apId&&x.status==='pending')?' <span class="tag warn">waiting for approval</span>':''}`:(new Date().getHours()>=17&&p.opened<=t?'<span class="tag bad">not handed in yet</span>':'')}
        ${(pettyMine(p)||may)?`<button class="btn tape sm" data-act="pcExp" data-id="${p.id}">+ An expense</button>`:''}
        ${pettyMine(p)?`<button class="btn sm" data-act="pcSubmit" data-id="${p.id}">${p.submitted?'Change what I hand in':'Hand in the balance'}</button>`:''}
        ${may?`<button class="btn ghost sm" data-act="pcGive" data-who="${noteEsc(p.who)}">Top up</button><button class="btn sm" data-act="pcSettle" data-id="${p.id}">Brought back — count it in</button>`:''}</div></div>` };
