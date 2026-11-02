@@ -66,7 +66,9 @@ const splitLink = (v) => { const m = /^(.*)\.([a-z0-9]{6,})$/i.exec(String(v || 
 const byCode = (S, code) => { const k = splitLink(code).code; return (S.customers || []).find(c => c.id !== 1 && norm(c.code) === norm(k) && c.active !== false); };
 const keyOk = (c, v) => { const key = splitLink(v).key, want = String(c?.pkey || '').toLowerCase();
   return !!(key && want && key.length === want.length && crypto.timingSafeEqual(Buffer.from(key), Buffer.from(want))); };
-const byPhone = (S, phone) => (S.customers || []).filter(c => c.id !== 1 && digits(c.phone) === phone && c.active !== false);
+// the main mobile or the second one on the card (2 Nov 2026)
+const hasPhone = (c, phone) => !!phone && (digits(c.phone) === phone || digits(c.phone2) === phone);
+const byPhone = (S, phone) => (S.customers || []).filter(c => c.id !== 1 && hasPhone(c, phone) && c.active !== false);
 
 function otpFor(phone, when = Date.now()) {
   const win = Math.floor(when / OTP_WINDOW_MS);
@@ -248,7 +250,7 @@ r.post('/otp', asyncHandler(async (req, res) => {
   if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'Enter a mobile like 0771234567');
   const list = byPhone(S, phone);
   const c = own || (req.body?.code ? list.find(x => norm(x.code) === norm(splitLink(req.body.code).code)) || byCode(S, req.body.code) : list[0]);
-  if (!c || digits(c.phone) !== phone) throw new HttpError(404, 'That mobile is not the one the shop has for this account');
+  if (!c || !hasPhone(c, phone)) throw new HttpError(404, 'That mobile is not the one the shop has for this account');
   if (!pageOpen(S, data?.CFG, c)) throw new HttpError(403, 'The shop has not opened this page for you yet — give them a ring');
   sendingCode(phone, req.ip);
   const code = otpFor(phone);

@@ -5291,7 +5291,13 @@ function letter(aud,body,open){
 }
 function supSms(to,body){ const t=supTest(); return t?sms(t,`[TEST · for ${to||'no number'}]\n${letter('supplier',body)}`,'raw'):sms(to,body,'supplier') }
 function supWa(to,body){ const t=supTest(); return t?wa(t,`[TEST · for ${to||'no number'}]\n${letter('supplier',body,/\s$/.test(body))}`,null,null,'raw'):wa(to,body,null,null,'supplier') }
-function sms(to,body,aud){
+/* A customer or supplier can have a second mobile (2 Nov 2026). When their card has "send texts to both
+   numbers" ticked, every text that goes to their main number goes to the second one too. */
+const ph2Of=(to)=>{ const d=String(to||'').replace(/\D/g,''); if(!/^0\d{9}$/.test(d)) return '';
+  const x=S.customers.find(c=>c.id!==1&&c.active!==false&&c.phone2Sms&&String(c.phone||'').replace(/\D/g,'')===d)||(S.suppliers||[]).find(s=>s.active!==false&&s.phone2Sms&&String(s.phone||'').replace(/\D/g,'')===d);
+  const p2=x?String(x.phone2||'').replace(/\D/g,''):''; return /^0\d{9}$/.test(p2)&&p2!==d?p2:'' };
+function sms(to,body,aud,copy){
+  if(!copy&&aud!=='owner'&&aud!=='staff'){ const p2=ph2Of(to); if(p2){ const r=sms(to,body,aud,true); sms(p2,body,aud,true); return r } }
   const plain=body;
   // a message from a template is written to whoever that template is for
   if(!aud&&tpl.last&&tpl.last.body===body) aud=TPL_AUD[tpl.last.key]||'customer';
@@ -10820,7 +10826,7 @@ const DD_MAX=150;
 function ddRows(kind,q){
   const d=poDraft, t=String(q||'').trim().toLowerCase();
   if(kind==='sup'){
-    const items=S.suppliers.filter(x=>x.active!==false&&(!t||[x.name,x.code,x.contact,x.phone].some(v=>String(v||'').toLowerCase().includes(t))));
+    const items=S.suppliers.filter(x=>x.active!==false&&(!t||[x.name,x.code,x.contact,x.phone,x.phone2].some(v=>String(v||'').toLowerCase().includes(t))));
     return { items, empty:'No supplier by that name.', foot:'',
       html:items.map(x=>`<div data-id="${x.id}" class="${d.sid===x.id?'cur':''}"><span><b>${x.name}</b> <span class="muted">${x.code||''}</span>${d.sid===x.id?' <span class="tag ok">chosen</span>':''}</span>
         <span class="muted">${x.contact||''}${x.contact&&x.phone?' · ':''}${x.phone||''}</span></div>`).join('') };
@@ -10935,7 +10941,7 @@ The ${n} item${n===1?'':'s'} already on it will be removed.`)){ d.supOpen=false;
   poDraft.prodOpen=true; render();                                  // their products open, ready to pick
 }
 const supHits=q=>{ const t=String(q||'').trim().toLowerCase(); if(!t) return [];
-  return S.suppliers.filter(x=>x.active!==false&&[x.name,x.code,x.contact,x.phone].some(v=>String(v||'').toLowerCase().includes(t))).slice(0,8) };
+  return S.suppliers.filter(x=>x.active!==false&&[x.name,x.code,x.contact,x.phone,x.phone2].some(v=>String(v||'').toLowerCase().includes(t))).slice(0,8) };
 /* An order is built the way a bill is: find the item, say how many, it drops onto the list.
    Picking used to mean "one of these" and a trip to the quantity box in the table, which is
    not how anybody at the counter works. */
@@ -22827,6 +22833,7 @@ function askNumber(inv,how,send){
    <div class="hb-ask"><b>${inv.no}</b><span>${fmt(inv.total)} · ${inv.date} ${inv.time||''}${c.id!==1?' · '+noteEsc(c.name)+(had?' · '+had+' on their card':''):' · walk-in'}${inv.phone&&inv.phone!==had?' · last sent to '+inv.phone:''}</span></div>
    <div class="f" style="margin-top:10px"><label>Mobile</label>
     <input id="anPhone" inputmode="tel" placeholder="07XXXXXXXX" value="${other?'':billPhone(inv)}"></div>
+   ${c.id!==1&&c.phone2?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${[had,c.phone2].filter(Boolean).map(p=>`<button class="btn ghost sm" data-anp="${p}">${p}</button>`).join('')}</div>`:''}
    ${c.id!==1?(had?`<label class="chk"><input type="checkbox" id="anKeep"> also make it ${noteEsc(c.name)}’s mobile, instead of ${had}</label>`:`<label class="chk"><input type="checkbox" id="anKeep" checked> keep it on ${noteEsc(c.name)}’s card</label>`):''}
    <div class="muted" id="anMsg" style="min-height:18px"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;flex-wrap:wrap">
@@ -22834,6 +22841,7 @@ function askNumber(inv,how,send){
     ${sends.whatsapp?`<button class="btn ${sends.text?'ghost':'tape'}" id="anWa">${WA_ICON} ${sends.text?'WhatsApp':'Open WhatsApp'}</button>`:''}
     ${sends.text?'<button class="btn tape" id="anOk">Send the text <i class="kbd">Enter</i></button>':''}</div>`);
   const inp=m.querySelector('#anPhone'); inp.focus(); inp.select();
+  m.querySelectorAll('[data-anp]').forEach(b=>b.onclick=()=>{ inp.value=b.dataset.anp; inp.focus() });
   const go=(way)=>{
     const to=inp.value.replace(/[^\d+]/g,'').trim();
     if(!/^(0\d{9}|\+?94\d{9})$/.test(to)) { inp.focus(); m.querySelector('#anMsg').textContent='That is not a mobile number — 07XXXXXXXX'; return }
@@ -24201,7 +24209,7 @@ function custMatch(c,q){
   const v=q.toLowerCase().trim(), digits=v.replace(/\D/g,'');
   const name=(c.name||'').toLowerCase();
   if(name.includes(v)||(c.code||'').toLowerCase().includes(v)||(c.address||'').toLowerCase().includes(v)||(c.contact||'').toLowerCase().includes(v)) return true;
-  if(digits.length>=3&&(c.phone||'').replace(/\D/g,'').includes(digits)) return true;
+  if(digits.length>=3&&((c.phone||'').replace(/\D/g,'').includes(digits)||(c.phone2||'').replace(/\D/g,'').includes(digits))) return true;
   const words=name.split(/\s+/).filter(Boolean);                       // "gf" finds Green Field, "n c" finds Nimal Constructions
   const parts=v.split(/\s+/).filter(Boolean);
   if(parts.length>1&&parts.every(p=>words.some(w=>w.startsWith(p)))) return true;
@@ -24342,7 +24350,7 @@ function customerPanel(c){
     </div>
     <div class="cu-id">${avatarOf(c,true)}
     <div style="min-width:0"><h2>${c.name} <span class="muted" style="font-size:13px;font-weight:400">${c.code}</span>${custListed(c)?` <span class="lst-tag ${c.list}" title="${noteEsc(c.listWhy||'')}">${listName(c)}</span>`:''}</h2>
-     <div class="muted" style="margin-top:2px">${c.phone?`<a href="tel:${c.phone}" style="border:0">📞 ${c.phone}</a>`:'<span class="tag warn">no mobile</span>'}${c.address?' · '+c.address:''}</div>
+     <div class="muted" style="margin-top:2px">${c.phone?`<a href="tel:${c.phone}" style="border:0">📞 ${c.phone}</a>`:'<span class="tag warn">no mobile</span>'}${c.phone2?` · <a href="tel:${c.phone2}" style="border:0">📞 ${c.phone2}</a>${c.phone2Sms?' <span class="tag">texts to both</span>':''}`:''}${c.address?' · '+c.address:''}</div>
      <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag ${c.level==='wholesale'?'blue':'ok'}">${c.level} prices</span>${overLimit?'<span class="tag bad">over the limit</span>':''}${ag.old>0?'<span class="tag bad">has 60+ day debt</span>':''}${c.portal?'<span class="tag page">own page on</span>':''}${c.online?'<span class="tag warn">from the website</span>':''}${first?`<span class="muted" style="font-size:12px;align-self:center">customer since ${first}</span>`:''}</div></div></div></div>
 
    <div class="cu-kpis">
@@ -24677,6 +24685,9 @@ function custModal(id,preset){
     <div class="f"><label>Name or shop</label><input id="cmName" value="${c?c.name.replace(/"/g,'&quot;'):(qIsPhone?'':q.replace(/"/g,'&quot;'))}" placeholder="e.g. Nimal Constructions"></div>
     <div class="f"><label>Mobile</label><input id="cmPhone" value="${c?(c.phone||''):(qIsPhone?q:'')}" placeholder="07XXXXXXXX" inputmode="tel"></div></div>
    <div class="grid2">
+    <div class="f"><label>Second mobile <span class="muted">(optional)</span></label><input id="cmPhone2" value="${c?(c.phone2||''):''}" placeholder="07XXXXXXXX" inputmode="tel"></div>
+    <div class="f"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="cmBoth" ${c&&c.phone2Sms?'checked':''}> send texts to both numbers</label></div></div>
+   <div class="grid2">
     <div class="f"><label>Address</label><input id="cmAddr" value="${c?(c.address||'').replace(/"/g,'&quot;'):''}" placeholder="Town, road, landmark"></div>
     <div class="f"><label>Email <span class="muted">(credit invoices and receipts go here as PDFs)</span></label><input id="cmEmail" type="email" value="${c?(c.email||'').replace(/"/g,'&quot;'):''}" placeholder="name@company.lk"></div></div>
    <div class="grid2">
@@ -24697,6 +24708,9 @@ function custModal(id,preset){
     if(!name){ g('cmMsg').textContent='A name is needed.'; g('cmName').focus(); return }
     if(email&&!isEmail(email)){ g('cmMsg').textContent='Enter an email like name@company.lk, or leave it empty.'; g('cmEmail').focus(); return }
     if(phone&&!/^0\d{6,9}$/.test(phone)){ g('cmMsg').textContent='Enter a mobile like 0771234567, or leave it empty.'; g('cmPhone').focus(); return }
+    const phone2=g('cmPhone2').value.replace(/\s+/g,'').trim(), phone2Sms=!!phone2&&g('cmBoth').checked;
+    if(phone2&&!/^0\d{6,9}$/.test(phone2)){ g('cmMsg').textContent='Enter the second mobile like 0771234567, or leave it empty.'; g('cmPhone2').focus(); return }
+    if(phone2&&phone2===phone){ g('cmMsg').textContent='The second mobile is the same as the first.'; g('cmPhone2').focus(); return }
     const dup=phone&&S.customers.find(x=>x.phone===phone&&x.id!==(c?c.id:-1));
     if(dup){ g('cmMsg').textContent=`${dup.name} already has that number.`; return }
     if(c){
@@ -24718,16 +24732,17 @@ function custModal(id,preset){
       if(termsChanged&&needsApproval('custTerms')){
         asks.push(requestApproval('custTerms',`Change ${c.name}'s terms: limit ${fmt(c.limit)} → ${fmt(limit)}, ${c.level} → ${level} prices`,`outstanding ${fmt(partyBal('C',c.id))} now`,{cid:c.id,limit,level}));
       } else if(termsChanged){ Object.assign(c,{level,limit}) }
-      const ledgerChanged=(c.ledger||'')!==ledger||(c.tin||'')!==tin||(c.cat||'')!==cat; c.ledger=ledger; if(tin) c.tin=tin; else delete c.tin; if(cat) c.cat=cat; else delete c.cat;
+      const ledgerChanged=(c.ledger||'')!==ledger||(c.tin||'')!==tin||(c.cat||'')!==cat||(c.phone2||'')!==phone2||!!c.phone2Sms!==phone2Sms; c.ledger=ledger;
+      if(phone2){ c.phone2=phone2; c.phone2Sms=phone2Sms } else { delete c.phone2; delete c.phone2Sms } if(tin) c.tin=tin; else delete c.tin; if(cat) c.cat=cat; else delete c.cat;
       m.remove(); render();
       if(asks.length) return;                                  // requestApproval has already said so
       toast(changed.length||termsChanged||ledgerChanged?'Saved':'Nothing changed'); return }
-    const nc={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),name,phone,address:addr,email,level,limit,notes,ledger,...(tin?{tin}:{}),...(cat?{cat}:{}),portal:false,lastLogin:null,points:0};
+    const nc={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),name,phone,...(phone2?{phone2,phone2Sms}:{}),address:addr,email,level,limit,notes,ledger,...(tin?{tin}:{}),...(cat?{cat}:{}),portal:false,lastLogin:null,points:0};
     S.customers.push(nc); custSel=nc.id; custQ=''; custFilter='all'; custTab='overview'; m.remove(); render(); toast(`${name} added`);
   };
   g('cmOk').onclick=save;
   // Enter goes to the next box; on the last one it saves
-  const order=['cmName','cmPhone','cmAddr','cmEmail','cmLevel','cmLimit','cmNotes'];
+  const order=['cmName','cmPhone','cmPhone2','cmAddr','cmEmail','cmLevel','cmLimit','cmNotes'];
   order.forEach((id2,i)=>{ g(id2).addEventListener('keydown',e=>{ if(e.key!=='Enter'||(id2==='cmNotes'&&e.shiftKey)) return; e.preventDefault(); e.stopPropagation();
     const nx=order[i+1]; if(!nx) return save(); const el=g(nx); el.focus(); if(el.select) el.select() }) });
   g(c?'cmName':(qIsPhone?'cmName':'cmPhone')).focus();
@@ -27728,7 +27743,7 @@ function supplierPanel(s){
     </div>
     <div class="cu-id">${avatarOf(s,true)}
     <div style="min-width:0"><h2>${s.name} <span class="muted" style="font-size:13px;font-weight:400">${s.code}</span></h2>
-     <div class="muted" style="margin-top:2px">${s.contact?s.contact+' · ':''}${s.phone?`<a href="tel:${s.phone}" style="border:0">📞 ${s.phone}</a>`:'<span class="tag warn">no phone</span>'}${s.address?' · '+s.address:''}</div>
+     <div class="muted" style="margin-top:2px">${s.contact?s.contact+' · ':''}${s.phone?`<a href="tel:${s.phone}" style="border:0">📞 ${s.phone}</a>`:'<span class="tag warn">no phone</span>'}${s.phone2?` · <a href="tel:${s.phone2}" style="border:0">📞 ${s.phone2}</a>${s.phone2Sms?' <span class="tag">texts to both</span>':''}`:''}${s.address?' · '+s.address:''}</div>
      <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag blue">terms ${s.days||0} days</span>${ag.old>0?'<span class="tag bad">bills over 60 days</span>':''}${pend.length?`<span class="tag warn">${pend.length} cheque${pend.length===1?'':'s'} out</span>`:''}${s.enabled?'<span class="tag page">own page on</span>':''}${waiting?`<span class="tag warn">${waiting} order${waiting===1?'':'s'} waiting</span>`:''}${first?`<span class="muted" style="font-size:12px;align-self:center">supplier since ${first}</span>`:''}</div></div></div></div>
 
    ${inactiveBand('S',s)}
@@ -27857,6 +27872,9 @@ function supModal(id,preset){
    <div class="grid2">
     <div class="f"><label>Phone</label><input id="smPhone" value="${s?(s.phone||''):(qIsPhone?q:'')}" placeholder="07XXXXXXXX" inputmode="tel"></div>
     <div class="f"><label>Payment terms (days)</label><input id="smDays" type="number" value="${s?(s.days||30):30}"></div></div>
+   <div class="grid2">
+    <div class="f"><label>Second phone <span class="muted">(optional)</span></label><input id="smPhone2" value="${s?(s.phone2||''):''}" placeholder="07XXXXXXXX" inputmode="tel"></div>
+    <div class="f"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="smBoth" ${s&&s.phone2Sms?'checked':''}> send texts to both numbers</label></div></div>
    <div class="f" style="max-width:260px"><label>Ledger No <span class="muted">(their page in the ledger book)</span></label><input id="smLedger" value="${s?escM(s.ledger||''):''}" placeholder="e.g. 12 or C-4"></div>
    <div class="f" style="max-width:260px"><label>VAT No <span class="muted">(if they are VAT registered — their bills then count as input VAT)</span></label><input id="smTin" value="${s?escM(s.tin||''):''}" placeholder="e.g. 104512345-7000"></div>
    <div class="grid2">
@@ -27871,17 +27889,20 @@ function supModal(id,preset){
     if(!name){ g('smMsg').textContent='A name is needed.'; g('smName').focus(); return }
     if(email&&!isEmail(email)){ g('smMsg').textContent='Enter an email like accounts@supplier.lk, or leave it empty.'; g('smEmail').focus(); return }
     if(phone&&!/^0\d{6,9}$/.test(phone)){ g('smMsg').textContent='Enter a phone like 0771234567, or leave it empty.'; g('smPhone').focus(); return }
+    const phone2=g('smPhone2').value.replace(/\s+/g,'').trim(), phone2Sms=!!phone2&&g('smBoth').checked;
+    if(phone2&&!/^0\d{6,9}$/.test(phone2)){ g('smMsg').textContent='Enter the second phone like 0771234567, or leave it empty.'; g('smPhone2').focus(); return }
+    if(phone2&&phone2===phone){ g('smMsg').textContent='The second phone is the same as the first.'; g('smPhone2').focus(); return }
     const dup=S.suppliers.find(x=>x.name.toLowerCase()===name.toLowerCase()&&x.id!==(s?s.id:-1));
     if(dup){ g('smMsg').textContent=`${dup.name} is already on the list.`; return }
     const ledger=g('smLedger').value.trim(), tin=g('smTin').value.trim();
-    if(s){ const oldName=s.name; Object.assign(s,{name,contact,phone,days,address:addr,email,notes,ledger,tin});
+    if(s){ const oldName=s.name; Object.assign(s,{name,contact,phone,days,address:addr,email,notes,ledger,tin}); if(phone2){ s.phone2=phone2; s.phone2Sms=phone2Sms } else { delete s.phone2; delete s.phone2Sms }
       if(oldName!==name) S.cheques.forEach(c=>{ if(c.dir==='ISSUED'&&c.party===oldName) c.party=name });   // cheques are filed by name
       m.remove(); render(); toast('Saved'); return }
-    const ns={id:Math.max(0,...S.suppliers.map(x=>x.id))+1,code:'S'+String(S.suppliers.length+1).padStart(4,'0'),name,contact,phone,days,address:addr,email,notes,ledger,tin,pin:'',showAccounts:false,enabled:false,lastLogin:null};
+    const ns={id:Math.max(0,...S.suppliers.map(x=>x.id))+1,code:'S'+String(S.suppliers.length+1).padStart(4,'0'),name,contact,phone,...(phone2?{phone2,phone2Sms}:{}),days,address:addr,email,notes,ledger,tin,pin:'',showAccounts:false,enabled:false,lastLogin:null};
     S.suppliers.push(ns); supSel=ns.id; supQ=''; supFilter='all'; supTab='overview'; m.remove(); render(); toast(`${name} added`);
   };
   g('smOk').onclick=save;
-  const order=['smName','smContact','smPhone','smDays','smAddr','smEmail','smNotes'];
+  const order=['smName','smContact','smPhone','smPhone2','smDays','smAddr','smEmail','smNotes'];
   order.forEach((id2,i)=>{ g(id2).addEventListener('keydown',e=>{ if(e.key!=='Enter'||(id2==='smNotes'&&e.shiftKey)) return; e.preventDefault(); e.stopPropagation();
     const nx=order[i+1]; if(!nx) return save(); const el=g(nx); el.focus(); if(el.select) el.select() }) });
   g('smName').focus();
