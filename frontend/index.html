@@ -967,6 +967,11 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 .chips button.chip-off{border-style:dashed;color:var(--muted)}.chips button.chip-off.on{border-style:solid;color:inherit}
 /* an update is on the server: a button, never a reload by itself */
 .sizeq .billpick.qf-pick{grid-template-columns:repeat(5,1fr)}@media (max-width:900px){.sizeq .billpick.qf-pick{grid-template-columns:1fr 1fr}}
+.modal .box.rl-box{max-width:980px}
+.rl-secs{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:8px}
+.rl-sec{border:1px solid var(--line);border-radius:10px;padding:8px 10px}.rl-sech{margin:0 0 4px}
+.rl-pages{display:flex;flex-direction:column;gap:0;padding-left:22px}.rl-pages .chk,.rl-perms .chk,.rl-sech{border:0!important;background:none!important;box-shadow:none!important;padding:2px 0!important;margin:0!important;min-height:0!important;font-size:12.5px}
+.rl-perms{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:2px 12px}.rl-perms .chk{margin:0;font-size:13px}
 #updReady{position:fixed;left:50%;transform:translateX(-50%);top:50px;z-index:96;display:flex;align-items:center;gap:10px;padding:10px 18px;border:0;border-radius:99px;cursor:pointer;
  font:700 14px 'IBM Plex Sans',system-ui,sans-serif;color:#fff;background:linear-gradient(135deg,#1E8A5A,#16799B);box-shadow:0 10px 26px rgba(16,30,34,.28);animation:updIn .35s cubic-bezier(.2,.8,.3,1)}
 #updReady:hover{filter:brightness(1.08)}#updReady i{font-style:normal;font-size:17px}#updReady small{font-weight:500;opacity:.85}
@@ -9114,7 +9119,7 @@ function employeeModal(id){
         name, role: data.position || 'Salesman',
         pin: '', uid: data.code || name.slice(0,2).toUpperCase(),
         passHash: hashSync('123456'),
-        perms: ROLE_DEFAULTS[data.position] || ROLE_DEFAULTS.Salesman || [],
+        perms: (typeof rolePermsFor==='function'?rolePermsFor(data.position):ROLE_DEFAULTS[data.position]) || ROLE_DEFAULTS.Salesman || [],
         active: true, lastSeen: null, prefs: { ...PREF_DEFAULTS }
       });
     }
@@ -13213,7 +13218,8 @@ function allowed(v){
   if(rLower === 'super admin' || rLower === 'superadmin' || rLower === 'owner') return true;
   if(rLower === 'admin') return true;
   
-  if(rLower === 'salesman') return v === 'payroll';   // Sales: their attendance (and leave, above) — nothing else
+  const salesChanged=(S.roles||[]).some(x=>String(x.name).toLowerCase()==='salesman'&&Array.isArray(x.pages));
+  if(rLower === 'salesman' && !salesChanged) return v === 'payroll';   // Sales: their attendance (and leave, above) — unless the role was changed
   
   if(rLower === 'kp'){
     if(v === 'users') return false;
@@ -13226,6 +13232,13 @@ function allowed(v){
   
   const rDef = roleDefFor(roleName);
   if(rDef){
+    // a role set page by page in the role editor: those pages, and no others
+    if(Array.isArray(rDef.pages)){
+      if(v === 'users') return false;
+      if(rDef.pages.includes(v)) return true;
+      if(['stock','ledger','products'].includes(v) && rDef.pages.includes('inventory')) return true;
+      return false;
+    }
     if(rDef.allowedViews && rDef.allowedViews.includes(v)) return true;
     // Products, Stock and the ledger are three doors onto the one page Inventory always was
     if(['stock','ledger','products'].includes(v) && rDef.allowedViews && rDef.allowedViews.includes('inventory')) return true;
@@ -31473,7 +31486,7 @@ const can=(k)=>{
   const r=String(S.user.role||'').toLowerCase();
   if(r==='super admin'||r==='superadmin'||r==='owner') return true;
   if(r==='admin') return true;
-  if(r==='salesman') return k==='attendance_view';   // Sales: attendance only
+  if(r==='salesman'&&!(S.roles||[]).some(x=>String(x.name).toLowerCase()==='salesman'&&Array.isArray(x.pages))) return k==='attendance_view';   // Sales: attendance only, unless the role was changed
   return !!(S.user.perms&&S.user.perms.includes(k));
 };
 
@@ -31551,7 +31564,7 @@ function users(){
     const nl = String(u.name).toLowerCase().trim();
     return nl !== 'demo' && nl !== 'demo user';
   });
-  const allRoles=[...DEFAULT_ROLES,...(S.roles||[]).filter(r=>!DEFAULT_ROLES.some(d=>d.name.toLowerCase()===r.name.toLowerCase()))];
+  const allRoles=[...DEFAULT_ROLES.map(d=>roleDefFor(d.name)||d),...(S.roles||[]).filter(r=>!DEFAULT_ROLES.some(d=>d.name.toLowerCase()===r.name.toLowerCase()))];   // a built-in role as it was last changed
   
   const totalUsers=rawList.length;
   const activeCount=rawList.filter(u=>u.active!==false).length;
@@ -31592,9 +31605,12 @@ function users(){
         <tr><th>Role</th><th>Description</th><th>Type</th><th>Permitted Sections</th><th></th></tr>
         ${allRoles.map(r=>{
           const isCustom=!r.isSystem;
-          const secs=r.sections||(r.allowedViews?r.allowedViews.map(v=>'View: '+v):[]);
+          const pgs=rolePagesOf(r), whole=Object.keys(SECTIONS).filter(s=>SECTIONS[s].every(v=>pgs.includes(v))), loose=pgs.filter(v=>!whole.some(s=>SECTIONS[s].includes(v)));
+          const everything=['super admin','admin','owner'].includes(String(r.name).toLowerCase());
+          const secs=everything?['Everything']:[...whole,...loose.map(v=>rolePageLabel(v))];
+          const changed=(S.roles||[]).some(x=>x.name===r.name)&&DEFAULT_ROLES.some(d=>d.name===r.name);
           return `<tr>
-            <td><b>${r.name}</b></td>
+            <td><b>${roleLabel(r.name)}</b>${changed?' <span class="tag warn" title="Changed from the original">changed</span>':''}</td>
             <td class="muted">${r.desc||'—'}</td>
             <td><span class="tag ${isCustom?'warn':'blue'}">${isCustom?'Custom':'System'}</span></td>
             <td><div class="permlist">${secs.length?secs.map(s=>`<span class="permchip">${s}</span>`).join(''):'<span class="muted">None</span>'}</div></td>
@@ -31602,7 +31618,7 @@ function users(){
               ${isCustom?`
                 <button class="btn ghost sm" data-act="roleEdit" data-r="${r.name}">Edit</button>
                 <button class="btn ghost sm" data-act="roleDel" data-r="${r.name}">Delete</button>
-              `:r.name==='KP'?`<button class="btn ghost sm" data-act="roleEdit" data-r="${r.name}">Customize</button>`:`<span class="muted">Built-in</span>`}
+              `:everything?`<span class="muted">May do everything</span>`:`<button class="btn ghost sm" data-act="roleEdit" data-r="${r.name}">✏️ Change what it may do</button>`}
             </div></td>
           </tr>`;
         }).join('')}
@@ -31843,73 +31859,59 @@ function myProfileModal(){
   };
 }
 
+/* Editing a role (2 Nov 2026): which pages it opens — page by page, a section ticked whole with one box — and
+   the abilities its people have (discounts, cost and profit, payments, approvals…), with the choice of giving
+   them to everyone in the role at once. A built-in role (Accounts, Management…) changed here is kept in the
+   books (S.roles) under its own name, so it holds after a reload and on every till — before, the change lived
+   in that till's memory only and was gone on the next load. "Back to the original" lets the built-in one stand again. */
+const ROLE_PAGE_EXTRA={inventory:'Inventory (products, stock, ledger)',approvals:'Approvals',shopmanage:'Online store — manage'};
+const rolePageLabel=(v)=>((views.find(x=>x[0]===v)||[])[1])||ROLE_PAGE_EXTRA[v]||v;
+const rolePagesOf=(r)=>{ if(!r) return []; if(Array.isArray(r.pages)) return r.pages.slice();
+  const out=new Set(r.allowedViews||[]); (r.sections||[]).forEach(s=>(SECTIONS[s]||[]).forEach(v=>out.add(v))); return [...out] };
+const rolePermsFor=(name)=>{ const r=roleDefFor(name); return (r&&Array.isArray(r.perms))?r.perms.slice():(ROLE_DEFAULTS[name]||[]).slice() };
 function roleModal(roleName){
-  if(S.user.role!=='Super Admin'&&S.user.role!=='Owner'){
-    return toast('Only Super Admin can configure roles and section permissions');
-  }
-  const isEdit=!!roleName;
-  const existing=isEdit?roleDefFor(roleName):null;
-  const curSections=new Set(existing?(existing.sections||[]):['Counter','Stock']);
-  
-  const sectionList=[
-    ['Counter','Dashboard, POS Billing, Bills history, Quotes & Delivery notes'],
-    ['Customers','Customers registry, Receipts & payments, Quotations & Tenders'],
-    ['Suppliers','Suppliers registry, Supplier orders, Purchases & Goods received'],
-    ['Stock','Products list, Inventory & ledger, Stock take, Barcode labels'],
-    ['Online','Online customer orders, Online store catalog, Website settings'],
-    ['Money','Cheques in, Cheques out, Store expenses, Chart of accounts & ledger'],
-    ['People','Management approvals, Attendance board & wages'],
-    ['Out','Customer & supplier SMS messages, Business reports & analytics'],
-    ['System','Shop settings & system configuration']
-  ];
-  
-  const m=modal(`<h2>${isEdit?'Edit Role · '+roleName:'Create New Role'}</h2>
-    <p class="muted">Select which of the 9 shop sections staff in this role can access.</p>
-    <div class="grid2">
-      <div class="f"><label>Role Name</label><input id="rlName" value="${existing?existing.name:''}" ${isEdit&&existing.isSystem?'readonly':''} placeholder="e.g. Supervisor, Cashier"></div>
-      <div class="f"><label>Description</label><input id="rlDesc" value="${existing?(existing.desc||''):''}" placeholder="e.g. Counter operations and stock check"></div>
-    </div>
-    <h3 style="margin-top:14px;margin-bottom:8px">Section Access Checkboxes</h3>
-    <div class="grid2" id="rlSections">
-      ${sectionList.map(([sec,desc])=>`
-        <label class="chk" style="padding:8px;border:1px solid var(--line);border-radius:6px;margin:0">
-          <input type="checkbox" data-sec="${sec}" ${curSections.has(sec)?'checked':''}>
-          <div>
-            <b>${sec} Section</b>
-            <div class="muted" style="font-size:11px">${desc}</div>
-          </div>
-        </label>
-      `).join('')}
-    </div>
-    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
-      <button class="btn ghost" data-act="closeModal">Cancel</button>
-      <button class="btn tape" id="rlSave">${isEdit?'Save Changes':'Create Role'}</button>
-    </div>
-  `);
-  
+  if(!['Super Admin','Owner'].includes(S.user.role)) return toast('Only the Super Admin can change what a role may do');
+  const existing=roleName?roleDefFor(roleName):null, sys=!!(existing&&(existing.isSystem||DEFAULT_ROLES.some(d=>d.name===existing.name)));
+  if(existing&&['super admin','admin','owner'].includes(String(existing.name).toLowerCase())) return toast(`${roleLabel(existing.name)} may do everything — that one is not changed here`);
+  const pages=new Set(existing?rolePagesOf(existing):['pos','bills','returns','docs']);
+  const perms=new Set(existing?rolePermsFor(existing.name):['sell']);
+  const people=existing?S.users.filter(u=>String(u.role||'').toLowerCase()===String(existing.name).toLowerCase()):[];
+  const SEC_LABEL={Counter:'The counter',Customers:'Customers',Suppliers:'Suppliers & buying',Stock:'Stock',Online:'Online store',Money:'Cash & banking',People:'Staff',Out:'Reports & messages',System:'Settings'};
+  const m=modal(`<h2>${existing?`What ${noteEsc(roleLabel(existing.name))} may do`:'A new role'}</h2>
+   <div class="muted" style="margin-bottom:10px">Tick the pages this role opens, and what its people may do there.${people.length?` ${people.length} ${people.length===1?'person has':'people have'} this role.`:''}</div>
+   <div class="grid2"><div class="f"><label>Role name</label><input id="rlName" value="${noteEsc(existing?existing.name:'')}" ${sys?'readonly':''} placeholder="e.g. Cashier, Store keeper"></div>
+    <div class="f"><label>What it is for</label><input id="rlDesc" value="${noteEsc(existing?existing.desc||'':'')}" placeholder="e.g. Billing at the counter only"></div></div>
+   <h3 style="margin:12px 0 6px">Pages</h3>
+   <div class="rl-secs">${Object.keys(SECTIONS).map(sec=>{ const list=SECTIONS[sec]; const all=list.every(v=>pages.has(v)), some=list.some(v=>pages.has(v));
+     return `<div class="rl-sec"><label class="chk rl-sech"><input type="checkbox" data-secall="${sec}" ${all?'checked':''} ${!all&&some?'data-some="1"':''}> <b>${SEC_LABEL[sec]||sec}</b></label>
+      <div class="rl-pages">${list.map(v=>`<label class="chk"><input type="checkbox" data-page="${v}" data-of="${sec}" ${pages.has(v)?'checked':''}> ${noteEsc(rolePageLabel(v))}</label>`).join('')}</div></div>` }).join('')}</div>
+   <h3 style="margin:14px 0 6px">What they may do</h3>
+   <div class="rl-perms">${PERMS.map(([k,l])=>`<label class="chk"><input type="checkbox" data-perm="${k}" ${perms.has(k)?'checked':''}> ${noteEsc(l)}</label>`).join('')}</div>
+   ${people.length?`<label class="chk" style="margin-top:10px;padding:8px 10px;background:var(--panel);border-radius:8px"><input type="checkbox" id="rlApply" checked> Give these abilities to the ${people.length} ${people.length===1?'person':'people'} in this role now: ${people.map(u=>noteEsc(u.name)).join(', ')}</label>`:''}
+   <div class="muted" style="margin-top:6px">Anyone given this role later starts with these abilities ticked; each person's own boxes can still be changed on their user.</div>
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:14px;flex-wrap:wrap">
+    <div>${sys&&S.roles&&S.roles.some(r=>r.name===existing.name)?'<button class="btn ghost" id="rlReset">Back to the original</button>':''}</div>
+    <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="rlSave">${existing?'Save':'Make the role'}</button></div></div>`);
+  m.querySelector('.box').classList.add('rl-box');
+  // a section's box ticks or clears all its pages; a page changes its section's box
+  const sync=()=>m.querySelectorAll('[data-secall]').forEach(b=>{ const ps=[...m.querySelectorAll(`[data-of="${b.dataset.secall}"]`)]; const n=ps.filter(x=>x.checked).length; b.checked=n===ps.length; b.indeterminate=n>0&&n<ps.length });
+  m.querySelectorAll('[data-secall]').forEach(b=>b.onchange=()=>{ m.querySelectorAll(`[data-of="${b.dataset.secall}"]`).forEach(x=>x.checked=b.checked); sync() });
+  m.querySelectorAll('[data-page]').forEach(x=>x.onchange=sync); sync();
+  const rr=m.querySelector('#rlReset'); if(rr) rr.onclick=()=>{ S.roles=S.roles.filter(r=>r.name!==existing.name);
+    try{ logTrail('other',`Role ${roleLabel(existing.name)} set back to the original`,{}) }catch(e){} m.remove(); persist(true); render(); toast(`${roleLabel(existing.name)} is back to the original`,'ok') };
   m.querySelector('#rlSave').onclick=()=>{
-    const nm=(m.querySelector('#rlName').value||'').trim();
-    if(!nm) return toast('Role name is required');
-    const desc=(m.querySelector('#rlDesc').value||'').trim();
-    const pickedSecs=[...m.querySelectorAll('[data-sec]:checked')].map(cb=>cb.dataset.sec);
-    if(!pickedSecs.length) return toast('Select at least one section for this role');
-    
+    const nm=(m.querySelector('#rlName').value||'').trim(); if(!nm) return toast('Give the role a name');
+    const pg=[...m.querySelectorAll('[data-page]:checked')].map(x=>x.dataset.page); if(!pg.length) return toast('Tick at least one page');
+    const pm=[...m.querySelectorAll('[data-perm]:checked')].map(x=>x.dataset.perm);
+    if(!existing&&roleDefFor(nm)) return toast(`There is a role called ${nm} already`);
     if(!Array.isArray(S.roles)) S.roles=[];
-    
-    if(existing&&existing.isSystem){
-      existing.sections=pickedSecs;
-      existing.desc=desc;
-    } else {
-      const idx=S.roles.findIndex(r=>r.name.toLowerCase()===nm.toLowerCase());
-      const roleObj={name:nm,desc,sections:pickedSecs,isSystem:false};
-      if(idx>=0) S.roles[idx]=roleObj;
-      else S.roles.push(roleObj);
-    }
-    
-    persist(true);
-    m.remove();
-    render();
-    toast(`Role ${nm} saved with ${pickedSecs.length} section(s) permitted`);
+    const secs=Object.keys(SECTIONS).filter(s=>SECTIONS[s].every(v=>pg.includes(v)));
+    const obj={name:existing?existing.name:nm,desc:(m.querySelector('#rlDesc').value||'').trim(),pages:pg,sections:secs,perms:pm,isSystem:sys,changedBy:S.user.name,changedAt:apStamp()};
+    const i=S.roles.findIndex(r=>String(r.name).toLowerCase()===obj.name.toLowerCase()); if(i>=0) S.roles[i]=obj; else S.roles.push(obj);
+    const ap=m.querySelector('#rlApply'); let n=0;
+    if(ap&&ap.checked) people.forEach(u=>{ u.perms=pm.slice(); n++ });
+    try{ logTrail('other',`Role ${roleLabel(obj.name)} changed: ${pg.length} pages, ${pm.length} abilities${n?`, given to ${n}`:''}`,{}) }catch(e){}
+    m.remove(); persist(true); render(); toast(`${roleLabel(obj.name)} saved${n?` — ${n} ${n===1?'person':'people'} updated`:''}`,'ok');
   };
 }
 
@@ -31937,7 +31939,7 @@ function userModal(name){
     return toast('Only Super Admin Afridh can modify Super Admin profile');
   }
   const u=name?S.users.find(x=>x.name===name):null;
-  const allRoles=[...DEFAULT_ROLES,...(S.roles||[]).filter(r=>!DEFAULT_ROLES.some(d=>d.name.toLowerCase()===r.name.toLowerCase()))];
+  const allRoles=[...DEFAULT_ROLES.map(d=>roleDefFor(d.name)||d),...(S.roles||[]).filter(r=>!DEFAULT_ROLES.some(d=>d.name.toLowerCase()===r.name.toLowerCase()))];   // a built-in role as it was last changed
   const availableRoles=(isSuperAdmin
     ? allRoles.map(r=>r.name)
     : allRoles.filter(r=>r.name!=='Super Admin'&&r.name!=='Owner').map(r=>r.name)).filter(r=>!OLD_ROLES.includes(r));
@@ -32028,7 +32030,7 @@ function userModal(name){
   m.querySelector('#uRole').onchange=e=>{
     const selectedRole = e.target.value;
     { const dd=m.querySelector('#uRoleDesc'); if(dd) dd.textContent=(roleDefFor(selectedRole)||{}).desc||''; }
-    const def=ROLE_DEFAULTS[selectedRole]||[];
+    const def=rolePermsFor(selectedRole);
     m.querySelectorAll('[data-perm]').forEach(cb=>cb.checked=def.includes(cb.dataset.perm));
     const isSales = selectedRole === 'Salesman';
     const sidBox = m.querySelector('#uSalesIdBox');
