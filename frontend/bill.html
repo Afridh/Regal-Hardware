@@ -94,6 +94,15 @@ button{font:inherit;color:inherit}
 .by{margin-top:12px;font-size:12px;color:var(--faint);text-align:center}
 
 /* ---------- what to do with it ---------- */
+/* the customer's whole account, under the bill */
+.acct{margin-top:22px;background:var(--white);border:1px solid var(--line2);border-radius:20px;padding:18px 18px 16px;box-shadow:0 10px 30px rgba(16,30,34,.08);animation:fadeUp .6s var(--ease) .8s both}
+.acct-h{display:flex;align-items:center;gap:12px}.acct-h b{display:block;font:800 17px Archivo,sans-serif}.acct-h small{color:var(--steel)}
+.acct-ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:#FFF4DC;color:var(--amber2);flex:none}.acct-ic svg{width:22px;height:22px}
+.acct-owe{margin-top:14px;padding:14px 16px;border-radius:14px;background:#FCEDEA;display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 10px}
+.acct-owe span{color:var(--steel);font-size:13px}.acct-owe b{font:800 24px Archivo,sans-serif;color:var(--rust);grid-row:span 2;text-align:right}.acct-owe small{color:var(--faint);font-size:12px}
+.acct-owe.ok{background:#E6F4EC}.acct-owe.ok b{color:var(--green);font-size:20px}
+.acct-go{display:block;margin-top:12px;text-align:center;text-decoration:none;color:#fff;font-weight:700;padding:13px 14px;border-radius:14px;background:linear-gradient(135deg,var(--ink),#17343A);box-shadow:0 8px 20px rgba(16,30,34,.2)}
+.acct-go span{display:block;font-weight:400;font-size:12.5px;opacity:.8;margin-top:2px}
 .acts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:30px;animation:fadeUp .6s var(--ease) .9s both}
 .act{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px;border-radius:14px;background:var(--white);border:1px solid var(--line);
   text-decoration:none;color:var(--ink);font-size:12px;font-weight:600;cursor:pointer;transition:transform .2s var(--spring),box-shadow .2s}
@@ -215,6 +224,7 @@ const ICON={
   call:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/>',
   web:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/>',
   pdf:'<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  acct:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/>',
   print:'<path d="M7 9V4h10v5M7 17H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2M7 14h10v6H7z"/>',
   wa:'<path d="M4 20l1.3-3.9A8 8 0 1112 20a8 8 0 01-3.9-1z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 01-1.8-1.8l.8-1-1-2z"/>'
 };
@@ -387,10 +397,18 @@ function feedbackAfter(b,id){
           <div class="tot"><span>Subtotal</span><b>${money(b.sub)}</b></div>
           ${b.billDisc > 0 ? `<div class="tot"><span>Discount</span><b>− ${money(b.billDisc)}</b></div>` : ''}
           <div class="tot"><span>Paid${b.pays && b.pays.length ? ' · ' + b.pays.map(p => esc(String(p.method).toLowerCase())).join(', ') : ''}</span><b>${money(b.paid)}</b></div>
-          ${settled ? `<div class="tot ok"><span>Settled</span><b>✓ in full</b></div>` : `<div class="tot due"><span>Outstanding</span><b>${money(b.balance)}</b></div>`}
+          ${settled ? `<div class="tot ok"><span>Settled</span><b>✓ in full</b></div>` : `<div class="tot due"><span>Still to pay on this bill</span><b>${money(b.balance)}</b></div>`}
         </div>
         ${b.by ? `<div class="by">Served by ${esc(b.by)}</div>` : ''}
       </div>`;
+    /* their whole account, not just this bill: what they owe altogether, and the way into their own page */
+    const c = b.customer, accT = c && (c.owes > 0.005 || c.page) ? `
+      <div class="acct screenview">
+        <div class="acct-h"><span class="acct-ic">${svg('acct')}</span><div><b>Your account</b><small>${esc(c.name)}</small></div></div>
+        ${c.owes > 0.005 ? `<div class="acct-owe"><span>Total outstanding</span><b>${money(c.owes)}</b><small>${c.openBills} unpaid bill${c.openBills === 1 ? '' : 's'}, this one included</small></div>`
+          : `<div class="acct-owe ok"><span>Your account</span><b>All clear</b><small>nothing outstanding</small></div>`}
+        ${c.page ? `<a class="acct-go" href="${esc(c.page)}">See every bill and payment<span>Sign in with your mobile — we text you a code</span></a>` : ''}
+      </div>` : '';
     const paper = b.html
       ? `<div class="paper forprint"><div class="fit printArea ${b.paper === 'r80' ? 'r80' : 'a5'}">${b.html}</div></div>`
       : '';
@@ -407,7 +425,7 @@ function feedbackAfter(b,id){
       </div>`;
     const foot = `<div class="shopfoot screenview"><b>${esc(sh.name)}</b><br>${esc(where)}<br>
         ${[sh.phone, sh.land].filter(Boolean).map(esc).join(' · ')}${sh.email ? '<br>' + esc(sh.email) : ''}${web ? `<br><a href="${esc(web)}" target="_blank" rel="noopener">${esc(sh.web.replace(/^https?:\/\//,''))}</a>` : ''}</div>`;
-    $('#out').innerHTML = pageRule + card + paper + acts + feedbackCard(b) + foot;
+    $('#out').innerHTML = pageRule + card + paper + accT + acts + feedbackCard(b) + foot;
     bill = b;
     setTimeout(() => countUp($('#amt'), +b.total || 0, 1400), calm ? 0 : 650);
     feedbackAfter(b, id);

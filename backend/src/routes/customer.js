@@ -76,6 +76,13 @@ function otpFor(phone, when = Date.now()) {
 const otpOk = (phone, code) => [0, 1].some(back => otpFor(phone, Date.now() - back * OTP_WINDOW_MS) === String(code || '').trim());
 const mask = p => digits(p).replace(/^(\d{3})\d{4}(\d{3})$/, '$1••••$2');
 
+/* Whether a customer's own page (regalhw.lk/my) opens for them. Switched on by the shop, it does. Anyone who
+   buys on credit can also open theirs — from the link on a credit bill, by their mobile and a texted code —
+   unless the shop switched theirs off by hand (c.portalOff) or Settings → Messages says not (2 Nov 2026). */
+const creditBuyer = (S, c) => (S.sales || []).some(s => s && s.customerId === c.id && (s.type === 'CREDIT' || +s.credit0 > 0.005 || +s.balance > 0.005));
+export const pageOpen = (S, CFG, c) => !!c && c.id !== 1 && (c.portal === true || (!c.portalOff && (CFG && CFG.msg && CFG.msg.creditPage) !== false && creditBuyer(S, c)));
+/* what a customer owes on the books, from the journal (the till's partyBal) */
+const owesOf = (S, id) => { let v = 0; for (const j of S.journal || []) for (const l of j.lines || []) if (l.party && l.party.type === 'C' && l.party.id === id && l.ac === '1100') v += (+l.dr || 0) - (+l.cr || 0); return +v.toFixed(2); };
 function custAuth(req, _res, next) {
   try {
     const h = req.headers.authorization || '';
@@ -161,7 +168,7 @@ r.get('/who/:code', asyncHandler(async (req, res) => {
   await ensureCustTables();
   const { rows: [{ n }] } = await query(`SELECT count(*)::int AS n FROM cust_logins WHERE owner = $1 AND active`, [c.id]);
   res.json({ ok: true, name: c.name, phone: c.phone ? mask(c.phone) : null, logins: n,
-    open: c.portal !== false, shop: { name: data?.CFG?.shop?.name || 'Regal Hardware', phone: data?.CFG?.shop?.phone || '', addr: data?.CFG?.shop?.addr || '' } });
+    open: pageOpen(data?.S || {}, data?.CFG, c), shop: { name: data?.CFG?.shop?.name || 'Regal Hardware', phone: data?.CFG?.shop?.phone || '', addr: data?.CFG?.shop?.addr || '' } });
 }));
 
 /* ---------------------------------------------------------------- signing in by name
@@ -180,7 +187,7 @@ r.post('/signin', asyncHandler(async (req, res) => {
   const data = await books();
   const c = (data?.S?.customers || []).find(x => x.id === l.owner);
   if (!c) throw new HttpError(404, 'That account is no longer on file');
-  if (c.portal === false) throw new HttpError(403, 'The shop has closed this page — give them a ring');
+  if (!pageOpen(data?.S || {}, data?.CFG, c)) throw new HttpError(403, 'The shop has closed this page — give them a ring');
   await query(`UPDATE cust_logins SET last_seen = now() WHERE id = $1`, [l.id]);
   res.json({ ok: true, token: jwt.sign({ kind: 'cust', cid: l.owner, lid: Number(l.id), user: l.username }, secret(), { expiresIn: '30d' }),
     name: c.name, code: c.code, who: l.name || l.username });
@@ -236,7 +243,7 @@ r.post('/otp', asyncHandler(async (req, res) => {
   const list = byPhone(S, phone);
   const c = own || (req.body?.code ? list.find(x => norm(x.code) === norm(splitLink(req.body.code).code)) || byCode(S, req.body.code) : list[0]);
   if (!c || digits(c.phone) !== phone) throw new HttpError(404, 'That mobile is not the one the shop has for this account');
-  if (c.portal === false) throw new HttpError(403, 'The shop has not opened this page for you yet — give them a ring');
+  if (!pageOpen(S, data?.CFG, c)) throw new HttpError(403, 'The shop has not opened this page for you yet — give them a ring');
   sendingCode(phone, req.ip);
   const code = otpFor(phone);
   const cfg = data?.CFG?.msg;
@@ -256,7 +263,7 @@ r.post('/login', asyncHandler(async (req, res) => {
   const list = byPhone(S, phone);
   const c = own || (req.body?.acc ? list.find(x => norm(x.code) === norm(splitLink(req.body.acc).code)) || list[0] : list[0]);
   if (!c) throw new HttpError(404, 'That mobile is not on file');
-  if (c.portal === false) throw new HttpError(403, 'The shop has not opened this page for you yet — give them a ring');
+  if (!pageOpen(S, data?.CFG, c)) throw new HttpError(403, 'The shop has not opened this page for you yet — give them a ring');
   res.json({ ok: true, token: jwt.sign({ kind: 'cust', cid: c.id, phone }, secret(), { expiresIn: '30d' }), name: c.name, code: c.code });
 }));
 
@@ -352,7 +359,10 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
     no: inv.no, date: inv.date, time: inv.time || '', type: inv.type,
     sub: inv.sub, billDisc: inv.billDisc || 0, total: inv.total, paid: inv.paid, balance: inv.balance,
     by: inv.by || '',
-    customer: cust && cust.id !== 1 ? { name: cust.name, code: cust.code } : null,
+    customer: cust && cust.id !== 1 ? { name: cust.name, code: cust.code,
+      owes: owesOf(S, cust.id), openBills: (S.sales || []).filter(s => s.customerId === cust.id && +s.balance > 0.005).length,
+      // their own page, by their mobile and a texted code: the link that names them when it can
+      page: pageOpen(S, CFG, cust) ? '/my' + (cust.pkey ? '/' + String((cust.code || '') + '.' + cust.pkey).toLowerCase() : '') : null } : null,
     lines: (inv.lines || []).map(l => {
       const p = prod(l.pid);
       return { name: l.name || p.name || 'Item', code: p.code || '', unit: p.unit || '',
@@ -560,7 +570,7 @@ r.post('/ask', asyncHandler(async (req, res) => {
   const data = await books(), S = data?.S || {};
   const c = byPhone(S, phone)[0];
   const name = String(req.body?.name || '').trim().replace(/\s+/g, ' ').slice(0, 80), note = String(req.body?.note || '').trim().slice(0, 200);
-  if (c && c.portal !== false) throw new HttpError(400, 'Your page is already open — sign in with your mobile');
+  if (c && pageOpen(data?.S || {}, data?.CFG, c)) throw new HttpError(400, 'Your page is already open — sign in with your mobile');
   if (!c && name.length < 2) throw new HttpError(400, 'Your name, or your business name, please');
   await ensureCustTables();
   const kind = c ? 'askopen' : 'asknew';
