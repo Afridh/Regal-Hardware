@@ -25831,6 +25831,12 @@ function productModal(pid){
       <div class="f"><label>Brand</label><input id="pbrand" value="${noteEsc(p?p.brand||'':'')}" placeholder="${noteEsc(p?brandOf({name:p.name}):'e.g. Tokyo — or leave empty')}" autocomplete="off"></div>
       <div class="f"><label>Department <span class="muted">— on the online shop</span></label><select id="pdept">${catalogCfg().depts.map(d=>`<option ${(p?(p.dept||catDeptOf(p.cat)):(keep.dept||'Others'))===d?'selected':''}>${noteEsc(d)}</option>`).join('')}</select></div>
      </div>
+     <div class="pm-g2">
+      <div class="f"><label>Supplier <span class="muted">— who you buy it from</span></label><input id="psup" list="psupList" value="${noteEsc((SU((p?p.supplierId:keep.supplierId)||0)||{}).name||'')}" placeholder="Type to find the supplier…" autocomplete="off">
+       <datalist id="psupList">${S.suppliers.filter(x=>x.active!==false).map(x=>`<option value="${noteEsc(x.name)}">${noteEsc(x.code||'')}</option>`).join('')}</datalist>
+       <div class="muted">Their orders, stock reading and price lists use it. Empty: none yet.</div></div>
+      <div class="f"><label>&nbsp;</label><button type="button" class="btn ghost" id="psupNew" style="align-self:flex-start">＋ A new supplier</button></div>
+     </div>
      ${!p&&topCats.length?`<div class="pm-chips" id="pcatChips" title="Your most used categories">${topCats.map(c=>`<button type="button" data-c="${noteEsc(c)}">${noteEsc(c)}</button>`).join('')}</div>`:''}
      <div class="f"><label>Sold by the</label><div class="pm-chips" id="punitChips" style="margin:0">${UNITS.map(x=>`<button type="button" data-u="${x}" class="${unitNow===x?'on':''}">${x}</button>`).join('')}</div>
       <select id="punit" style="display:none">${UNITS.map(x=>`<option ${unitNow===x?'selected':''}>${x}</option>`).join('')}</select></div>
@@ -25919,7 +25925,7 @@ function productModal(pid){
     pv() };
   const pv=()=>{ const nm=q('pname').value.trim(), ret=g('pretail'), mrp=g('pmrp');
     q('pvName').textContent=nm||'Product name';  q('pvName').style.color=nm?'':'var(--faint)';
-    q('pvCat').textContent=[(q('pcat').value||'').trim()||'No category', q('punit').value].join(' · ');
+    q('pvCat').textContent=[(q('pcat').value||'').trim()||'No category', q('punit').value, (q('psup').value||'').trim()?'from '+q('psup').value.trim():''].filter(Boolean).join(' · ');
     q('pvPrice').textContent=ret?fmt(ret):'Rs —'; q('pvMrp').textContent=mrp>ret&&ret?fmt(mrp):'';
     q('pvCodes').innerHTML=[['',q('pbar').value],['short ',q('pshort').value],['#',p?p.num:nextNum()]].filter(x=>String(x[1]).trim()).map(x=>`<span>${x[0]}${noteEsc(String(x[1]).trim())}</span>`).join('') };
   m.querySelectorAll('input,textarea').forEach(i=>i.addEventListener('input',marg)); marg();
@@ -25933,6 +25939,19 @@ function productModal(pid){
   if(!p) setTimeout(()=>q('pname').focus(),40);
   let again=false; const nx=q('pnext'); if(nx) nx.onclick=()=>{ again=true; q('psave').click(); again=false };
   { const pc=m.querySelector('#pcat'), pd=m.querySelector('#pdept'); if(pc&&pd) pc.onchange=()=>{ const v=pc.value.trim(); if(v) pd.value=catDeptOf(v) } }
+  // the supplier: picked from the list by name; one not there yet is added from here and comes straight in
+  const supByName=(t)=>{ const k=String(t||'').trim().toLowerCase(); return k?S.suppliers.find(x=>String(x.name||'').trim().toLowerCase()===k)||S.suppliers.find(x=>String(x.code||'').toLowerCase()===k):null };
+  q('psupNew').onclick=()=>{
+    const before=new Set(S.suppliers.map(x=>x.id)), typed=q('psup').value.trim();
+    supModal(null,typed&&!supByName(typed)?typed:'');
+    const t0=Date.now(), w=setInterval(()=>{
+      if(!document.body.contains(m)||Date.now()-t0>180000) return clearInterval(w);
+      const made=S.suppliers.find(x=>!before.has(x.id)); if(!made) return;
+      clearInterval(w);
+      q('psupList').innerHTML=S.suppliers.filter(x=>x.active!==false).map(x=>`<option value="${noteEsc(x.name)}">${noteEsc(x.code||'')}</option>`).join('');
+      q('psup').value=made.name; q('psup').classList.remove('pm-bad'); pv(); toast(made.name+' is this product\'s supplier','ok');
+    },400);
+  };
   m.querySelector('#psave').onclick=()=>{
     // the barcode number is the product's code, unless another one is typed
     const name=m.querySelector('#pname').value.trim(), code=m.querySelector('#pcode').value.trim()||m.querySelector('#pbar').value.trim();
@@ -25945,6 +25964,8 @@ function productModal(pid){
       if(other) return bad('pbar',`Barcode ${bar} is already ${codeNorm(other.barcode)===codeNorm(bar)||codeNorm(other.barcode2)===codeNorm(bar)?'the barcode':'the item number or code'} of ${other.name} — a code finds one product only`) }
     if(!(g('pretail')>0))return bad('pretail','Enter the selling price');
     if(g('pcost')>g('pretail'))return bad('pretail','The selling price is below cost — check it');
+    const supTxt=(q('psup').value||'').trim(), sup=supByName(supTxt);
+    if(supTxt&&!sup) return bad('psup',`No supplier called “${supTxt}” — pick one from the list, or press ＋ A new supplier`);
     const pcatV=(m.querySelector('#pcat').value||'').trim().replace(/\s+/g,' ')||'Others', pdeptV=m.querySelector('#pdept').value; catalogCfg().deptOf[pcatV]=pdeptV;
     const data={code,name,cat:pcatV,dept:pdeptV,unit:m.querySelector('#punit').value,
       barcode:m.querySelector('#pbar').value.trim(),mrp:g('pmrp')||g('pretail'),cost:g('pcost'),
@@ -25952,7 +25973,7 @@ function productModal(pid){
       webPrice:g('pweb')>0?+(+g('pweb')).toFixed(2):0,              // nought means: sell online at the counter price
       warrantyMonths:g('pwar'),serialised:m.querySelector('#pser').checked,desc:m.querySelector('#pdesc').value.trim(),
       brand:(m.querySelector('#pbrand').value||'').trim().replace(/\s+/g,' '), plu:(m.querySelector('#pplu').value||'').replace(/\D/g,''),
-      points:g('ppoints')>0?+(+g('ppoints')).toFixed(2):0,
+      points:g('ppoints')>0?+(+g('ppoints')).toFixed(2):0, supplierId:sup?sup.id:null,
       tiers:tiers.filter(t=>+t.min>0&&+t.price>0).map(t=>({min:+t.min,price:+t.price,label:(t.label||'').trim()}))};
     const photo=m.querySelector('#pphotoFile').files[0];
     const sendPhoto=pid=>{ if(photo) shopMediaUpload('p:'+pid,photo,900).then(()=>toast('Photo is on the site')).catch(e=>toast('Photo not saved: '+e.message)) };
@@ -25975,7 +25996,7 @@ function productModal(pid){
       const op=g('popen'); if(op>0){ move(np.id,op,'OPENING','New item',np.cost);
         post(D(today),'Opening stock '+np.code,np.code,[{ac:'1200',dr:+(op*np.cost).toFixed(2)},{ac:'3100',cr:+(op*np.cost).toFixed(2)}]) }
       m.remove(); render(); toast(`${name} added${op>0?` with ${fq(op)} ${np.unit} in stock`:''}`,'ok');
-      if(again){ pmKeep={cat:np.cat==='Others'?'':np.cat,unit:np.unit,dept:np.dept}; productModal() }
+      if(again){ pmKeep={cat:np.cat==='Others'?'':np.cat,unit:np.unit,dept:np.dept,supplierId:np.supplierId}; productModal() }
       else askLabels([{pid:np.id,qty:op>0?op:1}],`${noteEsc(name)} is added.`) }
   };
 }
