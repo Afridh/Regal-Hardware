@@ -110,6 +110,7 @@ if (!process.env.VERCEL && fs.existsSync(appDir)) {
   app.get(['/supplier', '/supplier/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'supplier.html')));
   app.get(['/my', '/my/', '/my/:code'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'my.html')));
   app.get(['/b/:id'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'bill.html')));   // the e-bill link texted to a customer
+  app.get(['/q/:id'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'bill.html')));   // a quotation's link, the same page   // the e-bill link texted to a customer
   app.use(express.static(appDir, { index: false, extensions: ['html'], setHeaders: (res, p) => { if (/\.(html|js|css)$/.test(p)) res.set('Cache-Control', 'no-store'); } }));
 }
 

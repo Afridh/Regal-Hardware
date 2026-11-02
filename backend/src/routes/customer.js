@@ -396,6 +396,35 @@ async function fbWaiting(link) {     // by the bill's own link: a bill number ca
   const row = rows.map(r => (typeof r.data === 'string' ? JSON.parse(r.data) : r.data)).find(d => d && d.link === link);
   return row || null;
 }
+/* A quotation by its link (regalhw.lk/q/…): the items with their MRP and our price, the total, what they save
+   against the MRP, and the day it holds good until. bill.html shows it, dressed as a quotation. */
+r.get('/q/:id', asyncHandler(async (req, res) => {
+  const id = String(req.params.id || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (id.length < 6) throw new HttpError(404, 'That link is not a quotation');
+  const data = await books();
+  const S = data?.S || {}, CFG = data?.CFG || {};
+  const d = (S.docs || []).find(x => x && x.kind === 'QUOTE' && String(x.link || '').toLowerCase().endsWith('/' + id));
+  if (!d) throw new HttpError(404, 'That quotation is not here — the link may be old, or mistyped');
+  const prod = (pid) => (S.products || []).find(x => x.id === pid) || {};
+  const cust = (S.customers || []).find(c => c.id === d.customerId);
+  const sh = CFG.shop || {};
+  const logo = /^(data:image\/|https?:\/\/|\/)/.test(String(sh.logo || '')) ? sh.logo : '/regal-logo.png';
+  const until = new Date(d.date + 'T12:00:00Z'); until.setUTCDate(until.getUTCDate() + (+d.valid || 0));
+  const lines = (d.lines || []).map(l => { const p = prod(l.pid), mrp = Math.max(+l.mrp || 0, +p.mrp || 0);
+    return { name: l.name || p.name || 'Item', code: p.code || '', unit: p.unit || '', qty: l.qty, price: l.price, disc: l.disc || 0, mrp: mrp > 0 ? mrp : 0,
+      amount: +(l.qty * l.price - (l.disc || 0)).toFixed(2) }; });
+  const mrpTotal = lines.reduce((a, l) => a + (l.mrp > 0 ? l.mrp * l.qty : l.amount), 0);
+  res.json({ ok: true, bill: {
+    quote: true, no: d.no, date: d.date, time: '', type: 'QUOTE', status: d.status, invoice: d.invoice || null,
+    valid: +d.valid || 0, until: until.toISOString().slice(0, 10), expired: until.toISOString().slice(0, 10) < localDate(),
+    sub: +lines.reduce((a, l) => a + l.amount, 0).toFixed(2), billDisc: d.billDisc || 0, total: d.total, paid: 0, balance: 0, by: d.by || '',
+    customer: cust && cust.id !== 1 ? { name: cust.name, code: cust.code } : null,
+    lines, pays: [], paper: 'a5', html: null, saved: +Math.max(0, mrpTotal - d.total).toFixed(2), feedback: null,
+    shop: { name: sh.name || 'Regal Hardware', phone: sh.phone || '', land: sh.land || '', addr: sh.addr || '', web: sh.web || '',
+      logo, sinhala: sh.sinhala || '', near: sh.near || '', tags: sh.tags || '', line1: sh.line1 || '', email: sh.email || '' },
+  } });
+}));
+
 /* "See every bill and payment" on a bill whose customer's page is not open: the ask goes to the shop's
    Approvals (the same as asking from the page itself); the bill link is theirs, so no code is needed to ask. */
 r.post('/b/:id/ask-open', asyncHandler(async (req, res) => {

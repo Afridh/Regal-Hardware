@@ -359,7 +359,9 @@ function feedbackAfter(b,id){
 (async () => {
   const id = location.pathname.split('/').filter(Boolean).pop() || '';
   try {
-    const r = await fetch('/api/my/b/' + encodeURIComponent(id));
+    // regalhw.lk/q/… is a quotation: the same page, dressed as one
+    const isQ = location.pathname.startsWith('/q/');
+    const r = await fetch((isQ ? '/api/my/q/' : '/api/my/b/') + encodeURIComponent(id));
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.bill) throw new Error(j.error || 'That bill could not be found');
     const b = j.bill, sh = b.shop;
@@ -371,7 +373,7 @@ function feedbackAfter(b,id){
     // the logo set in the till, else the shop's own — the initials only if neither will load
     { const im = new Image(); im.alt = sh.name; im.onload = () => { $('#logo').innerHTML = ''; $('#logo').appendChild(im) }; im.src = sh.logo || '/regal-logo.png' }
     $('#mk').textContent = ini;
-    document.title = sh.name + ' · bill ' + b.no;
+    document.title = sh.name + (b.quote ? ' · quotation ' : ' · bill ') + b.no;
     const telNum = firstPhone(sh.phone) || firstPhone(sh.land);
     const mob = firstPhone(sh.phone), wa = /^0?7\d{8}$/.test(mob) ? '94' + mob.replace(/^0/, '') : '';
     const where = [sh.addr, sh.near].filter(Boolean).join(' ');
@@ -381,32 +383,35 @@ function feedbackAfter(b,id){
       maps ? `<a class="chip" href="${esc(maps)}" target="_blank" rel="noopener">${svg('pin')}${esc(sh.addr)}</a>` : '',
       telNum ? `<a class="chip" href="tel:${esc(telNum)}">${svg('call')}${esc(String(sh.phone||sh.land).split(/[,/;]/)[0].trim())}</a>` : '',
       web ? `<a class="chip" href="${esc(web)}" target="_blank" rel="noopener">${svg('web')}${esc(sh.web.replace(/^https?:\/\//,''))}</a>` : ''].join('');
-    $('#hi').innerHTML = b.customer ? `Thank you for shopping with us, <b>${esc(b.customer.name)}</b>.` : 'Thank you for shopping with us.';
+    $('#hi').innerHTML = b.quote ? (b.customer ? `Here is your quotation, <b>${esc(b.customer.name)}</b>. Ring us to order.` : 'Here is your quotation. Ring us to order.')
+      : b.customer ? `Thank you for shopping with us, <b>${esc(b.customer.name)}</b>.` : 'Thank you for shopping with us.';
 
-    const settled = !(b.balance > 0.005);
-    const stamp = settled ? `<span class="stamp paid">Paid</span>` : b.type === 'CREDIT' && !(b.paid > 0.005) ? `<span class="stamp acc">On account</span>` : `<span class="stamp due">Balance due</span>`;
+    const settled = !b.quote && !(b.balance > 0.005);
+    const qStamp = b.quote ? (b.invoice ? `<span class="stamp paid">Ordered</span>` : b.expired ? `<span class="stamp due">Expired</span>` : `<span class="stamp acc">Quotation</span>`) : '';
+    const stamp = b.quote ? qStamp : settled ? `<span class="stamp paid">Paid</span>` : b.type === 'CREDIT' && !(b.paid > 0.005) ? `<span class="stamp acc">On account</span>` : `<span class="stamp due">Balance due</span>`;
     const card = `
       <div class="receipt ${b.html ? 'screenview' : ''}">
-        <div class="rtop"><div><div class="rno">Invoice<b>${esc(b.no)}</b></div>
+        <div class="rtop"><div><div class="rno">${b.quote ? 'Quotation' : 'Invoice'}<b>${esc(b.no)}</b></div>
           <div class="when">${esc(b.date)}${b.time ? ' · ' + esc(b.time) : ''}</div></div>${stamp}</div>
         <div class="grand"><div class="lbl">Total</div><div class="amt"><small>Rs</small><span id="amt">0.00</span></div>
-          ${b.saved > 0.005 ? `<span class="saved">🎉 You saved ${money(b.saved)}</span>` : ''}</div>
+          ${b.saved > 0.005 ? `<span class="saved">🎉 You ${b.quote ? "save" : "saved"} ${money(b.saved)}${b.quote ? " against the MRP" : ""}</span>` : ''}</div>
         <div class="items">${b.lines.map((l, i) => `<div class="item ${l.returned ? 'ret' : ''}" style="--i:${Math.min(i, 14)}">
             <span class="q">${+l.qty === Math.round(l.qty) ? Math.abs(l.qty) : Math.abs(l.qty).toFixed(2)}×</span>
             <span class="nm"><b>${esc(l.name)}${l.returned ? '<span class="rtag">returned</span>' : ''}</b>
-              <span class="sub">${money(l.price)}${l.unit ? ' / ' + esc(l.unit) : ''}${l.mrp ? `<s>${money(l.mrp)}</s>` : ''}${l.disc > 0 ? ` · less ${money(l.disc)}` : ''}</span></span>
+              <span class="sub">${money(l.price)}${l.unit ? ' / ' + esc(l.unit) : ''}${l.mrp ? (b.quote ? ` · MRP ${l.mrp > l.price + 0.005 ? `<s>${money(l.mrp)}</s>` : money(l.mrp)}` : `<s>${money(l.mrp)}</s>`) : ''}${l.disc > 0 ? ` · less ${money(l.disc)}` : ''}</span></span>
             <span class="am">${money(l.amount)}</span></div>`).join('')}</div>
         <div class="tots">
           <div class="tot"><span>Subtotal</span><b>${money(b.sub)}</b></div>
           ${b.billDisc > 0 ? `<div class="tot"><span>Discount</span><b>− ${money(b.billDisc)}</b></div>` : ''}
-          <div class="tot"><span>Paid${b.pays && b.pays.length ? ' · ' + b.pays.map(p => esc(String(p.method).toLowerCase())).join(', ') : ''}</span><b>${money(b.paid)}</b></div>
-          ${settled ? `<div class="tot ok"><span>Settled</span><b>✓ in full</b></div>` : `<div class="tot due"><span>Still to pay on this bill</span><b>${money(b.balance)}</b></div>`}
+          ${b.quote ? `<div class="tot"><span><b>Quoted total</b></span><b style="font-size:17px">${money(b.total)}</b></div>
+          <div class="tot ${b.expired ? 'due' : 'ok'}"><span>Prices hold good until</span><b>${esc(new Date(b.until + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }))}${b.expired ? ' — past' : ''}</b></div>` : `<div class="tot"><span>Paid${b.pays && b.pays.length ? ' · ' + b.pays.map(p => esc(String(p.method).toLowerCase())).join(', ') : ''}</span><b>${money(b.paid)}</b></div>
+          ${settled ? `<div class="tot ok"><span>Settled</span><b>✓ in full</b></div>` : `<div class="tot due"><span>Still to pay on this bill</span><b>${money(b.balance)}</b></div>`}`}
         </div>
         ${b.by ? `<div class="by">Served by ${esc(b.by)}</div>` : ''}
       </div>`;
     /* their whole account, not just this bill: what they owe altogether, and the way into their own page */
     // the way in: open → sign in with the mobile and a code; not open → ask the shop, who texts when it is
-    const c = b.customer;
+    const c = b.quote ? null : b.customer;
     const goT = !c ? '' : c.page ? `<a class="acct-go" href="${esc(c.page)}">See every bill and payment<span>Sign in with your mobile — we text you a code</span></a>`
       : c.asked ? `<div class="acct-go wait">Asked — waiting for the shop<span>We will text you when your account is open. Then sign in with your mobile and a code.</span></div>`
       : c.canAsk ? `<button class="acct-go" type="button" id="askOpen">See every bill and payment<span>Ask the shop to open your account — they text you when it is ready</span></button>` : '';
@@ -428,12 +433,12 @@ function feedbackAfter(b,id){
         <button class="act main" type="button" onclick="downloadPdf(this)"><i>${svg('pdf')}</i><span>PDF</span></button>
         <button class="act" type="button" onclick="window.print()"><i>${svg('print')}</i><span>Print</span></button>
         ${telNum ? `<a class="act" href="tel:${esc(telNum)}"><i>${svg('call')}</i><span>Call</span></a>` : ''}
-        ${wa ? `<a class="act" href="https://wa.me/${wa}?text=${encodeURIComponent('Hello, about my bill ' + b.no)}" target="_blank" rel="noopener"><i>${svg('wa')}</i><span>WhatsApp</span></a>`
+        ${wa ? `<a class="act" href="https://wa.me/${wa}?text=${encodeURIComponent((b.quote ? 'Hello, about my quotation ' : 'Hello, about my bill ') + b.no)}" target="_blank" rel="noopener"><i>${svg('wa')}</i><span>WhatsApp</span></a>`
              : maps ? `<a class="act" href="${esc(maps)}" target="_blank" rel="noopener"><i>${svg('pin')}</i><span>Find us</span></a>` : ''}
       </div>`;
     const foot = `<div class="shopfoot screenview"><b>${esc(sh.name)}</b><br>${esc(where)}<br>
         ${[sh.phone, sh.land].filter(Boolean).map(esc).join(' · ')}${sh.email ? '<br>' + esc(sh.email) : ''}${web ? `<br><a href="${esc(web)}" target="_blank" rel="noopener">${esc(sh.web.replace(/^https?:\/\//,''))}</a>` : ''}</div>`;
-    $('#out').innerHTML = pageRule + card + paper + accT + acts + feedbackCard(b) + foot;
+    $('#out').innerHTML = pageRule + card + paper + accT + acts + (b.quote ? '' : feedbackCard(b)) + foot;
     bill = b;
     { const ask = $('#askOpen'); if (ask) ask.onclick = async () => {
         ask.disabled = true; $('#askMsg').textContent = '';
@@ -444,7 +449,7 @@ function feedbackAfter(b,id){
         } catch (e) { ask.disabled = false; $('#askMsg').textContent = e.message }
       } }
     setTimeout(() => countUp($('#amt'), +b.total || 0, 1400), calm ? 0 : 650);
-    feedbackAfter(b, id);
+    if (!b.quote) feedbackAfter(b, id);
     // a bill paid in full: a little celebration, the first time it is opened on this phone
     if (settled && !seen('bill-cheer-' + id)) setTimeout(() => confetti(), 1500);
   } catch (e) {
