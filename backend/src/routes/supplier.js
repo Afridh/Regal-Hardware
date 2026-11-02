@@ -520,9 +520,10 @@ r.get('/me', supAuth, asyncHandler(async (req, res) => {
                  days: ageOf(p.date), terms, due: terms ? terms - ageOf(p.date) : null }))
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   // their own payment requests: the ones the shop has, and the one still on its way
-  const mine = (S.payReqs || []).filter(x => x.sid === sup.id).map(x => ({
+  // a payment the shop is making up of its own shows once a director has said yes; the shop's own steps (asking, approving) are not theirs to see
+  const mine = (S.payReqs || []).filter(x => x.sid === sup.id && !(x.source === 'shop' && (x.status === 'final' || x.apWait))).map(x => ({
     id: x.id, date: x.date, total: x.total, note: x.note, status: x.status, lines: x.lines,
-    events: (x.events || []).map(e => ({ who: e.actor === 'shop' ? (CFG.shop?.name || 'The shop') : e.name, action: e.action, note: e.note, at: e.at })),
+    events: (x.events || []).filter(e => !['askedOk', 'approved', 'declined'].includes(e.action)).map(e => ({ who: e.actor === 'shop' ? (CFG.shop?.name || 'The shop') : e.name, action: e.action, note: e.note, at: e.at })),
     pay: x.pay || null, final: x.final ? { amount: x.final.amount, note: x.final.note || '' } : null, prep: x.prep ? { method: x.prep.method } : null }));
   const waiting = pending.filter(p => p.kind === 'payreq').map(p => ({
     id: 'pending' + p.id, date: p.data.date, total: p.data.total, note: p.data.note, lines: p.data.lines,

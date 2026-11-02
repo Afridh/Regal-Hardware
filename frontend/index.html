@@ -9205,7 +9205,8 @@ const prIdx = (r) => PR_STAGES.findIndex(s => s[0] === prStage(r));
 const PR_FLOW = Object.fromEntries(PR_STAGES.map(s => [s[0], { label: s[1], tag: s[3] }]).concat([['accepted', { label: 'Amount finalised', tag: 'blue' }], ['rejected', { label: 'Turned down', tag: 'bad' }]]));
 const PR_NEXT = { sent: 'Invoices checked', checked: 'Finalise the amount', final: 'Start preparing', preparing: 'Amount prepared', prepared: 'Ready for collection', ready: 'Issue it' };
 const PR_ACT = { asked: 'asked to be paid', checked: 'checked the invoices', final: 'finalised the amount', accepted: 'finalised the amount', preparing: 'started preparing the amount',
-  prepared: 'prepared the amount', ready: 'made it ready for collection', issued: 'issued it', rejected: 'turned it down', queried: 'asked the supplier about it' };
+  prepared: 'prepared the amount', ready: 'made it ready for collection', issued: 'issued it', rejected: 'turned it down', queried: 'asked the supplier about it',
+  made: 'prepared a payment to them', askedOk: 'asked a director to approve it', approved: 'approved it', declined: 'did not approve it', reminded: 'reminded them to collect it' };
 const PR_EV_STAGE = { asked: 'sent', accepted: 'final' };
 const payReqs = () => (S.payReqs || []);
 const payReqOpen = () => payReqs().filter(r => !['issued', 'rejected'].includes(r.status));
@@ -9248,7 +9249,7 @@ function prNext(r){
       r.final = { amount: +a.toFixed(2), by: S.user.name, at: apStamp(), note: n }; m.remove();
       step('final', fmt(a) + (n ? ' — ' + n : ''), `${fmt(a)} finalised — ${who} is told`) };
     m.querySelector('#prA').select();
-  } else if (k === 'final') step('preparing', '', 'Preparing — mark it prepared when the cheque or cash is made up');
+  } else if (k === 'final') { if (r.apWait) return toast('Waiting for a director to say yes', 'warn'); if (prPrepGate(r, 'preparing')) return; step('preparing', '', 'Preparing — mark it prepared when the cheque or cash is made up') }
   else if (k === 'preparing') {
     const m = modal(`<h2>Amount prepared</h2><div class="muted">${fmt(prAmt(r))} for ${who}. How is it made up?</div>
       <div class="grid3" style="margin-top:10px">
@@ -9380,6 +9381,123 @@ function prStep(r, action, note){
   prTell(r, action);
 }
 
+/* ================== PAYING A SUPPLIER: THE TWO WAYS (2 Nov 2026) ==================
+   1. We write the cheques ahead and keep them until their collector calls: "Prepare a payment" — the
+      supplier, the bills it settles, how it is made up (cheque number, bank, date). A director or admin says
+      yes first (anyone else's goes to Approvals); then it is ready, the supplier is texted to come and collect,
+      and it waits on the "Ready — not collected yet" list. Handing it over (Issue it) needs a director's yes
+      too, posts the books, and the payment slip is signed by the collector.
+   2. Their collector comes, checks the bills, and the cheques are written there and then — the supplier's
+      Pay button, or their own payment request moved along; the same yes before anything is paid out.
+   Every payment is followed on the supplier's own card here and on their page at regalhw.lk/supplier. */
+const prOwingBills=(sid)=>S.purchases.filter(p=>p.supplierId===sid&&(+p.total||0)-(+p.paid||0)>0.005).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+const prWaitDays=(r)=>{ const e=(r.events||[]).filter(x=>x.action==='ready').pop(); return e?Math.max(0,Math.floor((Date.now()-e.at)/864e5)):0 };
+/* the director's yes before the money is made up; a director or admin doing it themselves is that yes */
+function prPrepGate(r,to,say){
+  if(payBoss()||(CFG.approvals||{}).supPayPrep===false) return false;
+  const sp=SU(r.sid);
+  const a=requestApproval('supPayPrep',`Prepare ${fmt(prAmt(r))} for ${escM(sp?sp.name:'a supplier')}`,
+    (r.prep?prepWhat(r.prep)+' · ':'')+`${(r.lines||[]).length} bill${(r.lines||[]).length===1?'':'s'}`,{prId:r.id,to});
+  r.apWait=a&&a.id; r.events=r.events||[]; r.events.push({actor:'shop',name:S.user.name,action:'askedOk',note:fmt(prAmt(r)),at:Date.now()});
+  persist(true); render(); toast(say||'Sent to a director for approval — it goes ahead once they say yes','warn'); return true;
+}
+function prPrepareNew(sid){
+  if(!canPayReq()) return toast('Paying suppliers is not open to '+S.user.name);
+  const owed=S.suppliers.filter(s=>s.active!==false&&partyBal('S',s.id)>0.005).sort((a,b)=>partyBal('S',b.id)-partyBal('S',a.id));
+  let cur=sid||(owed[0]||{}).id||null;
+  const m=modal(`<h2>Prepare a payment</h2>
+   <div class="muted" style="margin-bottom:10px">Write the cheque now and keep it until their collector calls. ${payBoss()?'':'A director or admin says yes first.'}</div>
+   <div class="f"><label>Supplier</label><select id="ppS">${(sid&&!owed.some(s=>s.id===sid)?[SU(sid)]:[]).concat(owed).filter(Boolean).map(s=>`<option value="${s.id}" ${s.id===cur?'selected':''}>${noteEsc(s.name)} — owed ${fmt(partyBal('S',s.id))}</option>`).join('')}</select></div>
+   <div id="ppBills"></div>
+   <div class="grid3" style="margin-top:8px">
+    <div class="f"><label>Amount</label><input id="ppA" type="number" step="any"></div>
+    <div class="f"><label>How</label><select id="ppHow"><option value="CHEQUE">Cheque</option><option value="CASH">Cash</option><option value="BANK">Bank transfer</option></select></div>
+    <div class="f"><label>From</label><select id="ppBank">${S.banks.map(b=>`<option value="${b.id}">${noteEsc(bankLabel?bankLabel(b):b.name)}</option>`).join('')}</select></div></div>
+   <div class="grid3">
+    <div class="f"><label>Cheque number</label><input id="ppNo" maxlength="30" placeholder="as written"></div>
+    <div class="f"><label>Cheque dated</label><input id="ppDate" type="date" value="${D(today)}"></div>
+    <div class="f"><label>Note (optional)</label><input id="ppNote" maxlength="160" placeholder="e.g. for the October bills"></div></div>
+   <label class="chk"><input type="checkbox" id="ppTell" checked> Tell them it is ready to collect (a text, and on their page)</label>
+   <div class="muted" id="ppM" style="min-height:18px;color:var(--chip-rust)"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="ppGo">${payBoss()?'Prepare it':'Ask for approval'}</button></div>`);
+  const g=i=>m.querySelector('#'+i);
+  const drawBills=()=>{ cur=+g('ppS').value; const bills=prOwingBills(cur);
+    g('ppBills').innerHTML=bills.length?`<div style="max-height:30vh;overflow:auto;margin-top:8px"><table class="tbl"><tr><th></th><th>Bill</th><th>Their invoice</th><th>Date</th><th class="n">Owing</th></tr>
+      ${bills.map(p=>`<tr><td><input type="checkbox" data-pb="${p.no}" checked></td><td>${noteEsc(p.no)}</td><td class="muted">${noteEsc(p.supInv||'—')}</td><td>${p.date}</td><td class="n">${fmt((+p.total||0)-(+p.paid||0))}</td></tr>`).join('')}</table></div>`
+      :'<div class="muted" style="margin-top:8px">No bills owing to them on the books — the amount goes on account.</div>';
+    const sum=()=>{ const s2=[...m.querySelectorAll('[data-pb]:checked')].reduce((a,x)=>{ const p=bills.find(b=>b.no===x.dataset.pb); return a+((+p.total||0)-(+p.paid||0)) },0); g('ppA').value=s2?s2.toFixed(2):'' };
+    m.querySelectorAll('[data-pb]').forEach(x=>x.onchange=sum); sum() };
+  g('ppS').onchange=drawBills; drawBills();
+  g('ppHow').onchange=()=>{ const h=g('ppHow').value; g('ppNo').disabled=h==='CASH'; g('ppDate').disabled=h!=='CHEQUE'; g('ppBank').disabled=h==='CASH' };
+  g('ppGo').onclick=()=>{
+    const sid2=+g('ppS').value, sp=SU(sid2), amt=+g('ppA').value||0, how=g('ppHow').value;
+    if(!sp) return g('ppM').textContent='Pick the supplier.';
+    if(!(amt>0)) return g('ppM').textContent='The amount, please.';
+    if(how==='CHEQUE'&&!g('ppNo').value.trim()) return g('ppM').textContent='The cheque number, as written.';
+    const bills=prOwingBills(sid2), picked=[...m.querySelectorAll('[data-pb]:checked')].map(x=>bills.find(b=>b.no===x.dataset.pb)).filter(Boolean);
+    const r={id:'PP'+Date.now().toString(36).toUpperCase(),source:'shop',sid:sid2,rep:S.user.name,date:D(today),note:g('ppNote').value.trim(),
+      lines:picked.map(p=>({no:p.no,supInv:p.supInv||'',date:p.date,billed:+p.total||0,owing:+((+p.total||0)-(+p.paid||0)).toFixed(2),claim:+((+p.total||0)-(+p.paid||0)).toFixed(2)})),
+      total:+amt.toFixed(2),final:{amount:+amt.toFixed(2),by:S.user.name,at:apStamp(),note:''},
+      prep:{method:how,bank:how==='CASH'?null:+g('ppBank').value||null,date:how==='CHEQUE'?g('ppDate').value:'',no:g('ppNo').value.trim(),by:S.user.name,at:apStamp()},
+      tell:g('ppTell').checked,status:'final',events:[{actor:'shop',name:S.user.name,action:'made',note:fmt(amt),at:Date.now()}]};
+    S.payReqs=S.payReqs||[]; S.payReqs.push(r); m.remove(); prSel=r.id;
+    if(prPrepGate(r,r.tell?'ready':'prepared',`Sent to a director — once they say yes it is ready${r.tell?' and '+sp.name.split(/[–(]/)[0].trim()+' is told':''}`)) return;
+    prMadeUp(r,r.tell?'ready':'prepared'); persist(true); render();
+  };
+}
+/* made up (and, when it is to be, the supplier told): after the yes, or at once for a director */
+function prMadeUp(r,to){
+  delete r.apWait;
+  if(r.status==='final'&&r.prep){ prStep(r,'prepared',prepWhat(r.prep)); r.status='prepared' }
+  if(to==='ready'){ prStep(r,'ready',''); r.status='ready' }
+  else if(to==='preparing'){ prStep(r,'preparing',''); r.status='preparing' }
+  const sp=SU(r.sid); toast(`${fmt(prAmt(r))} for ${sp?sp.name:'the supplier'} — ${r.status==='ready'?'ready, they are told to collect':r.status==='prepared'?'prepared, kept until they call':'being prepared'}`,'ok');
+}
+/* the list the owner looks at: made up, they are told, nobody has called for it yet */
+function prReadyList(){
+  const rs=payReqs().filter(r=>r.status==='ready'||r.status==='prepared').sort((a,b)=>prWaitDays(b)-prWaitDays(a));
+  const waiting=payReqs().filter(r=>r.apWait&&(S.approvals||[]).some(a=>a.id===r.apWait&&a.status==='pending'));
+  if(!rs.length&&!waiting.length) return '';
+  return `<div class="card" style="margin-bottom:12px;border-left:4px solid var(--chip-blue)">
+   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Ready — not collected yet <span class="muted" style="font-weight:400;font-size:13px">${rs.length} · ${fmt(rs.reduce((a,r)=>a+prAmt(r),0))}</span></h2>
+    ${waiting.length?`<span class="tag warn">${waiting.length} waiting for a director's yes · ${fmt(waiting.reduce((a,r)=>a+prAmt(r),0))}</span>`:''}</div>
+   ${rs.length?`<table class="tbl" style="margin-top:8px"><tr><th>Supplier</th><th>Made up as</th><th class="n">Amount</th><th>Waiting</th><th></th></tr>
+    ${rs.map(r=>{ const sp=SU(r.sid), d=prWaitDays(r);
+      return `<tr><td><b>${noteEsc(sp?sp.name:'Supplier')}</b><div class="muted">${(r.lines||[]).length} bill${(r.lines||[]).length===1?'':'s'}${r.source==='shop'?' · prepared by us':' · they asked'}</div></td>
+       <td>${noteEsc(r.prep?prepWhat(r.prep):'—')}</td><td class="n"><b>${fmt(prAmt(r))}</b></td>
+       <td>${r.status==='prepared'?'<span class="tag blue">not told yet</span>':d>7?`<span class="tag bad">${d} days</span>`:d>2?`<span class="tag warn">${d} days</span>`:`<span class="muted">${d?d+' days':'today'}</span>`}</td>
+       <td style="white-space:nowrap;text-align:right">${canPayReq()?(r.status==='prepared'?`<button class="btn ghost sm" data-act="prNext" data-id="${r.id}">Tell them it's ready</button>`:`<button class="btn tape sm" data-act="prNext" data-id="${r.id}">Issue it</button> <button class="btn ghost sm" data-act="prRemind" data-id="${r.id}">📱 Remind</button>`):''} <button class="btn ghost sm" data-act="prSlip" data-id="${r.id}">🧾 Slip</button></td></tr>` }).join('')}</table>`:''}</div>`;
+}
+/* the payment slip: what the collector signs for — the supplier, the bills, the cheque, who made it up,
+   who said yes, and room for the collector's name, NIC and signature */
+function prSlip(r){
+  const sp=SU(r.sid)||{name:'Supplier'}, p=r.prep||{};
+  const okBy=((r.events||[]).filter(e=>e.action==='approved').pop()||{}).name||((S.approvals||[]).find(a=>a.data&&a.data.prId===r.id&&a.status==='approved')||{}).decidedBy||(r.final||{}).by||'';
+  voucherPrint({view:true,title:'Payment Slip',no:r.id,date:(r.pay&&r.pay.date)||D(today),payee:sp.name,payeeLabel:'PAY TO',
+    payeeSub:`${sp.phone||''}${sp.code?' · '+sp.code:''}`,amount:+((r.pay&&r.pay.amount)||prAmt(r)),totalLabel:r.status==='issued'?'AMOUNT PAID':'AMOUNT TO PAY',
+    rows:[['Made up as',noteEsc(p.method?prepWhat(p):(r.pay?r.pay.what:'—'))],...(p.method==='CHEQUE'?[['Cheque number',noteEsc(p.no||'—')],['Cheque dated',p.date||'—']]:[]),
+      ['Prepared by',noteEsc(p.by||(r.final||{}).by||'—')],['Approved by',noteEsc(okBy||'—')],['Status',(PR_FLOW[r.status]||{}).label||r.status],
+      ...(r.pay?[['Handed over',`${r.pay.date} · voucher ${r.pay.voucher||'—'}`]]:[])],
+    linesLabel:'Bills settled',lines:(r.lines||[]).map(l=>[`${l.no}${l.supInv?' · their invoice '+l.supInv:''}${l.date?' · '+l.date:''}`,+l.claim||0]),
+    note:'Collected by — name: ______________________   NIC: ____________________',
+    thirdSign:'COLLECTED BY'});
+}
+function prRemind(r){
+  const sp=SU(r.sid); if(!sp||!sp.phone) return toast('No mobile for '+(sp?sp.name:'them'));
+  sms(sp.phone,PR_SAID.ready(r),'supplier'); r.events=r.events||[]; r.events.push({actor:'shop',name:S.user.name,action:'reminded',note:'',at:Date.now()});
+  persist(true); render(); toast(`${sp.name.split(/[–(]/)[0].trim()} reminded to collect`,'ok');
+}
+/* on the supplier's own card: their payments on the way, where each is */
+function supPayTrack(s){
+  const rs=payReqs().filter(r=>r.sid===s.id&&!['issued','rejected'].includes(r.status));
+  return `<div class="card" style="margin:10px 0">
+   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b>Payments on the way</b>
+    ${canPayReq()?`<button class="btn ghost sm" data-act="prPrep" data-id="${s.id}">💳 Prepare a payment</button>`:''}</div>
+   ${rs.length?rs.map(r=>`<div class="rowlink" data-act="prOpen" data-id="${r.id}" style="padding:8px 0;border-top:1px solid var(--line2);cursor:pointer">
+     <div style="display:flex;justify-content:space-between;gap:8px"><span>${r.date} · ${(r.lines||[]).length} bill${(r.lines||[]).length===1?'':'s'}${r.prep?' · '+noteEsc(prepWhat(r.prep)):''}</span><b>${fmt(prAmt(r))}</b></div>
+     <span class="tag ${(PR_FLOW[r.status]||{}).tag||''}">${r.apWait?'Waiting for a director':(PR_FLOW[r.status]||{}).label||r.status}</span>${prTrack(r,true)}</div>`).join('')
+    :'<div class="muted" style="margin-top:6px">Nothing on the way to them.</div>'}</div>`;
+}
 let prSel = null, prShow = 'open';
 function payreqs(){
   const all = payReqs();
@@ -9390,13 +9508,14 @@ function payreqs(){
   const month = D(today).slice(0, 7), paidMonth = all.filter(r => r.status === 'issued' && String((r.pay || {}).date || '').startsWith(month));
   const sel = prSel && all.find(r => r.id === prSel);
   const count = (k) => all.filter(r => prStage(r) === k).length;
-  return `<h1>Supplier payments <span class="muted" style="font-size:13px;font-weight:400">every request, from asked to issued</span></h1>
+  return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><span>Supplier payments <span class="muted" style="font-size:13px;font-weight:400">every payment, from asked or prepared to issued</span></span>${canPayReq()?'<button class="btn tape" data-act="prPrep" data-id="" style="font-size:14px">💳 Prepare a payment</button>':''}</h1>
    <div class="row" style="margin-bottom:12px">
     ${stat('New requests', payReqNew(), payReqNew() ? 'invoices to check' : 'nothing new', payReqNew() ? 'r' : 'g')}
     ${stat('In progress', fmt(open.reduce((a, r) => a + prAmt(r), 0)), `${open.length} request${open.length === 1 ? '' : 's'}`, open.length ? 'y' : 'g')}
     ${stat('Ready for collection', fmt(ready.reduce((a, r) => a + prAmt(r), 0)), `${ready.length} waiting to be collected`, ready.length ? 'b' : 'g')}
     ${stat('Issued this month', fmt(paidMonth.reduce((a, r) => a + (+((r.pay || {}).amount) || prAmt(r)), 0)), `${paidMonth.length} paid · owed in all ${fmt(owedAll)}`, 'g')}
    </div>
+   ${prReadyList()}
    <div class="pr-stages">
     <button class="${prShow === 'open' ? 'on' : ''}" data-act="prShow" data-k="open"><b>${open.length}</b><span>All open</span></button>
     ${PR_STAGES.map(([k, l], i) => `<button class="${prShow === k ? 'on' : ''} ${k === 'issued' ? 'end' : ''}" data-act="prShow" data-k="${k}"><b>${count(k)}</b><span>${i + 1}. ${l}</span></button>`).join('')}
@@ -9426,10 +9545,12 @@ function prCard(r){
   return `<div class="card">
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
      <div><h2 style="margin:0">${sp ? sp.name : 'Supplier'}</h2>
-      <div class="muted">asked ${r.date} by ${r.rep || 'their rep'} · they are owed ${fmt(owedNow)} in all</div></div>
+      <div class="muted">${r.source === 'shop' ? 'prepared' : 'asked'} ${r.date} by ${r.rep || 'their rep'} · they are owed ${fmt(owedNow)} in all</div></div>
      <div style="text-align:right"><div style="font-size:22px;font-weight:800">${fmt(prAmt(r))}</div><span class="tag ${f.tag || ''}">${f.label || r.status}</span></div></div>
     ${prTrack(r)}
-    ${canPayReq() && open && PR_NEXT[k] ? `<div class="pr-next"><div><small>Next step</small><b>${PR_STAGES[prIdx(r) + 1] ? PR_STAGES[prIdx(r) + 1][1] : ''}</b></div>
+    ${r.apWait ? `<div class="card note" style="margin:10px 0;border-left:3px solid var(--chip-yellow)"><b>Waiting for a director's yes</b><div class="muted">It goes ahead the moment they approve it in Approvals.</div></div>` : ''}
+    <div style="text-align:right;margin-top:6px"><button class="btn ghost sm" data-act="prSlip" data-id="${r.id}">🧾 Payment slip</button></div>
+    ${canPayReq() && open && PR_NEXT[k] && !r.apWait ? `<div class="pr-next"><div><small>Next step</small><b>${PR_STAGES[prIdx(r) + 1] ? PR_STAGES[prIdx(r) + 1][1] : ''}</b></div>
       <button class="btn tape" data-act="prNext" data-id="${r.id}">${PR_NEXT[k]} →</button>
       ${k === 'sent' ? `<button class="btn ghost" data-act="prQuery" data-id="${r.id}">Ask them about it</button>` : ''}
       ${k !== 'ready' ? `<button class="btn ghost" data-act="prReject" data-id="${r.id}">Turn it down</button>` : ''}</div>` : ''}
@@ -22819,11 +22940,12 @@ const APPROVAL_KINDS=[
   ['salaryAsk','Salary or an advance asked for at the shift clock'],
   ['custPay','Customer payment taken by someone other than an admin'],
   ['supPay','Supplier paid by someone other than an admin'],
+  ['supPayPrep','A supplier payment prepared (cheque written) by someone other than an admin'],
   ['stockAdj','Stock adjusted — a stock take closed, or counts from phones posted']];
 /* Money in and money out. Only the Super Admin, the Owner or an Admin record a payment straight away;
    anyone else's — even someone allowed to approve other things — waits for one of them to say yes, and
    only then does it reach the customer's or supplier's account. */
-const PAY_APPROVALS=['custPay','supPay'];
+const PAY_APPROVALS=['custPay','supPay','supPayPrep'];
 const payBoss=()=>!!(S.user&&(['super admin','superadmin','owner','admin','demo admin'].includes(String(S.user.role||'').toLowerCase())||window.isDemo));
 function payGate(kind,title,detail,data,opts){
   if(payBoss()||(CFG.approvals||{})[kind]===false) return false;
@@ -22896,6 +23018,8 @@ function applyApproval(a){
         r.pay={date:d.date||D(today),what:payWhat(d.lines||[]),voucher:pv.voucher,by:a.by,no:pv.no}; prStep(r,'issued',payWhat(d.lines||[])) } }
       setTimeout(()=>{ try{ supplierVoucher(pv,true) }catch(e){} },80);
       break }
+    case 'supPayPrep':{ const r=payReqs().find(x=>x.id===d.prId); if(!r) throw new Error('That payment is no longer there');
+      r.events=r.events||[]; r.events.push({actor:'shop',name:S.user.name,action:'approved',note:'',at:Date.now()}); prMadeUp(r,d.to||'preparing'); break }
     case 'billAdjust': applySaleAdjust(d.no,+d.amount,d.why,d.note,a.by); break;
     case 'purAdjust': applyPurAdjust(d.no,+d.amount,d.why,d.note,a.by); break;
     case 'prodPrice':{ const p=P(d.pid); if(!p) throw new Error('Product no longer exists'); const oc=p.cost; Object.assign(p,d.prices); costChanged(p,oc,'price change approved'); break }
@@ -22985,6 +23109,7 @@ function decideApproval(id,ok,note){
   a.status=ok?'approved':'rejected'; a.decidedBy=S.user.name; a.decidedAt=apStamp(); a.decidedTs=Date.now(); a.note=(note||'').trim();
   if(ok){ try{ applyApproval(a) }catch(e){ a.status='failed'; a.note=(a.note?a.note+' · ':'')+e.message } }
   if(a.kind==='salaryAsk'&&a.status!=='approved') salTell(a.data||{},false,a.note);
+  if(a.kind==='supPayPrep'&&a.status!=='approved'){ const r=payReqs().find(x=>x.id===(a.data||{}).prId); if(r){ delete r.apWait; r.events=r.events||[]; r.events.push({actor:'shop',name:S.user.name,action:'declined',note:a.note||'',at:Date.now()}) } }
   if(a.kind==='leave'&&a.status!=='approved'){ const l=lvList().find(x=>x.id===(a.data||{}).id); if(l&&l.status==='pending'){ l.status='rejected'; l.note=a.note; l.decidedBy=S.user.name; lvTell(l,false,a.note) } }
   notify('approval',`${a.status==='approved'?'Approved':a.status==='failed'?'Could not apply':'Turned down'}: ${a.title}${a.note?' — '+a.note:''}`,'approvals',{forUser:a.by});
   render(); toast(a.status==='approved'?'Approved and applied':a.status==='failed'?'Approved but could not be applied — '+a.note:'Turned down');
@@ -27502,6 +27627,7 @@ function supplierPanel(s){
      <div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"><span class="tag blue">terms ${s.days||0} days</span>${ag.old>0?'<span class="tag bad">bills over 60 days</span>':''}${pend.length?`<span class="tag warn">${pend.length} cheque${pend.length===1?'':'s'} out</span>`:''}${s.enabled?'<span class="tag page">own page on</span>':''}${waiting?`<span class="tag warn">${waiting} order${waiting===1?'':'s'} waiting</span>`:''}${first?`<span class="muted" style="font-size:12px;align-self:center">supplier since ${first}</span>`:''}</div></div></div></div>
 
    ${inactiveBand('S',s)}
+   ${supPayTrack(s)}
    <div class="cu-kpis">
     <div class="kpi ${ag.old>0?'r':owed>0?'y':'g'}"><div class="l">Outstanding</div><div class="v ${fmt(owed).length>14?'small':''}">${fmt(owed)}</div><div class="s">${open.length?`${open.length} unpaid bill${open.length===1?'':'s'} · oldest ${ag.oldest} days`:'nothing outstanding'}</div>
      ${owed>0?`<div class="agebars" title="up to 30 · 31–60 · over 60 days"><i style="width:${ag.now/owed*100}%;background:var(--chip-green)"></i><i style="width:${ag.mid/owed*100}%;background:var(--chip-yellow)"></i><i style="width:${ag.old/owed*100}%;background:var(--chip-rust)"></i></div>`:''}</div>
@@ -32773,6 +32899,8 @@ document.addEventListener('click',e=>{
       }catch(e){ toast('Not done: '+e.message) } },
     prShow:()=>{ prShow=a.dataset.k; render() },
     prNext:()=>prNext(payReqs().find(x=>x.id===a.dataset.id)),
+    prPrep:()=>prPrepareNew(+a.dataset.id||null), prSlip:()=>{ const r=payReqs().find(x=>x.id===a.dataset.id); if(r) prSlip(r) }, prRemind:()=>{ const r=payReqs().find(x=>x.id===a.dataset.id); if(r) prRemind(r) },
+    prOpen:()=>{ prSel=a.dataset.id; prShow='all'; go('payreqs') },
     prSel:()=>{ prSel=a.dataset.id; const r=payReqs().find(x=>x.id===prSel); if(r) r.unreadShop=false; render() },
     prAccept:()=>{ const r=payReqs().find(x=>x.id===a.dataset.id); if(r&&canPayReq()) prNote(r,'accepted','Agree to this request','anything they should know — optional','Agree to it') },
     prQuery:()=>{ const r=payReqs().find(x=>x.id===a.dataset.id); if(r&&canPayReq()) prNote(r,'queried','Ask them about it','what is not right, or what you need from them','Send it back') },

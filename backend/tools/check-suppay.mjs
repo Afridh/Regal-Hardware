@@ -52,8 +52,8 @@ const ac = await pg.evaluate(id => window.eval('actionItems')().find(x => x.key 
 ok(ac && /1\/7/.test(ac.tag) && /Invoices checked/.test(ac.acts.join('')), 'the Action centre has it, with the next step on its button', ac && ac.tag);
 
 const page = async () => pg.evaluate(id => { window.eval(`prSel=${JSON.stringify(id)}; prShow='open'`); window.eval('go')('payreqs'); const c = document.querySelector('#main');
-  return { now: (c.querySelector('.prt:not(.sm) .prt-s.now span') || {}).textContent || '', done: c.querySelectorAll('.prt:not(.sm) .prt-s.done').length, btn: (c.querySelector('[data-act="prNext"]') || {}).textContent || '' } }, r.id);
-const next = async (fill) => { await pg.$eval(`[data-act="prNext"][data-id="${r.id}"]`, x => x.click()); await wait(300); if (fill) await pg.evaluate(fill); await wait(300) };
+  return { now: (c.querySelector('.prt:not(.sm) .prt-s.now span') || {}).textContent || '', done: c.querySelectorAll('.prt:not(.sm) .prt-s.done').length, btn: (c.querySelector('.pr-next [data-act="prNext"]') || {}).textContent || '' } }, r.id);   // the request card's own button (the ready list has its own)
+const next = async (fill) => { await pg.$eval(`.pr-next [data-act="prNext"][data-id="${r.id}"]`, x => x.click()); await wait(300); if (fill) await pg.evaluate(fill); await wait(300) };
 const supSees = async () => { const me = await api('/me', null, login.token); return (me.payReqs || []).find(x => x.id === r.id) || {} };
 
 let p = await page();
