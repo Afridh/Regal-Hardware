@@ -15,7 +15,9 @@ const { spawn } = require('child_process');
 // the same drawing settings as the print helper (backend/tools/print-agent/config.json)
 const FMT = {
   r80: { widthPx: 576, dots: 576, dpi: 203, scale: 1, threshold: 186, oversample: 2 },
-  a5: { widthPx: 733, scale: 2, oversample: 1, paper: 'A5', landscape: true }
+  // A5: drawn at about 370 dots an inch for the laser (733 css px x 4 across 200mm), and left in grey —
+  // forcing it to black and white, as the thermal roll needs, made its letters jagged (3 Nov 2026)
+  a5: { widthPx: 733, scale: 2, oversample: 2, paper: 'A5', landscape: true, grey: true }
 };
 const GUESS = {
   label: [/zdesigner|zebra|\bzpl\b|zd2\d\d|gk420|gc420/i],
@@ -106,7 +108,7 @@ async function render(format, html) {
       const g = c.getContext('2d', { willReadFrequently: true }); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
       g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
       const d = g.getImageData(0, 0, w, h), px = d.data;
-      for (let i = 0; i < px.length; i += 4) { const v = (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) < ${cut} ? 0 : 255; px[i] = px[i + 1] = px[i + 2] = v; px[i + 3] = 255; }
+      if (!${!!f.grey}) for (let i = 0; i < px.length; i += 4) { const v = (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) < ${cut} ? 0 : 255; px[i] = px[i + 1] = px[i + 2] = v; px[i + 3] = 255; }
       g.putImageData(d, 0, 0); return c.toDataURL('image/png').split(',')[1];
     })()`);
     const file = path.join(tmp, 'bill-' + Date.now() + '.png'); fs.writeFileSync(file, Buffer.from(png, 'base64'));

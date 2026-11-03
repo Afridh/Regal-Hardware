@@ -116,7 +116,9 @@ async function render(format, html) {
       g.drawImage(img, 0, 0, w, h);
       const d = g.getImageData(0, 0, w, h);
       const px = d.data;
-      for (let i = 0; i < px.length; i += 4) {
+      // the A5 goes to a laser that prints grey well: its letters keep their smooth edges (3 Nov 2026) —
+      // only the thermal roll is forced to black and white
+      if (wide) for (let i = 0; i < px.length; i += 4) {
         // how bright the pixel is, as an eye would read it
         const lum = px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114;
         const v = lum < cut ? 0 : 255;
