@@ -24,7 +24,11 @@ r.param('id', numOnly); r.param('cid', numOnly);
 const NO_TEXT = 'Sorry — we could not text you just now. Please ring the shop.';
 const TZ = process.env.SHOP_TZ || 'Asia/Colombo';
 const OTP_WINDOW_MS = 5 * 60 * 1000;
-const digits = s => String(s || '').replace(/\D/g, '');
+// a Sri Lankan mobile however it was typed on the card — 077 123 4567, +94 77 123 4567, 94771234567, 771234567 —
+// comes out as 0771234567 (3 Nov 2026: one kept as +94… stopped a customer asking for their page)
+const digits = s => { const d = String(s || '').replace(/\D/g, ''); return /^94\d{9}$/.test(d) ? '0' + d.slice(2) : /^7\d{8}$/.test(d) ? '0' + d : d; };
+// the customer's mobile: the main one, else the second
+const mobOf = c => [c?.phone, c?.phone2].map(digits).find(x => /^0\d{9}$/.test(x)) || '';
 const localDate = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
 const secret = () => process.env.JWT_SECRET || 'regal';
 const norm = s => String(s || '').trim().toLowerCase();
@@ -209,7 +213,7 @@ r.post('/forgot', asyncHandler(async (req, res) => {
   if (!l) throw new HttpError(404, 'There is no sign-in by that name');
   const data = await books();
   const c = (data?.S?.customers || []).find(x => x.id === l.owner);
-  const phone = digits(l.phone || c?.phone);
+  const phone = l.phone ? digits(l.phone) : mobOf(c);
   if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'There is no mobile on that sign-in — ring the shop and they will set it');
   sendingCode(phone, req.ip);
   const code = otpFor(phone);
@@ -231,7 +235,7 @@ r.post('/reset', asyncHandler(async (req, res) => {
   if (!l) throw new HttpError(404, 'There is no sign-in by that name');
   const data = await books();
   const c = (data?.S?.customers || []).find(x => x.id === l.owner);
-  const phone = digits(l.phone || c?.phone);
+  const phone = l.phone ? digits(l.phone) : mobOf(c);
   guardCode(phone, req.ip, () => otpOk(phone, req.body?.code));
   await query(`UPDATE cust_logins SET own_hash = $2, starter = NULL WHERE id = $1`, [l.id, await hash(pass)]);
   res.json({ ok: true });
@@ -240,13 +244,13 @@ r.post('/reset', asyncHandler(async (req, res) => {
 /* A customer who opened their own link (code and key) is not asked anything: the code goes to the mobile
    the shop has for them. The key is only in links texted to that mobile, and the code still has to come
    back from it, so a link passed on does not let anybody else in. */
-const viaLink = (S, link) => { const c = link ? byCode(S, link) : null; return c && keyOk(c, link) && /^0\d{9}$/.test(digits(c.phone)) ? c : null; };
+const viaLink = (S, link) => { const c = link ? byCode(S, link) : null; return c && keyOk(c, link) && mobOf(c) ? c : null; };
 
 r.post('/otp', asyncHandler(async (req, res) => {
   const data = await books();
   const S = data?.S || {};
   const own = !req.body?.phone ? viaLink(S, req.body?.link) : null;
-  const phone = own ? digits(own.phone) : digits(req.body?.phone);
+  const phone = own ? mobOf(own) : digits(req.body?.phone);
   if (!/^0\d{9}$/.test(phone)) throw new HttpError(400, 'Enter a mobile like 0771234567');
   const list = byPhone(S, phone);
   const c = own || (req.body?.code ? list.find(x => norm(x.code) === norm(splitLink(req.body.code).code)) || byCode(S, req.body.code) : list[0]);
@@ -266,7 +270,7 @@ r.post('/login', asyncHandler(async (req, res) => {
   const data = await books();
   const S = data?.S || {};
   const own = !req.body?.phone ? viaLink(S, req.body?.link) : null;
-  const phone = own ? digits(own.phone) : digits(req.body?.phone);
+  const phone = own ? mobOf(own) : digits(req.body?.phone);
   guardCode(phone, req.ip, () => otpOk(phone, req.body?.code));
   const list = byPhone(S, phone);
   const c = own || (req.body?.acc ? list.find(x => norm(x.code) === norm(splitLink(req.body.acc).code)) || list[0] : list[0]);
@@ -387,7 +391,7 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
       owes: owesOf(S, cust.id), openBills: (S.sales || []).filter(s => s.customerId === cust.id && +s.balance > 0.005).length,
       // their own page, by their mobile and a texted code: the link that names them when it can
       page: pageOpen(S, CFG, cust) ? '/my' + (cust.pkey ? '/' + String((cust.code || '') + '.' + cust.pkey).toLowerCase() : '') : null,
-      asked, canAsk: /^0\d{9}$/.test(digits(cust.phone)) } : null,
+      asked, canAsk: !!mobOf(cust) } : null,
     lines: (inv.lines || []).map(l => {
       const p = prod(l.pid);
       return { name: l.name || p.name || 'Item', code: p.code || '', unit: p.unit || '',
@@ -452,9 +456,9 @@ r.post('/b/:id/ask-open', asyncHandler(async (req, res) => {
   const c = (S.customers || []).find(x => x.id === inv.customerId);
   if (!c || c.id === 1) throw new HttpError(400, 'This bill is not on an account');
   if (pageOpen(S, data?.CFG, c)) return res.json({ ok: true, open: true });
-  if (!/^0\d{9}$/.test(digits(c.phone))) throw new HttpError(400, 'The shop has no mobile for this account — please give them a ring');
+  if (!mobOf(c)) throw new HttpError(400, 'The shop has no mobile for this account — please give them a ring');
   if (await askWaiting(S, c.id)) return res.json({ ok: true, asked: true, already: true });
-  sendingCode(digits(c.phone), req.ip);        // a few asks a quarter hour, like the codes
+  sendingCode(mobOf(c), req.ip);        // a few asks a quarter hour, like the codes
   await query(`INSERT INTO cust_inbox (cid, kind, data) VALUES ($1, 'askopen', $2)`, [c.id, JSON.stringify({ phone: c.phone, name: c.name, note: 'asked from bill ' + inv.no })]);
   res.json({ ok: true, asked: true });
 }));
