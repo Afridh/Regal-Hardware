@@ -122,6 +122,16 @@ ok(await pg.evaluate(() => window.eval('S').pos.lines.length === 0 && document.a
 await putLine(); await wait(400);
 await pg.click('.sp-keys [data-act="csClear"]'); await wait(400); await pg.keyboard.press('Enter'); await wait(400);
 ok(await pg.evaluate(() => window.eval('S').pos.lines.length === 0), 'CLEAR on the key strip, Enter: cleared');
+// a short window (the Regal POS window on a 1366 x 768 screen): the small row shows its names, nothing scrolls
+await pg.setViewport({ width: 1366, height: 698 });
+await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); const S = window.eval('S'); const ps = S.products.filter(p => p.active !== false && p.retail > 100).slice(0, 3);
+  S.pos.lines = ps.map(p => ({ pid: p.id, qty: 1, price: p.retail, disc: 0, name: 'A LONG NAME FOR A LINE ON THE BILL TO SEE IT WRAP AND NOT PUSH THE BUTTONS OFF' })); window.eval('render')() }); await wait(500);
+const sh = await pg.evaluate(() => { const s = document.querySelector('.till-sum'), l = document.querySelector('.till-lines');
+  const vis = [...document.querySelectorAll('.sum-more button')].filter(b => b.offsetParent).map(b => b.innerText.trim());
+  return { vis, panel: s.scrollHeight - s.clientHeight, wide: l.scrollWidth - l.clientWidth } });
+ok(sh.vis.includes('Quotation') && sh.vis.every(t => t.length > 2), 'short window: Quotation, Delivery note, Check bill, Brought by show their names', JSON.stringify(sh.vis));
+ok(sh.panel <= 1 && sh.wide <= 1, 'short window: the panel and the bill fit, no scrolling', JSON.stringify(sh));
+await pg.setViewport({ width: 1366, height: 768 });
 // switching back
 await pg.evaluate(() => { window.eval('setPref')('tillLook', 'regal'); window.eval('render')() }); await wait(400);
 ok(await pg.evaluate(() => !document.querySelector('.till.sp-look') && getComputedStyle(document.querySelector('.till-hold')).display !== 'none' && !document.querySelector('.sp-keys')), 'Regal red: the old look, Hold / Clear / Held back at the top');
