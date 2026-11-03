@@ -1,6 +1,7 @@
 // Taking a customer payment: the amount is typed, never filled in for you.
 //  · the window opens with the amount box empty — what they owe shows in grey; Enter on it adds nothing
-//  · a typed amount and Enter: that much, as cash
+//  · a typed amount and Enter: that much, as cash, recorded and done in one press (3 Nov 2026)
+//  · a card part first, then the cash and Enter: both, done
 //  · "Pay it all": the whole of what is left goes in, and Enter then takes it
 //  · the cheque / card / bank form starts empty too
 //   node backend/tools/run-e2e.mjs --keep        (the test server on :4010)
@@ -32,22 +33,38 @@ const box = await pg.evaluate(() => ({ v: document.getElementById('ra').value, p
 ok(box.v === '' && /to pay/.test(box.ph), 'the amount box opens empty — what they owe in grey', JSON.stringify(box));
 await pg.keyboard.press('Enter'); await wait(250);
 ok((await parts()).length === 0, 'Enter on the empty box adds nothing (it used to take the whole outstanding)');
-await pg.type('#ra', '750'); await pg.keyboard.press('Enter'); await wait(250);
-let p = await parts();
-ok(p.length === 1 && /750\.00/.test(p[0]), 'a typed 750 and Enter: Rs 750 cash', JSON.stringify(p));
-ok(await pg.$eval('#ra', el => el.value) === '', 'after it, the box is empty again');
+const pays = () => pg.evaluate(id => window.eval('S').payments.filter(p => p.customerId === id && p.dir === 'IN').map(p => ({ m: p.method, a: p.amount })), c.id);
+const owing = () => pg.evaluate(id => window.eval('partyBal')('C', id), c.id);
+const open = async () => { await pg.evaluate(id => { document.querySelectorAll('.modal').forEach(m => m.remove()); window.eval('custPayModal')(id) }, c.id); await wait(300) };
+const winOpen = () => pg.evaluate(() => !!document.querySelector('.pay-win'));
+const n0 = (await pays()).length;
+await pg.type('#ra', '750'); await pg.keyboard.press('Enter'); await wait(600);
+let ps = await pays();
+ok(ps.length === n0 + 1 && ps.at(-1).m === 'CASH' && Math.abs(ps.at(-1).a - 750) < 0.01 && !(await winOpen()), 'a typed 750 and Enter: Rs 750 cash, recorded and done in one press', JSON.stringify(ps.slice(n0)));
+ok(Math.abs((await owing()) - (c.owes - 750)) < 0.01, 'what they owe is down by 750');
+// a card part first, then the cash and Enter: both, done
+await open();
+await pg.evaluate(() => [...document.querySelectorAll('[data-pm="CARD"]')].forEach(b2 => b2.click())); await wait(250);
+await pg.$eval('#sfAmt', el => { el.value = '200' }); await pg.click('#sfOk'); await wait(250);
+ok((await parts()).length === 1 && await winOpen(), 'a card part is added and the window waits');
+await pg.$eval('#ra', el => { el.value = '' }); await pg.type('#ra', '300'); await pg.keyboard.press('Enter'); await wait(600);
+ps = await pays();
+ok(ps.length === n0 + 3 && !(await winOpen()), 'then cash 300 and Enter: card and cash both recorded, done', JSON.stringify(ps.slice(n0 + 1)));
+// Pay it all, then Enter: the whole of what is left, done
+await open();
 await pg.click('[data-full="ra"]'); await wait(150);
 const filled = await pg.$eval('#ra', el => el.value);
-ok(Math.abs(+filled - (c.owes - 750)) < 0.01, 'Pay it all: the rest goes in the box', filled);
-await pg.keyboard.press('Enter'); await wait(250);
-p = await parts();
-ok(p.length === 2, 'and Enter takes it', JSON.stringify(p));
+ok(Math.abs(+filled - (await owing())) < 0.01, 'Pay it all: the rest goes in the box', filled);
+await pg.keyboard.press('Enter'); await wait(700);
+ok(Math.abs(await owing()) < 0.01 && !(await winOpen()), 'and Enter takes it: nothing owing, done');
+await open();
 // the card form starts empty too
 await pg.evaluate(() => { document.querySelectorAll('.pay-part .x').forEach(x => x.click()) }); await wait(200);
 await pg.evaluate(() => { const ps = document.querySelectorAll('[data-px]'); ps.forEach(() => {}); });
 await pg.evaluate(() => [...document.querySelectorAll('[data-pm="CARD"]')].forEach(b2 => b2.click())); await wait(250);
 const card = await pg.evaluate(() => ({ v: (document.getElementById('sfAmt') || {}).value, full: !!document.querySelector('[data-full="sfAmt"]') }));
-ok(card.v === '' && card.full, 'the card form: amount empty, with Pay it all', JSON.stringify(card));
+const left0 = await owing();
+ok(card.v === '' && (card.full || left0 < 0.01), 'the card form: amount empty, with Pay it all while anything is owing', JSON.stringify({ ...card, owing: left0 }));
 await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);

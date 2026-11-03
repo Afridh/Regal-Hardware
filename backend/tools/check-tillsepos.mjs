@@ -96,6 +96,12 @@ const pick = await pg.evaluate(() => { const m = document.querySelector('.modal'
 ok(pick && /Customer payment/.test(pick.title) && pick.first === owes.name, 'Ctrl+M on a walk-in bill: the ones who owe, the most first', JSON.stringify({ pick, owes }));
 await pg.keyboard.type(owes.name.split(' ')[0]); await wait(200); await pg.keyboard.press('Enter'); await wait(500);
 ok(await pg.evaluate(n => { const h = document.querySelector('.modal h2'); return !!h && h.innerText.includes('Payment from ' + n) }, owes.name), 'type a name, Enter: their payment window', owes.name);
+// type the amount, Enter: taken in cash and done (3 Nov 2026: Enter added it and asked for the rest)
+const pBefore = await pg.evaluate(id => ({ owe: window.eval('partyBal')('C', id), n: window.eval('S').payments.length }), owes.id);
+await pg.evaluate(() => { const r = document.getElementById('ra'); r.value = ''; r.focus() }); await pg.keyboard.type('1000'); await pg.keyboard.press('Enter'); await wait(900);
+await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
+const pAfter = await pg.evaluate(id => ({ owe: window.eval('partyBal')('C', id), n: window.eval('S').payments.length, last: window.eval('S').payments.at(-1) }), owes.id);
+ok(pAfter.n === pBefore.n + 1 && Math.abs(pBefore.owe - pAfter.owe - 1000) < 0.01 && pAfter.last.method === 'CASH', 'a part payment: type 1000, Enter, and it is recorded (no second Enter, no F12)', JSON.stringify({ before: pBefore.owe, after: pAfter.owe }));
 await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
 await pg.evaluate(id => { window.eval('S').pos.customer = id; window.eval('render')() }, owes.id); await wait(300);
 await pg.click('.sp-keys [data-act="credPay"]'); await wait(500);

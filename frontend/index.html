@@ -25191,7 +25191,7 @@ function custPayModal(id){
   let sel=new Set(), q='', parts=[], mode=null, typed=null, firstFocus=true, smsOn=true;   // smsOn: the tick survives the window being redrawn
   const m=modal(`<div class="pay-win">
    <div class="pay-top"><div><h2 style="margin:0">Payment from ${c.name}</h2><div class="muted">${c.phone||'no mobile'} · ${c.code} · — outstanding <b>${fmt(partyBal('C',id))}</b></div></div>
-    <div class="pay-keys"><span><i class="kbd">Enter</i>cash</span><span><i class="kbd">F8</i>cheque</span><span><i class="kbd">F9</i>card</span><span><i class="kbd">B</i>bank</span><span><i class="kbd">Del</i>undo</span><span><i class="kbd">F12</i>complete</span><span><i class="kbd">Esc</i>close</span></div></div>
+    <div class="pay-keys"><span><i class="kbd">Enter</i>cash and complete</span><span><i class="kbd">F8</i>cheque</span><span><i class="kbd">F9</i>card</span><span><i class="kbd">B</i>bank</span><span><i class="kbd">Del</i>undo</span><span><i class="kbd">F12</i>complete</span><span><i class="kbd">Esc</i>close</span></div></div>
    <div id="payBody"></div></div>`); npAdd(m);
   m.classList.add('wide');
   const open=()=>S.sales.filter(s=>s.customerId===id&&s.balance>0).sort((a,b)=>a.date.localeCompare(b.date));
@@ -25235,7 +25235,7 @@ function custPayModal(id){
       </div>`}
       <div class="pay-parts">
        ${parts.length?parts.map((p,i)=>`<div class="pay-part"><span class="pm ${p.method.toLowerCase()}">${METHODS[p.method]}</span><span class="t">${partLine(p)}</span><b>${fmt(p.amount)}</b><button class="x" data-px="${i}" title="Take this off (Del removes the last)">✕</button></div>`).join('')
-        :'<div class="muted" style="padding:10px 0">Nothing added yet — key the amount and press Enter for cash, or pick another way.</div>'}
+        :'<div class="muted" style="padding:10px 0">Nothing added yet — key the amount and press Enter: it is taken in cash and done. Or pick another way.</div>'}
       </div>
       <div class="pay-tot">
        <div><span>To pay</span><b>${fmt(target())}</b></div>
@@ -25291,7 +25291,10 @@ function custPayModal(id){
     m.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>start(b.dataset.pm));
     m.querySelectorAll('[data-full]').forEach(b=>b.onclick=()=>{ const el=g('#'+b.dataset.full); if(!el) return; el.value=left().toFixed(2); if(el.id==='ra') typed=el.value; el.focus(); el.select() });   // Pay it all: the amount is put in; Enter then takes it
     m.querySelectorAll('[data-px]').forEach(b=>b.onclick=()=>{ parts.splice(+b.dataset.px,1); draw(()=>{ const r=g('#ra'); if(r){r.focus();r.select()} }) });
-    const ra=g('#ra'); if(ra){ ra.oninput=()=>{typed=ra.value}; ra.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();e.stopPropagation();addCash()} } }
+    // Enter takes the amount in cash and finishes, in one press; with the box empty it finishes what is added (3 Nov 2026:
+    // it used to add the cash and ask for the rest, so a part payment took Enter and then F12)
+    const ra=g('#ra'); if(ra){ ra.oninput=()=>{typed=ra.value}; ra.onkeydown=e=>{ if(e.key==='Enter'){e.preventDefault();e.stopPropagation();
+      if((+ra.value||0)>0){ addCash(); if(parts.length) complete() } else if(parts.length) complete(); else addCash()} } }
     const ok=g('#rok'); ok.onclick=complete;
     const rs=g('#rsms'); if(rs) rs.onchange=()=>{ smsOn=rs.checked };
     const sfOk=g('#sfOk'); if(sfOk){ sfOk.onclick=addSub; g('#sfBack').onclick=()=>{ mode=null; draw(()=>{g('#ra').focus()}) };
