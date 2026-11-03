@@ -2,7 +2,8 @@
 //  · boxes for the item number or name, the category and the supplier; each narrows the grid as it is typed,
 //    and typing keeps the cursor in the box (only the grid is redrawn)
 //  · order by item number, by name, or newest first
-//  · one row picked out; ↑ ↓ move it; F3 / Enter edit it; F2 adds; Del deletes; F5 clears the search
+//  · one row picked out; ↑ ↓ move it; F3 / Enter edit it; F2 adds; F5 clears the search; no Delete in
+//    the list — deleting is on the product, and anyone but an admin asks for approval
 //  · the footer counts the records
 //   node backend/tools/run-e2e.mjs --keep        (the test server on :4010)
 //   node backend/tools/check-prgrid.mjs
@@ -69,7 +70,18 @@ await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remov
 const nid = await pg.evaluate(() => { const S = window.eval('S'); const p = { ...S.products[0], id: 990777, num: '990777', code: '990777', barcode: '990777', name: 'Grid Delete Test', short: '' }; S.products.push(p); window.eval('PR').sel = null; window.eval('prodQ=""'); window.eval('render')(); return p.id });
 await pg.click('#prodQ'); await pg.keyboard.type('Grid Delete Test'); await wait(150);
 await pg.evaluate(() => document.activeElement.blur()); await pg.keyboard.press('Delete'); await wait(300);
-ok(await pg.evaluate(id => !window.eval('S').products.some(p => p.id === id), nid), 'Del deletes the picked item (one never sold)');
+ok(await pg.evaluate(id => window.eval('S').products.some(p => p.id === id) && !document.querySelector('.pr-acts .pu-del'), nid), 'the list has no Delete — no button, and the Del key does nothing');
+// deleting, from the product itself: someone who is not an admin asks; an admin approves and it goes
+await pg.evaluate(() => { const S = window.eval('S'); window.__u = S.user; S.user = { ...S.user, name: 'Del Tester', role: 'Manager', perms: ['approve', 'products_view'] } });
+await pg.evaluate(id => window.eval('productModal')(id, { pu: true }), nid); await wait(300);
+await pg.click('#puDel'); await wait(300);
+const asked = await pg.evaluate(id => { const a = (window.eval('S').approvals || [])[0]; return { kind: a && a.kind, status: a && a.status, id: a && a.id, still: window.eval('S').products.some(p => p.id === id) } }, nid);
+ok(asked.kind === 'prodDel' && asked.status === 'pending' && asked.still, 'a Manager deleting an item: sent for approval, the item stays', JSON.stringify(asked));
+await pg.evaluate(id => window.eval('decideApproval')(id, true, ''), asked.id); await wait(200);
+ok(await pg.evaluate(id => window.eval('S').products.some(p => p.id === id), nid), 'the Manager cannot approve it');
+await pg.evaluate(id => { window.eval('S').user = window.__u; window.eval('decideApproval')(id, true, '') }, asked.id); await wait(200);
+ok(await pg.evaluate(id => !window.eval('S').products.some(p => p.id === id), nid), 'an Admin approves: the item is deleted');
+await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); window.eval('go')('inventory') }); await wait(200);
 // F5
 await pg.click('#prCat'); await pg.keyboard.type('zzzz'); await wait(100);
 await pg.keyboard.press('F5'); await wait(300);
