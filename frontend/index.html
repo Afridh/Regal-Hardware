@@ -22934,6 +22934,63 @@ function priceHistory(pid){
    amount, dates, kind, cashier), see it on the right with everything you can do to it.
    "Find a bill" and "Bill recall" used to be two screens doing the same job. */
 let billQ='', billFrom='', billTo='', billType='all', billBy='all', billSel=null, billLimit=150, billCust=0;
+/* ================== FIND A MISSING BILL (3 Nov 2026) ==================
+   A bill that printed but is not on the Bills list: looked for by its number in this till's own saved copy
+   of the books and in the copies the server keeps (the last 500 saves). Found, it is shown — with the save
+   that went without it — and put back with the stock movements and the journal entries it had, so the
+   stock, the drawer and the customer's account are as they were when it was made. */
+async function findBillLocal(no){
+  try{ const raw=await new Promise(res=>{ const r=indexedDB.open('regal-offline',1); r.onsuccess=()=>{ try{ const q=r.result.transaction('kv','readonly').objectStore('kv').get('regal:books'); q.onsuccess=()=>res(q.result); q.onerror=()=>res(null) }catch(e){ res(null) } }; r.onerror=()=>res(null) });
+    if(!raw) return null; const d=JSON.parse(raw), L=(d&&d.S)||{};
+    const sales=(L.sales||[]).filter(s=>String(s.no)===no); if(!sales.length) return null;
+    return {found:true,source:'this till',sales,journal:(L.journal||[]).filter(j=>String(j.ref)===no),movements:(L.movements||[]).filter(m=>String(m.ref)===no)} }catch(e){ return null }
+}
+function findBillModal(){
+  if(!payBoss()) return toast('Only an Admin, the Owner or the Super Admin can look for a missing bill');
+  const m=modal(`<h2>Find a missing bill</h2>
+   <div class="muted">For a bill that printed but is not on the Bills list. It is looked for on this till and in the copies of the books the server keeps.</div>
+   <div style="display:flex;gap:8px;margin-top:10px"><input id="fbNo" placeholder="Bill number, e.g. 20029" style="flex:1;font-size:16px" autocomplete="off"><button class="btn tape" id="fbGo">Look for it</button></div>
+   <div id="fbOut" style="margin-top:12px"></div>`);
+  const q=x=>m.querySelector(x), out=q('#fbOut');
+  const look=async()=>{
+    const no=q('#fbNo').value.trim(); if(!no) return;
+    const here=S.sales.filter(s=>String(s.no)===no);
+    out.innerHTML='<div class="muted">Looking…</div>';
+    let srv=null; try{ const r=await fetch('/api/books/regal/find-bill?no='+encodeURIComponent(no),{headers:{Authorization:'Bearer '+(window.regalBridge?regalBridge.token():'')}}); srv=await r.json(); if(!r.ok) srv={error:srv.error||('The server said '+r.status)} }catch(e){ srv={error:'The server could not be reached'} }
+    const loc=await findBillLocal(no);
+    const same=(a,b)=>a.total===b.total&&a.time===b.time&&a.by===b.by;
+    const pick=(loc&&loc.sales.find(s=>!here.some(h=>same(h,s))))?loc:(srv&&srv.found?srv:null);
+    const cand=pick?pick.sales.filter(s=>!here.some(h=>same(h,s))):[];
+    let html='';
+    if(here.length) html+=`<div class="card note" style="margin-bottom:8px">Bill <b>${escM(no)}</b> is in the books${here.length>1?` (${here.length} bills carry that number)`:''}: ${here.map(s=>`${escM(s.date)} ${escM(s.time||'')} · ${escM(s.by||'')} · ${fmt(s.total)}`).join(' — ')}. <a href="#" data-fbopen="${escM(no)}">Open it</a></div>`;
+    if(cand.length){ const s=cand[0];
+      html+=`<div class="card" style="border-left:4px solid var(--chip-green)"><b>Found ${escM(no)}</b> — ${pick===loc?'on this till':`in the server's copy of the books (save ${pick.rev}, ${escM(new Date(pick.savedAt).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))}, by ${escM(pick.savedBy||'')})`}
+        <div class="muted" style="margin:4px 0">${escM(s.date)} ${escM(s.time||'')} · by ${escM(s.by||'')} · ${escM((C(s.customerId)||{name:'Cash customer'}).name)} · <b>${fmt(s.total)}</b> · ${s.type==='CREDIT'?'credit':'cash'}</div>
+        <div style="font-size:13px">${(s.lines||[]).map(l=>`${escM(lineName(l))} — ${fq(l.qty)} × ${money2(l.price)}`).join('<br>')}</div>
+        ${pick.lostAt?`<div class="muted" style="margin-top:6px">It went missing with the save after that: save ${pick.lostAt.rev}, ${escM(new Date(pick.lostAt.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))}, by ${escM(pick.lostAt.by||'')}.</div>`:''}
+        <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end"><button class="btn tape" id="fbPut">Put it back${here.length?` as ${escM(no)}-R`:''}</button></div></div>` }
+    else if(!here.length) html+=`<div class="card note">Bill <b>${escM(no)}</b> is not on this till and not in any copy the server keeps${srv&&srv.error?` (the server: ${escM(srv.error)})`:''}. It may still be waiting on the till it was made on — open that till and check it says it is saved (not "not shared"); it goes up as soon as that till reaches the server.</div>`;
+    out.innerHTML=html;
+    const op=out.querySelector('[data-fbopen]'); if(op) op.onclick=e=>{ e.preventDefault(); m.remove(); billQ=no; billFrom=''; billTo=''; billType='all'; billBy='all'; billCust=0; go('bills') };
+    const pb=out.querySelector('#fbPut'); if(pb) pb.onclick=()=>{ if(!confirm(`Put bill ${no} back in the books, with its stock and account entries?`)) return;
+      const r=billPutBack(cand[0],pick.journal||[],pick.movements||[],here.length?no+'-R':null); m.remove(); persist(true); render(); toast(r,'ok') };
+  };
+  q('#fbGo').onclick=look; q('#fbNo').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); look() } }; setTimeout(()=>q('#fbNo').focus(),30);
+}
+/* the bill as it was, back in the books: its stock movements (and the stock with them) and its journal
+   entries, each only once; under a new number when the old one is now another bill's */
+function billPutBack(sale,journal,movements,newNo){
+  const no=newNo||sale.no, inv=JSON.parse(JSON.stringify(sale)); inv.no=no; inv.recoveredAt=apStamp(); inv.recoveredBy=S.user.name;
+  S.sales.push(inv);
+  const haveJ=new Set(S.journal.map(j=>JSON.stringify([j.date,j.desc,j.ref,j.lines])));
+  journal.forEach(j=>{ const k=JSON.stringify([j.date,j.desc,j.ref,j.lines]); if(haveJ.has(k)) return;
+    S.journal.push({...j,no:next('JE'),ref:newNo?no:j.ref,desc:newNo?String(j.desc).replace(sale.no,no):j.desc}) });
+  const haveM=new Set((S.movements||[]).map(x=>JSON.stringify([x.pid,x.qty,x.type,x.ref,x.date])));
+  let n=0; movements.forEach(x=>{ if(haveM.has(JSON.stringify([x.pid,x.qty,x.type,x.ref,x.date]))) return; const p=P(x.pid); if(!p) return;
+    p.stock=+((+p.stock||0)+(+x.qty||0)).toFixed(3); S.movements.push({...x,ref:newNo?no:x.ref,after:p.stock}); n++ });
+  try{ logTrail('other',`Bill ${sale.no} put back in the books${newNo?' as '+no:''} — ${fmt(sale.total)}, ${n} stock line(s)`,{ref:no,amount:sale.total}) }catch(e){}
+  return `Bill ${no} is back — ${fmt(sale.total)}${n?`, ${n} stock line${n===1?'':'s'}`:''}`;
+}
 const NOPROD={name:'(item no longer on file)',code:'',num:'',mrp:0};
 function billHit(s,q){
   if(billFrom&&s.date<billFrom)return false;
@@ -22971,7 +23028,7 @@ function bills(){
   const filtered=billQ||billFrom||billTo||billType!=='all'||billBy!=='all'||billCust;
   const dayIs=(n)=>billFrom===(n===1?ago(1):ago(n))&&billTo===(n===1?ago(1):D(today));
   return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><span>Bills <span class="muted" style="font-size:13px;font-weight:400;margin-left:6px">${salesReal().length} on the system</span></span>
-    <span style="display:flex;gap:6px"><button class="btn tape" data-view="pos">New bill <i class="kbd">F3</i></button></span></h1>
+    <span style="display:flex;gap:6px">${payBoss()?'<button class="btn ghost" data-act="findBill" title="A bill that printed but is not in this list">Find a missing bill</button>':''}<button class="btn tape" data-view="pos">New bill <i class="kbd">F3</i></button></span></h1>
   <div class="bl-wrap">
    <div class="card bl-list">
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -34285,6 +34342,7 @@ document.addEventListener('click',e=>{
     billTill:()=>billToTill(a.dataset.no),
     billAmend:()=>{closeModals();editSaleModal(a.dataset.no)},
     purEdit:()=>editPurchaseModal(a.dataset.no),
+    findBill:()=>findBillModal(),
     billClear:()=>{billQ='';billFrom='';billTo='';billType='all';billBy='all';billCust=0;billSel=null;billLimit=150;render()},
     cuLoginNew:()=>custLoginModal(+a.dataset.id,a.dataset.kind||'C'),
     cuLoginAuto:()=>{ const kind=a.dataset.kind||'C', id=+a.dataset.id;

@@ -869,6 +869,34 @@ r.get('/books/:key/history', regalAuth, asyncHandler(async (req, res) => {
   res.json(rows);
 }));
 
+/* A bill that printed but is not in the books (3 Nov 2026): the newest saved copy of the books that still
+   had it, the bill with its journal entries and stock movements as they were there, and the save that went
+   without it — who saved, and when. Looked for in the copies kept (books_history), by number, in the
+   database itself, so only the one copy is read. Admins only. */
+r.get('/books/:key/find-bill', regalAuth, asyncHandler(async (req, res) => {
+  const role = String(req.regalUser?.role || '').toLowerCase();
+  if (!['super admin', 'superadmin', 'owner', 'admin'].includes(role)) throw new HttpError(403, 'Only an Admin, the Owner or the Super Admin can look for a missing bill');
+  const no = String(req.query.no || '').trim();
+  if (!no || no.length > 40) throw new HttpError(400, 'Which bill number?');
+  const key = req.params.key;
+  const cur = await loadBooks(key); const CS = (cur && cur.data && cur.data.S) || {};
+  const inBooks = (CS.sales || []).filter(s => String(s.no) === no);
+  const sql = dbKind === 'mysql'
+    ? `SELECT id, rev, saved_at, saved_by FROM books_history WHERE ${KEY_COL} = $1 AND JSON_CONTAINS(JSON_EXTRACT(data, '$.S.sales[*].no'), $2) ORDER BY id DESC LIMIT 1`
+    : `SELECT id, rev, saved_at, saved_by FROM books_history WHERE ${KEY_COL} = $1 AND (data->'S'->'sales') @> $2::jsonb ORDER BY id DESC LIMIT 1`;
+  const { rows: [hit] } = await query(sql, [key, dbKind === 'mysql' ? JSON.stringify(no) : JSON.stringify([{ no }])]);
+  if (!hit) return res.json({ ok: true, no, inBooks: inBooks.length, found: false });
+  const { rows: [h] } = await query(`SELECT data FROM books_history WHERE id = $1`, [hit.id]);
+  const d = typeof h.data === 'string' ? JSON.parse(h.data) : h.data; const S = (d && d.S) || {};
+  const sales = (S.sales || []).filter(s => String(s.no) === no);
+  const journal = (S.journal || []).filter(j => String(j.ref) === no);
+  const movements = (S.movements || []).filter(m => String(m.ref) === no);
+  const { rows: [after] } = await query(`SELECT rev, saved_at, saved_by FROM books_history WHERE ${KEY_COL} = $1 AND id > $2 ORDER BY id ASC LIMIT 1`, [key, hit.id]);
+  res.json({ ok: true, no, inBooks: inBooks.length, inBooksBills: inBooks, found: true,
+    rev: Number(hit.rev), savedAt: hit.saved_at, savedBy: hit.saved_by, sales, journal, movements,
+    lostAt: after ? { rev: Number(after.rev), at: after.saved_at, by: after.saved_by } : null });
+}));
+
 /* A quick health read for the owner: how big the shop is now, when it last saved, and how many backup
    copies are kept — the status page polls this. */
 r.get('/shop-status', regalAuth, asyncHandler(async (req, res) => {
