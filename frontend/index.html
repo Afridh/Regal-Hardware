@@ -468,6 +468,13 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .pu-t .n{text-align:right;white-space:nowrap}
 .pu-mv{margin:2px 0 10px}.pu-mv td{cursor:default}.pu-mv tr:hover td{background:none}
 .pu-del{color:var(--chip-rust)!important;border-color:var(--chip-rust)!important}
+/* add stock, from the item */
+.modal .box.sa-box{max-width:620px}
+.sa-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
+.sa-now{text-align:right;line-height:1.1}.sa-now small{display:block;color:var(--steel);font-size:11px;text-transform:uppercase;letter-spacing:.04em}.sa-now b{font:800 26px Archivo,sans-serif}.sa-now span{color:var(--steel);margin-left:4px}
+.sa-tabs{margin-bottom:10px}
+.sa-big{font-size:20px!important;font-weight:700}
+.sa-say{min-height:22px;margin-top:4px;padding:6px 10px;border-radius:8px;background:var(--panel);font-size:13.5px}.sa-say:empty{background:none;padding:0}
 /* product records: the old SePOS grid */
 .pr-bar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px;background:var(--white);border:1px solid var(--line2);border-radius:10px;padding:8px 10px}
 .pr-order{display:flex;flex-direction:column;gap:1px;font-size:12.5px;padding-right:6px;border-right:1px solid var(--line2)}
@@ -22188,6 +22195,75 @@ function postStockTakeNow(note){
   askLabels(diffs.filter(x=>x.d>0).map(({p,d})=>({pid:p.id,qty:d})),`${no}: these came up on the count.`);
 }
 
+/* ================== ADD STOCK, FROM THE ITEM ITSELF (3 Nov 2026) ==================
+   Opened from the product (the updater, the records grid with F4, or "Sold on…"), for that one item:
+   · Goods came in — how many, the cost each, from which supplier, their bill number, and paid in cash now or
+     left on their account. It is a real purchase (PUR-…): stock up, the cost averaged in, the supplier's
+     account or the cash drawer, the labels asked for.
+   · Correct the count — what is on the shelf, or how many more or fewer; booked as a stock take (STK-…),
+     and waiting for the owner's yes where stock adjustments need one. */
+function stockAddModal(pid,after){
+  const p=P(pid); if(!p) return;
+  if(String((S.user||{}).role||'').toLowerCase()==='salesman') return toast('Adding stock is not open to Salesman');
+  const held=(typeof heldMap==='function'?heldMap()[p.id]:0)||0, now=+(p.stock+held).toFixed(3);
+  const sp0=SU(p.supplierId)||(typeof lastSupplier==='function'?lastSupplier(p.id):null);
+  let mode='in';
+  const m=modal(`<div class="sa-head"><div><h2 style="margin:0">Add stock</h2><div class="muted"><b>${escM(p.name)}</b> · No. ${escM(p.num||p.code||'')}</div></div>
+     <div class="sa-now"><small>in stock now</small><b>${fq(now)}</b><span>${escM(p.unit||'')}</span></div></div>
+   <div class="seg-tabs sa-tabs"><button type="button" class="on" data-sa="in">Goods came in</button><button type="button" data-sa="fix">Correct the count</button></div>
+   <div id="saIn">
+    <div class="grid3"><div class="f"><label>How many came in</label><input id="saQty" type="number" min="0" step="any" inputmode="decimal" placeholder="0" class="sa-big"></div>
+     <div class="f"><label>Cost each</label><input id="saCost" type="number" min="0" step="any" inputmode="decimal" value="${+p.cost||''}"></div>
+     <div class="f"><label>Comes to</label><input id="saTot" readonly style="background:var(--panel)"></div></div>
+    <div class="grid2"><div class="f"><label>From supplier</label><select id="saSup">${S.suppliers.filter(x=>x.active!==false).map(s=>`<option value="${s.id}" ${sp0&&sp0.id===s.id?'selected':''}>${escM(s.name)}</option>`).join('')}</select></div>
+     <div class="f"><label>Their bill no. (optional)</label><input id="saInv" placeholder="e.g. INV-2231"></div></div>
+    <div class="f"><label>Paid</label><div class="seg-tabs"><button type="button" class="on" data-sapay="credit">On their account</button><button type="button" data-sapay="cash">Cash now</button></div></div>
+   </div>
+   <div id="saFix" style="display:none">
+    <div class="grid2"><div class="f"><label>On the shelf now</label><input id="saCount" type="number" min="0" step="any" inputmode="decimal" value="${now}" class="sa-big"></div>
+     <div class="f"><label>— or this many more (− for fewer)</label><input id="saBy" type="number" step="any" inputmode="decimal" placeholder="e.g. 5 or −2"></div></div>
+    <div class="f"><label>Why</label><input id="saWhy" placeholder="e.g. found in the store room · counted wrong"></div>
+   </div>
+   <div id="saSay" class="sa-say"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel <i class="kbd">Esc</i></button><button class="btn tape" id="saOk">Add it <i class="kbd">Enter</i></button></div>`);
+  m.querySelector('.box').classList.add('sa-box');
+  const q=(x)=>m.querySelector(x); let pay='credit';
+  const say=()=>{
+    if(mode==='in'){ const n=+q('#saQty').value||0, c=+q('#saCost').value||0; q('#saTot').value=n&&c?money2(n*c):'';
+      q('#saSay').innerHTML=n>0?`Stock goes <b>${fq(now)} → ${fq(+(now+n).toFixed(3))}</b> ${escM(p.unit||'')}${c&&Math.abs(c-(+p.cost||0))>0.005?` · cost averages in from ${money2(p.cost)}`:''}`:'';
+      q('#saOk').innerHTML='Add it <i class="kbd">Enter</i>' }
+    else { const n=+q('#saCount').value, d=+(n-now).toFixed(3);
+      q('#saSay').innerHTML=q('#saCount').value===''?'':Math.abs(d)<1e-9?'<span class="muted">That is what the books say already.</span>':`Stock goes <b>${fq(now)} → ${fq(n)}</b> (${d>0?'+':''}${fq(d)})${needsApproval('stockAdj')?' · <span class="rust">the owner approves it first</span>':''}`;
+      q('#saOk').innerHTML=(needsApproval('stockAdj')?'Send for approval':'Correct it')+' <i class="kbd">Enter</i>' } };
+  m.querySelectorAll('[data-sa]').forEach(b=>b.onclick=()=>{ mode=b.dataset.sa; m.querySelectorAll('[data-sa]').forEach(x=>x.classList.toggle('on',x===b));
+    q('#saIn').style.display=mode==='in'?'':'none'; q('#saFix').style.display=mode==='fix'?'':'none'; say(); (mode==='in'?q('#saQty'):q('#saCount')).focus(); (mode==='in'?q('#saQty'):q('#saCount')).select() });
+  m.querySelectorAll('[data-sapay]').forEach(b=>b.onclick=()=>{ pay=b.dataset.sapay; m.querySelectorAll('[data-sapay]').forEach(x=>x.classList.toggle('on',x===b)) });
+  q('#saBy').oninput=()=>{ const v=q('#saBy').value; if(v!==''&&!isNaN(+v)) q('#saCount').value=String(+(now+(+v)).toFixed(3)); say() };
+  q('#saCount').oninput=()=>{ q('#saBy').value=''; say() };
+  ['#saQty','#saCost'].forEach(s=>q(s).oninput=say);
+  const done=(txt)=>{ m.remove(); persist(true); render(); toast(txt,'ok'); if(after) after() };
+  const ok=()=>{
+    if(mode==='in'){
+      const n=+(+q('#saQty').value||0).toFixed(3), c=+(+q('#saCost').value||0).toFixed(4), sid=+q('#saSup').value;
+      if(!(n>0)) { q('#saQty').focus(); return toast('How many came in?') }
+      if(!sid) return toast('Which supplier is it from? Add the supplier first, or use Correct the count');
+      try{ const pur=receivePurchase({supplierId:sid,supInv:q('#saInv').value.trim(),lines:[{pid:p.id,qty:n,cost:c}],pay:pay==='cash'&&n*c>0?{method:'CASH',amount:+(n*c).toFixed(2)}:null});
+        done(`${pur.no}: ${fq(n)} ${p.unit||''} of ${p.name} in — ${fq(p.stock)} in stock`);
+        askLabels([{pid:p.id,qty:n}],`${escM(p.name)}: ${fq(n)} came in.`) }
+      catch(e){ toast(e.message) }
+      return }
+    const v=q('#saCount').value; if(v===''||isNaN(+v)||+v<0) return toast('How many are on the shelf?');
+    const n=+(+v).toFixed(3), d=+(n-now).toFixed(3); if(Math.abs(d)<1e-9) return toast('That is what the books say already');
+    const why=q('#saWhy').value.trim()||'counted on the item';
+    if(needsApproval('stockAdj')){
+      requestApproval('stockAdj',`Stock of ${p.name}: ${fq(now)} → ${fq(n)} (${d>0?'+':''}${fq(d)})`,why,{counts:{[p.id]:n},note:`${p.name} — ${why}`},{keep:true});
+      return done('Sent for approval — the stock changes once it is approved') }
+    stkCount={[p.id]:n}; postStockTakeNow(`${p.name} — ${why}`); done(`${p.name}: ${fq(now)} → ${fq(n)}`);
+  };
+  q('#saOk').onclick=ok;
+  m.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.tagName!=='BUTTON'){ e.preventDefault(); e.stopPropagation(); ok() } });
+  say(); setTimeout(()=>{ q('#saQty').focus() },30);
+}
 /* ---- counting the drawer ---- */
 const NOTES=[5000,1000,500,100,50,20,10],COINS=[10,5,2,1];
 let denom={};
@@ -26447,7 +26523,7 @@ function productModal(pid,opt){
     </section>
     <section class="pm-sec pm-s-stock"><div class="pm-st"><span class="pm-n">4</span>Stock</div>
      <div class="pm-g3">
-      ${p?(pu?`<div class="f"><label>In stock now</label><input value="${fq(p.stock)} ${noteEsc(p.unit||'')}" readonly style="background:var(--panel)"><div class="muted">Change it with a stock adjustment</div></div>`:''):f('popen','Opening stock',0,'number','How many you have now')}
+      ${p?(pu?`<div class="f"><label>In stock now</label><div style="display:flex;gap:6px"><input value="${fq(p.stock)} ${noteEsc(p.unit||'')}" readonly style="background:var(--panel)"><button type="button" class="btn tape sm" id="puStock2" style="white-space:nowrap">＋ Add stock</button></div></div>`:''):f('popen','Opening stock',0,'number','How many you have now')}
       ${f('pmin','Reorder level',p?p.min:10,'number','Warns you when stock falls to this')}
       <div class="f"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="pser" ${p&&p.serialised?'checked':''}> every piece has a serial number</label>
        ${pu&&p?`<label class="chk"><input type="checkbox" id="pact" ${p.active!==false?'checked':''}> active — sold at the till</label>`:''}</div>
@@ -26483,7 +26559,7 @@ function productModal(pid,opt){
     <input id="puQ" placeholder="Find an item — name, code, barcode… (Ctrl+F)" autocomplete="off">
     <div class="pu-list" id="puList"></div></aside>`:'</aside>'}</div>
    <div class="pm-foot"><span class="muted">* needed${pu?' · Ctrl+S saves · Ctrl+F finds an item':''}</span>
-    ${pu?`${p&&canApprove()?'<button class="btn ghost pu-del" id="puDel" type="button">Delete item</button>':''}<button class="btn ghost" id="puAdv" type="button">Advance</button><button class="btn ghost" id="puClear" type="button">Clear</button><button class="btn tape" id="psave">Save <i class="kbd">Ctrl+S</i></button>`:`<button class="btn ghost" data-act="closeModal">Cancel</button>
+    ${pu?`${p&&canApprove()?'<button class="btn ghost pu-del" id="puDel" type="button">Delete item</button>':''}${p?'<button class="btn ghost" id="puStock" type="button" title="F4">＋ Add stock <i class="kbd">F4</i></button>':''}<button class="btn ghost" id="puAdv" type="button">Advance</button><button class="btn ghost" id="puClear" type="button">Clear</button><button class="btn tape" id="psave">Save <i class="kbd">Ctrl+S</i></button>`:`<button class="btn ghost" data-act="closeModal">Cancel</button>
     ${p?'':'<button class="btn ghost" id="pnext" type="button">Save &amp; add another</button>'}
     <button class="btn tape" id="psave">${p?'Save changes':'Add product'}</button>`}</div>`);
   m.querySelector('.box').classList.add('pm-box'); if(pu) m.querySelector('.box').classList.add('pu-box');
@@ -26624,6 +26700,10 @@ function productModal(pid,opt){
       if(k==='f'){ e.preventDefault(); q('puQ').focus(); q('puQ').select() }
       if(k==='s'){ e.preventDefault(); q('psave').click() } });
     q('puClear').onclick=()=>openP(null);
+    // add stock to this item, then back to it with the new figure
+    { const addS=()=>{ if(!p) return; if(dirty&&!confirm('Leave this product without saving?')) return; m.remove(); stockAddModal(p.id,()=>productModal(p.id,{pu:true})) };
+      if(q('puStock')) q('puStock').onclick=addS; if(q('puStock2')) q('puStock2').onclick=addS;
+      m.addEventListener('keydown',e=>{ if(e.key==='F4'&&p){ e.preventDefault(); e.stopPropagation(); addS() } }) }
     q('puAdv').onclick=()=>{ const d=m.querySelector('.pm-more'); d.open=!d.open; if(d.open) d.scrollIntoView({behavior:'smooth',block:'start'}) };
     q('puSimple').onclick=()=>{ CFG.prodForm='simple'; persist(true); m.remove(); productModal(pid,{pu:false}) };
     { const b2=q('pbulk2'); if(b2) b2.onclick=()=>{ m.remove(); bulkProductModal() } }
@@ -27122,7 +27202,7 @@ function productHistory(pid){
   modal(`<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
     <div><h2 style="margin:0;font-size:19px">${p.name}</h2>
      <div class="muted">${p.code} · ${p.barcode} · ${p.cat}</div></div>
-    <div style="display:flex;gap:6px"><button class="btn ghost sm" data-act="editProd" data-id="${p.id}">Edit prices</button>
+    <div style="display:flex;gap:6px"><button class="btn tape sm" data-act="stockAdd" data-id="${p.id}">＋ Add stock</button><button class="btn ghost sm" data-act="editProd" data-id="${p.id}">Edit prices</button>
      <button class="btn ghost sm" data-act="closeModal">Close</button></div></div>
    <div class="row" style="margin:12px 0">
     ${stat('In stock',fq(p.stock)+' '+p.unit,p.stock<=p.min?'below the reorder level':'','b')}
@@ -28509,7 +28589,7 @@ function prGridHtml(){
     ||`<tr><td colspan="10" class="muted" style="padding:12px">Nothing matches that.</td></tr>`}</tbody></table></div>
    ${moreRows(shown.length,list.length,'invMore')}
    <div class="pr-foot"><span>Total records: <b id="prCount">${shown.length}/${list.length}</b> of ${S.products.length}</span>
-    <span>${isSalesman?'':'F2 = Add new · F3 / Enter = Edit selected · Del = Delete selected · '}F5 = Refresh · ↑ ↓ = Move · double-click = Edit</span></div>`;
+    <span>${isSalesman?'':'F2 = Add new · F3 / Enter = Edit selected · F4 = Add stock · Del = Delete selected · '}F5 = Refresh · ↑ ↓ = Move · double-click = Edit</span></div>`;
 }
 function prDraw(){ const g=document.getElementById('prGrid'); if(!g) return; invLimit=200; g.innerHTML=prGridHtml(); prBindRows() }
 function prBindRows(){
@@ -28550,6 +28630,7 @@ window.addEventListener('keydown',e=>{
   const inField=/^(INPUT|SELECT|TEXTAREA)$/.test((e.target||{}).tagName||''), sales=String((S.user||{}).role||'').toLowerCase()==='salesman';
   if(e.key==='ArrowDown'||e.key==='ArrowUp'){ if(e.target&&e.target.type==='radio') return; stop(); prMove(e.key==='ArrowDown'?1:-1); return }
   if(e.key==='F2'&&!sales){ stop(); productModal(); return }
+  if(e.key==='F4'&&!sales){ stop(); const p=prSelP(); if(p) stockAddModal(p.id); else toast('Pick an item first'); return }
   if((e.key==='F3'||(e.key==='Enter'&&(inField||e.target===document.body)))&&!sales){ stop(); prEdit(); return }
   if(e.key==='Delete'&&!inField&&!sales){ stop(); const p=prSelP(); if(prodDelete(p)){ PR.sel=null; render() } return }
   if(e.key==='F5'){ stop(); prodQ=''; PR.cat=''; PR.sup=''; PR.sel=null; invLimit=200; render(); const q=$('#prodQ'); if(q) q.focus(); return }
@@ -28570,7 +28651,7 @@ function inventory(){
       <label class="pr-f"><span>Item number / barcode / name</span><input id="prodQ" value="${escM(prodQ)}" autocomplete="off" placeholder="e.g. 11754 or nippon filler"></label>
       <label class="pr-f"><span>Category</span><input id="prCat" list="prCatL" value="${escM(PR.cat)}" autocomplete="off"><datalist id="prCatL">${[...new Set(S.products.map(x=>x.cat).filter(Boolean))].sort().map(c=>`<option value="${escM(c)}">`).join('')}</datalist></label>
       <label class="pr-f"><span>Supplier</span><input id="prSup" list="prSupL" value="${escM(PR.sup)}" autocomplete="off"><datalist id="prSupL">${S.suppliers.filter(x=>x.active!==false).map(s=>`<option value="${escM(s.name)}">`).join('')}</datalist></label>
-      <div class="pr-acts">${!isSalesman?`<button class="btn tape sm" data-act="newProd" title="F2">Add <i class="kbd">F2</i></button><button class="btn ghost sm" data-act="prEdit" title="F3 or Enter">Edit <i class="kbd">F3</i></button><button class="btn ghost sm" data-act="prHist">Sold on…</button>${canApprove()?'<button class="btn ghost sm pu-del" data-act="prDel" title="Del">Delete <i class="kbd">Del</i></button>':''}`:''}
+      <div class="pr-acts">${!isSalesman?`<button class="btn tape sm" data-act="newProd" title="F2">Add <i class="kbd">F2</i></button><button class="btn ghost sm" data-act="prEdit" title="F3 or Enter">Edit <i class="kbd">F3</i></button><button class="btn ghost sm" data-act="prStock" title="F4">＋ Add stock <i class="kbd">F4</i></button><button class="btn ghost sm" data-act="prHist">Sold on…</button>${canApprove()?'<button class="btn ghost sm pu-del" data-act="prDel" title="Del">Delete <i class="kbd">Del</i></button>':''}`:''}
        ${canApprove()?`<button class="btn ghost sm" data-act="catMgr">Categories</button>${payBoss()?'<button class="btn ghost sm" data-act="oneNumber" title="One number for each product: the bill, the label and the till">One number for all</button><button class="btn sm" data-act="catTidy" style="background:#FFF4DC;border-color:#F0D08A;color:#8A5D06">Tidy the categories</button>':''}`:''}</div>
      </div>
      <div id="prGrid">${prGridHtml()}</div>`}
@@ -34179,8 +34260,10 @@ document.addEventListener('click',e=>{
     billMore:()=>{billLimit+=150; const keep=$('#billRows').scrollTop; render(); const r=$('#billRows'); if(r) r.scrollTop=keep},
     billCopy:()=>billCopy(a.dataset.no),
     billPrint:()=>billPrintNow(a.dataset.no,a.dataset.f||'a5'), billCam:()=>billCam(a.dataset.no),
+    prStock:()=>{ const p=prSelP(); if(p) stockAddModal(p.id); else toast('Pick an item first') },
     prEdit:()=>prEdit(), prHist:()=>{ const p=prSelP(); if(p) productHistory(p.id); else toast('Pick an item first') },
     prDel:()=>{ if(prodDelete(prSelP())){ PR.sel=null; render() } },
+    stockAdd:()=>{ closeModals(); stockAddModal(+a.dataset.id) },
     newProd:()=>{ if(S.user&&S.user.role==='Salesman') return toast('Adding products is not open to Salesman'); productModal() },
     editProd:()=>{ if(S.user&&S.user.role==='Salesman') return toast('Editing products is not open to Salesman'); closeModals(); productModal(+a.dataset.id) },
     prodHist:()=>productHistory(+a.dataset.id),
