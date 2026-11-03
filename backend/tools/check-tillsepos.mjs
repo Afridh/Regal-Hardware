@@ -64,6 +64,30 @@ await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remov
 await pg.click('.sp-keys .print'); await wait(400);
 ok(await pg.evaluate(() => !!document.querySelector('.payw')), 'PRINT on the strip opens the payment window');
 await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
+// G is the warranty, W in the price box is wholesale (3 Nov 2026: W did both)
+await pg.evaluate(() => { const S = window.eval('S'); S.pos.lines = []; window.eval('posSetLevel')('retail'); window.eval('render')() }); await wait(300);
+await pg.click('#csQ'); await pg.keyboard.type(pid.code); await pg.keyboard.press('Enter'); await wait(300);
+await pg.keyboard.press('g'); await wait(400);
+ok(await pg.evaluate(() => !!document.querySelector('.modal') && /warrant/i.test(document.querySelector('.modal').innerText)), 'G in the qty box opens the warranty');
+await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
+await pg.focus('#csPrice'); await pg.keyboard.press('w'); await wait(300);
+ok(await pg.evaluate(() => window.eval('posLevel')() === 'wholesale' && !document.querySelector('.modal')), 'W in the price box switches to wholesale, no warranty window');
+await pg.evaluate(() => { window.eval('posSetLevel')('retail') }); await wait(200);
+await pg.focus('#csPrice'); await pg.keyboard.press('g'); await wait(400);
+ok(await pg.evaluate(() => !!document.querySelector('.modal') && /warrant/i.test(document.querySelector('.modal').innerText)), 'G in the price box opens the warranty too');
+await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
+// End: the whole bill in cash, printed
+await pg.focus('#csDisc'); await pg.keyboard.press('Enter'); await wait(400);
+const before = await pg.evaluate(() => ({ lines: window.eval('S').pos.lines.length, sales: window.eval('S').sales.length, net: window.eval('csTotals')().net }));
+ok(await pg.evaluate(() => !!document.querySelector('.sp-keys [data-act="quickCash"]:not([disabled])')), 'the key strip has CASH (exact, End)');
+await pg.keyboard.press('End'); await wait(800);
+// the shop's end-of-bill questions (the customer's number, who sold it), when they are switched on: Enter for each
+for (let i = 0; i < 5 && await pg.evaluate(() => window.eval('S').pos.lines.length > 0 && document.querySelectorAll('.modal').length > 1); i++) { await pg.keyboard.press('Enter'); await wait(700); }
+await wait(800);
+await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
+const after = await pg.evaluate(() => { const S = window.eval('S'), s = S.sales.at(-1); return { lines: S.pos.lines.length, sales: S.sales.length, total: s && s.total, paid: s && s.paid, bal: s && s.balance, cash: s && (s.pays || []).some(p => p.method === 'CASH') } });
+ok(before.lines === 1 && after.lines === 0 && after.sales === before.sales + 1 && Math.abs(after.total - before.net) < 0.01 && after.bal < 0.005 && after.cash,
+  'End: the bill is paid in full in cash and done', JSON.stringify({ before, after }));
 // switching back
 await pg.evaluate(() => { window.eval('setPref')('tillLook', 'regal'); window.eval('render')() }); await wait(400);
 ok(await pg.evaluate(() => !document.querySelector('.till.sp-look') && getComputedStyle(document.querySelector('.till-hold')).display !== 'none' && !document.querySelector('.sp-keys')), 'Regal red: the old look, Hold / Clear / Held back at the top');
