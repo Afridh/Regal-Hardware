@@ -5125,7 +5125,7 @@ tr.cb-on td{background:#FBE4E6}
   opacity:.55;margin:12px 0 4px}
 .bd-reg:first-child{margin-top:0}
 </style>
-<link rel="stylesheet" href="bill-print.css?v=23">
+<link rel="stylesheet" href="bill-print.css?v=24">
 <link rel="stylesheet" href="pos-theme.css?v=1">
 <script src="pos-theme.js?v=1" defer></script>
 </head>
@@ -14096,7 +14096,16 @@ function motionAfter(moved){
 }
 
 let _rendering=false, _lastRenderView=null;
+/* A box that is left by clicking a button — its change, or its blur — used to redraw the page at once, with
+   the mouse still down: the button under it was rebuilt, and the click never landed (3 Nov 2026: "sometimes
+   the click is not working"). Now that redraw waits until the click is done; what the box changed is already
+   in place for the button to use. */
+let _ptrHeld=false,_renderAfterPtr=false,_ptrT=null;
+window.addEventListener('pointerdown',()=>{ _ptrHeld=true; clearTimeout(_ptrT); _ptrT=setTimeout(_ptrUp,2000) },true);
+function _ptrUp(){ if(!_ptrHeld) return; _ptrHeld=false; clearTimeout(_ptrT); if(_renderAfterPtr){ _renderAfterPtr=false; setTimeout(()=>render(),0) } }
+window.addEventListener('pointerup',_ptrUp,true); window.addEventListener('pointercancel',_ptrUp,true);
 function render(){
+  { const ev=window.event; if(_ptrHeld&&ev&&/^(change|blur|focusout)$/.test(ev.type)){ _renderAfterPtr=true; return } }
   syncBankNames();
   if(_rendering) return;
   const wasView=_lastRenderView;                    // renderNow moves it on, so it is taken first
@@ -25472,7 +25481,7 @@ const A5_BLOCKS = [
   ['addr',   'The address line',          'the address, the landmark and the phones',                'body'],
   ['items',  'What was sold',             'the table itself — this one cannot be taken off',         'body'],
   ['words',  'The amount in words',       '“… Rupees Only”, under the table',                        'body'],
-  ['outstanding','What was owed before',  'only ever prints on a credit bill',                       'foot'],
+  ['outstanding','What was owed before',  'on a credit bill, and on any bill of a customer who owes', 'foot'],
   ['signs',  'The two signature lines',   'the wording is below',                                    'foot'],
   ['note',   'The returns note',          'the wording is under Settings → What the bill shows',     'foot'],
   ['summary','The totals box',            'gross, discount, net and paid — it stays bottom right',   'sum'],
@@ -25495,6 +25504,8 @@ function a5Cfg(){
     if (B.showSign === false) B.a5.off.push('signs');         // this one was on unless turned off
     if (!B.footer) B.a5.off.push('note');
   }
+  // what was owed before prints from now on (the shop asked for it, 3 Nov 2026) — it can still be turned off
+  if (!B.a5.osOn3) { B.a5.off = (B.a5.off || []).filter(k => k !== 'outstanding'); B.a5.osOn3 = true }
   A5_DEFAULT.forEach(k => { if (!B.a5.order.includes(k)) B.a5.order.push(k) });
   B.a5.order = B.a5.order.filter(k => A5_DEFAULT.includes(k));
   if (!Array.isArray(B.a5.off)) B.a5.off = [];
@@ -25720,7 +25731,8 @@ function billAsSold(inv){
 }
 function billHtml(inv,f='a5'){
   inv=billAsSold(inv);
-  const c=C(inv.customerId)||C(1), credit=inv.balance>0, walk=c.id===1;
+  // a credit bill stays a credit bill when it is printed again after it has been paid (3 Nov 2026)
+  const c=C(inv.customerId)||C(1), credit=inv.balance>0||(inv.type==='CREDIT'&&+inv.total>0), walk=c.id===1;
   const prev=walk?0:inv.prevOut!=null?+inv.prevOut:Math.max(0,partyBal('C',c.id)-inv.balanceNow);
   const qty=inv.lines.reduce((a,l)=>a+l.qty,0);
   // as the old till showed it: the gross is at the maker's price (MRP), the discount is everything below that
@@ -25789,7 +25801,7 @@ function billHtml(inv,f='a5'){
   </div>`;
   }
   // ---------- A5 landscape: the large invoice ----------
-  if(a5Style()==='sepos') return billSepos(inv,{c,walk,credit,prev,gross,disc,copy,phones,scA5,payWord});
+  if(a5Style()==='sepos') return billSepos(inv,{c,walk,credit,prev,gross,disc,copy,phones,scA5,payWord,dk:inv.docKind&&DOCK[inv.docKind]});
   /* Laid out like a printed tax invoice: a header band with the shop, a row of boxes (the invoice,
      who it is for, the details, the account), a dark-headed item table, then remarks, the
      subtotal and the total, terms and signatures. Every value comes from the bill; a box whose
@@ -25823,7 +25835,7 @@ function billHtml(inv,f='a5'){
   const qrH=on('qr')&&!dk?`<div class="x-qrs">${qr(inv.no,50)}${qr('c'+inv.no,50)}</div>`:'';
   const custLine=walk?'':[c.phone?`Mob ${c.phone}`:'',c.nic?`NIC ${c.nic}`:'',c.tin?`VAT No ${c.tin}`:''].filter(Boolean).map(esc5).join(' · ');
   const bandH=(dk?`<div style="text-align:center;font-weight:800;font-size:22px;letter-spacing:.35em;border:2px solid #000;padding:4px 0;margin:8px 0 2px">${dk.label.toUpperCase()}</div>`:'')+(on('meta')?`<div class="x-band">
-    <div class="x-inv"><div class="x-ttl">${title}</div><div class="x-no"><span>${dk?dk.label:'Invoice'} No.</span> ${esc5(inv.no)}</div></div>
+    <div class="x-inv"><div class="x-ttl">${title}</div>${dk||inv.proof?'':`<div class="x-kind ${+inv.total<0?'rt':credit?'cr':'ca'}">${+inv.total<0?'RETURN':credit?'CREDIT BILL':'CASH BILL'}</div>`}<div class="x-no"><span>${dk?dk.label:'Invoice'} No.</span> ${esc5(inv.no)}</div></div>
     <div class="x-kv">${kv(dk?'Date':'Date / Time',dk?esc5(inv.date||''):when)}${B.showCashier!==false?kv(dk?'Prepared By':'Invoice By',esc5((inv.by||'').toUpperCase())):''}${dk?kv('Valid for',(inv.valid||CFG.bill.quoteDays||14)+' days'):kv('Payment',credit?'CREDIT':esc5(payWord.toUpperCase()))}${inv.ledger?kv('Ledger No',esc5(inv.ledger)):''}${inv.vehicle?kv('Vehicle / Ref',esc5(inv.vehicle)):''}${(dk?'':kv('Terminal',esc5(inv.terminal||S.terminal||'')))}</div>
     <div class="x-to"><div class="x-lbl">${dk?'QUOTED FOR':'BILL TO'}</div><div class="x-cn">${walk?'WALK-IN CUSTOMER':esc5(c.name.toUpperCase())}</div>${custLine?`<div class="x-ca">${custLine}</div>`:''}</div>
    </div>`:'');
@@ -25833,7 +25845,7 @@ function billHtml(inv,f='a5'){
   const subH=`<div class="x-box x-sub"><div class="x-bh">SUB TOTAL</div><div class="x-bb"><div><span>Lines</span><b>${inv.lines.length}</b></div><div><span>Quantity</span><b>${fq(qtyAll)}</b></div><div><span>Gross value</span><b>${money2(gross)}</b></div>${disc>0.005?`<div><span>Discount</span><b>− ${money2(disc)}</b></div>`:''}<div class="net"><span>Net</span><b>${money2(inv.total)}</b></div>${vatOn()?`<div><span>Value excl. VAT</span><b>${money2(inv.total-vatIn(inv.total))}</b></div><div><span>VAT ${+CFG.tax.rate}%</span><b>${money2(vatIn(inv.total))}</b></div>`:''}</div></div>`;
   const paidH=dk?`<div><span>Quoted on</span><b>${esc5(inv.date||'')}</b></div><div><span>Holds good for</span><b>${inv.valid||CFG.bill.quoteDays||14} days</b></div>`:credit?`<div><span>Paid now</span><b>${money2(inv.paid)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div>`
     :`<div><span>${esc5(payWord)} received</span><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div><span>Change</span><b>${money2(inv.paid-inv.total)}</b></div>`:''}`;
-  const osH=(credit&&!walk&&on('outstanding'))?`<div class="x-box x-osb"><div class="x-bh">ACCOUNT OUTSTANDING</div><div class="x-bb"><div><span>Previous outstanding</span><b>${money2(prev)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div><div class="tot"><span>TOTAL OUTSTANDING</span><b>${money2(prev+inv.balance)}</b></div></div></div>`:'';
+  const osH=(!walk&&!dk&&on('outstanding')&&(credit||prev>0.005))?`<div class="x-box x-osb"><div class="x-bh">ACCOUNT OUTSTANDING</div><div class="x-bb"><div><span>Previous outstanding</span><b>${money2(prev)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div><div class="tot"><span>TOTAL OUTSTANDING</span><b>${money2(prev+inv.balance)}</b></div></div></div>`:'';
   const vatH=vatOn()&&!dk?`<div><span>Value excl. VAT</span><b>${money2(inv.total-vatIn(inv.total))}</b></div><div><span>VAT ${+CFG.tax.rate}%</span><b>${money2(vatIn(inv.total))}</b></div>`:'';
   const totH=`<div class="x-tot"><div class="x-paid">${paidH}${vatH}</div><div class="x-grand"><span>${dk?dk.label.toUpperCase()+' TOTAL':'INVOICE TOTAL'}</span><b><small>LKR</small> ${money2(inv.total)}</b></div></div>`;
   const termsH=dk?`<div class="x-terms"><b>Note:</b> This is a quotation, not a bill. Prices hold for ${inv.valid||CFG.bill.quoteDays||14} days and depend on stock at the time of order.</div>`:`<div class="x-terms">${(on('note')&&B.footer)?`<b>Terms:</b> ${esc5(B.footer.replace('{days}',B.returnDays))}`:''}</div>`;
@@ -25873,7 +25885,7 @@ function billSepos(inv,o){
   const cash=inv.paid||0, change=Math.max(0,cash-inv.total);
   const tot=[['Gross Total',money2(gross)],[' - Inv.Discount',money2(disc)],['Net Total',money2(inv.total),'net'],
     ...(dk?[]:[['Amount Paid',money2(credit?inv.paid:cash)],...(credit?[['On Credit',money2(inv.balance)]]:[['CHANGE RS.',money2(change)]])]),
-    ...(credit&&!walk&&a5On('outstanding')?[['Previous Balance',money2(prev)],['Total Outstanding',money2(prev+inv.balance),'net']]:[])];
+    ...(!dk&&!walk&&a5On('outstanding')&&(credit||prev>0.005)?[['Previous Balance',money2(prev)],['Total Outstanding',money2(prev+(+inv.balance||0)),'net']]:[])];
   const terms=dk?`This is a quotation, not a bill — prices hold for ${inv.valid||B.quoteDays||14} days`
     :(B.seposLine||`Only Return will be taken within ${B.returnDays||7} days with <b>ONLY THE INVOICE</b>`);
   return `<div class="print a5 sp" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5})">
@@ -25883,7 +25895,7 @@ function billSepos(inv,o){
      <div class="sp-addr"><b>${e(addr)}</b>${near?` <small>${e(/^(.*)$/.test(near.trim())?near.trim():"("+near.trim()+")")}</small>`:''}${ph?`<b class="sp-ph">${e(ph)}</b>`:''}</div></div>
     ${dk?'':`<div class="sp-qr">${qr(inv.no,44)}${qr('c'+inv.no,44)}</div>`}
     <div class="sp-boxes">
-     <div class="sp-box"><div><span>${dk?e(dk.label)+' No':'Invoice No'}</span><i>:</i><b>${e(inv.no)}</b></div><div><span>${dk?'Prepared By':'Invoice By'}</span><i>:</i><b>${e((inv.by||'').toUpperCase())} /</b></div><div><span>Date</span><i>:</i><b>${dateTxt}</b><b class="sp-tm">${tmTxt}</b></div></div>
+     <div class="sp-box"><div><span>${dk?e(dk.label)+' No':'Invoice No'}</span><i>:</i><b>${e(inv.no)}</b>${dk||inv.proof?'':`<b class="sp-kind ${+inv.total<0?'rt':credit?'cr':'ca'}">${+inv.total<0?'RETURN':credit?'CREDIT':'CASH'}</b>`}</div><div><span>${dk?'Prepared By':'Invoice By'}</span><i>:</i><b>${e((inv.by||'').toUpperCase())} /</b></div><div><span>Date</span><i>:</i><b>${dateTxt}</b><b class="sp-tm">${tmTxt}</b></div></div>
      <div class="sp-box sp-cust"><div><span>Customer</span><i>:</i><b>${walk?'Cash Customer':e(c.name)}</b></div>${!walk&&c.phone?`<div class="sp-cm"><span></span><i></i>${e(c.phone)}${c.address?' · '+e(c.address):''}</div>`:''}</div>
     </div>
    </div>
