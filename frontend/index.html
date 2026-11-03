@@ -9,7 +9,7 @@
 <script src="regal-bridge.js"></script>
 <script src="regal-ext.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=Barlow:wght@500;600;700&family=Barlow+Semi+Condensed:wght@600;700;800&display=swap');
 /* Palette taken from the shop itself: enamel green-black shutters, cement
    floor, galvanised steel, and the paint chips on the mixing counter. */
 :root{
@@ -5127,6 +5127,7 @@ tr.cb-on td{background:#FBE4E6}
 </style>
 <link rel="stylesheet" href="bill-print.css?v=25">
 <link rel="stylesheet" href="pos-theme.css?v=1">
+<link rel="stylesheet" href="till-sepos.css?v=1">
 <script src="pos-theme.js?v=1" defer></script>
 </head>
 <body>
@@ -7337,6 +7338,15 @@ function settings(){
       <button class="${pref('till')==='quick'?'on':''}" data-act="tillPick" data-v="quick">
        <div class="np-art np-grid"><i></i><i></i><i></i><i></i><span></span></div>
        <b>Quick till</b><small>Tap tiles to add. Cash or credit is chosen before the bill, so completing it is one press.</small></button>
+     </div>
+     <h2 style="margin-top:14px">How the till looks</h2>
+     <div class="navpick">
+      <button class="${pref('tillLook')!=='regal'?'on':''}" data-act="tillLook" data-v="sepos">
+       <div class="np-art np-top"><i></i><i></i><span></span></div>
+       <b>SePOS style <em class="deftag">default</em></b><small>Grey like the old SePOS: product details and the paid amount down the right, one strip of keys along the bottom.</small></button>
+      <button class="${pref('tillLook')==='regal'?'on':''}" data-act="tillLook" data-v="regal">
+       <div class="np-art np-side"><i></i><i></i><i></i><span></span></div>
+       <b>Regal red</b><small>The red look the till had before, with Hold, Clear and Held along the top.</small></button>
      </div>
      <h2 style="margin-top:14px">The dashboard</h2>
      <div class="muted" style="margin-bottom:6px">Which panels you see and in what order — charts, figures, lists.</div>
@@ -13546,7 +13556,7 @@ function allowed(v){
    Each person gets their own arrangement: menu down the side or across the
    top, wide or narrow, and the page they land on. It travels with the login,
    so the cashier's screen is the cashier's whatever machine they sit at. */
-const PREF_DEFAULTS={nav:'side',collapsed:true,start:'updates',keys:true,till:'classic'};
+const PREF_DEFAULTS={nav:'side',collapsed:true,start:'updates',keys:true,till:'classic',tillLook:'sepos'};
 function prefs(){ if(!S.user.prefs) S.user.prefs={...PREF_DEFAULTS}; return S.user.prefs }
 function pref(k){ const p=prefs(); if(k==='collapsed'&&p[k]===undefined) return true; return p[k]===undefined?PREF_DEFAULTS[k]:p[k] }
 function setPref(k,v){
@@ -19242,7 +19252,11 @@ function posClassic(){
               ['F5 / Ctrl+R','Held bills'],['F7 / Ctrl+H','Hold bill'],['F8','Bill disc.'],['F10','Pay'],['F6','On account'],...(CFG.pos.dragLines!==false?[['Ctrl+↑↓','Move line']]:[]),['Ctrl+Q','Quotation'],['S in price','Past prices'],['C','Tick · untick a line'],['Ctrl+Shift+W / R','Wholesale · retail'],['Ctrl+Shift+L / N','Large · normal bill'],['Clear','Reset bill']];
 
   const sync=(document.getElementById('savedAt')||{}).textContent||'';
-  return `<div class="till">
+  // the SePOS look (3 Nov 2026): the old SePOS screen, modernised — product details, the paid amount with its
+  // balance, and one strip of keys; the till underneath is the same
+  const sp=pref('tillLook')!=='regal';
+  const lp=sp?(sel||(L[S.pos.sel]&&P(L[S.pos.sel].pid))):null;
+  return `<div class="till ${sp?'sp-look':''}">
 
    <div class="till-head">
     <button class="burger cs-burger" data-act="drawer" title="Menu">☰</button>
@@ -19330,6 +19344,10 @@ function posClassic(){
     </div>
 
     <div class="till-sum" id="csTillSum">
+     ${sp?`<div class="sp-pd"><div class="sp-cap">PRODUCT DETAILS<span>${lp?escM(String(lp.num||lp.code||'')):'no item'}</span></div>${lp&&lp.id!==OPEN_PID
+       ?`<div class="sp-pdb"><b>${escM(lp.name)}</b><div><span>Stock</span><em class="${lp.stock<=0?'neg':lp.stock<=lp.min?'low':''}">${fq(lp.stock)} ${escM(lp.unit||'')}</em></div><div><span>MRP</span><em>${money2(lp.mrp)}</em></div>
+        <div><span>Wholesale</span><em>${money2(lp.wholesale||0)}</em></div><div><span>Supplier</span><em>${escM((lastSupplier(lp.id)||{}).name||'not set')}</em></div></div>`
+       :'<div class="sp-pdb sp-none">Scan an item to see its stock and prices</div>'}</div>`:''}
      <div class="sum-top" data-act="csToggleSum" title="Tap to toggle full summary">
       <span>INVOICE SUMMARY</span>
       <b>${T.pcs} item${T.pcs===1?'':'s'} · ${fq(T.qty)} qty</b>
@@ -19351,6 +19369,9 @@ function posClassic(){
      </div>
      ${gpSeen()&&L.length?(()=>{const g=gpOf(L,S.pos.billDisc);
        return `<div class="sum-gp ${g.gp<0?'neg':''}" title="on this bill"><span>GP</span><b>${money2(g.gp)}</b><i>${g.pct}%</i></div>`})():''}
+     ${sp&&L.length&&T.net>0.005?`<div class="sp-paid"><label for="spPaid">PAID AMOUNT <span>Enter: payment</span></label>
+       <input id="spPaid" type="number" step="any" inputmode="decimal" value="${(+T.net).toFixed(2)}" title="What the customer hands over. Enter opens the payment with it.">
+       <div class="sp-bal"><div><span>BALANCE</span><b id="spBal">0.00</b></div><div class="cr"><span>CREDIT</span><b id="spCr">0.00</b></div></div></div>`:''}
      ${c.id!==1&&owed+T.net>c.limit?`<div class="sum-over">Over their limit — owed ${money2(owed)} of ${money2(c.limit)}</div>`:''}
 
      ${S.pos.undoReprice?`<div class="sum-editing">Prices set to what they paid last time
@@ -19374,6 +19395,15 @@ function posClassic(){
     </div>
    </div>
 
+   ${sp?`<div class="sp-keys">
+    <button class="sp-k" data-act="csClear" ${L.length||CS.pid||S.pos.customer?'':'disabled'}>CLEAR<small>Esc</small></button>
+    <button class="sp-k" data-act="hold" ${L.length?'':'disabled'}>HOLD<small>F7</small></button>
+    <button class="sp-k" data-act="showHeld">UN HOLD<small>F5${S.heldBills&&S.heldBills.length?`, ${S.heldBills.length} held`:''}</small></button>
+    <button class="sp-k blue" data-act="pickCust">CUSTOMER<small>F4</small></button>
+    <button class="sp-k blue" data-act="spDisc" ${L.length&&can('discount')?'':'disabled'}>DISCOUNT<small>F8</small></button>
+    <button class="sp-k" data-act="credit" ${L.length?'':'disabled'}>ON ACCOUNT<small>F6</small></button>
+    <button class="sp-k" data-act="doc" data-k="QUOTE" ${L.length?'':'disabled'}>QUOTATION<small>Ctrl+Q</small></button>
+    <button class="sp-k print" data-act="pay" ${L.length?'':'disabled'}>PRINT<small>F10</small></button></div>`:''}
    <div class="till-keys">
     <span class="till-brand">REGAL <b>HARDWARE</b></span>
     <span class="till-out"><em id="csSync">${sync}</em><button data-act="csExit">☰ Menu</button><button data-act="csUpdate" title="Check for updates">⟳ Update</button><button data-act="csSignOut">Sign out</button></span>
@@ -20300,6 +20330,11 @@ function showHeldBillsModal(initIdx = 0){
 
 function bindClassic(){
   const q=$('#csQ'), box=$('#csHits');
+  const spP=$('#spPaid');
+  if(spP){ const upd=()=>{ const d=(+spP.value||0)-csTotals().net; $('#spBal').textContent=money2(Math.max(0,d)); $('#spCr').textContent=money2(Math.max(0,-d)) };
+    spP.oninput=upd; upd(); spP.onfocus=()=>spP.select();
+    spP.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); openPay({box:+spP.value||0}) }
+      else if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); q&&q.focus() } } }
   /* ---- the bill list is its own place on the keyboard ----
      Down from the entry row lands on the bill; up and down walk the lines there,
      Enter opens the line, Delete takes it off, and F1 (or up from the top line)
@@ -34052,6 +34087,8 @@ document.addEventListener('click',e=>{
     qDone:()=>qDone(),
     qDisc:()=>{const v=prompt('Bill discount — Rs or %',S.pos.billDisc||''); if(v===null)return; const sub=S.pos.lines.reduce((a,l)=>a+l.qty*l.price-l.disc,0);
       const d=readDiscount(String(v).trim(),sub); S.pos.billDisc=Math.max(0,Math.min(sub,d)); render()},
+    tillLook:()=>{setPref('tillLook',a.dataset.v); render(); toast(a.dataset.v==='regal'?'The till is back to the Regal red look':'The till has the SePOS look','ok')},
+    spDisc:()=>{ const b=$('#csBillDisc'); if(b){ b.focus(); b.select() } },
     tillPick:()=>{setPref('till',a.dataset.v); render();
       toast({quick:'Quick till — tiles and one-press bills',classic:'The screen you know — entry row and invoice summary'}[a.dataset.v]||'Keyboard till')},
 

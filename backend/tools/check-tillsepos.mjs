@@ -1,0 +1,73 @@
+// The SePOS look on the till (3 Nov 2026): the classic till underneath, the old SePOS screen on top.
+//  · a new user gets the SePOS look by default; My settings → How the till looks switches it per user
+//  · product details show the item on the entry row (or the line picked on the bill)
+//  · the paid amount shows the balance and the credit as it is typed; Enter opens the payment window with it
+//  · the key strip does what the keys do: Hold, Un hold, Print (the payment window)
+//  · Regal red brings back the old look, with Hold / Clear / Held at the top
+//   node backend/tools/run-e2e.mjs --keep        (the test server on :4010)
+//   node backend/tools/check-tillsepos.mjs        (SHOT=<folder> to keep screenshots)
+import puppeteer from 'puppeteer-core';
+import fs from 'node:fs';
+const BASE = process.env.BASE || 'http://localhost:4010', SHOT = process.env.SHOT || '';
+const exe = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p => fs.existsSync(p));
+let pass = 0, fail = 0; const ok = (c, m, x = '') => { c ? pass++ : fail++; console.log((c ? 'PASS ' : 'FAIL ') + m + (x ? '  ' + x : '')) };
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['--no-sandbox'], protocolTimeout: 60000 });
+const pg = await b.newPage(); await pg.setViewport({ width: 1366, height: 768 });
+const errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('dialog', d => d.accept());
+await pg.setRequestInterception(true); pg.on('request', rq => { if (/:41\d\d/.test(rq.url())) return rq.abort(); rq.continue() });
+await pg.goto(BASE + '/pos', { waitUntil: 'networkidle2' });
+await pg.waitForFunction(() => document.getElementById('lockScreen') || document.querySelector('#nav button'), { timeout: 25000 });
+if (await pg.$('#lockScreen')) {
+  if (!(await pg.$('#lockUser')) && !(await pg.$('#lockPw'))) await pg.evaluate(() => shopLockPassword());
+  if (await pg.$('#lockUser')) await pg.type('#lockUser', 'Afridh');
+  await pg.waitForSelector('#lockPw'); await pg.type('#lockPw', 'Afridh123'); await pg.click('#lockGo');
+  await pg.waitForFunction(() => !document.getElementById('lockScreen'), { timeout: 20000 });
+}
+await wait(1500);
+// the default: a user with no choice saved gets SePOS
+await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); const p = window.eval('prefs')(); delete p.tillLook; p.till = 'classic';
+  window.printPaper = () => {}; window.eval('S').pos.lines = []; window.eval('go')('pos') });
+await wait(600);
+ok(await pg.evaluate(() => !!document.querySelector('.till.sp-look')), 'a user with no choice saved gets the SePOS look');
+ok(await pg.evaluate(() => getComputedStyle(document.querySelector('.till-hold')).display === 'none' && !!document.querySelector('.sp-keys [data-act="hold"]')), 'Hold / Clear / Held have moved to the key strip');
+// key a line the classic way
+const pid = await pg.evaluate(() => { const p = window.eval('S').products.find(x => x.active !== false && x.stock > 10 && x.retail > 100 && !(x.tiers || []).length && !x.serialised); return { code: String(p.num || p.code), name: p.name, retail: p.retail } });
+await pg.click('#csQ'); await pg.keyboard.type(pid.code); await pg.keyboard.press('Enter'); await wait(300);
+ok(await pg.evaluate(n => (document.querySelector('.sp-pdb b') || {}).textContent === n, pid.name), 'product details show the item on the entry row', pid.name);
+for (let i = 0; i < 4; i++) { await pg.keyboard.press('Enter'); await wait(120); }
+await wait(400);
+const st = await pg.evaluate(() => ({ lines: window.eval('S').pos.lines.length, net: window.eval('csTotals')().net, paid: (document.getElementById('spPaid') || {}).value }));
+ok(st.lines === 1 && Math.abs(+st.paid - st.net) < 0.01, 'the line is on the bill and the paid amount starts at the net total', JSON.stringify(st));
+if (SHOT) await pg.screenshot({ path: SHOT + '/till-sepos.png' });
+// the paid amount: balance and credit as it is typed
+await pg.click('#spPaid', { clickCount: 3 }); await pg.keyboard.type(String(Math.ceil(st.net / 1000) * 1000 + 1000)); await wait(150);
+const bal = await pg.evaluate(() => ({ bal: document.getElementById('spBal').textContent, cr: document.getElementById('spCr').textContent }));
+ok(bal.cr === '0.00' && bal.bal !== '0.00', 'more than the total: the balance (change) shows, no credit', JSON.stringify(bal));
+await pg.evaluate(() => { const i = document.getElementById('spPaid'); i.value = ''; i.focus() }); await pg.keyboard.type('10'); await wait(150);
+const cr = await pg.evaluate(() => document.getElementById('spCr').textContent);
+ok(cr !== '0.00', 'less than the total: the credit shows', cr);
+await pg.keyboard.press('Enter'); await wait(400);
+const pw = await pg.evaluate(() => ({ open: !!document.querySelector('.payw'), amt: (document.getElementById('payAmt') || {}).value }));
+ok(pw.open && +pw.amt === 10, 'Enter on the paid amount opens the payment window with that amount', JSON.stringify(pw));
+await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove())); await wait(200);
+// the key strip
+await pg.click('.sp-keys [data-act="hold"]'); await wait(500);
+await pg.evaluate(() => { const m = [...document.querySelectorAll('.modal button')].find(x => /put aside|hold/i.test(x.textContent) && !/quotation/i.test(x.textContent)); if (m) m.click() }); await wait(400);
+const held = await pg.evaluate(() => ({ lines: window.eval('S').pos.lines.length, held: (window.eval('S').heldBills || []).length }));
+ok(held.lines === 0 && held.held >= 1, 'HOLD on the strip puts the bill aside', JSON.stringify(held));
+await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
+await pg.click('.sp-keys [data-act="showHeld"]'); await wait(400);
+ok(await pg.evaluate(() => !!document.querySelector('.modal')), 'UN HOLD opens the held bills');
+await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); window.eval('recallHeldBill')(0) }); await wait(400);
+await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
+await pg.click('.sp-keys .print'); await wait(400);
+ok(await pg.evaluate(() => !!document.querySelector('.payw')), 'PRINT on the strip opens the payment window');
+await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
+// switching back
+await pg.evaluate(() => { window.eval('setPref')('tillLook', 'regal'); window.eval('render')() }); await wait(400);
+ok(await pg.evaluate(() => !document.querySelector('.till.sp-look') && getComputedStyle(document.querySelector('.till-hold')).display !== 'none' && !document.querySelector('.sp-keys')), 'Regal red: the old look, Hold / Clear / Held back at the top');
+await pg.evaluate(() => { window.eval('setPref')('tillLook', 'sepos'); window.eval('S').pos.lines = []; window.eval('S').heldBills = []; window.eval('render')() });
+ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
+console.log(`\n${pass} passed, ${fail} failed`);
+await b.close();
