@@ -22196,28 +22196,24 @@ function postStockTakeNow(note){
 }
 
 /* ================== ADD STOCK, FROM THE ITEM ITSELF (3 Nov 2026) ==================
-   Opened from the product (the updater, the records grid with F4, or "Sold on…"), for that one item:
-   · Goods came in — how many, the cost each, from which supplier, their bill number, and paid in cash now or
-     left on their account. It is a real purchase (PUR-…): stock up, the cost averaged in, the supplier's
-     account or the cash drawer, the labels asked for.
-   · Correct the count — what is on the shelf, or how many more or fewer; booked as a stock take (STK-…),
-     and waiting for the owner's yes where stock adjustments need one. */
+   Opened from the product (the updater, the records grid with F4, or "Sold on…"), for that one item. It is
+   a stock adjustment only — the shop asked that adding stock here never touch a supplier's account or the
+   cash drawer (a supplier's bill is entered under Purchases):
+   · Add stock — how many more, and why; valued at the item's cost against stock adjustments.
+   · Correct the count — what is on the shelf, or how many more or fewer.
+   Both are booked as a stock take (STK-…), the labels asked for what came up, and they wait for the owner's
+   yes where stock adjustments need one. */
 function stockAddModal(pid,after){
   const p=P(pid); if(!p) return;
   if(String((S.user||{}).role||'').toLowerCase()==='salesman') return toast('Adding stock is not open to Salesman');
-  const held=(typeof heldMap==='function'?heldMap()[p.id]:0)||0, now=+(p.stock+held).toFixed(3);
-  const sp0=SU(p.supplierId)||(typeof lastSupplier==='function'?lastSupplier(p.id):null);
+  const held=(typeof heldMap==='function'?heldMap()[p.id]:0)||0, now=+(p.stock+held).toFixed(3), ask=needsApproval('stockAdj');
   let mode='in';
   const m=modal(`<div class="sa-head"><div><h2 style="margin:0">Add stock</h2><div class="muted"><b>${escM(p.name)}</b> · No. ${escM(p.num||p.code||'')}</div></div>
      <div class="sa-now"><small>in stock now</small><b>${fq(now)}</b><span>${escM(p.unit||'')}</span></div></div>
-   <div class="seg-tabs sa-tabs"><button type="button" class="on" data-sa="in">Goods came in</button><button type="button" data-sa="fix">Correct the count</button></div>
+   <div class="seg-tabs sa-tabs"><button type="button" class="on" data-sa="in">Add stock</button><button type="button" data-sa="fix">Correct the count</button></div>
    <div id="saIn">
-    <div class="grid3"><div class="f"><label>How many came in</label><input id="saQty" type="number" min="0" step="any" inputmode="decimal" placeholder="0" class="sa-big"></div>
-     <div class="f"><label>Cost each</label><input id="saCost" type="number" min="0" step="any" inputmode="decimal" value="${+p.cost||''}"></div>
-     <div class="f"><label>Comes to</label><input id="saTot" readonly style="background:var(--panel)"></div></div>
-    <div class="grid2"><div class="f"><label>From supplier</label><select id="saSup">${S.suppliers.filter(x=>x.active!==false).map(s=>`<option value="${s.id}" ${sp0&&sp0.id===s.id?'selected':''}>${escM(s.name)}</option>`).join('')}</select></div>
-     <div class="f"><label>Their bill no. (optional)</label><input id="saInv" placeholder="e.g. INV-2231"></div></div>
-    <div class="f"><label>Paid</label><div class="seg-tabs"><button type="button" class="on" data-sapay="credit">On their account</button><button type="button" data-sapay="cash">Cash now</button></div></div>
+    <div class="grid2"><div class="f"><label>How many to add</label><input id="saQty" type="number" min="0" step="any" inputmode="decimal" placeholder="0" class="sa-big"></div>
+     <div class="f"><label>Why / where from (optional)</label><input id="saNote" placeholder="e.g. from the store room · opening stock"></div></div>
    </div>
    <div id="saFix" style="display:none">
     <div class="grid2"><div class="f"><label>On the shelf now</label><input id="saCount" type="number" min="0" step="any" inputmode="decimal" value="${now}" class="sa-big"></div>
@@ -22225,40 +22221,40 @@ function stockAddModal(pid,after){
     <div class="f"><label>Why</label><input id="saWhy" placeholder="e.g. found in the store room · counted wrong"></div>
    </div>
    <div id="saSay" class="sa-say"></div>
+   <div class="muted" style="font-size:12px;margin-top:6px">Stock only — nothing goes on a supplier's account or out of the cash drawer. A supplier's bill is entered under Purchases.</div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel <i class="kbd">Esc</i></button><button class="btn tape" id="saOk">Add it <i class="kbd">Enter</i></button></div>`);
   m.querySelector('.box').classList.add('sa-box');
-  const q=(x)=>m.querySelector(x); let pay='credit';
+  const q=(x)=>m.querySelector(x);
+  const wait=ask?' · <span class="rust">the owner approves it first</span>':'';
   const say=()=>{
-    if(mode==='in'){ const n=+q('#saQty').value||0, c=+q('#saCost').value||0; q('#saTot').value=n&&c?money2(n*c):'';
-      q('#saSay').innerHTML=n>0?`Stock goes <b>${fq(now)} → ${fq(+(now+n).toFixed(3))}</b> ${escM(p.unit||'')}${c&&Math.abs(c-(+p.cost||0))>0.005?` · cost averages in from ${money2(p.cost)}`:''}`:'';
-      q('#saOk').innerHTML='Add it <i class="kbd">Enter</i>' }
+    if(mode==='in'){ const n=+q('#saQty').value||0;
+      q('#saSay').innerHTML=n>0?`Stock goes <b>${fq(now)} → ${fq(+(now+n).toFixed(3))}</b> ${escM(p.unit||'')} · ${money2(n*(+p.cost||0))} at cost${wait}`:'';
+      q('#saOk').innerHTML=(ask?'Send for approval':'Add it')+' <i class="kbd">Enter</i>' }
     else { const n=+q('#saCount').value, d=+(n-now).toFixed(3);
-      q('#saSay').innerHTML=q('#saCount').value===''?'':Math.abs(d)<1e-9?'<span class="muted">That is what the books say already.</span>':`Stock goes <b>${fq(now)} → ${fq(n)}</b> (${d>0?'+':''}${fq(d)})${needsApproval('stockAdj')?' · <span class="rust">the owner approves it first</span>':''}`;
-      q('#saOk').innerHTML=(needsApproval('stockAdj')?'Send for approval':'Correct it')+' <i class="kbd">Enter</i>' } };
+      q('#saSay').innerHTML=q('#saCount').value===''?'':Math.abs(d)<1e-9?'<span class="muted">That is what the books say already.</span>':`Stock goes <b>${fq(now)} → ${fq(n)}</b> (${d>0?'+':''}${fq(d)})${wait}`;
+      q('#saOk').innerHTML=(ask?'Send for approval':'Correct it')+' <i class="kbd">Enter</i>' } };
   m.querySelectorAll('[data-sa]').forEach(b=>b.onclick=()=>{ mode=b.dataset.sa; m.querySelectorAll('[data-sa]').forEach(x=>x.classList.toggle('on',x===b));
     q('#saIn').style.display=mode==='in'?'':'none'; q('#saFix').style.display=mode==='fix'?'':'none'; say(); (mode==='in'?q('#saQty'):q('#saCount')).focus(); (mode==='in'?q('#saQty'):q('#saCount')).select() });
-  m.querySelectorAll('[data-sapay]').forEach(b=>b.onclick=()=>{ pay=b.dataset.sapay; m.querySelectorAll('[data-sapay]').forEach(x=>x.classList.toggle('on',x===b)) });
   q('#saBy').oninput=()=>{ const v=q('#saBy').value; if(v!==''&&!isNaN(+v)) q('#saCount').value=String(+(now+(+v)).toFixed(3)); say() };
   q('#saCount').oninput=()=>{ q('#saBy').value=''; say() };
-  ['#saQty','#saCost'].forEach(s=>q(s).oninput=say);
+  q('#saQty').oninput=say;
   const done=(txt)=>{ m.remove(); persist(true); render(); toast(txt,'ok'); if(after) after() };
+  // posting asks about labels: the item comes back first, so the question sits on top of it
+  const post=(count,note,txt)=>{ m.remove(); if(after) after(); stkCount={[p.id]:count}; postStockTakeNow(note); persist(true); render(); toast(txt(),'ok') };
   const ok=()=>{
     if(mode==='in'){
-      const n=+(+q('#saQty').value||0).toFixed(3), c=+(+q('#saCost').value||0).toFixed(4), sid=+q('#saSup').value;
-      if(!(n>0)) { q('#saQty').focus(); return toast('How many came in?') }
-      if(!sid) return toast('Which supplier is it from? Add the supplier first, or use Correct the count');
-      try{ const pur=receivePurchase({supplierId:sid,supInv:q('#saInv').value.trim(),lines:[{pid:p.id,qty:n,cost:c}],pay:pay==='cash'&&n*c>0?{method:'CASH',amount:+(n*c).toFixed(2)}:null});
-        done(`${pur.no}: ${fq(n)} ${p.unit||''} of ${p.name} in — ${fq(p.stock)} in stock`);
-        askLabels([{pid:p.id,qty:n}],`${escM(p.name)}: ${fq(n)} came in.`) }
-      catch(e){ toast(e.message) }
-      return }
+      const n=+(+q('#saQty').value||0).toFixed(3); if(!(n>0)){ q('#saQty').focus(); return toast('How many to add?') }
+      const why=q('#saNote').value.trim()||'stock added on the item';
+      if(ask){ requestApproval('stockAdj',`Add ${fq(n)} ${p.unit||''} to ${p.name} (${fq(now)} → ${fq(+(now+n).toFixed(3))})`,why,{adds:{[p.id]:n},note:`${p.name} — ${why}`},{keep:true});
+        return done('Sent for approval — the stock goes up once it is approved') }
+      return post(+(now+n).toFixed(3),`${p.name} — ${why}`,()=>`${fq(n)} ${p.unit||''} added to ${p.name} — ${fq(p.stock)} in stock`) }
     const v=q('#saCount').value; if(v===''||isNaN(+v)||+v<0) return toast('How many are on the shelf?');
     const n=+(+v).toFixed(3), d=+(n-now).toFixed(3); if(Math.abs(d)<1e-9) return toast('That is what the books say already');
     const why=q('#saWhy').value.trim()||'counted on the item';
-    if(needsApproval('stockAdj')){
+    if(ask){
       requestApproval('stockAdj',`Stock of ${p.name}: ${fq(now)} → ${fq(n)} (${d>0?'+':''}${fq(d)})`,why,{counts:{[p.id]:n},note:`${p.name} — ${why}`},{keep:true});
       return done('Sent for approval — the stock changes once it is approved') }
-    stkCount={[p.id]:n}; postStockTakeNow(`${p.name} — ${why}`); done(`${p.name}: ${fq(now)} → ${fq(n)}`);
+    post(n,`${p.name} — ${why}`,()=>`${p.name}: ${fq(now)} → ${fq(n)}`);
   };
   q('#saOk').onclick=ok;
   m.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.tagName!=='BUTTON'){ e.preventDefault(); e.stopPropagation(); ok() } });
@@ -23258,7 +23254,10 @@ function applyApproval(a){
     case 'listBill': case 'overLimit': break;
     case 'openBal': openBalAdd(d.type,d.id,d.amt,d.date,d.note,a.by); break;
     case 'partyActive': partyActivate(d.type,d.id,S.user.name); break;      // the yes itself is what the till looks for (dirApproved)
-    case 'stockAdj':{ if(d.phoneIds) phonePost(d.phoneIds,true); else { stkCount={...(d.counts||{})}; postStockTakeNow(d.note||'Stock take') } break }
+    case 'stockAdj':{ if(d.phoneIds) phonePost(d.phoneIds,true);
+      // stock added on an item: so many more than there are when it is approved
+      else if(d.adds){ const h=heldMap(); stkCount={}; for(const [k,v] of Object.entries(d.adds)){ const p=P(+k); if(p) stkCount[k]=+(p.stock+(h[p.id]||0)+(+v)).toFixed(3) } postStockTakeNow(d.note||'Stock added') }
+      else { stkCount={...(d.counts||{})}; postStockTakeNow(d.note||'Stock take') } break }
     case 'salaryAsk':{ const e=(S.employees||[]).find(x=>String(x.id)===String(d.empId))||(S.employees||[]).find(x=>x.name===d.who);
       if(!e) throw new Error('That person is no longer on the staff list');
       salTell(d,true);

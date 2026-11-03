@@ -1,8 +1,10 @@
 // Adding stock from the item itself.
-//  · the product updater has "＋ Add stock" (and F4): goods came in — 5 at a cost, from a supplier, on their
-//    account — is a real purchase: stock +5, the supplier owed, and the updater comes back with the new figure
+//  · the product updater has "＋ Add stock" (and F4): adding 5 is a stock adjustment only — stock +5, a stock
+//    take booked, no purchase, no supplier owed, no cash out — and the updater comes back with the new figure,
+//    the labels question on top of it
 //  · the records grid: F4 on the picked row opens it; "Correct the count" sets what is on the shelf (a stock take)
-//  · someone whose stock adjustments need approval: it is sent for approval and the stock waits
+//  · someone whose stock adjustments need approval: it is sent for approval and the stock waits; approved,
+//    the 3 are added to whatever is there then
 //   node backend/tools/run-e2e.mjs --keep        (the test server on :4010)
 //   node backend/tools/check-stockadd.mjs
 import puppeteer from 'puppeteer-core';
@@ -36,15 +38,16 @@ await pg.evaluate(id => window.eval('productModal')(id, { pu: true }), s0.pid); 
 ok(!!(await pg.$('#puStock')) && !!(await pg.$('#puStock2')), 'the product updater has "＋ Add stock" (by the stock figure and at the foot)');
 await pg.click('#puStock2'); await wait(300);
 ok(!!(await pg.$('#saQty')) && !(await pg.$('.pu-box')), 'it opens Add stock for this item');
-await pg.type('#saQty', '5'); await pg.evaluate(sid => { document.getElementById('saSup').value = String(sid) }, s0.sid);
+ok(!(await pg.$('#saSup')) && /supplier's account/.test(await pg.evaluate(() => document.querySelector('.sa-box').innerText)), 'no supplier and no payment on it — it says stock only');
+await pg.type('#saQty', '5'); await pg.type('#saNote', 'from the store room');
 ok(/→ /.test(await pg.evaluate(() => document.getElementById('saSay').innerText)), 'it says what the stock will become');
+const cash0 = await pg.evaluate(() => window.eval('bal')('1010'));
 await pg.click('#saOk'); await wait(600);
-const after = await pg.evaluate(s => { const S = window.eval('S'); const pur = S.purchases[S.purchases.length - 1];
-  return { n: S.purchases.length, sup: pur.supplierId, line: pur.lines[0] && { pid: pur.lines[0].pid, qty: pur.lines[0].qty }, owed: window.eval('partyBal')('S', s.sid), back: !!document.querySelector('.pu-box'), labels: [...document.querySelectorAll('.modal')].some(m => !m.querySelector('.pu-box')) } }, s0);
-ok(after.n === s0.np + 1 && after.sup === s0.sid && after.line.pid === s0.pid && after.line.qty === 5, 'goods came in: a purchase from that supplier, 5 of the item', JSON.stringify(after));
-ok(Math.abs((await stock()) - (s0.stock + 5)) < 1e-6, 'stock +5');
-ok(after.owed > s0.owed + 0.005, 'on their account: the supplier is owed more', `${s0.owed} → ${after.owed}`);
-ok(after.back && after.labels, 'the updater comes back with the new figure, and the labels are asked for');
+const after = await pg.evaluate(s => { const S = window.eval('S'); const mods = [...document.querySelectorAll('.modal')]; const t = S.stocktakes[S.stocktakes.length - 1];
+  return { n: S.purchases.length, owed: window.eval('partyBal')('S', s.sid), cash: window.eval('bal')('1010'), stk: t && t.note, back: mods.some(m => m.querySelector('.pu-box')), labelsOnTop: mods.length > 1 && !mods[mods.length - 1].querySelector('.pu-box') } }, s0);
+ok(Math.abs((await stock()) - (s0.stock + 5)) < 1e-6 && /store room/.test(after.stk || ''), 'stock +5, booked as a stock take', after.stk);
+ok(after.n === s0.np && Math.abs(after.owed - s0.owed) < 0.005 && Math.abs(after.cash - cash0) < 0.005, 'no purchase, the supplier owed nothing more, no cash out', JSON.stringify({ purchases: after.n, owed: after.owed, cash: after.cash }));
+ok(after.back && after.labelsOnTop, 'the updater comes back with the new figure, the labels question on top of it');
 await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
 // 2. from the grid: F4 and correct the count
 await pg.evaluate(id => { window.eval('PR').sel = id; window.eval('go')('inventory'); window.eval('render')() }, s0.pid); await wait(300);
@@ -64,6 +67,15 @@ const btn = await pg.evaluate(() => document.getElementById('saOk').innerText);
 await pg.click('#saOk'); await wait(400);
 const ap = await pg.evaluate(() => { const S = window.eval('S'); const a = (S.approvals || [])[0]; return a && { kind: a.kind, status: a.status, title: a.title } });
 ok(/approval/i.test(btn) && ap && ap.kind === 'stockAdj' && ap.status === 'pending' && Math.abs((await stock()) - st2) < 1e-6, 'needs approval: sent for approval, the stock waits', JSON.stringify(ap));
+// adding, asked for approval: approved after a sale, the 3 go on what is there then
+await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
+await pg.evaluate(id => window.eval('stockAddModal')(id), s0.pid); await wait(300);
+await pg.type('#saQty', '3'); await pg.click('#saOk'); await wait(400);
+const ap2 = await pg.evaluate(() => { const S = window.eval('S'); const a = S.approvals[0]; return { id: a.id, adds: a.data && a.data.adds } });
+await pg.evaluate(id => { const p = window.eval('P')(id); p.stock = +(p.stock - 1).toFixed(3) }, s0.pid);   // one sold meanwhile
+const st3 = await stock();
+await pg.evaluate(id => { const S = window.eval('S'); S.user = window.__user; window.eval('decideApproval')(id, true, '') }, ap2.id); await wait(300);
+ok(ap2.adds && Math.abs((await stock()) - (st3 + 3)) < 1e-6, 'approved: the 3 are added to what is there then', `${st3} → ${await stock()}`);
 await pg.evaluate(() => { const S = window.eval('S'); Object.assign(S, JSON.parse(window.__keep)); S.user = window.__user; document.querySelectorAll('.modal').forEach(m => m.remove()); window.eval('render')() });
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);
