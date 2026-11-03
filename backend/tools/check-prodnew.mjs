@@ -26,12 +26,12 @@ const rows = await pg.evaluate(async () => { document.querySelectorAll('.modal')
   const S = window.eval('S'); const base = S.products[0]; let id = Math.max(...S.products.map(x => x.id));
   S.products.push({ ...base, id: ++id, name: 'Newest Test A', code: 'NTA1', short: '', barcode: '', num: '' }, { ...base, id: ++id, name: 'Newest Test B', code: 'NTB1', short: '', barcode: '', num: '' });
   window.eval('go')('inventory'); window.eval('render')(); await new Promise(r => setTimeout(r, 300));
-  const names = () => [...document.querySelectorAll('tr.rowlink td:nth-child(4) > b')].slice(0, 3).map(x => x.textContent);
-  const blank = names(), note = document.body.innerText.includes('newest first');
+  const names = () => [...document.querySelectorAll('#prGrid tr[data-pr] td.nm')].slice(0, 3).map(x => x.childNodes[0].textContent.trim());
+  const blank = names(), note = !!document.querySelector('[name="prOrd"][value="new"]:checked');
   const f = document.getElementById('prodQ'); f.value = base.name; f.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 400));
   const typed = names(); S.products = S.products.filter(x => !/^Newest Test/.test(x.name)); return { blank, note, typed, want: base.name } });
 ok(rows.blank[0] === 'Newest Test B' && rows.blank[1] === 'Newest Test A', 'nothing typed: the last added is on top, the one before it next', rows.blank.join(' | '));
-ok(rows.note, 'the count says "newest first"');
+ok(rows.note, 'the order is "Newest first"');
 ok(rows.typed[0] === rows.want, 'typing still puts the best match first', rows.typed.join(' | '));
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -468,6 +468,32 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .pu-t .n{text-align:right;white-space:nowrap}
 .pu-mv{margin:2px 0 10px}.pu-mv td{cursor:default}.pu-mv tr:hover td{background:none}
 .pu-del{color:var(--chip-rust)!important;border-color:var(--chip-rust)!important}
+/* product records: the old SePOS grid */
+.pr-bar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px;background:var(--white);border:1px solid var(--line2);border-radius:10px;padding:8px 10px}
+.pr-order{display:flex;flex-direction:column;gap:1px;font-size:12.5px;padding-right:6px;border-right:1px solid var(--line2)}
+.pr-order b{font-size:11px;color:var(--steel);text-transform:uppercase;letter-spacing:.04em}
+.pr-bar .pr-order .chk{margin:0!important;padding:1px 2px!important;border:0!important;background:none!important;box-shadow:none!important;min-height:0!important;font-size:12.5px;gap:5px}
+.pr-t tbody tr.on .cc{color:var(--ink);background:#fff}
+
+.pr-f{display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--steel);flex:1;min-width:150px;max-width:300px}
+.pr-f input{margin:0;padding:6px 8px}
+.pr-f:first-of-type{max-width:340px;flex:1.3}
+.pr-acts{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.pr-wrap{max-height:calc(100vh - 290px);min-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--white)}
+.pr-t{width:100%;border-collapse:collapse;font-size:12.5px;margin:0}
+.pr-t th{position:sticky;top:0;z-index:1;background:var(--panel);text-align:left;padding:5px 8px;font-size:11.5px;border-bottom:1px solid var(--line);white-space:nowrap}
+.pr-t td{padding:3px 8px;border-bottom:1px solid var(--line2);white-space:nowrap;cursor:default}
+.pr-t td.nm{white-space:normal;font-weight:600;min-width:220px}
+.pr-t td.pn{font-variant-numeric:tabular-nums;color:var(--steel)}
+.pr-t th.n,.pr-t td.n{text-align:right}
+.pr-t tbody tr:nth-child(even) td{background:#fafbfb}
+.pr-t tbody tr:hover td{background:var(--tint-yellow)}
+.pr-t tbody tr.on td{background:var(--ink)!important;color:#fff}.pr-t tbody tr.on td.pn{color:#fff}
+.pr-t tbody tr.on .tag{background:#fff;color:var(--ink)}
+.pr-t tbody tr.off td{color:var(--faint)}
+.pr-t .shortcode{font-size:10.5px}
+.pr-foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:6px;padding:6px 10px;background:var(--ink);color:#fff;border-radius:6px;font-size:12px}
+
 @media (max-width:900px){ .pu-box .pm-body{grid-template-columns:1fr;overflow:auto} .pu-box .pm-main{overflow:visible} .pu-rec{max-height:60vh} }
 @media (max-width:820px){ .pm-body{grid-template-columns:1fr;max-height:none} .pm-side{position:static;order:-1} .pm-photo{height:120px} .pm-g3,.pm-g4{grid-template-columns:1fr 1fr} .pm-head .seg-tabs{display:none} .modal .box.pm-box{overflow:auto} .pm-foot .muted{display:none} }
 /* Take a payment: the heading with its small search box, the matches dropping under it */
@@ -14229,7 +14255,8 @@ function renderNow(){
       const q=(ask.value||'').trim(); if(!q)return; webChat.push({who:'you',text:q});
       webChat.push({who:'bot',text:webAnswer(q)}); render(); } };
   }
-  if(S.view==='products'){ const pq=$('#prodQ'); if(pq){ pq.oninput=e=>{prodQ=e.target.value;invLimit=200;render();const n=$('#prodQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)} } }
+  if(S.view==='products'&&$('#prGrid')) prBind();
+  else if(S.view==='products'){ const pq=$('#prodQ'); if(pq){ pq.oninput=e=>{prodQ=e.target.value;invLimit=200;render();const n=$('#prodQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)} } }
   if(S.view==='docs'){ const dq=$('#docQ'); if(dq){ dq.oninput=e=>{docQ=e.target.value;render();
       const n=$('#docQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body&&docQ)dq.focus() } }
@@ -14341,7 +14368,7 @@ function renderNow(){
     document.querySelectorAll('[data-mediarm]').forEach(el=>{ el.onclick=()=>shopMediaDelete(el.dataset.mediarm).then(()=>{ const pic=el.closest('.mediaslot').querySelector('.mediapic'); pic.innerHTML=''; pic.classList.add('empty'); toast('Taken off the site') }).catch(e=>toast(e.message)) });
     if(typeof extBindSettings==='function') extBindSettings();
   }
-  const pq=$('#prodQ'); if(pq){ pq.value=prodQ; pq.oninput=e=>{prodQ=e.target.value;invLimit=200;render();const n=$('#prodQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
+  const pq=$('#prGrid')?(prBind(),null):$('#prodQ'); if(pq){ pq.value=prodQ; pq.oninput=e=>{prodQ=e.target.value;invLimit=200;render();const n=$('#prodQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body&&prodQ)pq.focus() }
   const cq=$('#custQ'); if(cq){ cq.value=custQ;
     cq.oninput=e=>{ const pos=e.target.selectionStart; custQ=e.target.value; const l=custList(); if(l.length&&!l.some(c=>c.id===custSel)) custSel=l[0].id; render(); const n=$('#custQ'); n.focus(); n.setSelectionRange(pos,pos) };
@@ -26601,15 +26628,7 @@ function productModal(pid,opt){
     q('puSimple').onclick=()=>{ CFG.prodForm='simple'; persist(true); m.remove(); productModal(pid,{pu:false}) };
     { const b2=q('pbulk2'); if(b2) b2.onclick=()=>{ m.remove(); bulkProductModal() } }
     // Delete: an item never bought, sold or counted goes for good; one with history is kept for the books, off the till
-    { const del=q('puDel'); if(del) del.onclick=()=>{
-      const used=(S.movements||[]).some(x=>x.pid===p.id)||(S.sales||[]).some(s=>(s.lines||[]).some(l=>l.pid===p.id));
-      if(!used){ if(!confirm(`Delete ${p.name}? It has never been bought, sold or counted.`)) return;
-        S.products=S.products.filter(x=>x!==p); try{ logTrail('other',`Product deleted: ${p.name} (No. ${p.num||''}, ${p.code||''})`,{ref:p.code||String(p.id)}) }catch(e){}
-        persist(true); m.remove(); render(); toast(`${p.name} deleted`); productModal(null,{pu:true}); return }
-      if(p.active===false) return toast(`${p.name} is already off the till — it has stock history, so it stays on the books`);
-      if(!confirm(`${p.name} has been bought or sold, so it stays on the books for its history — but it comes off the till and the searches. Go ahead?`)) return;
-      p.active=false; try{ logTrail('other',`Product taken off the till: ${p.name} (No. ${p.num||''})`,{ref:p.code||String(p.id)}) }catch(e){}
-      persist(true); m.remove(); render(); toast(`${p.name} is off the till — tick "active" on it to bring it back`); productModal(null,{pu:true}) } }
+    { const del=q('puDel'); if(del) del.onclick=()=>{ if(prodDelete(p)){ m.remove(); render(); productModal(null,{pu:true}) } } }
     // after a save the updater stays open, empty for the next one
     const save0=q('psave').onclick;
     q('psave').onclick=()=>{ const n0=(S.approvals||[]).length; save0(); if(m._again) return;
@@ -28462,6 +28481,79 @@ function newPurModal(sid,ord){
    render();toast(`${pur.no} received · stock, supplier account and ledger updated${ord?' · order closed':''}`)} }
 
 /* ---- inventory ---- */
+/* ================== PRODUCT RECORDS (3 Nov 2026) ==================
+   The Products list as the shop's old SePOS had it: a box each for the item number or name, the category
+   and the supplier, ordered by item number, by name or newest first; tight rows with one picked out in
+   black; F2 adds, F3 or Enter edits the picked one, Del deletes it, F5 starts the search afresh, and the
+   arrows move. Typing only redraws the grid, so the cursor stays where it is. */
+let PR={cat:'',sup:'',order:'new',sel:null};
+function prList(){
+  const q=prodQ.trim(), cat=PR.cat.trim().toLowerCase(), sup=PR.sup.trim().toLowerCase();
+  let list=q?codeExact(q,S.products).concat(prodSearch(S.products,q)).filter((p,i,a)=>a.indexOf(p)===i):S.products.slice().reverse();
+  if(cat) list=list.filter(p=>String(p.cat||'').toLowerCase().includes(cat));
+  if(sup) list=list.filter(p=>{ const s=SU(p.supplierId); return s&&String(s.name||'').toLowerCase().includes(sup) });
+  const n=v=>{ const x=parseFloat(String(v??'').replace(/[^\d.]/g,'')); return isNaN(x)?Infinity:x };
+  if(PR.order==='num') list.sort((a,b)=>n(a.num)-n(b.num)||String(a.num||'').localeCompare(String(b.num||'')));
+  else if(PR.order==='name') list.sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  return list;
+}
+function prGridHtml(){
+  const isSalesman=String((S.user||{}).role||'').toLowerCase()==='salesman', list=prList(), shown=list.slice(0,invLimit), showCost=!isSalesman;
+  if(shown.length&&!shown.some(p=>p.id===PR.sel)) PR.sel=shown[0].id;
+  const cc=CFG.cost.inProducts&&can('cost');
+  return `<div class="pr-wrap"><table class="pr-t"><thead><tr><th>No.</th><th>Item name</th><th>Category</th><th>Supplier</th><th>Unit</th><th class="n">MRP</th>${showCost?`<th class="n">Cost${cc?' code':''}</th>`:''}<th class="n">Price</th><th class="n">Wholesale</th><th class="n">Stock</th></tr></thead>
+   <tbody>${shown.map(p=>{ const s=SU(p.supplierId)||(typeof lastSupplier==='function'?lastSupplier(p.id):null);
+    return `<tr data-pr="${p.id}" class="${p.id===PR.sel?'on':''}${p.active===false?' off':''}"><td class="pn">${escM(p.num||'')}</td><td class="nm">${escM(p.name)}${p.short?` <span class="shortcode">${escM(p.short)}</span>`:''}${p.active===false?' <i>(off the till)</i>':''}</td>
+     <td>${escM(p.cat||'')}</td><td>${s?escM(String(s.name).split(/[–(]/)[0].trim()):''}</td><td>${escM(p.unit||'')}</td><td class="n">${money2(p.mrp)}</td>${showCost?`<td class="n">${cc?`<span class="cc">${costCode(p.cost)}</span>`:money2(p.cost)}</td>`:''}
+     <td class="n"><b>${money2(p.retail)}</b></td><td class="n">${money2(p.wholesale)}</td><td class="n">${p.stock<=p.min?`<span class="tag bad">${fq(p.stock)}</span>`:fq(p.stock)}</td></tr>` }).join('')
+    ||`<tr><td colspan="10" class="muted" style="padding:12px">Nothing matches that.</td></tr>`}</tbody></table></div>
+   ${moreRows(shown.length,list.length,'invMore')}
+   <div class="pr-foot"><span>Total records: <b id="prCount">${shown.length}/${list.length}</b> of ${S.products.length}</span>
+    <span>${isSalesman?'':'F2 = Add new · F3 / Enter = Edit selected · Del = Delete selected · '}F5 = Refresh · ↑ ↓ = Move · double-click = Edit</span></div>`;
+}
+function prDraw(){ const g=document.getElementById('prGrid'); if(!g) return; invLimit=200; g.innerHTML=prGridHtml(); prBindRows() }
+function prBindRows(){
+  document.querySelectorAll('#prGrid [data-pr]').forEach(r=>{
+    r.onclick=()=>{ PR.sel=+r.dataset.pr; document.querySelectorAll('#prGrid tr.on').forEach(x=>x.classList.remove('on')); r.classList.add('on') };
+    r.ondblclick=()=>{ PR.sel=+r.dataset.pr; prEdit() } });
+}
+function prBind(){
+  const pq=$('#prodQ'); if(!pq) return;
+  const hook=(id,fn)=>{ const el=$('#'+id); if(el) el.oninput=()=>{ fn(el.value); prDraw() } };
+  hook('prodQ',v=>{ prodQ=v }); hook('prCat',v=>{ PR.cat=v }); hook('prSup',v=>{ PR.sup=v });
+  document.querySelectorAll('[name="prOrd"]').forEach(r=>r.onchange=()=>{ PR.order=r.value; prDraw() });
+  prBindRows();
+  if(document.activeElement===document.body) pq.focus();
+}
+const prSelP=()=>PR.sel!=null?P(PR.sel):null;
+function prEdit(){ const p=prSelP(); if(!p) return toast('Pick an item first'); if(String((S.user||{}).role||'').toLowerCase()==='salesman') return toast('Editing products is not open to Salesman'); productModal(p.id) }
+function prMove(d){ const rows=[...document.querySelectorAll('#prGrid [data-pr]')]; if(!rows.length) return;
+  let i=rows.findIndex(r=>+r.dataset.pr===PR.sel); i=Math.max(0,Math.min(rows.length-1,(i<0?0:i)+d));
+  rows.forEach(r=>r.classList.remove('on')); rows[i].classList.add('on'); PR.sel=+rows[i].dataset.pr; rows[i].scrollIntoView({block:'nearest'}) }
+/* deleting a product: one never bought, sold or counted goes for good; one with history stays on the books,
+   off the till and the searches (shared with the product updater) */
+function prodDelete(p){
+  if(!p) return false;
+  if(!canApprove()){ toast('Only the owner or an admin can delete a product'); return false }
+  const used=(S.movements||[]).some(x=>x.pid===p.id)||(S.sales||[]).some(s=>(s.lines||[]).some(l=>l.pid===p.id));
+  if(!used){ if(!confirm(`Delete ${p.name}? It has never been bought, sold or counted.`)) return false;
+    S.products=S.products.filter(x=>x!==p); try{ logTrail('other',`Product deleted: ${p.name} (No. ${p.num||''}, ${p.code||''})`,{ref:p.code||String(p.id)}) }catch(e){}
+    persist(true); toast(`${p.name} deleted`); return true }
+  if(p.active===false){ toast(`${p.name} is already off the till — it has stock history, so it stays on the books`); return false }
+  if(!confirm(`${p.name} has been bought or sold, so it stays on the books for its history — but it comes off the till and the searches. Go ahead?`)) return false;
+  p.active=false; try{ logTrail('other',`Product taken off the till: ${p.name} (No. ${p.num||''})`,{ref:p.code||String(p.id)}) }catch(e){}
+  persist(true); toast(`${p.name} is off the till — tick "active" on it to bring it back`); return true;
+}
+window.addEventListener('keydown',e=>{
+  if(typeof S==='undefined'||!S||!document.getElementById('prGrid')||document.querySelector('.modal')) return;
+  const stop=()=>{ e.preventDefault(); e.stopImmediatePropagation() };
+  const inField=/^(INPUT|SELECT|TEXTAREA)$/.test((e.target||{}).tagName||''), sales=String((S.user||{}).role||'').toLowerCase()==='salesman';
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){ if(e.target&&e.target.type==='radio') return; stop(); prMove(e.key==='ArrowDown'?1:-1); return }
+  if(e.key==='F2'&&!sales){ stop(); productModal(); return }
+  if((e.key==='F3'||(e.key==='Enter'&&(inField||e.target===document.body)))&&!sales){ stop(); prEdit(); return }
+  if(e.key==='Delete'&&!inField&&!sales){ stop(); const p=prSelP(); if(prodDelete(p)){ PR.sel=null; render() } return }
+  if(e.key==='F5'){ stop(); prodQ=''; PR.cat=''; PR.sup=''; PR.sel=null; invLimit=200; render(); const q=$('#prodQ'); if(q) q.focus(); return }
+},true);
 let invTab='products', prodQ='', invLimit=200;
 /* long lists are drawn a page at a time — thousands of rows in one go is what makes a screen feel stuck */
 const moreRows=(shown,total,act)=>shown<total?`<div style="display:flex;gap:10px;align-items:center;margin-top:8px"><span class="muted">Showing ${shown} of ${total}.</span><button class="btn ghost sm" data-act="${act}">Show 200 more</button><span class="muted">or search to narrow it down</span></div>`:'';
@@ -28470,25 +28562,18 @@ function inventory(){
   const tabs=isSalesman?[['products','Products'],['stock','Stock']]:[['products','Products'],['stock','Stock'],['ledger','Stock ledger'],['damage','Damaged goods']];
   if(isSalesman&&invTab!=='products'&&invTab!=='stock') invTab='products';
   let body='';
-  if(invTab==='products'){ const q=prodQ.toLowerCase().trim(); const list=q?codeExact(q,S.products).concat(prodSearch(S.products,q)).filter((p,i,a)=>a.indexOf(p)===i):S.products.slice().reverse();   // nothing typed: the newest added on top
-    const shown=list.slice(0,invLimit);
+  if(invTab==='products'){
     const clashN=isSalesman?0:codeClashes().length;
-    body=`${clashN?`<div class="card" style="background:#FFF4DC;border-color:#F0D08A;margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:240px"><b>${clashN} item number${clashN===1?'':'s'} ${clashN===1?'is':'are'} also another product's barcode or code</b><div class="muted">Typing or scanning that number would find the wrong product. Fix gives each one its own old sticker number where that's free, or a new number no product uses.</div></div><button class="btn tape" data-act="codeFix">Fix ${clashN===1?'it':'them'}</button></div>`:''}<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
-      <input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search item name, code, short code, barcode or category…" style="max-width:380px">
-      ${!isSalesman?`<button class="btn tape" data-act="newProd">Add a product</button>`:''}
-      ${canApprove()?`<button class="btn ghost" data-act="catMgr">Categories</button>${payBoss()?'<button class="btn ghost sm" data-act="oneNumber" title="One number for each product: the bill, the label and the till">One number for all</button><button class="btn sm" data-act="catTidy" style="background:#FFF4DC;border-color:#F0D08A;color:#8A5D06">Tidy the categories</button>':''}`:''}
-      <span class="muted" style="margin-left:auto">${list.length} of ${S.products.length} products${q?"":" · newest first"}</span></div>
-     <table><tr><th>No.</th><th>Code</th><th>Short</th><th>Item</th><th>Supplier</th><th>Unit</th><th class="n">MRP</th>${!isSalesman?`<th class="n">Cost${CFG.cost.inProducts&&can('cost')?' code':''}</th>`:''}<th class="n">Discounted</th><th class="n">Wholesale</th>${!isSalesman?'<th class="n">Margin</th>':''}<th class="n">In stock</th>${!isSalesman?'<th></th>':''}</tr>
-     ${shown.map(p=>`<tr class="rowlink" ${!isSalesman?`data-act="prodHist" data-id="${p.id}"`:''}><td><span class="pnum">${p.num||''}</span></td><td>${p.code}${p.barcode&&String(p.barcode)!==String(p.code)?`<div class="muted">${p.barcode}</div>`:''}${p.oldCode?`<div class="muted" style="font-size:11px">was ${p.oldCode}</div>`:''}</td>
-      <td>${p.short?`<span class="shortcode">${p.short}</span>`:'<span class="muted">—</span>'}</td>
-      <td><b>${p.name}</b><div class="muted">${p.cat}</div></td>
-      <td class="psup">${(()=>{const sp=SU(p.supplierId);return sp?sp.name.split(/[–(]/)[0].trim():'<span class="muted">—</span>'})()}</td><td>${p.unit}</td>
-      <td class="n">${money2(p.mrp)}</td>${!isSalesman?`<td class="n">${CFG.cost.inProducts&&can('cost')?`<span class="cc">${costCode(p.cost)}</span>`:money2(p.cost)}</td>`:''}<td class="n"><b>${money2(p.retail)}</b></td><td class="n">${money2(p.wholesale)}</td>
-      ${!isSalesman?`<td class="n">${((p.retail-p.cost)/p.retail*100).toFixed(1)}%</td>`:''}
-      <td class="n">${p.stock<=p.min?`<span class="tag bad">${fq(p.stock)}</span>`:fq(p.stock)}</td>
-      ${!isSalesman?`<td><button class="btn ghost sm" data-act="editProd" data-id="${p.id}">Edit</button></td>`:''}</tr>`).join('')||'<tr><td colspan="13" class="muted">Nothing matches that.</td></tr>'}</table>
-     ${moreRows(shown.length,list.length,'invMore')}
-     ${!isSalesman?'<div class="muted" style="margin-top:8px">Click an item to see every bill it has been sold on.</div>':''} `}
+    body=`${clashN?`<div class="card" style="background:#FFF4DC;border-color:#F0D08A;margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:240px"><b>${clashN} item number${clashN===1?'':'s'} ${clashN===1?'is':'are'} also another product's barcode or code</b><div class="muted">Typing or scanning that number would find the wrong product. Fix gives each one its own old sticker number where that's free, or a new number no product uses.</div></div><button class="btn tape" data-act="codeFix">Fix ${clashN===1?'it':'them'}</button></div>`:''}
+     <div class="pr-bar">
+      <div class="pr-order"><b>Order by</b>${[['num','Item number'],['name','Item name'],['new','Newest first']].map(([k,l])=>`<label class="chk"><input type="radio" name="prOrd" value="${k}" ${PR.order===k?'checked':''}> ${l}</label>`).join('')}</div>
+      <label class="pr-f"><span>Item number / barcode / name</span><input id="prodQ" value="${escM(prodQ)}" autocomplete="off" placeholder="e.g. 11754 or nippon filler"></label>
+      <label class="pr-f"><span>Category</span><input id="prCat" list="prCatL" value="${escM(PR.cat)}" autocomplete="off"><datalist id="prCatL">${[...new Set(S.products.map(x=>x.cat).filter(Boolean))].sort().map(c=>`<option value="${escM(c)}">`).join('')}</datalist></label>
+      <label class="pr-f"><span>Supplier</span><input id="prSup" list="prSupL" value="${escM(PR.sup)}" autocomplete="off"><datalist id="prSupL">${S.suppliers.filter(x=>x.active!==false).map(s=>`<option value="${escM(s.name)}">`).join('')}</datalist></label>
+      <div class="pr-acts">${!isSalesman?`<button class="btn tape sm" data-act="newProd" title="F2">Add <i class="kbd">F2</i></button><button class="btn ghost sm" data-act="prEdit" title="F3 or Enter">Edit <i class="kbd">F3</i></button><button class="btn ghost sm" data-act="prHist">Sold on…</button>${canApprove()?'<button class="btn ghost sm pu-del" data-act="prDel" title="Del">Delete <i class="kbd">Del</i></button>':''}`:''}
+       ${canApprove()?`<button class="btn ghost sm" data-act="catMgr">Categories</button>${payBoss()?'<button class="btn ghost sm" data-act="oneNumber" title="One number for each product: the bill, the label and the till">One number for all</button><button class="btn sm" data-act="catTidy" style="background:#FFF4DC;border-color:#F0D08A;color:#8A5D06">Tidy the categories</button>':''}`:''}</div>
+     </div>
+     <div id="prGrid">${prGridHtml()}</div>`}
   if(invTab==='stock'){ const q=prodQ.toLowerCase().trim(); const list=q?prodSearch(S.products,q):S.products.slice(); const shown=list.slice(0,invLimit);
     body=`<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center"><input id="prodQ" value="${prodQ.replace(/"/g,'&quot;')}" placeholder="Search name, code or category…" style="max-width:380px"><span class="muted" style="margin-left:auto">${list.length} products</span></div>
     <table><tr><th>Code</th><th>Product</th><th>Category</th><th class="n">In stock</th><th class="n">Min</th>${!isSalesman?'<th class="n">Cost (avg)</th>':''}<th class="n">Retail</th><th class="n">Wholesale</th>${!isSalesman?'<th class="n">Value</th>':''}</tr>${shown.map(p=>`<tr><td>${p.code}<div class="muted">${p.barcode}</div></td><td>${p.name}</td><td>${p.cat}</td><td class="n">${p.stock<=p.min?'<span class="tag bad">':''}${fq(p.stock)} ${p.unit}${p.stock<=p.min?'</span>':''}</td><td class="n">${p.min}</td>${!isSalesman?`<td class="n">${p.cost.toFixed(2)}</td>`:''}<td class="n">${p.retail.toFixed(2)}</td><td class="n">${p.wholesale.toFixed(2)}</td>${!isSalesman?`<td class="n">${fmt(p.stock*p.cost)}</td>`:''}</tr>`).join('')}${!isSalesman?`<tr><td colspan=8><b>Total stock value${q?' of these':''}</b></td><td class="n"><b>${fmt(list.reduce((a,p)=>a+p.stock*p.cost,0))}</b></td></tr>`:''}</table>${moreRows(shown.length,list.length,'invMore')}` }
@@ -34094,6 +34179,8 @@ document.addEventListener('click',e=>{
     billMore:()=>{billLimit+=150; const keep=$('#billRows').scrollTop; render(); const r=$('#billRows'); if(r) r.scrollTop=keep},
     billCopy:()=>billCopy(a.dataset.no),
     billPrint:()=>billPrintNow(a.dataset.no,a.dataset.f||'a5'), billCam:()=>billCam(a.dataset.no),
+    prEdit:()=>prEdit(), prHist:()=>{ const p=prSelP(); if(p) productHistory(p.id); else toast('Pick an item first') },
+    prDel:()=>{ if(prodDelete(prSelP())){ PR.sel=null; render() } },
     newProd:()=>{ if(S.user&&S.user.role==='Salesman') return toast('Adding products is not open to Salesman'); productModal() },
     editProd:()=>{ if(S.user&&S.user.role==='Salesman') return toast('Editing products is not open to Salesman'); closeModals(); productModal(+a.dataset.id) },
     prodHist:()=>productHistory(+a.dataset.id),
