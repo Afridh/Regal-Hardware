@@ -18125,6 +18125,17 @@ function cpDraw(focus){
     if(focus) q.focus();
     return;
   }
+  /* goods back (the bill is below nought, 3 Nov 2026): it comes off what they owe — the oldest bills first —
+     and anything past that is held as their credit for the next bill. No limit, no payment to take. */
+  if(T<-0.005){ const back=+(-T).toFixed(2), owes0=Math.max(0,partyBal('C',c.id)), after=+(owes0-back).toFixed(2);
+    el.innerHTML=head+`<div class="cp-who"><div><b>${noteEsc(c.name)}</b><span class="muted">${noteEsc(c.phone||'no mobile')} · ${c.level||'retail'} prices</span></div>
+      <button class="btn ghost sm" data-cp="change">Someone else</button></div>
+     <div class="cp-figs"><div><span>Outstanding now</span><b>${money2(owes0)}</b></div><div><span>Goods back — comes off</span><b>− ${money2(back)}</b></div>
+      <div><span>Outstanding after</span><b>${money2(Math.max(0,after))}</b></div></div>
+     ${after<-0.005?`<div class="muted">${money2(-after)} more than they owe — held as their credit, it comes off their next bill.</div>`:''}
+     <div class="cp-pills"><span class="muted">bill</span>${[['a5','Large A5'],...(c.phone?[['sms','e-Bill text']]:[]),['none','No print']].map(([k,l])=>`<button class="btn ghost sm ${ONA.paper===k?'on':''}" data-cp-paper="${k}">${l}</button>`).join('')}</div>
+     <button class="cp-save" data-cp="save"><b>Take ${money2(back)} off their account</b><span>${ONA.paper==='none'?'no print':({a5:'large A5 bill',r80:'80mm receipt',sms:'e-bill by text'})[ONA.paper]||'print'} · Enter</span></button>`;
+    return }
   const owes=partyBal('C',c.id), paid=cpPaid(), onAcct=+(T-paid).toFixed(2), held=Math.max(0,custCredit(c.id));
   const will=+(owes+Math.max(0,onAcct-held)).toFixed(2), stopD=dueStopped(c), siteOver=cpSiteOver(c), over=cpOver(c)||siteOver>0||(!!stopD&&onAcct>0.005), covered=paid>=T-0.005;
   const sites=(c.sites||[]).filter(x=>x.active!==false);
@@ -18191,6 +18202,14 @@ function cpPick(id){
 function cpSave(){
   if(!ONA||ONA.busy||!ONA.cust) return;
   const c=C(ONA.cust), T=cpTotal(), paid=+cpPaid().toFixed(2), how=ONA.how;
+  // goods back: taken off their account
+  if(T<-0.005){ const paper=ONA.paper; ONA.busy=true;
+    try{ const inv=finishTillBill({cust:c,pays:[],toAccount:true,note:'Goods back — taken off the account'});
+      cpClose(); CS.paper=null; render(); persist(true); billSaved(inv);
+      toast(`${inv.no}: ${money2(-T)} taken off ${c.name}'s account — outstanding ${money2(Math.max(0,partyBal('C',c.id)))}`,'ok');
+      printAnim(inv,paper) }
+    catch(e){ if(ONA) ONA.busy=false; toast(e.message) }
+    return }
   if(paid>=T-0.005) return toast('That covers the whole bill — use TAKE PAYMENT (F10)');
   if(cpOver(c)&&!ONA.allowedBy) return toast(`${c.name} would go past their limit — allow it first`);
   if(dueStopped(c)&&paid<T-0.005&&!ONA.allowedBy) return toast(`New credit is stopped for ${c.name} — allow it first`);
@@ -18893,11 +18912,11 @@ function openPay(resume){
 /* Saving the bill on the till — the payment screen and the on-account panel both come here: a bill being
    edited is remade, the bill is made, a note kept, a quotation or web order marked billed, and the till
    cleared. Throws when the bill is refused (the screen it came from says why). */
-function finishTillBill({cust,pays,override=false,note=''}){
+function finishTillBill({cust,pays,override=false,note='',toAccount=false}){
   const editing=S.pos.editing;
   const retired=editing?retireBill(editing):null;
   let inv;
-  try{ inv=completeSale({lines:S.pos.lines.map(l=>({...l})),customerId:cust.id,billDisc:S.pos.billDisc,pays,salesman:S.pos.salesman,override,no:editing||null}) }
+  try{ inv=completeSale({lines:S.pos.lines.map(l=>({...l})),customerId:cust.id,billDisc:S.pos.billDisc,pays,salesman:S.pos.salesman,override,no:editing||null,toAccount}) }
   catch(e){ if(retired){ // put the old bill straight back if the new one is refused
       S.journal.filter(j=>j.ref===editing+'-R').slice().forEach(j=>post(D(today),'Undo '+j.desc,editing+'-U',j.lines.map(l=>({ac:l.ac,dr:l.cr,cr:l.dr,party:l.party}))));
       retired.old.lines.forEach(l=>move(l.pid,-l.qty,'SALE',editing+' kept',l.cost)); S.sales.splice(retired.idx,0,retired.old) }
