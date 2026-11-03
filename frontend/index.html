@@ -468,6 +468,18 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .pu-t .n{text-align:right;white-space:nowrap}
 .pu-mv{margin:2px 0 10px}.pu-mv td{cursor:default}.pu-mv tr:hover td{background:none}
 .pu-del{color:var(--chip-rust)!important;border-color:var(--chip-rust)!important}
+/* an answer to an approval, in front of the one who asked */
+#apPops{position:fixed;right:16px;top:64px;z-index:200;display:flex;flex-direction:column;gap:10px;max-width:min(420px,calc(100vw - 32px))}
+.ap-pop{display:flex;gap:12px;align-items:flex-start;background:var(--white);border-radius:14px;padding:12px 14px;box-shadow:0 14px 40px rgba(16,30,34,.25);border-left:5px solid var(--chip-green);animation:apIn .3s cubic-bezier(.2,.8,.3,1)}
+.ap-pop.bad{border-left-color:var(--chip-rust)}
+.ap-pop-i{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:800;color:#fff;background:var(--chip-green);flex:none}.ap-pop.bad .ap-pop-i{background:var(--chip-rust)}
+.ap-pop-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.ap-pop-t b{font-family:Archivo,sans-serif;font-size:15px}.ap-pop-t span{font-size:13px;line-height:1.35;word-break:break-word}.ap-pop-t small{color:var(--faint);font-size:11px}
+.ap-pop-b{display:flex;flex-direction:column;gap:6px}
+.ap-pop.out{opacity:0;transform:translateX(30px);transition:.25s}
+@keyframes apIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:none}}
+/* stock on a bill line */
+.ln-stk{display:inline-block;margin-left:6px;font-size:11px;font-weight:600;color:var(--steel);background:var(--panel);border-radius:5px;padding:0 5px}
+.ln-stk.low{color:#8A5D06;background:#FFF4DC}.ln-stk.neg{color:var(--chip-rust);background:var(--tint-rust)}
 /* add stock, from the item */
 .modal .box.sa-box{max-width:620px}
 .sa-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
@@ -13772,7 +13784,28 @@ function notify(kind,text,view,opts){
 }
 const NKIND={order:'📦',money:'₨',cheque:'🧾',stock:'📉',people:'👤',warn:'⚠',approval:'✅'};
 const notifMine=(n)=>!(n.forUser&&n.forUser!==(S.user||{}).name)&&!(n.forApprovers&&typeof canApprove==='function'&&!canApprove());
+/* The answer to something sent for approval, put in front of the person who asked (3 Nov 2026): when their
+   till hears of it — straight away on the same till, or when the books come in from another — a card says
+   Approved or Turned down, with the note, until they close it. Each answer is shown once per person. */
+function apDecidedPop(){ try{
+  const me=(S.user||{}).name; if(!me||!Array.isArray(S.notif)) return;
+  const key='apSeen:'+me; let seen; try{ seen=new Set(JSON.parse(localStorage.getItem(key)||'[]')) }catch(e){ seen=new Set() }
+  const fresh=S.notif.filter(n=>n.kind==='approval'&&n.forUser===me&&!n.read&&!seen.has(n.id)&&/^(Approved|Turned down|Could not apply)/.test(String(n.text||'')));
+  if(!fresh.length) return;
+  fresh.forEach(n=>seen.add(n.id)); try{ localStorage.setItem(key,JSON.stringify([...seen].slice(-300))) }catch(e){}
+  let wrap=document.getElementById('apPops'); if(!wrap){ wrap=document.createElement('div'); wrap.id='apPops'; document.body.appendChild(wrap) }
+  fresh.slice(0,4).reverse().forEach(n=>{ const ok=/^Approved/.test(n.text), d=document.createElement('div');
+    d.className='ap-pop '+(ok?'ok':'bad');
+    d.innerHTML=`<div class="ap-pop-i">${ok?'✓':'✕'}</div><div class="ap-pop-t"><b>${ok?'Approved':/^Could not/.test(n.text)?'Approved — but could not be done':'Turned down'}</b><span>${escM(String(n.text).replace(/^(Approved|Turned down|Could not apply):\s*/,''))}</span><small>${escM(n.at||'')}</small></div>
+      <div class="ap-pop-b">${n.view&&typeof allowed==='function'&&allowed(n.view)?`<button type="button" class="btn sm" data-go="1">See it</button>`:''}<button type="button" class="btn ghost sm" data-x="1">OK</button></div>`;
+    const close=()=>{ n.read=true; d.classList.add('out'); setTimeout(()=>d.remove(),250); try{ drawBell() }catch(e){} };
+    d.querySelector('[data-x]').onclick=close;
+    const g=d.querySelector('[data-go]'); if(g) g.onclick=()=>{ close(); go(n.view) };
+    wrap.appendChild(d) });
+  document.querySelectorAll('.bell').forEach(b=>{ b.classList.remove('ring'); void b.offsetWidth; b.classList.add('ring') });
+}catch(e){} }
 function drawBell(){
+  setTimeout(apDecidedPop,0);
   const wraps=[...document.querySelectorAll('.bellwrap')]; if(!wraps.length) return;
   const mine=(S.notif||[]).filter(notifMine);
   const unread=mine.filter(n=>!n.read).length;
@@ -19261,7 +19294,8 @@ function posClassic(){
              title="These goods are at ${lineFrom(l)} — click to choose a different shop">issue from ${lineFrom(l)}</span>`:''}
           ${(l.warranty&&l.warranty!=='0')||(l.serials&&l.serials.length)?`<em class="ln-wr" title="W — warranty and serial numbers">${[l.warranty&&l.warranty!=='0'?'🛡 '+l.warranty+' warranty':'',(l.serials&&l.serials.length)?'S/N '+l.serials.join(', '):''].filter(Boolean).join(' · ')}</em>`:''}
           ${l.fromLast?`<span class="tag blue">their last price · ${l.fromLast}</span>`:''}
-          ${!isOpenLine(l)&&l.qty>p.stock+1e-9&&CFG.stock.track!==false?'<span class="tag bad">short on the floor</span>':''}
+          ${!isOpenLine(l)?`<span class="ln-stk ${p.stock<=0?'neg':p.stock<=p.min?'low':''}" title="In stock now">stock ${fq(p.stock)}</span>`:''}
+          ${!isOpenLine(l)&&l.qty>p.stock+1e-9?'<span class="tag bad">short on the floor</span>':''}
           ${l.belowCost?'<span class="tag bad">under cost</span>':''}${laterOf(l)?`<span class="tag warn" data-act="csLaterAct" data-i="${i}" style="cursor:pointer" title="L — collect later">📦 ${fq(laterOf(l))} to collect later${l.laterNote?' · '+noteEsc(l.laterNote):''}</span>`:''}</td>
          <td class="n q">${ed?`<input class="ln-in" id="lnQty" type="number" step="any" value="${l.qty}">`:fq(l.qty)}</td>
          <td class="n mrp">${mrpShown(p.mrp,l.disc&&l.qty?(l.qty*l.price-l.disc)/l.qty:l.price)?money2(p.mrp):'—'}</td>
@@ -20369,13 +20403,13 @@ function bindClassic(){
       const showCost=CFG.cost.atTill&&can('cost');
       const who=S.pos.customer;
       box.innerHTML=hits.length?`<table><thead><tr><th>CODE</th><th>DESCRIPTION</th>${showCost?'<th>COST</th>':''}
-         ${CFG.stock.track===false?'':'<th class="n">STOCK</th>'}<th class="n">MRP</th><th class="n">PRICE</th>${who?`<th class="n">${C(who).name.split(' ')[0].toUpperCase()} PAID</th>`:''}<th>SUPPLIER</th></tr></thead><tbody>
+         <th class="n">STOCK</th><th class="n">MRP</th><th class="n">PRICE</th>${who?`<th class="n">${C(who).name.split(' ')[0].toUpperCase()} PAID</th>`:''}<th>SUPPLIER</th></tr></thead><tbody>
         ${hits.slice(0,30).map(p=>{const sp=SU(p.supplierId)||lastSupplier(p.id);   // who it is bought from, else who last delivered it
           return `<tr data-act="csPick" data-id="${p.id}">
           <td class="c">${p.short?`<b style="color:var(--chip-blue)">${p.short.toUpperCase()}</b> · `:''}${p.num||p.code}</td>
           <td class="d">${p.name.toUpperCase()}</td>
           ${showCost?`<td class="cc">${costCode(p.cost)}</td>`:''}
-          ${CFG.stock.track===false?'':`<td class="n ${p.stock<=0?'neg':p.stock<=p.min?'low':''}">${fq(p.stock)}</td>`}
+          <td class="n ${p.stock<=0?'neg':p.stock<=p.min?'low':''}">${fq(p.stock)}</td>
           <td class="n">${money2(p.mrp)}</td>
           <td class="p">${money2(priceFor(p,1))}</td>
           ${who?(()=>{const was=lastPriceFor(p.id,who);
