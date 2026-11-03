@@ -63,7 +63,7 @@ const ap = await pg.evaluate(id => { const a = (window.eval('S').approvals || []
 ok(ap && ap.inbox && /asks to open their page/.test(ap.title), 'the shop sees it in Approvals', ap && ap.title);
 const after = await pg.evaluate((apid, cid) => { const S = window.eval('S'); const n0 = S.messages.length; window.eval('decideApproval')(apid, true); const x = window.eval('C')(cid);
   const msg = S.messages.slice(0, S.messages.length - n0).find(m => m.to === x.phone); return { portal: x.portal, msg: msg && msg.body } }, ap.id, c.id);
-ok(after.portal === true && /Approval granted/.test(after.msg || '') && /code we text you/.test(after.msg || ''), 'yes: their page opens, and a text says "Approval granted … sign in with the code we text you"', (after.msg || '').replace(/\s+/g, ' ').slice(0, 160));
+ok(after.portal === true && /Approved/.test(after.msg || '') && /Tap to see it: regalhw\.lk\/my\//.test(after.msg || '') && !/code/i.test(after.msg || ''), 'yes: their page opens, and a text says "Approved … Tap to see it: <their link>" (no code)', (after.msg || '').replace(/\s+/g, ' ').slice(0, 160));
 await pg.evaluate(() => window.eval('persist')(true)); await wait(2500);
 // 3. the customer signs in with the mobile and a code, and sees the balance the books have
 await bp.bringToFront(); await bp.goto(BASE + path, { waitUntil: 'networkidle2' }); await wait(2000);
@@ -74,7 +74,7 @@ ok(otp.s === 200, 'now a sign-in code is given', JSON.stringify(otp).slice(0, 10
 if (otp.j.code) {
   await bp.goto(BASE + go, { waitUntil: 'networkidle2' }); await wait(1500);
   const shownSignin = await bp.evaluate(() => !!document.querySelector('#signin') && getComputedStyle(document.querySelector('#signin')).display !== 'none');
-  ok(shownSignin, 'their page asks them to sign in (nothing shown before)');
+  ok(!shownSignin, 'from the bill, their page opens straight in (no code)');
   const li = await bp.evaluate(async (ph, code) => { const r = await fetch('/api/my/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: ph, code }) }); return r.json() }, c.phone, otp.j.code);
   const me = await bp.evaluate(async t2 => (await fetch('/api/my/me', { headers: { Authorization: 'Bearer ' + t2 } })).json(), li.token);
   ok(li.token && Math.abs(me.owed - c.owes) < 0.01, `signed in: their balance ${m2(me.owed)} is the books' ${m2(c.owes)}`);
@@ -84,7 +84,8 @@ if (otp.j.code) {
   await bp.evaluate(tk => localStorage.setItem('regal_my_token', tk), li2.token);
   await bp.goto(BASE + go, { waitUntil: 'networkidle2' }); await wait(2000);
   const wrong = await bp.evaluate(() => ({ signin: !!document.querySelector('#signin') && getComputedStyle(document.querySelector('#signin')).display !== 'none', acct: !!document.querySelector('#account') && getComputedStyle(document.querySelector('#account')).display !== 'none' }));
-  ok(wrong.signin && !wrong.acct, 'another customer\'s sign-in on this phone is not used here — it asks to sign in', JSON.stringify(wrong));
+  wrong.code = await bp.evaluate(async t2 => (await (await fetch('/api/my/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('regal_my_token') } })).json()).customer.code);
+  ok(!wrong.signin && wrong.acct && wrong.code === c.code, 'another customer\'s sign-in on this phone is not used here: this link opens its own account', JSON.stringify(wrong));
 } else ok(false, 'the test server should show the code when texting is off', JSON.stringify(otp.j));
 await pg.bringToFront(); await pg.evaluate(id => { const x = window.eval('C')(id); x.portal = false; window.eval('persist')(true) }, c.id); await wait(1000);
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));

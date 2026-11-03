@@ -177,6 +177,7 @@ body[data-tab="me"] #account [data-pane]:not([data-pane="me"]){display:none}
 @keyframes pop{from{transform:scale(.3);opacity:0}to{transform:scale(1);opacity:1}}
 @keyframes rise{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
 .ask-offer.hide,.ask-done.hide{display:none}
+.lk-owe{display:grid;gap:2px;text-align:center;padding:16px;border-radius:14px;background:#FFF1F1;border:1px solid #F3C2C2}.lk-owe span{font-size:13px;color:#7a3b3b}.lk-owe b{font-size:30px;color:#9b111e}.lk-owe small{font-size:13px;color:#7a3b3b}
 @keyframes glow{50%{box-shadow:0 10px 30px -6px rgba(198,40,51,.85)}}
 
 /* the three tabs: a bar along the bottom on a phone, a row of pills on anything wider */
@@ -224,6 +225,14 @@ body[data-tab="me"] #account [data-pane]:not([data-pane="me"]){display:none}
    <div class="card">
     <h2 id="siTitle">Your account</h2>
     <div class="muted" id="siWho" style="margin-bottom:10px"></div>
+
+    <!-- opened from their own link: what they owe at once; the full statement after the shop's one yes -->
+    <div id="stepLink" class="hide">
+      <div class="lk-owe"><span>Total outstanding</span><b id="lkOwed">Rs 0.00</b><small id="lkBills"></small></div>
+      <button class="btn" id="lkAsk" style="margin-top:12px">See my full statement</button>
+      <div id="lkWait" class="ask-offer hide"><b>Asked — waiting for the shop</b><span>When the shop says yes we will text you a link. Tap it and your statement opens — nothing to type.</span></div>
+      <div class="muted" style="margin-top:12px;text-align:center"><a href="#" id="lkOther">Sign in another way</a></div>
+    </div>
 
     <!-- by name and password: a firm's manager, accountant, storekeeper each have their own -->
     <div id="stepUser" class="hide">
@@ -422,7 +431,7 @@ async function api(path, body) {
 /* ---- signing in ----
    A firm with several people signs in by name and password; a one-man account can still use the
    mobile the shop has on file and a texted code. */
-const steps = ['#stepUser', '#stepForgot', '#stepPhone', '#stepCode', '#stepAsk'];
+const steps = ['#stepLink', '#stepUser', '#stepForgot', '#stepPhone', '#stepCode', '#stepAsk'];
 const step = (which) => steps.forEach(s => show(s, s === which));
 async function start() {
   // a sign-in kept on this phone is used only when it is for the account the link names — opened from
@@ -439,6 +448,15 @@ async function start() {
     // an old link, or one changed by hand: the plain sign-in, with nothing about any account
     if (w.plain) { $('#siWho').textContent = 'Sign in with your mobile — we will text you a code. Or use the user name the shop gave you.'; step('#stepPhone'); return }
     $('#siTitle').textContent = 'Hello, ' + w.name;
+    /* their own link (3 Nov 2026): open — straight in, no code; not open yet — what they owe, and one tap to ask */
+    if (w.open) { try { const j = await api('/direct', { link: CODE }); token = j.token; try { localStorage.setItem(KEY, token) } catch (e) {} show('#signin', false); await load(); return } catch (e) { /* the other ways below */ } }
+    else {
+      $('#siWho').textContent = 'Here is what is outstanding on your account with us.';
+      $('#lkOwed').textContent = money(w.owed);
+      $('#lkBills').textContent = w.unpaid ? `${w.unpaid} unpaid bill${w.unpaid === 1 ? '' : 's'}${w.oldest ? ` · the oldest ${w.oldest} days` : ''}` : 'Nothing unpaid — thank you!';
+      show('#lkAsk', !w.asked); show('#lkWait', !!w.asked);
+      step('#stepLink'); return;
+    }
     if (w.phone) {
       LINK = true;
       $('#siWho').textContent = `We will text a code to ${w.phone} — the mobile we have for you.`;
@@ -464,6 +482,16 @@ $('#doSignin').onclick = async () => {
   } catch (e) { say(e.message, 'bad') }
   $('#doSignin').disabled = false;
 };
+$('#lkAsk').onclick = async () => {
+  $('#lkAsk').disabled = true; $('#lkAsk').innerHTML = '<span class="spin"></span> Asking the shop…';
+  try {
+    const j = await api('/ask-link', { link: CODE });
+    if (j.open) { const t = await api('/direct', { link: CODE }); token = t.token; try { localStorage.setItem(KEY, token) } catch (e) {} show('#signin', false); await load(); return }
+    show('#lkAsk', false); show('#lkWait', true); say('');
+  } catch (e) { say(e.message, 'bad'); $('#lkAsk').textContent = 'See my full statement' }
+  $('#lkAsk').disabled = false;
+};
+$('#lkOther').onclick = (e) => { e.preventDefault(); say(''); $('#siWho').textContent = 'Sign in with your mobile — we will text you a code. Or use the user name the shop gave you.'; LINK = false; show('#phoneRow', true); step('#stepPhone') };
 $('#goForgot').onclick = () => { $('#fUser').value = $('#user').value.trim(); step('#stepForgot'); say('') };
 $('#goPhone').onclick = () => { step('#stepPhone'); say('') };
 $('#backUser').onclick = $('#backUser2').onclick = () => { step('#stepUser'); say('') };

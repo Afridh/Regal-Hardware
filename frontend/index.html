@@ -6702,7 +6702,7 @@ const CFG={
   dueRemind3:{label:'Credit follow-up — final reminder',vars:'{shop} {customer} {count} {days} {outstanding} {link}',
     text:'Final reminder: your account is long overdue.\nOldest bill: {days} days\nTotal outstanding: {outstanding}\nNew credit may be paused until it is settled. Details: {link}'},
   portalGranted:{label:'Their page opened, as they asked',vars:'{shop} {customer} {link}',
-    text:'Approval granted — you can now see your account with us: every bill, payment and what is outstanding.\nLink: {link}\nOpen it, type your mobile number, and sign in with the code we text you.'},
+    text:'Approved — your account statement is open: every bill, payment and what is outstanding.\nTap to see it: {link}'},
   portalInvite:{label:'Inviting a customer to their page',vars:'{shop} {customer} {link}',
     text:'You can now check your account with us at any time.\nLink: {link}\nSign in with a code we text you.'},
   portalLogin:{label:'A sign-in given to a customer’s person',vars:'{shop} {customer} {who} {user} {pass} {link}',
@@ -10792,6 +10792,8 @@ function applyKeptBooks(kept){
   (S.users||[]).forEach(u=>{ const p=String(u.pin||'');
     if(/^\d{4,6}$/.test(p)&&!u.pinHash){ hashPass('pin:'+p).then(h=>{ if(!u.pinHash){ u.pinHash=h; u.pinLen=p.length } delete u.pin; try{ persist(true) }catch(e){} }) }
     else if(u.pin!==undefined&&u.pinHash) delete u.pin });
+  // the approval text no longer says to type the mobile and a code: the link opens straight in (3 Nov 2026)
+  if(CFG.tpl&&CFG.tpl.portalGranted&&/type your mobile number/i.test(CFG.tpl.portalGranted.text||'')) CFG.tpl.portalGranted.text=TPL_ORIG.portalGranted.text;
   if(CFG.tpl&&CFG.tpl.returnReceived&&/\nItems: \{items\}/.test(CFG.tpl.returnReceived.text||'')) CFG.tpl.returnReceived.text=String(CFG.tpl.returnReceived.text).replace(/\nItems: \{items\}/,'');
   if(CFG.msg&&!CFG.msg.lines3){
     const core=(t)=>String(t||'').replace(/^\s*(?:\{shop\})?\s*(?:statement\s+)?[:\-–—]?\s*/i,'').replace(/\s+/g,' ').trim().toLowerCase();
@@ -23348,8 +23350,8 @@ function applyApproval(a){
   const d=a.data||{};
   switch(a.kind){
     case 'custPortal':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists');
-      // asked for by the customer (from their bill or their page): the page opens and a text says so — sign in with the mobile and a code
-      if(a.custInbox&&d.on){ c.portal=true; delete c.portalOff; if(c.phone) sms(c.phone,tpl('portalGranted',{customer:c.name,link:myLink(c)}),'customer'); break }
+      // asked for by the customer (from their bill, their page or their link): the page opens and a text with their link says so; it opens straight in
+      if(a.custInbox&&d.on){ c.portal=true; delete c.portalOff; const to=c.phone||c.phone2; if(to) sms(to,tpl('portalGranted',{customer:c.name,link:myLink(c)}),'customer'); break }
       custPortalSet(c,!!d.on); break }
     case 'supPortal':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supPortalSet(s,d.field,!!d.value); break }
     case 'supStock':{ const s=SU(d.sid); if(!s) throw new Error('Supplier no longer exists'); supStockOpen(s); break }

@@ -179,8 +179,35 @@ r.get('/who/:code', asyncHandler(async (req, res) => {
     shop: { name: data?.CFG?.shop?.name || 'Regal Hardware', phone: data?.CFG?.shop?.phone || '', addr: data?.CFG?.shop?.addr || '' } });
   await ensureCustTables();
   const { rows: [{ n }] } = await query(`SELECT count(*)::int AS n FROM cust_logins WHERE owner = $1 AND active`, [c.id]);
+  /* the link is their own (it has the key, and only goes out in texts to their mobile): what they owe is shown
+     straight away, as the reminder itself says it; the full statement waits for the shop's yes (3 Nov 2026) */
+  const S0 = data?.S || {}, unpaid = (S0.sales || []).filter(s => s.customerId === c.id && s.balance > 0.005);
+  const today = Date.parse(localDate() + 'T00:00:00Z');   // whole days in the shop's own time: a bill from today is 0 days old
+  const oldest = unpaid.reduce((d, s) => Math.max(d, Math.round((today - Date.parse(s.date + 'T00:00:00Z')) / 864e5) || 0), 0);
   res.json({ ok: true, name: c.name, phone: c.phone ? mask(c.phone) : null, logins: n,
+    owed: owesOf(S0, c.id), unpaid: unpaid.length, oldest, asked: !pageOpen(S0, data?.CFG, c) && await askWaiting(S0, c.id),
     open: pageOpen(data?.S || {}, data?.CFG, c), shop: { name: data?.CFG?.shop?.name || 'Regal Hardware', phone: data?.CFG?.shop?.phone || '', addr: data?.CFG?.shop?.addr || '' } });
+}));
+
+/* Their own link, once the shop has said yes: it opens the full page with no code to type (3 Nov 2026 — the
+   code, then an ask, then a code again, was too much). The key is only in texts to their mobile. */
+r.post('/direct', asyncHandler(async (req, res) => {
+  const data = await books(), S = data?.S || {};
+  const c = byCode(S, req.body?.link);
+  if (!c || !keyOk(c, req.body?.link)) throw new HttpError(404, 'That link is old or not complete — ask the shop to send it again');
+  if (!pageOpen(S, data?.CFG, c)) throw new HttpError(403, 'The shop has not opened this page for you yet');
+  res.json({ ok: true, token: jwt.sign({ kind: 'cust', cid: c.id, via: 'link' }, secret(), { expiresIn: '30d' }), name: c.name, code: c.code });
+}));
+/* "See my full statement" from their own link: one tap — the ask goes to the shop's Approvals; the yes texts the link */
+r.post('/ask-link', asyncHandler(async (req, res) => {
+  const data = await books(), S = data?.S || {};
+  const c = byCode(S, req.body?.link);
+  if (!c || !keyOk(c, req.body?.link)) throw new HttpError(404, 'That link is old or not complete — ask the shop to send it again');
+  if (pageOpen(S, data?.CFG, c)) return res.json({ ok: true, open: true });
+  if (await askWaiting(S, c.id)) return res.json({ ok: true, asked: true, already: true });
+  sendingCode(mobOf(c) || 'c' + c.id, req.ip);        // a few asks a quarter hour, like the codes
+  await query(`INSERT INTO cust_inbox (cid, kind, data) VALUES ($1, 'askopen', $2)`, [c.id, JSON.stringify({ phone: c.phone || '', name: c.name, note: 'asked from their link' })]);
+  res.json({ ok: true, asked: true });
 }));
 
 /* ---------------------------------------------------------------- signing in by name
