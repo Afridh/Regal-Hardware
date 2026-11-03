@@ -19404,7 +19404,7 @@ function posClassic(){
     <button class="sp-k blue" data-act="pickCust">CUSTOMER<small>F4</small></button>
     <button class="sp-k blue" data-act="spDisc" ${L.length&&can('discount')?'':'disabled'}>DISCOUNT<small>F8</small></button>
     <button class="sp-k" data-act="credit" ${L.length?'':'disabled'}>ON ACCOUNT<small>F6</small></button>
-    <button class="sp-k" data-act="doc" data-k="QUOTE" ${L.length?'':'disabled'}>QUOTATION<small>Ctrl+Q</small></button>
+    <button class="sp-k blue" data-act="credPay" title="A credit customer's payment: Ctrl+M">CREDIT PAY<small>Ctrl+M</small></button>
     <button class="sp-k cash" data-act="quickCash" ${L.length?'':'disabled'} title="The whole bill in cash, printed: End">CASH<small>exact, End</small></button>
     <button class="sp-k print" data-act="pay" ${L.length?'':'disabled'}>PRINT<small>F10</small></button></div>`:''}
    <div class="till-keys">
@@ -25155,6 +25155,37 @@ function adjustPurchaseModal(no,after){
    transfer ask which of our accounts it lands in.  Keys: Enter = cash for the
    amount in the box, F8 cheque, F9 card, B bank, Del takes the last part off,
    F12 completes. */
+/* Ctrl+M: a credit customer's payment, from any screen (3 Nov 2026). The customer on the bill, or the one
+   open on the Customers page, goes straight to their payment window; otherwise the ones who owe, the most
+   first, to pick by name, mobile or code. */
+function credPayKey(){
+  if(!allowed('receipts')&&!allowed('customers')) return toast('Taking customer payments is not on your sign-in');
+  if(S.view==='pos'&&S.pos.customer&&S.pos.customer!==1&&C(S.pos.customer)) return custPayModal(S.pos.customer);
+  if(S.view==='customers'&&typeof custSel!=='undefined'&&custSel&&custSel!==1&&C(custSel)) return custPayModal(custSel);
+  credPayPick();
+}
+function credPayPick(){
+  const all=S.customers.filter(c=>c.id!==1&&c.active!==false).map(c=>({c,o:partyBal('C',c.id)}));
+  const m=modal(`<h2>Customer payment <span class="muted" style="font-size:13px;font-weight:400">Ctrl+M</span></h2>
+   <input id="cpQ" placeholder="Name, mobile or code" autocomplete="off">
+   <div id="cpL" style="margin-top:10px;max-height:55vh;overflow:auto"></div>`);
+  const q=m.querySelector('#cpQ'); let cur=0, list=[];
+  const open=i=>{ const x=list[i]; if(!x) return; m.remove(); custPayModal(x.c.id) };
+  const draw=()=>{ const v=q.value.trim().toLowerCase();
+    list=all.filter(x=>v?(typeof custMatch==='function'?custMatch(x.c,v):(x.c.name.toLowerCase().includes(v)||(x.c.phone||'').includes(v))):x.o>0.005)
+      .sort((a,b)=>b.o-a.o).slice(0,60);
+    cur=Math.max(0,Math.min(cur,list.length-1));
+    m.querySelector('#cpL').innerHTML=list.length?`<table>${list.map((x,i)=>`<tr class="rowlink ${i===cur?'on':''}" data-i="${i}"><td><b>${escM(x.c.name)}</b><div class="muted">${escM(x.c.phone||'no mobile')}, ${escM(x.c.code||'')}</div></td>
+      <td class="n">${x.o>0.005?'<b>'+fmt(x.o)+'</b>':'<span class="muted">nothing owing</span>'}</td></tr>`).join('')}</table>`
+      :`<div class="muted">${v?'Nobody matches that.':'Nobody owes anything just now.'}</div>`;
+    m.querySelectorAll('[data-i]').forEach(r=>r.onclick=()=>open(+r.dataset.i));
+    const on=m.querySelector('tr.on'); if(on&&on.scrollIntoView) on.scrollIntoView({block:'nearest'}) };
+  q.oninput=()=>{ cur=0; draw() };
+  q.onkeydown=e=>{ if(e.key==='ArrowDown'){ e.preventDefault(); cur=Math.min(list.length-1,cur+1); draw() }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); cur=Math.max(0,cur-1); draw() }
+    else if(e.key==='Enter'){ e.preventDefault(); open(cur) } };
+  draw(); setTimeout(()=>q.focus(),30);
+}
 function custPayModal(id){
   const c=C(id);
   let sel=new Set(), q='', parts=[], mode=null, typed=null, firstFocus=true, smsOn=true;   // smsOn: the tick survives the window being redrawn
@@ -34094,6 +34125,7 @@ document.addEventListener('click',e=>{
     tillLook:()=>{setPref('tillLook',a.dataset.v); render(); toast(a.dataset.v==='regal'?'The till is back to the Regal red look':'The till has the SePOS look','ok')},
     spDisc:()=>{ const b=$('#csBillDisc'); if(b){ b.focus(); b.select() } },
     quickCash:()=>quickCash(),
+    credPay:()=>credPayKey(),
     tillPick:()=>{setPref('till',a.dataset.v); render();
       toast({quick:'Quick till — tiles and one-press bills',classic:'The screen you know — entry row and invoice summary'}[a.dataset.v]||'Keyboard till')},
 
@@ -34499,6 +34531,7 @@ document.addEventListener('click',e=>{
   })[act]?.() });
 document.addEventListener('keydown',e=>{
   if(CFG.privacy&&CFG.privacy.on&&S.user&&privacyKeyMatch(e)){ e.preventDefault(); e.stopPropagation(); privacyToggle(); return }   // the privacy screen, before anything else
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&(e.key==='m'||e.key==='M')&&S.user&&!document.getElementById('lockScreen')&&!document.querySelector('.modal')){ e.preventDefault(); e.stopPropagation(); credPayKey(); return }   // Ctrl+M: a customer's payment
   /* Which prices the bill uses, and which bill prints. Each key sets one thing rather than flipping
      it, so nobody has to look at the screen first to know what a press will do. */
   if(S.view==='pos'&&e.ctrlKey&&e.shiftKey&&!S.pos.editing){

@@ -88,6 +88,22 @@ await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remov
 const after = await pg.evaluate(() => { const S = window.eval('S'), s = S.sales.at(-1); return { lines: S.pos.lines.length, sales: S.sales.length, total: s && s.total, paid: s && s.paid, bal: s && s.balance, cash: s && (s.pays || []).some(p => p.method === 'CASH') } });
 ok(before.lines === 1 && after.lines === 0 && after.sales === before.sales + 1 && Math.abs(after.total - before.net) < 0.01 && after.bal < 0.005 && after.cash,
   'End: the bill is paid in full in cash and done', JSON.stringify({ before, after }));
+// Ctrl+M: a credit customer's payment
+await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); const S = window.eval('S'); S.pos.lines = []; S.pos.customer = null; window.eval('render')() }); await wait(300);
+const owes = await pg.evaluate(() => { const S = window.eval('S'), pb = window.eval('partyBal'); const c = S.customers.filter(x => x.id !== 1 && x.active !== false).sort((a, b) => pb('C', b.id) - pb('C', a.id))[0]; return { id: c.id, name: c.name, owe: pb('C', c.id) } });
+await pg.keyboard.down('Control'); await pg.keyboard.press('m'); await pg.keyboard.up('Control'); await wait(400);
+const pick = await pg.evaluate(() => { const m = document.querySelector('.modal'); return m && { title: m.querySelector('h2').innerText, first: (m.querySelector('tr.on b') || {}).textContent } });
+ok(pick && /Customer payment/.test(pick.title) && pick.first === owes.name, 'Ctrl+M on a walk-in bill: the ones who owe, the most first', JSON.stringify({ pick, owes }));
+await pg.keyboard.type(owes.name.split(' ')[0]); await wait(200); await pg.keyboard.press('Enter'); await wait(500);
+ok(await pg.evaluate(n => { const h = document.querySelector('.modal h2'); return !!h && h.innerText.includes('Payment from ' + n) }, owes.name), 'type a name, Enter: their payment window', owes.name);
+await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
+await pg.evaluate(id => { window.eval('S').pos.customer = id; window.eval('render')() }, owes.id); await wait(300);
+await pg.click('.sp-keys [data-act="credPay"]'); await wait(500);
+ok(await pg.evaluate(n => { const h = document.querySelector('.modal h2'); return !!h && h.innerText.includes('Payment from ' + n) }, owes.name), 'CREDIT PAY with a customer on the bill: straight to their payment window');
+await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); window.eval('S').pos.customer = null; window.eval('go')('dashboard') }); await wait(500);
+await pg.keyboard.down('Control'); await pg.keyboard.press('m'); await pg.keyboard.up('Control'); await wait(400);
+ok(await pg.evaluate(() => /Customer payment/.test((document.querySelector('.modal h2') || {}).innerText || '')), 'Ctrl+M works from another screen too (the dashboard)');
+await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); window.eval('go')('pos') }); await wait(400);
 // switching back
 await pg.evaluate(() => { window.eval('setPref')('tillLook', 'regal'); window.eval('render')() }); await wait(400);
 ok(await pg.evaluate(() => !document.querySelector('.till.sp-look') && getComputedStyle(document.querySelector('.till-hold')).display !== 'none' && !document.querySelector('.sp-keys')), 'Regal red: the old look, Hold / Clear / Held back at the top');
