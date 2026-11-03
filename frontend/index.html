@@ -22052,7 +22052,7 @@ function phoneDiff(e){
 }
 function phonePost(ids,approved){
   const list=phonePending().filter(x=>ids.includes(x.id)); if(!list.length) return;
-  if(!approved&&needsApproval('stockAdj')){
+  if(!approved&&stockAsk()){
     const fresh=list.filter(e=>!phoneAsked(e)); if(!fresh.length) return toast('Already waiting for approval','warn');
     const a=requestApproval('stockAdj',`Stock from phones — ${fresh.length} entr${fresh.length===1?'y':'ies'} from ${[...new Set(fresh.map(e=>e.by))].join(', ')}`,
       fresh.slice(0,8).map(e=>`${e.name}: ${({count:'counted',add:'+',remove:'−'})[e.mode]} ${fq(e.qty)}`).join(' · '),{phoneIds:fresh.map(e=>e.id)});
@@ -22170,7 +22170,7 @@ function postStockTake(){
   if(!diffs.length) return toast('Nothing differs from the books');
   const note=prompt('A word about this count — who counted, which aisle, anything unusual','Stock take '+D(today));
   if(note===null) return;
-  if(needsApproval('stockAdj')){
+  if(stockAsk()){
     const net=diffs.reduce((a,x)=>a+x.d*x.p.cost,0);
     requestApproval('stockAdj',`Stock take — ${diffs.length} item${diffs.length===1?'':'s'} to adjust, ${fmt(Math.abs(net))} ${net<0?'short':'over'}`,
       diffs.slice(0,8).map(x=>`${x.p.name}: ${x.d>0?'+':''}${fq(x.d)}`).join(' · ')+(diffs.length>8?` · and ${diffs.length-8} more`:'')+(note?' · '+note:''),
@@ -22206,7 +22206,7 @@ function postStockTakeNow(note){
 function stockAddModal(pid,after){
   const p=P(pid); if(!p) return;
   if(String((S.user||{}).role||'').toLowerCase()==='salesman') return toast('Adding stock is not open to Salesman');
-  const held=(typeof heldMap==='function'?heldMap()[p.id]:0)||0, now=+(p.stock+held).toFixed(3), ask=needsApproval('stockAdj');
+  const held=(typeof heldMap==='function'?heldMap()[p.id]:0)||0, now=+(p.stock+held).toFixed(3), ask=stockAsk();
   let mode='in';
   const m=modal(`<div class="sa-head"><div><h2 style="margin:0">Add stock</h2><div class="muted"><b>${escM(p.name)}</b> · No. ${escM(p.num||p.code||'')}</div></div>
      <div class="sa-now"><small>in stock now</small><b>${fq(now)}</b><span>${escM(p.unit||'')}</span></div></div>
@@ -23207,7 +23207,7 @@ const APPROVAL_KINDS=[
   ['supPay','Supplier paid by someone other than an admin'],
   ['supPayPrep','A supplier payment prepared (cheque written) by someone other than an admin'],
   ['chqCancel','A cheque we wrote cancelled (the payment taken back)'],
-  ['stockAdj','Stock adjusted — a stock take closed, or counts from phones posted'],
+  ['stockAdj','Stock adjusted — added, counted, or written off as damaged (an admin approves)'],
   ['pettyBack','Petty cash balance handed in (counted in once approved)']];
 /* Money in and money out. Only the Super Admin, the Owner or an Admin record a payment straight away;
    anyone else's — even someone allowed to approve other things — waits for one of them to say yes, and
@@ -23223,6 +23223,9 @@ function payGate(kind,title,detail,data,opts){
 const payWhat=(ls)=>ls.map(l=>`${String(l.method||'').toLowerCase()} ${fmt(l.amount)}${l.ref||l.no?' ('+escM(l.ref||l.no)+')':''}${l.date&&l.date!==D(today)?' dated '+l.date:''}`).join(' + ');
 const APKIND={...Object.fromEntries(APPROVAL_KINDS),listBill:'Billing a customer on the black or red list',openBal:'A previous balance brought forward',partyActive:'A customer or supplier made active again',overLimit:'Credit past a customer’s limit'};
 const canApprove=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||can('approve')));
+/* any stock adjustment — added on an item, a count corrected, a stock take, counts from phones, goods
+   written off — waits for an Admin, the Owner or the Super Admin unless one of them is doing it (3 Nov 2026) */
+const stockAsk=()=>(CFG.approvals||{}).stockAdj!==false&&!payBoss();
 const needsApproval=(kind)=>{ const cfg=CFG.approvals||{}; return cfg[kind]!==false&&!canApprove() };
 const apPending=()=>(S.approvals||[]).filter(a=>a.status==='pending');
 const apMine=()=>apPending().filter(a=>canApprove()||a.by===(S.user||{}).name);   // what the badge counts: to decide, or waiting on my behalf
@@ -23256,6 +23259,7 @@ function applyApproval(a){
     case 'partyActive': partyActivate(d.type,d.id,S.user.name); break;      // the yes itself is what the till looks for (dirApproved)
     case 'stockAdj':{ if(d.phoneIds) phonePost(d.phoneIds,true);
       // stock added on an item: so many more than there are when it is approved
+      else if(d.damage){ const p=P(d.damage.pid); if(!p) throw new Error('The item is gone'); if(+d.damage.qty>p.stock+1e-9) throw new Error(`Only ${fq(p.stock)} ${p.unit} of ${p.name} left`); addDamage(d.damage) }
       else if(d.adds){ const h=heldMap(); stkCount={}; for(const [k,v] of Object.entries(d.adds)){ const p=P(+k); if(p) stkCount[k]=+(p.stock+(h[p.id]||0)+(+v)).toFixed(3) } postStockTakeNow(d.note||'Stock added') }
       else { stkCount={...(d.counts||{})}; postStockTakeNow(d.note||'Stock take') } break }
     case 'salaryAsk':{ const e=(S.employees||[]).find(x=>String(x.id)===String(d.empId))||(S.employees||[]).find(x=>x.name===d.who);
@@ -23380,6 +23384,7 @@ function decideApproval(id,ok,note){
   const a=(S.approvals||[]).find(x=>x.id===id); if(!a||a.status!=='pending') return;
   if(!canApprove()) return toast('Only the owner can decide this');
   if(PAY_APPROVALS.includes(a.kind)&&!payBoss()) return toast('Only an Admin or the Super Admin can approve a payment');
+  if(a.kind==='stockAdj'&&!payBoss()) return toast('Only an Admin, the Owner or the Super Admin can approve a stock adjustment');
   if((a.kind==='listBill'||a.kind==='overLimit')&&!dirBoss()) return toast('Only the Super Admin or a director can decide this');
   a.status=ok?'approved':'rejected'; a.decidedBy=S.user.name; a.decidedAt=apStamp(); a.decidedTs=Date.now(); a.note=(note||'').trim();
   if(ok){ try{ applyApproval(a) }catch(e){ a.status='failed'; a.note=(a.note?a.note+' · ':'')+e.message } }
@@ -28675,7 +28680,12 @@ function inventory(){
    <div class="card">${body}</div>` }
 function barcodeSvg(code){ let s='<svg width="180" height="40" viewBox="0 0 180 40">'; let x=4; for(const ch of code+'X'){ const n=(ch.charCodeAt(0)*7)%5+1; s+=`<rect x="${x}" y="0" width="${n}" height="40" fill="#000"/>`; x+=n+((ch.charCodeAt(0)*3)%3+1); if(x>172)break } return s+'</svg>' }
 function dmgModal(){ const m=modal(`<h2>Damaged goods</h2><div class="grid3"><div class="f"><label>Product</label><select id="dp">${S.products.map(x=>`<option value="${x.id}">${x.name}</option>`).join('')}</select></div><div class="f"><label>Quantity</label><input id="dq" type="number" value="1"></div><div class="f"><label>Reason</label><select id="dr"><option>Broken in transport</option><option>Leaking / dented</option><option>Expired</option><option>Water damage</option><option>Other</option></select></div></div><div style="text-align:right"><button class="btn tape" id="dok">Remove from stock</button></div>`);
-  m.querySelector('#dok').onclick=()=>{const d=addDamage({pid:+m.querySelector('#dp').value,qty:+m.querySelector('#dq').value,reason:m.querySelector('#dr').value});m.remove();render();toast(`${d.no} recorded · ${fmt(d.value)} written off`)} }
+  m.querySelector('#dok').onclick=()=>{ if(stockAsk()){ const pid=+m.querySelector('#dp').value, qty=+m.querySelector('#dq').value, reason=m.querySelector('#dr').value, p=P(pid);
+      if(!(qty>0)) return toast('How many?');
+      requestApproval('stockAdj',`Write off ${fq(qty)} ${p.unit||''} of ${p.name} as damaged — ${fmt(qty*(+p.cost||0))}`,reason,{damage:{pid,qty,reason}},{keep:true});
+      m.remove(); render(); toast('Sent to an admin for approval — it is written off once approved','warn'); return }
+    const d=addDamage(
+{pid:+m.querySelector('#dp').value,qty:+m.querySelector('#dq').value,reason:m.querySelector('#dr').value});m.remove();render();toast(`${d.no} recorded · ${fmt(d.value)} written off`)} }
 
 /* ====================== BARCODE LABELS ====================== */
 /* A real EAN-13 encoder, so what prints here is what a scanner reads. */
