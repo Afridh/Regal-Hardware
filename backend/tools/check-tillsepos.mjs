@@ -110,6 +110,18 @@ await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.rem
 await pg.keyboard.down('Control'); await pg.keyboard.press('m'); await pg.keyboard.up('Control'); await wait(400);
 ok(await pg.evaluate(() => /Customer payment/.test((document.querySelector('.modal h2') || {}).innerText || '')), 'Ctrl+M works from another screen too (the dashboard)');
 await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); window.eval('go')('pos') }); await wait(400);
+// Esc clears: with the cursor in the code box (where it always is), as CLEAR does (3 Nov 2026: Esc did nothing there)
+const putLine = () => pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); const S = window.eval('S'); const p = S.products.find(x => x.active !== false && x.stock > 10 && x.retail > 100); S.pos.lines = [{ pid: p.id, qty: 1, price: p.retail, disc: 0 }]; S.pos.customer = null; window.eval('go')('pos') });
+await putLine(); await wait(400); await pg.focus('#csQ'); await pg.keyboard.type('abc'); await wait(150);
+await pg.keyboard.press('Escape'); await wait(300);
+ok(await pg.evaluate(() => document.getElementById('csQ').value === '' && window.eval('S').pos.lines.length === 1 && !document.querySelector('.modal')), 'Esc with something typed: wipes the typing, the bill stays');
+await pg.keyboard.press('Escape'); await wait(400);
+ok(await pg.evaluate(() => /Clear this bill/.test((document.querySelector('.modal') || {}).innerText || '')), 'Esc on the empty code box: "Clear this bill?"');
+await pg.keyboard.press('Enter'); await wait(400);
+ok(await pg.evaluate(() => window.eval('S').pos.lines.length === 0 && document.activeElement.id === 'csQ'), 'Enter: the bill is cleared, the cursor back in the code box');
+await putLine(); await wait(400);
+await pg.click('.sp-keys [data-act="csClear"]'); await wait(400); await pg.keyboard.press('Enter'); await wait(400);
+ok(await pg.evaluate(() => window.eval('S').pos.lines.length === 0), 'CLEAR on the key strip, Enter: cleared');
 // switching back
 await pg.evaluate(() => { window.eval('setPref')('tillLook', 'regal'); window.eval('render')() }); await wait(400);
 ok(await pg.evaluate(() => !document.querySelector('.till.sp-look') && getComputedStyle(document.querySelector('.till-hold')).display !== 'none' && !document.querySelector('.sp-keys')), 'Regal red: the old look, Hold / Clear / Held back at the top');

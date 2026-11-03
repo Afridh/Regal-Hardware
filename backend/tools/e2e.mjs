@@ -122,18 +122,14 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   const tick = d.querySelector('[data-pick]'); tick.checked = true; tick.dispatchEvent(new w.Event('change')); await sleep(20);
   ok('C: ticking a bill sets the amount to that bill', +d.getElementById('ra').value === w.S.sales.find(s => s.no === tick.dataset.pick).balance);
   d.getElementById('ra').value = '5000'; d.getElementById('ra').dispatchEvent(new w.Event('input'));
-  key(d.getElementById('ra'), 'Enter'); await sleep(20);
-  ok('C: Enter adds a cash part', d.querySelectorAll('.pay-part').length === 1 && /Cash/.test(d.querySelector('.pay-part').textContent));
-  d.getElementById('rok').click(); await sleep(50); w.closeModals();
+  key(d.getElementById('ra'), 'Enter'); await sleep(50);
+  ok('C: Enter takes the cash and completes, in one press', !d.querySelector('.modal #ra') && w.S.payments.length === payN + 1 && w.S.payments.at(-1).method === 'CASH'); w.closeModals();
   ok('C: payment recorded and still on the customers page', w.S.payments.length === payN + 1 && Math.abs(w.partyBal('C', 2) - (owedBefore - 5000)) < 0.01 && w.S.view === 'customers' && /Nimal/.test(d.querySelector('.cu-head h2').textContent));
-  // keys: F7 opens, Enter = cash for the amount, F12 completes; cheque only asks when chosen; several parts on one payment
+  // keys: F7 opens, Enter = the cash and complete; cheque only asks when chosen; several parts on one payment
   const keyDoc = (k, extra = {}) => d.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...extra }));
   const owed2 = w.partyBal('C', 2), payN2 = w.S.payments.length, chqN = w.S.cheques.length;
   keyDoc('F7'); await sleep(30);
   ok('C: F7 opens the payment window for the customer on screen', !!d.querySelector('.modal #ra') && /Nimal/.test(d.querySelector('.modal h2').textContent) && d.activeElement.id === 'ra');
-  d.getElementById('ra').value = '2500'; d.getElementById('ra').dispatchEvent(new w.Event('input'));
-  key(d.getElementById('ra'), 'Enter'); await sleep(20);
-  ok('C: Enter on amount = cash part, cursor back on amount for the rest', d.querySelectorAll('.pay-part').length === 1 && d.activeElement.id === 'ra');
   const mk = (k) => d.querySelector('.modal').dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
   d.getElementById('ra').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'F8', bubbles: true, cancelable: true })); await sleep(20);
   ok('C: F8 opens the cheque form, cursor on cheque number', !!d.getElementById('sfNo') && !!d.getElementById('sfDate') && !!d.getElementById('sfBank') && d.activeElement.id === 'sfNo');
@@ -141,16 +137,17 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   key(d.getElementById('sfNo'), 'Enter'); ok('C: Enter walks cheque no → date', d.activeElement.id === 'sfDate');
   key(d.getElementById('sfDate'), 'Enter'); ok('C: → bank', d.activeElement.id === 'sfBank');
   d.getElementById('sfBank').value = 'HNB Kaduruwela'; key(d.getElementById('sfBank'), 'Enter'); await sleep(20);
-  ok('C: Enter on the last box adds the cheque part', d.querySelectorAll('.pay-part').length === 2 && /556201/.test(d.querySelectorAll('.pay-part')[1].textContent) && !d.getElementById('sfNo'));
+  ok('C: Enter on the last box adds the cheque part, cursor back on amount', d.querySelectorAll('.pay-part').length === 1 && /556201/.test(d.querySelectorAll('.pay-part')[0].textContent) && !d.getElementById('sfNo') && d.activeElement.id === 'ra');
   d.getElementById('ra').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'F9', bubbles: true, cancelable: true })); await sleep(20);
   ok('C: F9 opens the card form with our bank accounts', !!d.getElementById('sfInto') && d.getElementById('sfInto').options.length === w.S.banks.length);
   d.getElementById('sfAmt').value = '1000'; d.getElementById('sfOk').click(); await sleep(20);
-  ok('C: three parts add up', d.querySelectorAll('.pay-part').length === 3 && /13,500/.test(d.querySelector('.pay-tot').textContent));
-  d.getElementById('ra').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'F12', bubbles: true, cancelable: true })); await sleep(60); w.closeModals();
+  ok('C: two parts add up', d.querySelectorAll('.pay-part').length === 2 && /11,000/.test(d.querySelector('.pay-tot').textContent));
+  d.getElementById('ra').value = '2500'; d.getElementById('ra').dispatchEvent(new w.Event('input'));
+  key(d.getElementById('ra'), 'Enter'); await sleep(60); w.closeModals();   // the cash last: Enter takes it and completes
   const newPays = w.S.payments.slice(payN2);
-  ok('C: F12 records one receipt per part', newPays.length === 3 && newPays.map(p => p.method).join() === 'CASH,CHEQUE,CARD' && Math.abs(w.partyBal('C', 2) - (owed2 - 13500)) < 0.01);
+  ok('C: then the cash and Enter records one receipt per part', newPays.length === 3 && newPays.map(p => p.method).join() === 'CHEQUE,CARD,CASH' && Math.abs(w.partyBal('C', 2) - (owed2 - 13500)) < 0.01);
   ok('C: cheque recorded with its number, date and bank', w.S.cheques.length === chqN + 1 && w.S.cheques.at(-1).no === '556201' && w.S.cheques.at(-1).bank === 'HNB Kaduruwela');
-  ok('C: card payment went into a bank account', newPays[2].bank === w.S.banks[0].id && w.bal(w.S.banks[0].ac) > 0);
+  ok('C: card payment went into a bank account', newPays[1].bank === w.S.banks[0].id && w.bal(w.S.banks[0].ac) > 0);
   ok('C: ledger still balanced', (() => { const tb = Object.keys(w.GL).map(k => w.bal(k)); const dr = tb.filter(v => v > 0).reduce((a, v) => a + v, 0), cr = tb.filter(v => v < 0).reduce((a, v) => a - v, 0); return Math.abs(dr - cr) < 0.01; })());
   keyDoc('n', { ctrlKey: true }); await sleep(30);
   ok('C: Ctrl+N opens the new customer form', !!d.getElementById('cmName'));
