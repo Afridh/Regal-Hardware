@@ -455,6 +455,14 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .pu-box .pm-photo{height:110px}.pu-box .pm-photo #pphoto img{max-height:106px}
 .pu-marg{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;gap:0 12px;margin:-2px 0 8px;font-size:12px}
 .pu-marg span{background:var(--panel);border-radius:6px;padding:3px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* the price boxes (5 Nov 2026): four equal columns, one line of label, one height, each figure under its own box */
+.pm-s-price .pm-g4,.pu-marg{grid-template-columns:repeat(4,minmax(0,1fr))}
+.pm-s-price .f>label{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pm-s-price .f>.muted{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pm-s-price .pm-money input,.pm-s-price .pm-big input,.pu-box .pm-s-price .pm-big input{width:100%;height:40px;box-sizing:border-box;font-size:16px!important;padding-top:0!important;padding-bottom:0!important;border-width:1px!important}
+.pm-s-price .pm-big input{font-weight:700;border-color:var(--ink)!important}
+.pm-s-price .pm-money input{-moz-appearance:textfield}.pm-s-price .pm-money input::-webkit-outer-spin-button,.pm-s-price .pm-money input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.pm-s-price .pm-off{font-size:12px;color:var(--steel);margin:0 0 6px}.pm-s-price .pm-off b{color:var(--ink)}
 .pu-rec{display:flex;flex-direction:column;min-height:0;background:var(--white);border:1px solid var(--line2);border-radius:10px;overflow:hidden}
 .pu-rt{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px 6px;font-size:13px}
 .pu-rec #puQ{margin:0 12px 8px;width:auto}
@@ -26765,11 +26773,12 @@ function productModal(pid,opt){
     <section class="pm-sec pm-s-price"><div class="pm-st"><span class="pm-n">2</span>${pu?'Pricing information':'Prices'}<span class="muted">the till charges the selling price</span></div>
      <div class="pm-g4">
       ${money('pmrp','MRP',p?p.mrp:'','Printed on it')}
-      ${money('pcost','Cost <span class="muted" style="font-weight:400">35/ = 35% off MRP</span>',p?p.cost:'','What you pay')}
+      ${money('pcost','Cost',p?p.cost:'','What you pay')}
       ${money('pretail','Selling price <span class="req">*</span>',p?p.retail:'','Over the counter',true)}
       ${money('pwhole','Wholesale',p?p.wholesale:'','Empty: selling price')}
      </div>
      ${pu?'<div class="pu-marg" id="puMarg"></div>':''}
+     <div class="pm-off" id="pmOff">Discount off the MRP: type <b>35/</b> in Cost or Selling price to take 35% off.</div>
      <div id="pmarg" class="pm-marg"></div>
     </section>
     <section class="pm-sec pm-s-codes"><div class="pm-st"><span class="pm-n">3</span>${one?'Product number':pu?'Item code / barcode':'Codes'}<span class="muted">${one?'one number for the bill, the label and the search':'scan or type any of them at the till'}</span></div>
@@ -26857,7 +26866,7 @@ function productModal(pid,opt){
       ? `<span class="pm-pill ${ret>cost?'good':'bad'}">Profit <b>${fmt(ret-cost)}</b> each · ${pct(ret,cost)}</span>${wh?`<span class="pm-pill ${wh>cost?'':'bad'}">Wholesale ${fmt(wh-cost)} · ${pct(wh,cost)}</span>`:''}${mrp>ret?`<span class="pm-pill">Customer saves ${fmt(mrp-ret)}</span>`:''}`
       : '<span class="muted">Fill in the cost and selling price to see your profit.</span>';
     if(q('puMarg')){ const pc=(a,b)=>a&&b?((a-b)/a*100).toFixed(1)+'%':'—';
-      q('puMarg').innerHTML=`<span>Margin ${pc(ret,cost)}</span><span>${p?'Qty '+fq(p.stock):'&nbsp;'}</span><span>MRP margin ${pc(mrp,cost)}</span><span>W/S margin ${pc(wh||ret,cost)}</span>` }
+      q('puMarg').innerHTML=`<span>MRP margin ${pc(mrp,cost)}</span><span>${p?'Qty '+fq(p.stock):'&nbsp;'}</span><span>Margin ${pc(ret,cost)}</span><span>W/S margin ${pc(wh||ret,cost)}</span>` }
     pv() };
   const pv=()=>{ const nm=q('pname').value.trim(), ret=g('pretail'), mrp=g('pmrp');
     q('pvName').textContent=nm||'Product name';  q('pvName').style.color=nm?'':'var(--faint)';
@@ -26876,14 +26885,15 @@ function productModal(pid,opt){
   // Enter walks the prices as they stand: MRP, cost, selling price
   q('pname').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.ctrlKey){ e.preventDefault(); q('pmrp').focus() } });
   q('pmrp').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.ctrlKey){ e.preventDefault(); q('pcost').focus() } });
-  q('pcost').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.ctrlKey){ e.preventDefault(); q('pretail').focus(); return }
-    // 35 then / in the cost box: the cost is the MRP less 35% (5 Nov 2026)
+  q('pcost').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.ctrlKey){ e.preventDefault(); q('pretail').focus() } });
+  // 35 then / in the cost or the selling price: the MRP less 35% (5 Nov 2026)
+  [['pcost','cost'],['pretail','selling price']].forEach(([id,what])=>q(id).addEventListener('keydown',e=>{
     if(e.key!=='/') return; e.preventDefault();
-    const off=g('pcost'), mrp=g('pmrp');
-    if(!(mrp>0)){ q('pmrp').focus(); return toast('Put the MRP first, then 35/ in the cost takes 35% off it') }
+    const off=g(id), mrp=g('pmrp');
+    if(!(mrp>0)){ q('pmrp').focus(); return toast('Put the MRP first, then 35/ takes 35% off it') }
     if(!(off>0&&off<100)) return toast('Type the percentage first, like 35/');
-    q('pcost').value=(mrp*(1-off/100)).toFixed(2); q('pcost').dispatchEvent(new Event('input',{bubbles:true})); q('pcost').select();
-    toast(off+'% off MRP '+money2(mrp)+': cost '+money2(+q('pcost').value)) });
+    q(id).value=(mrp*(1-off/100)).toFixed(2); q(id).dispatchEvent(new Event('input',{bubbles:true})); q(id).select();
+    toast(off+'% off MRP '+money2(mrp)+': '+what+' '+money2(+q(id).value)) }));
   q('pretail').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.ctrlKey){ e.preventDefault(); (q('pcost').value?q('psave'):q('pcost')).focus() } });
   m.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.ctrlKey){ e.preventDefault(); q('psave').click() } });
   m.addEventListener('input',e=>e.target.classList.remove('pm-bad'));
