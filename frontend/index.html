@@ -26764,9 +26764,9 @@ function productModal(pid,opt){
     </section>
     <section class="pm-sec pm-s-price"><div class="pm-st"><span class="pm-n">2</span>${pu?'Pricing information':'Prices'}<span class="muted">the till charges the selling price</span></div>
      <div class="pm-g4">
-      ${money('pretail','Selling price <span class="req">*</span>',p?p.retail:'','Over the counter',true)}
-      ${money('pcost','Cost',p?p.cost:'','What you pay')}
       ${money('pmrp','MRP',p?p.mrp:'','Printed on it')}
+      ${money('pcost','Cost <span class="muted" style="font-weight:400">35/ = 35% off MRP</span>',p?p.cost:'','What you pay')}
+      ${money('pretail','Selling price <span class="req">*</span>',p?p.retail:'','Over the counter',true)}
       ${money('pwhole','Wholesale',p?p.wholesale:'','Empty: selling price')}
      </div>
      ${pu?'<div class="pu-marg" id="puMarg"></div>':''}
@@ -26873,7 +26873,17 @@ function productModal(pid,opt){
   m.querySelectorAll('input,textarea').forEach(i=>i.addEventListener('input',marg)); marg();
   m.querySelectorAll('#punitChips [data-u]').forEach(b=>b.onclick=()=>{ q('punit').value=b.dataset.u; m.querySelectorAll('#punitChips [data-u]').forEach(x=>x.classList.toggle('on',x===b)); pv() });
   m.querySelectorAll('#pcatChips [data-c]').forEach(b=>b.onclick=()=>{ q('pcat').value=b.dataset.c; q('pcat').dispatchEvent(new Event('change')); pv() });
-  q('pname').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.ctrlKey){ e.preventDefault(); q('pretail').focus() } });
+  // Enter walks the prices as they stand: MRP, cost, selling price
+  q('pname').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.ctrlKey){ e.preventDefault(); q('pmrp').focus() } });
+  q('pmrp').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.ctrlKey){ e.preventDefault(); q('pcost').focus() } });
+  q('pcost').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.ctrlKey){ e.preventDefault(); q('pretail').focus(); return }
+    // 35 then / in the cost box: the cost is the MRP less 35% (5 Nov 2026)
+    if(e.key!=='/') return; e.preventDefault();
+    const off=g('pcost'), mrp=g('pmrp');
+    if(!(mrp>0)){ q('pmrp').focus(); return toast('Put the MRP first, then 35/ in the cost takes 35% off it') }
+    if(!(off>0&&off<100)) return toast('Type the percentage first, like 35/');
+    q('pcost').value=(mrp*(1-off/100)).toFixed(2); q('pcost').dispatchEvent(new Event('input',{bubbles:true})); q('pcost').select();
+    toast(off+'% off MRP '+money2(mrp)+': cost '+money2(+q('pcost').value)) });
   q('pretail').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.ctrlKey){ e.preventDefault(); (q('pcost').value?q('psave'):q('pcost')).focus() } });
   m.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.ctrlKey){ e.preventDefault(); q('psave').click() } });
   m.addEventListener('input',e=>e.target.classList.remove('pm-bad'));
