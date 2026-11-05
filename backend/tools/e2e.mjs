@@ -516,8 +516,10 @@ let webNo = null;
   A.w.eval(`poDraft={sid:${sup.id},lines:[{pid:null,desc:'Galvanised bucket 15L',unit:'pcs',qty:12,est:450,known:false}],note:'with the Thursday lorry',want:'',q:''}; sendPO(); closeModals()`);
   const po = A.w.S.orders.find(o => o.dir === 'OUT' && o.sid === sup.id);
   ok('A: order to the supplier written with an item not on the system', !!po && po.lines[0].known === false && po.status === 'sent', po && po.no);
-  A.w.persist(); await sleep(1000);
-  const me3 = await j('/api/sup/me', { headers: H });
+  A.w.persist();
+  // the save can take a few seconds when another is on its way: wait for it, not a fixed second
+  let me3;
+  for (let i = 0; i < 50; i++) { me3 = await j('/api/sup/me', { headers: H }); if (me3.pos && me3.pos.some(o => o.no === po.no)) break; await sleep(300); }
   ok('S: rep sees the shop\'s order with the new item', me3.pos.some(o => o.no === po.no && o.lines[0].desc === 'Galvanised bucket 15L' && !o.lines[0].known));
   const acc = await j('/api/sup/po/' + po.no + '/respond', { method: 'POST', headers: H, body: { action: 'accepted', note: 'Thursday it is' } });
   const disp = await j('/api/sup/po/' + po.no + '/respond', { method: 'POST', headers: H, body: { action: 'dispatched', invoice: 'INV-4521', eta: '2026-09-25' } });

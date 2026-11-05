@@ -1211,6 +1211,13 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 .act-item .sub{font-size:13px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
 .act-item .meta{font-size:12px;color:var(--muted);margin-top:3px;display:flex;flex-wrap:wrap;gap:4px}
 .act-item .meta i{font-style:normal;opacity:.5}
+.act-lines{width:100%;max-width:620px;margin:6px 0 2px;font-size:13px;border-collapse:collapse}
+.act-lines td{padding:3px 8px 3px 0;border-bottom:1px solid var(--line2);overflow-wrap:anywhere}
+.act-lines td.n{text-align:right;white-space:nowrap}
+.act-lines .sum td{font-weight:700;border-bottom:0}
+.act-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;margin:6px 0 2px}
+.act-pics{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}
+.act-pics img{width:64px;height:64px;object-fit:cover;border:1px solid var(--line);border-radius:6px;display:block}
 .act-item .amt{font-weight:700;font-size:15px;white-space:nowrap;text-align:right}
 .act-item .acts{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center}
 .act-item .acts .wa svg{width:15px;height:15px}
@@ -12018,11 +12025,11 @@ function actionItems(){
     const view=`data-id="${esA(o.id||o.no)}"`, open=actBtn('ordView','Open',view);
     if((o.dir||'IN')!=='OUT'&&o.status==='pending'){
       const id=`data-no="${esA(o.id)}"`;
-      push({cat:'supord',view:'orders',pri:2,key:'in'+o.id,who:s.name,when:o.date,title:`${s.name} sent an order`,sub:[o.no, n?`${n} line${n===1?'':'s'}`:(o.text&&o.text!=='(photo only)'?noteEsc(o.text.length>60?o.text.slice(0,60)+'…':o.text):(o.files||[]).length?`${o.files.length} photo${o.files.length===1?'':'s'}`:''), o.rep].filter(Boolean).join(' · '),tag:'Their order',
+      push({cat:'supord',view:'orders',pri:2,key:'in'+o.id,who:s.name,when:o.date,title:`${s.name} sent an order`,sub:[o.no, n?`${n} line${n===1?'':'s'}`:'', o.rep].filter(Boolean).join(' · '),list:ordCardList(o.lines||o.supLines,o),tag:'Their order',
         acts:may?[actBtn('ord','Approve',id+' data-st="accepted"','tape'),actBtn('ordAdjust','Ask for a change',id),actBtn('ord','Turn down',id+' data-st="rejected"'),open]:[open]});
     } else if(o.dir==='OUT'&&o.status==='completed'){
       const no=`data-no="${esA(o.no)}"`, total=(o.supLines||[]).reduce((a,l)=>a+l.qty*(+l.price||0),0);
-      push({cat:'supord',view:'orders',pri:2,key:'out'+o.no,who:s.name,when:o.date,amount:total||null,title:`${s.name} completed our order ${o.no}`,sub:`${(o.supLines||[]).length} line${(o.supLines||[]).length===1?'':'s'} as they will send it${o.invoiceNo?' · their invoice '+o.invoiceNo:''}`,tag:'Check & approve',
+      push({cat:'supord',view:'orders',pri:2,key:'out'+o.no,who:s.name,when:o.date,amount:total||null,title:`${s.name} completed our order ${o.no}`,sub:`${(o.supLines||[]).length} line${(o.supLines||[]).length===1?'':'s'} as they will send it${o.invoiceNo?' · their invoice '+o.invoiceNo:''}`,list:ordCardList(o.supLines,{}),tag:'Check & approve',
         acts:may?[actBtn('poApprove','Approve',no,'tape'),actBtn('poAskChange','Ask for a change',no),actBtn('poCancelOne','Cancel',no),open]:[open]});
     } else if(o.dir==='OUT'&&o.status==='approved'){
       push({cat:'supord',view:'orders',pri:3,key:'rcv'+o.no,who:s.name,when:o.date,title:`Goods coming from ${s.name}`,sub:`Order ${o.no} — receive it when it arrives`,tag:'To receive',
@@ -12120,12 +12127,22 @@ function actionCount(){
 }
 let actLastSeen='';
 /* one waiting item as a card with its own buttons — the Action centre and the Approvals page draw the same */
+/* what an order asks for, on its card: nobody should have to approve "3 lines" unseen (5 Nov 2026, the owner asked) */
+function ordCardList(lines,o){
+  const all=lines||[], some=all.slice(0,12), priced=all.some(l=>+l.price), sum=all.reduce((a,l)=>a+(+l.qty||0)*(+l.price||0),0);
+  const rows=some.map(l=>`<tr><td>${noteEsc(l.desc)}</td><td class="n">${fq(l.qty)} ${noteEsc(l.unit||'')}</td>${priced?`<td class="n">${+l.price?fmt(l.price):'—'}</td>`:''}</tr>`).join('');
+  const more=all.length-some.length;
+  const table=all.length?`<table class="act-lines">${rows}${more?`<tr><td colspan="${priced?3:2}" class="muted">and ${more} more: press Open to see them all</td></tr>`:''}${priced?`<tr class="sum"><td colspan="2">At their prices</td><td class="n">${fmt(sum)}</td></tr>`:''}</table>`:'';
+  const text=!all.length&&o.text&&o.text!=='(photo only)'?`<div class="act-text">${noteEsc(o.text)}</div>`:'';
+  const pics=(o.files||[]).length?`<div class="act-pics">${o.files.map(p=>`<a href="${noteEsc(p)}" target="_blank" rel="noopener"><img src="${noteEsc(p)}" alt="Photo with the order" title="Open the photo full size"></a>`).join('')}</div>`:'';
+  return table+text+pics;
+}
 function actItemHtml(x,k){
   const c=ACT_CATS.find(z=>z[0]===x.cat)||ACT_CATS[0];
   return `<div class="act-item" style="--c:${c[3]};animation-delay:${Math.min(k||0,14)*0.03}s">
        <span class="act-ic">${storeIc(c[2])}</span>
        <div class="body"><div class="top"><b>${esA(x.title)}</b>${x.tag?`<span class="st-tag" style="--c:${c[3]}">${esA(x.tag)}</span>`:''}</div>
-        ${x.sub?`<div class="sub">${esA(x.sub)}</div>`:''}
+        ${x.sub?`<div class="sub">${esA(x.sub)}</div>`:''}${x.list||''}
         <div class="meta">${[x.who&&`<span>${esA(x.who)}</span>`,x.when&&`<span>${esA(x.when)}</span>`,`<span>${c[1]}</span>`].filter(Boolean).join('<i>·</i>')}</div></div>
        ${x.amount?`<div class="amt">${fmt(x.amount)}</div>`:'<div></div>'}
        <div class="acts">${x.acts.filter(Boolean).join('')}</div></div>`;
@@ -12643,7 +12660,7 @@ function ordDetail(o){
 }
 /* the two popups on this page: the order being written, and the order being looked at.
    They are drawn again with the page, so whatever is done inside them shows straight away. */
-let ordOpen=null;
+let ordOpen=null, ordOpenOn=null;   // the order being looked at, and the page it was opened from
 function ordPop(id){
   let m=document.getElementById(id); if(m) return m;
   m=document.createElement('div'); m.className='modal wide'; m.id=id; m.innerHTML='<div class="box"></div>';
@@ -12672,7 +12689,7 @@ function ordPopsSync(){
   const pm=document.getElementById('poModal');
   if(poDraft&&S.view==='orders'&&pm) popDraw(pm.querySelector('.box'),poForm(),true);   // its dropdowns are put back by the wiring after every draw
   else { if(pm) pm.remove(); poDraft=null }
-  const om=document.getElementById('ordModal'), o=ordOpen&&S.view==='orders'&&ordFind(ordOpen);
+  const om=document.getElementById('ordModal'), o=ordOpen&&S.view===ordOpenOn&&ordFind(ordOpen);
   if(om&&o){ const b=om.querySelector('.box');
     // a reply or a change being written: leave it alone until it is sent or the popup is closed
     if(!b.querySelector('[id^="ob-"] input')) popDraw(b,ordDetail(o)) }
@@ -34377,7 +34394,7 @@ document.addEventListener('click',e=>{
     prefMini:()=>{setPref('collapsed',!pref('collapsed')); render()},
     prefKeys:()=>{setPref('keys',!pref('keys')); render()},
     ordTab:()=>{ordTab=a.dataset.t; render()},
-    ordView:()=>{ ordOpen=a.dataset.id; const o=ordFind(ordOpen); if(!o) return; ordPop('ordModal'); render() },
+    ordView:()=>{ ordOpen=a.dataset.id; ordOpenOn=S.view; const o=ordFind(ordOpen); if(!o) return; ordPop('ordModal'); render() },
     ordClose:()=>ordClose(),
     poNew:()=>newPO(), poFree:()=>{poAddFree()}, poAdd:()=>poAddKnown(+a.dataset.id),
     poPickSup:()=>poPickSup(+a.dataset.id),
