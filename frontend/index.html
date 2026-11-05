@@ -10673,7 +10673,13 @@ const DEFAULT_ACCOUNTS = [
 function applyKept(kept){
   try{ if(S&&S.user&&window._auditBase) auditCheck() }catch(e){}
   applyKeptBooks(kept);
+  try{ plainFromNumber() }catch(e){}
   auditRebase();           // what came in from elsewhere is not anyone's doing on this till
+}
+/* no-name customers made from a mobile at the end of a bill before they stopped getting credit: the Rs 25,000 they were
+   given by default goes, unless they owe. A limit the shop has set to anything else is its own and stays. */
+function plainFromNumber(){
+  for(const c of S.customers||[]) if(!c.byNumber&&+c.limit===25000&&c.name==='Customer '+c.phone&&partyBal('C',c.id)<=0.005){ c.limit=0; c.byNumber=true }
 }
 function applyKeptBooks(kept){
   if(!kept || !kept.S) return;
@@ -20998,9 +21004,9 @@ function askBillCustomer(done){
     if(!/^0\d{9}$/.test(p2)){ msg.textContent='Enter a mobile like 0771234567.'; ph.focus(); return }
     const dup=S.customers.find(c=>c.id!==1&&(mobNorm(c.phone)===p2||mobNorm(c.phone2)===p2)); if(dup) return take(dup.id);
     const c={id:Math.max(...S.customers.map(x=>x.id))+1,code:freeCustCode(),
-      name:n2||'Customer '+p2,phone:p2,level:'retail',limit:25000,address:'',portal:false,lastLogin:null};
+      name:n2||'Customer '+p2,phone:p2,level:'retail',limit:0,byNumber:true,address:'',portal:false,lastLogin:null};   // a normal customer, for the e-bill: credit is for those the shop gives a limit under Customers (5 Nov 2026, the owner said)
     S.customers.push(c); take(c.id);
-    toast(`${c.name} added · retail prices, ${fmt(c.limit)} limit — change it in Customers`);
+    toast(`${c.name} added · retail prices, no credit`);
   };
 
   const key=(e)=>{

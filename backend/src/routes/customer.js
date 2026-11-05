@@ -418,7 +418,9 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
       owes: owesOf(S, cust.id), openBills: (S.sales || []).filter(s => s.customerId === cust.id && +s.balance > 0.005).length,
       // their own page, by their mobile and a texted code: the link that names them when it can
       page: pageOpen(S, CFG, cust) ? '/my' + (cust.pkey ? '/' + String((cust.code || '') + '.' + cust.pkey).toLowerCase() : '') : null,
-      asked, canAsk: !!mobOf(cust) } : null,
+      asked, canAsk: !!mobOf(cust),
+      // came from a mobile at the end of a bill, no credit given and nothing owed: no account to talk about
+      plain: !pageOpen(S, CFG, cust) && owesOf(S, cust.id) <= 0.005 && (cust.byNumber ? !(+cust.limit > 0) : cust.name === 'Customer ' + cust.phone && +cust.limit === 25000) } : null,
     lines: (inv.lines || []).map(l => {
       const p = prod(l.pid);
       return { name: l.name || p.name || 'Item', code: p.code || '', unit: p.unit || '',
