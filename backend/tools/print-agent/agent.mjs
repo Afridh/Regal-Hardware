@@ -56,7 +56,7 @@ async function getBrowser() {
 }
 
 /** Render the bill to a PNG at print resolution. */
-async function render(format, html) {
+async function render(format, html, opt = {}) {
   const f = cfg[format]; if (!f) throw new Error('unknown format ' + format);
   const b = await getBrowser();
   const over = Math.max(1, Math.min(4, +f.oversample || 2));       // drawn this many times too big, then shrunk
@@ -97,6 +97,12 @@ async function render(format, html) {
     // Windows clears its temp folder now and then while the helper keeps running: make it again each time
     fs.mkdirSync(tmp, { recursive: true });
     const file = path.join(tmp, `bill-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.png`);
+    // a long A5 bill: one picture a page (5 Nov 2026); the first goes back as usual, the others in opt.more
+    if (format === 'a5' && opt.pages && await page.evaluate(() => window.regalA5Pages ? window.regalA5Pages() : 1) > 1) {
+      opt.more = [];
+      const sheets = await page.$$('#printArea .print');
+      for (let i = 1; i < sheets.length; i++) { const out = file.replace(/.png$/, '-' + i + '.png'); fs.writeFileSync(out, Buffer.from(await sheets[i].screenshot({ encoding: 'base64', omitBackground: false }), 'base64')); opt.more.push(out); }
+    }
     const target = await page.$('#printArea .print') || await page.$('body');
     const shot = await target.screenshot({ encoding: 'base64', omitBackground: false });
 
@@ -154,6 +160,13 @@ function printImage(format, file) {
 }
 
 /** Labels: the till sends the Zebra's own language (ZPL), which goes to the label printer untouched. */
+async function printPages(format, html, firstDrawn) {
+  const opt = { pages: true }, file = await render(format, html, opt); if (firstDrawn) firstDrawn();
+  let out = await printImage(format, file);
+  for (const p of opt.more || []) out = await printImage(format, p);
+  return out;
+}
+
 function printRaw(printer, data, name) {
   fs.mkdirSync(tmp, { recursive: true });      // Windows' clean-up may have taken the folder since the helper started
   const file = path.join(tmp, 'labels-' + Date.now() + '.zpl'); fs.writeFileSync(file, data, 'utf8');
@@ -208,10 +221,8 @@ async function takeJobs() {
       }
       const t0 = Date.now(); let tDraw = 0;
       const run = busy.then(async () => {
-        const file = await render(job.format, job.html);
-        tDraw = Date.now() - t0;
         let out = '';
-        for (let i = 0; i < (job.copies || 1); i++) out = await printImage(job.format, i ? await render(job.format, job.html) : file);
+        for (let i = 0; i < (job.copies || 1); i++) out = await printPages(job.format, job.html, () => { tDraw = tDraw || Date.now() - t0 });
         return out;
       });
       busy = run.catch(() => {});
@@ -284,9 +295,7 @@ http.createServer(async (req, res) => {
       // one at a time, in order — two bills never fight over the printer
       const t0 = Date.now(); let tDraw = 0;
       const run = busy.then(async () => {
-        const file = await render(job.format, job.html);
-        tDraw = Date.now() - t0;
-        return printImage(job.format, file);
+        return printPages(job.format, job.html, () => { tDraw = Date.now() - t0 });
       });
       busy = run.catch(() => {});
       try { const out = await run; log(job.format, job.no || '', '→', out,

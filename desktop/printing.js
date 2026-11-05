@@ -1,4 +1,5 @@
 // Printing from Regal POS itself — no print helper, no print box.
+// The large bill goes as text; the 80mm roll and the labels as before (a picture one dot to a dot, and the Zebra's own language).
 //
 // The till already knows how to hand a bill to "the print helper on this PC" (http://localhost:4100).
 // Inside Regal POS those calls are answered here instead: the bill is drawn exactly as the helper
@@ -49,9 +50,10 @@ async function detect() {
     cfg[k] = hit; cfg.chosen[k] = false;
   }
   save();
-  return { printers: names, chosen: { r80: cfg.r80, a5: cfg.a5, label: cfg.label } };
+  return { printers: names, chosen: { r80: cfg.r80, a5: cfg.a5, label: cfg.label }, a5Text: cfg.a5Text !== false };
 }
 function choose(k, name) { if (!(k in NAMES)) return; cfg[k] = name || ''; cfg.chosen[k] = true; save(); }
+function setA5Text(on) { cfg.a5Text = !!on; save(); }
 
 function ps(script, args) {
   return new Promise((resolve, reject) => {
@@ -65,7 +67,7 @@ function ps(script, args) {
 /** Draw the bill to a black-and-white PNG at the printer's own size — what the helper's render() does. */
 const T=(m)=>process.env.REGAL_SELFTEST&&console.log("STEP",m);
 const within = (ms, p, why) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(why)), ms))]);
-async function render(format, html) {
+async function render(format, html, opt = {}) {
   const f = FMT[format]; if (!f) throw new Error('unknown format ' + format);
   fs.mkdirSync(tmp, { recursive: true });
   const page = path.join(tmp, 'bill-' + Date.now() + '.html'); fs.writeFileSync(page, html);
@@ -76,7 +78,9 @@ async function render(format, html) {
     const over = Math.max(1, Math.min(4, f.oversample || 1));
     await dbg.sendCommand('Emulation.setEmulatedMedia', { media: 'print' }); T('media');
     await dbg.sendCommand('Emulation.setDeviceMetricsOverride', { width: f.widthPx, height: 800, deviceScaleFactor: (f.scale || 1) * over, mobile: false }); T('metrics');
-    const rect = await w.webContents.executeJavaScript(`(async () => {
+    // a long A5 bill as pictures (when it is not printed as text): one a page
+    let rect = await w.webContents.executeJavaScript(`(async () => {
+      document.documentElement.style.setProperty('overflow', 'hidden', 'important');   // no scrollbar: it narrowed the page while it was measured, and the picture lost its right edge
       document.body.classList.add('direct-print'); document.body.style.margin = '0'; document.body.style.background = '#fff';
       const p = document.querySelector('#printArea .print');
       if (p && ${format === 'r80'}) {
@@ -88,17 +92,22 @@ async function render(format, html) {
       // the fonts, but never waited on for ever: a font that does not come prints in the fallback
       if (document.fonts) await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 2500))]);
       await new Promise(r => setTimeout(r, 60));
+      ${format === 'a5' && opt.pages ? 'if (window.regalA5Pages) window.regalA5Pages();' : ''}
       // the roll: its whole width, from the top to the end of the receipt (a zoomed element's own box is
       // measured short by this Chromium, which cut the right-hand figures off)
       if (${format === 'r80'}) return { x: 0, y: 0, width: ${f.dots || 576}, height: Math.ceil(document.documentElement.scrollHeight) };
-      const el = p || document.body, r = el.getBoundingClientRect();
-      return { x: r.left + scrollX, y: r.top + scrollY, width: Math.ceil(r.width), height: Math.ceil(Math.max(r.height, el.scrollHeight || 0)) };
+      const box = (el) => { const r = el.getBoundingClientRect(); return { x: r.left + scrollX, y: r.top + scrollY, width: Math.ceil(r.width), height: Math.ceil(Math.max(r.height, el.scrollHeight || 0)) } };
+      const all = [...document.querySelectorAll('#printArea .print')];
+      return all.length > 1 && ${!!opt.pages} ? all.map(box) : box(document.querySelector('#printArea .print') || document.body);
     })()`);
     T('rect ' + JSON.stringify(rect));
+    const rects = Array.isArray(rect) ? rect : [rect], files = [];
     // a hidden window only draws what fits in it: make it as tall as the bill, then take the picture
-    await dbg.sendCommand('Emulation.setDeviceMetricsOverride', { width: f.widthPx, height: Math.ceil(rect.y + rect.height) + 4, deviceScaleFactor: (f.scale || 1) * over, mobile: false });
+    const end = rects[rects.length - 1];
+    await dbg.sendCommand('Emulation.setDeviceMetricsOverride', { width: f.widthPx, height: Math.ceil(end.y + end.height) + 4, deviceScaleFactor: (f.scale || 1) * over, mobile: false });
     await w.webContents.executeJavaScript('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))');
-    const shot = await within(15000, dbg.sendCommand('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false, clip: { ...rect, scale: 1 } }), 'the bill could not be drawn');
+    for (const one of rects) {
+    const shot = await within(15000, dbg.sendCommand('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false, clip: { ...one, scale: 1 } }), 'the bill could not be drawn');
     T('shot');
     const wide = format === 'r80' ? (f.dots || 576) : 0, cut = Math.max(1, Math.min(254, f.threshold || 186));
     const png = await w.webContents.executeJavaScript(`(async () => {
@@ -111,9 +120,47 @@ async function render(format, html) {
       if (!${!!f.grey}) for (let i = 0; i < px.length; i += 4) { const v = (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) < ${cut} ? 0 : 255; px[i] = px[i + 1] = px[i + 2] = v; px[i + 3] = 255; }
       g.putImageData(d, 0, 0); return c.toDataURL('image/png').split(',')[1];
     })()`);
-    const file = path.join(tmp, 'bill-' + Date.now() + '.png'); fs.writeFileSync(file, Buffer.from(png, 'base64'));
-    return file;
+    const file = path.join(tmp, 'bill-' + Date.now() + '-' + files.length + '.png'); fs.writeFileSync(file, Buffer.from(png, 'base64')); files.push(file);
+    }
+    return opt.pages ? files : files[0];
   } finally { w.destroy(); fs.unlink(page, () => { }); }
+}
+
+/* The large bill as text (5 Nov 2026): the page goes to the printer through Windows as letters and lines, not a picture,
+   so the Canon prints them at its own 600 dots an inch and the job is small and quick. A long bill is on real pages. */
+const A5_TEXT_WIDTH = 794;                       // the whole A5 sheet across (210mm), the sheets keep clear of its edge
+async function textWindow(html) {
+  fs.mkdirSync(tmp, { recursive: true });
+  const page = path.join(tmp, 'bill-' + Date.now() + '.html'); fs.writeFileSync(page, html);
+  const w = new BrowserWindow({ show: false, width: A5_TEXT_WIDTH, height: 800, webPreferences: { backgroundThrottling: false, partition: 'regal-print' } });
+  try {
+    await w.loadFile(page);
+    const dbg = w.webContents.debugger; dbg.attach('1.3');
+    await dbg.sendCommand('Emulation.setEmulatedMedia', { media: 'print' });
+    await dbg.sendCommand('Emulation.setDeviceMetricsOverride', { width: A5_TEXT_WIDTH, height: 800, deviceScaleFactor: 1, mobile: false });
+    const pages = await w.webContents.executeJavaScript(`(async () => {
+      const st = document.createElement('style'); st.textContent = '@page{size:A5 landscape;margin:0}html,body{margin:0!important;padding:0!important;background:#fff!important}'; document.head.appendChild(st);
+      document.documentElement.style.setProperty('overflow', 'hidden', 'important'); document.body.classList.add('direct-print');
+      if (document.fonts) await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 2500))]);
+      await Promise.all([...document.images].map(i => i.complete ? 0 : new Promise(r => { i.onload = i.onerror = r; setTimeout(r, 2500) })));
+      if (window.regalA5Pages) return window.regalA5Pages({ sheets: true });
+      const p = document.querySelector('#printArea .print'), d = document.createElement('div'); d.style.cssText = 'width:210mm;padding:6mm 6mm 0;box-sizing:border-box'; if (p) { p.parentNode.insertBefore(d, p); d.appendChild(p) }
+      return 1;
+    })()`);
+    await dbg.sendCommand('Emulation.clearDeviceMetricsOverride'); dbg.detach();
+    return { w, pages, done: () => { try { w.destroy() } catch { } fs.unlink(page, () => { }) } };
+  } catch (e) { try { w.destroy() } catch { } fs.unlink(page, () => { }); throw e; }
+}
+const TEXT_OPTS = { pageSize: 'A5', landscape: true, printBackground: true, margins: { marginType: 'none' } };
+async function printText(html, printer) {
+  const t = await textWindow(html);
+  try {
+    await new Promise((res, no) => {
+      const clock = setTimeout(() => { const e = new Error('the printer did not answer'); e.noRetry = true; no(e) }, 60000);   // it may yet print: never send it twice
+      t.w.webContents.print({ ...TEXT_OPTS, silent: true, deviceName: printer }, (ok, why) => { clearTimeout(clock); ok ? res() : no(new Error(why || 'print failed')) });
+    });
+    return `printed on ${printer} as text, ${t.pages} page${t.pages === 1 ? '' : 's'}`;
+  } finally { t.done(); }
 }
 
 let busy = Promise.resolve();                    // one at a time, in order
@@ -122,12 +169,20 @@ const queued = (fn) => { const run = busy.then(fn); busy = run.catch(() => { });
 async function printBill(format, html) {
   const printer = cfg[format]; const f = FMT[format];
   return queued(async () => {
-    const file = await render(format, html);
-    const args = ['-Printer', printer, '-Image', file];
-    if (f.paper) args.push('-Paper', f.paper);
-    if (f.landscape) args.push('-Landscape');
-    if (format === 'r80') args.push('-Roll', '-Dpi', String(f.dpi), '-Cut', String(f.threshold), '-Flat');
-    try { return await ps('print-image.ps1', args); } finally { fs.unlink(file, () => { }); }
+    if (format === 'a5' && cfg.a5Text !== false) {
+      try { return await printText(html, printer); }
+      catch (e) { if (e.noRetry) throw e; console.error('A5 as text failed, printing it as a picture:', e.message); }   // the bill still goes out
+    }
+    const files = await render(format, html, { pages: format === 'a5' });
+    let out = '';
+    for (const file of [].concat(files)) {
+      const args = ['-Printer', printer, '-Image', file];
+      if (f.paper) args.push('-Paper', f.paper);
+      if (f.landscape) args.push('-Landscape');
+      if (format === 'r80') args.push('-Roll', '-Dpi', String(f.dpi), '-Cut', String(f.threshold), '-Flat');
+      try { out = await ps('print-image.ps1', args); } finally { fs.unlink(file, () => { }); }
+    }
+    return out;
   });
 }
 async function printLabels(zpl, name) {
@@ -188,4 +243,4 @@ function openPrintersWindow(parent) {
   pw.loadFile(path.join(__dirname, 'printers.html'));
 }
 
-module.exports = { load, detect, choose, answer, render, printBill, printLabels, openPrintersWindow, TEST_BILL, TEST_LABEL, NAMES, config: () => cfg };
+module.exports = { load, detect, choose, setA5Text, textWindow, TEXT_OPTS, answer, render, printBill, printLabels, openPrintersWindow, TEST_BILL, TEST_LABEL, NAMES, config: () => cfg };

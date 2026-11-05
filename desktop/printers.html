@@ -19,6 +19,7 @@
 <header><h1>Printers on this PC</h1><p>Regal POS prints by itself — no print box, no print helper. Found by name; change any of them here.</p></header>
 <main>
   <div id="rows"></div>
+  <label class="row" style="grid-template-columns:auto 1fr;cursor:pointer"><input type="checkbox" id="a5Text"><div><b>Print A5 bills as text</b><small>Sharper letters and a smaller job. Untick to send them as a picture, if the printer ever has trouble with text.</small></div></label>
   <div class="say" id="say"></div>
   <div class="foot">“None” sends that kind of paper to the counter PC through the shop, as before.<br>Open this window from the till with <b>Ctrl + Shift + P</b>.</div>
 </main>
@@ -27,7 +28,8 @@ const KINDS = [['label', 'Labels', 'Zebra'], ['r80', '80mm receipts', 'Epson'], 
 const $ = (id) => document.getElementById(id);
 const say = (t, ok) => { $('say').textContent = t; $('say').className = 'say ' + (ok ? 'ok' : 'bad'); };
 async function draw() {
-  const { printers, chosen } = await window.printers.list();
+  const { printers, chosen, a5Text } = await window.printers.list();
+  $('a5Text').checked = a5Text; $('a5Text').onchange = async (e) => { await window.printers.a5Text(e.target.checked); say(e.target.checked ? 'A5 bills print as text.' : 'A5 bills print as a picture.', true); };
   $('rows').innerHTML = KINDS.map(([k, name, brand]) => `
     <div class="row"><div><b>${name}</b><small>${brand}</small></div>
       <select data-k="${k}"><option value="">None — send to the counter</option>${printers.map(p => `<option ${p === chosen[k] ? 'selected' : ''}>${p.replace(/</g, '&lt;')}</option>`).join('')}</select>

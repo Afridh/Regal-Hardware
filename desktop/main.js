@@ -148,6 +148,7 @@ app.whenReady().then(() => {
   printing.load();
   ipcMain.handle('printers:list', () => printing.detect());
   ipcMain.handle('printers:choose', (e, kind, name) => printing.choose(kind, name));
+  ipcMain.handle('printers:a5text', (e, on) => printing.setA5Text(on));
   ipcMain.handle('printers:test', async (e, kind) => {
     const c = printing.config();
     try {

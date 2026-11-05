@@ -26051,13 +26051,54 @@ function billSepos(inv,o){
    With the print helper running on the PC (backend/tools/print-agent) the bill goes to the printer set
    for its format — 80mm receipts to one, A5 bills to another — with no print box at all.
    Without it, the browser's own print is used, page size set to suit. */
+/* A long A5 bill on real pages (5 Nov 2026): it was drawn as one tall sheet and shrunk until it fitted one page, so the
+   letters came out tiny. The rows are measured as they will print and shared out: every sheet keeps the shop's heading
+   and the column heads, the totals and signatures go on the last, and each says "Page 1 of 2". A bill that fits one page
+   is left exactly as it is. It travels in the print document and does nothing until called, so a program that does not
+   know it still prints the whole bill on one page, as before. sheets:true (printing as text) puts each sheet on the
+   paper itself, with room for the printer's edge. */
+function regalA5Pages(o){
+  o=o||{}; const LIM=o.limit||514, area=document.getElementById('printArea'); if(!area) return 1;
+  const first=area.querySelector('.print.a5'); if(!first) return 1;
+  const sheet=(p,last)=>{ if(!o.sheets){ if(!last) p.style.breakAfter='page'; return p }
+    const d=document.createElement('div'); d.className='a5-sheet'; d.style.cssText='width:210mm;padding:6mm 6mm 0;box-sizing:border-box;overflow:hidden;'+(last?'':'break-after:page;');
+    p.parentNode.insertBefore(d,p); d.appendChild(p); return p };
+  sheet(first,true);                     // at its own width, so the rows wrap as they will print
+  const tbl=first.querySelector('table.x-tbl,table.sp-tbl'), rows=tbl&&tbl.tBodies[0]?[...tbl.tBodies[0].rows]:[];
+  if(!rows.length) return 1;
+  let top=tbl; while(top.parentElement!==first) top=top.parentElement;
+  const kids=[...first.children], cut=kids.indexOf(top)+1, after=kids.slice(cut);
+  const H=e=>e.getBoundingClientRect().height, mh=first.style.minHeight; first.style.minHeight='0';
+  const whole=H(first), rowH=rows.map(H), sum=rowH.reduce((a,b)=>a+b,0);
+  if(whole<=LIM+1){ first.style.minHeight=mh; return 1 }
+  after.forEach(e=>e.style.display='none'); const baseMid=H(first)-sum; after.forEach(e=>e.style.display='');
+  const baseEnd=whole-sum, tag=16, capMid=LIM-baseMid-tag-2, capEnd=LIM-baseEnd-tag-2;
+  const pages=[]; let i=0, closed=false;
+  while(i<rows.length){ let left=0; for(let k=i;k<rows.length;k++) left+=rowH[k];
+    if(left<=capEnd){ pages.push([i,rows.length]); closed=true; break }
+    let j=i, h=0; while(j<rows.length&&(j===i||h+rowH[j]<=capMid)){ h+=rowH[j]; j++ }
+    if(j===rows.length) j=Math.max(i+1,rows.length-1);       // never leave the totals on a page of their own if a row can go with them
+    pages.push([i,j]); i=j }
+  if(!closed) pages.push([rows.length,rows.length]);
+  first.style.minHeight=mh;
+  const holder=o.sheets?first.parentNode:first, n=pages.length;
+  pages.forEach(([a,b],no)=>{ const c=first.cloneNode(true), last=no===n-1, cr=[...c.querySelector('table.x-tbl,table.sp-tbl').tBodies[0].rows];
+    cr.forEach((r,k)=>{ if(k<a||k>=b) r.remove() });
+    if(!last) [...c.children].slice(cut).forEach(e=>e.remove());
+    const t=document.createElement('div'); t.className='a5-pg'; t.style.cssText='text-align:right;font-size:10px;line-height:14px;color:#000;flex:none';
+    t.textContent='Page '+(no+1)+' of '+n+(last?'':', continued on the next page');
+    c.insertBefore(t,c.children[cut]||null);
+    holder.parentNode.insertBefore(c,holder); sheet(c,last) });
+  holder.remove();
+  return n;
+}
 function printDocument(inner,f){
   const inline=[...document.querySelectorAll('style')].map(s=>s.textContent).join('\n');
   // the bill's own rules live in bill-print.css now, so the linked sheets are gathered too
   const linked=[...document.styleSheets].map(sh=>{ try{ return [...sh.cssRules].map(r=>r.cssText).join('\n') }catch(e){ return '' } }).join('\n');
   const css=inline+'\n'+linked;
   const base=(typeof location!=='undefined'&&location.href)?location.href:'';
-  return `<!doctype html><html><head><meta charset="utf-8">${base?`<base href="${base}">`:''}<style>${css}</style></head><body class="direct-print"><div id="printArea" class="printArea ${f}">${inner}</div></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8">${base?`<base href="${base}">`:''}<style>${css}</style><script>window.regalA5Pages=${regalA5Pages.toString()}<\/script></head><body class="direct-print"><div id="printArea" class="printArea ${f}">${inner}</div></body></html>`;
 }
 function billDocument(inv,f){ return printDocument(billHtml(inv,f),f); }
 const printAgentUrl=()=>(CFG.print&&CFG.print.agent!==undefined)?String(CFG.print.agent||'').replace(/\/$/,''):'http://localhost:4100';
@@ -26108,7 +26149,7 @@ function paperFallback(inner,f){
   document.body.appendChild(el); document.body.classList.add('direct-print');
   const page=el.querySelector('#printPage'), pr=el.querySelector('.print');
   if(f==='r80'&&pr) r80Place(pr,page);
-  else page.textContent='@page{size:A5 landscape;margin:4mm 6mm}';
+  else { page.textContent='@page{size:A5 landscape;margin:4mm 6mm}'; regalA5Pages() }
   let done=false;
   const finish=()=>{ if(done) return; done=true; document.body.classList.remove('direct-print'); el.remove();
     ['pointerdown','keydown'].forEach(ev=>window.removeEventListener(ev,finish,true)) };
@@ -26193,7 +26234,7 @@ function browserPrint(inv,f='a5'){
   // the page size follows the format: A5 landscape, or an 80mm roll cut to the length of this receipt
   const page=el.querySelector('#printPage');
   if(f==='r80') r80Place(el.querySelector('.print'),page);
-  else page.textContent='@page{size:A5 landscape;margin:4mm 6mm}';
+  else { page.textContent='@page{size:A5 landscape;margin:4mm 6mm}'; regalA5Pages() }
   // Chrome fires afterprint as soon as print() returns, while its preview is still being drawn — so the
   // bill stays until the person is back at the till (any click or key means the print box has closed)
   let cleaned=false;
