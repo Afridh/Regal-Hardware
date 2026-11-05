@@ -64,7 +64,7 @@ ok(/Incl\. VAT 18% Rs\.<\/span><i>:<\/i><b>1,800\.00/.test(r80) && /409876543-70
 const ret = await pg.evaluate((sid, date) => {
   const S = window.eval('S');
   const keepS = S.sales, keepP = S.purchases;
-  S.sales = S.sales.filter(x => x.date === date && x.total === 11800).slice(0, 1);
+  window._allowWipeOnce = Date.now(); S.sales = S.sales.filter(x => x.date === date && x.total === 11800).slice(0, 1);
   S.purchases = [{ no: 'PUR-T1', date, supplierId: sid, total: 5900, paid: 0, lines: [] }, { no: 'PUR-T2', date, supplierId: -99, total: 1000, paid: 0, lines: [] }];
   window.eval('CFG').tax.sscl = true;
   window.eval("repFrom=''"); window.eval("repTo=''"); window.eval("repKey='vat'");

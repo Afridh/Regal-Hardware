@@ -34,7 +34,7 @@ const setup = await pg.evaluate(() => {
      an opening balance is posted (3100 is the account the import uses for them). */
   if (bal('1010', d) < 20000) post(addDays(d, -1), 'Opening float for this check', 'OPEN-TEST',
     [{ ac: '1010', dr: 20000 }, { ac: '3100', cr: 20000 }]);
-  S.sales = S.sales.filter(s => s.date !== d);
+  window._allowWipeOnce = Date.now(); S.sales = S.sales.filter(s => s.date !== d);
   S.payments = S.payments.filter(p => p.date !== d);
   S.cheques = [];
   S.cashups = [];

@@ -70,7 +70,7 @@ const s3 = await other.evaluate(() => ({ phone: !document.getElementById('stepPh
 ok(s3.phone && !s3.link && !s3.name, 'a wrong key: no name, no amount — the mobile and a code as before', JSON.stringify(s3));
 // tidy up
 await pg.evaluate((cid) => { const S = window.eval('S'); const nos = S.sales.filter(s => s.customerId === cid).map(s => s.no);
-  S.sales = S.sales.filter(s => s.customerId !== cid); S.journal = S.journal.filter(j => !nos.includes(j.ref));
+  window._allowWipeOnce = Date.now(); S.sales = S.sales.filter(s => s.customerId !== cid); S.journal = S.journal.filter(j => !nos.includes(j.ref));
   S.movements.filter(x => nos.includes(x.ref)).forEach(x => { const p = window.eval('P')(x.pid); p.stock = +(p.stock - x.qty).toFixed(3) }); S.movements = S.movements.filter(x => !nos.includes(x.ref));
   S.customers = S.customers.filter(c => c.id !== cid); window.eval('persist')(true) }, made.cid);
 await wait(2000);

@@ -269,7 +269,16 @@
     if (Date.now() - lastPushAt < 3000) return false;
     // a bill or an edit made here and not saved yet would be wiped by the server's copy: save first
     if (heard && !window.booksUnreadable && ((typeof window.hasUnsaved === 'function' && window.hasUnsaved()) || unsynced)) { if (typeof window.persist === 'function') window.persist(true); return false; }
+    var pushedAt = lastPushAt;
     var j = await call('GET', '/books/' + KEY);
+    // A bill made while these books were on their way is not in them, and laying them over this till wiped it: printed,
+    // gone from the list, the customer owing nothing, its number given out again. Worse, the till then counted that as
+    // saved, so its next save took the bill out of the server's books too (5 Nov 2026: Rohana Stores, bill 20029).
+    // So look again now they are here: any work since asking, and these books are out of date. The next poll asks again.
+    if (heard && !window.booksUnreadable && (busy || pendingSet || unsynced || lastPushAt !== pushedAt || (typeof window.hasUnsaved === 'function' && window.hasUnsaved()))) {
+      if (!busy && !pendingSet && typeof window.hasUnsaved === 'function' && window.hasUnsaved() && typeof window.persist === 'function') window.persist(true);
+      return false;
+    }
     // the books are there but would not come down: nothing may be saved until they do
     if (j.__status !== 200) { window.booksUnreadable = true; return false; }
     window.booksUnreadable = false;
@@ -339,6 +348,8 @@
         var j = await call('PUT', '/books/' + KEY, { data: doc, rev: rev });
         if (j.__status === 200) {
           rev = j.rev; lastPushAt = Date.now(); lastSyncAt = Date.now(); base = doc; keepBase(); setUnsynced(false);
+          // the server kept bills this save had lost (see keepBills there): one revision behind, so the next poll brings them back here
+          if (j.keptBills && j.keptBills.length) { rev = j.rev - 1; lastPushAt = 0; }
           if (offlineSince) { offlineSince = 0; window.workingOffline = false; say('Back online — the work done on this PC is with the shop now'); }
           if (j.shiftDays) takeShiftDays(j.shiftDays);
           badge('saved ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' · shared');
@@ -355,6 +366,7 @@
             var r2 = await call('PUT', '/books/' + KEY, { data: merged, rev: srvRev });
             if (r2.__status === 200) {
               rev = r2.rev; base = merged; keepBase(); setUnsynced(false); lastPushAt = Date.now(); lastSyncAt = Date.now();
+              if (r2.keptBills && r2.keptBills.length) { rev = r2.rev - 1; lastPushAt = 0; }   // as above: they come back on the next poll
               if (offlineSince) { offlineSince = 0; window.workingOffline = false; say('Back online — the work done on this PC is put together with the other tills\' and saved'); }
               // work done here while this was saving is laid over the merged books, not lost
               var show = merged;
@@ -368,9 +380,12 @@
             b = theirs; mine = merged; theirs = strip(r2.data); srvRev = r2.rev;
           }
           if (j.__status === 409) {
-            rev = srvRev; base = theirs; keepBase(); setUnsynced(false); applyRemote(theirs);
-            say('The tills are very busy — the books were reloaded. Please check the last thing you did.');
-            return true;
+            // the tills are very busy: this used to reload the books over this till's work and ask the cashier to
+            // check it. The work stays: base is left as it was, so the next try merges it the same way, and
+            // nothing comes down over it until it has gone up (see unsynced in poll and pull).
+            setUnsynced(true); lastRetryAt = 0;
+            badge('not saved yet — the tills are busy, trying again');
+            return false;
           }
         }
         if (j.__status === 409) {

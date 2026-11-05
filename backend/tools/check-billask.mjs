@@ -46,7 +46,7 @@ const zt = await p3.evaluate(() => (document.querySelector('.acct') || {}).inner
 ok(/Your account/.test(zt) && /Give the shop your mobile number/.test(zt), 'no mobile on the card: the account card is there, saying to give the shop a mobile', zt.replace(/\s+/g, ' ').slice(0, 160));
 // tidy up: the two test customers and their bills
 await pg.evaluate(m => { const S = window.eval('S'); const nos = S.sales.filter(s => s.customerId === m.aid || s.customerId === m.zid).map(s => s.no);
-  S.sales = S.sales.filter(s => !nos.includes(s.no)); S.journal = S.journal.filter(j => !nos.includes(j.ref)); S.customers = S.customers.filter(c => c.id !== m.aid && c.id !== m.zid); window.eval('persist')(true) }, made);
+  window._allowWipeOnce = Date.now(); S.sales = S.sales.filter(s => !nos.includes(s.no)); S.journal = S.journal.filter(j => !nos.includes(j.ref)); S.customers = S.customers.filter(c => c.id !== m.aid && c.id !== m.zid); window.eval('persist')(true) }, made);
 await wait(1500);
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);

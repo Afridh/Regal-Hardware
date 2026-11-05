@@ -34,7 +34,7 @@ const made = await pg.evaluate(async () => { document.querySelectorAll('.modal')
   window.eval('persist')(true); return { no: inv.no, pid: p.id, stockAfter: p.stock, total: inv.total, cash: window.eval('bal')('1010') } });
 await wait(3500);
 // 2. lost: taken out of the books, the stock put back, saved
-await pg.evaluate(m => { const S = window.eval('S'); S.sales = S.sales.filter(s => s.no !== m.no); S.journal = S.journal.filter(j => j.ref !== m.no);
+await pg.evaluate(m => { const S = window.eval('S'); window._allowWipeOnce = Date.now(); S.sales = S.sales.filter(s => s.no !== m.no); S.journal = S.journal.filter(j => j.ref !== m.no);
   const mv = S.movements.filter(x => x.ref === m.no); mv.forEach(x => { const p = window.eval('P')(x.pid); p.stock = +(p.stock - x.qty).toFixed(3) }); S.movements = S.movements.filter(x => x.ref !== m.no);
   window.eval('persist')(true) }, made);
 await wait(3500);
@@ -62,7 +62,7 @@ await pg.type('#fbNo', '99999999'); await pg.click('#fbGo'); await wait(2000);
 ok(/not on this till and not in any copy/.test(await pg.evaluate(() => document.getElementById('fbOut').innerText)), 'a number never used: nowhere, and what to check on the till it was made on');
 await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
 // tidy up: take the test bill out again
-await pg.evaluate(m => { const S = window.eval('S'); S.sales = S.sales.filter(s => s.no !== m.no); S.journal = S.journal.filter(j => j.ref !== m.no);
+await pg.evaluate(m => { const S = window.eval('S'); window._allowWipeOnce = Date.now(); S.sales = S.sales.filter(s => s.no !== m.no); S.journal = S.journal.filter(j => j.ref !== m.no);
   S.movements.filter(x => x.ref === m.no).forEach(x => { const p = window.eval('P')(x.pid); p.stock = +(p.stock - x.qty).toFixed(3) }); S.movements = S.movements.filter(x => x.ref !== m.no); window.eval('persist')(true) }, made);
 await wait(2000);
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));

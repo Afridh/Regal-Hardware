@@ -30,7 +30,7 @@ await pg.evaluate(() => {
   document.querySelectorAll('.modal').forEach(m => m.remove());
   const S = window.eval('S'), CFG = window.eval('CFG'), ps = S.products.filter(p => !p.open);
   const A = ps[0], B = ps[1];
-  S.sales = S.sales.filter(s => !/^PRF/.test(s.no));              // a run before this one left its bills
+  window._allowWipeOnce = Date.now(); S.sales = S.sales.filter(s => !/^PRF/.test(s.no));              // a run before this one left its bills
   A.name = 'TOKYO Super Cement 50kg'; A.brand = ''; A.cat = 'Cement Test';
   B.name = 'Weathershield White 4L'; B.brand = 'Dulux'; B.cat = 'Paint Test';
   S.sales.push({ no: 'PRF1', date: '2099-02-01', customerId: 1, type: 'CASH', total: 1800, balance: 0, billDisc: 200, by: 'Afridh', salesman: null,

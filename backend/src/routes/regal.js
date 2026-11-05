@@ -762,6 +762,35 @@ function mergeShiftDays(data, cur, since) {
   return taken;
 }
 
+/* A bill, once in the books, stays there: nothing at the till takes a bill out (a re-made bill keeps its number, and only an
+   owner's fresh start carries the wipe token). A save that arrives without one has lost it, whatever the reason, so the bill
+   goes back in with its journal entries (what the customer owes, the drawer) and its stock movements, and the owner is told.
+   The till's own timing fault that did this is mended (regal-bridge.js, pull); this is so that no other can do it quietly. */
+export function keepBills(next, cur, by) {
+  const S = next?.S, C = cur?.S;
+  if (!S || !C || !Array.isArray(C.sales) || !Array.isArray(S.sales)) return [];
+  const have = new Set(S.sales.map(s => String(s?.no)));
+  const lost = C.sales.filter(s => s && s.no != null && !have.has(String(s.no)));
+  if (!lost.length) return [];
+  S.journal = Array.isArray(S.journal) ? S.journal : []; S.movements = Array.isArray(S.movements) ? S.movements : [];
+  const tag = (x) => JSON.stringify(x), inJ = new Set(S.journal.map(tag)), inM = new Set(S.movements.map(tag));
+  for (const sale of lost) {
+    S.sales.push(sale);
+    const no = String(sale.no);
+    for (const j of C.journal || []) if (String(j?.ref) === no && !inJ.has(tag(j))) S.journal.push(j);
+    for (const m of C.movements || []) if (String(m?.ref) === no && !inM.has(tag(m))) {
+      S.movements.push(m);
+      const p = (S.products || []).find(x => x.id === m.pid);
+      if (p) p.stock = +((+p.stock || 0) + (+m.qty || 0)).toFixed(3);
+    }
+  }
+  const nos = lost.map(s => String(s.no)), at = new Date();
+  S.notif = Array.isArray(S.notif) ? S.notif : [];
+  S.notif.unshift({ id: 'nkb' + at.getTime(), kind: 'warn', text: `A save by ${by} came without bill${nos.length > 1 ? 's' : ''} ${nos.join(', ')}. The bill${nos.length > 1 ? 's are' : ' is'} kept in the books.`,
+    view: 'bills', at: at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: process.env.SHOP_TZ || 'Asia/Colombo' }), read: false, forApprovers: true });
+  return nos;
+}
+
 /** Save.  body: { data, rev }  — rev is the revision the client loaded; a mismatch returns 409 with the newer copy. */
 r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   const { data, rev } = req.body || {};
@@ -812,6 +841,8 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
       if (full === undefined || full === null || Number(rev) < Number(full)) return { conflict: true, rev: curRev, data: cur.data };
       merged = mergeShiftDays(data, cur.data, Number(rev));
     }
+    const keptBills = cur && !wipeOk ? keepBills(data, cur.data, req.regalUser.name) : [];
+    if (keptBills.length) console.error(`[books guard] a save by ${req.regalUser.name} came without bills ${keptBills.join(', ')}: kept (rev ${curRev}, it said rev ${rev})`);
     const next = curRev + 1;
     data._fullRev = next;
     await client.query(
@@ -822,7 +853,7 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
     // everything older than the HISTORY_KEEP-th newest copy goes (written so MySQL takes it too: it has no
     // LIMIT inside IN (…), and the extra SELECT around the LIMIT is what lets it read the table it deletes from)
     await client.query(`DELETE FROM books_history WHERE key = $1 AND id < (SELECT id FROM (SELECT id FROM books_history WHERE key = $1 ORDER BY id DESC LIMIT 1 OFFSET ${HISTORY_KEEP - 1}) t)`, [key]);
-    return { conflict: false, rev: next, merged };
+    return { conflict: false, rev: next, merged, keptBills };
   });
   if (out.blocked) {
     console.error(`[books guard] blocked a save by ${req.regalUser.name}: products ${out.curProducts} -> ${out.newProducts}, bills ${out.curSales} -> ${out.newSales} (an empty or old till over the real shop)`);
@@ -836,7 +867,7 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   }
   if (key === BOOKS_KEY) await markImported(data);
   // punches laid over this save go back with the answer, so the till holds them before it saves again
-  res.json({ ok: true, rev: out.rev, ...(out.merged && Object.keys(out.merged).length ? { shiftDays: out.merged } : {}) });
+  res.json({ ok: true, rev: out.rev, ...(out.keptBills?.length ? { keptBills: out.keptBills } : {}), ...(out.merged && Object.keys(out.merged).length ? { shiftDays: out.merged } : {}) });
   // everyone on the books has a sign-in of their own: a customer added at the till gets one straight
   // away. It is nothing the save has to wait for, and it makes no text — the shop sends that.
   if (key === BOOKS_KEY) catchUpLogins(data).catch(e => console.error('sign-ins catch-up failed', e.message));
