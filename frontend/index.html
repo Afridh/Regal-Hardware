@@ -17856,7 +17856,7 @@ function pos(){
      : `<input id="q" placeholder="Scan a barcode, or type the item name or code…  (F1)" autocomplete="off"><div id="sug"></div>`}
    </div>
    <div class="card items"><table id="posTable"><tr><th>#</th><th>Item</th><th>Unit</th><th class="n">Qty</th><th class="n">MRP</th><th class="n">Price</th><th class="n">Disc</th><th class="n">Amount</th><th></th></tr>
-   ${L.length?L.map((l,i)=>{const p=P(l.pid);return `<tr class="${i===S.pos.sel?'sel':''}${l.qty<0?' retline':''}" data-i="${i}"><td>${i+1}</td><td>${p.name}<div class="muted">${p.code}${CFG.cost.atTill&&can('cost')?` · <span class="cc">${costCode(p.cost)}</span>`:''}${(()=>{const sp=lastSupplier(p.id);return sp?` · <span class="linesup">${sp.name.split(/[–(]/)[0].trim()}</span>`:''})()}</div></td><td>${p.unit}</td><td class="n"><input type="number" step="any" value="${l.qty}" data-edit="qty" data-i="${i}"></td>
+   ${L.length?L.map((l,i)=>{const p=P(l.pid);return `<tr class="${i===S.pos.sel?'sel':''}${l.qty<0?' retline':''}" data-i="${i}"><td>${i+1}</td><td>${lineName(l)}<div class="muted">${p.code}${CFG.cost.atTill&&can('cost')?` · <span class="cc">${costCode(p.cost)}</span>`:''}${(()=>{const sp=lastSupplier(p.id);return sp?` · <span class="linesup">${sp.name.split(/[–(]/)[0].trim()}</span>`:''})()}</div></td><td>${p.unit}</td><td class="n"><input type="number" step="any" value="${l.qty}" data-edit="qty" data-i="${i}"></td>
     <td class="n"><span class="muted">${mrpShown(p.mrp,l.price)?money2(p.mrp):'—'}</span>${p.mrp>l.price?`<div class="savetag sm">−${money2((p.mrp-l.price)*l.qty)}</div>`:''}
       ${l.belowCost?`<div class="tag bad" style="margin-top:2px">under cost · ${l.belowCost.split(' ')[0]}</div>`:''}
       ${l.qty>0&&l.qty>p.stock+1e-9?`<div class="tag warn" style="margin-top:2px">only ${fq(p.stock)} on the floor</div>`:''}
@@ -19623,13 +19623,13 @@ function csAskDel(i){
   const l=S.pos.lines[i]; if(!l) return;
   const p=P(l.pid);
   const m=modal(`<h2>Take this line off the bill?</h2>
-   <div class="paytop" style="margin:8px 0"><div class="pt-l"><span>${p.name}</span><b>${money2(l.qty*l.price-l.disc)}</b></div>
+   <div class="paytop" style="margin:8px 0"><div class="pt-l"><span>${lineName(l)}</span><b>${money2(l.qty*l.price-l.disc)}</b></div>
     <div class="pt-r"><span>${fq(l.qty)} ${p.unit} at ${money2(l.price)}</span>${l.disc?`<span>less ${money2(l.disc)}</span>`:''}</div></div>
    <div style="display:flex;justify-content:flex-end;gap:8px">
     <button class="btn ghost" id="cdNo">Keep it (Esc)</button>
     <button class="btn tape" id="cdYes">Take it off (Enter)</button></div>`);
   const yes=()=>{
-    logTrail('lineOff',`${p.name} — ${fq(l.qty)} ${p.unit} at ${money2(l.price)}`,{amount:l.qty*l.price-l.disc,who:C(S.pos.customer||1).name,ref:S.pos.editing||''});
+    logTrail('lineOff',`${lineName(l)} — ${fq(l.qty)} ${p.unit} at ${money2(l.price)}`,{amount:l.qty*l.price-l.disc,who:C(S.pos.customer||1).name,ref:S.pos.editing||''});
     S.pos.lines.splice(i,1); if(S.pos.sel>=S.pos.lines.length) S.pos.sel=S.pos.lines.length-1;
     stop(); m.remove(); render(); toast(`${p.name} taken off`) };
   const stopKeys=(ev)=>{ if(!document.body.contains(m)){ stop(); return }
@@ -21499,7 +21499,9 @@ function docToBill(no){
     +'<div class="d2b-face d2b-back"><span>NOW ON THE TILL</span><b>'+peekBillNo()+'</b>'
     +'<em>take the payment to finish it</em></div></div>';
   document.body.appendChild(fly);
-  S.pos={lines:doc.lines.map(l=>({pid:l.pid,qty:l.qty,price:l.price,disc:l.disc})),
+  // the lines as they were quoted (5 Nov 2026: only the item, qty and price were carried, so an open item came back as
+  // "Open item" and the bill was saved so, on every reprint after it; a name typed on a line and its warranty went too)
+  S.pos={lines:doc.lines.map(l=>{ const {mrp,auto,...k}=l; return isOpenLine(l)?{...k,open:true,auto:false}:k }),
     customer:doc.customerId===1?null:doc.customerId,billDisc:doc.billDisc,sel:-1,entry:null,
     lastBill:S.pos.lastBill,fromDoc:doc.no};
   closeModals(); go('pos'); persist(true);
@@ -21519,7 +21521,7 @@ function docList(){
       return String(d.no).toLowerCase().includes(q)
           || String(c.name||'').toLowerCase().includes(q)
           || String(c.phone||'').includes(q)
-          || (d.lines||[]).some(l=>{const p=P(l.pid)||{};return String(p.name||'').toLowerCase().includes(q)||String(p.code||'').toLowerCase().includes(q)})
+          || (d.lines||[]).some(l=>{const p=P(l.pid)||{};return String(l.name||p.name||'').toLowerCase().includes(q)||String(p.code||'').toLowerCase().includes(q)})
           || String(d.total.toFixed(2)).includes(q);
     })
     .sort((a,z)=>String(z.date+z.no).localeCompare(String(a.date+a.no)));
@@ -23325,7 +23327,7 @@ async function camWindow(o){
 }
 function billCopy(no){
   const s=S.sales.find(x=>x.no===no);
-  S.pos={lines:s.lines.map(l=>({pid:l.pid,qty:l.qty,price:price(P(l.pid)),disc:0})),
+  S.pos={lines:s.lines.map(l=>({pid:l.pid,qty:l.qty,price:isOpenLine(l)?l.price:price(P(l.pid)),disc:0,...(l.name?{name:l.name}:{}),...(isOpenLine(l)?{open:true,auto:false}:{})})),
     customer:s.customerId===1?null:s.customerId,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
   go('pos'); toast(`${s.lines.length} line${s.lines.length===1?'':'s'} from ${no} copied at today's prices`);
 }
@@ -24062,7 +24064,7 @@ function trailShow(id){
   modal(`<h2>${(TRAIL_KINDS[r.kind]||TRAIL_KINDS.other)[0]}</h2>
    <div class="hb-ask"><b>${b.ref||c.name}</b><span>${r.by} · ${String(r.date||'').slice(0,10)} ${r.time||''} · till ${r.till||'?'}${r.why?` · “${r.why}”`:''}</span></div>
    <table class="tbl" style="margin-top:10px"><tr><th>Item</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th></tr>
-    ${(b.lines||[]).map(l=>{const p=P(l.pid);return `<tr><td>${p?p.name:'(item removed)'}</td><td class="n">${fq(l.qty)}</td><td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}
+    ${(b.lines||[]).map(l=>{return `<tr><td>${lineName(l)}</td><td class="n">${fq(l.qty)}</td><td class="n">${money2(l.price)}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td></tr>`}).join('')}
     <tr><td colspan="3" class="n"><b>Total</b></td><td class="n"><b>${money2(Math.max(0,net))}</b></td></tr></table>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
     <button class="btn ghost" data-act="closeModal">Close</button>
