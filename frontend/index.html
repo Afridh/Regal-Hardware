@@ -5586,6 +5586,8 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
     const amt=+(-total).toFixed(2), owed=Math.max(0,partyBal('C',customerId)), onBills=+Math.min(amt,owed).toFixed(2);
     acct={amt,onBills,adv:+(amt-onBills).toFixed(2)}; credit=0;
   }
+  // the money has to add up BEFORE anything is written: it used to fail at the journal, after the bill and the stock were in, leaving half a bill for every press (5 Nov 2026)
+  if(credit<-0.005) throw new Error(total<0?`${fmt(-total)} goes back on this bill: give it in cash or take it off the customer's account`:`${fmt(paid)} taken on a bill of ${fmt(total)}: take the change off first`);
   lines.forEach(l=>{ if(l.qty<0) return;                      // a return goes back at what it was sold for
     const p=P(l.pid), net=(l.qty*l.price-(l.disc||0))/l.qty;
     if(net<p.cost-0.005&&!l.belowCost&&!override&&!(CFG.stock&&CFG.stock.allowBelowCost)) throw new Error(`${p.name} is under cost — an admin has to allow it`) });
@@ -18775,8 +18777,9 @@ function openPay(resume){
   const L=S.pos.lines; if(!L.length) return;
   const total=billTotal();
   const refund=total<-0.005;          // more came back than went out: the shop owes the customer
-  let taken=(resume&&resume.taken)||[], note=(resume&&resume.note)||'';
+  let taken=(resume&&resume.taken)||[], note=(resume&&resume.note)||'', toAcct=false;
   const resumeBox=resume&&resume.box;
+  const kinds=refund?[['CASH','Give back in cash','Enter'],['CREDIT','Take off their account','C']]:PAY_KINDS;   // a refund is all of it, one way or the other (as on the Returns page)
   const c=()=>C(S.pos.customer||1);
   const paidOf=(k)=>taken.filter(p=>p.method===k).reduce((a,p)=>a+p.amount,0);
   const paid=()=>taken.filter(p=>p.method!=='CREDIT').reduce((a,p)=>a+p.amount,0);
@@ -18796,8 +18799,8 @@ function openPay(resume){
       <div class="payw-l">
        <div class="pw-f"><label>${refund?'REFUND DUE':'NET TOTAL'}</label><b class="pw-net">${money2(refund?-total:total)}</b></div>
        <div class="pw-f on"><label>${refund?'GIVEN BACK':'AMOUNT PAID'}</label>
-        <input id="payAmt" type="number" step="any" inputmode="decimal" value="${inBox?inBox.toFixed(2):''}" placeholder="0.00">
-        <div class="pw-presets">
+        <input id="payAmt" type="number" step="any" inputmode="decimal" value="${refund?(-total).toFixed(2):inBox?inBox.toFixed(2):''}" placeholder="0.00" ${refund?'readonly':''}>
+        <div class="pw-presets" ${refund?'style="display:none"':''}>
          <button type="button" class="pw-preset-btn" data-preset="exact">Exact</button>
          <button type="button" class="pw-preset-btn" data-preset="100">+100</button>
          <button type="button" class="pw-preset-btn" data-preset="500">+500</button>
@@ -18805,24 +18808,25 @@ function openPay(resume){
          <button type="button" class="pw-preset-btn" data-preset="5000">+5,000</button>
         </div>
        </div>
-       <div class="pw-f"><label>${refund?'STILL TO GIVE BACK':(shown<-0.005?'CHANGE':'CREDIT AMOUNT')}</label>
+       <div class="pw-f" ${refund?'style="display:none"':''}><label>${refund?'STILL TO GIVE BACK':(shown<-0.005?'CHANGE':'CREDIT AMOUNT')}</label>
         <b class="pw-cr ${shown<-0.005?'chg':(shown>0.005?'due':'nil')}" id="payLeft">${money2(Math.abs(shown))}</b></div>
        <div class="pw-f"><label>NOTE</label><input id="payNote" value="${note}" placeholder="anything for the bill"></div>
        <div class="pw-f"><label>LEDGER NO</label><input id="payLedger" value="${escM(S.pos.ledger!=null?S.pos.ledger:(c().id!==1&&c().ledger)||'')}" placeholder="page in the ledger book"></div>
       </div>
       <div class="payw-m">
-       <table class="pw-brk">
+       ${refund?`<div class="card note"><b>Goods back: ${money2(-total)} goes back to the customer.</b><br>Enter or PRINT gives it in cash and prints the bill. C takes it off their account.</div>`:''}
+       <table class="pw-brk" ${refund?'style="display:none"':''}>
         ${PAY_KINDS.map(([k,l])=>`<tr class="${paidOf(k)?'has':''}"><td>${l}</td><td class="n">${money2(paidOf(k))}</td></tr>`).join('')}
         <tr class="tot"><td>Total amount paid</td><td class="n">${money2(paid()+credit())}</td></tr>
        </table>
        ${taken.length?`<div class="pw-lines">${taken.map((p,i)=>`<div><span>${p.label}</span><b>${money2(p.amount)}</b><button class="btn ghost sm" data-payrm="${i}">✕</button></div>`).join('')}</div>`:''}
       </div>
       <div class="payw-r">
-       ${PAY_KINDS.map(([k,l,key])=>`<button class="pw-btn" data-paym="${k}" ${k==='CREDIT'&&c().id===1?'title="asks who the customer is"':''}>${l.toUpperCase()} <i>(${key}${{CREDIT:' / F11',CARD:' / F9',CHEQUE:' / F8',BANK:' / F7'}[k]||''})</i></button>`).join('')}
+       ${kinds.map(([k,l,key])=>`<button class="pw-btn" data-paym="${k}" ${k==='CREDIT'&&c().id===1?'title="asks who the customer is"':''}>${l.toUpperCase()} <i>(${key}${{CREDIT:' / F11',CARD:' / F9',CHEQUE:' / F8',BANK:' / F7'}[k]||''})</i></button>`).join('')}
        <div class="pw-row">
         <button class="pw-btn red" id="payDel">DELETE <i>(Del)</i></button>
         <button class="pw-btn red" id="payPrint">PRINT <i>(P)</i></button></div>
-       <div class="muted" style="font-size:11px;margin-top:6px">Type the amount and press the kind. The box refills with what is left. PRINT with a balance left puts it on the customer's account.</div>
+       <div class="muted" style="font-size:11px;margin-top:6px;${refund?'display:none':''}">Type the amount and press the kind. The box refills with what is left. PRINT with a balance left puts it on the customer's account.</div>
       </div>
      </div>`;
     const box=stage.querySelector('#payAmt');
@@ -18856,6 +18860,14 @@ function openPay(resume){
   const amountInBox=()=>+((stage.querySelector('#payAmt')||{}).value)||0;
   const take=(kind)=>{
     if(m._busy) return;
+    if(refund){
+      if(kind==='CASH') return finish();
+      if(kind!=='CREDIT') return toast('A refund goes back in cash, or off the customer\'s account','warn');
+      if(!S.pos.customer){ const keep={note,then:'CREDIT'}; stop(); m.remove();
+        return pickCustomer(()=>{ if(S.pos.customer) openPay(keep); else toast('Nobody picked — the bill is still on the screen') }) }
+      toAcct=true; return finish();
+    }
+    if(kind==='CASH'&&Math.abs(total)<=0.005) return finish();   // an even exchange: nothing to take, only the bill to make
     let amt=+amountInBox().toFixed(2);
     if(!(amt>0)) amt=left()>0?left():0;
     if(!(amt>0)) return toast('Nothing left to pay');
@@ -18942,6 +18954,7 @@ function openPay(resume){
   // PRINT: whatever is still owed goes on the account, then the bill goes out
   const printNow=()=>{
     if(m._busy) return;
+    if(refund) return take('CASH');
     const inBox=amountInBox();
     if(inBox>0&&left()>0.005&&!taken.length){ taken.push({method:'CASH',label:'Cash',amount:+inBox.toFixed(2)}) }
     if(left()>0.005){
@@ -18968,8 +18981,8 @@ function openPay(resume){
       if(!confirm(`${cust.name} — outstanding ${fmt(partyBal('C',cust.id))} against a limit of ${fmt(cust.limit)}.\nThis bill takes them to ${fmt(partyBal('C',cust.id)+cr)}. Allow it?`)){ taken=taken.filter(p=>p.method!=='CREDIT'); draw(); return }
       override=true;
     }
-    const change=Math.max(0,-left());
-    let back=change; const pays=[];
+    const change=refund?0:Math.max(0,-left());
+    let back=change; const pays=refund&&!toAcct?[{method:'CASH',amount:+billTotal().toFixed(2)}]:[];
     [...taken].reverse().forEach(p=>{
       if(p.method==='CASH'){ const b=Math.min(back,p.amount); back-=b; const use=+(p.amount-b).toFixed(2); if(use>0) pays.unshift({method:'CASH',amount:use}) }
       else if(p.method==='CARD'||p.method==='BANK') pays.unshift({method:'CARD',bank:p.bank,amount:p.amount,ref:p.ref,kind:p.method});
@@ -18980,10 +18993,11 @@ function openPay(resume){
     });
     m._busy=true;
     try{
-      const inv=finishTillBill({cust,pays,override,note});
+      const inv=finishTillBill({cust,pays,override,note,toAccount:toAcct});
       stop(); m.remove(); render(); persist(true);
       billSaved(inv);
       if(change>0.005) toast(`Change ${fmt(change)}`);
+      if(refund) toast(toAcct?`${fmt(-inv.total)} taken off ${cust.name}'s account`:`Give back ${fmt(-inv.total)} in cash`,'ok');
       askSize(inv);
     }catch(e){ m._busy=false; toast(e.message) }
   };
@@ -19014,7 +19028,7 @@ function openPay(resume){
   const stop=()=>document.removeEventListener('keydown',handler,true);
   draw();
   // back from picking the customer: carry on with what was being done, no retyping
-  if(resume&&resume.then==='CREDIT'&&left()>0.005){ take('CREDIT') }
+  if(resume&&resume.then==='CREDIT'&&(refund||left()>0.005)){ take('CREDIT') }
   else if(resume&&resume.then==='PRINT'){ printNow() }
 }
 
