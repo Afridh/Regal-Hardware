@@ -26064,6 +26064,7 @@ function regalA5Pages(o){
     const d=document.createElement('div'); d.className='a5-sheet'; d.style.cssText='width:210mm;padding:6mm 6mm 0;box-sizing:border-box;overflow:hidden;'+(last?'':'break-after:page;');
     p.parentNode.insertBefore(d,p); d.appendChild(p); return p };
   sheet(first,true);                     // at its own width, so the rows wrap as they will print
+  if(first.querySelector('.a5-pg')) return 1;   // already one page of a bill: the till sent it page by page
   const tbl=first.querySelector('table.x-tbl,table.sp-tbl'), rows=tbl&&tbl.tBodies[0]?[...tbl.tBodies[0].rows]:[];
   if(!rows.length) return 1;
   let top=tbl; while(top.parentElement!==first) top=top.parentElement;
@@ -26128,7 +26129,37 @@ async function queuePrintHtml(html,no,f){
 }
 /* One road to paper for every document — bill, quotation, voucher: the helper on this machine, then the
    shop's queue, and failing both whatever fallback the caller gives (the browser, or a modal). */
+/* A long A5 bill leaves the till page by page (5 Nov 2026): measured here in a hidden frame and sent as one document a
+   page, so whatever does the printing, an older Regal POS or print helper included, prints each at full size. It used
+   to wait on an update of those programs, and until then shrank the whole bill onto one sheet. Should anything go wrong
+   here the bill simply goes out whole, as before. */
+async function a5PageDocs(html){
+  if((html.match(/<tr[ >]/g)||[]).length<6) return [html];        // a short bill: nothing to measure
+  const fr=document.createElement('iframe');
+  fr.style.cssText='position:fixed;left:-9999px;top:0;width:733px;height:800px;border:0;visibility:hidden';
+  document.body.appendChild(fr);
+  try{
+    // this copy is only for measuring: it follows the print rules, as a frame on the screen otherwise would not
+    const d=fr.contentDocument; d.open(); d.write(html.replace(/@media\s+print/g,'@media all').replace(/@media\s+screen/g,'@media not all')); d.close();
+    const nap=ms=>new Promise(r=>setTimeout(r,ms)), w=fr.contentWindow;
+    await Promise.race([Promise.all([...d.images].map(i=>i.complete?0:new Promise(r=>{ i.onload=i.onerror=r }))),nap(1500)]);
+    if(d.fonts) await Promise.race([d.fonts.ready,nap(1500)]);
+    if(!w.regalA5Pages||w.regalA5Pages({limit:510})<2) return [html];
+    return [...d.querySelectorAll('#printArea .print')].map(p=>{ p.style.breakAfter=''; return printDocument(p.outerHTML,'a5') });
+  }catch(e){ return [html] }
+  finally{ fr.remove() }
+}
 function printPaper(html,f,no,fallback){
+  if(f!=='a5') return printPaperOne(html,f,no,fallback);
+  a5PageDocs(html).then(async docs=>{
+    if(docs.length<2) return printPaperOne(docs[0],f,no,fallback);
+    for(let i=0;i<docs.length;i++){   // in order, each once the one before has gone
+      const went=await new Promise(res=>printPaperOne(docs[i],f,no?no+' page '+(i+1):'',why=>res({why}),()=>res(true)));
+      if(went!==true){ if(typeof fallback==='function') fallback(went.why); return }
+    }
+  });
+}
+function printPaperOne(html,f,no,fallback,sent){
   const toMain=(CFG.bill&&CFG.bill.printTo)==='main';
   const onThisMachine=()=>agentPrintHtml(html,no,f);
   const atTheCounter=()=>queuePrintHtml(html,no,f);
@@ -26136,8 +26167,8 @@ function printPaper(html,f,no,fallback){
   const then=toMain?onThisMachine:atTheCounter;
   const done=(v)=>v===true||!!(v&&v.ok===true);
   const why=(v)=>(v&&v.why)||'';
-  first().then(a=>{ if(done(a)) return;
-    then().then(b=>{ if(done(b)) return; if(typeof fallback==='function') fallback(why(b)||why(a)); });
+  first().then(a=>{ if(done(a)) return sent&&sent();
+    then().then(b=>{ if(done(b)) return sent&&sent(); if(typeof fallback==='function') fallback(why(b)||why(a)); });
   });
 }
 /* The browser's own print for one document, sized to fit: an 80mm roll cut to length, or A5 landscape

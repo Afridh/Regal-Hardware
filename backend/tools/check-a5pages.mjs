@@ -58,6 +58,32 @@ for (const style of ['sepos', 'boxed', 'bw', 'bands', 'standard']) {
   const t = await open(html, 733), s4 = await read(t);
   ok(s4.length === 1 && s4[0].rows.length === 45, `${style}: not called, the whole bill in one sheet (an older program, nothing lost)`); await t.close();
 }
+// the till sends it page by page: what an older Regal POS or helper does with each document (never to a printer: answered here)
+const posted = []; let held = 0;
+pg.removeAllListeners('request');
+pg.on('request', rq => { const u = rq.url(); if (!/:41\d\d/.test(u)) return rq.continue();
+  const head = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Access-Control-Allow-Private-Network': 'true' };
+  if (rq.method() === 'OPTIONS') return rq.respond({ status: 204, headers: head });
+  if (u.endsWith('/print')) { posted.push(JSON.parse(rq.postData())); return setTimeout(() => rq.respond({ status: 200, headers: head, contentType: 'application/json', body: JSON.stringify({ ok: true, printer: 'nothing, a test' }) }), 150) }
+  return rq.abort() });
+await pg.evaluate(() => { window.__keepTo = window.eval('CFG').bill.printTo; window.eval('CFG').bill.printTo = ''; window.eval('CFG').print = { agent: 'http://localhost:4100' } });
+const sendBill = async (n, style) => { posted.length = 0; const html = await doc(n, style); await pg.evaluate(h => { window.eval('printPaper')(h, 'a5', 'PG-TEST', () => { window.__fell = true }) }, html); await wait(n > 10 ? 3500 : 1200); return posted.map(p => p.html) };
+for (const style of ['sepos', 'boxed', 'bw']) {
+  const docs = await sendBill(27, style), seen = [];
+  ok(docs.length >= 2, `${style}: a 27-line bill leaves the till as ${docs.length} documents`, posted.map(p => p.no).join(', '));
+  for (const h of docs) { const p = await open(h, 733); const sh = await read(p); seen.push(...sh);
+    if (sh.length !== 1 || sh[0].h > 520) held++; await p.close() }   // not calling regalA5Pages: as the older programs do
+  ok(!held && seen.length === docs.length, `${style}: to an older program each is one page, none over the page height, so none is shrunk`, JSON.stringify(seen.map(s => s.h)));
+  const rows = seen.flatMap(s => s.rows);
+  ok(rows.length === 27 && rows.every((v, i) => v === i + 1), `${style}: all 27 rows, once each, in order`);
+  ok(seen.every((s, i) => s.page.startsWith(`Page ${i + 1} of ${docs.length}`) && s.total === (i === docs.length - 1)), `${style}: each says its page, totals on the last`);
+  const q = await open(docs[0], 794);
+  ok(await q.evaluate(() => window.regalA5Pages({ sheets: true })) === 1, `${style}: Regal POS 1.1.3 does not share a page out again`); await q.close();
+}
+const shortDocs = await sendBill(4, 'sepos');
+ok(shortDocs.length === 1 && !/<div class="a5-pg"/.test(shortDocs[0]), 'a 4-line bill goes as one document, no page mark', String(shortDocs.length));
+ok(!(await pg.evaluate(() => window.__fell)), 'the fallback was never needed');
+await pg.evaluate(() => { window.eval('CFG').bill.printTo = window.__keepTo });
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);
 await b.close();
