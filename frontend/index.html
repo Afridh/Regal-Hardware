@@ -7374,7 +7374,7 @@ function settings(){
       <div class="f"><label>&nbsp;</label>${fld('done.askSize','','Ask which bill each time (Enter takes the usual one)','check')}</div></div>
      ${fld('done.rememberPick','','Tick "remember my choice" by default on that question','check')}
      <h2 style="margin-top:14px">What is asked once the money is taken</h2>
-     <div class="grid2">${fld('done.askCustomer','','Ask for the customer&rsquo;s mobile number. Found, or added if new, the bill goes in their name and the e-bill goes to them as well as the print; left empty, it stays a walk-in sale','check')}
+     <div class="grid2">${fld('done.askCustomer','','Ask for the customer&rsquo;s mobile number. Found, or added if new, the bill goes in their name and the e-bill goes to them, then Enter prints the bill and Esc leaves it at the e-bill; left empty, it stays a walk-in sale and prints','check')}
       ${fld('done.askSalesman','','Ask who sold it, so the bill counts towards that salesperson&rsquo;s figures','check')}</div>
      <div class="muted">Neither question moves a price &mdash; by then the bill is agreed and paid, so only the name is added. A bill that already has its customer (anything on account) or a salesperson picked with F3 is not asked again, and Esc on either question lets the bill straight out.</div>
      <h2 style="margin-top:14px">The notice when a bill goes in</h2>
@@ -19060,12 +19060,29 @@ function finishTillBill({cust,pays,override=false,note='',toAccount=false}){
 
 /* ---- which bill goes out: a credit bill is the big A5, a cash bill the till receipt ---- */
 
+/* the next step once the e-bill has gone (5 Nov 2026, the owner asked): Enter prints, Esc leaves it at the e-bill. The bill is already saved. */
+function askPrintBill(inv,k){
+  const c=C(inv.customerId);
+  const m=modal(`<div id="bpAsk"><h2>${inv.no} · ${fmt(inv.total)}</h2>
+   <div class="muted">E-bill sent to ${noteEsc(c.phone)}. The bill is saved.</div>
+   <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><button class="btn tape" id="bpYes">Print the bill <i class="kbd">Enter</i></button>
+   <button class="btn ghost" id="bpNo">No print <i class="kbd">Esc</i></button></div></div>`);
+  const end=print=>{ window.removeEventListener('keydown',key,true); m.remove(); printAnim(inv,print?k:'none') };
+  const key=e=>{ if(!document.body.contains(m)){ window.removeEventListener('keydown',key,true); return }
+    if(e.key!=='Enter'&&e.key!=='Escape') return; e.preventDefault(); e.stopPropagation(); if(e.repeat) return; end(e.key==='Enter') };   // a held Enter from the number box does not print
+  window.addEventListener('keydown',key,true);
+  m.querySelector('#bpYes').onclick=()=>end(true); m.querySelector('#bpNo').onclick=()=>end(false);
+  m.querySelector('#bpYes').focus();
+}
 function askSize(inv){
   const kind=inv.balance>0?'CREDIT':'CASH';
   let def=(kind==='CREDIT'?CFG.done.creditDefault:CFG.done.cashDefault) || 'r80'; if(kind==='CREDIT'&&def==='r80') def='a5';
   const c=C(inv.customerId);
   if(typeof CS!=='undefined'&&CS.paper){ const k=CS.paper; CS.paper=null; if(k!=='none') S.pos.lastBill=k; return printAnim(inv,k) }   // picked on the bill itself — no question
-  if(!CFG.done.askSize){ S.pos.lastBill=def; return printAnim(inv,def==='sms'&&!c.phone?'r80':def) }
+  const given=billNumberGiven; billNumberGiven=false;
+  if(!CFG.done.askSize){ S.pos.lastBill=def; const k=def==='sms'&&!c.phone?'r80':def;
+    if(given&&c.phone&&CFG.msg.autoBill&&inv.total>0.005&&k!=='sms') return askPrintBill(inv,k);
+    return printAnim(inv,k) }
   const opts=[...(kind==='CREDIT'?[]:[['r80','1','80mm Till receipt','80mm thermal — quick for the counter']]),
               ['a5','2','Printed bill','A5 landscape — full bill with outstanding boxes'],
               ['sms','3','e-Bill by text',c.phone?`link to ${maskP(c.phone)}`:'no mobile on file'],
@@ -20896,7 +20913,9 @@ function pickSalesman(after){
 const freeCustCode=()=>{ const used=new Set(S.customers.map(c=>String(c.code||'').toUpperCase())); let n=S.customers.length+1, k; do{ k='C'+String(n++).padStart(4,'0') }while(used.has(k)); return k };
 // a Sri Lankan mobile however it was keyed: 077 123 4567, +94 77 123 4567, 94771234567, 771234567 all come out 0771234567
 const mobNorm=v=>{ const d=String(v||'').replace(/\D/g,''); return /^94\d{9}$/.test(d)?'0'+d.slice(2):/^7\d{8}$/.test(d)?'0'+d:d };
+let billNumberGiven=false;       // the customer's number was keyed at the end of this bill, so its e-bill has gone and the print is the next step
 function endBillAsk(done){
+  billNumberGiven=false;
   const wantCust=CFG.done.askCustomer&&!S.pos.customer;
   const wantSales=CFG.done.askSalesman&&!S.pos.salesman;
   if(!wantCust&&!wantSales) return done();
@@ -20907,12 +20926,12 @@ function endBillAsk(done){
 /* the number first: it is what the counter has to hand, and it finds them in one go */
 function askBillCustomer(done){
   const m=modal(`<h2>Customer's number</h2>
-   <div class="muted">The e-bill goes to this number as well as the print, and a new number joins your customers. Leave it empty for a walk-in.</div>
+   <div class="muted">Key the number and press Enter: the e-bill goes to them, then you choose whether to print. A new number joins your customers. Leave it empty and press Enter for a walk-in.</div>
    <input id="bqQ" placeholder="07… or a name" autocomplete="off" style="margin-top:8px">
    <div id="bqL" style="margin-top:10px;max-height:280px;overflow:auto"></div>
    <div class="card note" id="bqNew" style="margin-top:10px;display:none">
     <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
-     <b>A new customer</b><span class="muted">The mobile is enough. A name if you have it, or Enter to go on.</span></div>
+     <b>A new customer</b><span class="muted">Enter to go on. The name is not needed: Tab to add one.</span></div>
     <div class="grid2" style="margin-top:8px">
      <div class="f"><label>Mobile</label><input id="bqPh" placeholder="07…" autocomplete="off"></div>
      <div class="f"><label>Name <span class="muted">(can wait)</span></label><input id="bqNm" placeholder="Name or shop" autocomplete="off"></div></div>
@@ -20935,7 +20954,7 @@ function askBillCustomer(done){
   const close=()=>{ window.removeEventListener('keydown',key,true); m.remove() };
   const skip=()=>{ close(); done() };
   // the bill takes their name — nothing is repriced, the money is already agreed
-  const take=(id)=>{ const c=C(id); S.pos.customer=id; close(); render();
+  const take=(id)=>{ const c=C(id); S.pos.customer=id; billNumberGiven=true; close(); render();
     toast(`${c.name} — bill in their name${c.level==='wholesale'?', at the counter prices already keyed':''}`); done() };
 
   const draw=()=>{
@@ -20967,6 +20986,7 @@ function askBillCustomer(done){
     e.stopPropagation();                                  // the payment window behind must not see any of this
     if(e.key==='Escape'){ e.preventDefault(); skip(); return }
     const inNew=e.target&&e.target.closest&&e.target.closest('#bqNew');
+    if(!inNew&&e.key==='Tab'&&box.style.display!=='none'){ e.preventDefault(); nm.focus(); return }   // to the name, past the number already keyed
     if(!inNew&&e.key==='ArrowDown'){ e.preventDefault(); cur=Math.min(rows().length-1,cur+1); picked=true; mark(); return }
     if(!inNew&&e.key==='ArrowUp'){ e.preventDefault(); cur=Math.max(0,cur-1); picked=true; mark(); return }
     if(e.key!=='Enter') return;
@@ -20978,7 +20998,8 @@ function askBillCustomer(done){
     // part of a number never picks anybody by Enter alone: the bill, and now its text, would go to a stranger (5 Nov 2026)
     if(r&&/^[\d\s+]+$/.test(v)&&!/^0\d{9}$/.test(mobNorm(v))&&!picked) return toast('Key the whole number, or pick them from the list with the arrows');
     if(r) return take(+r.dataset.bqid);
-    (/^0\d{9}$/.test(mobNorm(v))||isPhone(v)?nm:ph).focus();   // no match: on to the name, and Enter there adds them, named or not
+    if(/^0\d{9}$/.test(mobNorm(v))) return add();          // a new number: added there and then, the name is not needed (5 Nov 2026, the owner asked)
+    (isPhone(v)?nm:ph).focus();                           // anything else: finish it in the boxes
   };
   window.addEventListener('keydown',key,true);
   m.addEventListener('click',e=>{ if(e.target===m) skip() });   // clicking away is a skip, never a dead end

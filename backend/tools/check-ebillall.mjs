@@ -1,5 +1,5 @@
 // Every customer an e-bill as well as the print, and registered by the mobile (5 Nov 2026). Through the real till, on End:
-//  · a new mobile, no name: Enter, Enter: a new customer, the bill in their name, the printer gets it AND the e-bill goes out
+//  · a new mobile, no name: Enter: a new customer, the bill in their name, the e-bill goes out; the next step, Enter, prints it; Esc does not
 //  · with a name typed; a number keyed as +94… or 77… finds the customer already there, by their second mobile too: no double
 //  · left empty: a walk-in, printed, no text
 //  · a bad number is refused; a new code never repeats one; a shop with the switches off gets them on, once
@@ -38,26 +38,42 @@ const setUp = () => pg.evaluate(() => { document.querySelectorAll('.modal').forE
 const until = async fn => { for (let i = 0; i < 30; i++) { if (await pg.evaluate(fn)) return true; await wait(100) } return false };
 // to the question: End, the amount taken, it asks
 const toQuestion = async () => { await setUp(); await wait(300); await pg.focus('#csQ'); printed.length = 0; await pg.keyboard.press('End'); return until(() => !!document.getElementById('bqQ')) };
+const printStep = () => until(() => !!document.getElementById('bpAsk'));
 const billDone = () => until(() => !document.querySelector('.payw') && !document.getElementById('bqQ'));
 const last = () => pg.evaluate(() => { const S = window.eval('S'), s = S.sales.at(-1), c = window.eval('C')(s.customerId); return { no: s.no, cid: s.customerId, name: c.name, phone: c.phone, code: c.code, level: c.level, msgs: S.messages.filter(m => m.body.includes(s.no) && /View your bill/.test(m.body)).map(m => ({ to: m.to, link: /\/b\//.test(m.body) || /regalhw|localhost/.test(m.body) })), customers: S.customers.length } });
 
 ok(await pg.evaluate(() => { const c = window.eval('CFG'); return c.done.askCustomer === true && c.msg.autoBill === true }), 'both switches are on in this shop');
 ok(await toQuestion(), 'End (cash) asks for the number first');
-ok(/e-bill goes to this number as well as the print/.test(await pg.evaluate(() => document.querySelector('.modal:last-of-type').innerText) + await pg.evaluate(() => [...document.querySelectorAll('.modal')].map(m => m.innerText).join(' '))), 'the question says what it is for');
+ok(/the e-bill goes to them, then you choose whether to print/.test(await pg.evaluate(() => document.querySelector('.modal:last-of-type').innerText) + await pg.evaluate(() => [...document.querySelectorAll('.modal')].map(m => m.innerText).join(' '))), 'the question says what it is for');
 const before = await pg.evaluate(() => window.eval('S').customers.length);
 // 1. a new mobile, nothing else: Enter, Enter
 await pg.keyboard.type(mob(1)); await wait(100); await pg.keyboard.press('Enter'); await wait(150);
-ok(await pg.evaluate(() => document.activeElement.id === 'bqNm'), 'a new number: Enter goes to the name');
-await pg.keyboard.press('Enter'); await billDone(); await wait(500);
 let r = await last();
-ok(r.customers === before + 1 && r.phone === mob(1) && r.name === 'Customer ' + mob(1), 'Enter on the empty name: registered by the mobile alone', JSON.stringify({ name: r.name, phone: r.phone, code: r.code }));
+ok(r.customers === before + 1 && r.phone === mob(1) && r.name === 'Customer ' + mob(1), 'a new number: Enter registers them by the mobile alone, no name asked', JSON.stringify({ name: r.name, phone: r.phone, code: r.code }));
 ok(r.msgs.length === 1 && r.msgs[0].to === mob(1) && r.msgs[0].link, 'the e-bill with its link goes to that number', JSON.stringify(r.msgs));
-ok(printed.length >= 1, 'and the bill is printed as well', printed.join());
+ok(await printStep() && printed.length === 0, 'the next step asks; nothing printed yet', printed.join());
+ok(await pg.evaluate(n => document.getElementById('bpAsk').innerText.includes(n), mob(1)), 'it says where the e-bill went');
+if (process.env.SHOT) await pg.screenshot({ path: process.env.SHOT + '/print-step.png' });
+await pg.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true }))); await wait(300);
+ok(printed.length === 0 && await pg.evaluate(() => !!document.getElementById('bpAsk')), 'an Enter still held down from the number box does not print');
+await pg.keyboard.press('Enter'); await wait(500); await pg.keyboard.press('Enter'); await wait(300);
+ok(printed.length === 1 && await pg.evaluate(() => !document.getElementById('bpAsk')), 'Enter on the next step prints it, once, and the step closes', printed.join());
+// Esc: the e-bill only, the bill still saved
+const nEsc = await pg.evaluate(() => window.eval('S').sales.length);
+await toQuestion(); await pg.keyboard.type(mob(1)); await wait(150); await pg.keyboard.press('Enter'); await printStep(); await pg.keyboard.press('Escape'); await wait(500);
+r = await last(); ok(printed.length === 0 && r.msgs.length === 1 && await pg.evaluate(n => window.eval('S').sales.length === n + 1 && !document.getElementById('bpAsk'), nEsc), 'Esc on the next step: no print, the e-bill gone, the bill saved', JSON.stringify({ printed, msgs: r.msgs.length }));
+// a customer already on the bill is not asked twice; one found by name with no mobile has no e-bill, so it just prints
+await setUp(); await wait(300); await pg.evaluate(() => { const S = window.eval('S'); S.pos.customer = S.customers.find(c => c.id !== 1 && c.active !== false && c.phone).id; window.eval('render')() }); await wait(300); await pg.focus('#csQ'); printed.length = 0; await pg.keyboard.press('End'); await wait(1500);
+ok(printed.length >= 1 && await pg.evaluate(() => !document.getElementById('bpAsk') && !document.getElementById('bqQ')), 'a customer chosen before the bill ended: no questions, it prints', printed.join());
+await pg.evaluate(() => { const S = window.eval('S'), n = S.customers.find(c => c.id !== 1 && c.active !== false && !c.phone); if (!n) S.customers.push({ id: 99998, code: 'NOPH1', name: 'Nophone Traders', phone: '', level: 'retail', limit: 25000 }); window._np = n ? n.name : 'Nophone Traders' });
+const npName = await pg.evaluate(() => window._np);
+await toQuestion(); await pg.keyboard.type(npName); await wait(200); await pg.keyboard.press('Enter'); await wait(1500);
+ok(printed.length >= 1 && await pg.evaluate(() => !document.getElementById('bpAsk')), 'found by name, no mobile on their card: no e-bill, so it just prints', npName);
 const cid1 = r.cid, code1 = r.code;
 // 2. with a name
 ok(await toQuestion(), 'the next bill asks again');
-await pg.keyboard.type(mob(2)); await pg.keyboard.press('Enter'); await wait(150); await pg.keyboard.type('Sunil Mason'); await pg.keyboard.press('Enter'); await billDone(); await wait(500);
-r = await last(); ok(r.name === 'Sunil Mason' && r.phone === mob(2) && r.code !== code1, 'a name typed is kept, and the code is its own', JSON.stringify({ name: r.name, code: r.code })); const cid2 = r.cid;
+await pg.keyboard.type(mob(2)); await wait(150); await pg.keyboard.press('Tab'); await pg.keyboard.type('Sunil Mason'); await pg.keyboard.press('Enter'); await billDone(); await wait(500);
+r = await last(); ok(r.name === 'Sunil Mason' && r.phone === mob(2) && r.code !== code1, 'Tab goes to the name: one typed is kept, and the code is its own', JSON.stringify({ name: r.name, code: r.code })); const cid2 = r.cid;
 // 3. the same customer, however the number is keyed: never twice
 const n2 = await pg.evaluate(() => window.eval('S').customers.length);
 for (const [label, keyed] of [['as +94', '+94 ' + mob(1).slice(1)], ['without the 0', mob(1).slice(1)], ['with spaces', mob(1).slice(0, 3) + ' ' + mob(1).slice(3)]]) {
@@ -81,7 +97,7 @@ r = await last(); ok(r.cid === 1 && r.customers === n2, 'Enter with the box empt
 // 5. the code is never one in use
 ok(await pg.evaluate(() => { const S = window.eval('S'), want = 'C' + String(S.customers.length + 1).padStart(4, '0'); S.customers.push({ id: 99999, code: want, name: 'Code Clash', phone: '', active: false }); const got = window.eval('freeCustCode')(); S.customers.pop(); return got !== want }), 'a new code skips one already in use');
 // tidy: the test customers and bills go
-await pg.evaluate(ids => { const S = window.eval('S'), nos = S.sales.filter(s => ids.includes(s.customerId) || s.customerId === 1 && /^\d+$/.test(s.no) && false).map(s => s.no); window._allowWipeOnce = Date.now(); S.sales = S.sales.filter(s => !nos.includes(s.no)); S.journal = S.journal.filter(j => !nos.includes(j.ref)); S.customers = S.customers.filter(c => !ids.includes(c.id)); window.eval('persist')(true) }, [cid1, cid2]); await wait(1500);
+await pg.evaluate(ids => { const S = window.eval('S'), nos = S.sales.filter(s => ids.includes(s.customerId) || s.customerId === 1 && /^\d+$/.test(s.no) && false).map(s => s.no); window._allowWipeOnce = Date.now(); S.sales = S.sales.filter(s => !nos.includes(s.no)); S.journal = S.journal.filter(j => !nos.includes(j.ref)); S.customers = S.customers.filter(c => !ids.includes(c.id) && c.id !== 99998); window.eval('persist')(true) }, [cid1, cid2]); await wait(1500);
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);
 await b.close();
