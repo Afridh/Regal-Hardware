@@ -1,6 +1,7 @@
 // A long large bill on real pages (5 Nov 2026), checked on PDF, never on paper.
 //  · every design: a 45-line bill makes several sheets, each row once and in order, each sheet no taller than the page,
 //    the column heads on every sheet, the totals only on the last, "Page 1 of n" on each
+//  · the letterhead and customer band on the first sheet only, and later sheets use that room for rows
 //  · the PDF has as many pages as there are sheets, with real text in it
 //  · a bill that fits one page is untouched; as pictures (the helper's way, 733 wide) it is paged the same way
 //  · a program that does not call it still has the whole bill in one sheet (as before: nothing lost)
@@ -34,7 +35,7 @@ const open = async (html, width) => { const p = await b.newPage(); p.on('pageerr
   await p.evaluate(() => { document.body.classList.add('direct-print'); const st = document.createElement('style'); st.textContent = '@page{size:A5 landscape;margin:0}html,body{margin:0!important;padding:0!important;background:#fff!important}'; document.head.appendChild(st) }); await wait(150); return p };
 const read = p => p.evaluate(() => { const sh = [...document.querySelectorAll('#printArea .print')];
   const row = s => [...s.querySelectorAll('table.x-tbl tbody tr,table.sp-tbl tbody tr')].map(r => (r.innerText.match(/LINE-(\d+)/) || [])[1]).filter(Boolean).map(Number);
-  return sh.map(s => ({ h: Math.round(s.getBoundingClientRect().height), rows: row(s), head: !!s.querySelector('thead'), total: /INVOICE TOTAL|Net Total/i.test(s.innerText), page: (s.querySelector('.a5-pg') || {}).textContent || '' })) });
+  return sh.map(s => ({ top: !!s.querySelector('.x-head,.sp-top,.x-band,.sp-head'), h: Math.round(s.getBoundingClientRect().height), rows: row(s), head: !!s.querySelector('thead'), total: /INVOICE TOTAL|Net Total/i.test(s.innerText), page: (s.querySelector('.a5-pg') || {}).textContent || '' })) });
 for (const style of ['sepos', 'boxed', 'bw', 'bands', 'standard']) {
   const html = await doc(45, style), p = await open(html, 794);
   const n = await p.evaluate(() => window.regalA5Pages({ sheets: true })); await wait(100);
@@ -44,6 +45,8 @@ for (const style of ['sepos', 'boxed', 'bw', 'bands', 'standard']) {
   ok(sh.every(s => s.h <= 516), `${style}: no sheet taller than the page`, JSON.stringify(sh.map(s => s.h)));
   ok(sh.every(s => s.head) && sh.every((s, i) => s.total === (i === n - 1)), `${style}: column heads on every sheet, totals only on the last`);
   ok(sh.every((s, i) => s.page.startsWith(`Page ${i + 1} of ${n}`)), `${style}: each sheet says its page`, sh[0].page);
+  ok(sh.every((s, i) => s.top === (i === 0)), `${style}: the letterhead and customer band on the first page only`, JSON.stringify(sh.map(s => s.top)));
+  ok(n < 3 || sh[1].rows.length > sh[0].rows.length, `${style}: the second page holds more rows than the first`, JSON.stringify(sh.map(s => s.rows.length)));
   const pdf = Buffer.from(await p.pdf({ preferCSSPageSize: true, printBackground: true, margin: { top: 0, right: 0, bottom: 0, left: 0 } }));
   const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
   ok(pages === n, `${style}: the PDF has ${pages} pages`, `${Math.round(pdf.length / 1024)} KB`);

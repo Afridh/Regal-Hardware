@@ -26117,11 +26117,14 @@ function regalA5Pages(o){
   const whole=H(first), rowH=rows.map(H), sum=rowH.reduce((a,b)=>a+b,0);
   if(whole<=LIM+1){ first.style.minHeight=mh; return 1 }
   after.forEach(e=>e.style.display='none'); const baseMid=H(first)-sum; after.forEach(e=>e.style.display='');
+  // the letterhead and the customer band are on the first page only (5 Nov 2026, the owner asked): later pages have that room for rows
+  const heads=kids.slice(0,cut-1); heads.forEach(e=>e.style.display='none'); const headH=whole-H(first); heads.forEach(e=>e.style.display='');
   const baseEnd=whole-sum, tag=16, capMid=LIM-baseMid-tag-2, capEnd=LIM-baseEnd-tag-2;
   const pages=[]; let i=0, closed=false;
   while(i<rows.length){ let left=0; for(let k=i;k<rows.length;k++) left+=rowH[k];
-    if(left<=capEnd){ pages.push([i,rows.length]); closed=true; break }
-    let j=i, h=0; while(j<rows.length&&(j===i||h+rowH[j]<=capMid)){ h+=rowH[j]; j++ }
+    const more=pages.length?headH:0;
+    if(left<=capEnd+more){ pages.push([i,rows.length]); closed=true; break }
+    let j=i, h=0; while(j<rows.length&&(j===i||h+rowH[j]<=capMid+more)){ h+=rowH[j]; j++ }
     if(j===rows.length) j=Math.max(i+1,rows.length-1);       // never leave the totals on a page of their own if a row can go with them
     pages.push([i,j]); i=j }
   if(!closed) pages.push([rows.length,rows.length]);
@@ -26131,8 +26134,9 @@ function regalA5Pages(o){
     cr.forEach((r,k)=>{ if(k<a||k>=b) r.remove() });
     if(!last) [...c.children].slice(cut).forEach(e=>e.remove());
     const t=document.createElement('div'); t.className='a5-pg'; t.style.cssText='text-align:right;font-size:10px;line-height:14px;color:#000;flex:none';
-    t.textContent='Page '+(no+1)+' of '+n+(last?'':', continued on the next page');
+    t.textContent='Page '+(no+1)+' of '+n+(last?'':', continued on the next page')+(no&&o.no?' · Bill '+o.no:'');
     c.insertBefore(t,c.children[cut]||null);
+    if(no) [...c.children].slice(0,cut-1).forEach(e=>e.remove());
     holder.parentNode.insertBefore(c,holder); sheet(c,last) });
   holder.remove();
   return n;
@@ -26177,7 +26181,7 @@ async function queuePrintHtml(html,no,f){
    page, so whatever does the printing, an older Regal POS or print helper included, prints each at full size. It used
    to wait on an update of those programs, and until then shrank the whole bill onto one sheet. Should anything go wrong
    here the bill simply goes out whole, as before. */
-async function a5PageDocs(html){
+async function a5PageDocs(html,no){
   if((html.match(/<tr[ >]/g)||[]).length<6) return [html];        // a short bill: nothing to measure
   const fr=document.createElement('iframe');
   fr.style.cssText='position:fixed;left:-9999px;top:0;width:733px;height:800px;border:0;visibility:hidden';
@@ -26188,14 +26192,14 @@ async function a5PageDocs(html){
     const nap=ms=>new Promise(r=>setTimeout(r,ms)), w=fr.contentWindow;
     await Promise.race([Promise.all([...d.images].map(i=>i.complete?0:new Promise(r=>{ i.onload=i.onerror=r }))),nap(1500)]);
     if(d.fonts) await Promise.race([d.fonts.ready,nap(1500)]);
-    if(!w.regalA5Pages||w.regalA5Pages({limit:510})<2) return [html];
+    if(!w.regalA5Pages||w.regalA5Pages({limit:510,no})<2) return [html];
     return [...d.querySelectorAll('#printArea .print')].map(p=>{ p.style.breakAfter=''; return printDocument(p.outerHTML,'a5') });
   }catch(e){ return [html] }
   finally{ fr.remove() }
 }
 function printPaper(html,f,no,fallback){
   if(f!=='a5') return printPaperOne(html,f,no,fallback);
-  a5PageDocs(html).then(async docs=>{
+  a5PageDocs(html,no).then(async docs=>{
     if(docs.length<2) return printPaperOne(docs[0],f,no,fallback);
     for(let i=0;i<docs.length;i++){   // in order, each once the one before has gone
       const went=await new Promise(res=>printPaperOne(docs[i],f,no?no+' page '+(i+1):'',why=>res({why}),()=>res(true)));
