@@ -17,7 +17,15 @@ const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['
 const pg = await b.newPage(); await pg.setViewport({ width: 1366, height: 800 });
 const errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('dialog', d => d.accept());
 await pg.setRequestInterception(true);
-pg.on('request', rq => { const u = rq.url(); if (/^https?:\/\/(localhost|127\.0\.0\.1):41\d\d/.test(u) || (/\/api\/print\b/.test(u) && rq.method() !== 'GET')) return rq.abort(); rq.continue() });
+const road = { helper: [], queue: [], helperUp: false, queueUp: false };
+const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*', 'Access-Control-Allow-Private-Network': 'true' };
+pg.on('request', rq => { const u = rq.url();
+  if (/^https?:\/\/(localhost|127\.0\.0\.1):41\d\d/.test(u)) {   // answered here: it never reaches the print helper on this PC
+    if (rq.method() === 'OPTIONS') return rq.respond({ status: 204, headers: CORS });
+    if (!/\/print$/.test(u) || !road.helperUp) return rq.abort();
+    road.helper.push(JSON.parse(rq.postData())); return rq.respond({ status: 200, headers: CORS, contentType: 'application/json', body: JSON.stringify({ ok: true, printer: 'TEST' }) }) }
+  if (/\/api\/print\b/.test(u) && rq.method() !== 'GET') { if (!road.queueUp) return rq.abort(); road.queue.push(JSON.parse(rq.postData())); return rq.respond({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }) }
+  rq.continue() });
 await pg.goto(BASE + '/pos', { waitUntil: 'networkidle2' });
 await pg.waitForFunction(() => document.getElementById('lockScreen') || document.querySelector('#nav button'), { timeout: 25000 });
 if (await pg.$('#lockScreen')) {
@@ -28,7 +36,7 @@ if (await pg.$('#lockScreen')) {
 }
 await wait(1500);
 await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); window.eval("CFG.print.agent=''");
-  window._printed = []; window.printPaper = (html, f, no) => { window._printed.push({ html: String(html), f, no }) };
+  window._printed = []; window._realPrint = window.printPaper; window.printPaper = (html, f, no) => { window._printed.push({ html: String(html), f, no }) }; window.print = () => { window._winPrint = (window._winPrint || 0) + 1 };
   window.eval('featOn'); const p = window.eval('prefs')(); delete p.tillLook; p.till = 'classic'; try { localStorage.removeItem('regal_note_paper') } catch (e) {} });
 
 // Ctrl+K
@@ -63,10 +71,15 @@ ok(!/GIVEN/.test(await paneText()), 'a normal bill shows no given and pending co
 // after the bill: 3 of the first line were taken, the rest is pending
 await pg.evaluate(() => document.querySelector('[data-act="billIssueParts"]').click()); await wait(250);
 if (OUT) await pg.screenshot({ path: OUT + '/parts-ask.png' });
-await pg.evaluate(() => { const i = document.querySelector('.modal [data-ip]'); i.value = 3 });
-await pg.evaluate(() => document.getElementById('ipOk').click()); await wait(400);
+ok(await pg.evaluate(() => [...document.querySelectorAll('.modal [data-ci]')].every(i => i.value === '0') && !window.eval('S').sales.some(s => 0)), 'it opens with nothing going yet');
+ok(await pg.evaluate(no => !window.eval('S').sales.find(s => s.no === no).lines.some(l => l.later), made.no), 'and nothing is pending until it is confirmed');
+const printedBefore = await pg.evaluate(() => window._printed.length);
+await pg.evaluate(() => { document.querySelector('.modal [data-ci]').value = 3 });
+await pg.focus('.modal [data-ci]'); await pg.keyboard.press('Enter'); await wait(500);
+let partsNote = await pg.evaluate(() => window._printed.slice(-1)[0]);
+ok((await pg.evaluate(() => window._printed.length)) === printedBefore + 1 && /DELIVERY NOTE/.test(partsNote.html) && partsNote.f === 'a5', 'typing what is going and Enter prints a delivery note', partsNote && partsNote.no);
 let st = await pg.evaluate(no => { const S = window.eval('S'), inv = S.sales.find(s => s.no === no); return { later: inv.lines.map(l => l.later), j: S.journal.length, total: inv.total, stock: inv.lines.map(l => S.products.find(p => p.id === l.pid).stock), pending: window.eval('billPending')(inv) } }, made.no);
-ok(st.later[0] === 7 && st.later[1] === 11 && st.later[4] === 14, 'what was not taken is pending', JSON.stringify(st.later));
+ok(st.later[0] === 10 && st.later[1] === 11 && st.later[4] === 14, 'every goods line goes through the notes', JSON.stringify(st.later));
 ok(st.j === made.journal && st.total === made.total, 'no money moved');
 ok(JSON.stringify(st.stock) === JSON.stringify(made.stock), 'and the stock did not move');
 let t = await paneText();
@@ -125,15 +138,15 @@ ok(/\b5\b/.test((await pg.evaluate(() => window._printed.slice(-1)[0].html)).mat
 // editing a bill keeps what has gone
 await pg.evaluate(no => window.eval('billToTill')(no), made.no); await wait(300); await pg.click('#ebYes'); await wait(500);
 const posL = await pg.evaluate(() => { const L = window.eval('S').pos.lines; return L.map(l => ({ later: l.later, n: (l.issued || []).length })) });
-ok(posL.length === 5 && posL[0].n === 2 && posL[0].later === 7, 'Edit in the till carries what has gone', JSON.stringify(posL[0]));
+ok(posL.length === 5 && posL[0].n === 3 && posL[0].later === 10, 'Edit in the till carries what has gone', JSON.stringify(posL[0]));
 await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); const S = window.eval('S'); S.pos.sel = 0; window.eval('csLater')(0) }); await wait(200);
 await pg.evaluate(() => { document.getElementById('clQty').value = 3; document.getElementById('clOk').click() }); await wait(200);
-ok(await pg.evaluate(() => window.eval('S').pos.lines[0].later === 7 && /already gone/.test([...document.querySelectorAll('.toast')].map(t => t.innerText).join(' '))), 'a line cannot be set below what has gone');
+ok(await pg.evaluate(() => window.eval('S').pos.lines[0].later === 10 && /already gone/.test([...document.querySelectorAll('.toast')].map(t => t.innerText).join(' '))), 'a line cannot be set below what has gone');
 await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); window.eval('creditSale')() }); await wait(400);
 await pg.evaluate(c => window.eval('cpPick')(c), made.cid); await wait(200);
 await pg.evaluate(() => window.eval('cpSave')()); await wait(900);
 const saved = await pg.evaluate(no => { document.querySelectorAll('.modal').forEach(m => m.remove()); const S = window.eval('S'), again = S.sales.find(x => x.no === no && !x.returnOf); return { n: (again.lines[0].issued || []).length, later: again.lines[0].later, one: S.sales.filter(x => x.no === no).length } }, made.no); await wait(100);
-ok(saved.n === 2 && saved.later === 7 && saved.one === 1, 'and a saved edit keeps it', JSON.stringify(saved));
+ok(saved.n === 3 && saved.later === 10 && saved.one === 1, 'and a saved edit keeps it', JSON.stringify(saved));
 
 // Goods to collect lists the bill together; the last of it finishes it
 await pg.evaluate(() => { window.eval('go')('collect') }); await wait(400);
@@ -158,6 +171,39 @@ const big = await pg.evaluate(() => { const S = window.eval('S'), inv = window.e
 ok(big.later && big.pend, 'the bill is saved with the goods pending', big.no);
 ok(/ISSUED IN PARTS/.test(big.a5) && !/Bring this bill to collect/.test(big.a5), 'the large bill says so once, not line by line');
 ok(/ISSUED IN PARTS/.test(big.r80), 'and the small bill');
+
+// nothing typed: pending, and no note
+const nothing = await pg.evaluate(() => { const S = window.eval('S'), ps = S.products.filter(p => p.active !== false && p.stock > 40 && p.retail > 0 && !p.serialised && !(p.tiers || []).length).slice(0, 2); S.pos.lines = ps.map(p => ({ pid: p.id, qty: 4, price: p.retail, disc: 0 })); const inv = window.eval('completeSale')({ lines: S.pos.lines.map(l => ({ ...l })), customerId: 1, billDisc: 0, pays: [{ method: 'CASH', amount: window.eval('billTotal')() }] }); S.pos.lines = []; return inv.no });
+let was = await pg.evaluate(() => window._printed.length);
+await pg.evaluate(no => window.eval('billIssueParts')(no), nothing); await wait(250);
+await pg.evaluate(() => document.getElementById('ciLarge').click()); await wait(300);
+ok((await pg.evaluate(() => window._printed.length)) === was && await pg.evaluate(no => window.eval('billPending')(window.eval('S').sales.find(s => s.no === no)), nothing), 'nothing typed: it all stays pending and nothing prints');
+ok(/no delivery note/i.test(await pg.evaluate(() => [...document.querySelectorAll('.toast')].map(t => t.innerText).join(' '))), 'and it says so');
+// Esc walks away: nothing changed
+const left = await pg.evaluate(() => { const S = window.eval('S'), ps = S.products.filter(p => p.active !== false && p.stock > 40 && p.retail > 0 && !p.serialised && !(p.tiers || []).length).slice(0, 2); S.pos.lines = ps.map(p => ({ pid: p.id, qty: 4, price: p.retail, disc: 0 })); const inv = window.eval('completeSale')({ lines: S.pos.lines.map(l => ({ ...l })), customerId: 1, billDisc: 0, pays: [{ method: 'CASH', amount: window.eval('billTotal')() }] }); S.pos.lines = []; return inv.no });
+await pg.evaluate(no => window.eval('billIssueParts')(no), left); await wait(250);
+await pg.evaluate(() => document.querySelector('.modal [data-act="closeModal"]').click()); await wait(200);
+ok(await pg.evaluate(no => !window.eval('S').sales.find(s => s.no === no).lines.some(l => l.later), left), 'Cancel: nothing on the bill changes');
+
+// the real road: printPaper as it is on the till, down to the request that leaves the page
+await pg.evaluate(() => { window.printPaper = window._realPrint; window.eval("CFG.print.agent='http://localhost:4100'") });
+const send = async (no, paper) => { await pg.evaluate(n => window.eval('billIssueParts')(n), no); await wait(250); await pg.evaluate(() => { document.querySelector('.modal [data-ci]').value = 1 }); await pg.evaluate(p => document.getElementById(p).click(), paper); await wait(1500) };
+road.helperUp = true;
+await send(left, 'ciLarge');
+ok(road.helper.length === 1 && road.helper[0].format === 'a5' && /DELIVERY NOTE/.test(road.helper[0].html) && /^ISN/i.test(road.helper[0].no), 'for real: the large note goes to the print helper', road.helper[0] && road.helper[0].no);
+road.helper.length = 0;
+await pg.evaluate(n => window.eval('collectIssue')(n), left); await wait(250); await pg.evaluate(() => { document.getElementById('ciNone').click(); document.querySelector('.modal [data-ci]').value = 1; document.getElementById('ciSmall').click() }); await wait(1200);
+ok(road.helper.length === 1 && road.helper[0].format === 'r80' && /DELIVERY NOTE/.test(road.helper[0].html), 'for real: the small note goes to the print helper');
+// no helper on this PC: the shop's queue
+road.helperUp = false; road.queueUp = true;
+await pg.evaluate(n => window.eval('collectIssue')(n), left); await wait(250); await pg.evaluate(() => { document.getElementById('ciNone').click(); document.querySelector('.modal [data-ci]').value = 1; document.getElementById('ciLarge').click() }); await wait(1500);
+ok(road.queue.length === 1 && /DELIVERY NOTE/.test(road.queue[0].html), 'no helper here: it goes to the shop printer through the server');
+// neither: the browser's own print window
+road.queueUp = false;
+await pg.evaluate(() => { window._winPrint = 0 });
+await pg.evaluate(n => window.eval('collectIssue')(n), left); await wait(250); await pg.evaluate(() => { document.getElementById('ciNone').click(); document.querySelector('.modal [data-ci]').value = 1; document.getElementById('ciLarge').click() }); await wait(1500);
+ok((await pg.evaluate(() => window._winPrint)) === 1, 'neither there: the browser print window opens, so it never just goes quiet');
+await pg.evaluate(() => { window.printPaper = (html, f, no) => { window._printed.push({ html: String(html), f, no }) }; window.eval("CFG.print.agent=''") });
 
 // a long bill: the note runs on to more sheets, with the letterhead on the first only, each row once and the signatures on the last
 const long = await pg.evaluate(async () => {

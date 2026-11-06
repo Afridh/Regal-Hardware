@@ -22799,31 +22799,8 @@ function noteA5(inv,rec,isn){
     <div style="flex:1;border-top:1px solid #000;padding-top:3px;text-align:center">Received in good order, name and date</div></div>
   </div>`;
 }
-/* After the bill: the goods have not all gone. Whatever is not given now becomes pending. */
-function billIssueParts(no){
-  const inv=(S.sales||[]).find(s=>s.no===no&&!s.returnOf); if(!inv) return toast('That bill is not in the books','warn');
-  const L=(inv.lines||[]).map((l,i)=>({l,i})).filter(x=>x.l.qty>0);
-  if(!L.length) return toast('No goods on this bill');
-  const m=modal(`<h2>📦 Issue in parts · ${noteEsc(no)}</h2>
-   <div class="muted">Say what the customer has already taken. All the rest is pending, and goes out on delivery notes as you give it. The bill's money and the stock stay as they are.</div>
-   <div style="max-height:52vh;overflow:auto;margin-top:10px"><table><tr><th>Item</th><th class="n">On the bill</th><th class="n">Already taken</th></tr>
-    ${L.map(x=>`<tr><td>${noteEsc(lineName(x.l).toUpperCase())}</td><td class="n">${fq(x.l.qty)}</td><td class="n"><input type="number" step="any" min="0" max="${x.l.qty}" data-ip="${x.i}" value="${isOpenLine(x.l)?x.l.qty:0}" style="width:90px;text-align:right"></td></tr>`).join('')}</table></div>
-   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="ipOk">Make the rest pending (Enter)</button></div>`);
-  const ok=()=>{
-    const set=[];
-    for(const x of L){ const v=+m.querySelector(`[data-ip="${x.i}"]`).value||0;
-      if(v<0||v>x.l.qty+1e-9) return toast(`Only ${fq(x.l.qty)} of ${lineName(x.l)} is on the bill`,'warn');
-      set.push({l:x.l,later:+(x.l.qty-v).toFixed(3)}) }
-    if(!set.some(x=>x.later>0)) return toast('Everything has been taken: nothing to make pending');
-    set.forEach(x=>{ if(x.later>0) x.l.later=x.later; else delete x.l.later });
-    delete inv.undelivered; delete inv.undeliveredBy;      // one list for a bill: this one says more
-    try{ logTrail('other',`${no}: goods to be issued in parts — ${set.filter(x=>x.later>0).length} lines pending`,{ref:no}) }catch(e){}
-    persist(true); m.remove(); render(); toast(`${no}: the goods are pending. Press Issue goods as you give them`);
-  };
-  m.querySelector('#ipOk').onclick=ok;
-  m.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); ok() } }));
-  const f=m.querySelector('[data-ip]'); if(f){ f.focus(); f.select() }
-}
+/* After the bill: the goods go bit by bit. What is typed goes on a delivery note there and then; the rest becomes pending. */
+const billIssueParts=(no)=>collectIssue(no,undefined,true);
 /* what the Bills page shows: each note this bill has had, and what is still pending */
 function billIssuedBox(inv){
   if(!(inv.lines||[]).some(l=>laterOf(l)>0)) return '';
@@ -22837,22 +22814,26 @@ function billIssuedBox(inv){
 /* issue: one line, or everything still waiting on a bill */
 const notePaper=()=>{ try{ const v=localStorage.getItem('regal_note_paper'); return v==='r80'?'r80':'a5' }catch(e){ return 'a5' } };
 const notePaperSet=(f)=>{ try{ localStorage.setItem('regal_note_paper',f) }catch(e){} };
-function collectIssue(no,only){
+function collectIssue(no,only,parts){
   const inv=(S.sales||[]).find(s=>s.no===no&&!s.returnOf); if(!inv) return toast('That bill is not in the books','warn');
-  const L=collectOpen().filter(x=>x.inv===inv&&x.left>0&&(only===undefined||x.i===only));
-  if(!L.length) return toast('Nothing left to issue on '+no);
+  // parts: nothing is pending yet, so every goods line is offered, and it becomes pending only when this window is confirmed
+  const L=parts?(inv.lines||[]).map((l,i)=>({inv,i,l,issued:0,left:+l.qty})).filter(x=>x.l.qty>0&&!isOpenLine(x.l)):collectOpen().filter(x=>x.inv===inv&&x.left>0&&(only===undefined||x.i===only));
+  if(!L.length) return toast(parts?'No goods on this bill':'Nothing left to issue on '+no);
   const c=C(inv.customerId)||{};
-  const m=modal(`<h2>📦 Issue goods · ${noteEsc(no)}</h2>
-   <div class="muted">${noteEsc(c.id===1?'Walk-in customer':c.name||'')} · billed ${inv.date}. Type what is going now and hand it over. A delivery note prints for the signature, and the rest stays pending.</div>
-   <table style="margin-top:10px"><tr><th>Item</th><th class="n">Pending</th><th class="n">Giving now</th></tr>
+  const m=modal(`<h2>📦 ${parts?'Issue in parts':'Issue goods'} · ${noteEsc(no)}</h2>
+   <div class="muted">${noteEsc(c.id===1?'Walk-in customer':c.name||'')} · billed ${inv.date}. ${parts?'Type what is going now. A delivery note prints for it, and everything else on the bill becomes pending. The money and the stock stay as they are.':'Type what is going now and hand it over. A delivery note prints for the signature, and the rest stays pending.'}</div>
+   <table style="margin-top:10px"><tr><th>Item</th><th class="n">${parts?'On the bill':'Pending'}</th><th class="n">Giving now</th></tr>
     ${L.map((x,k)=>`<tr><td>${noteEsc(lineName(x.l).toUpperCase())}${x.l.laterNote?`<div class="muted">📝 ${noteEsc(x.l.laterNote)}</div>`:''}</td><td class="n">${fq(x.left)}</td>
-     <td class="n"><input type="number" step="any" min="0" max="${x.left}" data-ci="${k}" value="${x.left}" style="width:90px;text-align:right"></td></tr>`).join('')}</table>
+     <td class="n"><input type="number" step="any" min="0" max="${x.left}" data-ci="${k}" value="${parts?0:x.left}" style="width:90px;text-align:right"></td></tr>`).join('')}</table>
    <div class="grid2" style="margin-top:10px"><div class="f"><label>Taken by, name or phone (optional)</label><input id="ciWho" maxlength="60" autocomplete="off"></div><div class="f"><label>Vehicle (optional)</label><input id="ciCar" maxlength="30" autocomplete="off"></div></div>
-   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn ghost" id="ciNone" title="Set every box to 0, then type only what is going now">Set all to 0</button><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn ${notePaper()==='r80'?'tape':'ghost'}" id="ciSmall">Small note (80mm)</button><button class="btn ${notePaper()==='a5'?'tape':'ghost'}" id="ciLarge">Large note (A5)</button></div></div><div class="muted" style="text-align:right;margin-top:4px">Enter issues it on the highlighted paper</div>`);
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn ghost" id="ciNone" title="Set every box to 0, then type only what is going now">Set all to 0</button><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn ${notePaper()==='r80'?'tape':'ghost'}" id="ciSmall">Small note (80mm)</button><button class="btn ${notePaper()==='a5'?'tape':'ghost'}" id="ciLarge">Large note (A5)</button></div></div><div class="muted" style="text-align:right;margin-top:4px">Enter prints on the highlighted paper${parts?'. Nothing typed: it all stays pending, and nothing prints':''}</div>`);
   const ok=(paper)=>{
     const give=L.map((x,k)=>({x,q:+m.querySelector(`[data-ci="${k}"]`).value||0})).filter(g=>g.q>0);
     for(const g of give) if(g.q>g.x.left+1e-9) return toast(`Only ${fq(g.x.left)} of ${lineName(g.x.l)} is pending`,'warn');
-    if(!give.length) return toast('Nothing to give');
+    if(!give.length&&!parts) return toast('Type how many are going now');
+    if(parts){ L.forEach(x=>{ x.l.later=+(+x.l.qty).toFixed(3) }); delete inv.undelivered; delete inv.undeliveredBy;      // one list for a bill: this one says more
+      try{ logTrail('other',`${no}: goods to be issued in parts`,{ref:no}) }catch(e){}
+      if(!give.length){ persist(true); m.remove(); render(); return toast(`${no}: all the goods are pending. Nothing typed, so no delivery note`) } }
     const isn=next('ISN'), who=(m.querySelector('#ciWho').value||'').trim(), car=(m.querySelector('#ciCar').value||'').trim(), at=Date.now(), f=paper||notePaper();
     notePaperSet(f);
     give.forEach(g=>{ g.x.l.issued=(g.x.l.issued||[]).concat([{no:isn,qty:g.q,date:D(today),at,by:S.user.name,paper:f,...(who?{who}:{}),...(car?{car}:{})}]) });
