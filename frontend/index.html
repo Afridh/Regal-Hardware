@@ -1105,6 +1105,8 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 /* ---- the Action centre: the trays on the left, the list on the right ---- */
 .ib-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:14px}
 .ib-head h1{margin:2px 0 0;padding:0;border:0}
+.ib-check-wrap{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:12px}
+.ib-check{min-height:30px;font-weight:600}
 .ib-hi{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .ib-kpis{display:grid;grid-template-columns:repeat(4,minmax(118px,1fr));gap:10px;flex:1;max-width:760px}
 .ib-kpi{text-align:left;font:inherit;color:inherit;cursor:pointer;padding:10px 14px 10px 16px;border:1px solid var(--line);border-radius:12px;background:var(--card,#fff);position:relative;overflow:hidden;
@@ -24180,6 +24182,23 @@ function trailBack(id){
    'approvals' from anywhere (a bell, a link) opens the Decisions tray, or History when asked for. */
 let inTab='';
 const IB_TRAY={decide:['Decisions','M9 12l2 2 4-4M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z','#7a4bc4'],todo:['To do','M4 6h16M4 12h16M4 18h10','#AE1E2B'],history:['History','M12 8v4l3 2M3 12a9 9 0 1018 0 9 9 0 00-18 0M3 4v4h4','#5b6b73']};
+/* The owner asked for a way to see at once whether anything new has come in (6 Nov 2026): the till only looks every
+   10 to 60 seconds, to stay clear of the hosting's firewall. So one press at a time, and never within 3 seconds. */
+let actChecking=false, actCheckTs=0;
+const actLastChecked=()=>{ const t=window.regalBridge&&regalBridge.lastSync&&regalBridge.lastSync(); return t?`<span class="muted">Checked ${new Date(t).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</span>`:'' };
+async function actCheck(){
+  if(actChecking||Date.now()-actCheckTs<3000) return;
+  if(!(window.regalBridge&&regalBridge.checkNow)) return toast('This till is not connected to the server');
+  const keys=()=>new Set(actionItems().map(x=>x.cat+':'+x.key));
+  const was=keys(); actChecking=true; actCheckTs=Date.now(); if(S.view==='actions') render();
+  let r={ok:false}; try{ r=await regalBridge.checkNow() }catch(e){}
+  actChecking=false; actCheckTs=Date.now();
+  const fresh=[...keys()].filter(k=>!was.has(k)).length;
+  if(S.view==='actions') render();
+  if(!r.ok) return toast(r.saving?'This till still has work to save. Check the internet, then try again':'Could not reach the server. Check the internet, then try again','warn');
+  if(r.moved&&!r.got) return toast('Something new is on its way. Press Check now again in a moment');
+  toast(fresh?`${fresh} new — shown in the list`:r.got?'Up to date. Nothing new for you to decide':'Nothing new. You are up to date');
+}
 function inbox(){
   const approver=canApprove(), all=actionItems(), q=actQ.toLowerCase().trim();
   const isDec=x=>x.cat==='approve'||isDecision(x);
@@ -24218,7 +24237,8 @@ function inbox(){
      ${filtered?'<button class="btn ghost sm" data-act="actCat" data-c="all">Show everything</button>':''}</div>`;
   const cats=tray==='history'?[]:ACT_CATS.filter(c=>c[0]==='all'||pool.some(x=>x.cat===c[0]));
   return `<div class="ib-head"><div><div class="ib-hi">${hello}, ${escM(String(S.user.name||'').split(' ')[0])} · ${today.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</div>
-      <h1>Action centre</h1></div>
+      <h1>Action centre</h1>
+      <div class="ib-check-wrap"><button class="btn ghost sm ib-check" data-act="actCheck" title="Ask the server now for anything new" ${actChecking?'disabled':''}>${actChecking?'Checking…':'Check now'}</button>${actLastChecked()}</div></div>
      <div class="ib-kpis">${kpi(approver?'Waiting on you':'Your requests',dec.length,approver?'to decide':'waiting',IB_TRAY.decide[2],'decide')}${kpi('Urgent now',urgent,urgent?'at the top':'nothing urgent','#c0392b')}${kpi('To do',todo.length,'jobs and follow-ups',IB_TRAY.todo[2],'todo')}${kpi('Decided today',decToday,decided.length+' in all',IB_TRAY.history[2],'history')}</div></div>
    <div class="ib">
     <aside class="ib-rail">
@@ -34034,6 +34054,7 @@ document.addEventListener('click',e=>{
       const c2=$('#webChat'); if(c2)c2.scrollTop=c2.scrollHeight},
     storeGo:()=>storeGo(a.dataset.t),
     actCat:()=>{ actCat=a.dataset.c||'all'; render() },
+    actCheck:()=>actCheck(),
     inTab:()=>{ inTab=a.dataset.t; apTab=inTab==='history'?'done':'pending'; actCat='all'; if(S.view!=='actions') go('actions'); else render() },
     fbShow:()=>{ fbShow=a.dataset.k; render() },
     fbDone:()=>fbFollowUp(a.dataset.id),

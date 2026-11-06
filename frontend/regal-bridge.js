@@ -27,7 +27,8 @@
   var heard = false;
   function nowHeard() { if (heard) return; heard = true; if (typeof window.persist === 'function') setTimeout(function () { window.persist(true); }, 0); }
   function pollGap() {
-    var gap = Date.now() - lastInputAt > IDLE_AFTER ? IDLE_GAP : ACTIVE_GAP;
+    // the Action centre on the screen is somebody waiting for a request to come in, touching the till or not
+    var gap = Date.now() - lastInputAt > IDLE_AFTER && !(window.S && window.S.view === 'actions') ? IDLE_GAP : ACTIVE_GAP;
     return failStreak ? Math.min(MAX_GAP, gap * Math.pow(2, failStreak)) : gap;
   }
   ['keydown', 'pointerdown', 'touchstart'].forEach(function (ev) {
@@ -532,6 +533,22 @@
       if (await pull(true) && newer) badge('updated ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + who + ' · shared');
     }
   }
+  /* The Check now button: ask the server this moment, whatever the pace. Somebody pressed it, so a box left
+     with words in it does not hold it back. This till's own work goes up first, as it does before any pull. */
+  async function checkNow() {
+    if (isDemoSession()) return { ok: true, got: false };
+    if (!token) return { ok: false };
+    if (heard && !window.booksUnreadable && typeof window.hasUnsaved === 'function' && window.hasUnsaved() && typeof window.persist === 'function') window.persist(true);
+    for (var i = 0; i < 16 && (busy || pendingSet || Date.now() - lastPushAt < 3000); i++) await new Promise(function (r) { setTimeout(r, 500); });
+    lastPollAt = Date.now();
+    var j = await call('GET', '/books/' + KEY + '/rev');
+    if (j.__status !== 200) return { ok: false };
+    failStreak = 0;
+    if (unsynced) return { ok: false, saving: true };
+    if (j.rev > rev || j.inbox > 0) return { ok: true, got: await pull(true), moved: true };
+    lastSyncAt = Date.now();
+    return { ok: true, got: false };
+  }
   function startPolling() { stopPolling(); pollTimer = setInterval(poll, POLL_MS); }
   // a till that comes back to the front catches up at once, not on the next tick
   document.addEventListener('visibilitychange', function () { if (!document.hidden && pollTimer) { lastInputAt = Date.now(); if (!failStreak) lastPollAt = 0; poll(); } });
@@ -562,6 +579,7 @@
     unsynced: function () { return unsynced; },
     lastSync: function () { return lastSyncAt; },
     offline: function () { return !!window.workingOffline; },
+    checkNow: checkNow,
     login: login, pinWho: pinWho, pinLogin: pinLogin, otpSend: otpSend, otpLogin: otpLogin, logout: logout, pull: pull, sms: sms, serverUsers: serverUsers,
     setTerminal: function (t) { localStorage.setItem(TERMINAL_KEY, t); },
     terminal: function () { return localStorage.getItem(TERMINAL_KEY) || ''; }
