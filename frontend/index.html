@@ -3586,6 +3586,25 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-brand{font-family:Archivo,sans-serif;font-weight:800;font-size:12px;letter-spacing:.03em;color:#fff;margin-right:8px}
 .till-brand b{background:none;padding:0;font-size:12px;color:var(--chip-yellow)}
 .till-out{margin-left:auto;display:flex;gap:5px;align-items:center}
+.modal.calcbox{z-index:71}
+.modal.calcbox .box{min-width:0;width:280px;max-width:calc(100vw - 32px);height:auto;max-height:none;padding:14px;border-radius:10px}
+.calc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.calc-x{border:0;background:transparent;font-size:15px;width:32px;height:32px;cursor:pointer;color:var(--steel)}
+.calc-show{background:#201819;color:#fff;border-radius:6px;padding:7px 12px;text-align:right;margin-bottom:8px;font-variant-numeric:tabular-nums}
+.calc-show small{display:block;min-height:17px;font-size:12px;color:#C9D3D4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.calc-show output{display:block;font:800 28px/1.2 Archivo,sans-serif;white-space:nowrap;overflow:hidden}
+.calc-show output.small{font-size:19px;line-height:34px}
+.calc-keys{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.calc-keys button{min-height:44px;border:1px solid var(--line);border-radius:6px;background:#fff;font:700 17px/1 Archivo,sans-serif;cursor:pointer;color:var(--ink)}
+.calc-keys button:hover{background:var(--panel);border-color:var(--ink)}
+.calc-keys .fn{background:var(--page)}
+.calc-keys .op{background:var(--tint-blue);color:#0F5A75}
+.calc-keys .eq{background:var(--brand);border-color:var(--brand);color:#fff}
+.calc-keys .eq:hover{background:var(--brand-dark);border-color:var(--brand-dark)}
+.calc-keys .wide{grid-column:span 2}
+.calc-hint{font-size:12px;margin-top:8px;text-align:center}
+@media (max-height:520px){.calc-keys button{min-height:36px}.calc-hint{display:none}}
+@media (max-width:640px){.calc-hint{display:none}}
 .till-out em{font-style:normal;font-size:10.5px;color:#C9B3B6;margin-right:6px;white-space:nowrap}
 .till-out button{background:#0B1417;color:#D7E0DF;border:0;border-radius:3px;padding:3px 10px;font:inherit;
  font-size:11px;cursor:pointer}
@@ -17868,6 +17887,7 @@ function pos(){
     <button class="till-held ${heldAll.length?'has-held':''}" data-act="showHeld" title="The bills on hold — see what is on each and bring one back (F4)">HELD<i>F4</i>${heldAll.length?`<b>${heldAll.length}</b>`:''}</button>
     <button class="till-hold" data-act="hold" ${L.length?'':'disabled'} title="Put this bill aside, or make it a quotation (Ctrl+H)">HOLD<i>Ctrl+H</i></button>
     <button class="till-clear" data-act="csClear" ${L.length||S.pos.customer?'':'disabled'} title="Throw this bill away (Esc)">CLEAR<i>Esc</i></button>
+    ${calcBtn('btn ghost sm')}
    </div>
    ${breakStrip()}
    <div class="card search">${e
@@ -18587,7 +18607,7 @@ function posPhone(){
    <div class="ph-find">
      <div class="ph-findrow"><input id="phQ" value="${noteEsc(PH.q)}" placeholder="Scan, or type a name or code"
        inputmode="search" autocomplete="off" autocapitalize="off" spellcheck="false">
-       <button type="button" class="ph-cam" data-act="phScan" aria-label="Scan with the camera">${SCAN_IC}<span>Scan</span></button></div>
+       <button type="button" class="ph-cam" data-act="phScan" aria-label="Scan with the camera">${SCAN_IC}<span>Scan</span></button>${calcBtn('ph-cam')}</div>
      ${q?`<div class="ph-hits">${hits.length?hits.map(p=>`<button type="button" class="ph-hit" data-act="phAdd" data-id="${p.id}">
          <span><b>${noteEsc(p.name)}</b><small>${p.num||p.code||''}${p.stock!==undefined?' · '+fq(p.stock)+' '+noteEsc(p.unit||''):''}</small></span>
          <span class="pr">${money2(price(p))}
@@ -18642,7 +18662,7 @@ function posQuick(){
   return `<div class="qpos">
    <div class="qleft">
     <div class="qsearch"><input id="qq" value="${QT.q}" placeholder="Type a number, short code or name — or just tap a tile" autocomplete="off">
-     <span class="muted">F1</span></div>
+     <span class="muted">F1</span>${calcBtn('btn ghost sm')}</div>
     <div class="qcats"><button class="${QT.cat===''?'on':''}" data-act="qCat" data-v="">All</button>
      ${cats.map(x=>`<button class="${QT.cat===x?'on':''}" data-act="qCat" data-v="${x}">${x}</button>`).join('')}</div>
     <div class="qtiles">${items.map(p=>{const pr=priceFor(p,1), inBill=L.filter(l=>l.pid===p.id).reduce((a,l)=>a+l.qty,0);
@@ -19481,7 +19501,7 @@ function posClassic(){
     <button class="sp-k print" data-act="pay" ${L.length?'':'disabled'}>PRINT<small>F10</small></button></div>`:''}
    <div class="till-keys">
     <span class="till-brand">REGAL <b>HARDWARE</b></span>
-    <span class="till-out"><em id="csSync">${sync}</em><button data-act="csExit">☰ Menu</button><button data-act="csUpdate" title="Check for updates">⟳ Update</button><button data-act="csSignOut">Sign out</button></span>
+    <span class="till-out"><em id="csSync">${sync}</em>${calcBtn()}<button data-act="csExit">☰ Menu</button><button data-act="csUpdate" title="Check for updates">⟳ Update</button><button data-act="csSignOut">Sign out</button></span>
    </div>
   </div>`;
 }
@@ -20410,6 +20430,57 @@ function showHeldBillsModal(initIdx = 0){
 
 /* The panel beside the bill never scrolls (5 Nov 2026, the owner asked). till-sepos.css makes it compact on a short window; anything still
    too tall (a warning, a very short window) is drawn a little smaller to fit. Below 70% it would not be readable, so it scrolls after all. */
+const calcBtn=(cls)=>`<button type="button" ${cls?`class="${cls}"`:''} data-act="csCalc" title="A small calculator. The bill stays as it is."><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="vertical-align:-1px;margin-right:4px"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></svg>Calculator</button>`;
+/* A small calculator on the till (6 Nov 2026, the owner asked). It works like a pocket one: 1000 - 10 % gives 900.
+   While it is open every key is its own, so nothing goes on the bill and Esc closes it instead of clearing the bill. */
+function tillCalc(){
+  if(document.querySelector('.modal.calcbox')) return;
+  const KEYS=[['C','C','fn'],['back','⌫','fn'],['%','%','fn'],['/','÷','op'],['7','7'],['8','8'],['9','9'],['*','×','op'],['4','4'],['5','5'],['6','6'],['-','−','op'],['1','1'],['2','2'],['3','3'],['+','+','op'],['0','0','wide'],['.','.'],['=','=','eq']];
+  const m=modal(`<div class="calc"><div class="calc-top"><b>Calculator</b><button class="calc-x" id="calcClose" aria-label="Close the calculator">✕</button></div>
+    <div class="calc-show"><small id="calcSum">&nbsp;</small><output id="calcNow">0</output></div>
+    <div class="calc-keys" id="calcKeys">${KEYS.map(([k,t,c])=>`<button type="button" data-k="${k}" class="${c||''}" aria-label="${k==='back'?'Take off a figure':k==='C'?'Clear':t}">${t}</button>`).join('')}</div>
+    <div class="muted calc-hint">Use the number keys too. Esc closes it.</div></div>`);
+  m.classList.add('calcbox');
+  const SIGN={'+':'+','-':'−','*':'×','/':'÷'};
+  let cur='0', acc=null, op=null, fresh=true, hasB=false, sum='', bad=false;
+  const round=x=>Math.round(x*1e8)/1e8;
+  const show=x=>{ const v=String(x), neg=v.startsWith('-'), [a,d]=v.replace('-','').split('.'); return (neg?'-':'')+Number(a).toLocaleString('en-LK')+(d!==undefined?'.'+d:'') };
+  const num=n=>Number(n).toLocaleString('en-LK',{maximumFractionDigits:8});
+  const work=(a,o,b)=>o==='+'?a+b:o==='-'?a-b:o==='*'?a*b:b===0?null:a/b;
+  const draw=()=>{ const n=m.querySelector('#calcNow'); n.textContent=bad?'Cannot divide by 0':fresh?num(cur):show(cur); n.classList.toggle('small',n.textContent.length>13); m.querySelector('#calcSum').textContent=sum||' ' };
+  const reset=()=>{ cur='0'; acc=null; op=null; fresh=true; hasB=false; sum=''; bad=false };
+  // false when the sum cannot be done
+  const finish=()=>{ const r=work(acc,op,+cur); if(r===null){ reset(); bad=true; return false } cur=String(round(r)); return true };
+  const press=k=>{
+    if(bad&&k!=='back') reset(); bad=false;
+    if(/^\d$/.test(k)){ hasB=true; if(fresh){ cur=k; fresh=false } else if(cur.replace(/[-.]/g,'').length<14) cur=cur==='0'?k:cur+k }
+    else if(k==='.'){ hasB=true; if(fresh){ cur='0.'; fresh=false } else if(!cur.includes('.')) cur+='.' }
+    else if(k==='C') reset();
+    else if(k==='back'){ if(!fresh){ cur=cur.length>1?cur.slice(0,-1):'0'; if(cur==='-') cur='0' } }
+    else if(k==='%'){ hasB=true; const c=+cur; cur=String(round(op&&'+-'.includes(op)?acc*c/100:c/100)); fresh=true;
+      if(op&&'+-'.includes(op)){ sum=`${num(acc)} ${SIGN[op]} ${num(cur)}` } }
+    else if(SIGN[k]){ if(op&&hasB&&!finish()) return draw(); acc=+cur; op=k; fresh=true; hasB=false; sum=`${num(acc)} ${SIGN[k]}` }
+    else if(k==='='){ if(op&&hasB){ const a=acc,o=op,b=cur; if(!finish()) return draw(); sum=`${num(a)} ${SIGN[o]} ${num(b)} =` } else if(op){ cur=String(acc); sum='' } acc=null; op=null; hasB=false; fresh=true }
+    draw();
+  };
+  const back=()=>{ const q=document.getElementById('csQ')||document.getElementById('qq'); if(q) q.focus() };
+  const close=()=>{ window.removeEventListener('keydown',key,true); m.remove(); back() };
+  const key=e=>{
+    if(!document.body.contains(m)){ window.removeEventListener('keydown',key,true); return }
+    e.preventDefault(); e.stopImmediatePropagation();                // nothing gets past it to the till
+    const k=e.key;
+    if(k==='Escape') return close();
+    if(/^[\d.+\-*/%=]$/.test(k)) return press(k);
+    if(k==='Enter') return press('=');
+    if(k==='x'||k==='X') return press('*');
+    if(k==='Backspace') return press('back');
+    if(k==='c'||k==='C'||k==='Delete') return press('C');
+  };
+  window.addEventListener('keydown',key,true);
+  m.querySelector('#calcKeys').onclick=e=>{ const b=e.target.closest('[data-k]'); if(b) press(b.dataset.k) };
+  m.querySelector('#calcClose').onclick=close;
+  m.addEventListener('click',e=>{ if(e.target===m) close() });
+}
 function spFit(){ const s=document.querySelector('.till.sp-look .till-sum'); if(!s) return;
   s.style.zoom=''; s.style.overflowY=''; if(innerWidth<=900) return;
   let z=1; while(s.scrollHeight>s.clientHeight+1&&z>.7){ z=+(z-.05).toFixed(2); s.style.zoom=z }
@@ -34373,6 +34444,7 @@ document.addEventListener('click',e=>{
     csExit:()=>tillMenu(),
     csSignOut:()=>signOut(),
     csUpdate:()=>checkForUpdates(),
+    csCalc:()=>tillCalc(),
     csSel:()=>{ if(CS.editLine===+a.dataset.i) return;   // clicking into the boxes of the line being edited
       CS.editLine=null; S.pos.sel=+a.dataset.i; CS.focus='list'; fastUpdatePosSel(S.pos.sel); const el=document.querySelector('.till-lines'); if(el) el.focus(); },
     openItem:()=>openItemAdd(),
