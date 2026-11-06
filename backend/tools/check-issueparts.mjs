@@ -180,8 +180,32 @@ ok(saved.n === 3 && saved.later === 10 && saved.one === 1, 'and a saved edit kee
 
 // Goods to collect lists the bill together; the last of it finishes it
 await pg.evaluate(() => { window.eval('go')('collect') }); await wait(400);
-const rows = await pg.evaluate(no => [...document.querySelectorAll('.card table tr')].filter(r => r.innerText.includes(no)).length, made.no);
-ok(rows >= 1, 'Goods to collect has it', String(rows));
+const blocks = await pg.evaluate(no => { const all = [...document.querySelectorAll('.cl-bill')].filter(b => b.dataset.bill === no), one = all[0]; return { n: all.length, lines: one ? one.querySelectorAll('.cl-lines tr').length - 1 : 0, issue: one ? one.querySelectorAll('[data-act="colIssueBill"]').length : 0, head: one ? one.querySelector('.cl-bh').innerText : '', dup: all.length ? [...document.querySelectorAll('.cl-lines td,.cl-lines th')].filter(c => c.textContent.trim() === no).length : 0 } }, made.no);
+ok(blocks.n === 1, 'Goods to collect: the invoice is in one block', String(blocks.n));
+ok(blocks.lines === 3, 'with its pending items inside it', String(blocks.lines));
+ok(blocks.issue === 1 && /Issue goods/.test(blocks.head) && new RegExp(made.cust).test(blocks.head), 'its number, customer and one Issue goods at the top', blocks.head.replace(/\s+/g, ' '));
+ok(blocks.dup === 0, 'the number is not repeated on each item');
+if (OUT) await pg.screenshot({ path: OUT + '/collect-bills.png' });
+const allNos = await pg.evaluate(() => { const b = [...document.querySelectorAll('.cl-bill')].map(x => x.dataset.bill); return { n: b.length, uniq: new Set(b).size } });
+ok(allNos.n === allNos.uniq, 'no invoice is listed twice', JSON.stringify(allNos));
+// a search on one of its items keeps the whole invoice together
+const oneItem = await pg.evaluate(no => { const inv = window.eval('S').sales.find(s => s.no === no); return window.eval('lineName')(window.eval('collectOpen')().filter(x => x.inv === inv && x.left > 0)[0].l) }, made.no);
+await pg.evaluate(v => { window.eval(`colQ=${JSON.stringify(v)}`); window.eval('render')() }, oneItem); await wait(250);
+ok(await pg.evaluate(no => { const b = [...document.querySelectorAll('.cl-bill')].find(x => x.dataset.bill === no); return b && b.querySelectorAll('.cl-lines tr').length - 1 === 3 }, made.no), 'searching one item still shows the whole invoice');
+await pg.evaluate(() => { window.eval("colQ=''"); window.eval('render')() }); await wait(200);
+// This item: only that one is offered
+await pg.evaluate(no => [...document.querySelectorAll('.cl-bill')].find(b => b.dataset.bill === no).querySelector('[data-act="colIssue"]').click(), made.no); await wait(250);
+ok(await pg.evaluate(() => document.querySelectorAll('.modal [data-ci]').length === 1), 'This item offers just that item');
+await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
+// Issue goods on the block: all of them
+await pg.evaluate(no => [...document.querySelectorAll('.cl-bill')].find(b => b.dataset.bill === no).querySelector('[data-act="colIssueBill"]').click(), made.no); await wait(250);
+ok(await pg.evaluate(() => document.querySelectorAll('.modal [data-ci]').length === 3), 'Issue goods offers every pending item on the invoice');
+await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
+// the Issued tab: one row for each note
+await pg.evaluate(() => { window.eval("colTab='done'"); window.eval('render')() }); await wait(250);
+const noteRow = await pg.evaluate(isn => { const r = [...document.querySelectorAll('tr[data-note]')].filter(x => x.dataset.note === isn); return { n: r.length, items: r[0] ? r[0].cells[3].querySelectorAll('div').length : 0 } }, firstIsn);
+ok(noteRow.n === 1 && noteRow.items === 2, 'Issued: a note of two items is one row, with both items in it', JSON.stringify(noteRow));
+await pg.evaluate(() => { window.eval("colTab='open'"); window.eval('render')() }); await wait(200);
 await pg.evaluate(no => window.eval('collectIssue')(no), made.no); await wait(250);
 await pg.evaluate(() => document.getElementById('ciLarge').click()); await wait(500);
 pr = await pg.evaluate(() => window._printed.slice(-1)[0]);

@@ -3588,6 +3588,17 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .till-out{margin-left:auto;display:flex;gap:5px;align-items:center}
 .modal.calcbox{z-index:71;align-items:center;padding:16px}
 .modal.calcbox .box{min-width:0;width:280px;max-width:calc(100vw - 32px);height:auto;max-height:none;padding:14px;border-radius:10px}
+.cl-bill{border:1px solid var(--line);border-radius:8px;margin-bottom:12px;overflow:hidden;background:var(--white)}
+.cl-bill:last-child{margin-bottom:0}
+.cl-bh{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 16px;padding:9px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.cl-who{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;min-width:0}
+.cl-who b{font-size:16px}
+.cl-sum{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.cl-lines{overflow-x:auto}
+.cl-lines table{margin:0;min-width:480px}
+.cl-lines th,.cl-lines td{padding:7px 12px}
+.cl-lines th:first-child{width:auto}
+.cl-lines th.n,.cl-lines td.n{width:92px}
 .calc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .calc-x{border:0;background:transparent;font-size:15px;width:32px;height:32px;cursor:pointer;color:var(--steel)}
 .calc-show{background:#201819;color:#fff;border-radius:6px;padding:7px 12px;text-align:right;margin-bottom:8px;font-variant-numeric:tabular-nums}
@@ -22724,33 +22735,36 @@ function collectPage(){
   const old=open.filter(x=>age(x.inv.date)>=7).length;
   const value=open.reduce((a,x)=>a+x.left*paidEach(x.inv,x.l),0);
   const issues=[]; all.forEach(x=>(x.l.issued||[]).forEach(r=>issues.push({...r,x}))); issues.sort((a,b)=>String(b.at||b.date).localeCompare(String(a.at||a.date)));
-  const rowsOpen=open.filter(hit).sort((a,b)=>String(a.inv.date).localeCompare(String(b.inv.date))||String(a.inv.no).localeCompare(String(b.inv.no))||a.i-b.i).map(x=>{ const c=C(x.inv.customerId)||{}, a=age(x.inv.date);
-    return `<tr><td><b class="mono">${noteEsc(x.inv.no)}</b><div class="muted">${x.inv.date}</div></td>
-     <td>${noteEsc(c.id===1?'Walk-in':c.name||'')}<div class="muted">${noteEsc(c.phone||'')}</div></td>
-     <td>${noteEsc(lineName(x.l).toUpperCase())}${x.l.laterNote?`<div class="muted">📝 ${noteEsc(x.l.laterNote)}</div>`:''}</td>
-     <td class="n">${fq(x.l.qty)}</td><td class="n">${fq(+(x.l.qty-laterOf(x.l)+x.issued).toFixed(3))}</td><td class="n"><b>${fq(x.left)}</b></td>
-     <td class="n">${a>=7?`<span class="tag bad">${a} days</span>`:a?a+' day'+(a===1?'':'s'):'today'}</td>
-     <td class="n" style="white-space:nowrap"><button class="btn tape sm" data-act="colIssue" data-no="${noteEsc(x.inv.no)}" data-i="${x.i}">Issue</button>
-      <button class="btn ghost sm" data-act="colIssueBill" data-no="${noteEsc(x.inv.no)}" title="Everything still to collect on this bill">Whole bill</button></td></tr>` }).join('');
-  const rowsDone=issues.filter(r=>hit(r.x)).slice(0,200).map(r=>{ const c=C(r.x.inv.customerId)||{};
-    return `<tr><td><b class="mono">${noteEsc(r.no||'')}</b><div class="muted">${noteEsc(r.date||'')}</div></td><td class="mono">${noteEsc(r.x.inv.no)}</td>
-     <td>${noteEsc(c.id===1?'Walk-in':c.name||'')}</td><td>${noteEsc(lineName(r.x.l).toUpperCase())}</td><td class="n">${fq(r.qty)}</td>
-     <td>${noteEsc(r.by||'')}${r.who?`<div class="muted">collected by ${noteEsc(r.who)}</div>`:''}</td>
-     <td class="n"><button class="btn ghost sm" data-act="colReprint" data-isn="${noteEsc(r.no||'')}">Print</button></td></tr>` }).join('');
+  // one block for each invoice (6 Nov 2026, the owner asked): a search that finds one of its items shows the whole invoice
+  const billsOpen=[...new Set(open.filter(hit).map(x=>x.inv))].sort((p,q)=>String(p.date).localeCompare(String(q.date))||String(p.no).localeCompare(String(q.no)));
+  const blocksOpen=billsOpen.map(inv=>{ const c=C(inv.customerId)||{}, d=age(inv.date), L=open.filter(x=>x.inv===inv).sort((p,q)=>p.i-q.i), pieces=L.reduce((n,x)=>n+x.left,0);
+    return `<div class="cl-bill" data-bill="${noteEsc(inv.no)}">
+     <div class="cl-bh"><div class="cl-who"><b class="mono">${noteEsc(inv.no)}</b><span>${noteEsc(c.id===1?'Walk-in':c.name||'')}${c.id!==1&&c.phone?' · '+noteEsc(c.phone):''}</span><span class="muted">${inv.date}</span>${d>=7?`<span class="tag bad">${d} days</span>`:`<span class="muted">${d?d+' day'+(d===1?'':'s'):'today'}</span>`}</div>
+      <div class="cl-sum"><span>${L.length} item${L.length===1?'':'s'}, <b>${fq(pieces)}</b> pending</span><button class="btn tape sm" data-act="colIssueBill" data-no="${noteEsc(inv.no)}" title="Choose what is going now from everything pending on this invoice">Issue goods</button></div></div>
+     <div class="cl-lines"><table><tr><th>Item</th><th class="n">On the bill</th><th class="n">Given</th><th class="n">Pending</th><th></th></tr>
+      ${L.map(x=>`<tr><td>${noteEsc(lineName(x.l).toUpperCase())}${x.l.laterNote?`<div class="muted">📝 ${noteEsc(x.l.laterNote)}</div>`:''}</td><td class="n">${fq(x.l.qty)}</td><td class="n">${fq(+(x.l.qty-laterOf(x.l)+x.issued).toFixed(3))}</td><td class="n"><b>${fq(x.left)}</b></td>
+       <td class="n"><button class="btn ghost sm" data-act="colIssue" data-no="${noteEsc(inv.no)}" data-i="${x.i}" title="Only this item">This item</button></td></tr>`).join('')}</table></div></div>`}).join('');
+  // one row for each delivery note, however many items it carried
+  const noteMap=new Map(); issues.forEach(r=>{ const n=noteMap.get(r.no)||{r,inv:r.x.inv,items:[],qty:0}; n.items.push(r); n.qty+=+r.qty||0; noteMap.set(r.no,n) });
+  const rowsDone=[...noteMap.values()].filter(n=>n.items.some(r=>hit(r.x))).slice(0,200).map(n=>{ const c=C(n.inv.customerId)||{};
+    return `<tr data-note="${noteEsc(n.r.no||'')}"><td><b class="mono">${noteEsc(n.r.no||'')}</b><div class="muted">${noteEsc(n.r.date||'')}</div></td><td class="mono">${noteEsc(n.inv.no)}</td>
+     <td>${noteEsc(c.id===1?'Walk-in':c.name||'')}</td><td>${n.items.map(r=>`<div>${noteEsc(lineName(r.x.l).toUpperCase())} <span class="muted">× ${fq(r.qty)}</span></div>`).join('')}</td><td class="n">${fq(n.qty)}</td>
+     <td>${noteEsc(n.r.by||'')}${n.r.who?`<div class="muted">taken by ${noteEsc(n.r.who)}</div>`:''}${n.r.car?`<div class="muted">${noteEsc(n.r.car)}</div>`:''}</td>
+     <td class="n"><button class="btn ghost sm" data-act="colReprint" data-isn="${noteEsc(n.r.no||'')}">Print</button></td></tr>` }).join('');
   return `<h1>Goods to collect</h1>
   <div class="row" style="margin-bottom:12px">
    ${stat('Bills with goods waiting',bills.length,'paid for, not yet collected','b')}
-   ${stat('Lines to issue',open.length,fq(open.reduce((a,x)=>a+x.left,0))+' pieces in all','y')}
+   ${stat('Items to issue',open.length,fq(open.reduce((a,x)=>a+x.left,0))+' pieces in all','y')}
    ${stat('Waiting a week or more',old,old?'call the customer':'none','r')}
    ${stat('Value held for customers',fmt(value),'already sold — still on our shelf','g')}
   </div>
   <div class="card" style="margin-bottom:12px"><div class="findbar">
    <div class="f" style="flex:2;min-width:240px"><label>Find — bill number, customer, phone or item</label><input id="colQ" value="${noteEsc(colQ)}" placeholder="scan the bill or type" autocomplete="off"></div>
-   <div class="f" style="flex:0 0 auto"><label>&nbsp;</label><div style="display:flex;gap:6px;white-space:nowrap"><button class="btn ${colTab==='open'?'tape':'ghost'}" data-act="colTab" data-t="open">To issue (${open.length})</button><button class="btn ${colTab==='done'?'tape':'ghost'}" data-act="colTab" data-t="done">Issued (${issues.length})</button></div></div></div>
+   <div class="f" style="flex:0 0 auto"><label>&nbsp;</label><div style="display:flex;gap:6px;white-space:nowrap"><button class="btn ${colTab==='open'?'tape':'ghost'}" data-act="colTab" data-t="open">To issue (${bills.length})</button><button class="btn ${colTab==='done'?'tape':'ghost'}" data-act="colTab" data-t="done">Issued (${new Set(issues.map(r=>r.no)).size})</button></div></div></div>
    <div class="muted">On the till, press <b>L</b> on a bill line to keep it (or some of it) for the customer to collect later. The goods are sold and out of stock from the bill; the stock take counts them back in while they are still here.</div></div>
   <div class="card">${colTab==='open'
-    ? `<table><tr><th>Bill</th><th>Customer</th><th>Item</th><th class="n">On the bill</th><th class="n">Given</th><th class="n">Pending</th><th class="n">Waiting</th><th></th></tr>${rowsOpen||'<tr><td colspan="8" class="muted" style="padding:22px;text-align:center">Nothing waiting to be collected.</td></tr>'}</table>`
-    : `<table><tr><th>Issue note</th><th>Bill</th><th>Customer</th><th>Item</th><th class="n">Qty</th><th>Issued by</th><th></th></tr>${rowsDone||'<tr><td colspan="7" class="muted" style="padding:22px;text-align:center">Nothing issued yet.</td></tr>'}</table>`}</div>`;
+    ? (blocksOpen||`<div class="muted" style="padding:22px;text-align:center">${q?'No invoice waiting matches that.':'Nothing waiting to be collected.'}</div>`)
+    : `<table><tr><th>Delivery note</th><th>Bill</th><th>Customer</th><th>Items</th><th class="n">Pieces</th><th>Issued by</th><th></th></tr>${rowsDone||'<tr><td colspan="7" class="muted" style="padding:22px;text-align:center">Nothing issued yet.</td></tr>'}</table>`}</div>`;
 }
 function collectAfter(){
   const q=$('#colQ'); if(!q) return;
