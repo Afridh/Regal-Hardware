@@ -13459,7 +13459,7 @@ function shortcutsModal(){
    <div class="grid2" style="align-items:start;gap:14px">
     <div><table class="tbl">${mine.map(x=>row('Alt+'+x[0],x[2])).join('')}</table></div>
     <div><table class="tbl">${mine.filter(x=>x[3]).map(x=>row('Alt+Shift+'+x[0],x[4])).join('')}
-     ${row('F2','Dashboard')}${row('F3','POS billing (on the till: who sold it)')}${row('F7','Take a payment')}${row('F8','Customers')}${row('F9','Attendance & pay')}${row('F11','Barcode labels')}${row('F12','Suppliers')}${row('/','Search')}${row('Ctrl+/','This list')}</table>
+     ${row('Ctrl+K','Calculator (on the till)')}${row('F2','Dashboard')}${row('F3','POS billing (on the till: who sold it)')}${row('F7','Take a payment')}${row('F8','Customers')}${row('F9','Attendance & pay')}${row('F11','Barcode labels')}${row('F12','Suppliers')}${row('/','Search')}${row('Ctrl+/','This list')}</table>
      <div class="muted" style="margin-top:8px">On a customer or supplier: <b>F7</b> take/pay money, <b>F6</b> new bill/purchase, <b>Ctrl+N</b> add, <b>Ctrl+E</b> edit.</div></div>
    </div><div style="text-align:right;margin-top:10px"><button class="btn tape" data-act="closeModal">Close <i class="kbd">Esc</i></button></div>`);
 }
@@ -20430,7 +20430,7 @@ function showHeldBillsModal(initIdx = 0){
 
 /* The panel beside the bill never scrolls (5 Nov 2026, the owner asked). till-sepos.css makes it compact on a short window; anything still
    too tall (a warning, a very short window) is drawn a little smaller to fit. Below 70% it would not be readable, so it scrolls after all. */
-const calcBtn=(cls)=>`<button type="button" ${cls?`class="${cls}"`:''} data-act="csCalc" title="A small calculator. The bill stays as it is."><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="vertical-align:-1px;margin-right:4px"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></svg>Calculator</button>`;
+const calcBtn=(cls)=>`<button type="button" ${cls?`class="${cls}"`:''} data-act="csCalc" title="A small calculator: Ctrl+K. The bill stays as it is."><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="vertical-align:-1px;margin-right:4px"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></svg>Calculator</button>`;
 /* A small calculator on the till (6 Nov 2026, the owner asked). It works like a pocket one: 1000 - 10 % gives 900.
    While it is open every key is its own, so nothing goes on the bill and Esc closes it instead of clearing the bill. */
 function tillCalc(){
@@ -20439,7 +20439,7 @@ function tillCalc(){
   const m=modal(`<div class="calc"><div class="calc-top"><b>Calculator</b><button class="calc-x" id="calcClose" aria-label="Close the calculator">✕</button></div>
     <div class="calc-show"><small id="calcSum">&nbsp;</small><output id="calcNow">0</output></div>
     <div class="calc-keys" id="calcKeys">${KEYS.map(([k,t,c])=>`<button type="button" data-k="${k}" class="${c||''}" aria-label="${k==='back'?'Take off a figure':k==='C'?'Clear':t}">${t}</button>`).join('')}</div>
-    <div class="muted calc-hint">Use the number keys too. Esc closes it.</div></div>`);
+    <div class="muted calc-hint">Use the number keys too. Ctrl+K or Esc closes it.</div></div>`);
   m.classList.add('calcbox');
   const SIGN={'+':'+','-':'−','*':'×','/':'÷'};
   let cur='0', acc=null, op=null, fresh=true, hasB=false, sum='', bad=false;
@@ -20469,7 +20469,8 @@ function tillCalc(){
     if(!document.body.contains(m)){ window.removeEventListener('keydown',key,true); return }
     e.preventDefault(); e.stopImmediatePropagation();                // nothing gets past it to the till
     const k=e.key;
-    if(k==='Escape') return close();
+    if(k==='Escape'||((e.ctrlKey||e.metaKey)&&k.toLowerCase()==='k')) return close();
+    if(e.ctrlKey||e.metaKey||e.altKey) return;
     if(/^[\d.+\-*/%=]$/.test(k)) return press(k);
     if(k==='Enter') return press('=');
     if(k==='x'||k==='X') return press('*');
@@ -21979,7 +21980,7 @@ function billToTill(no){
   const go2=()=>{ const why=inp.value.trim();   // a reason is kept with the bill when given; none is fine too
     m.remove();
     if(S.pos.lines.length) holdCurrentBill(false);
-    S.pos={lines:inv.lines.map(l=>({pid:l.pid,qty:l.qty,price:l.price,disc:l.disc||0,warranty:l.warranty,belowCost:l.belowCost,auto:false,...(l.name?{name:l.name}:{}),...(l.discPct!==undefined?{discPct:l.discPct}:{}),...(l.serials?{serials:l.serials.slice()}:{}),...(l.later?{later:l.later,laterNote:l.laterNote}:{})})),
+    S.pos={lines:inv.lines.map(l=>({pid:l.pid,qty:l.qty,price:l.price,disc:l.disc||0,warranty:l.warranty,belowCost:l.belowCost,auto:false,...(l.name?{name:l.name}:{}),...(l.discPct!==undefined?{discPct:l.discPct}:{}),...(l.serials?{serials:l.serials.slice()}:{}),...(l.later?{later:l.later,laterNote:l.laterNote}:{}),...(l.issued?{issued:l.issued}:{})})),
       customer:inv.customerId===1?null:inv.customerId,billDisc:inv.billDisc||0,sel:-1,entry:null,lastBill:S.pos.lastBill,editing:inv.no,editWhy:why};
     if(typeof CS!=='undefined') CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0'};
     logTrail('billEdit',`${no} opened to be changed`,{amount:inv.total,who:c.name,ref:no,why,bill:{ref:no,lines:inv.lines.map(l=>({...l})),customer:inv.customerId,billDisc:inv.billDisc||0,date:new Date().toISOString(),user:inv.by}});
@@ -22621,7 +22622,9 @@ const billDlvNote=(inv,a5)=>{ if(!inv||!inv.undelivered) return '';
     return a5?`<div class="x-box x-rem"><div class="x-bh">DELIVERED</div><div class="x-bb">${say}</div></div>`:`<div style="margin:4px 0;font-weight:700">${say.toUpperCase()}</div>` }
   return '';
 };
+const billAllLater=(inv)=>{ const G=(inv.lines||[]).filter(l=>l.qty>0&&!isOpenLine(l)); return G.length>3&&G.every(l=>+l.later>=l.qty-1e-9) };
 const billLaterNote=(inv)=>{ const L=(inv.lines||[]).filter(l=>+l.later>0); if(!L.length) return '';
+  if(billAllLater(inv)) return `<div style="border:1.5px solid #000;padding:3px 5px;margin:4px 0;font-weight:700">GOODS TO BE ISSUED IN PARTS<div style="font-weight:400;font-size:.9em">Each part comes with a delivery note to sign.</div></div>`;
   return `<div style="border:1.5px solid #000;padding:3px 5px;margin:4px 0;font-weight:700">GOODS NOT ISSUED — TO COLLECT LATER:${L.map(l=>`<div style="font-weight:400">${noteEsc(lineName(l).toUpperCase())} — ${fq(+l.later)}</div>`).join('')}<div style="font-weight:400;font-size:.9em">Bring this bill to collect them.</div></div>` };
 function csWarranty(i){
   const line=i>=0?S.pos.lines[i]:null, pid=line?line.pid:CS.pid, p=P(pid); if(!p) return;
@@ -22719,11 +22722,11 @@ function collectPage(){
   const old=open.filter(x=>age(x.inv.date)>=7).length;
   const value=open.reduce((a,x)=>a+x.left*paidEach(x.inv,x.l),0);
   const issues=[]; all.forEach(x=>(x.l.issued||[]).forEach(r=>issues.push({...r,x}))); issues.sort((a,b)=>String(b.at||b.date).localeCompare(String(a.at||a.date)));
-  const rowsOpen=open.filter(hit).sort((a,b)=>String(a.inv.date).localeCompare(String(b.inv.date))).map(x=>{ const c=C(x.inv.customerId)||{}, a=age(x.inv.date);
+  const rowsOpen=open.filter(hit).sort((a,b)=>String(a.inv.date).localeCompare(String(b.inv.date))||String(a.inv.no).localeCompare(String(b.inv.no))||a.i-b.i).map(x=>{ const c=C(x.inv.customerId)||{}, a=age(x.inv.date);
     return `<tr><td><b class="mono">${noteEsc(x.inv.no)}</b><div class="muted">${x.inv.date}</div></td>
      <td>${noteEsc(c.id===1?'Walk-in':c.name||'')}<div class="muted">${noteEsc(c.phone||'')}</div></td>
      <td>${noteEsc(lineName(x.l).toUpperCase())}${x.l.laterNote?`<div class="muted">📝 ${noteEsc(x.l.laterNote)}</div>`:''}</td>
-     <td class="n">${fq(x.l.qty)}</td><td class="n">${fq(x.issued)}</td><td class="n"><b>${fq(x.left)}</b></td>
+     <td class="n">${fq(x.l.qty)}</td><td class="n">${fq(+(x.l.qty-laterOf(x.l)+x.issued).toFixed(3))}</td><td class="n"><b>${fq(x.left)}</b></td>
      <td class="n">${a>=7?`<span class="tag bad">${a} days</span>`:a?a+' day'+(a===1?'':'s'):'today'}</td>
      <td class="n" style="white-space:nowrap"><button class="btn tape sm" data-act="colIssue" data-no="${noteEsc(x.inv.no)}" data-i="${x.i}">Issue</button>
       <button class="btn ghost sm" data-act="colIssueBill" data-no="${noteEsc(x.inv.no)}" title="Everything still to collect on this bill">Whole bill</button></td></tr>` }).join('');
@@ -22744,62 +22747,149 @@ function collectPage(){
    <div class="f" style="flex:0 0 auto"><label>&nbsp;</label><div style="display:flex;gap:6px;white-space:nowrap"><button class="btn ${colTab==='open'?'tape':'ghost'}" data-act="colTab" data-t="open">To issue (${open.length})</button><button class="btn ${colTab==='done'?'tape':'ghost'}" data-act="colTab" data-t="done">Issued (${issues.length})</button></div></div></div>
    <div class="muted">On the till, press <b>L</b> on a bill line to keep it (or some of it) for the customer to collect later. The goods are sold and out of stock from the bill; the stock take counts them back in while they are still here.</div></div>
   <div class="card">${colTab==='open'
-    ? `<table><tr><th>Bill</th><th>Customer</th><th>Item</th><th class="n">On the bill</th><th class="n">Issued</th><th class="n">To issue</th><th class="n">Waiting</th><th></th></tr>${rowsOpen||'<tr><td colspan="8" class="muted" style="padding:22px;text-align:center">Nothing waiting to be collected.</td></tr>'}</table>`
+    ? `<table><tr><th>Bill</th><th>Customer</th><th>Item</th><th class="n">On the bill</th><th class="n">Given</th><th class="n">Pending</th><th class="n">Waiting</th><th></th></tr>${rowsOpen||'<tr><td colspan="8" class="muted" style="padding:22px;text-align:center">Nothing waiting to be collected.</td></tr>'}</table>`
     : `<table><tr><th>Issue note</th><th>Bill</th><th>Customer</th><th>Item</th><th class="n">Qty</th><th>Issued by</th><th></th></tr>${rowsDone||'<tr><td colspan="7" class="muted" style="padding:22px;text-align:center">Nothing issued yet.</td></tr>'}</table>`}</div>`;
 }
 function collectAfter(){
   const q=$('#colQ'); if(!q) return;
   q.oninput=()=>{ colQ=q.value; render(); const n=$('#colQ'); if(n){ n.focus(); n.setSelectionRange(n.value.length,n.value.length) } };
 }
+/* ---- a big bill issued bit by bit (6 Nov 2026, the owner asked) ----
+   The goods on a bill can go in parts: each part has its own delivery note, and the bill always shows what has
+   gone and what is still pending. Marking a bill this way touches neither the money nor the stock: the bill is
+   sold and out of stock as any other, and the stock take counts the pending goods back in. */
+const issuedOf=(l)=>(l.issued||[]).reduce((a,x)=>a+(+x.qty||0),0);
+const billPendingLines=(inv)=>inv&&!inv.returnOf?collectOpen().filter(x=>x.inv===inv&&x.left>0):[];
+const billPending=(inv)=>!!(inv&&!inv.returnOf&&(inv.lines||[]).some(l=>laterOf(l)>0))&&billPendingLines(inv).length>0;
+const pendingBills=()=>{ const s=new Set(); collectOpen().forEach(x=>{ if(x.left>0) s.add(x.inv.no) }); return s };
+/* what a line stood at on one delivery note: gone before it, on it, and left after it, so a reprint says what it said */
+function noteLine(inv,l,i,rec,ret){
+  const list=l.issued||[], at=list.findIndex(x=>x.no===rec.no), upto=at>=0?at:list.length;
+  const before=list.filter((x,k)=>k<upto&&x.no!==rec.no).reduce((a,x)=>a+(+x.qty||0),0);
+  const now=list.filter(x=>x.no===rec.no).reduce((a,x)=>a+(+x.qty||0),0);
+  const later=laterOf(l), withBill=+Math.max(0,l.qty-later).toFixed(3), back=ret[i]||0;
+  return {l,i,withBill,before:+(withBill+before).toFixed(3),now:+now.toFixed(3),left:+Math.max(0,later-before-now-back).toFixed(3)};
+}
+/* the delivery note on the large sheet: every goods line of the bill, what went before, what is going now, what is still to come */
+function noteA5(inv,rec,isn){
+  const c=C(inv.customerId)||{}, SH=CFG.shop, ret=returnedFrom(inv);
+  const rows=(inv.lines||[]).map((l,i)=>l.qty>0?noteLine(inv,l,i,rec,ret):null).filter(Boolean).filter(x=>x.now>0||x.left>0||x.before>0);
+  const shown=rows.filter(x=>laterOf(x.l)>0||x.now>0);
+  const nowN=shown.reduce((a,x)=>a+x.now,0), leftN=shown.reduce((a,x)=>a+x.left,0);
+  const addr=c.id!==1&&c.address?c.address:'';
+  const cell='padding:3px 6px;vertical-align:top';
+  return `<div class="print a5 sbx" style="--a-items:12px;width:100%;aspect-ratio:auto;min-height:136mm;box-sizing:border-box;font-size:12px;color:#000;border:0;padding:6px 9px">
+   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div><div style="font-weight:800;font-size:19px">${noteEsc(SH.name||'')}</div>
+     <div>${noteEsc(SH.addr||'')}</div><div>${noteEsc([SH.phone,SH.land].filter(Boolean).join(' · '))}</div></div>
+    <div style="text-align:right"><div style="font-weight:800;font-size:17px;letter-spacing:.1em;border:2px solid #000;padding:3px 12px">DELIVERY NOTE</div>
+     <div style="margin-top:3px"><b>${noteEsc(isn)}</b> · ${noteEsc(rec.date||'')}</div></div></div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 16px;border:1px solid #000;padding:4px 7px;margin:7px 0 5px">
+    <div>Bill: <b>${noteEsc(inv.no)}</b> of ${noteEsc(inv.date||'')}</div>
+    <div>Customer: <b>${noteEsc(c.id===1?'Walk-in':(c.name||''))}</b>${c.id!==1&&c.phone?' · '+noteEsc(c.phone):''}</div>
+    ${addr?`<div style="grid-column:1/-1">Deliver to: ${noteEsc(addr)}</div>`:''}
+    ${rec.who?`<div>Taken by: <b>${noteEsc(rec.who)}</b></div>`:''}${rec.car?`<div>Vehicle: <b>${noteEsc(rec.car)}</b></div>`:''}
+   </div>
+   <table class="x-tbl" style="width:100%;border-collapse:collapse"><thead><tr><th style="${cell};width:24px">#</th><th style="${cell};text-align:left">ITEM</th><th style="${cell};text-align:right;width:62px">ON BILL</th><th style="${cell};text-align:right;width:70px">GIVEN BEFORE</th><th style="${cell};text-align:right;width:70px">THIS NOTE</th><th style="${cell};text-align:right;width:62px">PENDING</th></tr></thead>
+    <tbody>${shown.map((x,k)=>`<tr><td style="${cell};text-align:center">${k+1}</td><td style="${cell}">${noteEsc(lineName(x.l).toUpperCase())}</td><td style="${cell};text-align:right">${fq(x.l.qty)}</td><td style="${cell};text-align:right">${x.before?fq(x.before):'—'}</td><td style="${cell};text-align:right;font-weight:800">${x.now?fq(x.now):'—'}</td><td style="${cell};text-align:right">${x.left?fq(x.left):'—'}</td></tr>`).join('')}</tbody></table>
+   <div style="margin-top:6px;font-weight:700">${leftN>0?`This note: ${fq(nowN)}. Still pending on this bill: ${fq(leftN)}.`:`This note: ${fq(nowN)}. All goods on this bill have now been given.`}</div>
+   <div style="flex:1"></div>
+   <div style="display:flex;justify-content:space-between;gap:30px;margin-top:26px">
+    <div style="flex:1;border-top:1px solid #000;padding-top:3px;text-align:center">Issued by (${noteEsc(rec.by||'')})</div>
+    <div style="flex:1;border-top:1px solid #000;padding-top:3px;text-align:center">Delivered by</div>
+    <div style="flex:1;border-top:1px solid #000;padding-top:3px;text-align:center">Received in good order, name and date</div></div>
+  </div>`;
+}
+/* After the bill: the goods have not all gone. Whatever is not given now becomes pending. */
+function billIssueParts(no){
+  const inv=(S.sales||[]).find(s=>s.no===no&&!s.returnOf); if(!inv) return toast('That bill is not in the books','warn');
+  const L=(inv.lines||[]).map((l,i)=>({l,i})).filter(x=>x.l.qty>0);
+  if(!L.length) return toast('No goods on this bill');
+  const m=modal(`<h2>📦 Issue in parts · ${noteEsc(no)}</h2>
+   <div class="muted">Say what the customer has already taken. All the rest is pending, and goes out on delivery notes as you give it. The bill's money and the stock stay as they are.</div>
+   <div style="max-height:52vh;overflow:auto;margin-top:10px"><table><tr><th>Item</th><th class="n">On the bill</th><th class="n">Already taken</th></tr>
+    ${L.map(x=>`<tr><td>${noteEsc(lineName(x.l).toUpperCase())}</td><td class="n">${fq(x.l.qty)}</td><td class="n"><input type="number" step="any" min="0" max="${x.l.qty}" data-ip="${x.i}" value="${isOpenLine(x.l)?x.l.qty:0}" style="width:90px;text-align:right"></td></tr>`).join('')}</table></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="ipOk">Make the rest pending (Enter)</button></div>`);
+  const ok=()=>{
+    const set=[];
+    for(const x of L){ const v=+m.querySelector(`[data-ip="${x.i}"]`).value||0;
+      if(v<0||v>x.l.qty+1e-9) return toast(`Only ${fq(x.l.qty)} of ${lineName(x.l)} is on the bill`,'warn');
+      set.push({l:x.l,later:+(x.l.qty-v).toFixed(3)}) }
+    if(!set.some(x=>x.later>0)) return toast('Everything has been taken: nothing to make pending');
+    set.forEach(x=>{ if(x.later>0) x.l.later=x.later; else delete x.l.later });
+    delete inv.undelivered; delete inv.undeliveredBy;      // one list for a bill: this one says more
+    try{ logTrail('other',`${no}: goods to be issued in parts — ${set.filter(x=>x.later>0).length} lines pending`,{ref:no}) }catch(e){}
+    persist(true); m.remove(); render(); toast(`${no}: the goods are pending. Press Issue goods as you give them`);
+  };
+  m.querySelector('#ipOk').onclick=ok;
+  m.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); ok() } }));
+  const f=m.querySelector('[data-ip]'); if(f){ f.focus(); f.select() }
+}
+/* what the Bills page shows: each note this bill has had, and what is still pending */
+function billIssuedBox(inv){
+  if(!(inv.lines||[]).some(l=>laterOf(l)>0)) return '';
+  const notes=new Map();
+  (inv.lines||[]).forEach(l=>(l.issued||[]).forEach(r=>{ const n=notes.get(r.no)||{r,qty:0,n:0}; n.qty+=+r.qty||0; n.n++; notes.set(r.no,n) }));
+  const pend=billPendingLines(inv);
+  return `<div class="bl-hist"><b>Delivery notes</b>
+    ${[...notes.values()].map(x=>`<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:2px 0"><span>${noteEsc(x.r.no)} · ${noteEsc(x.r.date||'')} · ${x.n} line${x.n===1?'':'s'}, ${fq(x.qty)} pieces${x.r.who?' · '+noteEsc(x.r.who):''}${x.r.car?' · '+noteEsc(x.r.car):''}</span><button class="btn ghost sm" data-act="colReprint" data-isn="${noteEsc(x.r.no)}">Print</button></div>`).join('')||'<div class="muted">None yet.</div>'}
+    <div class="muted" style="margin-top:4px">${pend.length?`${pend.length} line${pend.length===1?'':'s'} still pending, ${fq(pend.reduce((a,x)=>a+x.left,0))} pieces`:'All the goods have been given.'}</div></div>`;
+}
 /* issue: one line, or everything still waiting on a bill */
+const notePaper=()=>{ try{ const v=localStorage.getItem('regal_note_paper'); return v==='r80'?'r80':'a5' }catch(e){ return 'a5' } };
+const notePaperSet=(f)=>{ try{ localStorage.setItem('regal_note_paper',f) }catch(e){} };
 function collectIssue(no,only){
   const inv=(S.sales||[]).find(s=>s.no===no&&!s.returnOf); if(!inv) return toast('That bill is not in the books','warn');
   const L=collectOpen().filter(x=>x.inv===inv&&x.left>0&&(only===undefined||x.i===only));
   if(!L.length) return toast('Nothing left to issue on '+no);
   const c=C(inv.customerId)||{};
   const m=modal(`<h2>📦 Issue goods · ${noteEsc(no)}</h2>
-   <div class="muted">${noteEsc(c.id===1?'Walk-in customer':c.name||'')} · billed ${inv.date}. Hand over the goods, then press Issue — a goods issue note prints for the signature.</div>
-   <table style="margin-top:10px"><tr><th>Item</th><th class="n">Waiting</th><th class="n">Giving now</th></tr>
+   <div class="muted">${noteEsc(c.id===1?'Walk-in customer':c.name||'')} · billed ${inv.date}. Type what is going now and hand it over. A delivery note prints for the signature, and the rest stays pending.</div>
+   <table style="margin-top:10px"><tr><th>Item</th><th class="n">Pending</th><th class="n">Giving now</th></tr>
     ${L.map((x,k)=>`<tr><td>${noteEsc(lineName(x.l).toUpperCase())}${x.l.laterNote?`<div class="muted">📝 ${noteEsc(x.l.laterNote)}</div>`:''}</td><td class="n">${fq(x.left)}</td>
      <td class="n"><input type="number" step="any" min="0" max="${x.left}" data-ci="${k}" value="${x.left}" style="width:90px;text-align:right"></td></tr>`).join('')}</table>
-   <div class="f" style="margin-top:10px"><label>Collected by — name or phone (optional)</label><input id="ciWho" maxlength="60" autocomplete="off"></div>
-   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="ciOk">Issue and print (Enter)</button></div>`);
-  const ok=()=>{
+   <div class="grid2" style="margin-top:10px"><div class="f"><label>Taken by, name or phone (optional)</label><input id="ciWho" maxlength="60" autocomplete="off"></div><div class="f"><label>Vehicle (optional)</label><input id="ciCar" maxlength="30" autocomplete="off"></div></div>
+   <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn ghost" id="ciNone" title="Set every box to 0, then type only what is going now">Set all to 0</button><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn ${notePaper()==='r80'?'tape':'ghost'}" id="ciSmall">Small note (80mm)</button><button class="btn ${notePaper()==='a5'?'tape':'ghost'}" id="ciLarge">Large note (A5)</button></div></div><div class="muted" style="text-align:right;margin-top:4px">Enter issues it on the highlighted paper</div>`);
+  const ok=(paper)=>{
     const give=L.map((x,k)=>({x,q:+m.querySelector(`[data-ci="${k}"]`).value||0})).filter(g=>g.q>0);
-    for(const g of give) if(g.q>g.x.left+1e-9) return toast(`Only ${fq(g.x.left)} of ${lineName(g.x.l)} is waiting`,'warn');
+    for(const g of give) if(g.q>g.x.left+1e-9) return toast(`Only ${fq(g.x.left)} of ${lineName(g.x.l)} is pending`,'warn');
     if(!give.length) return toast('Nothing to give');
-    const isn=next('ISN'), who=(m.querySelector('#ciWho').value||'').trim(), at=Date.now();
-    give.forEach(g=>{ g.x.l.issued=(g.x.l.issued||[]).concat([{no:isn,qty:g.q,date:D(today),at,by:S.user.name,...(who?{who}:{})}]) });
+    const isn=next('ISN'), who=(m.querySelector('#ciWho').value||'').trim(), car=(m.querySelector('#ciCar').value||'').trim(), at=Date.now(), f=paper||notePaper();
+    notePaperSet(f);
+    give.forEach(g=>{ g.x.l.issued=(g.x.l.issued||[]).concat([{no:isn,qty:g.q,date:D(today),at,by:S.user.name,paper:f,...(who?{who}:{}),...(car?{car}:{})}]) });
     try{ logTrail('other',`${isn}: goods from ${no} handed over — ${give.map(g=>lineName(g.x.l)+' × '+fq(g.q)).join(', ')}`,{ref:no}) }catch(e){}
     persist(true); m.remove(); render();
     toast(`${isn} — goods from ${no} issued`);
     collectPrint(isn);
   };
-  m.querySelector('#ciOk').onclick=ok;
+  m.querySelector('#ciLarge').onclick=()=>ok('a5'); m.querySelector('#ciSmall').onclick=()=>ok('r80');
+  m.querySelector('#ciNone').onclick=()=>{ m.querySelectorAll('[data-ci]').forEach(i=>{ i.value=0 }); const n=m.querySelector('[data-ci]'); if(n){ n.focus(); n.select() } };
   m.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); ok() } }));
   const f=m.querySelector('[data-ci]'); if(f){ f.focus(); f.select() }
 }
-/* the goods issue note, on the 80mm roll: what went, what is still to come, and two signatures */
-function collectPrint(isn){
+/* the delivery note for goods given from a bill: the large sheet (noteA5), or the 80mm roll: what went, what is still to come, and the signatures */
+function collectPrint(isn,paper){
   const lines=[]; let inv=null, rec=null;
   (S.sales||[]).forEach(s=>(s.lines||[]).forEach((l,i)=>(l.issued||[]).forEach(r=>{ if(r.no===isn){ inv=s; rec=r; lines.push({l,i,r}) } })));
-  if(!inv) return toast('That issue note is not in the books','warn');
-  const c=C(inv.customerId)||{}, SH=CFG.shop, B=CFG.bill, sc=Math.max(0.6,Math.min(2,(+B.r80Scale||100)/100));
-  const still=collectOpen().filter(x=>x.inv===inv&&x.left>0);
+  if(!inv) return toast('That delivery note is not in the books','warn');
+  const want=paper||rec.paper||'r80';
+  if(want==='a5'){ const big=noteA5(inv,rec,isn); return printPaper(printDocument(big,'a5'),'a5',isn,()=>paperFallback(big,'a5')) }
+  const c=C(inv.customerId)||{}, SH=CFG.shop, B=CFG.bill, sc=Math.max(0.6,Math.min(2,(+B.r80Scale||100)/100)), ret0=returnedFrom(inv);
+  const still=(inv.lines||[]).map((l,i)=>l.qty>0&&laterOf(l)>0?noteLine(inv,l,i,rec,ret0):null).filter(x=>x&&x.left>0);
   const inner=`<div class="print r80 sb80" data-scale="${sc}" style="zoom:${sc};width:calc(302px / ${sc});font-family:${billFontCss(B.r80Font)}">
    <div class="sb-name">${noteEsc(SH.name||'REGAL HARDWARE')}</div>
    <div class="sb-addr">${noteEsc((SH.addr||'').toUpperCase())}</div>
    <div class="sb-phone">${noteEsc(SH.phone||'')}</div>
-   <div style="text-align:center;font-weight:800;font-size:16px;letter-spacing:.12em;border:2px solid #000;padding:3px 0;margin:4px 0 6px">GOODS ISSUE NOTE</div>
-   <div class="sb-kv"><span>Issue No :</span><b>${noteEsc(isn)}</b><span>${noteEsc(rec.date)}</span></div>
+   <div style="text-align:center;font-weight:800;font-size:16px;letter-spacing:.12em;border:2px solid #000;padding:3px 0;margin:4px 0 6px">DELIVERY NOTE</div>
+   <div class="sb-kv"><span>Note No :</span><b>${noteEsc(isn)}</b><span>${noteEsc(rec.date)}</span></div>
    <div class="sb-kv"><span>Bill No :</span><b>${noteEsc(inv.no)}</b><span>${noteEsc(inv.date)}</span></div>
    ${c.id===1?'':`<div class="sb-kv"><span>Customer :</span><b>${noteEsc((c.name||'').toUpperCase())}</b><span>${noteEsc(c.phone||'')}</span></div>`}
-   ${rec.who?`<div class="sb-kv"><span>Collected by :</span><b>${noteEsc(rec.who.toUpperCase())}</b><span></span></div>`:''}
+   ${rec.who?`<div class="sb-kv"><span>Taken by :</span><b>${noteEsc(rec.who.toUpperCase())}</b><span></span></div>`:''}
+   ${rec.car?`<div class="sb-kv"><span>Vehicle :</span><b>${noteEsc(rec.car.toUpperCase())}</b><span></span></div>`:''}
    <div class="sb-rule"></div>
    <table class="sb-items"><tr><th class="l">#&nbsp; Item</th><th></th><th></th><th>Qty</th></tr>
     ${lines.map((x,k)=>`<tr class="nm"><td colspan="3">${k+1})&nbsp; ${noteEsc(lineName(x.l).toUpperCase())}</td><td>${fq(x.r.qty)}</td></tr>`).join('')}</table>
    <div class="sb-rule"></div>
-   ${still.length?`<div style="font-weight:700;margin:2px 0">STILL TO COLLECT ON THIS BILL:</div>${still.map(x=>`<div>${noteEsc(lineName(x.l).toUpperCase())} — ${fq(x.left)}</div>`).join('')}<div class="sb-rule"></div>`:'<div style="text-align:center;font-weight:700">ALL GOODS ON THIS BILL ARE NOW ISSUED</div><div class="sb-rule"></div>'}
+   ${still.length?`<div style="font-weight:700;margin:2px 0">STILL PENDING ON THIS BILL:</div>${still.map(x=>`<div>${noteEsc(lineName(x.l).toUpperCase())} — ${fq(x.left)}</div>`).join('')}<div class="sb-rule"></div>`:'<div style="text-align:center;font-weight:700">ALL GOODS ON THIS BILL HAVE NOW BEEN GIVEN</div><div class="sb-rule"></div>'}
    <div class="sb-sign"><span>Issued By (${noteEsc(rec.by||'')})</span><span>Received By</span></div>
    <div class="sb-foot">Goods received in good order.</div>
   </div>`;
@@ -22814,15 +22904,17 @@ function csLater(i){
    <div class="grid2" style="margin-top:10px"><div class="f"><label>How many to collect later</label><input id="clQty" type="number" step="any" min="0" value="${laterOf(l)||l.qty}"></div>
     <div class="f"><label>Note — who comes, when (optional)</label><input id="clNote" maxlength="80" autocomplete="off" value="${noteEsc(l.laterNote||'')}"></div></div>
    <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px">${laterOf(l)?'<button class="btn ghost" id="clOff">They take it all now</button>':'<span></span>'}
-    <div style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="clOk">Keep for later (Enter)</button></div></div>`);
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost" id="clAll" title="A big bill going bit by bit">Every line on this bill</button><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="clOk">Keep for later (Enter)</button></div></div>`);
   const q=m.querySelector('#clQty'), nt=m.querySelector('#clNote');
   const ok=()=>{ const n=+q.value||0;
+    if(issuedOf(l)>n+1e-9){ q.focus(); q.select(); return toast(`${fq(issuedOf(l))} of this has already gone`,'warn') }
     if(n<=0){ delete l.later; delete l.laterNote; m.remove(); render(); return toast('All taken now') }
     if(n>l.qty+1e-9){ q.focus(); q.select(); return toast(`Only ${fq(l.qty)} on this line`,'warn') }
     l.later=+n.toFixed(3); const t=(nt.value||'').trim(); if(t) l.laterNote=t; else delete l.laterNote;
     m.remove(); render(); toast(`${fq(l.later)} of ${lineName(l)} to collect later`) };
   m.querySelector('#clOk').onclick=ok;
-  const off=m.querySelector('#clOff'); if(off) off.onclick=()=>{ delete l.later; delete l.laterNote; m.remove(); render(); toast('All taken now') };
+  m.querySelector('#clAll').onclick=()=>{ let n=0; S.pos.lines.forEach(x=>{ if(x.qty>0&&!isOpenLine(x)){ x.later=+(+x.qty).toFixed(3); n++ } }); m.remove(); render(); toast(`${n} line${n===1?'':'s'} to go in parts. Each part gets a delivery note`) };
+  const off=m.querySelector('#clOff'); if(off) off.onclick=()=>{ if(issuedOf(l)>0) return toast(`${fq(issuedOf(l))} of this has already gone`,'warn'); delete l.later; delete l.laterNote; m.remove(); render(); toast('All taken now') };
   [q,nt].forEach(el=>el.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); ok() } }));
   q.focus(); q.select();
 }
@@ -23212,7 +23304,7 @@ function billHit(s,q){
   if(billType==='cash'&&s.type!=='CASH')return false;
   if(billType==='credit'&&s.type!=='CREDIT')return false;
   if(billType==='unpaid'&&!(s.balance>0))return false;
-  if(billType==='undelivered'&&!billUndelivered(s))return false;
+  if(billType==='undelivered'&&!billUndelivered(s)&&!pendingNow.has(s.no))return false;
   if(billBy!=='all'&&s.by!==billBy)return false;
   if(billCust&&s.customerId!==billCust)return false;             // every bill of one customer, picked from the list
   if(!q)return true;
@@ -23233,7 +23325,9 @@ function billList(){
   list.sort((a,b)=>a.date===b.date?seq.get(b.no)-seq.get(a.no):b.date.localeCompare(a.date));
   return list;
 }
+let pendingNow=new Set();   // the bills with goods still to give, worked out once for each drawing of the page
 function bills(){
+  pendingNow=pendingBills();
   const list=billList();
   const sum=list.reduce((a,s)=>{a.total+=s.total;a.paid+=s.paid;a.bal+=s.balance;return a},{total:0,paid:0,bal:0});
   const cashiers=[...new Set(S.sales.map(s=>s.by))];
@@ -23251,7 +23345,7 @@ function bills(){
       <button class="btn ghost sm" data-act="billCustAll">Every bill again</button></div>`:''}
     <div class="chips">${[[0,'Today'],[1,'Yesterday'],[7,'7 days'],[30,'30 days']].map(d=>`<button class="${dayIs(d[0])?'on':''}" data-act="billDay" data-d="${d[0]}">${d[1]}</button>`).join('')}<button class="${!billFrom&&!billTo?'on':''}" data-act="billAllDates">All time</button>
      <span class="bl-dates"><input id="billFrom" type="date" value="${billFrom}" title="From"><span>–</span><input id="billTo" type="date" value="${billTo}" title="To"></span></div>
-    <div class="chips" style="margin-bottom:6px">${[['all','All'],['cash','Cash'],['credit','Credit'],['unpaid','Outstanding'],['undelivered',`Not delivered${(n=>n?' · '+n:'')(undeliveredBills().length)}`]].filter(o=>o[0]!=='undelivered'||featOn('undelivered')).map(o=>`<button class="${billType===o[0]?'on':''}" data-act="billKind" data-v="${o[0]}">${o[1]}</button>`).join('')}
+    <div class="chips" style="margin-bottom:6px">${[['all','All'],['cash','Cash'],['credit','Credit'],['unpaid','Outstanding'],['undelivered',`Not delivered${(n=>n?' · '+n:'')(undeliveredBills().length+pendingNow.size)}`]].filter(o=>o[0]!=='undelivered'||featOn('undelivered')||pendingNow.size).map(o=>`<button class="${billType===o[0]?'on':''}" data-act="billKind" data-v="${o[0]}">${o[1]}</button>`).join('')}
      <select id="billBy" class="bl-by"><option value="all">Any cashier</option>${cashiers.map(x=>`<option ${billBy===x?'selected':''}>${x}</option>`).join('')}</select>
      ${filtered?`<button class="clear" data-act="billClear" style="color:var(--chip-rust)">Clear</button>`:''}</div>
     <div class="bl-count"><span><b>${list.length}</b> bill${list.length===1?'':'s'} · ${fmt(sum.total)} billed</span>
@@ -23263,7 +23357,7 @@ function bills(){
        ${/* who it was for reads first and biggest; the number and the rest sit under it */''}
        <div class="bl-who"><b class="${c.id===1?'walk':''}">${c.id===1?`Walk-in${s.phone?' · '+s.phone:''}`:`<a href="#" data-act="billCust" data-id="${c.id}" title="every bill of theirs">${c.name}</a>`}</b>
         <span class="bl-no2">${s.no}${c.id!==1&&c.phone?' · '+c.phone:''}</span>
-        <span class="muted">${billUndelivered(s)?'<b style="color:var(--chip-rust)">not delivered</b> · ':''}${s.lines.length} line${s.lines.length===1?'':'s'} · ${s.by}${(s.remade||[]).length?' · re-made':''}${(s.edits||[]).length?' · corrected':''}</span></div>
+        <span class="muted">${billUndelivered(s)?'<b style="color:var(--chip-rust)">not delivered</b> · ':''}${pendingNow.has(s.no)?'<b style="color:var(--chip-rust)">goods pending</b> · ':''}${s.lines.length} line${s.lines.length===1?'':'s'} · ${s.by}${(s.remade||[]).length?' · re-made':''}${(s.edits||[]).length?' · corrected':''}</span></div>
        <div class="bl-amt"><b>${fmt(s.total)}</b>${s.balance>0?`<i class="owe">${fmt(s.balance)} outstanding</i>`:s.type==='CREDIT'?'<i class="ok">credit · paid</i>':'<i class="ok">cash</i>'}${gpSeen()?(gpOdd(s)?'<i class="gp odd" title="The cost written on a line is far above what it sold for — check it">GP · cost looks wrong</i>':(()=>{const g=gpOf(s.lines,s.billDisc);return `<i class="gp ${g.gp<0?'neg':''}">GP ${fmt(g.gp)} · ${g.pct}%</i>`})()):''}</div></div>`}).join('')
       ||`<div class="muted" style="padding:20px 8px">No bill matches that. Try the last few digits of the number, or their mobile.</div>`}
      ${list.length>billLimit?`<div style="padding:8px"><button class="btn ghost sm" data-act="billMore">Show 150 more</button> <span class="muted">of ${list.length}</span></div>`:''}
@@ -23328,6 +23422,7 @@ function billDetail(inv){
   const c=C(inv.customerId)||{id:0,name:'—',phone:''};
   const qty=inv.lines.reduce((a,l)=>a+l.qty,0), gross=inv.lines.reduce((a,l)=>a+l.qty*l.price,0), disc=inv.lines.reduce((a,l)=>a+(l.disc||0),0)+(inv.billDisc||0);
   const prev=c.id&&c.id!==1?partyBal('C',c.id)-inv.balance:0;
+  const hasLater=inv.lines.some(l=>laterOf(l)>0), openLines=hasLater?billPendingLines(inv):[];
   const canEdit=can('cancelBill')||can('adjustInvoice');
   return `<div class="bl-head">
     <div><div class="bl-no">${inv.no}</div><div class="muted">${inv.date} ${inv.time||''} · by <b>${inv.by}</b> · ${inv.type==='CREDIT'?'<span class="tag warn">credit</span>':'<span class="tag ok">cash</span>'}${billUndelivered(inv)?' <span class="tag bad">not delivered</span>':inv.undelivered&&inv.deliveredAt?` <span class="tag ok">delivered ${inv.deliveredAt}</span>`:''}${(inv.remade||[]).length?` <span class="tag warn">re-made ${inv.remade.length}×</span>`:''}${(inv.edits||[]).length?' <span class="tag warn">corrected</span>':''}${inv.feedback?` <span class="tag ${inv.feedback.stars<=2?'bad':'ok'}" title="${noteEsc([(inv.feedback.tags||[]).join(', '),inv.feedback.note].filter(Boolean).join(' — ')||'the customer rated it')}">${'★'.repeat(inv.feedback.stars)} from the customer</span>`:''}</div></div>
@@ -23349,7 +23444,8 @@ function billDetail(inv){
      ${inv.balance>0?`<button class="btn tape sm" data-act="custPay" data-id="${inv.customerId}">Take payment</button>`:''}
      ${featOn('plans')&&+inv.balance>0.005&&inv.customerId!==1&&!(S.plans||[]).some(p=>p.status!=='closed'&&(p.bills||[]).includes(inv.no))?`<button class="btn ghost sm" data-act="planNew" data-no="${inv.no}">Easy payments</button>`:''}
      ${!featOn('dlv')||(S.deliveries||[]).some(d=>d.bill===inv.no&&d.status!=='cancelled')?'':`<button class="btn ghost sm" data-act="dlvNew" data-no="${inv.no}">Deliver</button>`}
-     ${billUndelivered(inv)?`<button class="btn tape sm" data-act="billDlvDone" data-no="${inv.no}" title="The goods have gone to the customer">Delivered ✓</button>`:inv.deliveredAt?(inv.undelivered?`<button class="btn ghost sm" data-act="billDlvSlip" data-no="${inv.no}" title="Print the delivery note again">Delivery note</button>`:''):`<button class="btn ghost sm" data-act="billDlvNot" data-no="${inv.no}" title="The goods are still here — put it on the Not delivered list">Not delivered yet</button>`}
+     ${billPending(inv)?`<button class="btn tape sm" data-act="colIssueBill" data-no="${inv.no}" title="Give some of the pending goods and print a delivery note">Issue goods</button>`:(!inv.returnOf&&!inv.proof&&!inv.lines.some(l=>laterOf(l)>0)&&inv.lines.some(l=>l.qty>0)?`<button class="btn ghost sm" data-act="billIssueParts" data-no="${inv.no}" title="The goods go bit by bit: a delivery note each time, and the bill shows what is pending">Issue in parts</button>`:'')}
+     ${billPending(inv)||inv.lines.some(l=>laterOf(l)>0)?'':billUndelivered(inv)?`<button class="btn tape sm" data-act="billDlvDone" data-no="${inv.no}" title="The goods have gone to the customer">Delivered ✓</button>`:inv.deliveredAt?(inv.undelivered?`<button class="btn ghost sm" data-act="billDlvSlip" data-no="${inv.no}" title="Print the delivery note again">Delivery note</button>`:''):`<button class="btn ghost sm" data-act="billDlvNot" data-no="${inv.no}" title="The goods are still here — put it on the Not delivered list">Not delivered yet</button>`}
      <button class="btn ghost sm" data-act="billCopy" data-no="${inv.no}">Bill again</button>
      ${canEdit?`<button class="btn ghost sm" data-act="billEdit" data-no="${inv.no}">Edit in the till</button><button class="btn ghost sm" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}</div>
    </div>
@@ -23362,10 +23458,11 @@ function billDetail(inv){
     <div class="${inv.balance>0?'owe':''}"><span>Balance</span><b>${money2(inv.balance)}</b></div>
     ${prev?`<div><span>Other bills outstanding</span><b>${money2(prev)}</b></div>`:''}
    </div>
-   <div class="bl-lines"><table class="till-tbl"><tr><th>CODE</th><th>ITEM</th><th class="n">QTY</th><th class="n">MRP</th><th class="n">PRICE</th><th class="n">DISC</th><th class="n">AMOUNT</th></tr>
-    ${inv.lines.map(l=>{const p=P(l.pid)||NOPROD;return `<tr><td class="c">${p.num||p.code}</td><td class="d">${lineName(l)}${lineFrom(l,inv)?` <b>[issue from ${lineFrom(l,inv)}]</b>`:''}${l.serials&&l.serials.length?`<div class="muted">S/N ${l.serials.join(', ')}</div>`:''}</td>
-      <td class="n">${fq(l.qty)}</td><td class="n">${mrpShown(l.mrp||p.mrp,l.qty?(l.qty*l.price-(l.disc||0))/l.qty:l.price)?money2(l.mrp||p.mrp):'—'}</td><td class="n">${money2(l.price)}</td><td class="n">${l.disc?money2(l.disc):'—'}</td><td class="n"><b>${money2(l.qty*l.price-(l.disc||0))}</b></td></tr>`}).join('')}</table></div>
+   <div class="bl-lines"><table class="till-tbl"><tr><th>CODE</th><th>ITEM</th><th class="n">QTY</th>${hasLater?'<th class="n">GIVEN</th><th class="n">PENDING</th>':''}<th class="n">MRP</th><th class="n">PRICE</th><th class="n">DISC</th><th class="n">AMOUNT</th></tr>
+    ${inv.lines.map((l,li)=>{const p=P(l.pid)||NOPROD, pend=hasLater?(openLines.find(x=>x.i===li)||{left:0}).left:0;return `<tr><td class="c">${p.num||p.code}</td><td class="d">${lineName(l)}${lineFrom(l,inv)?` <b>[issue from ${lineFrom(l,inv)}]</b>`:''}${l.serials&&l.serials.length?`<div class="muted">S/N ${l.serials.join(', ')}</div>`:''}</td>
+      <td class="n">${fq(l.qty)}</td>${hasLater?`<td class="n">${l.qty>0?fq(+(l.qty-laterOf(l)+issuedOf(l)).toFixed(3)):'—'}</td><td class="n">${pend>0?`<b style="color:var(--chip-rust)">${fq(pend)}</b>`:'—'}</td>`:''}<td class="n">${mrpShown(l.mrp||p.mrp,l.qty?(l.qty*l.price-(l.disc||0))/l.qty:l.price)?money2(l.mrp||p.mrp):'—'}</td><td class="n">${money2(l.price)}</td><td class="n">${l.disc?money2(l.disc):'—'}</td><td class="n"><b>${money2(l.qty*l.price-(l.disc||0))}</b></td></tr>`}).join('')}</table></div>
    <div class="bl-foot">
+    ${billIssuedBox(inv)}
     ${(inv.pays||[]).length?`<div class="bl-pays"><b>How it was paid</b>${inv.pays.map(p=>`<div><span>${p.method}${p.ref?' · '+p.ref:''}${p.bank?' · '+p.bank:''}</span><b>${money2(p.amount)}</b></div>`).join('')}</div>`:''}
     ${(inv.edits||[]).length?`<div class="bl-hist"><b>Corrections</b>${inv.edits.map(e=>`<div class="muted">${e.at||''} ${e.by||''}: ${e.what||e.note||''}</div>`).join('')}</div>`:''}
     ${(inv.remade||[]).length?`<div class="bl-hist"><b>Re-made</b>${inv.remade.map(e=>`<div class="muted">${e.at} by ${e.by} — was ${fmt(e.total)}, ${e.lines} lines${e.why?` · <i>${e.why}</i>`:''}</div>`).join('')}</div>`:''}
@@ -23394,6 +23491,11 @@ function billPrintNow(no,f){
   toast(`Printing ${no} — ${f==='a5'?'large A5 bill':'small 80mm receipt'}`,'info');
   printBill({...inv,reprint:!inv.proof},f);
 }
+/* Ctrl+K: the calculator, anywhere on the till, cursor in a box or not */
+document.addEventListener('keydown',e=>{
+  if(!(e.ctrlKey||e.metaKey)||e.shiftKey||e.altKey||String(e.key).toLowerCase()!=='k'||S.view!=='pos'||!S.user||document.getElementById('lockScreen')||document.querySelector('.modal')) return;
+  e.preventDefault(); e.stopPropagation(); tillCalc();
+},true);
 /* Alt+L large, Alt+S small, Alt+P look first, Alt+C camera — on the bill picked on the Bills page */
 document.addEventListener('keydown',e=>{
   if(!e.altKey||e.ctrlKey||e.metaKey||(S.view!=='bills'&&S.view!=='recall')||document.querySelector('.modal')) return;
@@ -26163,7 +26265,7 @@ function billHtml(inv,f='a5'){
     <div class="x-to"><div class="x-lbl">${dk?'QUOTED FOR':'BILL TO'}</div><div class="x-cn">${walk?'WALK-IN CUSTOMER':esc5(c.name.toUpperCase())}</div>${custLine?`<div class="x-ca">${custLine}</div>`:''}</div>
    </div>`:'');
   /* the remarks box only when something was written on the bill at the till */
-  const laterH=(inv.lines||[]).some(l=>+l.later>0)?`<div class="x-box x-rem"><div class="x-bh">GOODS NOT ISSUED — TO COLLECT LATER</div><div class="x-bb">${inv.lines.filter(l=>+l.later>0).map(l=>`${esc5(lineName(l).toUpperCase())} — ${fq(+l.later)}`).join('<br>')}<br><i>Bring this bill to collect them.</i></div></div>`:'';
+  const laterH=billAllLater(inv)?`<div class="x-box x-rem"><div class="x-bh">GOODS TO BE ISSUED IN PARTS</div><div class="x-bb">Each part comes with a delivery note to sign.</div></div>`:(inv.lines||[]).some(l=>+l.later>0)?`<div class="x-box x-rem"><div class="x-bh">GOODS NOT ISSUED — TO COLLECT LATER</div><div class="x-bb">${inv.lines.filter(l=>+l.later>0).map(l=>`${esc5(lineName(l).toUpperCase())} — ${fq(+l.later)}`).join('<br>')}<br><i>Bring this bill to collect them.</i></div></div>`:'';
   const remH=billDlvNote(inv,true)+laterH+(inv.note?`<div class="x-box x-rem"><div class="x-bh">REMARKS</div><div class="x-bb">${esc5(inv.note)}</div></div>`:'');
   const subH=`<div class="x-box x-sub"><div class="x-bh">SUB TOTAL</div><div class="x-bb"><div><span>Lines</span><b>${inv.lines.length}</b></div><div><span>Quantity</span><b>${fq(qtyAll)}</b></div><div><span>Gross value</span><b>${money2(gross)}</b></div>${disc>0.005?`<div><span>Discount</span><b>− ${money2(disc)}</b></div>`:''}<div class="net"><span>Net</span><b>${money2(inv.total)}</b></div>${vatOn()?`<div><span>Value excl. VAT</span><b>${money2(inv.total-vatIn(inv.total))}</b></div><div><span>VAT ${+CFG.tax.rate}%</span><b>${money2(vatIn(inv.total))}</b></div>`:''}</div></div>`;
   const paidH=dk?`<div><span>Quoted on</span><b>${esc5(inv.date||'')}</b></div><div><span>Holds good for</span><b>${inv.valid||CFG.bill.quoteDays||14} days</b></div>`:credit?`<div><span>Paid now</span><b>${money2(inv.paid)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div>`
@@ -26274,7 +26376,7 @@ function regalA5Pages(o){
     cr.forEach((r,k)=>{ if(k<a||k>=b) r.remove() });
     if(!last) [...c.children].slice(cut).forEach(e=>e.remove());
     const t=document.createElement('div'); t.className='a5-pg'; t.style.cssText='text-align:right;font-size:10px;line-height:14px;color:#000;flex:none';
-    t.textContent='Page '+(no+1)+' of '+n+(last?'':', continued on the next page')+(no&&o.no?' · Bill '+o.no:'');
+    t.textContent='Page '+(no+1)+' of '+n+(last?'':', continued on the next page')+(no&&o.no?' · '+(/^ISN/i.test(o.no)?'':'Bill ')+o.no:'');
     c.insertBefore(t,c.children[cut]||null);
     if(no) [...c.children].slice(0,cut-1).forEach(e=>e.remove());
     holder.parentNode.insertBefore(c,holder); sheet(c,last) });
@@ -34549,6 +34651,7 @@ document.addEventListener('click',e=>{
     csLaterAct:()=>csLater(+a.dataset.i),
     colIssue:()=>collectIssue(a.dataset.no,+a.dataset.i),
     colIssueBill:()=>collectIssue(a.dataset.no),
+    billIssueParts:()=>billIssueParts(a.dataset.no),
     colReprint:()=>collectPrint(a.dataset.isn),
     shopWork:()=>shopWorkAsk(+a.dataset.id),
     swYes:()=>shopWorkDecide(+a.dataset.id, true),
