@@ -6838,9 +6838,9 @@ function voucherPrint(v){
   const lines=(v.lines||[]).map((l,i)=>`<tr><td>${i+1}</td><td>${l[0]}</td><td class="n">${money2(l[1])}</td></tr>`).join('');
   const vm=modal(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
     <h2 style="margin:0">${v.title} — ${v.no}</h2>
-    <div style="display:flex;gap:6px"><button class="btn ${v.view?'tape':'ghost'} sm" data-act="rePrintPaper">${v.view?'Print':'Print again'}</button>
+    <div style="display:flex;gap:6px">${v.ask?'<button class="btn tape sm" id="vAskPrint">Print <i class="kbd">Enter</i></button>':`<button class="btn ${v.view?'tape':'ghost'} sm" data-act="rePrintPaper">${v.view?'Print':'Print again'}</button>`}
      ${v.mail?`<button class="btn ghost sm" id="vMail" title="${v.mail.to?'Email it to '+v.mail.to:'Their email is asked for'}">Email PDF</button>`:''}
-     <button class="btn ${v.view?'ghost':'tape'} sm vclose" data-act="closeModal">Close <i class="kbd">Enter</i></button></div></div>
+     <button class="btn ${v.view||v.ask?'ghost':'tape'} sm vclose" data-act="closeModal">${v.ask?'No print <i class="kbd">Esc</i>':'Close <i class="kbd">Enter</i>'}</button></div></div>
    <div class="print a5 bill voucher">
     <div class="bhead">
      <div class="bbrand"><div class="bmark">${mark(42)}</div>
@@ -6866,7 +6866,9 @@ function voucherPrint(v){
      <em>PRINTED ${D(today).split('-').reverse().join(' ')} · PAGE 1 OF 1</em></div>
    </div>`);
   const pr=vm&&vm.querySelector('.print'); if(pr){ const inner=pr.outerHTML; window._paperNow={inner,f:'a5',no:v.no};
-    if(!v.view&&!skip){ printPaper(printDocument(inner,'a5'),'a5',v.no,()=>paperFallback(inner,'a5')); window._paperNow.at=Date.now();
+    // approved from the Action centre (6 Nov 2026): nobody has said they want paper yet, and once a job has gone nothing can call it back
+    if(v.ask&&!skip){ const go=vm.querySelector('#vAskPrint'); if(go){ go.onclick=()=>{ go.onclick=null; vm.remove(); printPaper(printDocument(inner,'a5'),'a5',v.no,()=>paperFallback(inner,'a5')) }; setTimeout(()=>{ if(document.body.contains(go)) go.focus() },0) } }
+    else if(!v.view&&!skip){ printPaper(printDocument(inner,'a5'),'a5',v.no,()=>paperFallback(inner,'a5')); window._paperNow.at=Date.now();
       setTimeout(()=>{ const cb=vm.querySelector('.vclose'); if(cb) cb.focus() },0) }
     if(skip){ if(v.mail&&v.mail.auto) mailPaperAuto({...v.mail,inner}); vm.remove(); toast(`${v.title} ${v.no} saved — not printed`,'ok'); return }
     if(v.mail){ const b=vm.querySelector('#vMail'); if(b) b.onclick=()=>mailPaperModal({...v.mail,inner}); if(v.mail.auto) mailPaperAuto({...v.mail,inner}); } }
@@ -6963,10 +6965,10 @@ function invoiceMail(inv){
 }
 function mailInvoice(inv){ mailPaperModal(invoiceMail(inv)) }
 const autoMailOn=(k)=>!!(CFG.mail&&CFG.mail.host&&CFG.mail[k]!==false);
-function supplierVoucher(pv,fresh){
+function supplierVoucher(pv,fresh,ask){
   const s=SU(pv.supplierId);
   const owe=partyBal('S',s.id), how=(pv.lines||[]).map(l=>l.method==='CHEQUE'?`cheque #${l.no}${l.date?' dated '+l.date:''}`:String(l.method||'').toLowerCase()).filter(Boolean).join(' and ');
-  voucherPrint({view:!fresh,title:'Payment Voucher',no:pv.voucher,date:pv.date,payee:s.name,payeeSub:`${s.contact} · ${s.phone} · account ${s.code}`,
+  voucherPrint({view:!fresh,ask,title:'Payment Voucher',no:pv.voucher,date:pv.date,payee:s.name,payeeSub:`${s.contact} · ${s.phone} · account ${s.code}`,
     mail:{to:isEmail(s.email)?s.email.trim():'',party:{kind:'S',id:s.id},filename:pv.voucher,what:'Payment voucher '+pv.voucher,
       subject:`Payment voucher ${pv.voucher} — ${shopNice()}`,
       text:letter('supplier',`Please find attached our payment voucher ${pv.voucher} dated ${pv.date} for ${fmt(pv.total)}${how?', paid by '+how:''}.`+(owe>0.005?` After this payment the outstanding to you is ${fmt(owe)}.`:' This settles our account with you.')),
@@ -6993,9 +6995,9 @@ function receiptMail(c,no,date,amount,fresh){
     text:letter('customer',`Thank you for your payment of ${fmt(amount)}. Please find attached receipt voucher ${no} dated ${date}.`+(bal>0.005?` Your balance after this payment is ${fmt(bal)}.`:' Your account is now settled.')),
     auto:!!fresh&&c.id!==1&&isEmail(c.email)&&autoMailOn('autoVoucher') };
 }
-function receiptVoucher(rv,fresh){
+function receiptVoucher(rv,fresh,ask){
   const c=C(rv.customerId);
-  voucherPrint({view:!fresh,title:'Receipt Voucher',no:rv.voucher,date:rv.date,payee:c.name,payeeLabel:'RECEIVED FROM',mail:receiptMail(c,rv.voucher,rv.date,rv.amount,fresh),
+  voucherPrint({view:!fresh,ask,title:'Receipt Voucher',no:rv.voucher,date:rv.date,payee:c.name,payeeLabel:'RECEIVED FROM',mail:receiptMail(c,rv.voucher,rv.date,rv.amount,fresh),
     payeeSub:`${c.phone||''}${c.code?' · account '+c.code:''}`,amount:rv.amount,totalLabel:'AMOUNT RECEIVED',
     rows:[['Receipt number',rv.no],['Method',rv.method],
       ['Against',(rv.against&&rv.against.length)?rv.against.join(', '):'oldest bills first'],
@@ -23686,14 +23688,14 @@ function applyApproval(a){
       if(d.chqMeta){ const ch=S.cheques.at(-1); if(ch) Object.assign(ch,d.chqMeta,{recvDate:d.date||D(today),manual:true}) }
       rvs.forEach(rv=>{ if(rv) rv.takenBy=a.by });
       payTexts(rvs,{customer:d.sms!==false});
-      setTimeout(()=>{ try{ receiptVoucherCombined(rvs,true) }catch(e){} },80);
+      setTimeout(()=>{ try{ receiptVoucherCombined(rvs,true,true) }catch(e){} },80);
       break }
     case 'supPay':{ const sp=SU(d.supplierId); if(!sp) throw new Error('Supplier no longer exists');
       const pv=paySupplier({supplierId:sp.id,lines:d.lines||[],against:d.against||[],notes:d.notes||'',date:d.date||D(today),allowDamage:!!d.allowDamage});
       pv.paidBy=a.by;
       if(d.prId){ const r=payReqs().find(x=>x.id===d.prId); if(r){ r.status='issued';
         r.pay={date:d.date||D(today),what:payWhat(d.lines||[]),voucher:pv.voucher,by:a.by,no:pv.no}; prStep(r,'issued',payWhat(d.lines||[])) } }
-      setTimeout(()=>{ try{ supplierVoucher(pv,true) }catch(e){} },80);
+      setTimeout(()=>{ try{ supplierVoucher(pv,true,true) }catch(e){} },80);
       break }
     case 'chqCancel':{ const c=S.cheques.find(x=>x.no===d.no&&x.dir==='ISSUED'); if(!c) throw new Error('That cheque is not there any more'); chqCancelNow(c,d.why,a.by+' (approved by '+S.user.name+')'); break }
     case 'supPayPrep':{ const r=payReqs().find(x=>x.id===d.prId); if(!r) throw new Error('That payment is no longer there');
@@ -25603,10 +25605,10 @@ function payTexts(rvs,{customer=true}={}){
   return out;
 }
 /* one voucher for a payment that came in parts */
-function receiptVoucherCombined(rvs,fresh){
-  if(rvs.length===1) return receiptVoucher(rvs[0],fresh);
+function receiptVoucherCombined(rvs,fresh,ask){
+  if(rvs.length===1) return receiptVoucher(rvs[0],fresh,ask);
   const first=rvs[0], c=C(first.customerId), total=rvs.reduce((a,r)=>a+r.amount,0);
-  voucherPrint({view:!fresh,title:'Receipt Voucher',no:first.voucher,date:first.date,payee:c.name,payeeLabel:'RECEIVED FROM',mail:receiptMail(c,first.voucher,first.date,total,fresh),
+  voucherPrint({view:!fresh,ask,title:'Receipt Voucher',no:first.voucher,date:first.date,payee:c.name,payeeLabel:'RECEIVED FROM',mail:receiptMail(c,first.voucher,first.date,total,fresh),
     payeeSub:`${c.phone||''}${c.code?' · account '+c.code:''}`,amount:total,totalLabel:'AMOUNT RECEIVED',
     rows:[['Receipt numbers',rvs.map(r=>r.no).join(', ')],['Against',(first.against&&first.against.length)?first.against.join(', '):'oldest bills first'],
       ['Balance after this payment',fmt(partyBal('C',c.id))],['Received by',first.by||S.user.name]],
