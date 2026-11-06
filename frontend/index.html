@@ -22779,26 +22779,24 @@ function noteA5(inv,rec,isn){
   const shown=rows.filter(x=>laterOf(x.l)>0||x.now>0);
   const nowN=shown.reduce((a,x)=>a+x.now,0), leftN=shown.reduce((a,x)=>a+x.left,0);
   const addr=c.id!==1&&c.address?c.address:'';
-  const cell='padding:3px 6px;vertical-align:top';
-  return `<div class="print a5 sbx" style="--a-items:12px;width:100%;aspect-ratio:auto;min-height:136mm;box-sizing:border-box;font-size:12px;color:#000;border:0;padding:6px 9px">
-   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div><div style="font-weight:800;font-size:19px">${noteEsc(SH.name||'')}</div>
-     <div>${noteEsc(SH.addr||'')}</div><div>${noteEsc([SH.phone,SH.land].filter(Boolean).join(' · '))}</div></div>
-    <div style="text-align:right"><div style="font-weight:800;font-size:17px;letter-spacing:.1em;border:2px solid #000;padding:3px 12px">DELIVERY NOTE</div>
-     <div style="margin-top:3px"><b>${noteEsc(isn)}</b> · ${noteEsc(rec.date||'')}</div></div></div>
-   <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 16px;border:1px solid #000;padding:4px 7px;margin:7px 0 5px">
-    <div>Bill: <b>${noteEsc(inv.no)}</b> of ${noteEsc(inv.date||'')}</div>
-    <div>Customer: <b>${noteEsc(c.id===1?'Walk-in':(c.name||''))}</b>${c.id!==1&&c.phone?' · '+noteEsc(c.phone):''}</div>
-    ${addr?`<div style="grid-column:1/-1">Deliver to: ${noteEsc(addr)}</div>`:''}
-    ${rec.who?`<div>Taken by: <b>${noteEsc(rec.who)}</b></div>`:''}${rec.car?`<div>Vehicle: <b>${noteEsc(rec.car)}</b></div>`:''}
-   </div>
-   <table class="x-tbl" style="width:100%;border-collapse:collapse"><thead><tr><th style="${cell};width:24px">#</th><th style="${cell};text-align:left">ITEM</th><th style="${cell};text-align:right;width:62px">ON BILL</th><th style="${cell};text-align:right;width:70px">GIVEN BEFORE</th><th style="${cell};text-align:right;width:70px">THIS NOTE</th><th style="${cell};text-align:right;width:62px">PENDING</th></tr></thead>
+  const cell='padding:3px 6px;vertical-align:top', info='padding:2px 8px;border:0;text-align:left;vertical-align:top', sign='padding:3px 0 0;border:0;border-top:1px solid #000;text-align:center;vertical-align:top', sc=Math.max(0.6,Math.min(2,(+CFG.bill.a5Scale||100)/100));
+  return `<div class="print a5 sbx" data-scale="${sc}" style="zoom:${sc};width:calc(100% / ${sc});--a-items:12px;aspect-ratio:auto;min-height:calc(136mm / ${sc});box-sizing:border-box;font-size:12px;line-height:1.25;color:#000;border:0;padding:6px 9px">
+   <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0"><tr>
+     <td style="padding:0;border:0;vertical-align:top;text-align:left"><div style="font-weight:800;font-size:22px;line-height:1.15">${noteEsc(SH.name||'')}</div>
+      <div>${noteEsc(SH.addr||'')}</div><div>${noteEsc([SH.phone,SH.land].filter(Boolean).join(' · '))}</div></td>
+     <td style="padding:0;border:0;vertical-align:top;text-align:right;width:230px"><div style="display:inline-block;font-weight:800;font-size:18px;letter-spacing:.1em;border:2px solid #000;padding:3px 12px">DELIVERY NOTE</div>
+      <div style="margin-top:3px"><b>${noteEsc(isn)}</b> · ${noteEsc(rec.date||'')}</div></td></tr></table>
+   <table style="width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #000;margin:6px 0 5px">
+    <tr><td style="${info}">Bill: <b>${noteEsc(inv.no)}</b> of ${noteEsc(inv.date||'')}</td><td style="${info}">Customer: <b>${noteEsc(c.id===1?'Walk-in':(c.name||''))}</b>${c.id!==1&&c.phone?' · '+noteEsc(c.phone):''}</td></tr>
+    ${addr?`<tr><td colspan="2" style="${info}">Deliver to: ${noteEsc(addr)}</td></tr>`:''}
+    ${rec.who||rec.car?`<tr><td style="${info}">${rec.who?`Taken by: <b>${noteEsc(rec.who)}</b>`:''}</td><td style="${info}">${rec.car?`Vehicle: <b>${noteEsc(rec.car)}</b>`:''}</td></tr>`:''}
+   </table>
+   <table class="x-tbl" style="width:100%;border-collapse:collapse"><thead><tr><th style="${cell};width:26px">#</th><th style="${cell};text-align:left">ITEM</th><th style="${cell};text-align:right;width:66px">ON BILL</th><th style="${cell};text-align:right;width:76px">GIVEN BEFORE</th><th style="${cell};text-align:right;width:66px">THIS NOTE</th><th style="${cell};text-align:right;width:70px">PENDING</th></tr></thead>
     <tbody>${shown.map((x,k)=>`<tr><td style="${cell};text-align:center">${k+1}</td><td style="${cell}">${noteEsc(lineName(x.l).toUpperCase())}</td><td style="${cell};text-align:right">${fq(x.l.qty)}</td><td style="${cell};text-align:right">${x.before?fq(x.before):'—'}</td><td style="${cell};text-align:right;font-weight:800">${x.now?fq(x.now):'—'}</td><td style="${cell};text-align:right">${x.left?fq(x.left):'—'}</td></tr>`).join('')}</tbody></table>
-   <div style="margin-top:6px;font-weight:700">${leftN>0?`This note: ${fq(nowN)}. Still pending on this bill: ${fq(leftN)}.`:`This note: ${fq(nowN)}. All goods on this bill have now been given.`}</div>
+   <div style="margin-top:6px;font-weight:700;font-size:13px">${leftN>0?`This note: ${fq(nowN)}. Still pending on this bill: ${fq(leftN)}.`:`This note: ${fq(nowN)}. All goods on this bill have now been given.`}</div>
    <div style="flex:1"></div>
-   <div style="display:flex;justify-content:space-between;gap:30px;margin-top:26px">
-    <div style="flex:1;border-top:1px solid #000;padding-top:3px;text-align:center">Issued by (${noteEsc(rec.by||'')})</div>
-    <div style="flex:1;border-top:1px solid #000;padding-top:3px;text-align:center">Delivered by</div>
-    <div style="flex:1;border-top:1px solid #000;padding-top:3px;text-align:center">Received in good order, name and date</div></div>
+   <table style="width:100%;border-collapse:separate;border-spacing:24px 0;table-layout:fixed;margin:24px -24px 0;width:calc(100% + 48px)"><tr>
+    <td style="${sign}">Issued by (${noteEsc(rec.by||'')})</td><td style="${sign}">Delivered by</td><td style="${sign}">Received in good order, name and date</td></tr></table>
   </div>`;
 }
 /* After the bill: the goods go bit by bit. What is typed goes on a delivery note there and then; the rest becomes pending. */

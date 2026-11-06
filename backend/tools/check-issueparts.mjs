@@ -205,6 +205,27 @@ await pg.evaluate(n => window.eval('collectIssue')(n), left); await wait(250); a
 ok((await pg.evaluate(() => window._winPrint)) === 1, 'neither there: the browser print window opens, so it never just goes quiet');
 await pg.evaluate(() => { window.printPaper = (html, f, no) => { window._printed.push({ html: String(html), f, no }) }; window.eval("CFG.print.agent=''") });
 
+// the size on the paper: drawn on a sheet the width the printers use, as they draw it. It was half this (6 Nov 2026: the small-window zoom)
+const sized = await pg.evaluate(() => { const S = window.eval('S'), rec = { no: 'ISN-SIZE', qty: 1, date: '2026-11-06', by: 'Afridh' }, p = S.products.find(x => x.active !== false); return { html: window.eval('printDocument')(window.eval('noteA5')({ no: 'T-SIZE', date: '2026-11-06', customerId: 1, lines: [{ pid: p.id, qty: 5, price: 10, disc: 0, later: 5, issued: [rec] }] }, rec, rec.no), 'a5'), want: Math.max(0.6, Math.min(2, (+window.eval('CFG').bill.a5Scale || 100) / 100)) } });
+for (const w of [733, 794]) {
+  const sh = await b.newPage(); await sh.setRequestInterception(true); sh.on('request', rq => /^data:|^about:/.test(rq.url()) ? rq.continue() : rq.abort());
+  await sh.setViewport({ width: w, height: 800 }); await sh.setContent(sized.html.replace(/<base[^>]*>/, ''), { waitUntil: 'load' }); await sh.emulateMediaType('print');
+  const m = await sh.evaluate(() => { document.body.classList.add('direct-print'); const p = document.querySelector('#printArea .print'), td = p.querySelector('table.x-tbl td'), r = p.getBoundingClientRect(), z = parseFloat(getComputedStyle(p).zoom) || 1; return { zoom: z, td: parseFloat(getComputedStyle(td).fontSize), width: r.width } });
+  ok(Math.abs(m.zoom - sized.want) < 0.01, w + 'px sheet: the note is at the shop\'s large paper size', JSON.stringify(m));
+  ok(m.td * m.zoom >= 13.5, w + 'px sheet: an item line is big enough to read', String(m.td * m.zoom));
+  ok(m.width >= w * 0.95, w + 'px sheet: it fills the width of the sheet', String(m.width));
+  const lay = await sh.evaluate(() => { const find = t => [...document.querySelectorAll('#printArea td,#printArea div')].filter(e => e.textContent.trim().startsWith(t)).pop().getBoundingClientRect(), a = find('DELIVERY NOTE'), n = find('REGAL'), i = find('Issued by'), d = find('Delivered by'), r = find('Received in good'), c = find('Customer:'), bl = find('Bill:'); return { head: Math.abs(a.top - n.top) < 12 && a.left > n.left, sign: Math.abs(i.top - d.top) < 2 && Math.abs(d.top - r.top) < 2 && i.left < d.left && d.left < r.left, info: Math.abs(c.top - bl.top) < 2 && c.left > bl.left } });
+  ok(lay.head, w + 'px sheet: the shop on the left and DELIVERY NOTE on the right, in one row', JSON.stringify(lay));
+  ok(lay.sign, w + 'px sheet: the three signatures side by side');
+  ok(lay.info, w + 'px sheet: bill and customer side by side');
+  await sh.close();
+}
+await pg.bringToFront();
+
+// an ordinary note stays on one sheet
+const ten = await pg.evaluate(async () => { const S = window.eval('S'), ps = S.products.filter(p => p.active !== false).slice(0, 8), rec = { no: 'ISN-TEN', qty: 1, date: '2026-11-06', by: 'Afridh', who: 'Kamal', car: 'WP LA-1234' }; const html = window.eval('printDocument')(window.eval('noteA5')({ no: 'T-TEN', date: '2026-11-06', customerId: S.customers.find(c => c.id !== 1).id, lines: ps.map(p => ({ pid: p.id, qty: 5, price: 10, disc: 0, later: 5, issued: [{ ...rec }] })) }, rec, rec.no), 'a5'); return (await window.eval('a5PageDocs')(html, rec.no)).length });
+ok(ten === 1, 'an eight line note fits on one sheet', String(ten));
+
 // a long bill: the note runs on to more sheets, with the letterhead on the first only, each row once and the signatures on the last
 const long = await pg.evaluate(async () => {
   const S = window.eval('S'), ps = S.products.filter(p => p.active !== false).slice(0, 26);
