@@ -22847,6 +22847,29 @@ function collectIssue(no,only,parts){
   m.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); ok() } }));
   const f=m.querySelector('[data-ci]'); if(f){ f.focus(); f.select() }
 }
+/* Print on a delivery note already made: which paper (6 Nov 2026, the owner asked). 1 or S small, 2 or L large, Enter the one it
+   was printed on, Esc not now. Nothing goes to the printer until one is chosen. */
+function noteReprintAsk(isn){
+  let rec=null; (S.sales||[]).some(s=>(s.lines||[]).some(l=>(l.issued||[]).some(r=>{ if(r.no===isn){ rec=r; return true } return false })));
+  if(!rec) return toast('That delivery note is not in the books','warn');
+  const now=rec.paper==='r80'?'r80':'a5';
+  const m=modal(`<h2>Print delivery note ${noteEsc(isn)}</h2>
+   <div class="muted">Which paper?</div>
+   <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+    <button class="btn ${now==='r80'?'tape':'ghost'}" data-nf="r80" style="flex:1;padding:14px"><b>1</b> · Small (80mm)</button>
+    <button class="btn ${now==='a5'?'tape':'ghost'}" data-nf="a5" style="flex:1;padding:14px"><b>2</b> · Large (A5)</button></div>
+   <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn ghost" data-act="closeModal">Not now <i class="kbd">Esc</i></button></div>`);
+  const off=()=>document.removeEventListener('keydown',key,true);
+  let sent=false;
+  const go=(p)=>{ if(sent) return; sent=true; off(); m.remove(); collectPrint(isn,p) };
+  const key=(e)=>{ if(!document.body.contains(m)) return off();
+    const x=String(e.key).toLowerCase(), p=x==='1'||x==='s'?'r80':x==='2'||x==='l'?'a5':x==='enter'?now:null;
+    if(p){ e.preventDefault(); e.stopPropagation(); go(p) }
+    else if(x==='escape'){ e.preventDefault(); e.stopPropagation(); off(); m.remove() } };
+  document.addEventListener('keydown',key,true);
+  m.querySelectorAll('[data-nf]').forEach(b=>b.onclick=()=>go(b.dataset.nf));
+  const def=m.querySelector(`[data-nf="${now}"]`); if(def) def.focus();
+}
 /* the delivery note for goods given from a bill: the large sheet (noteA5), or the 80mm roll: what went, what is still to come, and the signatures */
 function collectPrint(isn,paper){
   const lines=[]; let inv=null, rec=null;
@@ -34633,7 +34656,7 @@ document.addEventListener('click',e=>{
     colIssue:()=>collectIssue(a.dataset.no,+a.dataset.i),
     colIssueBill:()=>collectIssue(a.dataset.no),
     billIssueParts:()=>billIssueParts(a.dataset.no),
-    colReprint:()=>collectPrint(a.dataset.isn),
+    colReprint:()=>noteReprintAsk(a.dataset.isn),
     shopWork:()=>shopWorkAsk(+a.dataset.id),
     swYes:()=>shopWorkDecide(+a.dataset.id, true),
     swNo:()=>shopWorkDecide(+a.dataset.id, false),

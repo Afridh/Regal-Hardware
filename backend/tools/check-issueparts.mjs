@@ -135,6 +135,36 @@ await pg.evaluate(isn => window.eval('collectPrint')(isn, 'r80'), firstIsn); awa
 ok((await pg.evaluate(() => window._printed.slice(-1)[0].f)) === 'r80', 'it can be asked for on the other paper');
 ok(/\b5\b/.test((await pg.evaluate(() => window._printed.slice(-1)[0].html)).match(/STILL PENDING[\s\S]*?sb-rule/)?.[0] || ''), 'the small reprint has the pending as it stood');
 
+// Print on a note asks which paper first
+const notePrints = () => pg.evaluate(() => window._printed.length);
+const pressPrint = isn => pg.evaluate(i => [...document.querySelectorAll('[data-act="colReprint"]')].find(b => b.dataset.isn === i).click(), isn).then(() => wait(250));
+await pg.evaluate(() => window.eval('render')()); await wait(200);
+let npr = await notePrints();
+await pressPrint(firstIsn);
+ok(await has('.modal [data-nf="a5"]') && await has('.modal [data-nf="r80"]') && await notePrints() === npr, 'Print on a note asks large or small, and nothing has printed yet');
+if (OUT) await pg.screenshot({ path: OUT + '/note-ask.png' });
+await pg.evaluate(() => document.querySelector('.modal [data-nf="r80"]').click()); await wait(250);
+pr = await pg.evaluate(() => window._printed.slice(-1)[0]);
+ok(await notePrints() === npr + 1 && pr.f === 'r80' && pr.no === firstIsn, 'choosing Small prints it small, once');
+ok(!(await has('.modal [data-nf]')), 'and the question closes');
+await pressPrint(firstIsn); await pg.evaluate(() => { const b = document.querySelector('.modal [data-nf="a5"]'); b.click(); b.click() }); await wait(250);
+pr = await pg.evaluate(() => window._printed.slice(-1)[0]);
+ok(await notePrints() === npr + 2 && pr.f === 'a5', 'choosing Large prints it large, once, even pressed twice');
+await pressPrint(firstIsn); await pg.keyboard.press('Escape'); await wait(250);
+ok(await notePrints() === npr + 2 && !(await has('.modal [data-nf]')), 'Esc prints nothing');
+await pressPrint(firstIsn); await pg.evaluate(() => document.querySelector('.modal').click()); await wait(250); await pg.keyboard.press('Enter'); await wait(250);
+ok(await notePrints() === npr + 2, 'a click outside prints nothing, and a key pressed after it does not either');
+await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove())); await wait(150);   // Enter on the Bills page opens the bill: that is the page's own, not this
+await pressPrint(firstIsn); await pg.keyboard.press('Enter'); await wait(250);
+pr = await pg.evaluate(() => window._printed.slice(-1)[0]);
+ok(await notePrints() === npr + 3 && pr.f === 'a5', 'Enter takes the paper it was printed on', `${await notePrints() - npr} ${pr.f}`);
+await pressPrint(firstIsn); await pg.keyboard.press('s'); await wait(250);
+pr = await pg.evaluate(() => window._printed.slice(-1)[0]);
+ok(pr.f === 'r80', 'S is small');
+await pressPrint(firstIsn); await pg.keyboard.press('2'); await wait(250);
+pr = await pg.evaluate(() => window._printed.slice(-1)[0]);
+ok(pr.f === 'a5', '2 is large');
+
 // editing a bill keeps what has gone
 await pg.evaluate(no => window.eval('billToTill')(no), made.no); await wait(300); await pg.click('#ebYes'); await wait(500);
 const posL = await pg.evaluate(() => { const L = window.eval('S').pos.lines; return L.map(l => ({ later: l.later, n: (l.issued || []).length })) });
