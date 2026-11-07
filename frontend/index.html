@@ -13435,7 +13435,7 @@ const views=[
  ['grp','Customers'],['customers','Customers','F8'],['receipts','Take a payment','F7'],['dues','Credit follow-up'],['plans','Easy payments'],['trades','Tradesmen'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],['feedback','Customer feedback'],
  ['grp','Suppliers & buying'],['suppliers','Suppliers','F12'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Supplier payments'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
  ['grp','Stock'],['products','Products'],['stock','Stock on hand'],['ledger','Stock ledger'],['stocktake','Stock take'],['labels','Barcode labels','F11'],
- ['grp','Cash & banking'],['counter','Open & close'],['cashup','Day book'],['petty','Petty cash'],['expenses','Expenses'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['chqbooks','Cheque books'],['accounting','Accounting'],
+ ['grp','Cash & banking'],['counter','Open & close'],['cashup','Day book'],['cashbank','Cash & bank'],['petty','Petty cash'],['expenses','Expenses'],['chequesIn','Cheques in'],['chequesOut','Cheques out'],['chqbooks','Cheque books'],['accounting','Accounting'],
  ['grp','Staff'],['payroll','Attendance & pay','F9'],['leave','Leave'],['users','Users & permissions'],
  ['grp','Online store'],['site','Online store'],['weborders','Online orders'],['webproducts','Online products'],['social','Social'],
  ['grp','Reports'],['reports','Reports'],['everything','Everything'],['trail','The trail'],['syslog','System log'],['ai','AI support'],
@@ -13498,7 +13498,7 @@ const SECTIONS = {
   Suppliers: ['suppliers', 'orders', 'payreqs', 'purchases', 'purchasing'],
   Stock: ['products', 'stock', 'ledger', 'inventory', 'stocktake', 'labels', 'cameras'],
   Online: ['weborders', 'webproducts', 'shopmanage', 'site', 'social'],
-  Money: ['chequesIn', 'chequesOut', 'chqbooks', 'petty', 'expenses', 'accounting'],
+  Money: ['cashbank', 'chequesIn', 'chequesOut', 'chqbooks', 'petty', 'expenses', 'accounting'],
   People: ['leave', 'approvals', 'payroll', 'users'],
   Out: ['trail', 'syslog', 'messages', 'reports', 'printq'],
   System: ['settings']
@@ -13570,6 +13570,7 @@ function allowed(v){
   if(v === 'collect') return allowed('pos')||allowed('bills');   // goods paid for and waiting to be collected
   if(v === 'returns') return allowed('pos');  // whoever may bill may take goods back          // everyone has one; each item on it keeps to the page it comes from
   if(v === 'issues'||v === 'transfers') return typeof extMulti==='function'&&extMulti();   // nothing to see with one shop
+  if(v === 'cashbank') return payBoss();   // the figures for the cash and the banks: an admin's, and nobody else's
   if(v === 'ai') return ownerOnly();        // what it is shown includes costs and margins
   if(v === 'everything') return ownerOnly();  // the same: every figure in the shop on one page
   if(v === 'trail') return ownerOnly();
@@ -14215,7 +14216,7 @@ function renderNow(){
   const sameView = _lastRenderView === S.view;
   const keepMainScroll = (sameView && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={counter:counterPage,syslog:sysLog,printq,cameras,everything,actions:inbox,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,hire:hirePage,plans:plansPage,dlv:dlvPage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals:()=>{ inTab=apTab==='done'?'history':'decide'; return inbox() },feedback:feedbackPage,startup:startupScreen,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={cashbank:cashBankPage,counter:counterPage,syslog:sysLog,printq,cameras,everything,actions:inbox,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,hire:hirePage,plans:plansPage,dlv:dlvPage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals:()=>{ inTab=apTab==='done'?'history':'decide'; return inbox() },feedback:feedbackPage,startup:startupScreen,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     const sn0=mn.querySelector('.subnav'), snTop=sn0&&sameView?sn0.scrollTop:0;   // the section list keeps where it was scrolled to
     /* the box being typed in keeps its place: a redraw from elsewhere (another tab saving, the books coming in)
@@ -23648,7 +23649,7 @@ const APPROVAL_KINDS=[
 /* Money in and money out. Only the Super Admin, the Owner or an Admin record a payment straight away;
    anyone else's — even someone allowed to approve other things — waits for one of them to say yes, and
    only then does it reach the customer's or supplier's account. */
-const PAY_APPROVALS=['custPay','supPay','supPayPrep','chqCancel'];
+const PAY_APPROVALS=['custPay','supPay','supPayPrep','chqCancel','expChange'];
 const payBoss=()=>!!(S.user&&(['super admin','superadmin','owner','admin','demo admin'].includes(String(S.user.role||'').toLowerCase())||window.isDemo));
 function payGate(kind,title,detail,data,opts){
   if(payBoss()||(CFG.approvals||{})[kind]===false) return false;
@@ -23657,7 +23658,7 @@ function payGate(kind,title,detail,data,opts){
   return true;
 }
 const payWhat=(ls)=>ls.map(l=>`${String(l.method||'').toLowerCase()} ${fmt(l.amount)}${l.ref||l.no?' ('+escM(l.ref||l.no)+')':''}${l.date&&l.date!==D(today)?' dated '+l.date:''}`).join(' + ');
-const APKIND={...Object.fromEntries(APPROVAL_KINDS),listBill:'Billing a customer on the black or red list',openBal:'A previous balance brought forward',partyActive:'A customer or supplier made active again',overLimit:'Credit past a customer’s limit'};
+const APKIND={...Object.fromEntries(APPROVAL_KINDS),expChange:'An expense changed or deleted',listBill:'Billing a customer on the black or red list',openBal:'A previous balance brought forward',partyActive:'A customer or supplier made active again',overLimit:'Credit past a customer’s limit'};
 const canApprove=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||can('approve')));
 /* any stock adjustment — added on an item, a count corrected, a stock take, counts from phones, goods
    written off — waits for an Admin, the Owner or the Super Admin unless one of them is doing it (3 Nov 2026) */
@@ -23693,6 +23694,7 @@ function applyApproval(a){
       notify('money',`Your petty cash hand-in of ${fmt(p.settled.back)} (${p.no}) is approved and counted in`,'petty',{forUser:p.who}); break }
     case 'listBill': case 'overLimit': break;
     case 'openBal': openBalAdd(d.type,d.id,d.amt,d.date,d.note,a.by); break;
+    case 'expChange':{ const who=a.by+' (approved by '+S.user.name+')'; if(d.del) expApplyDel(d.no,who); else expApplyEdit(d.no,d.vals,who); break }
     case 'partyActive': partyActivate(d.type,d.id,S.user.name); break;      // the yes itself is what the till looks for (dirApproved)
     case 'stockAdj':{ if(d.phoneIds) phonePost(d.phoneIds,true);
       // stock added on an item: so many more than there are when it is approved
@@ -30705,6 +30707,7 @@ function bankSettings(){
    <button class="btn tape" data-act="bkEdit" style="margin-top:10px">Add a bank account</button>`;
 }
 function bankModal(id){
+  if(!payBoss()) return toast('Only an admin can change bank details','warn');
   const b=id?B(id):null;
   const m=modal(`<h2>${b?'Change '+esA(b.name):'A new bank account'}</h2>
    <div class="grid2" style="margin-top:6px">
@@ -30733,7 +30736,7 @@ function bankModal(id){
     m.remove(); persist(true); render(); toast(`${name} added`,'ok');
   };
 }
-function bankDelete(id){ const b=B(id); if(!b) return;
+function bankDelete(id){ if(!payBoss()) return toast('Only an admin can remove a bank account','warn'); const b=B(id); if(!b) return;
   if(bankUsed(b)) return toast(`${b.name} has money or cheques on it, so it stays — you can change its name and number`);
   if(!confirm(`Remove ${b.name}?`)) return;
   S.banks=S.banks.filter(x=>x!==b); persist(true); render(); toast('Removed') }
@@ -32001,9 +32004,146 @@ function printChq(no){ const c=S.cheques.filter(x=>x.no===no&&x.dir==='ISSUED').
   modal(`<h2>Cheque print — ${c.bank}</h2><div class="muted" style="margin-bottom:8px">Positions come from Settings → Cheque layout (per bank). Nudge with the offsets below, then Print.</div><div class="chq"><div class="d" style="right:14px;top:10px;letter-spacing:6px">${d}</div><div class="d" style="left:80px;top:60px;width:400px;border-bottom:1px dotted #000">${c.payee}</div><div class="d" style="left:60px;top:95px;width:440px;border-bottom:1px dotted #000">${words(c.amount)} rupees only</div><div class="d" style="right:14px;top:125px;border:1px solid #000;padding:4px 10px;font-weight:700">Rs ${c.amount.toLocaleString('en-LK',{minimumFractionDigits:2})}/=</div><div class="d" style="left:14px;bottom:10px" class="muted">A/C payee only · ${c.no}</div></div><div class="grid3" style="margin-top:10px"><div class="f"><label>Shift right (mm)</label><input type="number" value="0"></div><div class="f"><label>Shift down (mm)</label><input type="number" value="0"></div><div class="f"><label>Cheque size</label><select><option>Standard LK 178×76mm</option></select></div></div><div style="text-align:right"><button class="btn ghost" data-act="closeModal">Close</button> <button class="btn tape" data-act="chqSet" data-no="${c.no}" data-dir="ISSUED" data-st="PRINTED">Print & mark printed</button></div>`) }
 
 /* ---- expenses ---- */
-function expenses(){ return `<h1>Expenses</h1><button class="btn ghost" data-act="denom" style="float:right">Count the drawer</button><button class="btn tape" data-act="newExp" style="margin-bottom:10px">Record expense</button><div class="card"><table><tr><th>No</th><th>Date</th><th>Category</th><th>Description</th><th>Paid by</th><th class="n">Amount</th><th>Voucher</th></tr>${S.expenses.slice().reverse().map(e=>`<tr><td>${e.no}</td><td>${e.date}</td><td>${GL[e.cat]}</td><td>${e.desc}</td><td>${e.method}</td><td class="n">${fmt(e.amount)}</td><td><a href="#" data-act="voucher" data-no="${e.no}">${e.voucher}</a></td></tr>`).join('')}</table></div>` }
-function expModal(){ const cats=Object.keys(GL).filter(k=>k.startsWith('6')); const m=modal(`<h2>Expense</h2><div class="grid3"><div class="f"><label>Category</label><select id="ec">${cats.map(k=>`<option value="${k}">${GL[k]}</option>`).join('')}</select></div><div class="f"><label>Amount</label><input id="ea" type="number" value="2500"></div><div class="f"><label>Paid by</label><select id="em"><option>CASH</option><option>BANK</option></select><select id="eb" style="margin-top:4px">${S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select></div></div><div class="f"><label>Description</label><input id="ed" placeholder="e.g. Three-wheeler hire to Hingurakgoda"></div><div class="f"><label>Attachment</label><input type="file"></div><div style="text-align:right"><button class="btn tape" id="eok">Save & create voucher</button></div>`);
-  m.querySelector('#eok').onclick=()=>{const e=addExpense({cat:m.querySelector('#ec').value,amount:+m.querySelector('#ea').value,method:m.querySelector('#em').value,bank:+m.querySelector('#eb').value,desc:m.querySelector('#ed').value||GL[m.querySelector('#ec').value]});m.remove();render();toast(`${e.no} saved · voucher ${e.voucher}`)} }
+/* ---- Cash and bank figures, and expenses, while the shop is settling in (7 Nov 2026, the owner asked) ----
+   The figure for the cash in hand or a bank account comes from entries against Opening balances (3100). Those entries
+   are what an admin adds, changes or deletes here, whichever way they were made (an old import, a new bank account),
+   so there is one set of figures and no second list to fall out with it. They touch neither sales nor profit. Only an
+   Admin, the Owner or the Super Admin can do it. Every change goes on the trail with what it was before. */
+const moneyAcs=()=>new Map([['1010','Cash in hand'],...(S.banks||[]).map(b=>[b.ac,b.name])]);
+function cashEntries(){
+  const M=moneyAcs();
+  return (S.journal||[]).filter(j=>{ const L=j.lines||[]; return L.length===2&&!L.some(l=>l.party)&&L.some(l=>M.has(l.ac))&&L.some(l=>l.ac==='3100') })
+    .map(j=>{ const m=j.lines.find(l=>M.has(l.ac)); return {j,ac:m.ac,where:M.get(m.ac),amount:+((+m.dr||0)-(+m.cr||0)).toFixed(2),note:j.note!==undefined?j.note:(j.desc||'')} })
+    .sort((a,b)=>String(b.j.date).localeCompare(String(a.j.date)));
+}
+const cashOnly=()=>{ if(payBoss()) return true; toast('Only an admin can change cash and bank figures','warn'); return false };
+function cashBankPage(){
+  if(!payBoss()) return `<h1>Cash &amp; bank</h1><div class="card muted">Only an admin can see and change these figures.</div>`;
+  const rows=cashEntries();
+  return `<h1 style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><span>Cash &amp; bank</span><button class="btn tape" data-act="cashNew">Add an entry</button></h1>
+  <div class="row" style="margin-bottom:12px">
+   ${stat('Cash in hand',fmt(bal('1010')),'in the books now','g')}
+   ${(S.banks||[]).map(b=>stat(esA(b.name),fmt(bal(b.ac)),esA(b.no||'no account number'),'b')).join('')}
+  </div>
+  <div class="card note" style="margin-bottom:12px">These entries set where the cash and the banks start from. They do not count as sales or profit. To change what a bill, a payment or an expense did, change that bill, payment or expense.</div>
+  <div class="card"><table><tr><th>Date</th><th>Where</th><th>Details</th><th>By</th><th class="n">Amount</th><th></th></tr>
+   ${rows.map(x=>`<tr data-cash="${esA(x.j.no)}"><td>${noteEsc(x.j.date)}</td><td>${noteEsc(x.where)}</td><td>${noteEsc(x.note)}${(x.j.edits||[]).length?` <span class="tag">changed</span>`:''}</td><td>${noteEsc(x.j.by||'')}</td>
+     <td class="n"><b style="color:${x.amount<0?'var(--chip-rust)':'inherit'}">${money2(x.amount)}</b></td>
+     <td class="n" style="white-space:nowrap"><button class="btn ghost sm" data-act="cashEdit" data-no="${esA(x.j.no)}">Edit</button> <button class="btn ghost sm" data-act="cashDel" data-no="${esA(x.j.no)}">Delete</button></td></tr>`).join('')
+     ||'<tr><td colspan="6" class="muted" style="padding:22px;text-align:center">No entries yet. Add one for the cash in hand and for each bank.</td></tr>'}</table></div>
+  <div class="card" style="margin-top:12px"><h2>Bank account details</h2><table><tr><th>Bank and branch</th><th>Account number</th><th>Account name</th><th></th></tr>
+   ${(S.banks||[]).map(b=>`<tr><td>${noteEsc(b.name)}</td><td>${noteEsc(b.no||'')}</td><td>${noteEsc(b.holder||'')}</td><td class="n"><button class="btn ghost sm" data-act="bkEdit" data-id="${b.id}">Edit</button></td></tr>`).join('')}</table>
+   <button class="btn ghost sm" data-act="bkEdit" style="margin-top:8px">Add a bank account</button></div>`;
+}
+function cashEntryModal(no){
+  if(!cashOnly()) return;
+  const x=no?cashEntries().find(y=>y.j.no===no):null; if(no&&!x) return toast('That entry is no longer there','warn');
+  const M=moneyAcs();
+  const m=modal(`<h2>${x?'Change this entry':'Add an entry'}</h2>
+   <div class="grid2" style="margin-top:8px">
+    <div class="f"><label>Where</label><select id="cashAc">${[...M].map(([a,n])=>`<option value="${esA(a)}" ${x&&x.ac===a?'selected':''}>${noteEsc(n)}</option>`).join('')}</select></div>
+    <div class="f"><label>Which way</label><select id="cashWay"><option value="in" ${!x||x.amount>=0?'selected':''}>Add to it</option><option value="out" ${x&&x.amount<0?'selected':''}>Take from it</option></select></div>
+    <div class="f"><label>Amount (Rs)</label><input id="cashAmt" type="number" step="any" min="0" value="${x?Math.abs(x.amount):''}" placeholder="0.00"></div>
+    <div class="f"><label>Date</label><input id="cashDate" type="date" value="${x?esA(x.j.date):D(today)}" max="${D(today)}"></div></div>
+   <div class="f"><label>Details</label><input id="cashNote" maxlength="120" value="${x?esA(x.note):''}" placeholder="e.g. Cash in the drawer when we started"></div>
+   <div class="muted" id="cashMsg"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="cashOk">Save</button></div>`);
+  const g=i=>m.querySelector('#'+i), say=t=>{ g('cashMsg').textContent=t };
+  const save=()=>{
+    if(!cashOnly()) return;
+    const ac=g('cashAc').value, amt=+(+g('cashAmt').value||0).toFixed(2), date=g('cashDate').value, note=g('cashNote').value.trim(), out=g('cashWay').value==='out';
+    if(!(amt>0)) return say('Put in the amount.');
+    if(!date||date>D(today)) return say('The date cannot be in the future.');
+    if(!note) return say('Say what this entry is.');
+    const name=M.get(ac), lines=out?[{ac:'3100',dr:amt,cr:0,party:null},{ac,dr:0,cr:amt,party:null}]:[{ac,dr:amt,cr:0,party:null},{ac:'3100',dr:0,cr:amt,party:null}], desc=`Opening balance — ${name}: ${note}`, signed=out?-amt:amt;
+    if(x){ const was=`${x.where} ${money2(x.amount)}, ${x.j.date}, ${x.note}`;
+      x.j.edits=(x.j.edits||[]).concat([{at:apStamp(),by:S.user.name,ac:x.ac,amount:x.amount,date:x.j.date,note:x.note}]);
+      x.j.date=date; x.j.desc=desc; x.j.note=note; x.j.lines=lines;
+      try{ logTrail('other',`Cash and bank entry changed by ${S.user.name}: ${name} ${money2(signed)}, ${date}, ${note}. It was: ${was}`,{ref:x.j.no,amount:signed}) }catch(e){}
+    } else { const je=post(date,desc,'CB-'+Date.now().toString(36),lines); je.note=note; je.by=S.user.name;
+      try{ logTrail('other',`Cash and bank entry added by ${S.user.name}: ${name} ${money2(signed)}, ${date}, ${note}`,{ref:je.no,amount:signed}) }catch(e){} }
+    m.remove(); persist(true); render(); toast(x?'Entry changed':'Entry added','ok');
+  };
+  g('cashOk').onclick=save;
+  m.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); save() } }));
+  g('cashAmt').focus();
+}
+function cashEntryDelete(no){
+  if(!cashOnly()) return;
+  const x=cashEntries().find(y=>y.j.no===no); if(!x) return toast('That entry is no longer there','warn');
+  if(!confirm(`Delete this entry?\n\n${x.where}: ${money2(x.amount)}\n${x.j.date} · ${x.note}\n\n${x.where} goes down or up by this amount.`)) return;
+  S.journal.splice(S.journal.indexOf(x.j),1);
+  try{ logTrail('other',`Cash and bank entry deleted by ${S.user.name}: ${x.where} ${money2(x.amount)}, ${x.j.date}, ${x.note}`,{ref:no,amount:x.amount}) }catch(e){}
+  persist(true); render(); toast('Entry deleted','ok');
+}
+/* an expense's own entry in the books; one paid by cheque or from petty cash is changed where it was made */
+const expJe=(e)=>(S.journal||[]).find(j=>j.ref===e.no&&(j.lines||[]).length===2&&j.lines.some(l=>l.ac===e.cat&&+l.dr>0));
+const expWhy=(e)=>e.chq||e.method==='CHEQUE'?'Paid by cheque: change it from Cheques out':e.petty||e.method==='PETTY'?'From petty cash: change it from Petty cash':!expJe(e)?'Its entry in the books is not there':'';
+const expAsked=(no)=>(S.approvals||[]).some(a=>a.kind==='expChange'&&a.status==='pending'&&(a.data||{}).no===no);
+function expCheck(v){
+  if(!(+v.amount>0)) return 'Put in the amount.';
+  if(!v.date||v.date>D(today)) return 'The date cannot be in the future.';
+  if(!GL[v.cat]||!String(v.cat).startsWith('6')) return 'Choose the category.';
+  if(v.method==='BANK'&&!B(v.bank)) return 'Choose the bank.';
+  return '';
+}
+function expApplyEdit(no,v,by){
+  const e=S.expenses.find(x=>x.no===no); if(!e) throw new Error('That expense is no longer there');
+  const why=expWhy(e); if(why) throw new Error(why);
+  const bad=expCheck(v); if(bad) throw new Error(bad);
+  const j=expJe(e), was=`${money2(e.amount)}, ${e.date}, ${GL[e.cat]}, ${e.method}, ${e.desc}`, amt=+(+v.amount).toFixed(2), bank=v.method==='BANK'?v.bank:null;
+  e.edits=(e.edits||[]).concat([{at:apStamp(),by,amount:e.amount,date:e.date,cat:e.cat,method:e.method,bank:e.bank,desc:e.desc}]);
+  Object.assign(e,{date:v.date,cat:v.cat,amount:amt,method:v.method,bank,desc:v.desc||GL[v.cat]});
+  j.date=v.date; j.desc='Expense '+e.no+' '+GL[v.cat]; j.lines=[{ac:v.cat,dr:amt,cr:0,party:null},{ac:v.method==='CASH'?'1010':B(bank).ac,dr:0,cr:amt,party:null}];
+  try{ logTrail('other',`Expense ${no} changed by ${by}: ${money2(amt)}, ${v.date}, ${GL[v.cat]}, ${v.method}, ${e.desc}. It was: ${was}`,{ref:no,amount:amt}) }catch(x){}
+}
+function expApplyDel(no,by){
+  const e=S.expenses.find(x=>x.no===no); if(!e) throw new Error('That expense is no longer there');
+  const why=expWhy(e); if(why) throw new Error(why);
+  S.journal.splice(S.journal.indexOf(expJe(e)),1); S.expenses=S.expenses.filter(x=>x!==e);
+  try{ logTrail('other',`Expense ${no} deleted by ${by}: ${money2(e.amount)}, ${e.date}, ${GL[e.cat]}, ${e.method}, ${e.desc}`,{ref:no,amount:e.amount}) }catch(x){}
+}
+function expDelete(no){
+  const e=S.expenses.find(x=>x.no===no); if(!e) return toast('That expense is no longer there','warn');
+  const why=expWhy(e); if(why) return toast(why,'warn');
+  const say=`${no}: ${money2(e.amount)} · ${e.date}\n${GL[e.cat]} · ${e.desc}`;
+  if(!payBoss()){ if(expAsked(no)) return toast('Already asked: waiting for an admin','warn');
+    if(!confirm(`Ask an admin to delete this expense?\n\n${say}`)) return;
+    requestApproval('expChange',`Delete expense ${no}: ${money2(e.amount)}`,`${e.date} · ${GL[e.cat]} · ${e.desc}`,{no,del:true},{keep:true}); render(); return toast('Sent to an admin. It is deleted once approved','warn') }
+  if(!confirm(`Delete this expense?\n\n${say}\n\nThe money goes back to where it was paid from.`)) return;
+  expApplyDel(no,S.user.name); persist(true); render(); toast(`${no} deleted`,'ok');
+}
+function expenses(){
+  const boss=payBoss();
+  return `<h1>Expenses</h1><button class="btn ghost" data-act="denom" style="float:right">Count the drawer</button><button class="btn tape" data-act="newExp" style="margin-bottom:10px">Record expense</button><div class="card"><table><tr><th>No</th><th>Date</th><th>Category</th><th>Description</th><th>Paid by</th><th class="n">Amount</th><th>Voucher</th><th></th></tr>${S.expenses.slice().reverse().map(e=>{ const why=expWhy(e), asked=expAsked(e.no);
+    return `<tr data-exp="${esA(e.no)}"><td>${noteEsc(e.no)}</td><td>${noteEsc(e.date)}</td><td>${noteEsc(GL[e.cat]||e.cat)}</td><td>${noteEsc(e.desc)}${(e.edits||[]).length?' <span class="tag">changed</span>':''}</td><td>${noteEsc(e.method)}</td><td class="n">${fmt(e.amount)}</td><td><a href="#" data-act="voucher" data-no="${esA(e.no)}">${noteEsc(e.voucher)}</a></td>
+     <td class="n" style="white-space:nowrap">${why?`<span class="muted" title="${esA(why)}">${e.petty||e.method==='PETTY'?'petty cash':e.method==='CHEQUE'?'cheque':''}</span>`:asked?'<span class="tag warn">waiting for an admin</span>':`<button class="btn ghost sm" data-act="expEdit" data-no="${esA(e.no)}">${boss?'Edit':'Ask to change'}</button> <button class="btn ghost sm" data-act="expDel" data-no="${esA(e.no)}">${boss?'Delete':'Ask to delete'}</button>`}</td></tr>` }).join('')}</table></div>`;
+}
+function expModal(no){
+  const e=no?S.expenses.find(x=>x.no===no):null; if(no&&!e) return toast('That expense is no longer there','warn');
+  if(e){ const why=expWhy(e); if(why) return toast(why,'warn'); if(!payBoss()&&expAsked(no)) return toast('Already asked: waiting for an admin','warn') }
+  const cats=Object.keys(GL).filter(k=>k.startsWith('6')), boss=payBoss(), hasBank=(S.banks||[]).length>0;
+  const m=modal(`<h2>${e?'Change expense '+noteEsc(e.no):'Expense'}</h2><div class="grid3"><div class="f"><label>Category</label><select id="ec">${cats.map(k=>`<option value="${k}" ${e&&e.cat===k?'selected':''}>${GL[k]}</option>`).join('')}</select></div>
+    <div class="f"><label>Amount</label><input id="ea" type="number" step="any" min="0" value="${e?e.amount:''}" placeholder="0.00"></div>
+    <div class="f"><label>Date</label><input id="edt" type="date" value="${e?esA(e.date):D(today)}" max="${D(today)}"></div></div>
+   <div class="grid2"><div class="f"><label>Paid by</label><select id="em"><option ${e&&e.method==='BANK'?'':'selected'}>CASH</option>${hasBank?`<option ${e&&e.method==='BANK'?'selected':''}>BANK</option>`:''}</select></div>
+    <div class="f" id="ebWrap"><label>Bank</label><select id="eb">${(S.banks||[]).map(b=>`<option value="${b.id}" ${e&&+e.bank===+b.id?'selected':''}>${noteEsc(b.name)}</option>`).join('')}</select></div></div>
+   <div class="f"><label>Description</label><input id="ed" maxlength="160" value="${e?esA(e.desc):''}" placeholder="e.g. Three-wheeler hire to Hingurakgoda"></div>
+   <div class="muted" id="eMsg">${e&&!boss?'This goes to an admin to approve first.':''}</div>
+   <div style="text-align:right;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button> <button class="btn tape" id="eok">${e?(boss?'Save':'Ask an admin'):'Save & create voucher'}</button></div>`);
+  const g=i=>m.querySelector('#'+i), wrap=()=>{ g('ebWrap').style.visibility=g('em').value==='BANK'?'visible':'hidden' };
+  g('em').onchange=wrap; wrap();
+  const save=()=>{
+    const v={cat:g('ec').value,amount:+g('ea').value||0,date:g('edt').value,method:g('em').value,bank:+g('eb').value||null,desc:g('ed').value.trim()};
+    const bad=expCheck(v); if(bad) return g('eMsg').textContent=bad;
+    if(!e){ const n=addExpense({cat:v.cat,amount:+v.amount.toFixed(2),method:v.method,bank:v.bank,desc:v.desc||GL[v.cat],date:v.date}); m.remove(); persist(true); render(); return toast(`${n.no} saved · voucher ${n.voucher}`) }
+    if(boss){ try{ expApplyEdit(e.no,v,S.user.name) }catch(x){ return g('eMsg').textContent=x.message } m.remove(); persist(true); render(); return toast(`${e.no} changed`,'ok') }
+    requestApproval('expChange',`Change expense ${e.no}: ${money2(e.amount)} to ${money2(v.amount)}`,`${v.date} · ${GL[v.cat]} · ${v.method} · ${v.desc||GL[v.cat]}`,{no:e.no,vals:v},{keep:true}); m.remove(); render(); toast('Sent to an admin. It changes once approved','warn');
+  };
+  g('eok').onclick=save;
+  m.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); ev.stopPropagation(); save() } }));
+  g('ea').focus();
+}
 function voucher(no){ const e=S.expenses.find(x=>x.no===no); if(!e) return toast('No such voucher'); expenseVoucher(e) }
 
 /* ---- accounting ---- */
@@ -34103,7 +34243,7 @@ document.addEventListener('click',e=>{
     supRemove:()=>{ const s=SU(+a.dataset.id); if(partyBal('S',s.id)>0.005) return toast('Settle the account first');
       if(!confirm(`Remove ${s.name} from the supplier list? Their bills stay on the books.`)) return; s.active=false; supSel=0; render(); toast(`${s.name} removed`) },
     supPay:()=>supPayModal(+a.dataset.id), newPur:()=>newPurModal(+a.dataset.id),
-    newDmg:dmgModal, newExp:expModal, voucher:()=>voucher(a.dataset.no), printChq:()=>printChq(a.dataset.no),
+    newDmg:dmgModal, newExp:()=>expModal(), expEdit:()=>expModal(a.dataset.no), expDel:()=>expDelete(a.dataset.no), cashNew:()=>cashEntryModal(), cashEdit:()=>cashEntryModal(a.dataset.no), cashDel:()=>cashEntryDelete(a.dataset.no), voucher:()=>voucher(a.dataset.no), printChq:()=>printChq(a.dataset.no),
     chq:()=>{const c=S.cheques.find(x=>x.no===a.dataset.no&&x.dir===a.dataset.dir); if(c.dir==='RECEIVED'&&a.dataset.st==='DEPOSITED'){const m=modal(`<h2>Deposit cheque ${c.no}</h2><div class="f"><label>Into account</label><select id="dep">${S.banks.map(b=>`<option value="${b.id}">${b.name}</option>`).join('')}</select></div><button class="btn tape" id="dok">Deposit</button>`);m.querySelector('#dok').onclick=()=>{c.depositTo=+m.querySelector('#dep').value;chequeStatus(c,'DEPOSITED');m.remove();render();toast('Deposited')};return} closeModals();try{chequeStatus(c,a.dataset.st)}catch(e){return toast(e.message)}render();toast(`Cheque ${c.no} → ${a.dataset.st}${['BOUNCED','CANCELLED'].includes(a.dataset.st)?' — supplier balance reinstated':''}`)},
     noticeTake:()=>{const n=S.notices.find(x=>x.id===a.dataset.id); n.status='confirmed';
       custPayModal(n.cid); const box=document.querySelector('.modal #ra'); if(box)box.value=n.amount; render(); drawPhone()},
