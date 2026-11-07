@@ -413,7 +413,7 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
   res.json({ ok: true, bill: {
     no: inv.no, date: inv.date, time: inv.time || '', type: inv.type,
     sub: inv.sub, billDisc: inv.billDisc || 0, total: inv.total, paid: inv.paid, balance: inv.balance,
-    by: inv.by || '',
+    by: inv.by || '', cancelled: !!inv.cancelled,
     customer: cust && cust.id !== 1 ? { name: cust.name, code: cust.code,
       owes: owesOf(S, cust.id), openBills: (S.sales || []).filter(s => s.customerId === cust.id && +s.balance > 0.005).length,
       // their own page, by their mobile and a texted code: the link that names them when it can
@@ -429,7 +429,7 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
     }),
     pays: (inv.pays || []).map(x => ({ method: x.method, amount: x.amount })),
     paper: view?.format || (inv.paper === 'r80' ? 'r80' : 'a5'),
-    html: view?.html || null,
+    html: inv.cancelled ? null : (view?.html || null),   // the old paper is not shown for a bill the shop has cancelled
     saved: +saved.toFixed(2),
     feedback: fb ? { stars: fb.stars, tags: fb.tags || [], note: fb.note || '' } : null,
     shop: { name: sh.name || 'Regal Hardware', phone: sh.phone || '', land: sh.land || '', addr: sh.addr || '', web: sh.web || '',

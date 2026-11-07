@@ -5296,7 +5296,7 @@ let _pbArr=null,_pbLen=-1,_pbMap=new Map();
    clears it, it ages and it is reminded like any debt — but it is not a bill: it stays off the Bills and
    Purchases lists, the bill counts and every sales figure, and shows as "Previous balance" (1 Nov 2026). */
 const isBF=s=>!!(s&&(s.opening||(s.by==='SePOS'&&!(s.lines||[]).length&&/brought forward/i.test(s.note||''))));
-const salesReal=()=>S.sales.filter(s=>!isBF(s));
+const salesReal=()=>S.sales.filter(s=>!isBF(s)&&!s.cancelled);
 const bfOf=(type,id)=>(type==='C'?S.sales.filter(s=>s.customerId===id):S.purchases.filter(p=>p.supplierId===id)).filter(isBF);
 /* the previous balance on a customer's or supplier's page: what came forward and what is still to pay */
 function bfLine(type,id){
@@ -16035,7 +16035,7 @@ function deTenders(d,loc){
   const credit=sales.reduce((a,s)=>a+(+s.balance||0),0);
   const ret=sales.filter(s=>(+s.total||0)<0);
   const exp=(S.expenses||[]).filter(e=>e.date===d).reduce((a,e)=>a+(+e.amount||0),0);
-  return { bills:sales.length, sales:+gross.toFixed(2), credit:+credit.toFixed(2),
+  return { bills:sales.filter(s=>!s.cancelled).length, sales:+gross.toFixed(2), credit:+credit.toFixed(2),
     returns:ret.length, returned:+ret.reduce((a,s)=>a+Math.abs(+s.total||0),0).toFixed(2),
     expenses:+exp.toFixed(2),
     t:Object.fromEntries(Object.entries(t).map(([k,v])=>[k,+v.toFixed(2)])), banks };
@@ -16219,7 +16219,7 @@ function deCloseDay(){
    Settings → Bills, the server sends it (services/summary.js). Whichever goes first marks the day in the
    books (S.summarySent), and the other then stays quiet. The figures here and the server's are the same:
    keep closeSummaryVars in step with summaryOf there. */
-const SUM_RISKY={holdDiscard:'held bill thrown away',billCleared:'bill cleared',lineOff:'line taken off',billEdit:'saved bill changed',billRemade:'bill re-made',bigDisc:'big discount',underCost:'sold under cost',cashRefund:'cash given back'};
+const SUM_RISKY={holdDiscard:'held bill thrown away',billCleared:'bill cleared',lineOff:'line taken off',billEdit:'saved bill changed',billRemade:'bill re-made',billCancelled:'bill cancelled',bigDisc:'big discount',underCost:'sold under cost',cashRefund:'cash given back'};
 function closeSummaryVars(day,rec){
   const sales=S.sales.filter(s=>String(s.date)===day), sold=sales.filter(s=>+s.total>0);
   let total=0,cash=0,credit=0,profit=0;
@@ -18782,7 +18782,7 @@ function qComplete(pays,override,change){
     const editing=S.pos.editing, retired=editing?retireBill(editing):null;
     let inv;
     try{ inv=completeSale({lines:S.pos.lines.map(l=>({...l})),customerId:cust.id,billDisc:S.pos.billDisc,pays,salesman:S.pos.salesman,override,no:editing||null}) }
-    catch(e){ if(retired){ S.journal.filter(j=>j.ref===editing+'-R').slice().forEach(j=>post(D(today),'Undo '+j.desc,editing+'-U',j.lines.map(l=>({ac:l.ac,dr:l.cr,cr:l.dr,party:l.party}))));
+    catch(e){ if(retired){ (retired.rev?[retired.rev]:[]).forEach(j=>post(D(today),'Undo '+j.desc,editing+'-U',j.lines.map(l=>({ac:l.ac,dr:l.cr,cr:l.dr,party:l.party}))));
         retired.old.lines.forEach(l=>move(l.pid,-l.qty,'SALE',editing+' kept',l.cost)); S.sales.splice(retired.idx,0,retired.old) } throw e }
     if(retired) inv=finishRemake(retired,inv);
     if(S.pos.fromDoc){ const dd=S.docs.find(x=>x.no===S.pos.fromDoc); if(dd){ dd.status='billed'; dd.invoice=inv.no } }
@@ -19101,7 +19101,7 @@ function finishTillBill({cust,pays,override=false,note='',toAccount=false}){
   let inv;
   try{ inv=completeSale({lines:S.pos.lines.map(l=>({...l})),customerId:cust.id,billDisc:S.pos.billDisc,pays,salesman:S.pos.salesman,override,no:editing||null,toAccount}) }
   catch(e){ if(retired){ // put the old bill straight back if the new one is refused
-      S.journal.filter(j=>j.ref===editing+'-R').slice().forEach(j=>post(D(today),'Undo '+j.desc,editing+'-U',j.lines.map(l=>({ac:l.ac,dr:l.cr,cr:l.dr,party:l.party}))));
+      (retired.rev?[retired.rev]:[]).forEach(j=>post(D(today),'Undo '+j.desc,editing+'-U',j.lines.map(l=>({ac:l.ac,dr:l.cr,cr:l.dr,party:l.party}))));
       retired.old.lines.forEach(l=>move(l.pid,-l.qty,'SALE',editing+' kept',l.cost)); S.sales.splice(retired.idx,0,retired.old) }
     throw e }
   if(retired) inv=finishRemake(retired,inv);
@@ -19835,6 +19835,7 @@ function csOpenStart(){
 }
 /* CLEAR (F3 / Esc): a bill with anything on it is only thrown away after a yes */
 function csClearAsk(){
+  if(S.pos.editing) return csClearEditing();
   const doIt=()=>{
     if(S.pos.lines.length) logTrail('billCleared',`${S.pos.lines.length} line${S.pos.lines.length===1?'':'s'} thrown away before billing`,
       {amount:billTotal(),who:C(S.pos.customer||1).name,bill:{ref:'cleared',lines:S.pos.lines.map(l=>({...l})),customer:S.pos.customer,billDisc:S.pos.billDisc||0,date:new Date().toISOString(),user:S.user.name}});
@@ -19974,7 +19975,7 @@ function logTrail(kind,what,opts){
    a credit bill's, and the owner is told. A line taken off counts only from the shop's amount up — a
    cashier corrects a mistyped item many times a day — and a held bill or a cleared bill only with
    something on it. Switched off, or with no counter camera, nothing is asked of the cameras. */
-const CAM_FLAG_KINDS=['holdDiscard','billCleared','lineOff','billEdit','billRemade','bigDisc','underCost','cashRefund'];
+const CAM_FLAG_KINDS=['holdDiscard','billCleared','lineOff','billEdit','billRemade','billCancelled','bigDisc','underCost','cashRefund'];
 function camFlag(e){
   if(!featOn('camflags')) return;
   const c=camCfg();
@@ -19996,6 +19997,7 @@ const TRAIL_KINDS={
   lineOff:['Line taken off a bill','warn'],
   billEdit:['Saved bill opened to be changed','warn'],
   billRemade:['Bill re-made','bad'],
+  billCancelled:['Bill cancelled','bad'],
   bigDisc:['Big discount given','warn'],
   underCost:['Sold under cost','bad'],
   cashRefund:['Cash handed back for a return','warn'],
@@ -21807,6 +21809,7 @@ function docDetail(d){
 function editSaleModal(no){
   if(!can('cancelBill')&&!can('adjustInvoice')) return toast('Changing a bill is not open to '+S.user.name);
   const inv=S.sales.find(x=>x.no===no); if(!inv) return;
+  if(inv.cancelled) return toast(`Bill ${no} is cancelled`,'warn');
   const c=C(inv.customerId);
   let lines=inv.lines.map(l=>({...l}));
   let newCust=inv.customerId, newDate=inv.date, newNote=inv.note||'';
@@ -21982,6 +21985,7 @@ function editPurchaseModal(no){
 function billToTill(no){
   if(!can('cancelBill')&&!can('adjustInvoice')) return toast('Changing a bill is not open to '+S.user.name);
   const inv=S.sales.find(x=>x.no===no); if(!inv) return;
+  if(inv.cancelled) return toast(`Bill ${no} is cancelled`,'warn');
   const c=C(inv.customerId), onTill=S.pos.lines.length;
   // asked first, with a reason that goes on the bill's record
   const m=modal(`<h2>Change bill ${no}?</h2>
@@ -22005,19 +22009,134 @@ function billToTill(no){
   m.querySelector('#ebNo').onclick=()=>m.remove();
   inp.onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); go2() } if(e.key==='Escape'){ e.preventDefault(); m.remove() } };
 }
+/* What a bill still stands at in the books, taken back as one entry. Everything the bill has posted — the sale, a
+   correction, an earlier re-make and its reversal — is added up by account and customer, so nothing is taken back
+   twice: a bill re-made a second time used to reverse its first sale again, and the customer owed that much too little. */
+function billNetOff(no,why){
+  const net=new Map();
+  for(const j of S.journal){
+    const own=j.ref===no||(j.ref===no+'-R'&&/^Reversal of/.test(j.desc||''))||(j.ref===no+'-U'&&/^Undo/.test(j.desc||''));
+    if(!own) continue;
+    for(const l of j.lines){ const k=l.ac+'|'+(l.party?l.party.type+l.party.id:''); const v=net.get(k)||{ac:l.ac,party:l.party||null,v:0}; v.v+=(+l.dr||0)-(+l.cr||0); net.set(k,v) }
+  }
+  const lines=[...net.values()].map(x=>({ac:x.ac,party:x.party,v:+x.v.toFixed(2)})).filter(x=>Math.abs(x.v)>=0.005).map(x=>x.v>0?{ac:x.ac,cr:x.v,party:x.party}:{ac:x.ac,dr:-x.v,party:x.party});
+  return lines.length?post(D(today),`Reversal of bill ${no} (${why})`,no+'-R',lines):null;
+}
+/* ==================== CANCELLING A BILL (7 Nov 2026) ====================
+   Clearing the till while a bill is open only throws away the copy on the till, so the bill and what the customer
+   owes stay as they were. This is the way to take a bill back. An admin does it; anyone else asks, and it waits on
+   the Approvals tray. The number stays in the list, marked cancelled, with what it was kept beside it — the server
+   puts back any bill that goes missing, and a gap in the numbers would look like one lost — but nothing is left on
+   it, so no report, drawer or statement counts it. */
+const billCancelMoney=(inv)=>(inv.pays||[]).filter(p=>['CASH','CARD','BANK'].includes(p.method)).reduce((a,p)=>a+(+p.amount||0),0);
+const billCancelAsked=(no)=>(S.approvals||[]).find(a=>a.kind==='billCancel'&&a.status==='pending'&&(a.data||{}).no===no);
+/* why this bill cannot be cancelled here, in words for the counter; empty when it can */
+function billCancelStop(inv){
+  if(!inv) return 'That bill is no longer in the books.';
+  if(inv.cancelled) return `Bill ${inv.no} is already cancelled.`;
+  if(isBF(inv)) return 'This is a previous balance brought forward, not a bill.';
+  if(inv.proof) return 'This is not a sale, so there is nothing to cancel.';
+  if(inv.returnOf||+inv.total<0) return 'This is a return. It cannot be cancelled.';
+  if(S.pos&&S.pos.editing===inv.no) return `Bill ${inv.no} is open on this till. Finish it or clear the till first.`;
+  const back=S.sales.filter(s=>s.returnOf===inv.no&&!s.cancelled);
+  if(back.length) return `Goods already came back on this bill (return ${back.map(s=>s.no).join(', ')}). Take any more back with a return.`;
+  if((S.deliveries||[]).some(d=>d.bill===inv.no&&d.status!=='cancelled')) return 'This bill is on a delivery. Cancel the delivery first.';
+  if((S.plans||[]).some(p=>p.status!=='closed'&&(p.bills||[]).includes(inv.no))) return 'This bill is on easy payments. Close the plan first.';
+  if((S.issues||[]).some(o=>o.invNo===inv.no)) return 'Another store is handing over goods for this bill. Use a return instead.';
+  const pays=inv.pays||[];
+  if(pays.some(p=>p.method==='CHEQUE')) return 'This bill was paid by cheque, and the cheque stays in the cheque list. Use a return instead.';
+  if(pays.some(p=>p.method==='VOUCHER')) return 'This bill was paid with a voucher. Use a return instead.';
+  if(billCancelMoney(inv)>0.005&&inv.date!==D(today)) return `Money was taken on this bill on ${inv.date}, and that day’s drawer is already counted. Use a return, so the money given back counts in today’s drawer.`;
+  return '';
+}
+function billCancelNow(no,why,by,askedBy){
+  const inv=S.sales.find(x=>x.no===no), stop=billCancelStop(inv); if(stop) throw new Error(stop);
+  const c=C(inv.customerId)||{id:0,name:'—'}, was=JSON.parse(JSON.stringify({type:inv.type,sub:inv.sub,billDisc:inv.billDisc||0,total:inv.total,paid:inv.paid,balance:inv.balance,lines:inv.lines,pays:inv.pays}));
+  const madeAt=(inv.pays||[]).filter(p=>p.method!=='CREDIT').reduce((a,p)=>a+(+p.amount||0),0);
+  const carry=+Math.max(0,(+inv.paid||0)-madeAt-(+inv.usedCredit||0)).toFixed(2);   // taken later, against this bill: the customer's money still
+  billNetOff(no,'bill cancelled');
+  inv.lines.forEach(l=>move(l.pid,l.qty,'SALE_RETURN',no+' cancelled',l.cost,undefined,l.loc));
+  (S.serials||[]).forEach(r=>{ if(r.outRef===no){ r.status='in'; delete r.outRef; delete r.outDate; delete r.customerId; delete r.warrantyTo } });
+  if(c.id&&(+inv.pointsEarned||+inv.pointsSpent)) c.points=+Math.max(0,(+c.points||0)-(+inv.pointsEarned||0)+(+inv.pointsSpent||0)).toFixed(2);
+  Object.assign(inv,{type:'CANCELLED',lines:[],pays:[],sub:0,billDisc:0,total:0,paid:0,balance:0,credit0:0,paid0:0,overLimit:false});
+  ['usedCredit','pointsEarned','pointsSpent','undelivered','undeliveredBy','deliveredAt'].forEach(k=>delete inv[k]);
+  inv.cancelled={...was,why,by,...(askedBy?{askedBy}:{}),at:apStamp(),on:D(today)};
+  // what they paid against it: first on their other open bills, and anything over stays as their credit
+  if(carry>0.005&&c.id){ let rem=carry;
+    for(const s of S.sales.filter(s=>s.customerId===c.id&&+s.balance>0.005).sort((a,b)=>String(a.date).localeCompare(String(b.date)))){
+      const a=+Math.min(rem,s.balance).toFixed(2); s.balance=+(s.balance-a).toFixed(2); s.paid=+((+s.paid||0)+a).toFixed(2); rem=+(rem-a).toFixed(2); if(rem<=0.005) break }
+    const over=+Math.max(0,-partyBal('C',c.id)).toFixed(2);
+    if(over>0.005){ post(D(today),`Paid on cancelled bill ${no}, held as credit`,no+'-C',[{ac:'1100',dr:over,party:{type:'C',id:c.id}},{ac:'2050',cr:over,party:{type:'C',id:c.id}}]) } }
+  if(c.id&&c.id!==1) c.advance=+Math.max(0,custCredit(c.id)).toFixed(2);   // their credit, as the books have it
+  logTrail('billCancelled',`${no} — ${fmt(was.total)} cancelled${askedBy?` (asked by ${askedBy}, approved by ${by})`:''}`,{amount:was.total,who:c.name,ref:no,why,
+    bill:{ref:no+' (as it was)',lines:was.lines,customer:inv.customerId,billDisc:was.billDisc,date:inv.date,user:inv.by}});
+  notify('warn',`${by} cancelled bill ${no} — ${fmt(was.total)}${c.id&&c.id!==1?' · '+c.name:''}`,'bills');
+  if(c.id&&c.id!==1&&c.phone&&CFG.msg.autoBill) sms(c.phone,`Your bill has been cancelled.\nBill No: ${no}\nAmount: ${fmt(was.total)}\nOutstanding now: ${fmt(Math.max(0,partyBal('C',c.id)))}`,'customer');
+  return inv;
+}
+function billCancelAsk(no){
+  const inv=S.sales.find(x=>x.no===no), stop=billCancelStop(inv);
+  if(stop){ const m=modal(`<h2>This bill cannot be cancelled</h2><div class="muted" style="margin:8px 0 14px">${noteEsc(stop)}</div><div style="display:flex;justify-content:flex-end"><button class="btn tape" id="bcOk">OK</button></div>`); m.querySelector('#bcOk').onclick=()=>m.remove(); return }
+  if(!payBoss()&&billCancelAsked(no)) return toast(`Cancelling ${no} is already waiting for an admin`,'warn');
+  const c=C(inv.customerId)||{id:0,name:'—'}, named=c.id&&c.id!==1, money=billCancelMoney(inv);
+  const taken=+Math.max(0,(+inv.paid||0)-(inv.pays||[]).filter(p=>p.method!=='CREDIT').reduce((a,p)=>a+(+p.amount||0),0)-(+inv.usedCredit||0)).toFixed(2);
+  const owes=named?partyBal('C',c.id):0;
+  const says=[`The goods go back into stock. Make sure they are really back on the shelf.`,
+    named&&+inv.balance>0.005?`${noteEsc(c.name)} owes <b>${fmt(inv.balance)}</b> less: <b>${fmt(owes)}</b> becomes <b>${fmt(Math.max(0,owes-inv.balance))}</b>.`:'',
+    money>0.005?`<b>${fmt(money)}</b> was taken on this bill and comes out of the books. <b>Give it back to the customer.</b>`:'',
+    taken>0.005?`<b>${fmt(taken)}</b> they paid on it goes on their other bills, and anything over stays as their credit.`:'',
+    `The number stays in the list, marked cancelled. This cannot be undone.`,
+    payBoss()?'':'<b>An admin approves it first.</b>'].filter(Boolean);
+  askBox({title:`Cancel bill ${noteEsc(no)}?`,body:`${noteEsc(c.name)} · ${fmt(inv.total)} · ${inv.date}<ul style="margin:8px 0 0;padding-left:18px">${says.map(x=>`<li>${x}</li>`).join('')}</ul>`,
+    label:'Why is it being cancelled?',placeholder:'e.g. wrong price, billed again',ok:payBoss()?'Cancel the bill':'Ask an admin',cancel:'Keep the bill',need:true}).then(why=>{
+    if(why===null) return;
+    if(!payBoss()){
+      const items=inv.lines.slice(0,6).map(l=>`${fq(l.qty)} × ${lineName(l)}`).join(', ')+(inv.lines.length>6?` and ${inv.lines.length-6} more`:'');
+      requestApproval('billCancel',`Cancel bill ${escM(no)} — ${fmt(inv.total)} · ${escM(c.name)}`,`${escM(why)} · ${escM(items)}`,{no,why,total:inv.total,paid:inv.paid});
+      return }
+    try{ billCancelNow(no,why,S.user.name); persist(true); render(); toast(`Bill ${no} cancelled${money>0.005?` — give ${fmt(money)} back`:''}`,'ok') }catch(e){ toast(e.message,'warn') }
+  });
+}
+/* Clear on a bill opened to be changed: only the copy on the till goes. Says so, and offers the real thing. */
+function csClearEditing(){
+  const no=S.pos.editing, inv=S.sales.find(x=>x.no===no), c=inv&&C(inv.customerId);
+  const leave=()=>{ clearPosDraft(); S.pos={lines:[],customer:null,salesman:null,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
+    CS={...CS,q:'',pid:null,qty:1,price:0,disc:0,warranty:'0',serials:[],last:null,focus:'',editLine:null,paper:null,chk:null}; closeModals(); render(); toast(`${no} left as it was`) };
+  const m=modal(`<h2>Bill ${noteEsc(no)} stays as it is</h2>
+   <div class="muted" style="margin:8px 0 14px">Clearing only takes the copy off the till. The bill stays in the books${inv&&+inv.balance>0.005&&c&&c.id!==1?` and ${noteEsc(c.name)} still owes ${fmt(inv.balance)} on it`:''}. To take the bill back, use <b>Cancel the bill</b>.</div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap"><button class="btn ghost" id="clNo">Keep changing it <i class="kbd">Esc</i></button><button class="btn ghost" id="clCancel" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)">Cancel the bill</button><button class="btn tape" id="clYes">Clear the till <i class="kbd">Enter</i></button></div>`);
+  const stay=()=>{ m.remove(); const q=$('#csQ'); if(q) q.focus() };
+  m.querySelector('#clNo').onclick=stay; m.querySelector('#clYes').onclick=leave;
+  m.querySelector('#clCancel').onclick=()=>{ leave(); billCancelAsk(no) };
+  m.querySelector('#clYes').focus();
+  m.onkeydown=e=>{ if(e.key==='Enter'&&e.target.id!=='clCancel'&&e.target.id!=='clNo'){ e.preventDefault(); e.stopPropagation(); leave() } if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); stay() } };
+}
+/* a cancelled bill on the Bills page: what it was, and why it is not any more */
+function billCancelledDetail(inv){
+  const c=C(inv.customerId)||{id:0,name:'—',phone:''}, x=inv.cancelled;
+  return `<div class="bl-head">
+    <div><div class="bl-no" style="text-decoration:line-through">${inv.no}</div><div class="muted">${inv.date} ${inv.time||''} · by <b>${inv.by}</b> · <span class="tag bad">cancelled</span></div></div>
+    <div class="bl-cust">${avatarOf(c)}<div><b>${c.name}</b><span class="muted">${c.phone||(c.id===1?'walk-in':'no mobile')}${c.id&&c.id!==1?` · <a href="#" data-act="cust" data-id="${c.id}">their account</a>`:''}</span></div></div>
+   </div>
+   <div class="card note" style="margin:12px 0"><b>Cancelled by ${noteEsc(x.by||'')}</b>${x.askedBy?`, asked by ${noteEsc(x.askedBy)}`:''} · ${noteEsc(x.at||x.on||'')}<div style="margin-top:4px">${noteEsc(x.why||'')}</div></div>
+   <div class="muted" style="margin-bottom:6px">What the bill was: <b>${fmt(x.total)}</b>${x.paid?` · ${fmt(x.paid)} paid`:''}${x.balance?` · ${fmt(x.balance)} outstanding`:''}</div>
+   <table style="opacity:.75"><tr><th>Item</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Disc</th><th class="n">Amount</th></tr>
+    ${(x.lines||[]).map(l=>`<tr><td>${noteEsc(lineName(l))}</td><td class="n">${fq(l.qty)}</td><td class="n">${money2(l.price)}</td><td class="n">${l.disc?money2(l.disc):'—'}</td><td class="n">${money2(l.qty*l.price-(l.disc||0))}</td></tr>`).join('')}</table>`;
+}
 let remakeLink=null;   // the link of the bill being re-made, for completeSale to keep
 function retireBill(no){
   const old=S.sales.find(x=>x.no===no); if(!old) return null;
+  if(old.cancelled) throw new Error(`Bill ${no} was cancelled while it was on this till. Clear the till.`);
   remakeLink={no:old.no,link:old.link||null};
   // 1. the stock the old bill took comes back
   old.lines.forEach(l=>move(l.pid,l.qty,'SALE_RETURN',no+' re-made',l.cost));
   // 2. every entry the old bill made is reversed, line for line — before the new one is posted
-  S.journal.filter(j=>j.ref===no).slice().forEach(j=>post(D(today),'Reversal of '+j.desc+' (bill re-made)',no+'-R',j.lines.map(l=>({ac:l.ac,dr:l.cr,cr:l.dr,party:l.party}))));
+  const rev=billNetOff(no,'bill re-made');
   // 3. receipts set against the old bill still stand and carry to the new one
   const tillMoney=old.pays.filter(p=>p.method!=='CREDIT').reduce((a,p)=>a+p.amount,0);
   const carry=+Math.max(0,old.paid-tillMoney-(old.usedCredit||0)).toFixed(2);
   const idx=S.sales.indexOf(old); S.sales.splice(idx,1);
-  return {old,carry,idx,why:S.pos.editWhy||''};
+  return {old,carry,idx,rev,why:S.pos.editWhy||''};
 }
 function finishRemake(r,fresh){
   const {old,carry,idx}=r, c=C(fresh.customerId);
@@ -23324,6 +23443,7 @@ function billHit(s,q){
   if(billType==='cash'&&s.type!=='CASH')return false;
   if(billType==='credit'&&s.type!=='CREDIT')return false;
   if(billType==='unpaid'&&!(s.balance>0))return false;
+  if(billType==='cancelled'&&!s.cancelled)return false;
   if(billType==='undelivered'&&!billUndelivered(s)&&!pendingNow.has(s.no))return false;
   if(billBy!=='all'&&s.by!==billBy)return false;
   if(billCust&&s.customerId!==billCust)return false;             // every bill of one customer, picked from the list
@@ -23365,7 +23485,7 @@ function bills(){
       <button class="btn ghost sm" data-act="billCustAll">Every bill again</button></div>`:''}
     <div class="chips">${[[0,'Today'],[1,'Yesterday'],[7,'7 days'],[30,'30 days']].map(d=>`<button class="${dayIs(d[0])?'on':''}" data-act="billDay" data-d="${d[0]}">${d[1]}</button>`).join('')}<button class="${!billFrom&&!billTo?'on':''}" data-act="billAllDates">All time</button>
      <span class="bl-dates"><input id="billFrom" type="date" value="${billFrom}" title="From"><span>–</span><input id="billTo" type="date" value="${billTo}" title="To"></span></div>
-    <div class="chips" style="margin-bottom:6px">${[['all','All'],['cash','Cash'],['credit','Credit'],['unpaid','Outstanding'],['undelivered',`Not delivered${(n=>n?' · '+n:'')(undeliveredBills().length+pendingNow.size)}`]].filter(o=>o[0]!=='undelivered'||featOn('undelivered')||pendingNow.size).map(o=>`<button class="${billType===o[0]?'on':''}" data-act="billKind" data-v="${o[0]}">${o[1]}</button>`).join('')}
+    <div class="chips" style="margin-bottom:6px">${[['all','All'],['cash','Cash'],['credit','Credit'],['unpaid','Outstanding'],['undelivered',`Not delivered${(n=>n?' · '+n:'')(undeliveredBills().length+pendingNow.size)}`]].concat(S.sales.some(s=>s.cancelled)?[['cancelled','Cancelled']]:[]).filter(o=>o[0]!=='undelivered'||featOn('undelivered')||pendingNow.size).map(o=>`<button class="${billType===o[0]?'on':''}" data-act="billKind" data-v="${o[0]}">${o[1]}</button>`).join('')}
      <select id="billBy" class="bl-by"><option value="all">Any cashier</option>${cashiers.map(x=>`<option ${billBy===x?'selected':''}>${x}</option>`).join('')}</select>
      ${filtered?`<button class="clear" data-act="billClear" style="color:var(--chip-rust)">Clear</button>`:''}</div>
     <div class="bl-count"><span><b>${list.length}</b> bill${list.length===1?'':'s'} · ${fmt(sum.total)} billed</span>
@@ -23377,8 +23497,8 @@ function bills(){
        ${/* who it was for reads first and biggest; the number and the rest sit under it */''}
        <div class="bl-who"><b class="${c.id===1?'walk':''}">${c.id===1?`Walk-in${s.phone?' · '+s.phone:''}`:`<a href="#" data-act="billCust" data-id="${c.id}" title="every bill of theirs">${c.name}</a>`}</b>
         <span class="bl-no2">${s.no}${c.id!==1&&c.phone?' · '+c.phone:''}</span>
-        <span class="muted">${billUndelivered(s)?'<b style="color:var(--chip-rust)">not delivered</b> · ':''}${pendingNow.has(s.no)?'<b style="color:var(--chip-rust)">goods pending</b> · ':''}${s.lines.length} line${s.lines.length===1?'':'s'} · ${s.by}${(s.remade||[]).length?' · re-made':''}${(s.edits||[]).length?' · corrected':''}</span></div>
-       <div class="bl-amt"><b>${fmt(s.total)}</b>${s.balance>0?`<i class="owe">${fmt(s.balance)} outstanding</i>`:s.type==='CREDIT'?'<i class="ok">credit · paid</i>':'<i class="ok">cash</i>'}${gpSeen()?(gpOdd(s)?'<i class="gp odd" title="The cost written on a line is far above what it sold for — check it">GP · cost looks wrong</i>':(()=>{const g=gpOf(s.lines,s.billDisc);return `<i class="gp ${g.gp<0?'neg':''}">GP ${fmt(g.gp)} · ${g.pct}%</i>`})()):''}</div></div>`}).join('')
+        <span class="muted">${billUndelivered(s)?'<b style="color:var(--chip-rust)">not delivered</b> · ':''}${pendingNow.has(s.no)?'<b style="color:var(--chip-rust)">goods pending</b> · ':''}${s.cancelled?`${s.cancelled.lines.length} line${s.cancelled.lines.length===1?'':'s'}`:`${s.lines.length} line${s.lines.length===1?'':'s'}`} · ${s.by}${(s.remade||[]).length?' · re-made':''}${(s.edits||[]).length?' · corrected':''}</span></div>
+       <div class="bl-amt">${s.cancelled?`<b style="text-decoration:line-through">${fmt(s.cancelled.total)}</b><i class="owe">cancelled</i></div></div>`:`<b>${fmt(s.total)}</b>${s.balance>0?`<i class="owe">${fmt(s.balance)} outstanding</i>`:s.type==='CREDIT'?'<i class="ok">credit · paid</i>':'<i class="ok">cash</i>'}${gpSeen()?(gpOdd(s)?'<i class="gp odd" title="The cost written on a line is far above what it sold for — check it">GP · cost looks wrong</i>':(()=>{const g=gpOf(s.lines,s.billDisc);return `<i class="gp ${g.gp<0?'neg':''}">GP ${fmt(g.gp)} · ${g.pct}%</i>`})()):''}</div></div>`}`}).join('')
       ||`<div class="muted" style="padding:20px 8px">No bill matches that. Try the last few digits of the number, or their mobile.</div>`}
      ${list.length>billLimit?`<div style="padding:8px"><button class="btn ghost sm" data-act="billMore">Show 150 more</button> <span class="muted">of ${list.length}</span></div>`:''}
     </div>
@@ -23439,6 +23559,7 @@ function askNumber(inv,how,send){
   inp.onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); go(sends.text?'text':'whatsapp') } if(e.key==='Escape'){ e.preventDefault(); m.remove() } };
 }
 function billDetail(inv){
+  if(inv.cancelled) return billCancelledDetail(inv);
   const c=C(inv.customerId)||{id:0,name:'—',phone:''};
   const qty=inv.lines.reduce((a,l)=>a+l.qty,0), gross=inv.lines.reduce((a,l)=>a+l.qty*l.price,0), disc=inv.lines.reduce((a,l)=>a+(l.disc||0),0)+(inv.billDisc||0);
   const prev=c.id&&c.id!==1?partyBal('C',c.id)-inv.balance:0;
@@ -23467,7 +23588,8 @@ function billDetail(inv){
      ${billPending(inv)?`<button class="btn tape sm" data-act="colIssueBill" data-no="${inv.no}" title="Give some of the pending goods and print a delivery note">Issue goods</button>`:(!inv.returnOf&&!inv.proof&&!inv.lines.some(l=>laterOf(l)>0)&&inv.lines.some(l=>l.qty>0)?`<button class="btn ghost sm" data-act="billIssueParts" data-no="${inv.no}" title="The goods go bit by bit: a delivery note each time, and the bill shows what is pending">Issue in parts</button>`:'')}
      ${billPending(inv)||inv.lines.some(l=>laterOf(l)>0)?'':billUndelivered(inv)?`<button class="btn tape sm" data-act="billDlvDone" data-no="${inv.no}" title="The goods have gone to the customer">Delivered ✓</button>`:inv.deliveredAt?(inv.undelivered?`<button class="btn ghost sm" data-act="billDlvSlip" data-no="${inv.no}" title="Print the delivery note again">Delivery note</button>`:''):`<button class="btn ghost sm" data-act="billDlvNot" data-no="${inv.no}" title="The goods are still here — put it on the Not delivered list">Not delivered yet</button>`}
      <button class="btn ghost sm" data-act="billCopy" data-no="${inv.no}">Bill again</button>
-     ${canEdit?`<button class="btn ghost sm" data-act="billEdit" data-no="${inv.no}">Edit in the till</button><button class="btn ghost sm" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}</div>
+     ${canEdit?`<button class="btn ghost sm" data-act="billEdit" data-no="${inv.no}">Edit in the till</button><button class="btn ghost sm" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}
+     ${inv.returnOf||inv.proof||+inv.total<0?'':billCancelAsked(inv.no)&&!payBoss()?'<span class="tag warn">cancel waiting for an admin</span>':`<button class="btn ghost sm" data-act="billCancel" data-no="${inv.no}" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)" title="${payBoss()?'Take this bill back':'An admin approves it first'}">Cancel bill</button>`}</div>
    </div>
    <div class="bl-strip">
     <div><span>Items · qty</span><b>${inv.lines.length} · ${fq(qty)}</b></div>
@@ -23613,6 +23735,7 @@ async function camWindow(o){
 }
 function billCopy(no){
   const s=S.sales.find(x=>x.no===no);
+  if(s&&s.cancelled) return toast(`Bill ${no} is cancelled`,'warn');
   S.pos={lines:s.lines.map(l=>({pid:l.pid,qty:l.qty,price:isOpenLine(l)?l.price:price(P(l.pid)),disc:0,...(l.name?{name:l.name}:{}),...(isOpenLine(l)?{open:true,auto:false}:{})})),
     customer:s.customerId===1?null:s.customerId,billDisc:0,sel:-1,entry:null,lastBill:S.pos.lastBill};
   go('pos'); toast(`${s.lines.length} line${s.lines.length===1?'':'s'} from ${no} copied at today's prices`);
@@ -23658,7 +23781,7 @@ function payGate(kind,title,detail,data,opts){
   return true;
 }
 const payWhat=(ls)=>ls.map(l=>`${String(l.method||'').toLowerCase()} ${fmt(l.amount)}${l.ref||l.no?' ('+escM(l.ref||l.no)+')':''}${l.date&&l.date!==D(today)?' dated '+l.date:''}`).join(' + ');
-const APKIND={...Object.fromEntries(APPROVAL_KINDS),expChange:'An expense changed or deleted',listBill:'Billing a customer on the black or red list',openBal:'A previous balance brought forward',partyActive:'A customer or supplier made active again',overLimit:'Credit past a customer’s limit'};
+const APKIND={...Object.fromEntries(APPROVAL_KINDS),billCancel:'A bill cancelled',expChange:'An expense changed or deleted',listBill:'Billing a customer on the black or red list',openBal:'A previous balance brought forward',partyActive:'A customer or supplier made active again',overLimit:'Credit past a customer’s limit'};
 const canApprove=()=>!!(S.user&&(S.user.role==='Super Admin'||S.user.role==='Owner'||S.user.role==='Admin'||can('approve')));
 /* any stock adjustment — added on an item, a count corrected, a stock take, counts from phones, goods
    written off — waits for an Admin, the Owner or the Super Admin unless one of them is doing it (3 Nov 2026) */
@@ -23694,6 +23817,7 @@ function applyApproval(a){
       notify('money',`Your petty cash hand-in of ${fmt(p.settled.back)} (${p.no}) is approved and counted in`,'petty',{forUser:p.who}); break }
     case 'listBill': case 'overLimit': break;
     case 'openBal': openBalAdd(d.type,d.id,d.amt,d.date,d.note,a.by); break;
+    case 'billCancel':{ const inv=S.sales.find(x=>x.no===d.no); if(inv&&(Math.abs(inv.total-d.total)>0.005||Math.abs(inv.paid-d.paid)>0.005)) throw new Error('The bill has changed since this was asked. Ask again.'); billCancelNow(d.no,d.why,S.user.name,a.by); persist(true); break }
     case 'expChange':{ const who=a.by+' (approved by '+S.user.name+')'; if(d.del) expApplyDel(d.no,who); else expApplyEdit(d.no,d.vals,who); break }
     case 'partyActive': partyActivate(d.type,d.id,S.user.name); break;      // the yes itself is what the till looks for (dirApproved)
     case 'stockAdj':{ if(d.phoneIds) phonePost(d.phoneIds,true);
@@ -23824,6 +23948,7 @@ function decideApproval(id,ok,note){
   if(!canApprove()) return toast('Only the owner can decide this');
   if(PAY_APPROVALS.includes(a.kind)&&!payBoss()) return toast('Only an Admin or the Super Admin can approve a payment');
   if(a.kind==='stockAdj'&&!payBoss()) return toast('Only an Admin, the Owner or the Super Admin can approve a stock adjustment');
+  if(a.kind==='billCancel'&&!payBoss()) return toast('Only an Admin, the Owner or the Super Admin can approve cancelling a bill');
   if(a.kind==='prodDel'&&!payBoss()) return toast('Only an Admin, the Owner or the Super Admin can approve deleting a product');
   if((a.kind==='listBill'||a.kind==='overLimit')&&!dirBoss()) return toast('Only the Super Admin or a director can decide this');
   a.status=ok?'approved':'rejected'; a.decidedBy=S.user.name; a.decidedAt=apStamp(); a.decidedTs=Date.now(); a.note=(note||'').trim();
@@ -24309,7 +24434,7 @@ function trail(){
   const count=(k)=>(S.trail||[]).filter(t=>t.kind===k).length;
   const money0=(v)=>v?fmt(Math.abs(v)):'—';
   const tabs=[['all','Everything'],['holdDiscard','Held bills thrown away'],['billCleared','Bills cleared'],
-              ['lineOff','Lines taken off'],['billEdit','Bills opened again'],['billRemade','Bills re-made'],
+              ['lineOff','Lines taken off'],['billEdit','Bills opened again'],['billRemade','Bills re-made'],['billCancelled','Bills cancelled'],
               ['docClosed','Quotations closed']];
   return `<h1>The trail <span class="muted" style="font-size:13px;font-weight:400">what was taken away or changed, and who did it</span></h1>
    <div class="row" style="margin-bottom:12px">
@@ -25262,7 +25387,7 @@ function custOverview(c,inv,open,rc,webOrders,ag,owed){
   </div>`;
 }
 function custBills(c,inv){
-  const list=inv.filter(s=>custBillsF==='all'||(custBillsF==='unpaid'?s.balance>0:s.balance<=0));
+  const list=inv.filter(s=>!s.cancelled&&(custBillsF==='all'||(custBillsF==='unpaid'?s.balance>0:s.balance<=0)));
   return `<div class="chips" style="margin-bottom:8px">${[['all','All'],['unpaid','Unpaid'],['paid','Paid']].map(f=>`<button class="${custBillsF===f[0]?'on':''}" data-custbills="${f[0]}">${f[1]}</button>`).join('')}
     <span class="muted" style="align-self:center;margin-left:auto">${list.length} bill${list.length===1?'':'s'} · ${fmt(list.reduce((a,s)=>a+s.total,0))}</span></div>
    <table class="cu-tbl"><tr><th>Bill</th><th>Date</th><th>Items</th><th class="n">Total</th><th class="n">Paid</th><th class="n">Outstanding</th><th>Status</th><th></th></tr>
@@ -26915,6 +27040,7 @@ function rtGo(how){
   }catch(e){ RT.busy=false; RT.err=e.message||String(e); render() }
 }
 function showInvoice(inv,f){
+  if(inv&&inv.cancelled) return toast(`Bill ${inv.no} is cancelled`,'warn');
   window._shownBill=inv;
   let curF = f || (CFG.bill && CFG.bill.defaultFormat) || 'r80';
   if(curF !== 'a5' && curF !== 'r80') curF = 'r80';
@@ -34532,7 +34658,7 @@ document.addEventListener('click',e=>{
     phHeld:()=>showHeldBillsModal(),
     phHold:()=>holdCurrentBill(true),
     phQuote:()=>{ if(S.pos.lines.length) saveDoc('QUOTE'); else toast('Nothing on the bill') },
-    phClear:()=>{ if(!S.pos.lines.length) return;
+    phClear:()=>{ if(S.pos.editing) return csClearEditing(); if(!S.pos.lines.length) return;
       if(!confirm('Clear the bill?')) return;
       S.pos={...S.pos,lines:[],billDisc:0,sel:-1}; PH.q=''; render() },
     phPay:()=>{ if(S.pos.lines.length) openPay() },
@@ -34960,7 +35086,7 @@ document.addEventListener('click',e=>{
     waInboxRead:()=>{ fetch('/api/wa/inbox/read',{method:'POST',headers:{Authorization:'Bearer '+regalBridge.token()}}).then(()=>{ waInbox.unread=0; waInbox.rows.forEach(r=>r.read_at=r.read_at||1); render() }) },
     waReply:()=>{ const to=a.dataset.to; const body=prompt('Reply on WhatsApp to '+to+(a.dataset.name?' ('+a.dataset.name+')':'')); if(body&&body.trim()) { wa(to.replace(/^94/,'0'),body.trim()); render() } },
     tplTest:()=>{sms(CFG.shop.owner,tplPreview(a.dataset.k).replace(/<\/?i>/g,''),TPL_AUD[a.dataset.k]||'customer'); render(); toast('Test message queued to '+CFG.shop.owner)},
-    billEdit:()=>billToTill(a.dataset.no),
+    billEdit:()=>billToTill(a.dataset.no), billCancel:()=>billCancelAsk(a.dataset.no),
     billTill:()=>billToTill(a.dataset.no),
     billAmend:()=>{closeModals();editSaleModal(a.dataset.no)},
     purEdit:()=>editPurchaseModal(a.dataset.no),
