@@ -4,177 +4,165 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#0B1719">
+<meta name="theme-color" content="#a31d24">
 <title>Your bill</title>
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png"><link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/bill-print.css">
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600;700&family=Noto+Sans+Sinhala:wght@600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;500;600;700;800&family=Noto+Sans+Sinhala:wght@600&display=swap" rel="stylesheet">
 <style>
-:root{--ink:#101E22;--ink2:#0B1719;--steel:#5A6E72;--faint:#8C9CA0;--page:#EEF2F1;--white:#fff;
-  --line:#D8DEDD;--line2:#EAEEED;--amber:#F0A81E;--amber2:#E0900A;--teal:#1FA39A;--green:#1E8A5A;--rust:#C0442C;
-  --spring:cubic-bezier(.2,1.25,.35,1);--ease:cubic-bezier(.2,.8,.2,1)}
-*{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--page);color:var(--ink);font:15px/1.5 Inter,system-ui,sans-serif;overflow-x:hidden}
-.wrap{max-width:560px;margin:0 auto;padding:0 16px}
-button{font:inherit;color:inherit}
+/* The customer's e-bill, "Poster" design (chosen 8 Nov 2026 from docs/ebill-designs/3-poster.html):
+   the shop's red, the bill's state as one huge word, the amount edge to edge, a running banner of the
+   state (PAID / QUOTATION…), and the bill itself on a cream sheet that slides up over the red. */
+:root{--red:#a31d24;--red2:#e2463f;--ink:#1a0d0e;--cream:#f7f1e6;--mute:#6f6156;--gold:#ffcf5a;--green:#1d7a45}
+*{box-sizing:border-box;margin:0}
+html,body{background:var(--red)}
+html{overflow-x:clip;-webkit-text-size-adjust:100%}
+body{color:#fff;font:400 16px/1.5 Barlow,system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh;overflow-x:clip}
+a{color:inherit;text-decoration:none}button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--gold);outline-offset:3px;border-radius:8px}
+.disp{font-family:Anton,Impact,sans-serif;font-weight:400;text-transform:uppercase;line-height:.9}
+.num{font-variant-numeric:tabular-nums}
+.rp{position:relative;overflow:hidden}
+.ripple{position:absolute;border-radius:50%;background:currentColor;opacity:.25;transform:scale(0);animation:rip .6s ease-out forwards;pointer-events:none}
+@keyframes rip{to{transform:scale(2.6);opacity:0}}
 
 /* ---------- the shop, across the top ---------- */
-.hero{position:relative;overflow:hidden;background:radial-gradient(120% 140% at 0% 0%,#17343A 0%,var(--ink2) 55%,#081113 100%);
-  color:#fff;padding:26px 0 74px;isolation:isolate}
-.hero::before{content:"";position:absolute;inset:0;z-index:-1;opacity:.13;
-  background-image:linear-gradient(rgba(255,255,255,.5) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.5) 1px,transparent 1px);
-  background-size:28px 28px;-webkit-mask-image:radial-gradient(80% 90% at 70% 0%,#000,transparent 75%);mask-image:radial-gradient(80% 90% at 70% 0%,#000,transparent 75%)}
-.blob{position:absolute;z-index:-1;border-radius:50%;filter:blur(46px);opacity:.55;animation:drift 14s ease-in-out infinite alternate}
-.blob.a{width:260px;height:260px;background:var(--amber);right:-70px;top:-90px}
-.blob.b{width:220px;height:220px;background:var(--teal);left:-80px;bottom:-110px;animation-duration:17s;animation-delay:-5s;opacity:.4}
-.blob.c{width:140px;height:140px;background:#F25F3A;right:30%;bottom:-70px;animation-duration:11s;opacity:.28}
-@keyframes drift{0%{transform:translate(0,0) scale(1)}50%{transform:translate(-30px,24px) scale(1.12)}100%{transform:translate(18px,-14px) scale(.94)}}
-.brand{display:flex;align-items:center;gap:14px;animation:fadeDown .7s var(--ease) both}
-.logo{position:relative;width:64px;height:64px;flex:0 0 64px;border-radius:18px;background:#fff;overflow:hidden;
-  display:grid;place-items:center;box-shadow:0 10px 30px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.12);animation:pop .8s var(--spring) .1s both}
-.logo img{width:100%;height:100%;object-fit:contain;padding:6px}
-.logo .ini{font:800 22px Archivo,sans-serif;color:var(--ink);background:linear-gradient(145deg,#FFD271,var(--amber));width:100%;height:100%;display:grid;place-items:center}
-.logo::after{content:"";position:absolute;inset:-40%;background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.85) 50%,transparent 60%);
-  transform:translateX(-120%);animation:shine 4.5s ease-in-out 1.2s infinite}
-@keyframes shine{0%,70%{transform:translateX(-120%)}85%,100%{transform:translateX(120%)}}
-.bname b{display:block;font:800 21px/1.15 Archivo,sans-serif;letter-spacing:.02em}
-.bname .si{display:block;font:600 13.5px 'Noto Sans Sinhala',sans-serif;color:#FFD27A;margin-top:2px}
-.bname small{display:block;font-size:12px;color:#9FB4B7;margin-top:3px}
-.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px;animation:fadeDown .7s var(--ease) .15s both}
-.chip{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#E6EEEF;text-decoration:none;
-  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:6px 11px;
-  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);transition:background .2s,transform .2s}
-.chip:active{transform:scale(.96)} .chip:hover{background:rgba(255,255,255,.16)}
-.chip svg{width:14px;height:14px;flex:0 0 14px;opacity:.9}
-.hi{margin-top:18px;font-size:14px;color:#CFDADB;animation:fadeDown .7s var(--ease) .25s both}
-.hi b{color:#fff}
+.top{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 18px}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.logo{width:44px;height:44px;flex:0 0 44px;border-radius:12px;background:#fff;display:grid;place-items:center;overflow:hidden;box-shadow:0 6px 16px rgba(0,0,0,.2)}
+.logo img{width:100%;height:100%;object-fit:contain;padding:4px}
+.logo .ini{font:400 18px Anton,Impact,sans-serif;color:var(--red)}
+.bname{min-width:0}
+.bname b{display:block;font:400 18px/1.1 Anton,Impact,sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.bname .si{display:block;font:600 12.5px 'Noto Sans Sinhala',sans-serif;color:#ffd9a0}
+.bname small{display:block;font-size:11.5px;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.call{flex:none;display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 16px;border-radius:999px;background:#fff;color:var(--red);font-weight:700;font-size:14.5px}
+.call svg{width:16px;height:16px}
 
-/* ---------- the bill ---------- */
-.receipt{position:relative;margin-top:-52px;background:var(--white);border-radius:20px 20px 0 0;padding:20px 18px 26px;
-  box-shadow:0 24px 50px -18px rgba(16,30,34,.35),0 2px 6px rgba(16,30,34,.06);animation:rise .9s var(--spring) .2s both}
-.receipt::after{content:"";position:absolute;left:0;right:0;bottom:-12px;height:12px;
-  background:radial-gradient(circle at 10px 12px,transparent 6px,var(--white) 6.5px) 0 0/20px 12px repeat-x}
-@keyframes rise{from{opacity:0;transform:translateY(60px) scale(.97)}to{opacity:1;transform:none}}
-@keyframes fadeDown{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
+/* ---------- the state, the amount ---------- */
+.hero{padding:6px 18px 0}
+.eyebrow{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-weight:600;letter-spacing:.16em;font-size:12px;text-transform:uppercase;opacity:.9}
+.eyebrow::before{content:"";width:28px;height:2px;background:#fff}
+.wrapw{overflow:hidden;padding-top:.06em}
+/* the word: drawn as an outline, then filled; sized to its length so a long one still fits a phone */
+.word{font-size:clamp(60px,calc(150vw / var(--n)),220px);letter-spacing:-.01em;margin-top:6px;color:transparent;-webkit-text-stroke:2px #fff;animation:fillw .6s ease-out 1.1s forwards;white-space:nowrap}
+.word span{display:inline-block;transform:translateY(105%);animation:upw .9s cubic-bezier(.16,1,.3,1) forwards;animation-delay:calc(.15s + var(--i)*.06s)}
+@keyframes upw{to{transform:none}}
+@keyframes fillw{to{color:#fff;-webkit-text-stroke:2px transparent}}
+.w-due .word{animation-name:fillw2}@keyframes fillw2{to{color:var(--gold);-webkit-text-stroke:2px transparent}}
+.amt{font-size:clamp(44px,14vw,140px);margin-top:4px;white-space:nowrap}
+.amt small{font-size:.32em;vertical-align:1.6em;margin-right:.18em;opacity:.8}
+.stamp{display:inline-block;margin-top:12px;font-weight:800;font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;padding:6px 12px;border:2px solid #fff;border-radius:999px;opacity:0;animation:fadeUp .5s ease-out 1.3s forwards}
+.stamp.due{border-color:var(--gold);color:var(--gold)}
+/* a credit customer's name, big and bold */
+.cust{margin-top:12px;display:flex;flex-direction:column;gap:2px}
+.cust span{font-weight:600;letter-spacing:.18em;font-size:12px;text-transform:uppercase;opacity:.85}
+.cust b{font-weight:800;font-size:clamp(26px,7.5vw,44px);line-height:1.1;color:var(--gold);overflow-wrap:anywhere}
+.hi{margin-top:10px;font-weight:500;opacity:.92}
+.hi b{font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.chip{display:inline-flex;align-items:center;gap:6px;min-height:34px;font-size:13px;font-weight:600;border:1.5px solid rgba(255,255,255,.55);border-radius:999px;padding:4px 12px;max-width:100%}
+.chip svg{width:14px;height:14px;flex:none}
+.chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-@keyframes pop{0%{opacity:0;transform:scale(.4) rotate(-12deg)}100%{opacity:1;transform:none}}
-.rtop{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-.rno{font:800 13px Archivo,sans-serif;letter-spacing:.12em;color:var(--steel);text-transform:uppercase}
-.rno b{display:block;font-size:22px;letter-spacing:.02em;color:var(--ink);text-transform:none}
-.when{font-size:12.5px;color:var(--steel);margin-top:2px}
-.stamp{flex:0 0 auto;font:800 13px Archivo,sans-serif;letter-spacing:.16em;text-transform:uppercase;padding:7px 12px;border-radius:8px;
-  border:2.5px solid currentColor;transform:rotate(-8deg);animation:stamp .55s cubic-bezier(.3,1.6,.5,1) 1.05s both;white-space:nowrap}
-.stamp.paid{color:var(--green);background:rgba(30,138,90,.06)}
-.stamp.due{color:var(--rust);background:rgba(192,68,44,.06)}
-.stamp.acc{color:#A86C00;background:rgba(240,168,30,.08)}
-@keyframes stamp{0%{opacity:0;transform:rotate(-24deg) scale(2.6)}70%{opacity:1;transform:rotate(-6deg) scale(.92)}100%{opacity:1;transform:rotate(-8deg) scale(1)}}
-.grand{margin:18px -18px 4px;padding:18px;background:linear-gradient(135deg,#FFF8E8,#FFF1D2);border-top:1px dashed #F0D39A;border-bottom:1px dashed #F0D39A;text-align:center}
-.grand .lbl{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#8A6A1F;font-weight:700}
-.grand .amt{font:800 38px/1.1 Archivo,sans-serif;letter-spacing:-.01em;margin-top:4px;font-variant-numeric:tabular-nums}
-.grand .amt small{font-size:18px;font-weight:700;margin-right:4px;color:#8A6A1F}
-.saved{display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:6px 13px;border-radius:999px;font-size:13px;font-weight:700;color:#0F5E3A;
-  background:linear-gradient(90deg,#D3F3E3,#EFFFF6,#D3F3E3);background-size:200% 100%;animation:fadeUp .6s var(--ease) 1.5s both,sheen 2.6s linear 2.1s infinite}
-@keyframes sheen{to{background-position:-200% 0}}
-.items{margin-top:14px}
-.item{display:flex;gap:10px;padding:11px 0;border-bottom:1px solid var(--line2);animation:fadeUp .5s var(--ease) both;animation-delay:calc(.55s + var(--i) * 60ms)}
-.item:last-child{border-bottom:0}
-.item .q{flex:0 0 34px;height:34px;border-radius:10px;background:var(--page);display:grid;place-items:center;font:700 12.5px Archivo,sans-serif;color:var(--steel)}
-.item .nm{flex:1;min-width:0}
-.item .nm b{display:block;font-weight:600;font-size:14.5px;line-height:1.3;overflow-wrap:anywhere}
-.item .sub{font-size:12px;color:var(--faint);margin-top:2px}
-.item .sub s{margin-left:4px}
-.item .am{text-align:right;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
-.item.ret .nm b,.item.ret .am{color:#9F1239}
-.rtag{background:#FFE4E6;color:#9F1239;border-radius:999px;font-size:10px;padding:1px 7px;margin-left:5px;font-weight:600;vertical-align:1px}
-.tots{margin-top:8px;padding-top:10px;border-top:1.5px solid var(--line)}
-.tot{display:flex;justify-content:space-between;padding:4px 0;font-size:14px;color:var(--steel)}
-.tot b{color:var(--ink);font-variant-numeric:tabular-nums}
-.tot.due b{color:var(--rust)} .tot.ok b{color:var(--green)}
-.by{margin-top:12px;font-size:12px;color:var(--faint);text-align:center}
+
+/* the band: the bill's state running like a shop's banner */
+.band{margin-top:24px;background:var(--ink);color:#fff;transform:rotate(-2deg) scale(1.04);padding:12px 0;overflow:hidden;box-shadow:0 14px 30px rgba(0,0,0,.25)}
+.band div{display:flex;gap:34px;width:max-content;animation:run 32s linear infinite;font-family:Anton,Impact,sans-serif;font-size:22px;letter-spacing:.04em;text-transform:uppercase}
+.band span::after{content:"✦";margin-left:34px;color:var(--red2)}
+@keyframes run{to{transform:translateX(-50%)}}
+
+/* ---------- the bill: a cream sheet sliding up over the red ---------- */
+.sheet{position:relative;margin-top:30px;background:var(--cream);color:var(--ink);border-radius:36px 36px 0 0;padding:30px 18px 40px;animation:sheet 1s cubic-bezier(.16,1,.3,1) .6s both;box-shadow:0 -20px 40px rgba(0,0,0,.18)}
+@keyframes sheet{from{transform:translateY(120px);opacity:0}}
+.grab{width:44px;height:5px;border-radius:3px;background:rgba(26,13,14,.2);margin:-16px auto 18px}
+.inner{max-width:560px;margin:0 auto}
+.sh{display:flex;justify-content:space-between;align-items:end;gap:10px}
+.sh h2{font-size:34px}
+.sh span{font-size:13px;color:var(--mute);text-align:right}
+.items{counter-reset:l;border-top:2px solid var(--ink);margin-top:14px}
+.item{display:grid;grid-template-columns:auto 1fr auto;gap:2px 14px;align-items:center;padding:14px 0;border-bottom:2px solid var(--ink);opacity:0;animation:rl .6s cubic-bezier(.16,1,.3,1) forwards;animation-delay:calc(1.2s + var(--i)*.08s)}
+.item::before{content:counter(l,decimal-leading-zero);counter-increment:l;grid-row:1/3;font-family:Anton,Impact,sans-serif;font-size:22px;color:var(--red)}
+@keyframes rl{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+.item .nm{font-weight:700;font-size:15px;line-height:1.25;overflow-wrap:anywhere;min-width:0}
+.item .sub{grid-column:2;font-size:13px;color:var(--mute)}.item .sub s{opacity:.7}
+.item .am{grid-row:1/3;grid-column:3;font-family:Anton,Impact,sans-serif;font-size:19px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.item.ret .nm,.item.ret .am{color:#9F1239}
+.rtag{font-style:normal;color:var(--red);font-weight:600;margin-left:5px}
+.tots{margin-top:14px}
+.tot{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:15px}
+.tot b{font-variant-numeric:tabular-nums}
+.tot.g{font-family:Anton,Impact,sans-serif;font-size:28px;text-transform:uppercase}.tot.g b{font-weight:400}
+.tot.due{color:var(--red);font-weight:700}.tot.ok{color:var(--green);font-weight:700}
+.by{margin-top:10px;font-size:13px;color:var(--mute)}
+.saved{margin-top:18px;background:var(--ink);color:#fff;border-radius:22px;padding:18px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.saved b{font-family:Anton,Impact,sans-serif;font-weight:400;font-size:clamp(28px,9vw,40px);color:var(--gold);line-height:1;white-space:nowrap}
+.saved span{font-size:14px;opacity:.85;max-width:13rem}
 
 /* ---------- what to do with it ---------- */
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:56px;padding:0 12px;border-radius:999px;border:2px solid var(--ink);background:transparent;font-weight:700;font-size:15.5px;transition:transform .45s cubic-bezier(.34,1.56,.64,1),box-shadow .2s;text-align:center}
+.btn:hover{box-shadow:4px 4px 0 var(--ink);transform:translate(-2px,-2px)}
+.btn:active{transform:scale(.95);box-shadow:none;transition-duration:.08s}
+.btn svg{width:18px;height:18px;flex:none}
+.btn.red{background:var(--red);color:#fff;border-color:var(--red)}.btn.ink{background:var(--ink);color:#fff}.btn.full{grid-column:1/-1}
+.btn[disabled]{opacity:.6;pointer-events:none}
+.card{margin-top:16px;border:2px solid var(--ink);border-radius:26px;padding:20px}
+.card h3{font-family:Anton,Impact,sans-serif;font-weight:400;font-size:28px;letter-spacing:.02em;line-height:1}
+.card .lead{color:var(--mute);font-size:14px;margin-top:4px}
 /* the customer's whole account, under the bill */
-.acct{margin-top:22px;background:var(--white);border:1px solid var(--line2);border-radius:20px;padding:18px 18px 16px;box-shadow:0 10px 30px rgba(16,30,34,.08);animation:fadeUp .6s var(--ease) .8s both}
-.acct-h{display:flex;align-items:center;gap:12px}.acct-h b{display:block;font:800 17px Archivo,sans-serif}.acct-h small{color:var(--steel)}
-.acct-ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:#FFF4DC;color:var(--amber2);flex:none}.acct-ic svg{width:22px;height:22px}
-.acct-owe{margin-top:14px;padding:14px 16px;border-radius:14px;background:#FCEDEA;display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 10px}
-.acct-owe span{color:var(--steel);font-size:13px}.acct-owe b{font:800 24px Archivo,sans-serif;color:var(--rust);grid-row:span 2;text-align:right}.acct-owe small{color:var(--faint);font-size:12px}
-.acct-owe.ok{background:#E6F4EC}.acct-owe.ok b{color:var(--green);font-size:20px}
-.acct-go{display:block;margin-top:12px;text-align:center;text-decoration:none;color:#fff;font-weight:700;padding:13px 14px;border-radius:14px;background:linear-gradient(135deg,var(--ink),#17343A);box-shadow:0 8px 20px rgba(16,30,34,.2)}
-.acct-go span{display:block;font-weight:400;font-size:12.5px;opacity:.8;margin-top:2px}
-button.acct-go{width:100%;border:0;font:inherit;font-weight:700;cursor:pointer}button.acct-go:disabled{opacity:.6}
-.acct-go.wait{background:#FFF4DC;color:#7A5A05;box-shadow:none;border:1px dashed #F0D08A}
-.acct-msg{color:var(--rust);font-size:13px;text-align:center;margin-top:6px;min-height:0}
-.acts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:30px;animation:fadeUp .6s var(--ease) .9s both}
-.act{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px;border-radius:14px;background:var(--white);border:1px solid var(--line);
-  text-decoration:none;color:var(--ink);font-size:12px;font-weight:600;cursor:pointer;transition:transform .2s var(--spring),box-shadow .2s}
-.act:hover{transform:translateY(-2px);box-shadow:0 8px 18px -8px rgba(16,30,34,.3)} .act:active{transform:scale(.95)}
-.act i{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:var(--page)}
-.act i svg{width:19px;height:19px}
-.act.main i{background:var(--amber);color:var(--ink)}
-.act[disabled]{opacity:.6;pointer-events:none}
-
-/* ---------- how was it ---------- */
-.fb{position:relative;margin-top:16px;background:var(--white);border:1px solid var(--line);border-radius:20px;padding:20px 18px;text-align:center;overflow:hidden;
-  animation:fadeUp .7s var(--ease) 1.1s both}
-.fb h3{margin:0;font:800 18px Archivo,sans-serif}
-.fb .lead{font-size:13px;color:var(--steel);margin-top:2px}
-.face{font-size:44px;line-height:1;height:52px;margin-top:10px;display:grid;place-items:center}
-.face span{display:inline-block;animation:faceIn .45s var(--spring) both}
-@keyframes faceIn{from{opacity:0;transform:scale(.3) rotate(-25deg)}to{opacity:1;transform:none}}
-.stars{display:flex;justify-content:center;gap:6px;margin-top:6px}
-.star{background:none;border:0;padding:4px;cursor:pointer;-webkit-tap-highlight-color:transparent;position:relative}
-.star svg{width:40px;height:40px;display:block;transition:transform .25s var(--spring)}
-.star path{fill:#E6EBEA;stroke:#CBD4D3;stroke-width:1;transition:fill .2s,stroke .2s}
-.star.on path{fill:url(#gold);stroke:#D18A00}
-.star.on svg{animation:starPop .45s var(--spring) both;animation-delay:calc(var(--i) * 55ms)}
-.star:hover svg{transform:scale(1.12) rotate(-6deg)}
-@keyframes starPop{0%{transform:scale(.6)}60%{transform:scale(1.28) rotate(8deg)}100%{transform:scale(1)}}
-.star .ring{position:absolute;inset:50% auto auto 50%;width:8px;height:8px;margin:-4px;border-radius:50%;border:2px solid var(--amber);opacity:0;pointer-events:none}
-.star.burst .ring{animation:ring .55s ease-out}
-@keyframes ring{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(7)}}
-.say{font-weight:700;font-size:14px;height:22px;margin-top:4px;color:var(--steel);transition:color .2s}
-.more{display:grid;grid-template-rows:0fr;transition:grid-template-rows .5s var(--ease)}
+.acct-who{font-weight:800;font-size:18px;margin-top:4px}
+.acct-owe{margin-top:12px}
+.acct-owe span{display:block;color:var(--mute);font-size:14px;font-weight:700}
+.acct-owe b{display:block;font-family:Anton,Impact,sans-serif;font-weight:400;font-size:44px;line-height:1.05;color:var(--red)}
+.acct-owe small{color:var(--mute);font-size:13px}
+.acct-owe.ok b{color:var(--green);font-size:32px}
+.acct-go{display:block;margin-top:14px;text-align:center;color:#fff;font-weight:700;padding:14px;border-radius:22px;background:var(--ink);border:0;width:100%;font:inherit;font-weight:700}
+.acct-go span{display:block;font-weight:400;font-size:13px;opacity:.8;margin-top:2px}
+button.acct-go:disabled{opacity:.6}
+.acct-go.wait{background:#fff3d6;color:#6b4a00;border:2px dashed #e0b450}
+.acct-msg{color:var(--red);font-size:13px;text-align:center;margin-top:6px}
+/* how was it: 1 to 5 */
+.nums{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:14px}
+.star{aspect-ratio:1;border:2px solid var(--ink);border-radius:50%;background:transparent;font-family:Anton,Impact,sans-serif;font-size:24px;transition:transform .35s cubic-bezier(.34,1.56,.64,1),background .15s,color .15s}
+.star.on{background:var(--red);border-color:var(--red);color:#fff}
+.star.pop{animation:pop .45s cubic-bezier(.34,1.56,.64,1)}@keyframes pop{40%{transform:scale(1.15) rotate(-6deg)}}
+.lbl{display:flex;justify-content:space-between;font-size:12px;color:var(--mute);margin-top:6px}
+.say{font-weight:700;font-size:16px;min-height:24px;margin-top:8px;text-align:center}
+.more{display:grid;grid-template-rows:0fr;transition:grid-template-rows .5s cubic-bezier(.16,1,.3,1)}
 .more.open{grid-template-rows:1fr}
 .more>div{overflow:hidden}
-.tags{display:flex;flex-wrap:wrap;justify-content:center;gap:7px;margin-top:12px}
-.tg{border:1.5px solid var(--line);background:var(--white);border-radius:999px;padding:7px 13px;font-size:13px;font-weight:600;cursor:pointer;
-  transition:all .2s var(--spring)}
-.tg.on{background:var(--ink);color:#fff;border-color:var(--ink);transform:scale(1.04)}
-.fb textarea{width:100%;margin-top:12px;border:1.5px solid var(--line);border-radius:14px;padding:11px 13px;font:14px Inter,sans-serif;resize:none;min-height:76px;
-  transition:border-color .2s,box-shadow .2s;background:#FBFCFC}
-.fb textarea:focus{outline:0;border-color:var(--amber);box-shadow:0 0 0 4px rgba(240,168,30,.18)}
-.send{margin-top:12px;width:100%;border:0;border-radius:14px;padding:14px;font:700 15px Inter,sans-serif;cursor:pointer;color:var(--ink);
-  background:linear-gradient(135deg,#FFC74A,var(--amber) 55%,var(--amber2));box-shadow:0 10px 22px -10px rgba(224,144,10,.8);
-  transition:transform .2s var(--spring),filter .2s;position:relative}
-.send:active{transform:scale(.97)} .send[disabled]{filter:grayscale(.4);opacity:.7}
-.send .sp{display:inline-block;width:16px;height:16px;border:2.5px solid rgba(16,30,34,.25);border-top-color:var(--ink);border-radius:50%;vertical-align:-3px;margin-right:8px;animation:spin .7s linear infinite}
+.tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.tg{min-height:40px;padding:6px 15px;border:2px solid var(--ink);border-radius:999px;background:transparent;font-weight:600;font-size:14px;animation:rl .35s cubic-bezier(.16,1,.3,1) both}
+.tg.on{background:var(--ink);color:#fff}
+#note{width:100%;margin-top:12px;border:2px solid var(--ink);border-radius:16px;padding:10px 14px;font:inherit;min-height:70px;background:#fff;resize:none}
+.send{width:100%;margin-top:10px;min-height:54px;border:0;border-radius:999px;background:var(--red);color:#fff;font-weight:700}
+.send[disabled]{opacity:.7}
+.send .sp{display:inline-block;width:16px;height:16px;border:2.5px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;vertical-align:-3px;margin-right:8px;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.fbmsg{font-size:13px;color:var(--rust);margin-top:8px;min-height:18px}
-.thanks{padding:8px 0 4px;animation:fadeUp .6s var(--ease) both}
-.thanks svg.tick{width:74px;height:74px;display:block;margin:4px auto 8px}
+.fbmsg{font-size:13px;color:var(--red);margin-top:8px;min-height:18px;text-align:center}
+.thanks{text-align:center;padding:4px 0;animation:fadeUp .5s ease-out both}
+.thanks svg{width:64px;height:64px;display:block;margin:0 auto 8px}
 .thanks .c{stroke:var(--green);stroke-width:3;fill:none;stroke-dasharray:190;stroke-dashoffset:190;animation:draw .7s ease-out .1s forwards}
 .thanks .k{stroke:var(--green);stroke-width:4;fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:50;stroke-dashoffset:50;animation:draw .45s ease-out .7s forwards}
 @keyframes draw{to{stroke-dashoffset:0}}
-.thanks h3{font-size:19px}
-.thanks .gave{color:#E59E0B;font-size:20px;letter-spacing:2px;margin-top:4px}
-.heart{position:absolute;bottom:20px;font-size:20px;pointer-events:none;animation:float 1.8s ease-out forwards}
-@keyframes float{0%{opacity:0;transform:translateY(0) scale(.5)}15%{opacity:1}100%{opacity:0;transform:translateY(-170px) translateX(var(--dx)) scale(1.2) rotate(var(--r))}}
-
-/* ---------- the shop, at the foot ---------- */
-.shopfoot{margin:22px 0 34px;text-align:center;font-size:12.5px;color:var(--steel);line-height:1.7;animation:fadeUp .6s var(--ease) 1.3s both}
-.shopfoot b{color:var(--ink);font-family:Archivo,sans-serif;letter-spacing:.04em}
-.shopfoot a{color:var(--ink);font-weight:600}
-.msgcard{margin-top:-52px;background:var(--white);border-radius:20px;padding:34px 20px;text-align:center;color:var(--steel);box-shadow:0 24px 50px -18px rgba(16,30,34,.35);animation:rise .8s var(--spring) both}
-.msgcard b{display:block;font:800 18px Archivo,sans-serif;color:var(--ink);margin-bottom:6px}
-.loader{width:42px;height:42px;margin:0 auto 12px;border-radius:50%;border:3px solid var(--line2);border-top-color:var(--amber);animation:spin .8s linear infinite}
+.thanks h3{font-family:Anton,Impact,sans-serif;font-weight:400;font-size:30px;line-height:1}
+.thanks .gave{font-family:Anton,Impact,sans-serif;font-size:22px;color:var(--red);margin-top:4px}
+.thanks .lead{margin-top:4px}
+.shopfoot{text-align:center;font-size:13px;color:var(--mute);margin-top:28px;line-height:1.7}
+.shopfoot b{color:var(--ink);font-family:Anton,Impact,sans-serif;font-weight:400;letter-spacing:.06em;font-size:16px}
+.shopfoot a{color:var(--ink);font-weight:700}
+.msgcard{margin:20px 18px;background:var(--cream);color:var(--mute);border-radius:28px;padding:34px 22px;text-align:center;animation:sheet .8s cubic-bezier(.16,1,.3,1) both}
+.msgcard b{display:block;font:400 26px/1.1 Anton,Impact,sans-serif;text-transform:uppercase;color:var(--ink);margin-bottom:8px}
+.loader{width:42px;height:42px;margin:0 auto 12px;border-radius:50%;border:3px solid rgba(26,13,14,.12);border-top-color:var(--red);animation:spin .8s linear infinite}
 #confetti{position:fixed;inset:0;pointer-events:none;z-index:50}
-
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+@media (min-width:900px){.hero{padding:10px 48px 0}.top{padding:18px 48px}.sheet{padding:40px 48px 60px}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}
+  .word{color:#fff;-webkit-text-stroke:0}.word span,.item{transform:none;opacity:1}.stamp{opacity:1}.thanks .c,.thanks .k{stroke-dashoffset:0}}
 
 /* The exact branded bill the till printed — kept so "save as PDF" is the real invoice with its
-   logo and QR, but hidden on screen, where the card above reads properly on a phone. */
+   logo and QR, but hidden on screen, where the poster above reads properly on a phone. */
 .paper{background:#fff;padding:0;margin:0;overflow:hidden}
 .paper .print{border:0;margin:0 auto;padding:0}
 .fit.a5{width:760px}
@@ -184,10 +172,9 @@ button.acct-go{width:100%;border:0;font:inherit;font-weight:700;cursor:pointer}b
 .forprint{display:none}
 @media print{
   *{animation:none!important}
-  body{background:#fff;margin:0}
-  .hero,.acts,.fb,.shopfoot,#confetti{display:none!important}
-  .receipt{margin:0;box-shadow:none}
-  .wrap{max-width:none;padding:0;margin:0}
+  html,body{background:#fff;margin:0}
+  .top,.hero,.band,#confetti{display:none!important}
+  .sheet{margin:0;padding:0;box-shadow:none;background:#fff;border-radius:0}
   .screenview{display:none!important}
   .forprint{display:block!important}
   /* Fill the page width exactly, whatever page the device gives us. iOS Safari ignores the @page
@@ -202,15 +189,12 @@ button.acct-go{width:100%;border:0;font:inherit;font-weight:700;cursor:pointer}b
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFD45C"/><stop offset="1" stop-color="#F0A81E"/></linearGradient></defs></svg>
-<header class="hero"><i class="blob a"></i><i class="blob b"></i><i class="blob c"></i>
-  <div class="wrap">
-    <div class="brand"><span class="logo" id="logo"><span class="ini" id="mk">RH</span></span>
-      <span class="bname"><b id="shopName">Regal Hardware</b><span class="si" id="shopSi"></span><small id="shopTags"></small></span></div>
-    <div class="chips" id="chips"></div>
-    <div class="hi" id="hi"></div>
-  </div></header>
-<div class="wrap"><div id="out"><div class="msgcard"><div class="loader"></div>Reading your bill…</div></div></div>
+<header class="top screenview">
+  <div class="brand"><span class="logo" id="logo"><span class="ini" id="mk">RH</span></span>
+    <span class="bname"><b id="shopName">Regal Hardware</b><span class="si" id="shopSi"></span><small id="shopTags"></small></span></div>
+  <span id="callTop"></span>
+</header>
+<div id="out"><div class="msgcard"><div class="loader"></div>Reading your bill…</div></div>
 <canvas id="confetti"></canvas>
 <script>
 
@@ -227,11 +211,17 @@ const ICON={
   call:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/>',
   web:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/>',
   pdf:'<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
-  acct:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/>',
   print:'<path d="M7 9V4h10v5M7 17H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2M7 14h10v6H7z"/>',
+  bag:'<path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 016 0v2"/>',
   wa:'<path d="M4 20l1.3-3.9A8 8 0 1112 20a8 8 0 01-3.9-1z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 01-1.8-1.8l.8-1-1-2z"/>'
 };
-const svg=(k)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
+const svg=(k)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
+
+/* a ripple on anything marked .rp, where it was pressed */
+document.addEventListener('pointerdown',e=>{ const el=e.target.closest('.rp'); if(!el||calm) return;
+  const r=el.getBoundingClientRect(), d=Math.max(r.width,r.height), s=document.createElement('span');
+  s.className='ripple'; s.style.cssText=`width:${d}px;height:${d}px;left:${e.clientX-r.left-d/2}px;top:${e.clientY-r.top-d/2}px`;
+  el.appendChild(s); setTimeout(()=>s.remove(),650) });
 
 /* A real PDF file of the bill the till printed, made on the customer's own phone: the paper is drawn
    to a picture and laid on an A5 landscape page (or an 80 mm strip for a receipt). "Print or save as
@@ -285,7 +275,7 @@ function confetti(n=140,from){
   if(calm) return;
   const cv=$('#confetti'), cx=cv.getContext('2d'), dpr=Math.min(2,devicePixelRatio||1);
   cv.width=innerWidth*dpr; cv.height=innerHeight*dpr; cx.scale(dpr,dpr);
-  const cols=['#F0A81E','#FFD45C','#1FA39A','#1E8A5A','#F25F3A','#101E22'];
+  const cols=['#ffcf5a','#ffffff','#e2463f','#1a0d0e','#f7f1e6','#1d7a45'];
   const ox=from?from.x:innerWidth/2, oy=from?from.y:innerHeight*.32;
   const P=Array.from({length:n},()=>{ const a=-Math.PI/2+(Math.random()-.5)*Math.PI*1.1, v=6+Math.random()*9;
     return {x:ox,y:oy,vx:Math.cos(a)*v,vy:Math.sin(a)*v,w:5+Math.random()*6,h:8+Math.random()*8,r:Math.random()*6,vr:(Math.random()-.5)*.35,c:cols[Math.random()*cols.length|0],round:Math.random()<.3} });
@@ -300,46 +290,45 @@ function confetti(n=140,from){
 }
 const seen=(k)=>{ try{ if(localStorage.getItem(k)) return true; localStorage.setItem(k,'1') }catch(e){} return false };
 
-/* ---------- how was it ---------- */
-const FACES=[['🙂','Tap a star'],['😞','Not good'],['😕','Could be better'],['😐','It was okay'],['😊','Good'],['🤩','Loved it!']];
+/* ---------- how was it: 1 to 5 ---------- */
+const SAY=['Tap a number','Not good','Could be better','It was okay','Good','Loved it!'];
 const TAGS={good:['Friendly staff','Quick service','Good prices','Good quality','Found everything','Helpful advice'],
   bad:['Slow service','Out of stock','Price too high','Wrong item','Friendly staff','Good quality']};
 function feedbackCard(b){
-  if(b.feedback) return `<div class="fb" id="fb">${thanksHtml(b.feedback.stars,true)}</div>`;
-  return `<div class="fb" id="fb">
-    <h3>How was your visit?</h3><div class="lead">Your word goes straight to ${esc(b.shop.name)}.</div>
-    <div class="face" id="face"><span>${FACES[0][0]}</span></div>
-    <div class="stars" id="stars" role="radiogroup" aria-label="Your rating">${[1,2,3,4,5].map(i=>`<button class="star" type="button" role="radio" aria-checked="false" aria-label="${i} star${i>1?'s':''}" data-s="${i}" style="--i:${i}"><svg viewBox="0 0 24 24"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3L2.9 9.5l6.3-.9z" stroke-linejoin="round"/></svg><i class="ring"></i></button>`).join('')}</div>
-    <div class="say" id="say">${FACES[0][1]}</div>
+  if(b.feedback) return `<div class="card screenview" id="fb">${thanksHtml(b.feedback.stars,true)}</div>`;
+  return `<div class="card screenview" id="fb">
+    <h3>Rate us, 1 to 5</h3><div class="lead">Your word goes straight to ${esc(b.shop.name)}.</div>
+    <div class="nums" id="stars" role="radiogroup" aria-label="Your rating">${[1,2,3,4,5].map(i=>`<button class="star rp" type="button" role="radio" aria-checked="false" aria-label="${i} out of 5" data-s="${i}">${i}</button>`).join('')}</div>
+    <div class="lbl"><span>Not good</span><span>Excellent</span></div>
+    <div class="say" id="say">${SAY[0]}</div>
     <div class="more" id="more"><div>
       <div class="tags" id="tags"></div>
       <textarea id="note" maxlength="300" placeholder="Anything you would like to tell us? (optional)"></textarea>
-      <button class="send" id="send" type="button">Send my feedback</button>
+      <button class="send rp" id="send" type="button">Send my feedback</button>
       <div class="fbmsg" id="fbmsg"></div>
     </div></div></div>`;
 }
-const thanksHtml=(stars,before)=>`<div class="thanks"><svg class="tick" viewBox="0 0 64 64"><circle class="c" cx="32" cy="32" r="29"/><path class="k" d="M20 33l8 8 16-17"/></svg>
-  <h3>${before?'You have rated this visit':'Thank you!'}</h3><div class="gave">${'★'.repeat(stars)}<span style="color:#DCE2E1">${'★'.repeat(5-stars)}</span></div>
+const thanksHtml=(stars,before)=>`<div class="thanks"><svg viewBox="0 0 64 64"><circle class="c" cx="32" cy="32" r="29"/><path class="k" d="M20 33l8 8 16-17"/></svg>
+  <h3>${before?'You have rated this visit':'Thank you!'}</h3><div class="gave">${stars} out of 5</div>
   <div class="lead">${before?'Thank you for telling us — it helps the whole shop.':stars>=4?'We are so glad. See you again soon!':'We are sorry it was not better — the shop has your note and will put it right.'}</div></div>`;
 function feedbackAfter(b,id){
   const box=$('#fb'); if(!box||b.feedback) return;
   let stars=0; const picked=new Set();
   const paintTags=()=>{ const list=stars>=4?TAGS.good:TAGS.bad;
-    $('#tags').innerHTML=list.map((t,i)=>`<button type="button" class="tg ${picked.has(t)?'on':''}" data-t="${esc(t)}" style="animation:fadeUp .4s var(--ease) ${i*45}ms both">${esc(t)}</button>`).join('');
+    $('#tags').innerHTML=list.map((t,i)=>`<button type="button" class="tg rp ${picked.has(t)?'on':''}" data-t="${esc(t)}" style="animation-delay:${i*45}ms">${esc(t)}</button>`).join('');
     $('#tags').querySelectorAll('.tg').forEach(x=>x.onclick=()=>{ const t=x.dataset.t; picked.has(t)?picked.delete(t):picked.add(t); x.classList.toggle('on') }) };
   box.querySelectorAll('.star').forEach(s=>{
     s.onclick=()=>{ const was=stars; stars=+s.dataset.s;
-      box.querySelectorAll('.star').forEach(x=>{ const on=+x.dataset.s<=stars; x.classList.toggle('on',on); x.setAttribute('aria-checked',String(+x.dataset.s===stars));
-        if(on&&+x.dataset.s>was){ x.classList.remove('on'); void x.offsetWidth; x.classList.add('on') } });
-      s.classList.remove('burst'); void s.offsetWidth; s.classList.add('burst');
-      $('#face').innerHTML=`<span>${FACES[stars][0]}</span>`; $('#say').textContent=FACES[stars][1];
-      $('#say').style.color=stars<=2?'var(--rust)':stars>=4?'var(--green)':'var(--steel)';
+      box.querySelectorAll('.star').forEach(x=>{ const on=x===s; x.classList.toggle('on',on); x.setAttribute('aria-checked',String(on)) });
+      s.classList.remove('pop'); void s.offsetWidth; s.classList.add('pop');
+      $('#say').textContent=SAY[stars];
+      $('#say').style.color=stars<=2?'var(--red)':stars>=4?'var(--green)':'var(--mute)';
       if((was>=4)!==(stars>=4)||!was){ [...picked].forEach(t=>{ if(!(stars>=4?TAGS.good:TAGS.bad).includes(t)) picked.delete(t) }); paintTags() }
       $('#more').classList.add('open');
       if(navigator.vibrate) try{ navigator.vibrate(12) }catch(e){} };
   });
   $('#send').onclick=async()=>{
-    if(!stars){ $('#fbmsg').textContent='Tap the stars first'; return }
+    if(!stars){ $('#fbmsg').textContent='Tap a number first'; return }
     const btn=$('#send'); btn.disabled=true; btn.innerHTML='<i class="sp"></i>Sending…'; $('#fbmsg').textContent='';
     try{
       const r=await fetch('/api/my/b/'+encodeURIComponent(id)+'/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stars,tags:[...picked],note:$('#note').value})});
@@ -348,10 +337,7 @@ function feedbackAfter(b,id){
       if(r.status===404&&j.error==='Not found') throw new Error('The shop is updating its system — please try again in a little while');
       if(!r.ok) throw new Error(j.error||'It did not go — please try again');
       box.innerHTML=thanksHtml(stars,false);
-      if(stars>=4){ const rc=box.getBoundingClientRect(); confetti(90,{x:rc.left+rc.width/2,y:rc.top+40});
-        for(let i=0;i<7;i++){ const h=document.createElement('span'); h.className='heart'; h.textContent=['💛','🧡','💚'][i%3];
-          h.style.left=(18+Math.random()*64)+'%'; h.style.setProperty('--dx',(Math.random()*60-30)+'px'); h.style.setProperty('--r',(Math.random()*40-20)+'deg');
-          h.style.animationDelay=(i*110)+'ms'; box.appendChild(h); setTimeout(()=>h.remove(),2600) } }
+      if(stars>=4){ const rc=box.getBoundingClientRect(); confetti(90,{x:rc.left+rc.width/2,y:rc.top+40}) }
     }catch(e){ btn.disabled=false; btn.textContent='Send my feedback'; $('#fbmsg').textContent=e.message }
   };
 }
@@ -376,52 +362,71 @@ function feedbackAfter(b,id){
     $('#mk').textContent = ini;
     document.title = sh.name + (b.quote ? ' · quotation ' : ' · bill ') + b.no;
     const telNum = firstPhone(sh.phone) || firstPhone(sh.land);
+    const telShow = String(sh.phone || sh.land || '').split(/[,/;]/)[0].trim();
     const mob = firstPhone(sh.phone), wa = /^0?7\d{8}$/.test(mob) ? '94' + mob.replace(/^0/, '') : '';
     const where = [sh.addr, sh.near].filter(Boolean).join(' ');
     const maps = sh.addr ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(sh.name + ' ' + sh.addr) : '';
     const web = sh.web ? (/^https?:/.test(sh.web) ? sh.web : 'https://' + sh.web) : '';
-    $('#chips').innerHTML = [
-      maps ? `<a class="chip" href="${esc(maps)}" target="_blank" rel="noopener">${svg('pin')}${esc(sh.addr)}</a>` : '',
-      telNum ? `<a class="chip" href="tel:${esc(telNum)}">${svg('call')}${esc(String(sh.phone||sh.land).split(/[,/;]/)[0].trim())}</a>` : '',
-      web ? `<a class="chip" href="${esc(web)}" target="_blank" rel="noopener">${svg('web')}${esc(sh.web.replace(/^https?:\/\//,''))}</a>` : ''].join('');
-    $('#hi').innerHTML = b.quote ? (b.customer ? `Here is your quotation, <b>${esc(b.customer.name)}</b>. Ring us to order.` : 'Here is your quotation. Ring us to order.')
-      : b.customer ? `Thank you for shopping with us, <b>${esc(b.customer.name)}</b>.` : 'Thank you for shopping with us.';
+    if (telNum) $('#callTop').outerHTML = `<a class="call rp" href="tel:${esc(telNum)}">${svg('call')}Call</a>`;
+    const chips = [
+      maps ? `<a class="chip" href="${esc(maps)}" target="_blank" rel="noopener">${svg('pin')}<span>${esc(sh.addr)}</span></a>` : '',
+      telNum ? `<a class="chip" href="tel:${esc(telNum)}">${svg('call')}<span>${esc(telShow)}</span></a>` : '',
+      web ? `<a class="chip" href="${esc(web)}" target="_blank" rel="noopener">${svg('web')}<span>${esc(sh.web.replace(/^https?:\/\//,''))}</span></a>` : ''].join('');
+    const cname = b.customer && b.customer.name;
+    const hi = b.quote ? (cname ? `Here is your quotation, <b>${esc(cname)}</b>. Ring us to order.` : 'Here is your quotation. Ring us to order.')
+      : cname ? `Thank you for shopping with us, <b>${esc(cname)}</b>.` : 'Thank you for shopping with us.';
 
+    /* the bill's state: one word for the poster, a label for the stamp, and the running banner */
     const settled = !b.quote && !(b.balance > 0.005);
-    const qStamp = b.quote ? (b.invoice ? `<span class="stamp paid">Ordered</span>` : b.expired ? `<span class="stamp due">Expired</span>` : `<span class="stamp acc">Quotation</span>`) : '';
-    const stamp = b.quote ? qStamp : settled ? `<span class="stamp paid">Paid</span>` : b.type === 'CREDIT' && !(b.paid > 0.005) ? `<span class="stamp acc">On account</span>` : `<span class="stamp due">Balance due</span>`;
-    const card = `
-      <div class="receipt ${b.html ? 'screenview' : ''}">
-        <div class="rtop"><div><div class="rno">${b.quote ? 'Quotation' : 'Invoice'}<b>${esc(b.no)}</b></div>
-          <div class="when">${esc(b.date)}${b.time ? ' · ' + esc(b.time) : ''}</div></div>${stamp}</div>
-        <div class="grand"><div class="lbl">Total</div><div class="amt"><small>Rs</small><span id="amt">0.00</span></div>
-          ${b.saved > 0.005 ? `<span class="saved">🎉 You ${b.quote ? "save" : "saved"} ${money(b.saved)}${b.quote ? " against the MRP" : ""}</span>` : ''}</div>
-        <div class="items">${b.lines.map((l, i) => `<div class="item ${l.returned ? 'ret' : ''}" style="--i:${Math.min(i, 14)}">
-            <span class="q">${+l.qty === Math.round(l.qty) ? Math.abs(l.qty) : Math.abs(l.qty).toFixed(2)}×</span>
-            <span class="nm"><b>${esc(l.name)}${l.returned ? '<span class="rtag">returned</span>' : ''}</b>
-              <span class="sub">${money(l.price)}${l.unit ? ' / ' + esc(l.unit) : ''}${l.mrp ? (b.quote ? ` · MRP ${l.mrp > l.price + 0.005 ? `<s>${money(l.mrp)}</s>` : money(l.mrp)}` : `<s>${money(l.mrp)}</s>`) : ''}${l.disc > 0 ? ` · less ${money(l.disc)}` : ''}</span></span>
+    const onAcct = !b.quote && !settled && b.type === 'CREDIT' && !(b.paid > 0.005);
+    const st = b.quote ? (b.invoice ? { w: 'Ordered.', s: 'Ordered', band: 'Ordered', due: false } : b.expired ? { w: 'Expired.', s: 'Expired', band: 'Quotation · Expired', due: true } : { w: 'Quote.', s: 'Quotation', band: 'Quotation', due: false })
+      : settled ? { w: 'Paid.', s: 'Paid', band: 'Paid', due: false }
+      : onAcct ? { w: 'To pay.', s: 'On account', band: 'Credit · To pay', due: true }
+      : { w: 'To pay.', s: 'Balance due', band: 'Balance due', due: true };
+    const credit = !b.quote && !settled;          // a bill still owed: the customer's name is shown big
+    const word = `<div class="wrapw"><h1 class="disp word" style="--n:${st.w.length}" aria-label="${esc(st.w)}">${st.w.split('').map((c, i) => `<span style="--i:${i}">${esc(c)}</span>`).join('')}</h1></div>`;
+    const band = `<div class="band screenview" aria-hidden="true"><div>${new Array(10).fill(`<span>${esc(st.band)}</span>`).join('')}</div></div>`;
+    const hero = `<section class="hero screenview ${st.due ? 'w-due' : ''}">
+        <div class="eyebrow"><span>${b.quote ? 'Quotation' : 'Invoice'} ${esc(b.no)}</span><span>${esc(b.date)}${b.time ? ' · ' + esc(b.time) : ''}</span></div>
+        ${word}
+        <div class="disp amt num" aria-label="Total"><small>Rs</small><span id="amt">0.00</span></div>
+        <span class="stamp ${st.due ? 'due' : ''}">${st.s}</span>
+        ${credit && cname ? `<div class="cust"><span>Customer</span><b>${esc(cname)}</b></div>` : ''}
+        <div class="hi" id="hi">${hi}</div>
+        <div class="chips" id="chips">${chips}</div>
+      </section>`;
+
+    const lines = b.lines || [];
+    const sheetBill = `
+        <div class="sh"><h2 class="disp">The bill</h2><span>${lines.length} line${lines.length === 1 ? '' : 's'}</span></div>
+        <div class="items">${lines.map((l, i) => `<div class="item ${l.returned ? 'ret' : ''}" style="--i:${Math.min(i, 14)}">
+            <span class="nm">${esc(l.name)}${l.returned ? '<em class="rtag">returned</em>' : ''}</span>
+            <span class="sub">${+l.qty === Math.round(l.qty) ? Math.abs(l.qty) : Math.abs(l.qty).toFixed(2)} × ${money(l.price)}${l.unit ? ' / ' + esc(l.unit) : ''}${l.mrp ? (b.quote ? ` · MRP ${l.mrp > l.price + 0.005 ? `<s>${money(l.mrp)}</s>` : money(l.mrp)}` : ` <s>${money(l.mrp)}</s>`) : ''}${l.disc > 0 ? ` · less ${money(l.disc)}` : ''}</span>
             <span class="am">${money(l.amount)}</span></div>`).join('')}</div>
         <div class="tots">
           <div class="tot"><span>Subtotal</span><b>${money(b.sub)}</b></div>
           ${b.billDisc > 0 ? `<div class="tot"><span>Discount</span><b>− ${money(b.billDisc)}</b></div>` : ''}
-          ${b.quote ? `<div class="tot"><span><b>Quoted total</b></span><b style="font-size:17px">${money(b.total)}</b></div>
-          <div class="tot ${b.expired ? 'due' : 'ok'}"><span>Prices hold good until</span><b>${esc(new Date(b.until + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }))}${b.expired ? ' — past' : ''}</b></div>` : `<div class="tot"><span>Paid${b.pays && b.pays.length ? ' · ' + b.pays.map(p => esc(String(p.method).toLowerCase())).join(', ') : ''}</span><b>${money(b.paid)}</b></div>
+          ${b.quote ? `<div class="tot g"><span>Quoted total</span><b>${money(b.total)}</b></div>
+          <div class="tot ${b.expired ? 'due' : 'ok'}"><span>Prices hold good until</span><b>${esc(new Date(b.until + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }))}${b.expired ? ' — past' : ''}</b></div>`
+          : `<div class="tot g"><span>Total</span><b>${money(b.total)}</b></div>
+          <div class="tot"><span>Paid${b.pays && b.pays.length ? ' · ' + b.pays.map(p => esc(String(p.method).toLowerCase())).join(', ') : ''}</span><b>${money(b.paid)}</b></div>
           ${settled ? `<div class="tot ok"><span>Settled</span><b>✓ in full</b></div>` : `<div class="tot due"><span>Still to pay on this bill</span><b>${money(b.balance)}</b></div>`}`}
         </div>
-        ${b.by ? `<div class="by">Served by ${esc(b.by)}</div>` : ''}
-      </div>`;
+        ${b.by ? `<div class="by">Served by <b>${esc(b.by)}</b></div>` : ''}
+        ${b.saved > 0.005 ? `<div class="saved"><span>You ${b.quote ? 'save' : 'saved'} ${money(b.saved)} against the marked price (MRP)</span><b class="num">${money(b.saved)}</b></div>` : ''}`;
+
     /* their whole account, not just this bill: what they owe altogether, and the way into their own page */
     // the way in: open → sign in with the mobile and a code; not open → ask the shop, who texts when it is
     const c = b.quote || (b.customer && b.customer.plain) ? null : b.customer;   // a normal customer has no account: only those the shop gave credit
-    const goT = !c ? '' : c.page ? `<a class="acct-go" href="${esc(c.page)}">See every bill and payment<span>Your full statement — opens straight away</span></a>`
+    const goT = !c ? '' : c.page ? `<a class="acct-go rp" href="${esc(c.page)}">See every bill and payment<span>Your full statement — opens straight away</span></a>`
       : c.asked ? `<div class="acct-go wait">Asked — waiting for the shop<span>We will text you a link when the shop says yes. Tap it and your statement opens.</span></div>`
-      : c.canAsk ? `<button class="acct-go" type="button" id="askOpen">See every bill and payment<span>Ask the shop to open your account — they text you when it is ready</span></button>`
+      : c.canAsk ? `<button class="acct-go rp" type="button" id="askOpen">See every bill and payment<span>Ask the shop to open your account — they text you when it is ready</span></button>`
       // no mobile on their card: the way in is still shown — a call puts the number on it (3 Nov 2026)
-      : `<${telNum ? `a href="tel:${esc(telNum)}"` : 'div'} class="acct-go wait">See every bill and payment<span>Give the shop your mobile number${telNum ? ' — tap to call ' + esc(String(sh.phone || sh.land).split(/[,/;]/)[0].trim()) : ''}. Then they can open your statement for you.</span></${telNum ? 'a' : 'div'}>`;
+      : `<${telNum ? `a href="tel:${esc(telNum)}"` : 'div'} class="acct-go wait">See every bill and payment<span>Give the shop your mobile number${telNum ? ' — tap to call ' + esc(telShow) : ''}. Then they can open your statement for you.</span></${telNum ? 'a' : 'div'}>`;
     const accT = c && (c.owes > 0.005 || goT) ? `
-      <div class="acct screenview">
-        <div class="acct-h"><span class="acct-ic">${svg('acct')}</span><div><b>Your account</b><small>${esc(c.name)}</small></div></div>
-        ${c.owes > 0.005 ? `<div class="acct-owe"><span>Total outstanding</span><b>${money(c.owes)}</b><small>${c.openBills} unpaid bill${c.openBills === 1 ? '' : 's'}, this one included</small></div>`
+      <div class="card acct screenview">
+        <h3>Your account</h3><div class="acct-who">${esc(c.name)}</div>
+        ${c.owes > 0.005 ? `<div class="acct-owe"><span>Total outstanding</span><b class="num">${money(c.owes)}</b><small>${c.openBills} unpaid bill${c.openBills === 1 ? '' : 's'}, this one included</small></div>`
           : `<div class="acct-owe ok"><span>Your account</span><b>All clear</b><small>nothing outstanding</small></div>`}
         ${goT}<div class="acct-msg" id="askMsg"></div>
       </div>` : '';
@@ -432,16 +437,21 @@ function feedbackAfter(b,id){
     const pageRule = b.html
       ? `<style media="print">@page{size:${b.paper === 'r80' ? '80mm auto;margin:2mm' : 'A5 landscape;margin:6mm'}}</style>`
       : '';
+    const waText = encodeURIComponent((b.quote ? 'Hello, about my quotation ' : 'Hello, about my bill ') + b.no);
     const acts = `<div class="acts screenview">
-        <button class="act main" type="button" onclick="downloadPdf(this)"><i>${svg('pdf')}</i><span>PDF</span></button>
-        <button class="act" type="button" onclick="window.print()"><i>${svg('print')}</i><span>Print</span></button>
-        ${telNum ? `<a class="act" href="tel:${esc(telNum)}"><i>${svg('call')}</i><span>Call</span></a>` : ''}
-        ${wa ? `<a class="act" href="https://wa.me/${wa}?text=${encodeURIComponent((b.quote ? 'Hello, about my quotation ' : 'Hello, about my bill ') + b.no)}" target="_blank" rel="noopener"><i>${svg('wa')}</i><span>WhatsApp</span></a>`
-             : maps ? `<a class="act" href="${esc(maps)}" target="_blank" rel="noopener"><i>${svg('pin')}</i><span>Find us</span></a>` : ''}
+        <button class="btn ink rp" type="button" onclick="downloadPdf(this)">${svg('pdf')}<span>Save PDF</span></button>
+        <button class="btn rp" type="button" onclick="window.print()">${svg('print')}<span>Print</span></button>
+        ${wa ? `<a class="btn rp" href="https://wa.me/${wa}?text=${waText}" target="_blank" rel="noopener">${svg('wa')}<span>${b.quote ? 'Order on WhatsApp' : 'WhatsApp us'}</span></a>`
+             : maps ? `<a class="btn rp" href="${esc(maps)}" target="_blank" rel="noopener">${svg('pin')}<span>Find us</span></a>` : ''}
+        ${telNum ? `<a class="btn rp" href="tel:${esc(telNum)}">${svg('call')}<span>${b.quote ? 'Call to order' : 'Call'}</span></a>` : ''}
+        ${web ? `<a class="btn red full rp" href="${esc(web)}" target="_blank" rel="noopener">${svg('bag')}<span>Shop online at ${esc(sh.web.replace(/^https?:\/\//,'').replace(/\/$/,''))}</span></a>` : ''}
       </div>`;
     const foot = `<div class="shopfoot screenview"><b>${esc(sh.name)}</b><br>${esc(where)}<br>
         ${[sh.phone, sh.land].filter(Boolean).map(esc).join(' · ')}${sh.email ? '<br>' + esc(sh.email) : ''}${web ? `<br><a href="${esc(web)}" target="_blank" rel="noopener">${esc(sh.web.replace(/^https?:\/\//,''))}</a>` : ''}</div>`;
-    $('#out').innerHTML = pageRule + card + paper + accT + acts + (b.quote ? '' : feedbackCard(b)) + foot;
+    $('#out').innerHTML = pageRule + hero + band +
+      `<section class="sheet"><div class="grab screenview"></div><div class="inner">
+        <div class="screenview">${sheetBill}</div>${paper}${acts}${accT}${b.quote ? '' : feedbackCard(b)}${foot}
+      </div></section>`;
     bill = b;
     { const ask = $('#askOpen'); if (ask) ask.onclick = async () => {
         ask.disabled = true; $('#askMsg').textContent = '';
