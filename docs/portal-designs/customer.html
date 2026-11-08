@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>My account · Regal Hardware</title><meta name="theme-color" content="#a31d24">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="poster.css">
+</head><body>
+<div class="demo-note">Demo · sample customer</div>
+<header class="top"><div class="brand"><span class="logo" id="mk"></span><span class="bname"><b>Regal Hardware</b><small>Your account</small></span></div><a class="pill rp" href="tel:0772222259" id="callTop"></a></header>
+<div id="hero"></div>
+<section class="sheet"><div class="grab"></div><div class="inner" id="pane"></div></section>
+<nav class="tabs" id="tabs" aria-label="Your account"></nav>
+<script src="common.js"></script>
+<script>
+(function(){
+var E=P.esc, rs=P.rs;
+document.getElementById('mk').innerHTML=P.MARK;
+document.getElementById('callTop').innerHTML=P.icon('call')+'Call';
+/* a sample customer — on the live page this comes from /api/my */
+var C={name:'Kamal Stores',code:'C0002',phone:'077 123 4567',limit:250000,
+  bills:[{no:'20216',date:'08 Nov 2026',total:23460,paid:0,days:0,lines:[['Kevilton 13A Socket — Kumbuk',4,1420],['Nippon Paint Vinyl Silk 4L',2,6800],['S-lon Elbow 90° 20 mm',12,75]]},
+         {no:'20141',date:'21 Oct 2026',total:68240,paid:20000,days:18,lines:[['Tokyo Super Cement 50kg',20,2350],['Steel bar 10 mm (per length)',12,1940]]},
+         {no:'19987',date:'12 Sep 2026',total:67000,paid:0,days:57,lines:[['Kelani Cable 2.5 mm (100 m)',2,24500],['MCB 32A Single Pole',6,3000]]}],
+  pays:[{date:'02 Nov 2026',amt:20000,how:'Bank transfer',ref:'on 20141'},{date:'15 Oct 2026',amt:45000,how:'Cash',ref:'on 19902'},{date:'28 Sep 2026',amt:30000,how:'Cheque · HNB 004512',ref:'on 19850'}],
+  returns:[{date:'25 Oct 2026',bill:'20141',item:'Steel bar 10 mm',qty:2,amt:3880}]};
+C.bills.forEach(function(b){b.due=b.total-b.paid});
+C.owes=C.bills.reduce(function(a,b){return a+b.due},0);
+var bands=[['Up to 30 days',C.bills.filter(function(b){return b.days<=30}).reduce(function(a,b){return a+b.due},0),'#ffcf5a'],
+           ['31–60 days',C.bills.filter(function(b){return b.days>30&&b.days<=60}).reduce(function(a,b){return a+b.due},0),'#e2463f'],
+           ['Over 60 days',0,'#fff']];
+var HERO={
+  home:function(){return '<div class="eyebrow"><span>Account '+C.code+'</span><span>'+C.bills.length+' unpaid bills</span></div>'+P.word('You owe.',true)+
+    '<div class="disp amt num"><small>Rs</small><span id="big">0.00</span></div><div class="who">'+E(C.name)+'</div><div class="lede">Credit limit Rs '+rs(C.limit)+' · Rs '+rs(C.limit-C.owes)+' still open to you.</div>'},
+  stmt:function(){return '<div class="eyebrow"><span>Every bill and payment</span></div>'+P.word('Statement.')+'<div class="who">'+E(C.name)+'</div><div class="lede">Since 1 Sep 2026 · tap a bill to see it line by line.</div>'},
+  pay:function(){return '<div class="eyebrow"><span>Paid by bank, cash or cheque?</span></div>'+P.word('Pay.',true)+'<div class="disp amt num"><small>Rs</small><span id="big">0.00</span></div><div class="lede">Tell the shop what you paid. They match it to your bills and text you.</div>'},
+  me:function(){return '<div class="eyebrow"><span>'+E(C.phone)+'</span></div>'+P.word('Hello.')+'<div class="who">'+E(C.name)+'</div><div class="lede">Your sign-in, your team, and the shop.</div>'}
+};
+var BAND={home:'Rs '+rs(C.owes)+' to pay',stmt:'Statement',pay:'Tell the shop you paid',me:'Regal Hardware'};
+function billRows(list){return '<div class="rows">'+list.map(function(b,i){
+  var tag=b.days>30?'<span class="tag red">'+b.days+' days</span>':b.paid?'<span class="tag gold">part paid</span>':'<span class="tag mute">new</span>';
+  return '<button class="row" type="button" data-bill="'+b.no+'" style="--i:'+i+'"><span class="n">Bill '+b.no+tag+'</span><span class="s">'+b.date+(b.paid?' · paid Rs '+rs(b.paid)+' of '+rs(b.total):' · Rs '+rs(b.total))+'</span><span class="a num">'+rs(b.due)+'<small>to pay</small></span></button>'}).join('')+'</div>'}
+var PANE={
+  home:function(){
+    var tot=bands.reduce(function(a,b){return a+b[1]},0)||1;
+    return '<div class="bigcard"><div class="k">How old your bills are</div><div class="bars">'+bands.map(function(b,i){return '<i style="width:'+(b[1]/tot*100)+'%;background:'+b[2]+';animation-delay:'+(.6+i*.15)+'s"></i>'}).join('')+'</div>'+
+      '<div class="legend">'+bands.map(function(b){return '<span><b style="background:'+b[2]+'"></b>'+b[0]+' · Rs '+rs(b[1])+'</span>'}).join('')+'</div></div>'+
+      '<div class="sh"><h2 class="disp">Unpaid bills</h2><span>tap one to open it</span></div>'+billRows(C.bills)+
+      '<div class="two"><button class="btn red rp" type="button" data-go="pay">'+P.icon('pay')+'I have paid</button><button class="btn rp" type="button" data-go="stmt">'+P.icon('doc')+'Statement</button></div>'+
+      '<a class="btn wide ink" href="https://wa.me/94772222259">'+P.icon('wa')+'Ask the shop on WhatsApp</a>'},
+  stmt:function(){
+    var ev=[];C.bills.forEach(function(b){ev.push({d:b.date,t:'Bill '+b.no,dr:b.total})});C.pays.forEach(function(p){ev.push({d:p.date,t:p.how,cr:p.amt})});C.returns.forEach(function(r){ev.push({d:r.date,t:'Returned · '+r.item,cr:r.amt})});
+    ev.sort(function(a,b){return new Date(a.d)-new Date(b.d)});var bal=C.owes-ev.reduce(function(a,e){return a+(e.dr||0)-(e.cr||0)},0);
+    return '<div class="chips" id="per">'+['This month','3 months','This year','Everything'].map(function(c,i){return '<button class="chip'+(i==1?' on':'')+'" type="button">'+c+'</button>'}).join('')+'</div>'+
+      '<div class="bigcard" style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><div class="k">Bought</div><div class="v num" style="font-size:30px">'+rs(ev.reduce(function(a,e){return a+(e.dr||0)},0))+'</div></div><div><div class="k">Paid &amp; returned</div><div class="v num" style="font-size:30px;color:#fff">'+rs(ev.reduce(function(a,e){return a+(e.cr||0)},0))+'</div></div></div>'+
+      '<div class="sh"><h2 class="disp">Line by line</h2><span>balance after each</span></div><div class="rows">'+ev.map(function(e,i){bal+=(e.dr||0)-(e.cr||0);
+        return '<div class="row plain'+(e.cr?' in':'')+'" style="--i:'+i+'"><span class="n">'+E(e.t)+'</span><span class="s">'+e.d+' · balance Rs '+rs(bal)+'</span><span class="a num">'+(e.cr?'− ':'')+rs(e.dr||e.cr)+'</span></div>'}).join('')+'</div>'+
+      '<button class="btn wide ink rp" type="button" onclick="window.print()">'+P.icon('dl')+'Save statement as PDF</button>'+
+      '<div class="sh"><h2 class="disp">Goods returned</h2></div><div class="rows">'+C.returns.map(function(r,i){return '<div class="row in" style="--i:'+i+'"><span class="n">'+E(r.item)+' × '+r.qty+'</span><span class="s">'+r.date+' · from bill '+r.bill+'</span><span class="a num">− '+rs(r.amt)+'</span></div>'}).join('')+'</div>'},
+  pay:function(){
+    return '<div class="card"><h3>Tell the shop you have paid</h3><p>Pick the bills, say how you paid. The shop checks it and clears them.</p>'+
+      '<label>Which bills</label><div class="chips" id="pick">'+C.bills.map(function(b){return '<button class="chip on" type="button" data-amt="'+b.due+'">'+b.no+' · '+rs(b.due)+'</button>'}).join('')+'</div>'+
+      '<div class="two"><div><label for="pAmt">How much</label><input class="in num" id="pAmt" inputmode="decimal" value="'+rs(C.owes)+'"></div><div><label for="pWay">How</label><select class="in" id="pWay"><option>Bank transfer</option><option>Cash</option><option>Cheque</option></select></div></div>'+
+      '<label for="pRef">Reference or cheque number</label><input class="in" id="pRef" placeholder="e.g. HNB slip 4471">'+
+      '<label>Photo of the slip (optional)</label><button class="btn wide rp" type="button" style="margin-top:0">'+P.icon('cam')+'Add a photo</button>'+
+      '<button class="btn wide red rp" type="button" id="send">Tell the shop</button><div id="sent"></div></div>'+
+      '<div class="sh"><h2 class="disp">Your payments</h2><span>last 3</span></div><div class="rows">'+C.pays.map(function(p,i){return '<div class="row in" style="--i:'+i+'"><span class="n">'+E(p.how)+'</span><span class="s">'+p.date+' · '+E(p.ref)+'</span><span class="a num">'+rs(p.amt)+'<small>received</small></span></div>'}).join('')+'</div>'},
+  me:function(){
+    return '<div class="card"><h3>Your sign-in</h3><p>User name <b>kamalstores</b> · or your mobile and a texted code.</p><label for="o">The password you use now</label><input class="in" id="o" type="password"><label for="n">The new one</label><input class="in" id="n" type="password" placeholder="at least six"><button class="btn wide ink rp" type="button" id="pw">Change it</button><div id="pwd"></div></div>'+
+      '<div class="card"><h3>Someone from your firm</h3><p>Give a staff member their own sign-in. The shop approves it.</p><div class="two"><input class="in" placeholder="Name"><input class="in" placeholder="Mobile" inputmode="tel"></div><button class="btn wide rp" type="button" id="tm">Ask the shop</button><div id="tmd"></div></div>'+
+      '<div class="card"><h3>Regal Hardware</h3><p>748, Main Street, Kaduruwela · open 8 am – 7 pm</p><div class="two"><a class="btn red" href="tel:0772222259">'+P.icon('call')+'Call</a><a class="btn" href="https://regalhw.lk">Shop online</a></div></div>'+
+      '<button class="btn wide rp" type="button" style="margin-top:16px">'+P.icon('out')+'Sign out</button>'}
+};
+function show(k){
+  document.getElementById('hero').innerHTML='<section class="hero">'+HERO[k]()+'</section>'+P.band(BAND[k]);
+  P.countUp(document.getElementById('big'),C.owes,1300,500);
+  var p=document.getElementById('pane');p.innerHTML='<div class="pane">'+PANE[k]()+'</div><footer class="foot">Regal Hardware · 748, Main Street, Kaduruwela<br>077 222 22 59 · regalhw.lk</footer>';
+  p.querySelectorAll('[data-go]').forEach(function(b){b.onclick=function(){set(b.dataset.go)}});
+  p.querySelectorAll('[data-bill]').forEach(function(b){b.onclick=function(){openBill(b.dataset.bill)}});
+  p.querySelectorAll('.chips .chip').forEach(function(c){c.onclick=function(){
+    if(c.parentNode.id==='per'){c.parentNode.querySelectorAll('.chip').forEach(function(x){x.classList.toggle('on',x===c)})}else c.classList.toggle('on');
+    if(c.parentNode.id==='pick'){var t=0;c.parentNode.querySelectorAll('.chip.on').forEach(function(x){t+=+x.dataset.amt});document.getElementById('pAmt').value=rs(t)}}});
+  var s=document.getElementById('send');if(s)s.onclick=function(){P.done(document.getElementById('sent'),'Sent. The shop will check it and text you when it is cleared.')};
+  var pw=document.getElementById('pw');if(pw)pw.onclick=function(){P.done(document.getElementById('pwd'),'Changed. Use the new one from now on.')};
+  var tm=document.getElementById('tm');if(tm)tm.onclick=function(){P.done(document.getElementById('tmd'),'Asked. The shop will text them when it is ready.')};
+}
+function openBill(no){
+  var b=C.bills.find(function(x){return x.no===no});
+  P.over('<div class="eyebrow" style="color:var(--mute)"><span>Bill '+b.no+' · '+b.date+'</span></div><div class="disp" style="font-size:56px;margin-top:6px;color:var(--red)">Rs '+rs(b.due)+'</div><p class="mutep">to pay'+(b.paid?' · Rs '+rs(b.paid)+' paid of '+rs(b.total):'')+'</p>'+
+    '<div class="rows">'+b.lines.map(function(l,i){return '<div class="row" style="--i:'+i+'"><span class="n">'+E(l[0])+'</span><span class="s">'+l[1]+' × '+rs(l[2])+'</span><span class="a num">'+rs(l[1]*l[2])+'</span></div>'}).join('')+'</div>'+
+    '<div class="two"><button class="btn ink" type="button">'+P.icon('dl')+'PDF</button><button class="btn red" type="button" data-x onclick="setTimeout(function(){document.querySelector(\'[data-tab=pay]\').click()},50)">I paid this</button></div>');
+}
+var set=P.tabs(document.getElementById('tabs'),[['home','home','Home'],['stmt','doc','Statement'],['pay','pay','Pay'],['me','me','Account']],show);
+set('home',true);
+})();
+</script></body></html>

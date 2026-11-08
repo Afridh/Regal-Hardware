@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Suppliers · Regal Hardware</title><meta name="theme-color" content="#a31d24">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="poster.css">
+<style>
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:16px}
+.stat{border:2px solid rgba(255,255,255,.55);border-radius:20px;padding:12px;text-align:left;background:none;color:#fff}
+.stat b{display:block;font:400 clamp(26px,8vw,44px)/1 Anton,Impact,sans-serif}
+.stat span{display:block;font-size:12.5px;font-weight:600;opacity:.9;margin-top:4px;line-height:1.2}
+.stat.hot{background:#fff;color:var(--red);border-color:#fff}
+.po{margin-top:16px;border:2px solid var(--ink);border-radius:26px;padding:18px;animation:fadeUp .5s both;animation-delay:calc(var(--i)*.08s)}
+.po.attn{border-color:var(--red);box-shadow:6px 6px 0 var(--red)}
+.po .h{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.po .h b{font:400 26px/1 Anton,Impact,sans-serif}
+.po .h small{display:block;color:var(--mute);font-size:13px;margin-top:4px}
+.po .rows{margin-top:12px}
+.po .said{margin-top:12px;padding:10px 14px;border-radius:16px;background:#fdebd8;font-size:14px}
+.steps{display:flex;gap:4px;margin-top:14px}
+.steps i{flex:1;height:6px;border-radius:3px;background:rgba(26,13,14,.12)}
+.steps i.on{background:var(--red)}
+.steps+.lbl{display:flex;justify-content:space-between;font-size:11.5px;color:var(--mute);margin-top:5px;font-weight:600}
+.qty{display:flex;align-items:center;gap:6px}
+.qty button{width:36px;height:36px;border-radius:50%;border:2px solid var(--ink);background:none;font:700 18px Barlow,sans-serif;line-height:1}
+.qty b{min-width:28px;text-align:center;font:400 20px Anton,Impact,sans-serif}
+.pr{display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:center;padding:12px 0;border-bottom:2px solid var(--ink)}
+.pr .n{font-weight:700}.pr .s{font-size:13px;color:var(--mute)}
+.pr .qty{grid-row:1/3;grid-column:2}
+.tot{display:flex;justify-content:space-between;align-items:baseline;margin-top:14px;font:400 28px Anton,Impact,sans-serif;text-transform:uppercase}
+.tick{width:26px;height:26px;border-radius:8px;border:2px solid var(--ink);display:grid;place-items:center;flex:none;background:#fff}
+.tick svg{width:18px;height:18px;opacity:0;transition:opacity .15s}
+.on>.tick{background:var(--ink);color:#fff}.on>.tick svg{opacity:1}
+.chk{display:grid;grid-template-columns:auto 1fr auto;gap:2px 12px;align-items:center;width:100%;padding:13px 0;border:0;border-bottom:2px solid var(--ink);background:none;text-align:left}
+.chk .tick{grid-row:1/3}.chk .n{font-weight:700}.chk .s{grid-column:2;font-size:13px;color:var(--mute)}.chk .a{grid-row:1/3;grid-column:3;font:400 19px Anton,Impact,sans-serif}
+.list{border-top:2px solid var(--ink);margin-top:12px}
+</style>
+</head><body>
+<div class="demo-note">Demo · sample supplier</div>
+<header class="top"><div class="brand"><span class="logo" id="mk"></span><span class="bname"><b>Regal Hardware</b><small>Supplier page</small></span></div><a class="pill rp" href="tel:0772222259" id="callTop"></a></header>
+<div id="hero"></div>
+<section class="sheet"><div class="grab"></div><div class="inner" id="pane"></div></section>
+<nav class="tabs" id="tabs" aria-label="Supplier page"></nav>
+<script src="common.js"></script>
+<script>
+(function(){
+var E=P.esc, rs=P.rs;
+document.getElementById('mk').innerHTML=P.MARK;
+document.getElementById('callTop').innerHTML=P.icon('call')+'Call';
+/* a sample supplier — on the live page this comes from /api/supplier */
+var S={firm:'Lanka Tiles & Paints (Pvt) Ltd',rep:'Sunil',owed:186450,
+  orders:[{no:'PO-00412',date:'08 Nov 2026',st:1,attn:true,lines:[['Nippon Vinyl Silk 4L — White',24,6100],['Nippon Weather Bond 4L',12,8250],['Paint brush 3"',48,310]]},
+          {no:'PO-00409',date:'06 Nov 2026',st:2,lines:[['Nippon Floor Paint 1L',30,2150]]},
+          {no:'PO-00401',date:'02 Nov 2026',st:3,said:'Only 20 of the 30 came. We changed the order to 20.',lines:[['Lanka Wall Tile 30×30 (box)',20,3400]]}],
+  pending:[{no:'SO-0117',date:'05 Nov 2026',what:'Your order · 6 lines',amt:84200,st:'Waiting for the shop'},{no:'SO-0112',date:'30 Oct 2026',what:'Your order · 2 lines',amt:22600,st:'Shop changed it'}],
+  bills:[{no:'INV 55821',date:'14 Oct 2026',amt:96200,days:25},{no:'INV 55940',date:'22 Oct 2026',amt:52650,days:17},{no:'INV 56012',date:'01 Nov 2026',amt:37600,days:7}],
+  dmg:[{item:'Lanka Wall Tile 30×30',qty:3,why:'Cracked in the box',st:'held'},{item:'Nippon Vinyl Silk 4L',qty:1,why:'Tin dented, leaking',st:'held'}],
+  cat:[['Nippon Vinyl Silk 4L — White',6100],['Nippon Weather Bond 4L',8250],['Nippon Floor Paint 1L',2150],['Lanka Wall Tile 30×30 (box)',3400],['Paint brush 3"',310]]};
+var STEPS=['Sent','Accepted','Dispatched','Received'];
+var h=new Date().getHours(), hello=h<12?'Good morning':h<17?'Good afternoon':'Good evening';
+var need=S.orders.filter(function(o){return o.st<2||o.said}).length;
+var HERO={
+  orders:function(){return '<div class="eyebrow"><span>'+hello+'</span><span>'+E(S.firm)+'</span></div>'+P.word('Hi '+S.rep+'.')+
+    '<div class="stats"><button class="stat hot rp" data-go="orders"><b>'+need+'</b><span>orders to answer</span></button><button class="stat rp" data-go="pending"><b>'+S.pending.length+'</b><span>pending with the shop</span></button><button class="stat rp" data-go="pay"><b class="num">'+Math.round(S.owed/1000)+'k</b><span>Rs owed to you</span></button></div>'},
+  create:function(){return '<div class="eyebrow"><span>Send the shop an order</span></div>'+P.word('New order.')+'<div class="lede">Pick from your price list, or send a photo of your invoice.</div>'},
+  pending:function(){return '<div class="eyebrow"><span>With the shop now</span></div>'+P.word('Pending.',true)+'<div class="lede">What you sent, and what the shop did with it.</div>'},
+  pay:function(){return '<div class="eyebrow"><span>Your bills at the shop</span></div>'+P.word('Owed.',true)+'<div class="disp amt num"><small>Rs</small><span id="big">0.00</span></div><div class="lede">Tick the bills and ask for payment. The shop texts when it is paid.</div>'},
+  dmg:function(){return '<div class="eyebrow"><span>Goods that came damaged</span></div>'+P.word('Damages.')+'<div class="lede">Say if you will replace them or give credit.</div>'},
+  me:function(){return '<div class="eyebrow"><span>'+E(S.firm)+'</span></div>'+P.word('Account.')+'<div class="who">'+E(S.rep)+'</div><div class="lede">Your sign-in, price lists, stock and history.</div>'}
+};
+var BAND={orders:need+' orders to answer',create:'New order',pending:'Pending with the shop',pay:'Rs '+rs(S.owed)+' owed to you',dmg:'Damage returns',me:'Regal Hardware'};
+function lines(ls){return '<div class="rows">'+ls.map(function(l,i){return '<div class="row" style="--i:'+i+'"><span class="n">'+E(l[0])+'</span><span class="s">'+l[1]+' × '+rs(l[2])+'</span><span class="a num">'+rs(l[1]*l[2])+'</span></div>'}).join('')+'</div>'}
+function poCard(o,i){
+  var tot=o.lines.reduce(function(a,l){return a+l[1]*l[2]},0);
+  var tag=o.said?'<span class="tag red">Shop changed it</span>':o.st===1?'<span class="tag red">Answer this</span>':o.st===2?'<span class="tag gold">Accepted</span>':'<span class="tag green">On the way</span>';
+  var acts=o.said?'<div class="two"><button class="btn red rp" data-ok>OK, agreed</button><button class="btn rp">Call the shop</button></div>':
+    o.st===1?'<div class="two"><button class="btn red rp" data-ok>Accept</button><button class="btn rp">Change it</button></div>':
+    o.st===2?'<button class="btn wide ink rp" data-ok>'+P.icon('box')+'Mark dispatched</button>':'';
+  return '<div class="po'+(o.attn||o.said?' attn':'')+'" style="--i:'+i+'"><div class="h"><div><b>'+o.no+'</b><small>'+o.date+' · '+o.lines.length+' line'+(o.lines.length===1?'':'s')+'</small></div>'+tag+'</div>'+
+    (o.said?'<div class="said"><b>The shop said:</b> '+E(o.said)+'</div>':'')+lines(o.lines)+
+    '<div class="tot"><span>Total</span><span class="num">Rs '+rs(tot)+'</span></div>'+
+    '<div class="steps">'+STEPS.map(function(s,j){return '<i class="'+(j<o.st?'on':'')+'"></i>'}).join('')+'</div><div class="lbl">'+STEPS.map(function(s){return '<span>'+s+'</span>'}).join('')+'</div>'+
+    '<div data-act>'+acts+'</div></div>'}
+var PANE={
+  orders:function(){return '<div class="sh"><h2 class="disp">Orders from the shop</h2><span>newest first</span></div>'+S.orders.map(poCard).join('')},
+  create:function(){return '<div class="card"><h3>From your price list</h3><p>Tap + for each item.</p><div class="list">'+S.cat.map(function(c,i){return '<div class="pr"><span class="n">'+E(c[0])+'</span><span class="s">Rs '+rs(c[1])+' each</span><div class="qty" data-p="'+c[1]+'"><button type="button" data-d="-1" aria-label="less">−</button><b>0</b><button type="button" data-d="1" aria-label="more">+</button></div></div>'}).join('')+'</div>'+
+      '<div class="tot"><span>Total</span><span class="num" id="otot">Rs 0.00</span></div><button class="btn wide red rp" type="button" id="osend">Send to the shop</button><div id="odone"></div></div>'+
+      '<div class="card"><h3>Or a photo</h3><p>Snap your invoice — the shop types it in.</p><button class="btn wide ink rp" type="button">'+P.icon('cam')+'Take a photo of the invoice</button></div>'},
+  pending:function(){return '<div class="sh"><h2 class="disp">Sent by you</h2><span>'+S.pending.length+' open</span></div><div class="rows">'+S.pending.map(function(p,i){return '<div class="row" style="--i:'+i+'"><span class="n">'+p.no+(/changed/.test(p.st)?'<span class="tag red">'+p.st+'</span>':'<span class="tag gold">'+p.st+'</span>')+'</span><span class="s">'+p.date+' · '+p.what+'</span><span class="a num">'+rs(p.amt)+'</span></div>'}).join('')+'</div>'+
+      '<div class="sh"><h2 class="disp">Done lately</h2></div><div class="rows"><div class="row" style="--i:0"><span class="n">PO-00388<span class="tag green">Received</span></span><span class="s">24 Oct 2026 · goods in, GRN 1207</span><span class="a num">58,400.00</span></div><div class="row" style="--i:1"><span class="n">PO-00377<span class="tag green">Received</span></span><span class="s">17 Oct 2026 · goods in, GRN 1189</span><span class="a num">31,250.00</span></div></div>'},
+  pay:function(){return '<div class="sh"><h2 class="disp">Ask to be paid</h2><span>tick the bills</span></div><div class="list" id="pb">'+S.bills.map(function(b){return '<button class="chk on" type="button" data-a="'+b.amt+'"><span class="tick">'+P.icon('tick')+'</span><span class="n">'+b.no+(b.days>21?'<span class="tag red">'+b.days+' days</span>':'')+'</span><span class="s">'+b.date+'</span><span class="a num">'+rs(b.amt)+'</span></button>'}).join('')+'</div>'+
+      '<div class="tot"><span>Asking for</span><span class="num" id="ptot">Rs '+rs(S.owed)+'</span></div><label for="pway">Pay me by</label><select class="in" id="pway"><option>Bank transfer · BOC 7712…</option><option>Cheque</option><option>Cash</option></select>'+
+      '<button class="btn wide red rp" type="button" id="psend">Ask for payment</button><div id="pdone"></div>'+
+      '<div class="sh"><h2 class="disp">Paid lately</h2></div><div class="rows"><div class="row in" style="--i:0"><span class="n">Bank transfer</span><span class="s">31 Oct 2026 · INV 55610, 55702</span><span class="a num">112,300.00<small>paid</small></span></div></div>'},
+  dmg:function(){return S.dmg.map(function(d,i){return '<div class="po attn" style="--i:'+i+'"><div class="h"><div><b>'+E(d.item)+'</b><small>'+d.qty+' held at the shop · '+E(d.why)+'</small></div><span class="tag red">Your answer</span></div><div class="two"><button class="btn red rp" data-dd="Replace">I will replace</button><button class="btn rp" data-dd="Credit">Give credit</button></div><div data-ddone></div></div>'}).join('')},
+  me:function(){return '<div class="rows">'+[['Order history','Every order since you joined','clock'],['Your stock at the shop','Open today until 7 pm','box'],['Price lists','Send a new one as a photo or PDF','doc']].map(function(x,i){return '<button class="row" type="button" style="--i:'+i+'"><span class="n">'+x[0]+'</span><span class="s">'+x[1]+'</span><span class="a">→</span></button>'}).join('')+'</div>'+
+      '<div class="card"><h3>Your sign-in</h3><p>User name <b>lankatiles.sunil</b></p><label for="np">New password</label><input class="in" id="np" type="password" placeholder="at least six"><button class="btn wide ink rp" type="button" id="pw">Change it</button><div id="pwd"></div></div>'+
+      '<div class="card"><h3>Someone else from your firm</h3><p>Give another rep their own sign-in.</p><div class="two"><input class="in" placeholder="Name"><input class="in" placeholder="Mobile" inputmode="tel"></div><button class="btn wide rp" type="button" id="tm">Ask the shop</button><div id="tmd"></div></div>'+
+      '<button class="btn wide rp" type="button" style="margin-top:16px">'+P.icon('out')+'Sign out</button>'}
+};
+function show(k){
+  document.getElementById('hero').innerHTML='<section class="hero">'+HERO[k]()+'</section>'+P.band(BAND[k]);
+  P.countUp(document.getElementById('big'),S.owed,1300,500);
+  document.querySelectorAll('#hero [data-go]').forEach(function(b){b.onclick=function(){set(b.dataset.go)}});
+  var p=document.getElementById('pane');p.innerHTML='<div class="pane">'+PANE[k]()+'</div><footer class="foot">Regal Hardware · 748, Main Street, Kaduruwela<br>077 222 22 59 · regalhw.lk</footer>';
+  p.querySelectorAll('[data-ok]').forEach(function(b){b.onclick=function(){var w=b.closest('[data-act]'),po=b.closest('.po');P.done(w,b.textContent.indexOf('dispatch')>=0?'Marked dispatched. The shop has been told.':'Done. The shop has been told.');po.classList.remove('attn');var t=po.querySelector('.tag');if(t){t.className='tag green';t.textContent='Answered'}}});
+  p.querySelectorAll('.qty button').forEach(function(b){b.onclick=function(){var q=b.parentNode.querySelector('b');q.textContent=Math.max(0,+q.textContent+ +b.dataset.d);q.animate&&!P.calm&&q.animate([{transform:'scale(1.4)'},{transform:'none'}],{duration:250});var t=0;p.querySelectorAll('.qty').forEach(function(x){t+=+x.dataset.p*+x.querySelector('b').textContent});document.getElementById('otot').textContent='Rs '+rs(t)}});
+  var os=document.getElementById('osend');if(os)os.onclick=function(){P.done(document.getElementById('odone'),'Sent. You will see it under Pending.')};
+  p.querySelectorAll('.chk').forEach(function(c){c.onclick=function(){c.classList.toggle('on');var t=0;p.querySelectorAll('.chk.on').forEach(function(x){t+=+x.dataset.a});document.getElementById('ptot').textContent='Rs '+rs(t)}});
+  var ps=document.getElementById('psend');if(ps)ps.onclick=function(){P.done(document.getElementById('pdone'),'Asked. The shop will text you when it is paid.')};
+  p.querySelectorAll('[data-dd]').forEach(function(b){b.onclick=function(){var c=b.closest('.po');P.done(c.querySelector('[data-ddone]'),b.dataset.dd==='Replace'?'Thank you. Bring the new ones on your next visit.':'Thank you. The shop takes it off your next bill.');c.querySelector('.two').remove();c.classList.remove('attn');var t=c.querySelector('.tag');t.className='tag green';t.textContent='Answered'}});
+  var pw=document.getElementById('pw');if(pw)pw.onclick=function(){P.done(document.getElementById('pwd'),'Changed. Use the new one from now on.')};
+  var tm=document.getElementById('tm');if(tm)tm.onclick=function(){P.done(document.getElementById('tmd'),'Asked. The shop will text them when it is ready.')};
+}
+var set=P.tabs(document.getElementById('tabs'),[['orders','inbox','Orders',need],['create','plus','New'],['pending','clock','Pending'],['pay','pay','Payment'],['dmg','warn','Damages',S.dmg.length],['me','me','Account']],show);
+set('orders',true);
+})();
+</script></body></html>
