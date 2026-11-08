@@ -19777,9 +19777,10 @@ function csLineDone(save){
 function csEditLine(i){
   const l=S.pos.lines[i]; if(!l) return;
   const p=P(l.pid);
-  // no "Name on this bill" box here (8 Nov 2026, the owner did not need it) — N on the line still renames it
-  const m=modal(`<h2>${noteEsc(lineName(l))}</h2>
+  const m=modal(`<h2>${p.name}</h2>
    <div class="muted">${p.num||p.code} · ${fq(p.stock)} ${p.unit} on the floor · MRP ${money2(p.mrp)}${CFG.cost.atTill&&can('cost')?' · cost code '+costCode(p.cost):''}</div>
+   <div class="f" style="margin-top:10px"><label>Name on this bill <span class="muted">— a colour code, a size, anything the customer should read</span></label>
+    <input id="elName" maxlength="90" value="${lineName(l).replace(/"/g,'&quot;')}"></div>
    <div class="grid3" style="margin-top:10px">
     <div class="f"><label>Quantity</label><input id="elQty" type="number" step="any" value="${l.qty}"></div>
     <div class="f"><label>Price each</label><input id="elPrice" type="number" step="any" value="${l.price}"></div>
@@ -19805,6 +19806,7 @@ function csEditLine(i){
     if(p.mrp>net) bits.push(`${money2(p.mrp-net)} under MRP`);
     m.querySelector('#elNote').innerHTML=bits.join(' · ');
   };
+  m.querySelector('#elName').onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); save() } };
   m.querySelectorAll('#elQty,#elPrice,#elDisc').forEach(el=>{
     // the price follows the breaks only if this line was on the list price to begin with
     const wasList=Math.abs(l.price-priceFor(p,l.qty))<0.005;
@@ -19821,7 +19823,9 @@ function csEditLine(i){
     if(pctTyped!==null){ const want=(p.mrp||pr)*(1-pctTyped/100); ds=+((pr-want)*q).toFixed(2) } else if(q<0) ds=-Math.abs(ds);
     if(Math.abs(ds)>Math.abs(q*pr)) return toast('The discount is more than the line');
     const net=(q*pr-ds)/q;
-    const put=(by)=>{ l.qty=q; l.price=pr; l.disc=ds; l.warranty=m.querySelector('#elWarr').value;   // the line's own name is left as it is
+    const nm=(m.querySelector('#elName').value||'').trim();
+    const put=(by)=>{ l.qty=q; l.price=pr; l.disc=ds; l.warranty=m.querySelector('#elWarr').value;
+      if(!nm||nm===p.name) delete l.name; else l.name=nm;
       if(pctTyped!==null) l.discPct=pctTyped; else delete l.discPct;
       if(by) l.belowCost=by; if(pr!==priceFor(p,q)) l.auto=false;
       m.remove(); render(); toast(`${lineName(l)} — ${fq(q)} at ${money2(pr)}`) };
@@ -19919,7 +19923,7 @@ function csStart(pid){
   const was=lastPriceFor(pid,S.pos.customer);
   if(was&&CFG.pos.repriceToLast&&was.price>=p.cost-0.005){ CS.price=was.price; CS.auto=false; CS.last=was }
   else { CS.price=priceFor(p,1); CS.auto=true; CS.last=was||null }
-  CS.warranty=p.warrantyMonths?(p.warrantyMonths>=1200?'LIFETIME':p.warrantyMonths>=36?'3 YEARS':p.warrantyMonths>=24?'2 YEARS':p.warrantyMonths>=12?'1 YEAR':p.warrantyMonths>=6?'6 MONTHS':'3 MONTHS'):'0';
+  CS.warranty=p.warrantyMonths?(p.warrantyMonths>=1200?'LIFETIME':p.warrantyMonths>=60?'5 YEARS':p.warrantyMonths>=36?'3 YEARS':p.warrantyMonths>=24?'2 YEARS':p.warrantyMonths>=12?'1 YEAR':p.warrantyMonths>=6?'6 MONTHS':'3 MONTHS'):'0';
   render();
   // the name is the next box: Enter leaves it as it is, or type onto the end first (a colour code on a paint base)
   // the quantity comes first; E opens the name for typing (a colour code on a paint base)
@@ -20667,7 +20671,9 @@ function bindClassic(){
       // G: the warranty (guarantee) and serial numbers of the line under the cursor — W is wholesale in the price box,
       // so it no longer means the warranty anywhere (3 Nov 2026)
       if(!e.ctrlKey&&!e.altKey&&!e.metaKey&&e.key.toLowerCase()==='g'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csWarranty(S.pos.sel); return }
-      if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csEditLine(S.pos.sel); return }
+      // Enter on a line no longer opens the edit-a-line window (8 Nov 2026, the owner: Space does the changing);
+      // it is swallowed here so it does not reach the payment keys behind. The … button still opens the window.
+      if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); return }
       if(e.key==='Delete'){ e.preventDefault(); e.stopPropagation(); if(S.pos.sel>=0) csAskDel(S.pos.sel); return }
     };
     linesEl.onfocus=()=>{
@@ -22842,7 +22848,7 @@ const warrantyLeft=(rec)=>{ if(!rec||!rec.warrantyTo) return null;
 /* W on the till: how long the warranty is and the serial numbers, for the item being keyed (i = -1) or
    a line on the bill. The warranty starts at the item's own; the serials are scanned or keyed, Enter after
    each, and Enter on an empty box keeps it all. (26 Oct 2026) */
-const WARR_PERIODS=['0','3 MONTHS','6 MONTHS','1 YEAR','2 YEARS','3 YEARS','LIFETIME'];
+const WARR_PERIODS=['0','3 MONTHS','6 MONTHS','1 YEAR','2 YEARS','3 YEARS','5 YEARS','LIFETIME'];
 // the warranty and serials of a bill line, printed under it on the small bill
 const billWarrLine=(l)=>{ const t=[l.warranty&&l.warranty!=='0'?'WARRANTY: '+l.warranty:'',(l.serials&&l.serials.length)?'S/N: '+l.serials.join(', '):''].filter(Boolean).join('  |  ');
   return (t?`<tr class="wr"><td colspan="4">${noteEsc(t)}</td></tr>`:'')+(+l.later>0?`<tr class="wr"><td colspan="4"><b>** NOT ISSUED — ${fq(+l.later)} TO COLLECT LATER **</b></td></tr>`:'') };
