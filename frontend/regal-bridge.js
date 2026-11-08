@@ -54,9 +54,27 @@
     if (token) h['Authorization'] = 'Bearer ' + token;
     return h;
   }
+  /* The books are about 3.5 MB of text; a weak line or a busy host gave up on a save that size again and again
+     (7-8 Nov 2026: one till's bills did not get through for 18 hours). Packed with gzip they are a tenth of that.
+     The server unpacks them itself (express.json). Should the host ever refuse a packed body, it is sent as it
+     is, and this till stops packing. */
+  var gzipOff = false; try { gzipOff = localStorage.getItem('regal_gzip_off') === '1'; } catch (e) {}
+  async function packed(txt) {
+    var stream = new Blob([txt]).stream().pipeThrough(new CompressionStream('gzip'));
+    return await new Response(stream).arrayBuffer();
+  }
   async function call(method, path, body) {
     try {
-      var r = await fetch(API + path, { method: method, headers: headers(!!body), body: body ? JSON.stringify(body) : undefined });
+      var txt = body ? JSON.stringify(body) : undefined, h = headers(!!body), send = txt, zipped = false;
+      if (txt && txt.length > 65536 && !gzipOff && typeof CompressionStream === 'function') {
+        try { send = await packed(txt); h['Content-Encoding'] = 'gzip'; zipped = true; } catch (e) { send = txt; zipped = false; }
+      }
+      var r = await fetch(API + path, { method: method, headers: h, body: send });
+      if (zipped && (r.status === 400 || r.status === 413 || r.status === 415)) {
+        gzipOff = true; try { localStorage.setItem('regal_gzip_off', '1'); } catch (e) {}
+        delete h['Content-Encoding'];
+        r = await fetch(API + path, { method: method, headers: h, body: txt });
+      }
       var j = null; try { j = await r.json(); } catch (e) { j = {}; }
       j.__status = r.status;
       if (r.status === 401 && token) { token = ''; localStorage.removeItem(TOKEN_KEY); onSignedOut(j.error || ''); }
@@ -104,7 +122,15 @@
     return { put: put, get: get };
   })();
   function keepBase() { if (base) idb.put('base', { rev: rev, base: base, at: Date.now() }); }
-  function setUnsynced(v) { if (unsynced !== v) { unsynced = v; idb.put('unsynced', v); } }
+  /* since when this till has had work the server has not taken, and the last answer it got: shown on the till
+     (the sync light and its window) so nobody has to guess, and so a till that cannot get through says so loudly */
+  var unsentSince = 0, lastErr = null, lastIn = null, lastOut = 0;   // lastIn: the last time the other tills' work came in, and whose
+  function setUnsynced(v) {
+    if (unsynced !== v) { unsynced = v; idb.put('unsynced', v); }
+    if (v && !unsentSince) { unsentSince = Date.now(); idb.put('since', unsentSince); }
+    if (!v) { if (unsentSince) idb.put('since', 0); unsentSince = 0; lastErr = null; }
+  }
+  function noteErr(j) { lastErr = { status: j && j.__status || 0, msg: (j && j.error) || '', at: Date.now() }; }
   /* The books this PC was holding when it last closed, for a start with no internet. Only books a real
      till saved are ever written here (the demo and a till that could not read the books never save), so
      this is never sample data. */
@@ -338,6 +364,7 @@
         var merged = merge3(waiting.base, waiting.mine, strip(d));
         merged.at = new Date().toISOString();
         unsynced = true;                                   // it goes up before anything comes down (see poll and pull)
+        try { var was0 = await idb.get('since'); unsentSince = +was0 || Date.now(); } catch (e) { unsentSince = Date.now(); }
         setTimeout(function () {
           say('Work kept on this PC is put together with the shop\'s books and sent now.');
           if (typeof window.persist === 'function') window.persist(true);
@@ -375,7 +402,7 @@
           if (j.keptBills && j.keptBills.length) { rev = j.rev - 1; lastPushAt = 0; }
           if (offlineSince) { offlineSince = 0; window.workingOffline = false; say('Back online — the work done on this PC is with the shop now'); }
           if (j.shiftDays) takeShiftDays(j.shiftDays);
-          badge('saved ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' · shared');
+          lastOut = Date.now(); badge('saved ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' · shared');
           return true;
         }
         if (j.blocked) { rev = j.rev; base = strip(j.data); keepBase(); setUnsynced(false); applyRemote(j.data); say(j.error || 'Save blocked — the real books were reloaded'); return true; }
@@ -396,7 +423,7 @@
               if (pendingSet) { show = merge3(doc, strip(JSON.parse(pendingSet)), merged); pendingSet = JSON.stringify(show); }
               applyRemote(show);
               if (r2.shiftDays) takeShiftDays(r2.shiftDays);
-              badge('saved ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' · shared');
+              lastOut = Date.now(); badge('saved ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' · shared');
               return true;
             }
             if (r2.__status !== 409) { j = r2; break; }
@@ -406,7 +433,7 @@
             // the tills are very busy: this used to reload the books over this till's work and ask the cashier to
             // check it. The work stays: base is left as it was, so the next try merges it the same way, and
             // nothing comes down over it until it has gone up (see unsynced in poll and pull).
-            setUnsynced(true); lastRetryAt = 0;
+            setUnsynced(true); lastRetryAt = 0; noteErr({ __status: 409, error: 'the other tills kept saving first' });
             badge('not saved yet — the tills are busy, trying again');
             return false;
           }
@@ -416,6 +443,7 @@
           say('Another till saved first — the books were reloaded. Please re-enter what you were doing.');
           return true;
         }
+        noteErr(j);
         if (j.__status === 0 || j.__status >= 500) { offlineSince = offlineSince || Date.now(); badge(j.maintenance ? 'the shop system is being updated — kept on this PC' : 'server unreachable — kept on this PC'); }
         setUnsynced(true);                                   // not with the shop yet: it goes up, and is merged, before anything comes down
         throw new Error(j.error || ('save failed ' + j.__status));
@@ -552,7 +580,7 @@
       if (typing() || tillBusy()) return;                  // never pull the rug while someone is keying a bill
       var who = j.updated_by ? ' by ' + j.updated_by : '', newer = j.rev > rev;
       // another till saving is the normal run of the day: said quietly in the status line, never popped up
-      if (await pull(true) && newer) badge('updated ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + who + ' · shared');
+      if (await pull(true) && newer) { lastIn = { at: Date.now(), by: j.updated_by || '' }; } if (lastIn && lastIn.at > Date.now() - 1000) badge('updated ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + who + ' · shared');
     }
   }
   /* The Check now button: ask the server this moment, whatever the pace. Somebody pressed it, so a box left
@@ -571,6 +599,53 @@
     lastSyncAt = Date.now();
     return { ok: true, got: false };
   }
+  /* The bills, quotations and expenses on this till the server has not had yet: in the books here, not in the
+     copy last shared with the server. */
+  function waitingList() {
+    var S = window.S, B = base && base.S, out = { sales: [], docs: [], expenses: [] };
+    if (!S || !B) return out;
+    var missing = function (a, b) { var have = new Set((b || []).map(function (x) { return String(x && x.no); })); return (a || []).filter(function (x) { return x && x.no != null && !have.has(String(x.no)); }); };
+    out.sales = missing(S.sales, B.sales); out.docs = missing(S.docs, B.docs); out.expenses = missing(S.expenses, B.expenses);
+    return out;
+  }
+  /* Sync now (the button): this till's own work goes up first, however long it has waited, then whatever the
+     other tills did comes down. Says plainly how it went. */
+  var syncing = false;
+  async function syncNow() {
+    if (isDemoSession()) return { ok: true };
+    if (!token) return { ok: false, error: 'This till is not signed in to the server. Sign out and in again.' };
+    if (syncing) return { ok: false, error: 'Already sending — a moment.' };
+    syncing = true;
+    try {
+      if (window.booksUnreadable) { try { await window.storage.get(STORE_KEY); } catch (e) {} if (window.booksUnreadable) return { ok: false, error: 'The books did not come down from the server, so nothing can be sent yet.' }; }
+      var had = unsynced || (typeof window.hasUnsaved === 'function' && window.hasUnsaved());
+      if (had) {
+        lastRetryAt = Date.now();
+        if (typeof window.persist === 'function') window.persist(true);
+        await new Promise(function (r) { setTimeout(r, 400); });
+        for (var i = 0; i < 90 && (busy || pendingSet); i++) await new Promise(function (r) { setTimeout(r, 500); });
+        if (unsynced || busy) return { ok: false, waiting: true, error: errWords(lastErr) };
+      }
+      var c = await checkNow();
+      if (!c.ok) return { ok: false, error: c.saving ? errWords(lastErr) : 'The shop\'s server did not answer. Check the internet, then press Sync now again.' };
+      return { ok: true, sent: had, got: !!c.got };
+    } finally { syncing = false; }
+  }
+  function errWords(e) {
+    if (!e) return 'Not sent yet — it keeps trying.';
+    if (e.status === 0) return 'The shop\'s server could not be reached from this PC (no answer). The internet, or the hosting\'s firewall, is stopping it.';
+    if (e.status === 409) return 'The other tills kept saving first — it tries again by itself.';
+    if (e.status === 401) return 'This till was signed out of the server. Sign out and in again.';
+    if (e.status === 413) return 'The server refused the save as too big.';
+    if (e.status >= 500) return 'The shop\'s server had a problem (' + e.status + ')' + (e.msg ? ': ' + e.msg : '') + '. It tries again by itself.';
+    return 'The server said ' + e.status + (e.msg ? ': ' + e.msg : '') + '.';
+  }
+  // the internet back: send what waits at once, not on the next tick
+  window.addEventListener('online', function () {
+    if (!token || isDemoSession()) return;
+    if (unsynced && !window.booksUnreadable && typeof window.persist === 'function') { lastRetryAt = Date.now(); window.persist(true); }
+    else { lastPollAt = 0; poll(); }
+  });
   function startPolling() { stopPolling(); pollTimer = setInterval(poll, POLL_MS); }
   // a till that comes back to the front catches up at once, not on the next tick
   document.addEventListener('visibilitychange', function () { if (!document.hidden && pollTimer) { lastInputAt = Date.now(); if (!failStreak) lastPollAt = 0; poll(); } });
@@ -599,6 +674,9 @@
     // the Check for updates button: is the till page on the server newer than this one?
     newerPage: async function () { var j = await call("GET", "/books/" + KEY + "/rev"); if (j.__status !== 200) return null; if (!build) build = j.build || ""; return !!(j.build && j.build !== build); },
     unsynced: function () { return unsynced; },
+    syncInfo: function () { return { unsynced: unsynced, since: unsentSince, lastErr: lastErr, lastSync: lastSyncAt, offline: !!window.workingOffline, signedIn: !!token, packed: !gzipOff && typeof CompressionStream === 'function', why: unsynced ? errWords(lastErr) : '', lastIn: lastIn, lastOut: lastOut }; },
+    waiting: waitingList,
+    syncNow: syncNow,
     lastSync: function () { return lastSyncAt; },
     offline: function () { return !!window.workingOffline; },
     checkNow: checkNow,
@@ -607,5 +685,6 @@
     terminal: function () { return localStorage.getItem(TERMINAL_KEY) || ''; }
   };
   idb.get('unsynced').then(function (v) { if (v === true) unsynced = true; });
+  idb.get('since').then(function (v) { if (v && unsynced && !unsentSince) unsentSince = +v; });
   if (token) startPolling();
 })();

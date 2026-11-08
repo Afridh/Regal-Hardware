@@ -791,6 +791,43 @@ export function keepBills(next, cur, by) {
   return nos;
 }
 
+/* Quotations, delivery notes and expenses, as keepBills does for bills (8 Nov 2026: a till's save left out five
+   quotations and an expense it had made while it could not reach the server). One the till deleted on purpose
+   is listed in S.gone, and stays out. An expense comes back with its journal entry; a delivery note with its
+   stock movements. */
+export function keepDocs(next, cur, by) {
+  const S = next?.S, C = cur?.S;
+  if (!S || !C) return [];
+  const gone = new Set((Array.isArray(S.gone) ? S.gone : []).map(g => String(g?.k || '') + ':' + String(g?.no || '')));
+  const kept = [];
+  S.journal = Array.isArray(S.journal) ? S.journal : []; S.movements = Array.isArray(S.movements) ? S.movements : [];
+  const tag = (x) => JSON.stringify(x), inJ = new Set(S.journal.map(tag)), inM = new Set(S.movements.map(tag));
+  const back = (list, kind) => {
+    if (!Array.isArray(C[list])) return;
+    S[list] = Array.isArray(S[list]) ? S[list] : [];
+    const have = new Set(S[list].map(x => String(x?.no)));
+    for (const x of C[list]) {
+      if (!x || x.no == null || have.has(String(x.no)) || gone.has(kind + ':' + String(x.no))) continue;
+      S[list].push(x); kept.push(String(x.no));
+      const no = String(x.no);
+      for (const j of C.journal || []) if (String(j?.ref) === no && !inJ.has(tag(j))) { S.journal.push(j); inJ.add(tag(j)); }
+      for (const m of C.movements || []) if (String(m?.ref) === no && !inM.has(tag(m))) {
+        S.movements.push(m); inM.add(tag(m));
+        const p = (S.products || []).find(y => y.id === m.pid);
+        if (p) p.stock = +((+p.stock || 0) + (+m.qty || 0)).toFixed(3);
+      }
+    }
+  };
+  back('docs', 'doc'); back('expenses', 'expense');
+  if (kept.length) {
+    const at = new Date();
+    S.notif = Array.isArray(S.notif) ? S.notif : [];
+    S.notif.unshift({ id: 'nkd' + at.getTime(), kind: 'warn', text: `A save by ${by} came without ${kept.join(', ')}. Kept in the books.`,
+      view: 'approvals', at: at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: process.env.SHOP_TZ || 'Asia/Colombo' }), read: false, forApprovers: true });
+  }
+  return kept;
+}
+
 /** Save.  body: { data, rev }  — rev is the revision the client loaded; a mismatch returns 409 with the newer copy. */
 r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   const { data, rev } = req.body || {};
@@ -841,7 +878,7 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
       if (full === undefined || full === null || Number(rev) < Number(full)) return { conflict: true, rev: curRev, data: cur.data };
       merged = mergeShiftDays(data, cur.data, Number(rev));
     }
-    const keptBills = cur && !wipeOk ? keepBills(data, cur.data, req.regalUser.name) : [];
+    const keptBills = cur && !wipeOk ? keepBills(data, cur.data, req.regalUser.name).concat(keepDocs(data, cur.data, req.regalUser.name)) : [];
     if (keptBills.length) console.error(`[books guard] a save by ${req.regalUser.name} came without bills ${keptBills.join(', ')}: kept (rev ${curRev}, it said rev ${rev})`);
     const next = curRev + 1;
     data._fullRev = next;

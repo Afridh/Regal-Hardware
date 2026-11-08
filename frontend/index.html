@@ -10678,7 +10678,8 @@ function persist(force){
     if(!f&&txt===lastSavedTxt) return;
     lastSavedTxt=txt;
     const pendingUsers=[...dirtyUsers];
-    const ok=await store.set({v:1,at:new Date().toISOString(),S:snapshot(),CFG});
+    // a save that cannot reach the server is kept on this PC by the bridge and sent later: not an error here
+    let ok=false; try{ ok=await store.set({v:1,at:new Date().toISOString(),S:snapshot(),CFG}) }catch(e){ ok=false }
     if(!ok) lastSavedTxt='';
     else {
       pendingUsers.forEach(n=>dirtyUsers.delete(n));        // those changes are on the server now
@@ -10686,6 +10687,7 @@ function persist(force){
     }
     lastSaved=ok?new Date():null;
     ['savedAt','savedAtNav','csSync'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=ok?'saved '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'not saved'; });
+    try{ drawSync() }catch(e){}
     if(ok && typeof BroadcastChannel !== 'undefined'){
       try { bcSend('books_updated'); }catch(_){}
     }
@@ -10695,6 +10697,107 @@ function persist(force){
 window.markSaved=()=>{ lastSavedTxt=snapshotTxt() };
 // work on this till that has not gone to the server yet (the bridge does not pull over it)
 window.hasUnsaved=()=>{ try{ return !!lastSavedTxt && snapshotTxt()!==lastSavedTxt }catch(e){ return false } };   // books just came from the server: nothing to push back
+/* ===== Sync: the light, its window and the alarm (8 Nov 2026 — the owner asked for a proper system) =====
+   Work made with no internet stays on this PC and goes up by itself the moment the shop's server answers again
+   (regal-bridge.js), and reopening the till sends it too. This shows where it stands, everywhere: green, all
+   sent; amber, sending; red, work that has waited more than two minutes, how many bills and since when, with a
+   bar across the top that stays until it has gone. The light opens a window with what is waiting, why it has
+   not gone, Sync now, and Save a copy to a file — for Find a missing bill → Bring back work from a saved copy,
+   should everything else fail. One till's bills sat unsent for 18 hours behind a small grey word before this. */
+const SYNC_ALARM_MS=2*60*1000;
+function syncNowState(){
+  const br=window.regalBridge; if(!br||!br.syncInfo||window.isDemo||!S||!S.user) return null;
+  const i=br.syncInfo(), w=br.waiting?br.waiting():{sales:[],docs:[],expenses:[]};
+  const n=w.sales.length, nd=w.docs.length, ne=w.expenses.length;
+  const dirty=i.unsynced||(typeof window.hasUnsaved==='function'&&window.hasUnsaved());
+  const hm=t=>new Date(t).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const what=[n?`${n} bill${n===1?'':'s'}`:'',nd?`${nd} quotation${nd===1?'':'s'}`:'',ne?`${ne} expense${ne===1?'':'s'}`:''].filter(Boolean).join(', ');
+  const late=i.unsynced&&i.since&&Date.now()-i.since>(window.SYNC_ALARM_MS||SYNC_ALARM_MS);
+  if(!i.signedIn) return {k:'bad',short:'not signed in',long:'This till is not signed in to the shop server',i,w,what};
+  if(late) return {k:'bad',short:`${what||'work'} not sent`,long:`${what||'Work'} on this till ${n+nd+ne===1?'has':'have'} not reached the shop since ${hm(i.since)}`,i,w,what};
+  if(dirty) return {k:'busy',short:what?`sending ${what}`:'sending…',long:what?`Sending ${what} to the shop…`:'Sending to the shop…',i,w,what};
+  // the other tills' work came in last: said quietly, as before (check-quietsync)
+  if(i.lastIn&&i.lastIn.at>(i.lastOut||0)) return {k:'ok',short:`updated ${hm(i.lastIn.at)}${i.lastIn.by?' by '+i.lastIn.by:''}`,long:`Everything on this till is with the shop. The other tills' work came in at ${hm(i.lastIn.at)}`,i,w,what};
+  return {k:'ok',short:i.lastSync?`all sent · ${hm(i.lastSync)}`:'all sent',long:'Everything on this till is with the shop',i,w,what};
+}
+function syncPanelHtml(st){
+  const i=st.i, when=t=>new Date(t).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  const cn=id=>(C(id)||{name:'Walk-in customer'}).name;
+  const rows=st.w.sales.map(s=>`<tr><td>${escM(s.no)}</td><td>${escM(s.date)} ${escM(s.time||'')}</td><td>${escM(cn(s.customerId))}</td><td>${s.type==='CREDIT'?'credit':'cash'}</td><td class="n">${fmt(s.total)}</td></tr>`).join('')
+    +st.w.docs.map(d=>`<tr><td>${escM(d.no)}</td><td>${escM(d.date)}</td><td>${escM(cn(d.customerId))}</td><td>${d.kind==='QUOTE'?'quotation':escM(String(d.kind||'').toLowerCase())}</td><td class="n">${fmt(d.total)}</td></tr>`).join('')
+    +st.w.expenses.map(e=>`<tr><td>${escM(e.no)}</td><td>${escM(e.date)}</td><td colspan="2">${escM(e.desc||'expense')}</td><td class="n">${fmt(+e.amount||0)}</td></tr>`).join('');
+  return `<div class="sy-head"><i class="sy-dot sy-${st.k}"></i><b>${escM(st.long)}</b></div>
+    ${i.unsynced&&i.why?`<div class="card note" style="margin-top:10px">${escM(i.why)}</div>`:''}
+    <div class="muted" style="margin-top:8px">${i.lastSync?'Last with the shop: '+when(i.lastSync):'Not with the shop yet since this till opened'}${i.unsynced&&i.since?' · waiting since '+when(i.since):''}</div>
+    ${rows?`<div style="margin-top:12px"><b>Waiting on this till</b><div style="max-height:260px;overflow:auto;margin-top:6px"><table class="tbl"><tr><th>No</th><th>When</th><th>Customer</th><th></th><th class="n">Amount</th></tr>${rows}</table></div></div>`:`<div class="muted" style="margin-top:12px">Nothing is waiting on this till.</div>`}
+    <div class="muted" style="margin-top:12px;font-size:12.5px">Bills made without internet stay on this PC and go to the shop by themselves the moment its server answers again, or when you press Sync now. Closing Regal POS is safe: what waits is sent when it opens again.</div>`;
+}
+function drawSync(){
+  const st=syncNowState(); if(!st) return;
+  const dot=`<i class="sy-dot sy-${st.k}"></i>`;
+  ['savedAtNav','csSync','savedAt'].forEach(id=>{ const el=document.getElementById(id); if(!el) return;
+    const html=dot+`<span>${escM(st.short)}</span>`; if(el.innerHTML!==html) el.innerHTML=html;
+    el.dataset.sync='1'; el.title=st.long+' — click for Sync now'; el.classList.add('sy-chip') });
+  let bar=document.getElementById('syncAlarm');
+  if(st.k==='bad'){
+    if(!bar){ bar=document.createElement('div'); bar.id='syncAlarm'; bar.setAttribute('role','alert'); document.body.appendChild(bar) }
+    const html=`<b>${escM(st.long)}.</b><span>Keep Regal POS open — it keeps trying.</span><button type="button" data-syncnow="1">Sync now</button><button type="button" data-sync="1" class="ghost">Details</button>`;
+    if(bar.innerHTML!==html) bar.innerHTML=html;
+  } else if(bar) bar.remove();
+  const body=document.getElementById('syncPanelBody'); if(body&&!body.dataset.busy){ const h=syncPanelHtml(st); if(body.innerHTML!==h) body.innerHTML=h }
+}
+function openSyncPanel(){
+  if(document.getElementById('syncPanelBody')) return;
+  const st=syncNowState(); if(!st) return toast('This till is not connected to the shop server');
+  const m=modal(`<h2>Sync</h2><div id="syncPanelBody"></div>
+    <div class="row" style="justify-content:space-between;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn ghost" id="syCopy" title="Everything on this till, in a file — for Find a missing bill if the work never reaches the shop">Save a copy to a file</button>
+     <span style="display:flex;gap:8px"><button class="btn ghost" data-act="closeModal">Close</button><button class="btn tape" id="syGo" data-syncnow="1">Sync now</button></span></div>
+    <div id="syMsg" style="margin-top:8px;min-height:18px;font-weight:600"></div>`);
+  drawSync();
+  m.querySelector('#syCopy').onclick=saveTillCopy;
+}
+let syncPressing=false;
+async function syncNowPress(){
+  if(syncPressing) return; syncPressing=true;
+  const go=document.getElementById('syGo'), msg=document.getElementById('syMsg');
+  if(go){ go.disabled=true; go.textContent='Sending…' } if(msg){ msg.style.color=''; msg.textContent='Sending this till\'s work to the shop…' }
+  else toast('Sending this till\'s work to the shop…');
+  let r={ok:false,error:'Something went wrong'}; try{ r=await regalBridge.syncNow() }catch(e){ r={ok:false,error:e.message} }
+  syncPressing=false;
+  const go2=document.getElementById('syGo'), msg2=document.getElementById('syMsg');
+  if(go2){ go2.disabled=false; go2.textContent='Sync now' }
+  const text=r.ok?(r.sent?'Sent — everything on this till is with the shop now.':'Up to date — nothing was waiting on this till.')+(r.got?' The other tills\' work came in too.':''):(r.error||'Not sent yet — it keeps trying.');
+  if(msg2){ msg2.textContent=text; msg2.style.color=r.ok?'var(--chip-green)':'var(--chip-rust)' } else toast(text,r.ok?'ok':'warn');
+  drawSync(); if(r.ok&&r.got&&typeof render==='function'&&!document.querySelector('.modal input:focus')) try{ render() }catch(e){}
+}
+function saveTillCopy(){
+  try{
+    const txt=JSON.stringify({v:1,at:new Date().toISOString(),S:snapshot(),CFG});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([txt],{type:'application/json'}));
+    a.download=`Regal till copy ${D(today)} ${new Date().toTimeString().slice(0,5).replace(':','-')}.json`;
+    document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove() },3000);
+    toast('A copy of this till\'s books is saved. Keep it until the work has reached the shop','ok');
+  }catch(e){ toast('Could not save a copy: '+e.message,'warn') }
+}
+document.addEventListener('click',e=>{
+  if(e.target.closest('[data-syncnow]')){ e.preventDefault(); e.stopPropagation(); syncNowPress(); return }
+  if(e.target.closest('[data-sync]')){ e.preventDefault(); e.stopPropagation(); openSyncPanel() }
+},true);
+setInterval(()=>{ try{ drawSync() }catch(e){} },2000);
+(()=>{ const st=document.createElement('style'); st.textContent=`
+.sy-chip{cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.sy-chip:hover span{text-decoration:underline}
+.sy-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.sy-ok{background:#1f9d55}
+.sy-busy{background:#e0a100;animation:syPulse 1.2s ease-in-out infinite}
+.sy-bad{background:#d93025;box-shadow:0 0 0 3px rgba(217,48,37,.28)}
+@keyframes syPulse{50%{opacity:.35}}
+.sy-head{display:flex;align-items:center;gap:10px;font-size:16px}
+.sy-head .sy-dot{width:12px;height:12px}
+#syncAlarm{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:9998;background:#b3261e;color:#fff;padding:9px 10px 9px 16px;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.3);display:flex;gap:10px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 24px);font-size:14px}
+#syncAlarm button{border:0;border-radius:999px;padding:7px 14px;font-weight:600;background:#fff;color:#b3261e;cursor:pointer}
+#syncAlarm button.ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.6)}
+@media (prefers-reduced-motion:reduce){.sy-busy{animation:none}}`; document.head.appendChild(st) })();
 const DEFAULT_ACCOUNTS = [
   { name: 'Afridh', role: 'Super Admin', uid: 'AF', pass: 'Afridh123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
   { name: 'Azhad', role: 'Admin', uid: 'AZ', pass: 'Azhad123', perms: ['sell','discount','cancelBill','cost','profit','adjustInvoice','overLimit','belowCost','receive','products','paySupplier','reports','settings','users','approve'] },
@@ -31031,6 +31134,7 @@ function pettyUndo(id,no){
   if(!confirm(`Take off ${fmt(x.amount)} — ${x.desc}?`)) return;
   post(D(today),'Petty cash expense '+no+' taken off',no,[{ac:'1015',dr:x.amount},{ac:x.cat,cr:x.amount}]);
   S.expenses=S.expenses.filter(e=>e.no!==no); p.spent=p.spent.filter(s=>s.id!==no);
+  S.gone=(S.gone||[]).concat([{k:'expense',no,at:apStamp(),by:S.user.name}]).slice(-300);   // taken off on purpose: the server does not put it back
   persist(true); render(); toast('Taken off');
 }
 
@@ -32312,6 +32416,7 @@ function expApplyDel(no,by){
   const e=S.expenses.find(x=>x.no===no); if(!e) throw new Error('That expense is no longer there');
   const why=expWhy(e); if(why) throw new Error(why);
   S.journal.splice(S.journal.indexOf(expJe(e)),1); S.expenses=S.expenses.filter(x=>x!==e);
+  S.gone=(S.gone||[]).concat([{k:'expense',no,at:apStamp(),by}]).slice(-300);   // deleted on purpose: the server does not put it back (keepDocs)
   try{ logTrail('other',`Expense ${no} deleted by ${by}: ${money2(e.amount)}, ${e.date}, ${GL[e.cat]}, ${e.method}, ${e.desc}`,{ref:no,amount:e.amount}) }catch(x){}
 }
 function expDelete(no){
