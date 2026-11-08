@@ -19777,10 +19777,9 @@ function csLineDone(save){
 function csEditLine(i){
   const l=S.pos.lines[i]; if(!l) return;
   const p=P(l.pid);
-  const m=modal(`<h2>${p.name}</h2>
+  // no "Name on this bill" box here (8 Nov 2026, the owner did not need it) — N on the line still renames it
+  const m=modal(`<h2>${noteEsc(lineName(l))}</h2>
    <div class="muted">${p.num||p.code} · ${fq(p.stock)} ${p.unit} on the floor · MRP ${money2(p.mrp)}${CFG.cost.atTill&&can('cost')?' · cost code '+costCode(p.cost):''}</div>
-   <div class="f" style="margin-top:10px"><label>Name on this bill <span class="muted">— a colour code, a size, anything the customer should read</span></label>
-    <input id="elName" maxlength="90" value="${lineName(l).replace(/"/g,'&quot;')}"></div>
    <div class="grid3" style="margin-top:10px">
     <div class="f"><label>Quantity</label><input id="elQty" type="number" step="any" value="${l.qty}"></div>
     <div class="f"><label>Price each</label><input id="elPrice" type="number" step="any" value="${l.price}"></div>
@@ -19806,7 +19805,6 @@ function csEditLine(i){
     if(p.mrp>net) bits.push(`${money2(p.mrp-net)} under MRP`);
     m.querySelector('#elNote').innerHTML=bits.join(' · ');
   };
-  m.querySelector('#elName').onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); save() } };
   m.querySelectorAll('#elQty,#elPrice,#elDisc').forEach(el=>{
     // the price follows the breaks only if this line was on the list price to begin with
     const wasList=Math.abs(l.price-priceFor(p,l.qty))<0.005;
@@ -19823,9 +19821,7 @@ function csEditLine(i){
     if(pctTyped!==null){ const want=(p.mrp||pr)*(1-pctTyped/100); ds=+((pr-want)*q).toFixed(2) } else if(q<0) ds=-Math.abs(ds);
     if(Math.abs(ds)>Math.abs(q*pr)) return toast('The discount is more than the line');
     const net=(q*pr-ds)/q;
-    const nm=(m.querySelector('#elName').value||'').trim();
-    const put=(by)=>{ l.qty=q; l.price=pr; l.disc=ds; l.warranty=m.querySelector('#elWarr').value;
-      if(!nm||nm===p.name) delete l.name; else l.name=nm;
+    const put=(by)=>{ l.qty=q; l.price=pr; l.disc=ds; l.warranty=m.querySelector('#elWarr').value;   // the line's own name is left as it is
       if(pctTyped!==null) l.discPct=pctTyped; else delete l.discPct;
       if(by) l.belowCost=by; if(pr!==priceFor(p,q)) l.auto=false;
       m.remove(); render(); toast(`${lineName(l)} — ${fq(q)} at ${money2(pr)}`) };
