@@ -206,7 +206,7 @@ body[data-tab="me"] #account [data-pane]:not([data-pane="me"]){display:none}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 
 /* ================= the Poster design (chosen 8 Nov 2026 — the same look as the e-bill page, bill.html) =================
-   The shop's red, one huge word for where they are (YOU OWE. / STATEMENT. / PAY.), the amount edge to edge,
+   The shop's red, one huge word for where they are (OUTSTANDING. / STATEMENT. / PAY.), the amount edge to edge,
    a running banner, and everything else on a cream sheet that slides up over the red. Only the look changed:
    every id, step and call above is as it was. */
 :root{--pred:#a31d24;--pred2:#e2463f;--pink:#1a0d0e;--pcream:#f7f1e6;--pmute:#6f6156;--pgold:#ffcf5a;--pgreen:#1d7a45}
@@ -564,7 +564,7 @@ async function start() {
     if (w.plain) { $('#siWho').textContent = 'Sign in with your mobile — we will text you a code. Or use the user name the shop gave you.'; step('#stepPhone'); return }
     $('#siTitle').textContent = 'Hello, ' + w.name;
     posterSet(w.open ? { eb: $('#shopName').textContent, w: 'Hello.', who: w.name, band: 'Your account' }
-      : { eb: w.unpaid ? w.unpaid + ' unpaid bill' + (w.unpaid === 1 ? '' : 's') : 'Your account', w: w.owed > 0.005 ? 'You owe.' : 'All clear.', gold: w.owed > 0.005, amt: w.owed, who: w.name, band: w.owed > 0.005 ? money(w.owed) + ' to pay' : 'All clear · thank you' });
+      : { eb: w.unpaid ? w.unpaid + ' unpaid bill' + (w.unpaid === 1 ? '' : 's') : 'Your account', w: w.owed > 0.005 ? 'Outstanding.' : 'All clear.', gold: w.owed > 0.005, amt: w.owed, who: w.name, band: w.owed > 0.005 ? money(w.owed) + ' outstanding' : 'All clear · thank you' });
     /* their own link (3 Nov 2026): open — straight in, no code; not open yet — what they owe, and one tap to ask */
     if (w.open) { try { const j = await api('/direct', { link: CODE }); token = j.token; try { localStorage.setItem(KEY, token) } catch (e) {} show('#signin', false); await load(); return } catch (e) { /* the other ways below */ } }
     else {
@@ -774,7 +774,7 @@ function printStmt() {
    ${from ? `<tr><td>${from}</td><td colspan="4">Brought forward</td><td class="n">${money(opening)}</td></tr>` : ''}
    ${shown.map(r => `<tr><td>${r.date}</td><td>${esc((KIND[r.kind] || KIND.other)[1] || r.what)}</td><td>${esc(r.ref)}</td>
      <td class="n">${r.amount > 0 ? money(r.amount) : ''}</td><td class="n">${r.amount < 0 ? money(-r.amount) : ''}</td><td class="n">${money(r.balance)}</td></tr>`).join('')}
-   <tr class="t"><td colspan="5">You owe</td><td class="n">${money(Math.max(0, rows.length ? rows[rows.length - 1].balance : 0))}</td></tr></table>
+   <tr class="t"><td colspan="5">Outstanding</td><td class="n">${money(Math.max(0, rows.length ? rows[rows.length - 1].balance : 0))}</td></tr></table>
    <p class="m">${esc([j.shop.addr, j.shop.phone].filter(Boolean).join(' · '))}</p>`);
   w.document.close(); setTimeout(() => { w.focus(); w.print() }, 300);
 }
@@ -911,8 +911,8 @@ function poster(k) {
   if (!j) return posterSet({ eb: $('#shopName').textContent, w: 'Hello.', lede: 'Your outstanding, every bill line by line, and telling the shop you have paid. Any time, from your phone.', band: 'Your account' });
   const name = j.customer.name, n = j.open.length, owes = j.owed > 0.005;
   ({
-    home: () => posterSet({ eb: (j.customer.code ? j.customer.code + ' · ' : '') + (n ? n + ' unpaid bill' + (n === 1 ? '' : 's') : 'nothing unpaid'), w: owes ? 'You owe.' : 'All clear.', gold: owes,
-      amt: j.owed, who: name, lede: j.limit ? 'Credit limit ' + money(j.limit) + (owes ? ' · ' + money(Math.max(0, j.limit - j.owed)) + ' still open to you' : '') : '', band: owes ? money(j.owed) + ' to pay' : 'All clear · thank you' }),
+    home: () => posterSet({ eb: (j.customer.code ? j.customer.code + ' · ' : '') + (n ? n + ' unpaid bill' + (n === 1 ? '' : 's') : 'nothing unpaid'), w: owes ? 'Outstanding.' : 'All clear.', gold: owes,
+      amt: j.owed, who: name, lede: j.limit ? 'Credit limit ' + money(j.limit) + (owes ? ' · ' + money(Math.max(0, j.limit - j.owed)) + ' still open to you' : '') : '', band: owes ? money(j.owed) + ' outstanding' : 'All clear · thank you' }),
     stmt: () => posterSet({ eb: 'Every bill and payment', w: 'Statement.', who: name, lede: 'Tap a bill to see it line by line.', band: 'Statement' }),
     pay: () => posterSet({ eb: 'Paid by bank, cash or cheque?', w: 'Pay.', gold: true, amt: j.owed, lede: 'Tell the shop what you paid. It shows on your account once they enter it.', band: 'Tell the shop you paid' }),
     me: () => posterSet({ eb: j.who ? 'Signed in as ' + j.who : (j.customer.code || ''), w: 'Account.', who: name, lede: 'Your sign-in, your team, and the shop.', band: j.shop.name || 'Regal Hardware' })
