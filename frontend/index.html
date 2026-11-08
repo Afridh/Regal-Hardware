@@ -349,6 +349,26 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .wr-per{display:flex;flex-wrap:wrap;gap:6px}.wr-per .btn b{opacity:.55;margin-right:3px}
 .till-tbl td.d em.ln-wr{display:block;font-style:normal;font-size:11px;font-weight:600;color:#1E40AF}
 .upd-out p{margin:6px 0}.upd-out .upd-ok{color:var(--ok,#1a7f37)}.upd-out .upd-warn{color:var(--warn,#9a6700)}
+/* Home: the whole system as big tiles (see homePage) */
+.hm{max-width:1180px;margin:0 auto;padding:6px 4px 30px}
+.hm-hd{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:4px 6px 18px}
+.hm-hd small{display:block;font-size:12.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--steel,#5a6e72)}
+.hm-hd h1{margin:2px 0 0;font-size:26px}
+.hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:18px 16px}
+.hm-tile{display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px 10px 14px;border:0;border-radius:16px;background:transparent;cursor:pointer;text-align:center;color:inherit;font:inherit;
+  transition:background .2s,transform .25s cubic-bezier(.34,1.56,.64,1);animation:hmIn .45s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--i)*25ms)}
+@keyframes hmIn{from{opacity:0;transform:translateY(12px)}}
+.hm-tile:hover{background:rgba(0,0,0,.045);transform:translateY(-3px)}
+.hm-tile:active{transform:scale(.96)}
+.hm-tile:focus-visible{outline:3px solid #AE1E2B;outline-offset:2px}
+.hm-ic{position:relative;display:grid;place-items:center;width:78px;height:78px;color:#4a4f52}
+.hm-ic svg{width:70px;height:70px;stroke-width:1.5}
+.hm-plus{position:absolute;right:0;top:0;width:26px;height:26px;border-radius:50%;background:#4a4f52;color:#fff;font:800 20px/26px sans-serif;box-shadow:0 0 0 3px var(--bg,#f1f3f2)}
+.hm-tile:hover .hm-ic,.hm-tile:focus-visible .hm-ic{color:#AE1E2B}.hm-tile:hover .hm-plus,.hm-tile:focus-visible .hm-plus{background:#AE1E2B}
+.hm-lb{display:block;width:100%;max-width:190px;padding:9px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 0 rgba(0,0,0,.08),0 6px 14px -8px rgba(0,0,0,.35);font-weight:800;font-size:17px;color:#1b1f21;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hm-tile:hover .hm-lb{box-shadow:0 2px 0 #AE1E2B,0 10px 18px -8px rgba(0,0,0,.4)}
+.hm-ds{font-size:12.5px;line-height:1.35;color:var(--steel,#5a6e72);max-width:200px}
+@media (prefers-reduced-motion:reduce){.hm-tile{animation:none;transition:none}}
 /* the on-account panel: a sheet down the right of the till, the bill still in view */
 .modal.cp-modal{justify-content:flex-end;align-items:stretch;padding:0;background:rgba(16,22,20,.32)}
 /* the cheque calendar */
@@ -13566,7 +13586,7 @@ const $=(s)=>document.querySelector(s);
    is in one place only, under the heading anybody would look for it under. (Who may open what is the
    role's sections — SECTIONS below — and does not depend on these headings.) */
 const views=[
- ['grp','Home'],['startup','Getting started'],['dashboard','Dashboard','F2'],['actions','Action centre'],['updates','What is new'],
+ ['grp','Home'],['home','Home'],['startup','Getting started'],['dashboard','Dashboard','F2'],['actions','Action centre'],['updates','What is new'],
  ['grp','Sales'],['pos','POS billing','F3'],['bills','Bills'],['returns','Returns'],['docs','Quotes & delivery notes'],['collect','Goods to collect'],['dlv','Deliveries'],['hire','Tool hire'],
  ['grp','Customers'],['customers','Customers','F8'],['receipts','Take a payment','F7'],['dues','Credit follow-up'],['plans','Easy payments'],['trades','Tradesmen'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],['feedback','Customer feedback'],
  ['grp','Suppliers & buying'],['suppliers','Suppliers','F12'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Supplier payments'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
@@ -13695,6 +13715,7 @@ function allowed(v){
   { const fv=FEATURES.find(x=>x[3]&&x[3]===v); if(fv&&!featOn(fv[0])) return false }   // a feature the Super Admin switched off
   if(v === 'startup') return startupOn() && ownerOnly();   // only while setting up, and for the owner or a director
   if(v === 'updates') return true;          // what changed is everybody's business
+  if(v === 'home') return true;             // the launcher: each tile on it is checked on its own
   if(v === 'actions') return true;
   if(v === 'leave') return true;            // everybody asks for their own days off
   if(v === 'petty') return String(S.user.role||'').toLowerCase()!=='salesman'||(S.petty||[]).some(p=>p.status==='open'&&p.who===S.user.name);   // Sales staff: only while holding some            // the counter hands it out; whoever holds some puts in what they spent
@@ -13763,7 +13784,7 @@ function allowed(v){
    Each person gets their own arrangement: menu down the side or across the
    top, wide or narrow, and the page they land on. It travels with the login,
    so the cashier's screen is the cashier's whatever machine they sit at. */
-const PREF_DEFAULTS={nav:'side',collapsed:true,start:'updates',keys:true,till:'classic',tillLook:'sepos'};
+const PREF_DEFAULTS={nav:'side',collapsed:true,start:'home',keys:true,till:'classic',tillLook:'sepos'};
 function prefs(){ if(!S.user.prefs) S.user.prefs={...PREF_DEFAULTS}; return S.user.prefs }
 function pref(k){ const p=prefs(); if(k==='collapsed'&&p[k]===undefined) return true; return p[k]===undefined?PREF_DEFAULTS[k]:p[k] }
 function setPref(k,v){
@@ -13873,6 +13894,9 @@ function tillMenu(){
 const icon=(k)=>`<svg viewBox="0 0 24 24" class="nvi" fill="none" stroke="currentColor" stroke-width="1.7"
   stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[k]||ICONS.dashboard}"/></svg>`;
 ICONS.tenders='M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h6M9 8h2';
+ICONS.home='M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6h-6v6H4a1 1 0 01-1-1z';
+ICONS.products=ICONS.products||'M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10M7.5 5l9 4';
+ICONS.cashbank=ICONS.cashbank||'M3 10l9-6 9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 20h18';
 ICONS.purchasing='M3 17l5-5 4 3 5-6M3 21h18M5 3v14';
 ICONS.counter='M4 10h16v10H4zM2 10l10-6 10 6M9 14h6M12 14v6';
 ICONS.syslog='M12 8v4l3 2M3 12a9 9 0 1018 0 9 9 0 00-18 0M3 4v4h4';
@@ -14352,7 +14376,7 @@ function renderNow(){
   const sameView = _lastRenderView === S.view;
   const keepMainScroll = (sameView && mn) ? mn.scrollTop : 0;
   _lastRenderView = S.view;
-  const r={cashbank:cashBankPage,counter:counterPage,syslog:sysLog,printq,cameras,everything,actions:inbox,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,hire:hirePage,plans:plansPage,dlv:dlvPage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals:()=>{ inTab=apTab==='done'?'history':'decide'; return inbox() },feedback:feedbackPage,startup:startupScreen,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
+  const r={home:homePage,cashbank:cashBankPage,counter:counterPage,syslog:sysLog,printq,cameras,everything,actions:inbox,returns:returnsPage,leave:leavePage,chqbooks:chqBooksPage,petty:pettyPage,dues:duesPage,hire:hirePage,plans:plansPage,dlv:dlvPage,trades:tradesPage,billdesign,shopmanage:site,cashup,ai,updates,recall,stocktake:stockTake,collect:collectPage,serials,damages,jobs,supstock,dashboard,pos:()=>({quick:posQuick,classic:posClassic,phone:posPhone}[tillNow()]||pos)(),bills,docs,receipts,weborders:site,site,webproducts:webProducts,tenders,products:()=>{invTab='products';return inventory()},stock:()=>{invTab='stock';return inventory()},ledger:()=>{invTab='ledger';return inventory()},vouchers:()=>(typeof vouchers==='function'?vouchers():''),transfers:()=>(typeof transfers==='function'?transfers():''),issues:()=>(typeof storeIssues==='function'?storeIssues():''),approvals:()=>{ inTab=apTab==='done'?'history':'decide'; return inbox() },feedback:feedbackPage,startup:startupScreen,customers,suppliers,orders,inventory,labels,purchases,purchasing,payreqs,chequesIn,chequesOut,expenses,accounting,payroll,users,messages,social,reports,settings,trail}[S.view];
   if(mn && typeof r === 'function'){
     const sn0=mn.querySelector('.subnav'), snTop=sn0&&sameView?sn0.scrollTop:0;   // the section list keeps where it was scrolled to
     /* the box being typed in keeps its place: a redraw from elsewhere (another tab saving, the books coming in)
@@ -14409,6 +14433,7 @@ function renderNow(){
   if(S.view==='cashup') cashupAfter();
   if(S.view==='ai') aiAfter();
   if(S.view==='updates') markUpdatesSeen();
+  if(S.view==='home') homeAfter();
   if(S.view==='bills'||S.view==='recall') billsAfter();
   if(S.view==='trail') trailAfter();
   if(S.view==='settings'&&setTab==='app') appDownloadAfter();
@@ -17292,7 +17317,62 @@ function updatesUnseen(){ return (UPDATE_LOG.items||[]).length && !updatesSeen()
 
 /* Where a person lands when we have to put them somewhere: what they picked in
    Settings, and failing that whatever is open to them. */
+/* ---- Home: every part of the system on one page, as big tiles (8 Nov 2026, the owner: "centralizing all the things
+   in one page — this should be the default page", like SePOS's main screen). A tile shows only where that person
+   may go; the "+ New" ones open the add window straight away. Enter or a click opens a tile; the arrows move between them. */
+const HOME_TILES=[
+  ['pos','New Invoice','Make a bill at the till: items, discounts, the customer and how they paid.',()=>go('pos'),'+'],
+  ['purchases','New Purchase','Goods in from a supplier: updates the stock and what we owe them.',()=>{ go('purchases'); newPurModal() },'+'],
+  ['products','Add Product','A new item with its barcode, prices, supplier and stock.',()=>{ if(S.user&&S.user.role==='Salesman') return toast('Adding products is not open to Salesman'); go('products'); productModal() },'+'],
+  ['suppliers','Add Supplier','A new supplier with their contact details and credit terms.',()=>{ go('suppliers'); supModal(null) },'+'],
+  ['customers','Add Customer','A new customer with their mobile, credit limit and price level.',()=>{ go('customers'); custModal(null) },'+'],
+  ['reports','Sales Revenue','Sales by day, item, category, customer or salesman, with the profit.',()=>go('reports')],
+  ['purchases','Purchase History','Every goods-in by date, supplier or item — open one to see it in full.',()=>go('purchases')],
+  ['products','Products','The whole catalogue: prices, stock, barcodes and categories.',()=>go('products')],
+  ['suppliers','Suppliers','Every supplier with what we owe, what we bought and their ledger.',()=>go('suppliers')],
+  ['customers','Customers','Every customer with what they owe, their points and their bills.',()=>go('customers')],
+  ['dashboard','Dashboard','Today at a glance: sales, purchases, expenses, money in and out.',()=>go('dashboard')],
+  ['orders','Purchase Order','Orders to suppliers, made from what is running low.',()=>go('orders')],
+  ['stock','Inventory','Stock on hand, what is low, what moves fast and what does not.',()=>go('stock')],
+  ['payreqs','Paid Out','Pay suppliers for what we bought on credit: cash, cheque or bank.',()=>go('payreqs')],
+  ['receipts','Received','Take a customer\'s payment for their credit bills: cash, cheque or bank.',()=>go('receipts')],
+  ['bills','Bills','Every bill: find it, print it again, change or cancel it.',()=>go('bills')],
+  ['returns','Returns','Goods brought back: refund in cash or take it off their account.',()=>go('returns')],
+  ['docs','Quotations','Quotations and delivery notes for customers.',()=>go('docs')],
+  ['expenses','Expenses','Shop expenses: rent, bills, transport and the rest.',()=>go('expenses')],
+  ['cashup','Day Book','The day\'s money: open and close the drawer, and the takings.',()=>go('cashup')],
+  ['cashbank','Cash & Bank','Every account: cash in hand and the banks.',()=>go('cashbank')],
+  ['chequesIn','Cheques','Cheques taken and given: what is due and what has cleared.',()=>go('chequesIn')],
+  ['labels','Barcode Labels','Print price and barcode labels for the shelves.',()=>go('labels')],
+  ['payroll','Employees','Attendance, leave and pay.',()=>go('payroll')],
+  ['actions','Action Centre','What needs a look: approvals, orders, unhappy customers.',()=>go('actions')],
+  ['settings','Settings','The shop, the bill, printers, messages and users.',()=>go('settings')]];
+const homeTiles=()=>HOME_TILES.filter(t=>allowed(t[0]));
+function homePage(){
+  const list=homeTiles(), h=new Date().getHours();
+  return `<div class="hm">
+    <div class="hm-hd"><div><small>${h<12?'Good morning':h<17?'Good afternoon':'Good evening'}, ${noteEsc(S.user.name)}</small><h1>${noteEsc((CFG.shop&&CFG.shop.name)||'Regal Hardware')}</h1></div>
+      <span class="muted">${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</span></div>
+    <div class="hm-grid">${list.map((t,i)=>`<button type="button" class="hm-tile" data-home="${HOME_TILES.indexOf(t)}" style="--i:${i}">
+       <span class="hm-ic">${icon(t[0])}${t[4]?'<b class="hm-plus">+</b>':''}</span>
+       <span class="hm-lb">${t[4]?'+ ':''}${noteEsc(t[1])}</span>
+       <span class="hm-ds">${noteEsc(t[2])}</span></button>`).join('')}</div></div>`;
+}
+function homeAfter(){
+  const tiles=[...document.querySelectorAll('.hm-tile')];
+  tiles.forEach(b=>{ b.onclick=()=>{ const t=HOME_TILES[+b.dataset.home]; if(t) t[3]() } });
+  const grid=document.querySelector('.hm-grid'); if(!grid) return;
+  grid.onkeydown=e=>{
+    const i=tiles.indexOf(document.activeElement); if(i<0) return;
+    const cols=Math.max(1,Math.round(grid.clientWidth/(tiles[0].offsetWidth+16)));
+    const to={ArrowRight:i+1,ArrowLeft:i-1,ArrowDown:i+cols,ArrowUp:i-cols}[e.key];
+    if(to===undefined) return; e.preventDefault(); if(tiles[to]) tiles[to].focus();
+  };
+  if(!document.activeElement||document.activeElement===document.body) tiles[0]&&tiles[0].focus({preventScroll:true});
+}
 function landingView(){
+  // once for everybody: the new Home page is where the system opens (the owner asked for it); Settings can change it again
+  { const p=prefs(); if(!p.homeV1){ p.homeV1=true; p.start='home'; const u=S.users.find(x=>x.name===S.user.name); if(u) u.prefs={...p} } }
   const s=pref('start');
   if(allowed(s)) return s;
   return allowed('dashboard') ? 'dashboard' : (allowed('pos') ? 'pos' : 'products');
