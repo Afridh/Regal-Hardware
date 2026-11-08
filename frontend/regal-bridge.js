@@ -261,7 +261,11 @@
     if (!doc || typeof window.applyKept !== 'function') return;
     var local = keepLocal();
     window.keptLocalPunches = false;
-    window.applyKept(doc);
+    /* The till gets a copy of its own, never the object kept here as `base`. After two tills' saves were put together,
+       `base = merged` and this was handed `merged` itself: the till's bill list WAS the base's, so every bill made
+       afterwards was in the base too — and the next merge read it as one the server had taken out, and dropped it
+       from the server and from this till (8 Nov 2026: bill 10176, printed on two PCs, only one kept). */
+    window.applyKept(JSON.parse(JSON.stringify(doc)));
     restoreLocal(local);
     if (typeof window.refreshMe === 'function') window.refreshMe();
     if (typeof window.markSaved === 'function') window.markSaved();

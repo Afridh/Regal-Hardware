@@ -766,29 +766,52 @@ function mergeShiftDays(data, cur, since) {
    owner's fresh start carries the wipe token). A save that arrives without one has lost it, whatever the reason, so the bill
    goes back in with its journal entries (what the customer owes, the drawer) and its stock movements, and the owner is told.
    The till's own timing fault that did this is mended (regal-bridge.js, pull); this is so that no other can do it quietly. */
+/* 8 Nov 2026: two tills printed bill 10176 at the same moment — two different bills, one number — and the save of the
+   second laid it over the first, because bills were told apart by their number alone. A bill made since then carries a
+   uid of its own (kept when it is re-made), and is told apart by that: a bill in the books that a save brings back
+   under the same number but a different uid is a different bill, and it stays. Two bills can then share a number;
+   the one kept here is renumbered "10176-2" in the books, and remembers the number printed on its paper (printedNo).
+   Bills from before carry no uid and are matched by number, as they always were. */
 export function keepBills(next, cur, by) {
   const S = next?.S, C = cur?.S;
   if (!S || !C || !Array.isArray(C.sales) || !Array.isArray(S.sales)) return [];
-  const have = new Set(S.sales.map(s => String(s?.no)));
-  const lost = C.sales.filter(s => s && s.no != null && !have.has(String(s.no)));
+  const haveNo = new Set(S.sales.map(s => String(s?.no)));
+  const haveUid = new Set(S.sales.filter(s => s && s.uid).map(s => String(s.uid)));
+  const lost = C.sales.filter(s => s && s.no != null && (s.uid ? !haveUid.has(String(s.uid)) && !(haveNo.has(String(s.no)) && S.sales.some(x => x && String(x.no) === String(s.no) && !x.uid)) : !haveNo.has(String(s.no))));
   if (!lost.length) return [];
   S.journal = Array.isArray(S.journal) ? S.journal : []; S.movements = Array.isArray(S.movements) ? S.movements : [];
-  const tag = (x) => JSON.stringify(x), inJ = new Set(S.journal.map(tag)), inM = new Set(S.movements.map(tag));
-  for (const sale of lost) {
-    S.sales.push(sale);
-    const no = String(sale.no);
-    for (const j of C.journal || []) if (String(j?.ref) === no && !inJ.has(tag(j))) S.journal.push(j);
-    for (const m of C.movements || []) if (String(m?.ref) === no && !inM.has(tag(m))) {
-      S.movements.push(m);
+  const tag = (x) => JSON.stringify(x);
+  // entries are matched by count, so a bill's entry that happens to read the same as the other bill's is not taken for it
+  const counts = (arr) => { const c = new Map(); for (const x of arr) { const t = tag(x); c.set(t, (c.get(t) || 0) + 1) } return c };
+  const nJ = counts(S.journal), nM = counts(S.movements);
+  const out = [], renamed = [];
+  for (const sale0 of lost) {
+    const no = String(sale0.no);
+    const clash = haveNo.has(no);
+    let sale = sale0, newNo = no;
+    if (clash) {                                     // the number is taken by another bill: this one is kept as no-2, no-3…
+      for (let i = 2; haveNo.has(newNo = no + '-' + i); i++);
+      sale = { ...sale0, no: newNo, printedNo: sale0.printedNo || no, note: [sale0.note, `printed as ${no} — another bill had the same number`].filter(Boolean).join(' · ') };
+      renamed.push(`${no} → ${newNo}`);
+    }
+    haveNo.add(newNo); if (sale.uid) haveUid.add(String(sale.uid));
+    S.sales.push(sale); out.push(newNo);
+    const fix = (x) => (clash ? { ...x, ref: newNo } : x);
+    const curJ = (C.journal || []).filter(j => String(j?.ref) === no), curM = (C.movements || []).filter(m => String(m?.ref) === no);
+    for (const [t, k] of counts(curJ)) { let more = k - (clash ? 0 : (nJ.get(t) || 0)); for (const j of curJ) { if (more <= 0) break; if (tag(j) === t) { S.journal.push(fix(j)); more-- } } }
+    for (const [t, k] of counts(curM)) { let more = k - (clash ? 0 : (nM.get(t) || 0)); for (const m of curM) { if (more <= 0) break; if (tag(m) === t) {
+      S.movements.push(fix(m)); more--;
       const p = (S.products || []).find(x => x.id === m.pid);
       if (p) p.stock = +((+p.stock || 0) + (+m.qty || 0)).toFixed(3);
-    }
+    } } }
   }
-  const nos = lost.map(s => String(s.no)), at = new Date();
+  const at = new Date();
   S.notif = Array.isArray(S.notif) ? S.notif : [];
-  S.notif.unshift({ id: 'nkb' + at.getTime(), kind: 'warn', text: `A save by ${by} came without bill${nos.length > 1 ? 's' : ''} ${nos.join(', ')}. The bill${nos.length > 1 ? 's are' : ' is'} kept in the books.`,
+  S.notif.unshift({ id: 'nkb' + at.getTime(), kind: 'warn', text: renamed.length
+      ? `Two bills were printed with the same number (${renamed.map(r => r.split(' → ')[0]).join(', ')}). Both are kept: the second is in the books as ${renamed.map(r => r.split(' → ')[1]).join(', ')}.`
+      : `A save by ${by} came without bill${out.length > 1 ? 's' : ''} ${out.join(', ')}. The bill${out.length > 1 ? 's are' : ' is'} kept in the books.`,
     view: 'bills', at: at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: process.env.SHOP_TZ || 'Asia/Colombo' }), read: false, forApprovers: true });
-  return nos;
+  return out;
 }
 
 /* Quotations, delivery notes and expenses, as keepBills does for bills (8 Nov 2026: a till's save left out five
@@ -910,6 +933,55 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   if (key === BOOKS_KEY) catchUpLogins(data).catch(e => console.error('sign-ins catch-up failed', e.message));
 }));
 
+/* ---- bill numbers handed out one at a time, so two tills never print the same one (8 Nov 2026: bill 10176 came
+   out of two PCs at 5:17 pm). Each till keeps one number held for it here, ready before the customer pays, so the
+   Pay key never waits on the internet: it uses the held number and asks for the next. A till that cannot reach
+   the server numbers on its own, as before, and the save guard (keepBills) keeps both bills if two then clash.
+   body: { k: the run ('N1' — the cashier's number), term: this PC's own id, seed: the highest number this till
+   knows of in that run, used: the held number it has just printed, if any } → { n: the number now held for it } */
+let seqReady = null;
+function ensureSeqTables() {
+  if (!seqReady) seqReady = (async () => {
+    if (dbKind === 'mysql') {
+      await query('CREATE TABLE IF NOT EXISTS `bill_seq` (`k` VARCHAR(80) NOT NULL, `n` BIGINT NOT NULL DEFAULT 0, PRIMARY KEY (`k`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
+      await query('CREATE TABLE IF NOT EXISTS `bill_res` (`k` VARCHAR(80) NOT NULL, `term` VARCHAR(80) NOT NULL, `n` BIGINT NOT NULL, `at` DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (`k`, `term`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
+    } else {
+      await query('CREATE TABLE IF NOT EXISTS bill_seq (k varchar(80) PRIMARY KEY, n bigint NOT NULL DEFAULT 0)');
+      await query('CREATE TABLE IF NOT EXISTS bill_res (k varchar(80) NOT NULL, term varchar(80) NOT NULL, n bigint NOT NULL, at timestamptz DEFAULT now(), PRIMARY KEY (k, term))');
+    }
+  })().catch(e => { seqReady = null; throw e; });
+  return seqReady;
+}
+r.post('/books/:key/billno', regalAuth, asyncHandler(async (req, res) => {
+  const b = req.body || {};
+  const run = String(b.k || '').trim().slice(0, 40), term = String(b.term || '').trim().slice(0, 80);
+  if (!run || !term) throw new HttpError(400, 'Which run, and which till?');
+  const k = String(req.params.key).slice(0, 30) + ':' + run;
+  const seed = Math.max(0, Math.floor(+b.seed || 0)), used = b.used === undefined || b.used === null ? null : Math.floor(+b.used);
+  await ensureSeqTables();
+  const my = dbKind === 'mysql';
+  const n = await withTransaction(async (c) => {
+    // the run's row, made the first time and then locked, so two tills asking at once are served one after the other
+    await c.query(my ? 'INSERT IGNORE INTO `bill_seq` (`k`, `n`) VALUES (?, ?)' : 'INSERT INTO bill_seq (k, n) VALUES ($1, $2) ON CONFLICT (k) DO NOTHING', [k, seed]);
+    const { rows: [row] } = await c.query(my ? 'SELECT `n` FROM `bill_seq` WHERE `k` = ? FOR UPDATE' : 'SELECT n FROM bill_seq WHERE k = $1 FOR UPDATE', [k]);
+    let top = Math.max(Number(row?.n || 0), seed);
+    const { rows: [held] } = await c.query(my ? 'SELECT `n` FROM `bill_res` WHERE `k` = ? AND `term` = ?' : 'SELECT n FROM bill_res WHERE k = $1 AND term = $2', [k, term]);
+    let mine = held ? Number(held.n) : null;
+    // printed: it is spent. Otherwise it stays this till's, even when other tills have billed past it — so no number is skipped.
+    if (mine !== null && used !== null && used === mine) {
+      await c.query(my ? 'DELETE FROM `bill_res` WHERE `k` = ? AND `term` = ?' : 'DELETE FROM bill_res WHERE k = $1 AND term = $2', [k, term]);
+      mine = null;
+    }
+    if (mine === null) {
+      mine = top + 1; top = mine;
+      await c.query(my ? 'INSERT INTO `bill_res` (`k`, `term`, `n`) VALUES (?, ?, ?)' : 'INSERT INTO bill_res (k, term, n) VALUES ($1, $2, $3)', [k, term, mine]);
+    }
+    await c.query(my ? 'UPDATE `bill_seq` SET `n` = ? WHERE `k` = ?' : 'UPDATE bill_seq SET n = $1 WHERE k = $2', [top, k]);
+    return mine;
+  });
+  res.json({ ok: true, n });
+}));
+
 r.delete('/books/:key', regalAuth, asyncHandler(async (req, res) => {
   if (req.regalUser.role !== 'Owner') throw new HttpError(403, 'Only the owner can clear the books');
   await query(`DELETE FROM books WHERE key = $1`, [req.params.key]);
@@ -920,7 +992,7 @@ r.delete('/books/:key', regalAuth, asyncHandler(async (req, res) => {
    what the server keeps beside them. Portal sign-ins first of all — they point at customer and supplier numbers
    the new lists will give out again, so an old login would open a stranger's page. The Super Admin only. */
 const FRESH_TABLES = ['cust_logins', 'sup_logins', 'login_requests', 'cust_inbox', 'sup_inbox', 'sup_hidden', 'sup_media', 'bill_views', 'due_log', 'due_runs', 'due_sent',
-  'sum_runs', 'break_warned', 'display_screens', 'print_jobs', 'shop_orders', 'files', 'shift_photos'];
+  'sum_runs', 'break_warned', 'display_screens', 'print_jobs', 'shop_orders', 'files', 'shift_photos', 'bill_seq', 'bill_res'];
 r.post('/books/:key/fresh-start', regalAuth, asyncHandler(async (req, res) => {
   const role = String(req.regalUser?.role || '').toLowerCase();
   if (!['super admin', 'superadmin', 'owner'].includes(role)) throw new HttpError(403, 'Only the Super Admin can start the shop afresh');
