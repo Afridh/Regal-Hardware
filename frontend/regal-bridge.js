@@ -320,8 +320,30 @@
       window.booksUnreadable = false;                    // they came down: saving is safe again
       setTimeout(nowHeard, 0);                           // once the till has laid them in, not before
       var d = j.data; if (d && d.S) LOCAL_KEYS.forEach(function (k) { delete d.S[k]; });
+      /* Work this PC never got to the server: it closed, or lost its connection, with bills waiting. Opening it
+         used to lay the server's books over them, and the next save took them out for good (8 Nov 2026: 26 bills
+         and 5 quotations on one till). Now they are put together with the server's books first, the same way
+         two tills' saves are, and sent before anything else comes down. Read before keepBase() below writes the
+         new base over the old one, which the merge needs. */
+      var waiting = null;
+      try {
+        if ((await idb.get('unsynced')) === true) {
+          var mineTxt = await idb.get('books'), was = await idb.get('base');
+          if (mineTxt && was && was.base) waiting = { mine: strip(JSON.parse(mineTxt)), base: was.base };
+        }
+      } catch (e) { waiting = null; }
       base = JSON.parse(JSON.stringify(d)); keepBase();
       if (window.workingOffline) { window.workingOffline = false; }
+      if (waiting) {
+        var merged = merge3(waiting.base, waiting.mine, strip(d));
+        merged.at = new Date().toISOString();
+        unsynced = true;                                   // it goes up before anything comes down (see poll and pull)
+        setTimeout(function () {
+          say('Work kept on this PC is put together with the shop\'s books and sent now.');
+          if (typeof window.persist === 'function') window.persist(true);
+        }, 1500);
+        return { value: JSON.stringify(merged) };
+      }
       return { value: JSON.stringify(d) };
     },
     set: async function (_k, txt) {

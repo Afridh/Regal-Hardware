@@ -23395,8 +23395,13 @@ function findBillModal(){
   const m=modal(`<h2>Find a missing bill</h2>
    <div class="muted">For a bill that printed but is not on the Bills list. It is looked for on this till and in the copies of the books the server keeps.</div>
    <div style="display:flex;gap:8px;margin-top:10px"><input id="fbNo" placeholder="Bill number, e.g. 20029" style="flex:1;font-size:16px" autocomplete="off"><button class="btn tape" id="fbGo">Look for it</button></div>
-   <div id="fbOut" style="margin-top:12px"></div>`);
+   <div id="fbOut" style="margin-top:12px"></div>
+   <div class="card" style="margin-top:14px"><b>Bring back work from a saved copy</b>
+    <div class="muted" style="margin:4px 0 8px">When a till could not reach the server and its work went missing: pick the copy of the books saved from that PC. Everything in it these books lack is listed first; nothing already here is changed.</div>
+    <input type="file" id="fbFile" accept=".json,application/json"></div>
+   <div id="fbRest" style="margin-top:10px"></div>`);
   const q=x=>m.querySelector(x), out=q('#fbOut');
+  q('#fbFile').onchange=e=>restoreFromFile(e.target.files&&e.target.files[0],q('#fbRest'),m);
   const look=async()=>{
     const no=q('#fbNo').value.trim(); if(!no) return;
     const here=S.sales.filter(s=>String(s.no)===no);
@@ -23435,6 +23440,86 @@ function billPutBack(sale,journal,movements,newNo){
     p.stock=+((+p.stock||0)+(+x.qty||0)).toFixed(3); S.movements.push({...x,ref:newNo?no:x.ref,after:p.stock}); n++ });
   try{ logTrail('other',`Bill ${sale.no} put back in the books${newNo?' as '+no:''} — ${fmt(sale.total)}, ${n} stock line(s)`,{ref:no,amount:sale.total}) }catch(e){}
   return `Bill ${no} is back — ${fmt(sale.total)}${n?`, ${n} stock line${n===1?'':'s'}`:''}`;
+}
+/* Bring back work from a saved copy (8 Nov 2026). A till that could not reach the server kept its bills on the
+   PC, and opening it again laid the server's copy over them: 26 bills, 5 quotations and an expense gone from the
+   books, though still in the copy that PC had saved. An admin picks such a copy (a file) and everything in it the
+   books here lack comes back: bills, quotations and delivery notes, expenses, each with its stock movements (and
+   the stock with them) and its journal entries, the held bills and the trail. Nothing already here is changed,
+   and running it twice brings nothing twice. A number another bill or document now carries comes back as …-R. */
+const canon=x=>Array.isArray(x)?'['+x.map(canon).join(',')+']':x&&typeof x==='object'?'{'+Object.keys(x).filter(k=>x[k]!==undefined&&x[k]!==null).sort().map(k=>JSON.stringify(k)+':'+canon(x[k])).join(',')+'}':JSON.stringify(x);
+function restorePlan(C2){
+  const sameBill=(a,b)=>a.date===b.date&&Math.abs((+a.total||0)-(+b.total||0))<0.005&&(a.time||'')===(b.time||'')&&(a.by||'')===(b.by||'');
+  const sameDoc=(a,b)=>a.kind===b.kind&&a.date===b.date&&Math.abs((+a.total||0)-(+b.total||0))<0.005;
+  const expKey=e=>e.no||e.id;
+  const sameExp=(a,b)=>a.date===b.date&&Math.abs((+(a.amount??a.total)||0)-(+(b.amount??b.total)||0))<0.005;
+  const plan={sales:[],docs:[],expenses:[],held:[],trail:[],audit:[]};
+  (C2.sales||[]).forEach(x=>{ if(!x||!x.no) return; const here=S.sales.filter(h=>String(h.no)===String(x.no)); if(here.some(h=>sameBill(h,x))) return; plan.sales.push({x,clash:here.length>0}) });
+  (C2.docs||[]).forEach(x=>{ if(!x||!x.no) return; const here=(S.docs||[]).filter(h=>h.no===x.no); if(here.some(h=>sameDoc(h,x))) return; plan.docs.push({x,clash:here.length>0}) });
+  (C2.expenses||[]).forEach(x=>{ if(!x||!expKey(x)) return; const here=(S.expenses||[]).filter(h=>expKey(h)===expKey(x)); if(here.some(h=>sameExp(h,x))) return; plan.expenses.push({x,clash:here.length>0}) });
+  const ids=a=>new Set((a||[]).map(t=>t&&t.id));
+  const hb=ids(S.heldBills), tr=ids(S.trail), au=ids(S.audit);
+  plan.held=(C2.heldBills||[]).filter(t=>t&&t.id&&!hb.has(t.id));
+  plan.trail=(C2.trail||[]).filter(t=>t&&t.id&&!tr.has(t.id));
+  plan.audit=(C2.audit||[]).filter(t=>t&&t.id&&!au.has(t.id));
+  const refs=new Set(plan.sales.map(p=>String(p.x.no)).concat(plan.docs.map(p=>p.x.no),plan.expenses.map(p=>expKey(p.x))));
+  const base=r=>String(r==null?'':r).replace(/-(R|U|C)$/,'');
+  plan.journal=(C2.journal||[]).filter(j=>j&&refs.has(base(j.ref)));
+  plan.movements=(C2.movements||[]).filter(x=>x&&refs.has(base(x.ref)));
+  plan.empty=!plan.sales.length&&!plan.docs.length&&!plan.expenses.length&&!plan.held.length;
+  return plan;
+}
+function restoreApply(C2,plan){
+  const map={}, put=(k,clash)=>(map[k]=clash?k+'-R':k);
+  plan.sales.forEach(({x,clash})=>{ const inv=JSON.parse(JSON.stringify(x)); inv.no=put(String(x.no),clash); inv.recoveredAt=apStamp(); inv.recoveredBy=S.user.name; S.sales.push(inv) });
+  plan.docs.forEach(({x,clash})=>{ const d=JSON.parse(JSON.stringify(x)); d.no=put(x.no,clash); (S.docs=S.docs||[]).push(d) });
+  plan.expenses.forEach(({x,clash})=>{ const e=JSON.parse(JSON.stringify(x)), k=e.no||e.id, nk=put(k,clash); if(e.no) e.no=nk; else e.id=nk; (S.expenses=S.expenses||[]).push(e) });
+  const newRef=r=>{ const t=String(r==null?'':r), m=t.match(/^(.*?)(-R|-U|-C)?$/); return map[m[1]]!==undefined?map[m[1]]+(m[2]||''):t };
+  const haveJ=new Set(S.journal.map(j=>canon([j.date,j.desc,j.ref,j.lines])));
+  let nj=0; plan.journal.forEach(j=>{ if(haveJ.has(canon([j.date,j.desc,j.ref,j.lines]))) return; const nr=newRef(j.ref);
+    S.journal.push({...JSON.parse(JSON.stringify(j)),no:next('JE'),ref:nr,desc:nr===j.ref?j.desc:String(j.desc).split(String(j.ref)).join(nr)}); nj++ });
+  const haveM=new Set((S.movements||[]).map(x=>canon([x.pid,x.qty,x.type,x.ref,x.date])));
+  let nm=0; plan.movements.forEach(x=>{ if(haveM.has(canon([x.pid,x.qty,x.type,x.ref,x.date]))) return; const p=P(x.pid); if(!p) return; const q=+x.qty||0;
+    p.stock=+((+p.stock||0)+q).toFixed(3);
+    if(typeof extMove==='function'&&Array.isArray(S.locations)&&S.locations.length) extMove(p,q,x.loc);
+    S.movements.push({...JSON.parse(JSON.stringify(x)),ref:newRef(x.ref),after:p.stock}); nm++ });
+  plan.held.forEach(h=>(S.heldBills=S.heldBills||[]).push(JSON.parse(JSON.stringify(h))));
+  plan.trail.forEach(t=>(S.trail=S.trail||[]).push(JSON.parse(JSON.stringify(t))));
+  plan.audit.forEach(t=>(S.audit=S.audit||[]).push(JSON.parse(JSON.stringify(t))));
+  // the counters never go back: the next bill, quotation or entry gets a number none of these carries
+  if(C2.seq&&typeof C2.seq==='object'){ S.seq=S.seq||{}; Object.keys(C2.seq).forEach(k=>{ if(+C2.seq[k]>(+S.seq[k]||0)) S.seq[k]=+C2.seq[k] }) }
+  if(C2.seqBy&&typeof C2.seqBy==='object'){ S.seqBy=S.seqBy||{}; Object.keys(C2.seqBy).forEach(k=>{ if(+C2.seqBy[k]>(+S.seqBy[k]||0)) S.seqBy[k]=+C2.seqBy[k] }) }
+  if(+C2.serial>(+S.serial||0)) S.serial=+C2.serial;
+  const total=plan.sales.reduce((a,p)=>a+(+p.x.total||0),0);
+  const said=[plan.sales.length?`${plan.sales.length} bill${plan.sales.length===1?'':'s'} (${fmt(total)})`:'',plan.docs.length?`${plan.docs.length} quotation${plan.docs.length===1?'':'s'} or note${plan.docs.length===1?'':'s'}`:'',plan.expenses.length?`${plan.expenses.length} expense${plan.expenses.length===1?'':'s'}`:'',plan.held.length?`${plan.held.length} held bill${plan.held.length===1?'':'s'}`:''].filter(Boolean).join(', ');
+  try{ logTrail('other',`Work brought back from a saved copy: ${said} — ${nm} stock line(s), ${nj} account entr${nj===1?'y':'ies'}`,{amount:total}) }catch(e){}
+  return {said,nj,nm,renamed:Object.keys(map).filter(k=>map[k]!==k).map(k=>map[k])};
+}
+async function restoreFromFile(file,box,m){
+  if(!file||!box) return;
+  if(!payBoss()) return toast('Only an Admin, the Owner or the Super Admin can bring work back');
+  box.innerHTML='<div class="muted">Reading the copy…</div>';
+  let d=null; try{ d=JSON.parse(await file.text()) }catch(e){ box.innerHTML='<div class="card note">That file is not a copy of the books.</div>'; return }
+  const C2=d&&(d.S||d);
+  if(!C2||!Array.isArray(C2.sales)||!Array.isArray(C2.products)){ box.innerHTML='<div class="card note">That file is not a copy of the books.</div>'; return }
+  // what the server has now first, so nothing another till saved meanwhile is counted as missing
+  try{ if(window.regalBridge&&regalBridge.checkNow) await regalBridge.checkNow() }catch(e){}
+  const plan=restorePlan(C2);
+  if(plan.empty){ box.innerHTML='<div class="card note">Everything in that copy is already in the books — nothing to bring back.</div>'; return }
+  const cn=id=>(C(id)||{name:'Walk-in customer'}).name;
+  const rows=plan.sales.map(({x,clash})=>`<tr><td>${escM(x.no)}${clash?` <span class="tag warn">comes back as ${escM(x.no)}-R</span>`:''}</td><td>${escM(x.date)} ${escM(x.time||'')}</td><td>${escM(cn(x.customerId))}</td><td>${x.type==='CREDIT'?'<b>credit</b>':'cash'}</td><td class="n">${fmt(x.total)}</td></tr>`).join('');
+  const docRows=plan.docs.map(({x,clash})=>`<tr><td>${escM(x.no)}${clash?` <span class="tag warn">comes back as ${escM(x.no)}-R</span>`:''}</td><td>${escM(x.date)}</td><td>${escM(cn(x.customerId))}</td><td>${x.kind==='QUOTE'?'quotation':escM(String(x.kind||'').toLowerCase())}</td><td class="n">${fmt(x.total)}</td></tr>`).join('');
+  const expRows=plan.expenses.map(({x})=>`<tr><td>${escM(x.no||x.id)}</td><td>${escM(x.date)}</td><td colspan="2">${escM(x.payee||x.desc||x.note||'expense')}</td><td class="n">${fmt(+(x.amount??x.total)||0)}</td></tr>`).join('');
+  const credit=plan.sales.filter(p=>p.x.type==='CREDIT'||(+p.x.balance||0)>0);
+  box.innerHTML=`<div class="card" style="border-left:4px solid var(--chip-green)"><b>In the copy, not in the books</b>
+    <div style="max-height:300px;overflow:auto;margin-top:8px"><table class="tbl"><tr><th>No</th><th>When</th><th>Customer</th><th></th><th class="n">Amount</th></tr>${rows}${docRows}${expRows}</table></div>
+    <div class="muted" style="margin-top:8px">${plan.movements.length} stock line(s) and ${plan.journal.length} account entr${plan.journal.length===1?'y':'ies'} come back with them${plan.held.length?`, and ${plan.held.length} held bill${plan.held.length===1?'':'s'}`:''}.${credit.length?` What ${[...new Set(credit.map(p=>cn(p.x.customerId)))].map(escM).join(' and ')} owe${credit.length===1?'s':''} goes up by these bills again.`:''}</div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn tape" id="fbRestGo">Put all of it back</button></div></div>`;
+  box.querySelector('#fbRestGo').onclick=()=>{
+    if(!confirm('Put all of this back in the books, with its stock and account entries?')) return;
+    const r=restoreApply(C2,plan); persist(true); render(); m.remove();
+    toast(`Back in the books: ${r.said}${r.renamed.length?` — ${r.renamed.join(', ')} under a new number`:''}`,'ok');
+  };
 }
 const NOPROD={name:'(item no longer on file)',code:'',num:'',mrp:0};
 function billHit(s,q){
