@@ -5746,7 +5746,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   if(total<-0.005){ if(c&&c.id!==1&&c.phone&&CFG.msg.autoReturn!==false){
       sms(c.phone,tpl('returnReceived',{return:inv.no,fromPart:returnOf?'\nFrom bill: '+returnOf:'',amount:fmt(-total),
         how:acct?'It has been taken off your account.':'It has been refunded to you in cash.',outstanding:fmt(Math.max(0,partyBal('C',c.id)))}),'customer') } }
-  else if(c&&c.phone&&CFG.msg.autoBill) sms(c.phone, tpl(credit>0?'creditSale':'cashSale',v));
+  else if(c&&c.phone&&CFG.msg.autoBill){ sms(c.phone, tpl(credit>0?'creditSale':'cashSale',v)); inv.textedTo=mobNorm(c.phone) }   // remembered: choosing "e-bill" after does not text it again
   // a credit bill goes to a customer who keeps an email with us as the A5 invoice, in a PDF
   if(c&&c.id!==1&&credit>0.005&&isEmail(c.email)&&autoMailOn('autoInvoice')) setTimeout(()=>mailPaperAuto(invoiceMail(inv)),300);
 
@@ -19490,7 +19490,11 @@ function printAnim(inv,k){
        <b>Printing ${k==='a5'?'the A5 bill':'the till receipt'}</b><span>${inv.no} · ${fmt(inv.total)}${inv.balance>0?' · '+fmt(inv.balance)+' on account':''}</span></div>`;
   document.body.appendChild(el);
   const done=()=>{ el.classList.add('out'); setTimeout(()=>el.remove(),260);
-    if(k==='sms'){ if(c.phone){ sms(c.phone,tpl('billLink',{invoice:inv.no,total:fmt(inv.total),balancePart:inv.balance>0.005?'\nStill to pay: '+fmt(inv.balance):'',link:inv.link})); toast(`e-bill texted to ${c.name}`) } else printBill(inv,'r80') }
+    if(k==='sms'){ if(c.phone){
+        // the bill was texted to this number as it was saved (Settings → Messages, "text the bill"): once is enough (8 Nov 2026: bill 10184 went twice)
+        if(inv.textedTo&&inv.textedTo===mobNorm(c.phone)) toast(`e-bill already texted to ${c.name} — not sent twice`,'ok');
+        else { sms(c.phone,tpl('billLink',{invoice:inv.no,total:fmt(inv.total),balancePart:inv.balance>0.005?'\nStill to pay: '+fmt(inv.balance):'',link:inv.link})); inv.textedTo=mobNorm(c.phone); toast(`e-bill texted to ${c.name}`) } }
+      else printBill(inv,'r80') }
     else if(CFG.done.preview) showInvoice(inv,k); else printBill(inv,k) };   // straight to the printer unless a preview is asked for in Settings
   if(!CFG.done.printAnim){ el.remove(); return done() }
   setTimeout(done,(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)?50:(+CFG.done.animMs||1000)+50);
