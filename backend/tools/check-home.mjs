@@ -47,6 +47,28 @@ const at = await pg.evaluate(() => [...document.querySelectorAll('.hm-tile')].in
 ok(at > 1, 'the arrow keys move between tiles', 'on tile ' + at);
 await pg.keyboard.press('Enter'); await wait(600);
 ok(await pg.evaluate(() => window.eval('S').view) !== 'home', 'Enter opens the tile');
+// pressing a tile: the animation runs, then the page opens
+await pg.evaluate(() => window.eval('go')('home')); await wait(500);
+const anim = await pg.evaluate(async () => { const t = [...document.querySelectorAll('.hm-tile')].find(x => /^Bills$/.test(x.querySelector('.hm-lb').textContent.trim())); t.click();
+  const r = { go: t.classList.contains('go'), wave: !!t.querySelector('.hm-wave'), stepBack: document.querySelector('.hm-grid').classList.contains('going'), still: window.eval('S').view };
+  await new Promise(z => setTimeout(z, 600)); r.after = window.eval('S').view; return r });
+ok(anim.go && anim.wave && anim.stepBack && anim.still === 'home' && anim.after === 'bills', 'a pressed tile ripples, jumps and flashes, then its page opens', JSON.stringify(anim));
+// the Home key, from anywhere
+await pg.evaluate(() => { window.eval('go')('products'); document.activeElement && document.activeElement.blur() }); await wait(500);
+await pg.keyboard.press('Home'); await wait(500);
+ok(await pg.evaluate(() => window.eval('S').view) === 'home', 'the Home key goes to Home');
+await pg.evaluate(() => window.eval('go')('customers')); await wait(500);
+await pg.evaluate(() => { const i = document.querySelector('#main input[type=text],#main input:not([type]),#main input[type=search]'); if (i) i.focus() });
+const typingIn = await pg.evaluate(() => document.activeElement && document.activeElement.tagName);
+await pg.keyboard.press('Home'); await wait(300);
+const stayed = await pg.evaluate(() => window.eval('S').view);
+await pg.keyboard.down('Control'); await pg.keyboard.press('Home'); await pg.keyboard.up('Control'); await wait(500);
+ok(typingIn !== 'INPUT' || stayed === 'customers', 'typing in a box, Home stays in the box', typingIn + ' / ' + stayed);
+ok(await pg.evaluate(() => window.eval('S').view) === 'home', 'Ctrl+Home goes to Home even while typing');
+// opening the system again, after leaving it on another page: Home
+await pg.evaluate(() => { window.eval('go')('stock'); window.eval('persist')(true) }); await wait(1500);
+await pg.reload({ waitUntil: 'networkidle2' }); await wait(3500);
+ok(await pg.evaluate(() => window.eval('S').view) === 'home', 'opening the system again lands on Home, not the page it was left on');
 ok(!pg.errs.length, 'no script errors', pg.errs.join(' | '));
 // a salesman
 const sp = await signIn('Sales1', 'Sales123', 1280, 720);

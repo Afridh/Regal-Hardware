@@ -368,6 +368,17 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .hm-lb{display:block;width:100%;max-width:190px;padding:9px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 0 rgba(0,0,0,.08),0 6px 14px -8px rgba(0,0,0,.35);font-weight:800;font-size:17px;color:#1b1f21;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hm-tile:hover .hm-lb{box-shadow:0 2px 0 #AE1E2B,0 10px 18px -8px rgba(0,0,0,.4)}
 .hm-ds{font-size:12.5px;line-height:1.35;color:var(--steel,#5a6e72);max-width:200px}
+/* pressed (see homeAfter): ripple, the icon jumps, the label flashes, the rest step back */
+.hm-tile{position:relative;overflow:hidden}
+.hm-wave{position:absolute;border-radius:50%;background:radial-gradient(circle,rgba(174,30,43,.28) 0%,rgba(174,30,43,.12) 45%,transparent 70%);transform:scale(0);animation:hmWave .55s cubic-bezier(.16,1,.3,1) forwards;pointer-events:none}
+@keyframes hmWave{to{transform:scale(1);opacity:0}}
+.hm-tile.go{background:rgba(174,30,43,.07);transform:scale(.95)}
+.hm-tile.go .hm-ic{color:#AE1E2B;animation:hmJump .42s cubic-bezier(.34,1.56,.64,1)}
+@keyframes hmJump{0%{transform:scale(1)}35%{transform:scale(.78) rotate(-8deg)}70%{transform:scale(1.18) rotate(4deg)}100%{transform:scale(1.06)}}
+.hm-tile.go .hm-plus{background:#AE1E2B;animation:hmSpin .42s cubic-bezier(.34,1.56,.64,1)}
+@keyframes hmSpin{to{transform:rotate(180deg) scale(1.15)}}
+.hm-tile.go .hm-lb{background:#AE1E2B;color:#fff;box-shadow:0 2px 0 #7E141D,0 10px 22px -8px rgba(174,30,43,.6);transition:background .12s,color .12s}
+.hm-grid.going .hm-tile:not(.go){opacity:.45;transform:scale(.97);transition:opacity .25s,transform .3s}
 @media (prefers-reduced-motion:reduce){.hm-tile{animation:none;transition:none}}
 /* the on-account panel: a sheet down the right of the till, the bill still in view */
 .modal.cp-modal{justify-content:flex-end;align-items:stretch;padding:0;background:rgba(16,22,20,.32)}
@@ -13586,7 +13597,7 @@ const $=(s)=>document.querySelector(s);
    is in one place only, under the heading anybody would look for it under. (Who may open what is the
    role's sections — SECTIONS below — and does not depend on these headings.) */
 const views=[
- ['grp','Home'],['home','Home'],['startup','Getting started'],['dashboard','Dashboard','F2'],['actions','Action centre'],['updates','What is new'],
+ ['grp','Home'],['home','Home','Home key'],['startup','Getting started'],['dashboard','Dashboard','F2'],['actions','Action centre'],['updates','What is new'],
  ['grp','Sales'],['pos','POS billing','F3'],['bills','Bills'],['returns','Returns'],['docs','Quotes & delivery notes'],['collect','Goods to collect'],['dlv','Deliveries'],['hire','Tool hire'],
  ['grp','Customers'],['customers','Customers','F8'],['receipts','Take a payment','F7'],['dues','Credit follow-up'],['plans','Easy payments'],['trades','Tradesmen'],['tenders','Quotations & tenders'],['jobs','Repairs & warranty'],['feedback','Customer feedback'],
  ['grp','Suppliers & buying'],['suppliers','Suppliers','F12'],['orders','Supplier orders'],['purchases','Purchases'],['payreqs','Supplier payments'],['purchasing','Purchasing & cash plan'],['damages','Damage returns'],['supstock','Who is reading the stock'],
@@ -13629,12 +13640,17 @@ function shortcutsModal(){
    <div class="grid2" style="align-items:start;gap:14px">
     <div><table class="tbl">${mine.map(x=>row('Alt+'+x[0],x[2])).join('')}</table></div>
     <div><table class="tbl">${mine.filter(x=>x[3]).map(x=>row('Alt+Shift+'+x[0],x[4])).join('')}
-     ${row('Ctrl+K','Calculator (on the till)')}${row('F2','Dashboard')}${row('F3','POS billing (on the till: who sold it)')}${row('F7','Take a payment')}${row('F8','Customers')}${row('F9','Attendance & pay')}${row('F11','Barcode labels')}${row('F12','Suppliers')}${row('/','Search')}${row('Ctrl+/','This list')}</table>
+     ${row('Home','Home page (Ctrl+Home while typing)')}${row('Ctrl+K','Calculator (on the till)')}${row('F2','Dashboard')}${row('F3','POS billing (on the till: who sold it)')}${row('F7','Take a payment')}${row('F8','Customers')}${row('F9','Attendance & pay')}${row('F11','Barcode labels')}${row('F12','Suppliers')}${row('/','Search')}${row('Ctrl+/','This list')}</table>
      <div class="muted" style="margin-top:8px">On a customer or supplier: <b>F7</b> take/pay money, <b>F6</b> new bill/purchase, <b>Ctrl+N</b> add, <b>Ctrl+E</b> edit.</div></div>
    </div><div style="text-align:right;margin-top:10px"><button class="btn tape" data-act="closeModal">Close <i class="kbd">Esc</i></button></div>`);
 }
 window.addEventListener('keydown',e=>{
   if(!S.user||!S.user.name||document.querySelector('.lock')) return;
+  // Home: back to the Home page from anywhere — the Home key, or Ctrl+Home while typing in a box (8 Nov 2026)
+  if(e.key==='Home'&&!e.altKey&&!e.shiftKey&&!document.querySelector('.modal')){
+    const t=e.target, typing=t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable);
+    if(e.ctrlKey||!typing){ e.preventDefault(); e.stopPropagation(); if(S.view!=='home') go('home'); return }
+  }
   if((e.ctrlKey||e.metaKey)&&!e.altKey&&(e.key==='/'||e.code==='Slash')){ e.preventDefault(); e.stopPropagation(); if(!document.querySelector('.modal')) shortcutsModal(); return }
   if(e.key==='F1'&&!e.ctrlKey&&!e.altKey&&!['pos','labels'].includes(S.view)&&!document.querySelector('.modal')){ e.preventDefault(); e.stopPropagation(); shortcutsModal(); return }
   if(!e.altKey||e.ctrlKey||e.metaKey||document.querySelector('.modal')) return;   // Ctrl+Alt is AltGr: a letter being typed
@@ -17360,7 +17376,18 @@ function homePage(){
 }
 function homeAfter(){
   const tiles=[...document.querySelectorAll('.hm-tile')];
-  tiles.forEach(b=>{ b.onclick=()=>{ const t=HOME_TILES[+b.dataset.home]; if(t) t[3]() } });
+  /* pressed: a ripple from where it was touched, the icon jumps, the label flashes red and the others step back —
+     then the page opens (a quarter of a second; at once for anyone whose screen asks for less motion) */
+  let going=false;
+  tiles.forEach(b=>{ b.onclick=(e)=>{
+    const t=HOME_TILES[+b.dataset.home]; if(!t||going) return;
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches) return t[3]();
+    going=true;
+    const r=b.getBoundingClientRect(), d=Math.max(r.width,r.height)*2.2, x=(e&&e.clientX?e.clientX:r.left+r.width/2)-r.left, y=(e&&e.clientY?e.clientY:r.top+r.height/2)-r.top;
+    const w=document.createElement('i'); w.className='hm-wave'; w.style.cssText=`width:${d}px;height:${d}px;left:${x-d/2}px;top:${y-d/2}px`; b.appendChild(w);
+    b.classList.add('go'); const g=document.querySelector('.hm-grid'); if(g) g.classList.add('going');
+    setTimeout(()=>{ going=false; t[3]() },300);
+  } });
   const grid=document.querySelector('.hm-grid'); if(!grid) return;
   grid.onkeydown=e=>{
     const i=tiles.indexOf(document.activeElement); if(i<0) return;
@@ -35742,8 +35769,9 @@ const backAtTheTill=(name)=>{
   tillHandover(prevTill);
   applyLayout();
   // the view you left off on comes back with you — unless there is an update log you have not read
-  if(!allowed(S.view)) S.view = landingView();
-  else if(updatesUnseen()) S.view = 'updates';
+  // opening the system: everybody lands on their start page — Home unless they chose another (8 Nov 2026, the owner);
+  // a bill left on the till is still there when they go to the till
+  S.view = landingView();
   render();
   drawPhone();
   try{ tenderReminders() }catch(e){}
