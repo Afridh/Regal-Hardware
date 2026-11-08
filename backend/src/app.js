@@ -100,7 +100,9 @@ const appDir = path.resolve(here, '../../frontend');
 if (!process.env.VERCEL && fs.existsSync(appDir)) {
   // the pages and scripts change often: never let a browser show a stale copy
   const fresh = (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); };
-  app.get('/', fresh, (_req, res) => res.sendFile(path.join(appDir, 'shop.html')));
+  // the front page is the new design (8 Nov 2026); the page it replaced stays at /classic
+  app.get('/', fresh, (_req, res) => res.sendFile(path.join(appDir, 'store.html')));
+  app.get(['/classic', '/classic/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'shop.html')));
   app.get(['/pos', '/pos/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'index.html')));
   app.get(['/shift', '/shift/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'shift.html')));
   app.get(/^\/count(\d{0,2})\/?$/i, fresh, (_req, res) => res.sendFile(path.join(appDir, 'display.html')));   // a tablet facing the customer

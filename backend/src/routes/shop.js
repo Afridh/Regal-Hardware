@@ -441,6 +441,10 @@ function promoOn(data, code, goods, used = 0) {
   return { off, code: String(p.code).toUpperCase(), kind: p.kind, value: +p.value || 0 };
 }
 
+/* The price of a line, with the quantity breaks the catalogue shows (10 or more at a lower price): the page has always
+   shown them, and the order now charges them too, so the total on the screen is the total on the order (8 Nov 2026). */
+const linePrice = (p, qty) => { let pr = +p.price || 0; for (const t of (p.tiers || [])) if (qty >= +t.min && +t.price > 0 && +t.price < pr) pr = +t.price; return pr; };
+
 /** What a basket comes to: the goods, the delivery for the zone chosen, and any code. */
 r.post('/quote', optionalAuth, asyncHandler(async (req, res) => {
   const data = await books();
@@ -450,7 +454,7 @@ r.post('/quote', optionalAuth, asyncHandler(async (req, res) => {
   let goods = 0;
   for (const l of (req.body?.lines || [])) {
     const p = byId.get(+l.pid), qty = +l.qty;
-    if (p && qty > 0) goods += qty * p.price;
+    if (p && qty > 0) goods += qty * linePrice(p, qty);
   }
   goods = round2(goods);
   const deliver = !!req.body?.deliver;
@@ -476,7 +480,7 @@ r.post('/order', shopAuth, asyncHandler(async (req, res) => {
   for (const l of (req.body?.lines || [])) {
     const p = byId.get(+l.pid); const qty = +l.qty;
     if (!p || !(qty > 0)) continue;
-    lines.push({ pid: p.id, qty, price: p.price, name: p.name, unit: p.unit });
+    lines.push({ pid: p.id, qty, price: linePrice(p, qty), name: p.name, unit: p.unit });
   }
   if (!lines.length) throw new HttpError(400, 'The basket is empty');
   const goods = round2(lines.reduce((a, l) => a + l.qty * l.price, 0));
