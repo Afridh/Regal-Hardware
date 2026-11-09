@@ -71,24 +71,27 @@ for (const [label, change] of [['the bill changed after the lost answer', true],
   if (change) ok(end.note === 'checked after the lost answer', `${label}: the change made after it is kept`, end.note);
 }
 
-// a bill already in twice from before the fix (20207): the owner's button on the Bills page takes the extra copy out
+// a save with a bill in it twice (a PC still on the old page, or 20207 already in the books): the server keeps it
+// once, with its outstanding and stock as they should be, and the till takes the mended books back
 {
   const no = await sell(); await wait(3000);
   const was = await pg.evaluate(no => { const S = window.eval('S'), s = S.sales.find(x => x.no === no), cid = s.customerId;
     const bal = window.eval('partyBal')('C', cid), pid = s.lines[0].pid, stock = window.eval('P')(pid).stock;
     // as the fault left it: the bill, its entries and its stock moves all in twice
     S.sales.push(JSON.parse(JSON.stringify(s)));
-    S.journal.filter(j => String(j.ref) === no).forEach(j => S.journal.push({ ...j }));
+    S.journal.filter(j => String(j.ref) === no).forEach(j => S.journal.push(JSON.parse(JSON.stringify(j))));
     S.movements.filter(m => String(m.ref) === no).forEach(m => { S.movements.push({ ...m }); const p = window.eval('P')(m.pid); p.stock = +(p.stock + m.qty).toFixed(3) });
-    window.eval('go')('bills');
-    return { cid, bal, pid, stock, dblBal: window.eval('partyBal')('C', cid) } }, no);
-  await wait(800);
-  const btn = await pg.$('[data-act="fixDouble"]');
-  ok(!!btn && was.dblBal > was.bal, 'a bill in twice: the Bills page shows the fix button', JSON.stringify(was));
-  if (btn) { await btn.click(); await wait(1200) }
-  const after = await pg.evaluate((no, was) => { const S = window.eval('S');
-    return { bills: S.sales.filter(x => x.no === no).length, bal: window.eval('partyBal')('C', was.cid), stock: window.eval('P')(was.pid).stock, btn: !!document.querySelector('[data-act="fixDouble"]') } }, no, was);
-  ok(after.bills === 1 && Math.abs(after.bal - was.bal) < 0.01 && Math.abs(after.stock - was.stock) < 0.001 && !after.btn, 'fixed: the bill once, the outstanding and the stock as they should be', JSON.stringify({ was, after }));
+    const dblBal = window.eval('partyBal')('C', cid); window.persist(true);
+    return { cid, bal, pid, stock, dblBal } }, no);
+  await wait(2500);
+  const srv = await server(), t = tally(srv, no);
+  ok(was.dblBal > was.bal && t.bills === 1,
+    'the server keeps the bill once', JSON.stringify({ was, server: t }));
+  ok(srv.data.S.products.find(p => p.id === was.pid).stock === was.stock, 'the server puts the stock back as it was', srv.data.S.products.find(p => p.id === was.pid).stock + ' / ' + was.stock);
+  let here = null;
+  for (let i = 0; i < 40; i++) { await wait(1000); here = await pg.evaluate((no, was) => ({ bills: window.eval('S').sales.filter(x => x.no === no).length, bal: window.eval('partyBal')('C', was.cid), stock: window.eval('P')(was.pid).stock }), no, was); if (here.bills === 1) break }
+  ok(here.bills === 1 && Math.abs(here.bal - was.bal) < 0.01 && Math.abs(here.stock - was.stock) < 0.001, 'the till has the mended books: bill once, outstanding and stock right', JSON.stringify({ was, here }));
+  ok(/more than once/.test((srv.data.S.notif || [])[0]?.text || ''), 'the owner is told', (srv.data.S.notif || [])[0]?.text);
 }
 ok(!errs.length, 'no script errors', errs.join(' | '));
 await b.close();

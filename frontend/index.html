@@ -5753,10 +5753,10 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   /* goods back taken off the customer's account (rather than cash handed back): it comes off what they
      owe — the bill they came from first, then the oldest — and anything over what they owe is held as
      their credit for the next bill, as an overpayment is */
-  let acct=null;
+  let acct=null, owed0=0;
   if(total<-0.005&&toAccount){
     if(!customerId||customerId===1) throw new Error('Taking a return off an account needs the customer — or give the money back in cash');
-    const amt=+(-total).toFixed(2), owed=Math.max(0,partyBal('C',customerId)), onBills=+Math.min(amt,owed).toFixed(2);
+    const amt=+(-total).toFixed(2), owed=Math.max(0,partyBal('C',customerId)), onBills=+Math.min(amt,owed).toFixed(2); owed0=owed;
     acct={amt,onBills,adv:+(amt-onBills).toFixed(2)}; credit=0;
   }
   // the money has to add up BEFORE anything is written: it used to fail at the journal, after the bill and the stock were in, leaving half a bill for every press (5 Nov 2026)
@@ -5791,7 +5791,7 @@ function completeSale({lines,customerId,billDisc=0,pays,date=D(today),by=S.user.
   if(credit>0.005) jl.push({ac:'1100',dr:credit,party:{type:'C',id:customerId}});
   if(returnOf){ inv.returnOf=returnOf; const ob=S.sales.find(x=>x.no===returnOf); if(ob&&ob.trade){ inv.trade=ob.trade; inv.tradeRate=ob.tradeRate } }   // goods back off a tradesman's bill come off their commission too
   if(returnWhy) inv.returnWhy=returnWhy;
-  if(acct){ inv.toAccount=acct.amt;
+  if(acct){ inv.toAccount=acct.amt; inv.prevOut=+owed0.toFixed(2);
     if(acct.onBills>0.005) jl.push({ac:'1100',cr:acct.onBills,party:{type:'C',id:customerId}});
     if(acct.adv>0.005){ jl.push({ac:'2050',cr:acct.adv,party:{type:'C',id:customerId}}); const ca=C(customerId); ca.advance=+((ca.advance||0)+acct.adv).toFixed(2) } }
   if(usedCredit>0.005){ jl.push({ac:'2050',dr:usedCredit,party:{type:'C',id:customerId}}); inv.paid=+(paid+usedCredit).toFixed(2); inv.usedCredit=usedCredit;
@@ -23708,52 +23708,6 @@ let billQ='', billFrom='', billTo='', billType='all', billBy='all', billSel=null
    of the books and in the copies the server keeps (the last 500 saves). Found, it is shown — with the save
    that went without it — and put back with the stock movements and the journal entries it had, so the
    stock, the drawer and the customer's account are as they were when it was made. */
-/* 9 Nov 2026: a save whose answer was lost put bill 20207 in the books twice — the bill, its journal entries (so the
-   customer's outstanding counted it twice) and its stock moves (the stock came off twice). The fault is mended in
-   regal-bridge.js (landedFrom); this finds a bill that went in more than once that way and takes the extra copies
-   out. Only copies of one and the same bill: the same uid (or none on any), the same lines, the same total. A
-   bill's entries are taken back only when every one of them is there the same number of times over; otherwise the
-   entries are left alone and the owner is told to look at the account. */
-function doubleBills(){
-  const by=new Map();
-  for(const s of S.sales||[]){ if(!s||s.no==null) continue; const k=String(s.no); if(!by.has(k)) by.set(k,[]); by.get(k).push(s) }
-  const out=[];
-  for(const [no,list] of by){ if(list.length<2) continue;
-    const same=list.every(x=>String(x.uid||'')===String(list[0].uid||'')&&JSON.stringify(x.lines)===JSON.stringify(list[0].lines)&&+x.total===+list[0].total);
-    if(same) out.push({no,n:list.length,list}) }
-  return out;
-}
-function fixDoubleBills(){
-  const done=[], look=[];
-  for(const {no,n,list} of doubleBills()){
-    // the copy kept: the one with the most done to it (payments, notes), so nothing done to the bill is lost
-    const keep=list.slice().sort((a,b)=>((b.pays||[]).length-(a.pays||[]).length)||(JSON.stringify(b).length-JSON.stringify(a).length))[0];
-    S.sales=S.sales.filter(x=>String(x.no)!==no||x===keep);
-    const thin=(arr,onOut)=>{                      // each entry of this bill kept once for every n copies of it
-      const mine=arr.filter(x=>String(x&&x.ref)===no), c=new Map();
-      mine.forEach(x=>{const t=JSON.stringify(x);c.set(t,(c.get(t)||0)+1)});
-      if(![...c.values()].every(k=>k%n===0)) return null;
-      const left=new Map([...c].map(([t,k])=>[t,k/n]));
-      return arr.filter(x=>{ if(String(x&&x.ref)!==no) return true; const t=JSON.stringify(x); if(left.get(t)>0){ left.set(t,left.get(t)-1); return true } onOut&&onOut(x); return false });
-    };
-    const J=thin(S.journal||[]); if(J) S.journal=J; else look.push(no);
-    const M=thin(S.movements||[],m=>{const p=P(m.pid); if(p&&p.id!==OPEN_PID) p.stock=+((+p.stock||0)-(+m.qty||0)).toFixed(3)});
-    if(M) S.movements=M; else look.push(no+' (stock)');
-    done.push(no);
-  }
-  return {done,look};
-}
-function fixDoubleBillsAsk(){
-  const d=doubleBills(); if(!d.length){ toast('No bill is in the books twice','ok'); return }
-  const names=d.map(x=>`${x.no} (${x.n}×, ${C(x.list[0].customerId).name}, ${money2(x.list[0].total)})`).join('\n');
-  if(!confirm(`These bills went into the books more than once, by a save fault (now mended):
-
-${names}
-
-Take out the extra copies? Each bill is kept once, with its amount owed and its stock counted once.`)) return;
-  const r=fixDoubleBills(); persist(true); render();
-  toast(`Mended: ${r.done.join(', ')} — each in the books once now${r.look.length?`. Please check the account for ${r.look.join(', ')}`:''}`,r.look.length?'warn':'ok');
-}
 async function findBillLocal(no){
   try{ const raw=await new Promise(res=>{ const r=indexedDB.open('regal-offline',1); r.onsuccess=()=>{ try{ const q=r.result.transaction('kv','readonly').objectStore('kv').get('regal:books'); q.onsuccess=()=>res(q.result); q.onerror=()=>res(null) }catch(e){ res(null) } }; r.onerror=()=>res(null) });
     if(!raw) return null; const d=JSON.parse(raw), L=(d&&d.S)||{};
@@ -23931,7 +23885,7 @@ function bills(){
   const filtered=billQ||billFrom||billTo||billType!=='all'||billBy!=='all'||billCust;
   const dayIs=(n)=>billFrom===(n===1?ago(1):ago(n))&&billTo===(n===1?ago(1):D(today));
   return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><span>Bills <span class="muted" style="font-size:13px;font-weight:400;margin-left:6px">${salesReal().length} on the system</span></span>
-    <span style="display:flex;gap:6px">${payBoss()&&doubleBills().length?`<button class="btn" data-act="fixDouble" style="background:var(--chip-rust);color:#fff" title="A save fault put these bills in the books more than once">Bill ${doubleBills().map(x=>x.no).join(', ')} is in twice — fix it</button>`:''}${payBoss()?'<button class="btn ghost" data-act="findBill" title="A bill that printed but is not in this list">Find a missing bill</button>':''}<button class="btn tape" data-view="pos">New bill <i class="kbd">F3</i></button></span></h1>
+    <span style="display:flex;gap:6px">${payBoss()?'<button class="btn ghost" data-act="findBill" title="A bill that printed but is not in this list">Find a missing bill</button>':''}<button class="btn tape" data-view="pos">New bill <i class="kbd">F3</i></button></span></h1>
   <div class="bl-wrap">
    <div class="card bl-list">
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -26762,7 +26716,12 @@ function billHtml(inv,f='a5'){
   inv=billAsSold(inv);
   // a credit bill stays a credit bill when it is printed again after it has been paid (3 Nov 2026)
   const c=C(inv.customerId)||C(1), credit=inv.balance>0||(inv.type==='CREDIT'&&+inv.total>0), walk=c.id===1;
-  const prev=walk?0:inv.prevOut!=null?+inv.prevOut:Math.max(0,partyBal('C',c.id)-inv.balanceNow);
+  /* 9 Nov 2026: return 10236 (goods back off a credit customer's account) printed "CHANGE RS. 5,090.80" as if cash
+     went back, and its outstanding after the return as the previous balance, so nothing seemed to come off. Now it
+     prints what came off the account, the outstanding before, and the outstanding after. */
+  const back=+inv.toAccount>0.005&&!walk?(()=>{ const amt=+inv.toAccount, off=+(inv.appliedTo||[]).reduce((a,x)=>a+(+x.amount||0),0).toFixed(2); return {amt,off,held:+Math.max(0,amt-off).toFixed(2)} })():null;
+  const prev=walk?0:inv.prevOut!=null?+inv.prevOut:back?+(Math.max(0,partyBal('C',c.id)-inv.balanceNow)+back.off).toFixed(2):Math.max(0,partyBal('C',c.id)-inv.balanceNow);
+  const after=back?+Math.max(0,prev-back.off).toFixed(2):prev+(+inv.balance||0);
   const qty=inv.lines.reduce((a,l)=>a+l.qty,0);
   // as the old till showed it: the gross is at the maker's price (MRP), the discount is everything below that
   const gross=inv.lines.reduce((a,l)=>{const p=P(l.pid)||{}; const mrp=Math.max(+l.mrp||0,+p.mrp||0,l.price); return a+l.qty*mrp},0);
@@ -26813,7 +26772,9 @@ function billHtml(inv,f='a5'){
      <div class="sb-stars">${'*'.repeat(46)}</div>
      <div class="sb-net"><span>Invoice Total Rs.</span><i>:</i><b>${money2(inv.total)}</b></div>
      <div class="sb-stars">${'*'.repeat(46)}</div>${vatOn()?`<div class="sb-tot"><span>Incl. VAT ${+CFG.tax.rate}% Rs.</span><i>:</i><b>${money2(vatIn(inv.total))}</b></div><div class="sb-tot"><span>VAT Reg No</span><i>:</i><b>${escM(CFG.shop.vat)}</b></div>${!walk&&c.tin?`<div class="sb-tot"><span>Customer VAT No</span><i>:</i><b>${escM(c.tin)}</b></div>`:''}`:''}`,
-    paid:credit?`<div class="sb-tot"><span>Credit Rs.</span><i>:</i><b>${money2(inv.balance)}</b></div>${inv.paid>0?`<div class="sb-tot"><span>Paid Rs.</span><i>:</i><b>${money2(inv.paid)}</b></div>`:''}
+    paid:back?`<div class="sb-tot bold"><span>Taken off the account Rs.</span><i>:</i><b>${money2(back.amt)}</b></div>${back.held>0.005?`<div class="sb-tot"><span>Kept as their credit Rs.</span><i>:</i><b>${money2(back.held)}</b></div>`:''}
+      ${CFG.bill.showOutstanding!==false?`<div class="sb-tot"><span>Previous Outstanding</span><i>:</i><b>${money2(prev)}</b></div><div class="sb-tot"><span>Total Outstanding Rs.</span><i>:</i><b>${money2(after)}</b></div>`:''}`
+     :credit?`<div class="sb-tot"><span>Credit Rs.</span><i>:</i><b>${money2(inv.balance)}</b></div>${inv.paid>0?`<div class="sb-tot"><span>Paid Rs.</span><i>:</i><b>${money2(inv.paid)}</b></div>`:''}
       ${!walk&&CFG.bill.showOutstanding!==false?`<div class="sb-tot"><span>Previous Outstanding</span><i>:</i><b>${money2(prev)}</b></div><div class="sb-tot"><span>Total Outstanding Rs.</span><i>:</i><b>${money2(prev+inv.balance)}</b></div>`:''}
       ${inv.reprint&&Math.abs(inv.balanceNow-inv.balance)>0.005?`<div class="sb-tot bold"><span>Outstanding on this bill</span><i>:</i><b>${money2(inv.balanceNow)}</b></div>`:''}`
      :`<div class="sb-tot"><span>${payWord} Payment Rs.</span><i>:</i><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div class="sb-tot"><span>Change Rs.</span><i>:</i><b>${money2(inv.paid-inv.total)}</b></div>`:''}`,
@@ -26830,7 +26791,7 @@ function billHtml(inv,f='a5'){
   </div>`;
   }
   // ---------- A5 landscape: the large invoice ----------
-  if(a5Style()==='sepos') return billSepos(inv,{c,walk,credit,prev,gross,disc,copy,phones,scA5,payWord,dk:inv.docKind&&DOCK[inv.docKind]});
+  if(a5Style()==='sepos') return billSepos(inv,{c,walk,credit,prev,back,after,gross,disc,copy,phones,scA5,payWord,dk:inv.docKind&&DOCK[inv.docKind]});
   /* Laid out like a printed tax invoice: a header band with the shop, a row of boxes (the invoice,
      who it is for, the details, the account), a dark-headed item table, then remarks, the
      subtotal and the total, terms and signatures. Every value comes from the bill; a box whose
@@ -26872,9 +26833,9 @@ function billHtml(inv,f='a5'){
   const laterH=billAllLater(inv)?`<div class="x-box x-rem"><div class="x-bh">GOODS TO BE ISSUED IN PARTS</div><div class="x-bb">Each part comes with a delivery note to sign.</div></div>`:(inv.lines||[]).some(l=>+l.later>0)?`<div class="x-box x-rem"><div class="x-bh">GOODS NOT ISSUED — TO COLLECT LATER</div><div class="x-bb">${inv.lines.filter(l=>+l.later>0).map(l=>`${esc5(lineName(l).toUpperCase())} — ${fq(+l.later)}`).join('<br>')}<br><i>Bring this bill to collect them.</i></div></div>`:'';
   const remH=billDlvNote(inv,true)+laterH+(inv.note?`<div class="x-box x-rem"><div class="x-bh">REMARKS</div><div class="x-bb">${esc5(inv.note)}</div></div>`:'');
   const subH=`<div class="x-box x-sub"><div class="x-bh">SUB TOTAL</div><div class="x-bb"><div><span>Lines</span><b>${inv.lines.length}</b></div><div><span>Quantity</span><b>${fq(qtyAll)}</b></div><div><span>Gross value</span><b>${money2(gross)}</b></div>${disc>0.005?`<div><span>Discount</span><b>− ${money2(disc)}</b></div>`:''}<div class="net"><span>Net</span><b>${money2(inv.total)}</b></div>${vatOn()?`<div><span>Value excl. VAT</span><b>${money2(inv.total-vatIn(inv.total))}</b></div><div><span>VAT ${+CFG.tax.rate}%</span><b>${money2(vatIn(inv.total))}</b></div>`:''}</div></div>`;
-  const paidH=dk?`<div><span>Quoted on</span><b>${esc5(inv.date||'')}</b></div><div><span>Holds good for</span><b>${inv.valid||CFG.bill.quoteDays||14} days</b></div>`:credit?`<div><span>Paid now</span><b>${money2(inv.paid)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div>`
+  const paidH=back?`<div><span>Taken off the account</span><b>${money2(back.amt)}</b></div>${back.held>0.005?`<div><span>Kept as their credit</span><b>${money2(back.held)}</b></div>`:''}`:dk?`<div><span>Quoted on</span><b>${esc5(inv.date||'')}</b></div><div><span>Holds good for</span><b>${inv.valid||CFG.bill.quoteDays||14} days</b></div>`:credit?`<div><span>Paid now</span><b>${money2(inv.paid)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div>`
     :`<div><span>${esc5(payWord)} received</span><b>${money2(inv.paid)}</b></div>${inv.paid>inv.total+0.005?`<div><span>Change</span><b>${money2(inv.paid-inv.total)}</b></div>`:''}`;
-  const osH=(!walk&&!dk&&on('outstanding')&&(credit||prev>0.005))?`<div class="x-box x-osb"><div class="x-bh">ACCOUNT OUTSTANDING</div><div class="x-bb"><div><span>Previous outstanding</span><b>${money2(prev)}</b></div><div><span>This bill on credit</span><b>${money2(inv.balance)}</b></div><div class="tot"><span>TOTAL OUTSTANDING</span><b>${money2(prev+inv.balance)}</b></div></div></div>`:'';
+  const osH=(!walk&&!dk&&on('outstanding')&&(credit||back||prev>0.005))?`<div class="x-box x-osb"><div class="x-bh">ACCOUNT OUTSTANDING</div><div class="x-bb"><div><span>Previous outstanding</span><b>${money2(prev)}</b></div><div><span>${back?'Taken off by this return':'This bill on credit'}</span><b>${back?'− '+money2(back.off):money2(inv.balance)}</b></div><div class="tot"><span>TOTAL OUTSTANDING</span><b>${money2(after)}</b></div></div></div>`:'';
   const vatH=vatOn()&&!dk?`<div><span>Value excl. VAT</span><b>${money2(inv.total-vatIn(inv.total))}</b></div><div><span>VAT ${+CFG.tax.rate}%</span><b>${money2(vatIn(inv.total))}</b></div>`:'';
   const totH=`<div class="x-tot"><div class="x-paid">${paidH}${vatH}</div><div class="x-grand"><span>${dk?dk.label.toUpperCase()+' TOTAL':'INVOICE TOTAL'}</span><b><small>LKR</small> ${money2(inv.total)}</b></div></div>`;
   const termsH=dk?`<div class="x-terms"><b>Note:</b> This is a quotation, not a bill. Prices hold for ${inv.valid||CFG.bill.quoteDays||14} days and depend on stock at the time of order.</div>`:`<div class="x-terms">${(on('note')&&B.footer)?`<b>Terms:</b> ${esc5(B.footer.replace('{days}',B.returnDays))}`:''}</div>`;
@@ -26896,7 +26857,7 @@ function billHtml(inv,f='a5'){
    Gross Total at the MRP, the invoice discount, Net Total, Amount Paid and the change. A credit bill adds
    what is on credit and the account's total outstanding to that box. */
 function billSepos(inv,o){
-  const B=CFG.bill, SH=CFG.shop, {c,walk,credit,prev,gross,disc,copy,phones,scA5}=o;
+  const B=CFG.bill, SH=CFG.shop, {c,walk,credit,prev,back,after,gross,disc,copy,phones,scA5}=o;
   const e=(v)=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const showCode=B.showCode!==false, showUom=B.showUom!==false, showMrp=B.showMrp!==false||!!inv.docKind;
   const dk=inv.docKind&&DOCK[inv.docKind];
@@ -26913,8 +26874,8 @@ function billSepos(inv,o){
     return `<tr><td class="i">${i+1})</td>${showCode?`<td class="cd">${e(p.num||p.code||'')}</td>`:''}<td class="d">${e(lineName(l).toUpperCase())}${extra?` <i>${e(extra)}</i>`:''}</td><td class="n">${q.toFixed(q%1?3:2)}</td>${showUom?`<td class="u">${e(p.unit&&p.unit!=='pcs'?p.unit.toUpperCase():'')}</td>`:''}${showMrp?`<td class="n">${mrp>0?money2(Math.max(mrp,unit)):''}</td>`:''}<td class="n">${money2(unit)}</td><td class="n">${money2(net)}</td></tr>` }).join('');
   const cash=inv.paid||0, change=Math.max(0,cash-inv.total);
   const tot=[['Gross Total',money2(gross)],[' - Inv.Discount',money2(disc)],['Net Total',money2(inv.total),'net'],
-    ...(dk?[]:[['Amount Paid',money2(credit?inv.paid:cash)],...(credit?[['On Credit',money2(inv.balance)]]:[['CHANGE RS.',money2(change)]])]),
-    ...(!dk&&!walk&&a5On('outstanding')&&(credit||prev>0.005)?[['Previous Balance',money2(prev)],['Total Outstanding',money2(prev+(+inv.balance||0)),'net']]:[])];
+    ...(dk?[]:back?[['Taken off account',money2(back.amt)],...(back.held>0.005?[['Kept as credit',money2(back.held)]]:[])]:[['Amount Paid',money2(credit?inv.paid:cash)],...(credit?[['On Credit',money2(inv.balance)]]:[['CHANGE RS.',money2(change)]])]),
+    ...(!dk&&!walk&&a5On('outstanding')&&(credit||back||prev>0.005)?[['Previous Balance',money2(prev)],['Total Outstanding',money2(after),'net']]:[])];
   const terms=dk?`This is a quotation, not a bill — prices hold for ${inv.valid||B.quoteDays||14} days`
     :(B.seposLine||`Only Return will be taken within ${B.returnDays||7} days with <b>ONLY THE INVOICE</b>`);
   return `<div class="print a5 sp" data-scale="${scA5}" style="zoom:${scA5};width:calc(100% / ${scA5});min-height:calc(136mm / ${scA5})">
@@ -35551,7 +35512,6 @@ document.addEventListener('click',e=>{
     billAmend:()=>{closeModals();editSaleModal(a.dataset.no)},
     purEdit:()=>editPurchaseModal(a.dataset.no),
     findBill:()=>findBillModal(),
-    fixDouble:()=>fixDoubleBillsAsk(),
     billClear:()=>{billQ='';billFrom='';billTo='';billType='all';billBy='all';billCust=0;billSel=null;billLimit=150;render()},
     cuLoginNew:()=>custLoginModal(+a.dataset.id,a.dataset.kind||'C'),
     cuLoginAuto:()=>{ const kind=a.dataset.kind||'C', id=+a.dataset.id;

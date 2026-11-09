@@ -814,6 +814,54 @@ export function keepBills(next, cur, by) {
   return out;
 }
 
+/* 9 Nov 2026: bill 20207 went into the books twice — the bill, its journal entries (so the customer's outstanding
+   counted it twice) and its stock moves — when a till's save went in but its answer was lost, and the till's next
+   save added it again. The till no longer does that (regal-bridge.js, landedFrom), but a PC still on the old page
+   could, so no save is written with one bill in it more than once: copies of one and the same bill (the same
+   number, the same uid or none, the same lines, the same total) are taken back to one, and the entries the extra
+   copies brought with them go too — only when every entry of that bill is there the same number of times over,
+   so nothing that belongs to it is taken. The owner is told. */
+export function dropDoubleBills(next, by) {
+  const S = next?.S;
+  if (!S || !Array.isArray(S.sales)) return [];
+  const groups = new Map();
+  for (const x of S.sales) { if (!x || x.no == null) continue; const k = String(x.no); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); }
+  const done = [], odd = [];
+  for (const [no, list] of groups) {
+    if (list.length < 2) continue;
+    const one = list[0];
+    if (!list.every(x => String(x.uid || '') === String(one.uid || '') && JSON.stringify(x.lines) === JSON.stringify(one.lines) && Number(x.total) === Number(one.total))) continue;
+    const n = list.length;
+    const keep = list.slice().sort((a, b) => ((b.pays || []).length - (a.pays || []).length) || (JSON.stringify(b).length - JSON.stringify(a).length))[0];
+    const thin = (arr, onOut) => {
+      if (!Array.isArray(arr)) return arr;
+      const c = new Map();
+      for (const x of arr) if (String(x?.ref) === no) { const t = JSON.stringify(x); c.set(t, (c.get(t) || 0) + 1); }
+      if (![...c.values()].every(k => k % n === 0)) return null;
+      const left = new Map([...c].map(([t, k]) => [t, k / n]));
+      return arr.filter(x => { if (String(x?.ref) !== no) return true; const t = JSON.stringify(x); if (left.get(t) > 0) { left.set(t, left.get(t) - 1); return true; } onOut && onOut(x); return false; });
+    };
+    // a bill whose entries are not all there n times over is left as it is, for the owner to look at
+    const fixStock = [], J = thin(S.journal), M = thin(S.movements, m => fixStock.push(m));
+    if (J === null || M === null) { odd.push(no); continue; }
+    S.sales = S.sales.filter(x => !x || String(x.no) !== no || x === keep);
+    S.journal = J; S.movements = M;
+    fixStock.forEach(m => { const p = (S.products || []).find(y => y.id === m.pid); if (p) p.stock = +((+p.stock || 0) - (+m.qty || 0)).toFixed(3); });
+    done.push(no);
+  }
+  if (odd.length) {
+    S.notif = Array.isArray(S.notif) ? S.notif : [];
+    if (!S.notif.some(x => x && x.oddDouble === odd.join(','))) S.notif.unshift({ id: 'ndo' + Date.now(), kind: 'warn', oddDouble: odd.join(','), text: `Bill ${odd.join(', ')} is in the books more than once and its entries do not match up — please look at it on the Bills page (fix button).`, view: 'bills', at: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: process.env.SHOP_TZ || 'Asia/Colombo' }), read: false, forApprovers: true });
+  }
+  if (done.length) {
+    const at = new Date();
+    S.notif = Array.isArray(S.notif) ? S.notif : [];
+    S.notif.unshift({ id: 'ndb' + at.getTime(), kind: 'warn', text: `A save by ${by} had bill${done.length > 1 ? 's' : ''} ${done.join(', ')} in it more than once. Each is kept once, with its amount owed and its stock counted once.`,
+      view: 'bills', at: at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: process.env.SHOP_TZ || 'Asia/Colombo' }), read: false, forApprovers: true });
+  }
+  return done;
+}
+
 /* Quotations, delivery notes and expenses, as keepBills does for bills (8 Nov 2026: a till's save left out five
    quotations and an expense it had made while it could not reach the server). One the till deleted on purpose
    is listed in S.gone, and stays out. An expense comes back with its journal entry; a delivery note with its
@@ -902,6 +950,8 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
       merged = mergeShiftDays(data, cur.data, Number(rev));
     }
     const keptBills = cur && !wipeOk ? keepBills(data, cur.data, req.regalUser.name).concat(keepDocs(data, cur.data, req.regalUser.name)) : [];
+    const doubles = dropDoubleBills(data, req.regalUser.name);
+    if (doubles.length) { console.error(`[books guard] a save by ${req.regalUser.name} had bills ${doubles.join(', ')} more than once: one each kept`); keptBills.push(...doubles); }   // the till takes the books back on its next poll
     if (keptBills.length) console.error(`[books guard] a save by ${req.regalUser.name} came without bills ${keptBills.join(', ')}: kept (rev ${curRev}, it said rev ${rev})`);
     const next = curRev + 1;
     data._fullRev = next;
