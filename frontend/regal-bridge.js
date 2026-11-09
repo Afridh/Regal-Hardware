@@ -87,7 +87,27 @@
     // the document as saved: shared books only, no per-till state
     var d = JSON.parse(JSON.stringify(data));
     if (d && d.S) LOCAL_KEYS.forEach(function (k) { delete d.S[k]; });
+    if (d) delete d._sent;
     return d;
+  }
+  /* 9 Nov 2026: bill 20207 was in the books twice, its outstanding and stock counted twice. A save had reached the
+     server, but its answer did not come back (the host restarts the app every few minutes: "503", or a dropped line).
+     The till took it as not saved, and its next save, meeting the newer books, put them together with its own from
+     the old starting point: the bill, new on both sides, went in twice, with its journal entries and stock moves.
+     Now every save carries a tag of its own and this PC's id; the server notes the last tag it wrote from each PC.
+     A save whose answer was lost is kept here (unacked); when the books come back with its tag on them, that save
+     went in, and what it sent is the starting point for putting the books together, not the older one. */
+  var TERM = (function () { try { var u = localStorage.getItem('regal_till_uid'); if (!u) { u = 'T' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); localStorage.setItem('regal_till_uid', u); } return u; } catch (e) { return 'T-' + Math.random().toString(36).slice(2, 10); } })();
+  var unacked = [];
+  function newSid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function lostAnswer(sid, doc) { unacked.push({ sid: sid, doc: doc }); if (unacked.length > 3) unacked.shift(); idb.put('unacked', unacked); }
+  function answered() { if (unacked.length) { unacked = []; idb.put('unacked', []); } }
+  // the books as this PC last sent them, if that save went in after all; otherwise null
+  function landedFrom(data) {
+    var tag = data && data._sent && data._sent[TERM];
+    if (!tag) return null;
+    for (var i = unacked.length - 1; i >= 0; i--) if (unacked[i].sid === tag) return unacked[i].doc;
+    return null;
   }
   /* ---------------- two tills saving at once ----------------
      base   the books as this till last had them from the server
@@ -359,9 +379,11 @@
       try {
         if ((await idb.get('unsynced')) === true) {
           var mineTxt = await idb.get('books'), was = await idb.get('base');
-          if (mineTxt && was && was.base) waiting = { mine: strip(JSON.parse(mineTxt)), base: was.base };
+          try { unacked = (await idb.get('unacked')) || []; } catch (e) { unacked = []; }
+          if (mineTxt && was && was.base) waiting = { mine: strip(JSON.parse(mineTxt)), base: landedFrom(d) || was.base };
         }
       } catch (e) { waiting = null; }
+      if (d) delete d._sent;
       base = JSON.parse(JSON.stringify(d)); keepBase();
       if (window.workingOffline) { window.workingOffline = false; }
       if (waiting) {
@@ -399,8 +421,11 @@
         var doc = strip(JSON.parse(txt));
         if (window._allowWipeOnce && Date.now() - window._allowWipeOnce < 120000) doc._allowWipe = window._allowWipeOnce;
         window._allowWipeOnce = 0;
-        var j = await call('PUT', '/books/' + KEY, { data: doc, rev: rev });
+        var sid = newSid();
+        var j = await call('PUT', '/books/' + KEY, { data: doc, rev: rev, sid: sid, term: TERM });
+        if (j.__status === 0 || j.__status >= 500) lostAnswer(sid, doc);
         if (j.__status === 200) {
+          answered();
           rev = j.rev; lastPushAt = Date.now(); lastSyncAt = Date.now(); base = doc; keepBase(); setUnsynced(false);
           // the server kept bills this save had lost (see keepBills there): one revision behind, so the next poll brings them back here
           if (j.keptBills && j.keptBills.length) { rev = j.rev - 1; lastPushAt = 0; }
@@ -413,12 +438,15 @@
         if (j.__status === 409 && base) {
           // another till saved first: put both tills' work together and save that (again, if yet another
           // till gets in between)
-          var b = base, mine = doc, theirs = strip(j.data), srvRev = j.rev;
+          var b = landedFrom(j.data) || base, mine = doc, theirs = strip(j.data), srvRev = j.rev;
           for (var tries = 0; tries < 4; tries++) {
             var merged = merge3(b, mine, theirs);
             merged.at = new Date().toISOString();
-            var r2 = await call('PUT', '/books/' + KEY, { data: merged, rev: srvRev });
+            var sid2 = newSid();
+            var r2 = await call('PUT', '/books/' + KEY, { data: merged, rev: srvRev, sid: sid2, term: TERM });
+            if (r2.__status === 0 || r2.__status >= 500) lostAnswer(sid2, merged);
             if (r2.__status === 200) {
+              answered();
               rev = r2.rev; base = merged; keepBase(); setUnsynced(false); lastPushAt = Date.now(); lastSyncAt = Date.now();
               if (r2.keptBills && r2.keptBills.length) { rev = r2.rev - 1; lastPushAt = 0; }   // as above: they come back on the next poll
               if (offlineSince) { offlineSince = 0; window.workingOffline = false; say('Back online — the work done on this PC is put together with the other tills\' and saved'); }
@@ -431,7 +459,7 @@
               return true;
             }
             if (r2.__status !== 409) { j = r2; break; }
-            b = theirs; mine = merged; theirs = strip(r2.data); srvRev = r2.rev;
+            b = landedFrom(r2.data) || theirs; mine = merged; theirs = strip(r2.data); srvRev = r2.rev;
           }
           if (j.__status === 409) {
             // the tills are very busy: this used to reload the books over this till's work and ask the cashier to

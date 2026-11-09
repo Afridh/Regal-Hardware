@@ -23708,6 +23708,52 @@ let billQ='', billFrom='', billTo='', billType='all', billBy='all', billSel=null
    of the books and in the copies the server keeps (the last 500 saves). Found, it is shown — with the save
    that went without it — and put back with the stock movements and the journal entries it had, so the
    stock, the drawer and the customer's account are as they were when it was made. */
+/* 9 Nov 2026: a save whose answer was lost put bill 20207 in the books twice — the bill, its journal entries (so the
+   customer's outstanding counted it twice) and its stock moves (the stock came off twice). The fault is mended in
+   regal-bridge.js (landedFrom); this finds a bill that went in more than once that way and takes the extra copies
+   out. Only copies of one and the same bill: the same uid (or none on any), the same lines, the same total. A
+   bill's entries are taken back only when every one of them is there the same number of times over; otherwise the
+   entries are left alone and the owner is told to look at the account. */
+function doubleBills(){
+  const by=new Map();
+  for(const s of S.sales||[]){ if(!s||s.no==null) continue; const k=String(s.no); if(!by.has(k)) by.set(k,[]); by.get(k).push(s) }
+  const out=[];
+  for(const [no,list] of by){ if(list.length<2) continue;
+    const same=list.every(x=>String(x.uid||'')===String(list[0].uid||'')&&JSON.stringify(x.lines)===JSON.stringify(list[0].lines)&&+x.total===+list[0].total);
+    if(same) out.push({no,n:list.length,list}) }
+  return out;
+}
+function fixDoubleBills(){
+  const done=[], look=[];
+  for(const {no,n,list} of doubleBills()){
+    // the copy kept: the one with the most done to it (payments, notes), so nothing done to the bill is lost
+    const keep=list.slice().sort((a,b)=>((b.pays||[]).length-(a.pays||[]).length)||(JSON.stringify(b).length-JSON.stringify(a).length))[0];
+    S.sales=S.sales.filter(x=>String(x.no)!==no||x===keep);
+    const thin=(arr,onOut)=>{                      // each entry of this bill kept once for every n copies of it
+      const mine=arr.filter(x=>String(x&&x.ref)===no), c=new Map();
+      mine.forEach(x=>{const t=JSON.stringify(x);c.set(t,(c.get(t)||0)+1)});
+      if(![...c.values()].every(k=>k%n===0)) return null;
+      const left=new Map([...c].map(([t,k])=>[t,k/n]));
+      return arr.filter(x=>{ if(String(x&&x.ref)!==no) return true; const t=JSON.stringify(x); if(left.get(t)>0){ left.set(t,left.get(t)-1); return true } onOut&&onOut(x); return false });
+    };
+    const J=thin(S.journal||[]); if(J) S.journal=J; else look.push(no);
+    const M=thin(S.movements||[],m=>{const p=P(m.pid); if(p&&p.id!==OPEN_PID) p.stock=+((+p.stock||0)-(+m.qty||0)).toFixed(3)});
+    if(M) S.movements=M; else look.push(no+' (stock)');
+    done.push(no);
+  }
+  return {done,look};
+}
+function fixDoubleBillsAsk(){
+  const d=doubleBills(); if(!d.length){ toast('No bill is in the books twice','ok'); return }
+  const names=d.map(x=>`${x.no} (${x.n}×, ${C(x.list[0].customerId).name}, ${money2(x.list[0].total)})`).join('\n');
+  if(!confirm(`These bills went into the books more than once, by a save fault (now mended):
+
+${names}
+
+Take out the extra copies? Each bill is kept once, with its amount owed and its stock counted once.`)) return;
+  const r=fixDoubleBills(); persist(true); render();
+  toast(`Mended: ${r.done.join(', ')} — each in the books once now${r.look.length?`. Please check the account for ${r.look.join(', ')}`:''}`,r.look.length?'warn':'ok');
+}
 async function findBillLocal(no){
   try{ const raw=await new Promise(res=>{ const r=indexedDB.open('regal-offline',1); r.onsuccess=()=>{ try{ const q=r.result.transaction('kv','readonly').objectStore('kv').get('regal:books'); q.onsuccess=()=>res(q.result); q.onerror=()=>res(null) }catch(e){ res(null) } }; r.onerror=()=>res(null) });
     if(!raw) return null; const d=JSON.parse(raw), L=(d&&d.S)||{};
@@ -23885,7 +23931,7 @@ function bills(){
   const filtered=billQ||billFrom||billTo||billType!=='all'||billBy!=='all'||billCust;
   const dayIs=(n)=>billFrom===(n===1?ago(1):ago(n))&&billTo===(n===1?ago(1):D(today));
   return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><span>Bills <span class="muted" style="font-size:13px;font-weight:400;margin-left:6px">${salesReal().length} on the system</span></span>
-    <span style="display:flex;gap:6px">${payBoss()?'<button class="btn ghost" data-act="findBill" title="A bill that printed but is not in this list">Find a missing bill</button>':''}<button class="btn tape" data-view="pos">New bill <i class="kbd">F3</i></button></span></h1>
+    <span style="display:flex;gap:6px">${payBoss()&&doubleBills().length?`<button class="btn" data-act="fixDouble" style="background:var(--chip-rust);color:#fff" title="A save fault put these bills in the books more than once">Bill ${doubleBills().map(x=>x.no).join(', ')} is in twice — fix it</button>`:''}${payBoss()?'<button class="btn ghost" data-act="findBill" title="A bill that printed but is not in this list">Find a missing bill</button>':''}<button class="btn tape" data-view="pos">New bill <i class="kbd">F3</i></button></span></h1>
   <div class="bl-wrap">
    <div class="card bl-list">
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -35505,6 +35551,7 @@ document.addEventListener('click',e=>{
     billAmend:()=>{closeModals();editSaleModal(a.dataset.no)},
     purEdit:()=>editPurchaseModal(a.dataset.no),
     findBill:()=>findBillModal(),
+    fixDouble:()=>fixDoubleBillsAsk(),
     billClear:()=>{billQ='';billFrom='';billTo='';billType='all';billBy='all';billCust=0;billSel=null;billLimit=150;render()},
     cuLoginNew:()=>custLoginModal(+a.dataset.id,a.dataset.kind||'C'),
     cuLoginAuto:()=>{ const kind=a.dataset.kind||'C', id=+a.dataset.id;

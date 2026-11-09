@@ -853,7 +853,7 @@ export function keepDocs(next, cur, by) {
 
 /** Save.  body: { data, rev }  — rev is the revision the client loaded; a mismatch returns 409 with the newer copy. */
 r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
-  const { data, rev } = req.body || {};
+  const { data, rev, sid, term } = req.body || {};
   if (!data || typeof data !== 'object') throw new HttpError(400, 'No data');
   const key = req.params.key;
   await ensureBooksTables();
@@ -905,6 +905,11 @@ r.put('/books/:key', regalAuth, asyncHandler(async (req, res) => {
     if (keptBills.length) console.error(`[books guard] a save by ${req.regalUser.name} came without bills ${keptBills.join(', ')}: kept (rev ${curRev}, it said rev ${rev})`);
     const next = curRev + 1;
     data._fullRev = next;
+    // which save went in last from each PC: a till whose answer was lost finds its own tag here (regal-bridge.js, landedFrom)
+    const sent = { ...((cur && cur.data && cur.data._sent) || {}) };
+    if (term && sid) { delete sent[String(term).slice(0, 80)]; sent[String(term).slice(0, 80)] = String(sid).slice(0, 40); }
+    const terms = Object.keys(sent); if (terms.length > 60) terms.slice(0, terms.length - 60).forEach(t => delete sent[t]);
+    data._sent = sent;
     await client.query(
       `INSERT INTO books (key, rev, data, updated_at, updated_by) VALUES ($1,$2,$3,now(),$4)
        ON CONFLICT (key) DO UPDATE SET rev = EXCLUDED.rev, data = EXCLUDED.data, updated_at = now(), updated_by = EXCLUDED.updated_by`,

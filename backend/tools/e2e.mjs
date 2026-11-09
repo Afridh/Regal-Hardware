@@ -388,7 +388,7 @@ w.extUseLocation(1);
 // ---------------------------------------------------------------- persistence to the server
 w.persist(); await sleep(900);
 const saved = await (await fetch(BASE + '/api/books/regal', { headers: { Authorization: 'Bearer ' + tok } })).json();
-ok('A: books saved to server', saved.rev > rev.rev, `rev ${saved.rev}`);
+ok('A: books saved to server', saved.rev > rev.rev, `rev ${saved.rev} ${saved.error || ''}`);
 ok('A: vouchers + transfers + points in the saved books', saved.data.S.vouchers.length === 1 && saved.data.S.transfers.length === 1 && saved.data.S.customers.find(c => c.id === 2).points === nimal.points, `vouchers ${saved.data.S.vouchers.length} transfers ${saved.data.S.transfers.length} points ${saved.data.S.customers.find(c => c.id === 2).points}/${nimal.points} local vouchers ${S.vouchers.length}`);
 ok('A: per-till state stripped from the shared books', saved.data.S.user === undefined && saved.data.S.pos === undefined && saved.data.S.locId === undefined && saved.data.S.terminal === undefined);
 ok('A: no script errors so far', A.errors.length === 0, A.errors.slice(0, 2).join(' | '));
