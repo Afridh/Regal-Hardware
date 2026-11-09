@@ -38,10 +38,11 @@ const v = await pg.evaluate(no => {
   const spill = [...document.querySelectorAll('.bl-big,.bl-legend b,.bl-ckv b,.bl-pills b,.bl-amt b')].filter(e => e.scrollWidth > e.clientWidth + 1).map(e => e.textContent.trim());
   const d = dock && dock.getBoundingClientRect();
   return { name: nm && nm.textContent.trim(), nameCut: nm ? nm.scrollHeight > nm.clientHeight + 2 : null, net: big && big.textContent.trim(), spill,
-    dockOnScreen: !!d && d.bottom <= innerHeight + 1 && d.top < innerHeight, tiles: document.querySelectorAll('.bl-dock .bl-tile').length, groups: [...document.querySelectorAll('.bl-more > div > span')].map(e => e.textContent).join() } }, no);
+    dockUnder: !!d && d.top >= document.querySelector('.bl-top').getBoundingClientRect().bottom - 1 && d.top < document.querySelector('.bl-pills').getBoundingClientRect().top && d.bottom <= innerHeight + 1, gp: /Profit|GP /.test(document.querySelector('.bl-top').textContent + document.querySelector('.bl-list, .bl-wrap').textContent), tiles: document.querySelectorAll('.bl-dock .bl-tile').length, groups: [...document.querySelectorAll('.bl-more > div > span')].map(e => e.textContent).join() } }, no);
 ok(v.name && /RECEPTION CENTRE/.test(v.name) && !v.nameCut, 'the list shows the customer\'s whole name', v.name);
 ok(/^Rs\s*[\d,]+\.\d\d$/.test(v.net.replace(/\s+/g, ' ')) && !v.spill.length, 'the net total and every figure fit their boxes', JSON.stringify({ net: v.net, spill: v.spill }));
-ok(v.dockOnScreen && v.tiles === 4 && v.groups === 'Send,Change', 'all the buttons are in the dark bar, on screen at the foot', JSON.stringify(v));
+ok(v.dockUnder && v.tiles === 4 && v.groups === 'Send,Change', 'all the buttons are in the dark bar, right under the total', JSON.stringify(v));
+ok(!v.gp, 'no profit shown on the bill', JSON.stringify(v));
 await pg.screenshot({ path: OUT + '/bills-money.png' });
 ok(!errs.length, 'no script errors', errs.join(' | '));
 await b.close();

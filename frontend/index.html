@@ -1011,7 +1011,7 @@ body.privacy nav .navuser{position:relative}
 .bl-pills b{color:var(--ink);font-family:Archivo,sans-serif;font-size:14px}
 .bl-lines{background:#fff;border-radius:16px;border-color:var(--line2)}
 /* every button, in one dark bar that stays at the foot of the screen */
-.bl-dock{position:sticky;bottom:8px;z-index:4;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin-top:12px;padding:7px;border-radius:16px;background:#1b1f22;box-shadow:0 14px 30px -14px rgba(0,0,0,.6)}
+.bl-dock{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin-top:12px;padding:7px;border-radius:16px;background:#1b1f22;box-shadow:0 14px 30px -14px rgba(0,0,0,.6)}
 .bl-dock .bl-tiles{display:flex;gap:5px;padding:0;grid-template-columns:none}
 .bl-dock .bl-tile{display:flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:0;border-radius:11px;background:rgba(255,255,255,.1);color:#fff}
 .bl-dock .bl-tile i{font-size:14px}.bl-dock .bl-tile b{font-size:12.5px}
@@ -23908,7 +23908,7 @@ function bills(){
        <div class="bl-who"><b class="${c.id===1?'walk':''}">${c.id===1?`Walk-in${s.phone?' · '+s.phone:''}`:`<a href="#" data-act="billCust" data-id="${c.id}" title="every bill of theirs">${c.name}</a>`}</b>
         <span class="bl-no2">${s.no} · ${s.date===D(today)?'Today':s.date===ago(1)?'Yesterday':s.date} ${billClock(s)||s.time||''}${c.id!==1&&c.phone?' · '+c.phone:''}</span>
         <span class="muted">${billUndelivered(s)?'<b style="color:var(--chip-rust)">not delivered</b> · ':''}${pendingNow.has(s.no)?'<b style="color:var(--chip-rust)">goods pending</b> · ':''}${s.cancelled?`${s.cancelled.lines.length} line${s.cancelled.lines.length===1?'':'s'}`:`${s.lines.length} line${s.lines.length===1?'':'s'}`} · ${s.by}${(s.remade||[]).length?' · re-made':''}${(s.edits||[]).length?' · corrected':''}</span></div>
-       <div class="bl-amt">${s.cancelled?`<b style="text-decoration:line-through">${fmt(s.cancelled.total)}</b><i class="owe">cancelled</i></div></div>`:`<b>${fmt(s.total)}</b>${s.balance>0?`<i class="owe">${fmt(s.balance)} due</i>`:s.type==='CREDIT'?'<i class="ok">credit · paid</i>':'<i class="ok">cash</i>'}${gpSeen()?(gpOdd(s)?'<i class="gp odd" title="The cost written on a line is far above what it sold for — check it">GP · cost looks wrong</i>':(()=>{const g=gpOf(s.lines,s.billDisc);return `<i class="gp ${g.gp<0?'neg':''}">GP ${fmt(g.gp)} · ${g.pct}%</i>`})()):''}</div></div>`}`}).join('')
+       <div class="bl-amt">${s.cancelled?`<b style="text-decoration:line-through">${fmt(s.cancelled.total)}</b><i class="owe">cancelled</i></div></div>`:`<b>${fmt(s.total)}</b>${s.balance>0?`<i class="owe">${fmt(s.balance)} due</i>`:s.type==='CREDIT'?'<i class="ok">credit · paid</i>':'<i class="ok">cash</i>'}</div></div>`}`}).join('')
       ||`<div class="muted" style="padding:20px 8px">No bill matches that. Try the last few digits of the number, or their mobile.</div>`}
      ${list.length>billLimit?`<div style="padding:8px"><button class="btn ghost sm" data-act="billMore">Show 150 more</button> <span class="muted">of ${list.length}</span></div>`:''}
     </div>
@@ -23976,9 +23976,8 @@ function billDetail(inv){
   const hasLater=inv.lines.some(l=>laterOf(l)>0), openLines=hasLater?billPendingLines(inv):[];
   const canEdit=can('cancelBill')||can('adjustInvoice');
   /* "Money first" (chosen 9 Nov 2026): the net total big, with how much of it is paid; the customer in a card of their
-     own, name in full; every button in one dark bar that stays at the foot of the screen */
+     own, name in full; every button in one dark bar right under the total (no profit shown here) */
   const paidPct=inv.total>0?Math.max(0,Math.min(100,Math.round(inv.paid/inv.total*100))):100;
-  const g=gpSeen()&&!gpOdd(inv)?gpOf(inv.lines,inv.billDisc):null;
   return `<div class="bl-top">
    <div class="bl-head bl-money no-invert ${inv.balance>0.005?'due':'ok'}">
     <div class="bl-mrow"><div><span class="bl-no">${inv.no}</span><span class="bl-when2">${inv.date===D(today)?'Today':inv.date===ago(1)?'Yesterday':inv.date} ${inv.time||''} · by <b>${inv.by}</b></span></div>${inv.type==='CREDIT'?'<span class="bl-kind">credit</span>':'<span class="bl-kind">cash</span>'}</div>
@@ -23986,17 +23985,7 @@ function billDetail(inv){
     <div class="bl-bar" title="${paidPct}% paid"><i style="width:${paidPct}%"></i></div>
     <div class="bl-legend"><span>Paid <b>${money2(inv.paid)}</b></span><span>Balance <b>${money2(inv.balance)}</b></span></div>
     <div class="bl-flags">${'' /* the tags that were beside the number */}${billUndelivered(inv)?' <span class="tag bad">not delivered</span>':inv.undelivered&&inv.deliveredAt?` <span class="tag ok">delivered ${inv.deliveredAt}</span>`:''}${(inv.remade||[]).length?` <span class="tag warn">re-made ${inv.remade.length}×</span>`:''}${(inv.edits||[]).length?' <span class="tag warn">corrected</span>':''}${inv.feedback?` <span class="tag ${inv.feedback.stars<=2?'bad':'ok'}" title="${noteEsc([(inv.feedback.tags||[]).join(', '),inv.feedback.note].filter(Boolean).join(' — ')||'the customer rated it')}">${'★'.repeat(inv.feedback.stars)} from the customer</span>`:''}</div></div>
-    <div class="bl-cust bl-custcard"><div class="bl-ch">${avatarOf(c)}<div><b>${c.name}</b><span class="muted">${c.phone||(c.id===1?'walk-in':'no mobile')}${c.id&&c.id!==1?` · <a href="#" data-act="cust" data-id="${c.id}">their account</a>`:''}</span></div></div><div class="bl-ckv">${c.id&&c.id!==1?`<div class="${prev>0.005?'red':''}"><small>Other bills due</small><b>${money2(prev)}</b></div>`:''}${g?`<div><small>Profit (GP)</small><b>${money2(g.gp)} · ${g.pct}%</b></div>`:''}</div></div>
-   </div>
-   <div class="bl-pills"><span>Items · qty <b>${inv.lines.length} · ${fq(qty)}</b></span><span>Gross <b>${money2(gross)}</b></span><span>Discount <b>${money2(disc)}${gross&&disc?` · ${(disc/gross*100).toFixed(1)}%`:''}</b></span>${inv.pays&&inv.pays.length?`<span>Paid by <b>${[...new Set(inv.pays.map(p=>String(p.method).toLowerCase()))].join(', ')}</b></span>`:''}</div>
-   <div class="bl-lines"><table class="till-tbl"><tr><th>CODE</th><th>ITEM</th><th class="n">QTY</th>${hasLater?'<th class="n">GIVEN</th><th class="n">PENDING</th>':''}<th class="n">MRP</th><th class="n">PRICE</th><th class="n">DISC</th><th class="n">AMOUNT</th></tr>
-    ${inv.lines.map((l,li)=>{const p=P(l.pid)||NOPROD, pend=hasLater?(openLines.find(x=>x.i===li)||{left:0}).left:0;return `<tr><td class="c">${p.num||p.code}</td><td class="d">${lineName(l)}${lineFrom(l,inv)?` <b>[issue from ${lineFrom(l,inv)}]</b>`:''}${l.serials&&l.serials.length?`<div class="muted">S/N ${l.serials.join(', ')}</div>`:''}</td>
-      <td class="n">${fq(l.qty)}</td>${hasLater?`<td class="n">${l.qty>0?fq(+(l.qty-laterOf(l)+issuedOf(l)).toFixed(3)):'—'}</td><td class="n">${pend>0?`<b style="color:var(--chip-rust)">${fq(pend)}</b>`:'—'}</td>`:''}<td class="n">${mrpShown(l.mrp||p.mrp,l.qty?(l.qty*l.price-(l.disc||0))/l.qty:l.price)?money2(l.mrp||p.mrp):'—'}</td><td class="n">${money2(l.price)}</td><td class="n">${l.disc?money2(l.disc):'—'}</td><td class="n"><b>${money2(l.qty*l.price-(l.disc||0))}</b></td></tr>`}).join('')}</table></div>
-   <div class="bl-foot">
-    ${billIssuedBox(inv)}
-    ${(inv.pays||[]).length?`<div class="bl-pays"><b>How it was paid</b>${inv.pays.map(p=>`<div><span>${p.method}${p.ref?' · '+p.ref:''}${p.bank?' · '+p.bank:''}</span><b>${money2(p.amount)}</b></div>`).join('')}</div>`:''}
-    ${(inv.edits||[]).length?`<div class="bl-hist"><b>Corrections</b>${inv.edits.map(e=>`<div class="muted">${e.at||''} ${e.by||''}: ${e.what||e.note||''}</div>`).join('')}</div>`:''}
-    ${(inv.remade||[]).length?`<div class="bl-hist"><b>Re-made</b>${inv.remade.map(e=>`<div class="muted">${e.at} by ${e.by} — was ${fmt(e.total)}, ${e.lines} lines${e.why?` · <i>${e.why}</i>`:''}</div>`).join('')}</div>`:''}
+    <div class="bl-cust bl-custcard"><div class="bl-ch">${avatarOf(c)}<div><b>${c.name}</b><span class="muted">${c.phone||(c.id===1?'walk-in':'no mobile')}${c.id&&c.id!==1?` · <a href="#" data-act="cust" data-id="${c.id}">their account</a>`:''}</span></div></div><div class="bl-ckv">${c.id&&c.id!==1?`<div class="${prev>0.005?'red':''}"><small>Other bills due</small><b>${money2(prev)}</b></div>`:''}</div></div>
    </div>
    <div class="bl-dock no-invert">
    <div class="bl-tiles">
@@ -24021,6 +24010,16 @@ function billDetail(inv){
      ${canEdit?`<button class="btn ghost sm" data-act="billEdit" data-no="${inv.no}">Edit in the till</button><button class="btn ghost sm" data-act="billAmend" data-no="${inv.no}">Correct a line</button>`:''}
      ${inv.returnOf||inv.proof||+inv.total<0?'':billCancelAsked(inv.no)&&!payBoss()?'<span class="tag warn">cancel waiting for an admin</span>':`<button class="btn ghost sm" data-act="billCancel" data-no="${inv.no}" style="color:var(--chip-rust);border-color:rgba(192,68,44,.3)" title="${payBoss()?'Take this bill back':'An admin approves it first'}">Cancel bill</button>`}</div>
    </div>
+   </div>
+   <div class="bl-pills"><span>Items · qty <b>${inv.lines.length} · ${fq(qty)}</b></span><span>Gross <b>${money2(gross)}</b></span><span>Discount <b>${money2(disc)}${gross&&disc?` · ${(disc/gross*100).toFixed(1)}%`:''}</b></span>${inv.pays&&inv.pays.length?`<span>Paid by <b>${[...new Set(inv.pays.map(p=>String(p.method).toLowerCase()))].join(', ')}</b></span>`:''}</div>
+   <div class="bl-lines"><table class="till-tbl"><tr><th>CODE</th><th>ITEM</th><th class="n">QTY</th>${hasLater?'<th class="n">GIVEN</th><th class="n">PENDING</th>':''}<th class="n">MRP</th><th class="n">PRICE</th><th class="n">DISC</th><th class="n">AMOUNT</th></tr>
+    ${inv.lines.map((l,li)=>{const p=P(l.pid)||NOPROD, pend=hasLater?(openLines.find(x=>x.i===li)||{left:0}).left:0;return `<tr><td class="c">${p.num||p.code}</td><td class="d">${lineName(l)}${lineFrom(l,inv)?` <b>[issue from ${lineFrom(l,inv)}]</b>`:''}${l.serials&&l.serials.length?`<div class="muted">S/N ${l.serials.join(', ')}</div>`:''}</td>
+      <td class="n">${fq(l.qty)}</td>${hasLater?`<td class="n">${l.qty>0?fq(+(l.qty-laterOf(l)+issuedOf(l)).toFixed(3)):'—'}</td><td class="n">${pend>0?`<b style="color:var(--chip-rust)">${fq(pend)}</b>`:'—'}</td>`:''}<td class="n">${mrpShown(l.mrp||p.mrp,l.qty?(l.qty*l.price-(l.disc||0))/l.qty:l.price)?money2(l.mrp||p.mrp):'—'}</td><td class="n">${money2(l.price)}</td><td class="n">${l.disc?money2(l.disc):'—'}</td><td class="n"><b>${money2(l.qty*l.price-(l.disc||0))}</b></td></tr>`}).join('')}</table></div>
+   <div class="bl-foot">
+    ${billIssuedBox(inv)}
+    ${(inv.pays||[]).length?`<div class="bl-pays"><b>How it was paid</b>${inv.pays.map(p=>`<div><span>${p.method}${p.ref?' · '+p.ref:''}${p.bank?' · '+p.bank:''}</span><b>${money2(p.amount)}</b></div>`).join('')}</div>`:''}
+    ${(inv.edits||[]).length?`<div class="bl-hist"><b>Corrections</b>${inv.edits.map(e=>`<div class="muted">${e.at||''} ${e.by||''}: ${e.what||e.note||''}</div>`).join('')}</div>`:''}
+    ${(inv.remade||[]).length?`<div class="bl-hist"><b>Re-made</b>${inv.remade.map(e=>`<div class="muted">${e.at} by ${e.by} — was ${fmt(e.total)}, ${e.lines} lines${e.why?` · <i>${e.why}</i>`:''}</div>`).join('')}</div>`:''}
    </div>`;
 }
 function billsAfter(){
