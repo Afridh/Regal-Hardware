@@ -456,6 +456,26 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .cp-card .cp-lim{display:flex;justify-content:space-between;margin-top:5px;font-size:11.5px;color:rgba(255,255,255,.72)}
 .cp-save{align-items:center;border-radius:16px;min-height:58px;justify-content:center;background:#AE1E2B;box-shadow:0 12px 24px -12px #AE1E2B}
 .cp-save[disabled]{background:#c9ced4;box-shadow:none;opacity:1}
+/* Customer's number at the end of a bill (10 Nov 2026): the same look */
+.modal .box.bq-box{max-width:760px;padding:0;border-top:0;border-radius:20px;overflow:hidden}
+.bq-head{background:linear-gradient(150deg,#2a0b10,#5a1019 60%,#AE1E2B);color:#fff;padding:18px 20px 20px;position:relative;overflow:hidden}
+.bq-head:after{content:"";position:absolute;right:-80px;top:-90px;width:230px;height:230px;border-radius:50%;background:rgba(255,255,255,.07);pointer-events:none}
+.bq-t{display:flex;gap:12px;align-items:center}.bq-t svg{flex:none;width:40px;height:40px;padding:9px;border-radius:12px;background:rgba(255,255,255,.14)}
+.bq-t h2{margin:0;font-size:19px;color:#fff}.bq-t span{font-size:12.5px;color:rgba(255,255,255,.72)}
+.bq-head #bqQ{display:block;width:100%;margin:14px 0 0;height:58px;border-radius:14px!important;border:0!important;background:#fff;color:#1d2125;font:800 24px Archivo,sans-serif;letter-spacing:.04em;padding:0 16px;box-shadow:0 10px 24px -12px rgba(0,0,0,.6);position:relative;z-index:1}
+.bq-head #bqQ::placeholder{color:#a9afb6;font-weight:600;letter-spacing:0}
+.bq-body{padding:12px 16px 14px}
+#bqL{max-height:280px;overflow:auto}
+.bq-row{display:flex;align-items:center;gap:12px;padding:10px;border-radius:12px;cursor:pointer}
+.bq-row:hover{background:#f6f7f8}.bq-row.on,.bq-row.on:hover{background:#1d2125;color:#fff}
+.bq-nm{flex:1;min-width:0}.bq-nm b{display:block;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bq-nm span{font-size:12px;color:var(--steel)}.bq-row.on .bq-nm span{color:rgba(255,255,255,.65)}
+.bq-lv{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:3px 8px;border-radius:999px;background:#eef0f2;color:var(--steel)}.bq-row.on .bq-lv{background:rgba(255,255,255,.14);color:#fff}
+.bq-ow{font-family:Archivo,sans-serif;font-weight:800;font-size:14.5px;min-width:96px;text-align:right}.bq-ow i{font-style:normal;font-family:inherit;font-weight:500;font-size:12.5px;color:var(--steel)}
+.bq-none,.bq-hint{padding:12px 6px;color:var(--steel);font-size:13px}
+.bq-new{margin-top:8px;border-radius:16px;padding:14px 16px;background:#fff6f6;box-shadow:inset 0 0 0 1.5px #f1c9cc}
+.bq-nh{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}.bq-nh b{display:flex;align-items:center;gap:8px;font-size:15px}
+.bq-nh b i{font-style:normal;font-size:10px;letter-spacing:.1em;background:#AE1E2B;color:#fff;border-radius:6px;padding:2px 6px}.bq-nh span{font-size:12px;color:var(--steel)}
+.bq-foot{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}.bq-foot .muted{font-size:12.5px}
 @media (max-width:520px){.cp-figs{grid-template-columns:1fr 1fr}.cp-row2{grid-template-columns:1fr}}
 .modal .box{background:var(--white);border-radius:var(--r);padding:18px;min-width:420px;max-width:900px;width:92%;
  max-height:90vh;overflow:auto;border-top:4px solid var(--chip-yellow);box-shadow:0 18px 50px rgba(16,22,20,.35)}
@@ -21440,23 +21460,27 @@ function endBillAsk(done){
 
 /* the number first: it is what the counter has to hand, and it finds them in one go */
 function askBillCustomer(done){
-  const m=modal(`<h2>Customer's number</h2>
-   <div class="muted">Key the number and press Enter: the e-bill goes to them, then you choose whether to print. A new number joins your customers. Leave it empty and press Enter for a walk-in.</div>
-   <input id="bqQ" placeholder="07… or a name" autocomplete="off" style="margin-top:8px">
-   <div id="bqL" style="margin-top:10px;max-height:280px;overflow:auto"></div>
-   <div class="card note" id="bqNew" style="margin-top:10px;display:none">
-    <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
-     <b>A new customer</b><span class="muted">Enter to go on. The name is not needed: Tab to add one.</span></div>
-    <div class="grid2" style="margin-top:8px">
+  /* the look of Ctrl+M and Put on account (10 Nov 2026): the number keyed big on a red header, matches as rows */
+  const bt=(typeof billTotal==='function'?billTotal():0);
+  const m=modal(`<div class="bq-head no-invert">
+    <div class="bq-t"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg>
+     <div><h2>Customer's number</h2><span>the e-bill goes to this number${bt?` · bill Rs ${money2(bt)}`:''}</span></div></div>
+    <input id="bqQ" placeholder="07… or a name" autocomplete="off" inputmode="text"></div>
+   <div class="bq-body">
+   <div id="bqL"></div>
+   <div class="bq-new" id="bqNew" style="display:none">
+    <div class="bq-nh"><b><i>NEW</i>A new customer</b><span>Enter to go on · the name can wait (Tab to add one)</span></div>
+    <div class="grid2">
      <div class="f"><label>Mobile</label><input id="bqPh" placeholder="07…" autocomplete="off"></div>
      <div class="f"><label>Name <span class="muted">(can wait)</span></label><input id="bqNm" placeholder="Name or shop" autocomplete="off"></div></div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
      <button class="btn tape" id="bqAdd">Add them and put the bill in their name</button>
      <span class="muted" id="bqMsg"></span></div>
    </div>
-   <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:12px">
+   <div class="bq-foot">
     <button class="btn ghost" id="bqSkip">Walk-in — no name <i class="kbd">Esc</i></button>
-    <span class="muted">The prices and the total stay as they were agreed.</span></div>`);
+    <span class="muted">Empty + Enter is a walk-in too. The prices and the total stay as agreed.</span></div></div>`);
+  m.querySelector('.box').classList.add('bq-box');
 
   const q=m.querySelector('#bqQ'), ph=m.querySelector('#bqPh'), nm=m.querySelector('#bqNm'), box=m.querySelector('#bqNew');
   const isPhone=v=>/^0\d{6,9}$/.test(v);
@@ -21476,10 +21500,10 @@ function askBillCustomer(done){
     const v=q.value.trim();
     const asMob=mobNorm(v), isMob=/^0\d{9}$/.test(asMob);
     const hits=v?S.customers.filter(c=>c.id!==1&&c.active!==false&&(custMatch(c,v)||(isMob&&(mobNorm(c.phone)===asMob||mobNorm(c.phone2)===asMob)))).slice(0,8):[];
-    m.querySelector('#bqL').innerHTML=v?`<table>
-      ${hits.map(c=>`<tr class="rowlink" data-bqid="${c.id}"><td><b>${c.name}</b><div class="muted">${c.phone||'no mobile'} · ${c.code||''}</div></td>
-        <td>${c.level}</td><td class="n">${partyBal('C',c.id)>0?'outstanding '+fmt(partyBal('C',c.id)):'<span class="muted">clear</span>'}</td></tr>`).join('')}
-      ${hits.length?'':'<tr><td colspan="3" class="muted">Nobody matches that yet.</td></tr>'}</table>`:'';
+    m.querySelector('#bqL').innerHTML=v?(hits.map(c=>{ const ow=partyBal('C',c.id), age=typeof cpOldest==='function'?cpOldest(c.id):0;
+        return `<div class="bq-row" data-bqid="${c.id}"><span class="cp-dot ${ow>0.005?(age>60?'old':age>30?'mid':'new'):'none'}"></span><div class="bq-nm"><b>${escM(c.name)}</b><span>${escM(c.phone||'no mobile')} · ${escM(c.code||'')}</span></div>
+        <span class="bq-lv">${escM(c.level||'retail')}</span><span class="bq-ow">${ow>0.005?money2(ow):'<i>clear</i>'}</span></div>` }).join('')
+      ||'<div class="bq-none">Nobody matches that yet.</div>'):'<div class="bq-hint">Key the number and press Enter — the e-bill goes to them, then you choose whether to print.</div>';
     m.querySelectorAll('[data-bqid]').forEach(r=>r.onclick=()=>take(+r.dataset.bqid));
     box.style.display=(v&&!hits.length)?'':'none'; picked=false;
     if(!touched){ if(isMob||isPhone(v)){ ph.value=isMob?asMob:v; nm.value='' } else { nm.value=v; ph.value='' } }
