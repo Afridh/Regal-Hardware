@@ -544,6 +544,19 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .bq-row.on .bs-av{background:rgba(255,255,255,.16);color:#fff}
 .bq-row kbd{margin-left:auto;font:700 10.5px Inter,sans-serif;border-radius:6px;padding:2px 6px;background:#f2f3f5;color:var(--steel);border:0}.bq-row.on kbd{background:rgba(255,255,255,.15);color:#fff}
 .pc-list{max-height:min(380px,48vh);overflow:auto}
+/* the prices would change when a customer is chosen (10 Nov 2026) */
+.modal .box.pca-box{max-width:620px;padding:0;border-top:0;border-radius:20px;overflow:hidden}
+.pca-h{background:linear-gradient(150deg,#2a0b10,#5a1019 60%,#AE1E2B);color:#fff;padding:18px 20px}
+.pca-h small{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#ffd27a}
+.pca-h h2{margin:4px 0 2px;color:#fff;font-size:20px}.pca-h span{font-size:13px;color:rgba(255,255,255,.75)}
+.pca-b{padding:14px 18px 18px}
+.pca-b table{width:100%;border-collapse:collapse;font-size:13.5px}.pca-b td{padding:8px 4px;border-bottom:1px solid var(--line2)}
+.pca-b td b{font-weight:700}.pca-b td span{color:var(--steel);font-size:12px;margin-left:6px}.pca-b td.n{text-align:right;white-space:nowrap}
+.pca-b s{color:var(--steel)}.pca-b .dn{color:#AE1E2B}.pca-b .up{color:#1f8a55}
+.pca-t{display:flex;align-items:baseline;gap:12px;margin-top:12px;padding:12px 14px;border-radius:14px;background:#f6f7f8;flex-wrap:wrap}
+.pca-t span{font-weight:700}.pca-t b{font:800 18px Archivo,sans-serif}.pca-t b s{font-size:14px;font-weight:600}.pca-t em{font-style:normal}
+.pca-t i{margin-left:auto;font-style:normal;font-weight:800;font-size:13px;border-radius:999px;padding:3px 10px;background:#fdecee}.pca-t i.up{background:#e2f5ea}
+.pca-k{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}.pca-k .btn{flex:1;justify-content:center}
 .pc-walk .bs-av{background:#eef0f2;color:var(--steel)}
 .bs-lb{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--steel);padding:10px 10px 4px}
 @media (max-width:520px){.cp-figs{grid-template-columns:1fr 1fr}.cp-row2{grid-template-columns:1fr}}
@@ -18836,7 +18849,7 @@ async function cpPin(){
 }
 function cpPick(id){
   if(!id||id===1) return;
-  setBillCustomer(id); ONA.cust=id; ONA.q=''; render(); cpDraw(true);
+  setBillCustomer(id,()=>{ if(!ONA) return; ONA.cust=id; ONA.q=''; render(); cpDraw(true) });
   const c=C(id); if(!c.limit) toast(`${c.name.split(' ')[0]} has no credit limit set — it can go on account, but set one under Customers`,'warn');
 }
 function cpSave(){
@@ -18920,8 +18933,9 @@ document.addEventListener('click',e=>{
   if(a==='pin') return cpPin();
   if(a==='save') return cpSave();
   if(a==='new'){ cpClose(); return pickCustomer(()=>{ if(S.pos.customer) creditSale() }) }
-  if(a==='payscreen'){ const had=ONA.cust; cpClose(); if(had&&!S.pos.customer) setBillCustomer(had);
-    openPay(); const m=[...document.querySelectorAll('.modal')].pop(); const pb=m&&m.querySelector('[data-paym="CREDIT"]'); if(pb&&S.pos.customer) pb.click() }
+  if(a==='payscreen'){ const had=ONA.cust; cpClose();
+    const go=()=>{ openPay(); const m=[...document.querySelectorAll('.modal')].pop(); const pb=m&&m.querySelector('[data-paym="CREDIT"]'); if(pb&&S.pos.customer) pb.click() };
+    if(had&&!S.pos.customer) setBillCustomer(had,go); else go() }
 });
 
 /* ================== THE QUICK TILL ==================
@@ -21380,7 +21394,47 @@ function smsSentModal(inv,c){
 /* The results list is redrawn as you type; the new-customer fields are built
    once and left alone, so typing a name is never interrupted. */
 /* the bill follows the customer: their price list, and each line at what they were charged last time */
-function setBillCustomer(id){
+/* 10 Nov 2026: a bill made without a customer, opened again to edit and given the customer, came down in value —
+   every line the till had priced moved to the customer's price list and to what they paid last time, and only a
+   small message said so. Now, when choosing a customer moves any price, the till stops and shows each line, was →
+   now, and the total, and asks: keep the prices on the bill, or use theirs. On a bill being edited, keeping them is
+   what Enter does. then(n) runs once it is settled, so the payment window or the account sheet opens on the right total. */
+function setBillCustomer(id,then){
+  const before=S.pos.lines.map(l=>({price:l.price,auto:l.auto,fromLast:l.fromLast,last:l.last})), was=typeof billTotal==='function'?billTotal():0;
+  const n=setBillCustomer0(id);
+  const moved=S.pos.lines.map((l,i)=>({l,i,b:before[i]})).filter(x=>x.b&&Math.abs((+x.b.price||0)-(+x.l.price||0))>0.005);
+  if(!moved.length||!(id&&id!==1)){ if(then) then(n); return n }
+  S.pos._priceAsked=true;
+  priceChangeAsk(C(id),moved,before,was,()=>{ if(then) then(n) });
+  return n;
+}
+function priceChangeAsk(c,moved,before,was,done){
+  const now=billTotal(), editing=!!S.pos.editing, first=String(c.name||'').split(' ')[0];
+  const keep=()=>{ before.forEach((b,i)=>{ const l=S.pos.lines[i]; if(!l||!b) return; l.price=b.price; l.auto=b.auto;
+    if(b.fromLast===undefined) delete l.fromLast; else l.fromLast=b.fromLast; if(b.last===undefined) delete l.last; else l.last=b.last }) };
+  const rows=moved.map(x=>{ const q=+x.l.qty||0; return `<tr><td><b>${escM(lineName(x.l))}</b><span>${fq(q)} ×</span></td><td class="n"><s>${money2(x.b.price)}</s></td><td class="n">→</td><td class="n ${x.l.price<x.b.price?'dn':'up'}"><b>${money2(x.l.price)}</b></td></tr>` }).join('');
+  const m=modal(`<div class="pca"><div class="pca-h no-invert"><small>${editing?'Editing bill '+escM(S.pos.editing)+' · ':''}the prices would change</small><h2>${escM(c.name)}</h2>
+     <span>${moved.length} line${moved.length===1?'':'s'} would move to ${c.level==='wholesale'?'their wholesale prices':'their prices'}${CFG.pos&&CFG.pos.repriceToLast?' and to what they paid last time':''}</span></div>
+    <div class="pca-b"><table>${rows}</table>
+     <div class="pca-t"><span>The bill</span><b><s>${money2(was)}</s> → <em class="${now<was?'dn':'up'}">${money2(now)}</em></b><i class="${now<was?'dn':'up'}">${now<was?'− ':'+ '}${money2(Math.abs(now-was))}</i></div>
+     <div class="pca-k"><button class="btn ${editing?'tape':'ghost'}" id="pcaKeep">Keep the prices on the bill <i class="kbd">${editing?'Enter':'K'}</i></button>
+      <button class="btn ${editing?'ghost':'tape'}" id="pcaUse">Use ${escM(first)}'s prices <i class="kbd">${editing?'U':'Enter'}</i></button></div></div></div>`);
+  m.querySelector('.box').classList.add('pca-box');
+  let gone=false;
+  const end=(k)=>{ if(gone) return; gone=true; window.removeEventListener('keydown',key,true); m.remove();
+    if(k) keep(); render();
+    toast(k?`${first} on the bill — the prices stay as they were (${money2(billTotal())})`:`${first}'s prices — the bill is now ${money2(billTotal())}`); done() };
+  const key=e=>{ if(!document.body.contains(m)){ window.removeEventListener('keydown',key,true); return }
+    e.stopPropagation(); if(e.repeat) return;
+    const k=e.key.toLowerCase();
+    if(e.key==='Enter'){ e.preventDefault(); end(editing) }
+    else if(e.key==='Escape'||k==='k'){ e.preventDefault(); end(true) }
+    else if(k==='u'){ e.preventDefault(); end(false) } };
+  window.addEventListener('keydown',key,true);
+  m.addEventListener('click',e=>{ if(e.target===m) end(true) });   // clicking away keeps the bill as it was
+  m.querySelector('#pcaKeep').onclick=()=>end(true); m.querySelector('#pcaUse').onclick=()=>end(false);
+}
+function setBillCustomer0(id){
   if((id===1?null:id)===S.pos.customer&&S.pos.customer) return 0;   // the same customer again: nothing on the bill changes
   S.pos.customer=id===1?null:id; S.pos.level=null;
   if(S.pos.listOk&&S.pos.listOk.cid!==id) delete S.pos.listOk;
@@ -21413,9 +21467,9 @@ function pickCustomer(after){
   let touched=false;
   ph.oninput=()=>touched=true; nm.oninput=()=>touched=true;
 
-  const pick=(id)=>{ const n=setBillCustomer(id);
-    m.remove(); render(); if(after) after();
-    if(id!==1){ const c=C(id); toast(`${c.name.split(' ')[0]} — ${c.level==='wholesale'?'wholesale':'retail'} prices${n?`, ${n} line${n===1?'':'s'} at what they paid last time`:''}`) } };
+  const pick=(id)=>{ m.remove(); render();
+    setBillCustomer(id,n=>{ render(); if(after) after();
+      if(id!==1&&!S.pos._priceAsked){ const c=C(id); toast(`${c.name.split(' ')[0]} — ${c.level==='wholesale'?'wholesale':'retail'} prices${n?`, ${n} line${n===1?'':'s'} at what they paid last time`:''}`) } delete S.pos._priceAsked }) };
 
   let cur=0;                                   // which row the arrow keys are on
   const rows=()=>[...m.querySelectorAll('[data-cid]')];
