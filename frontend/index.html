@@ -14914,7 +14914,7 @@ function receipts(){
   const todays=S.payments.filter(p=>p.dir==='IN'&&p.date===t);
   const byMethod=todays.reduce((a,p)=>{a[p.method]=(a[p.method]||0)+p.amount;return a},{});
   const q=recQ.trim().toLowerCase();
-  const hits=q?S.customers.filter(c=>c.id!==1&&(c.name.toLowerCase().includes(q)||(c.phone||'').includes(q)||c.code.toLowerCase().includes(q))):[];
+  const hits=q?custRecent(S.customers.filter(c=>c.id!==1&&(c.name.toLowerCase().includes(q)||(c.phone||'').includes(q)||c.code.toLowerCase().includes(q)))):[];
   const owing=S.customers.filter(c=>c.id!==1&&partyBal('C',c.id)>0).sort((a,b)=>partyBal('C',b.id)-partyBal('C',a.id));
   const c=recSel?C(recSel):null;
   const days=d=>Math.round((today-new Date(d))/864e5);
@@ -15017,7 +15017,7 @@ function receiptsAfter(){
   q.oninput=e=>{recQ=e.target.value; render(); const n=$('#recQ'); n.focus(); n.setSelectionRange(n.value.length,n.value.length)};
   q.onkeydown=e=>{ if(e.key==='Enter'){
     const v=recQ.trim().toLowerCase();
-    const hits=S.customers.filter(c=>c.id!==1&&c.active!==false&&(typeof custMatch==='function'?custMatch(c,v):(c.name.toLowerCase().includes(v)||(c.phone||'').includes(v))));
+    const hits=custRecent(S.customers.filter(c=>c.id!==1&&c.active!==false&&(typeof custMatch==='function'?custMatch(c,v):(c.name.toLowerCase().includes(v)||(c.phone||'').includes(v)))));
     if(hits.length===1){ recSel=hits[0].id; recQ=''; render(); window.scrollTo({top:0}) } }
     if(e.key==='Escape'&&recQ){ e.preventDefault(); e.stopPropagation(); recQ=''; render(); const n=$('#recQ'); if(n) n.focus() } };
   if(document.activeElement===document.body&&!recSel) q.focus();
@@ -18448,7 +18448,7 @@ function posAfter(){
   sugList=[]; sugIdx=0; drawSug(); q.value=''; q.focus();
   q.addEventListener('input',()=>{ const v=q.value.trim().toLowerCase();
     const byShort=v?S.products.filter(p=>(p.short||'').toLowerCase()===v||String(p.num||'')===v):[];
-    const rest=v?prodSearch(S.products.filter(p=>!byShort.includes(p)&&p.active!==false),v):[];
+    const rest=v?prodRecent(prodSearch(S.products.filter(p=>!byShort.includes(p)&&p.active!==false),v)):[];
     sugList=[...byShort,...rest].slice(0,8); sugIdx=0; openNav=false; drawSug();
     // a barcode scanner types fast and ends with Enter; an exact hit goes straight to quantity
     const exact=S.products.find(p=>p.barcode===v); if(exact){ q.value=''; sugList=[]; startLine(exact.id) } });
@@ -18664,7 +18664,7 @@ const cpSiteOver=(c)=>{ const st=ONA&&ONA.site&&siteOf(c,ONA.site); if(!st||!(+s
 function cpList(){
   const v=ONA.q.trim().toLowerCase();
   if(!v) return cpRegulars();
-  return S.customers.filter(c=>c.id!==1&&c.active!==false&&(typeof custMatch==='function'?custMatch(c,v):(c.name.toLowerCase().includes(v)||(c.phone||'').includes(v)))).slice(0,30);
+  return custRecent(S.customers.filter(c=>c.id!==1&&c.active!==false&&(typeof custMatch==='function'?custMatch(c,v):(c.name.toLowerCase().includes(v)||(c.phone||'').includes(v))))).slice(0,30);
 }
 // how many days old their oldest unpaid bill is (the dot in the list), and two letters for the card
 function cpOldest(id){ let d=null; for(const s of S.sales) if(s.customerId===id&&+s.balance>0.005&&(!d||String(s.date)<d)) d=String(s.date); return d?Math.max(0,Math.round((today-new Date(d))/864e5)):0 }
@@ -19990,6 +19990,24 @@ function prodRank(p,q){ const qq=srchNorm(q), ws=srchWords(q), h=prodHay(p);
   if(h.name.includes(qq)) return 1;
   if(ws.every(w=>h.words.some(x=>x.startsWith(w)))) return 2;
   return 3 }
+/* Who and what was billed lately come first in a search (10 Nov 2026, the owner asked): the customer who bought
+   yesterday before one not seen in a year, the item rung up this morning before the rest that match. Bills of the
+   last 60 days count, the latest first; the bills are in the order they were made, so a later one is a later sale.
+   Nothing else in the order changes: an exact code or barcode still comes first where the till puts it first. */
+let _recSales=null,_recLen=-1,_recCust=new Map(),_recProd=new Map();
+function recentNow(){
+  if(_recSales===S.sales&&_recLen===S.sales.length) return;
+  _recSales=S.sales; _recLen=S.sales.length; _recCust=new Map(); _recProd=new Map();
+  const from=D(new Date(today.getTime()-60*864e5));
+  S.sales.forEach((s,i)=>{ if(!s||s.cancelled||String(s.date||'')<from) return;
+    if(s.customerId&&s.customerId!==1) _recCust.set(s.customerId,i);
+    for(const l of s.lines||[]) if(+l.qty>0&&l.pid!=null) _recProd.set(l.pid,i) });
+}
+// the list as it was, with those billed lately moved to the top, the latest first
+function recentFirst(list,idOf,kind){ recentNow(); const M=kind==='p'?_recProd:_recCust;
+  return list.map((x,i)=>[x,M.has(idOf(x))?M.get(idOf(x)):-1,i]).sort((a,b)=>(b[1]-a[1])||(a[2]-b[2])).map(x=>x[0]) }
+const custRecent=list=>recentFirst(list,c=>c.id,'c');
+const prodRecent=list=>recentFirst(list,p=>p.id,'p');
 function prodSearch(list,q){ const ws=srchWords(q); if(!ws.length) return list;
   return list.filter(p=>prodMatch(p,ws)).map(p=>[p,prodRank(p,q)]).sort((a,b)=>a[1]-b[1]||((b[0].stock>0)-(a[0].stock>0))||a[0].name.length-b[0].name.length).map(x=>x[0]) }
 function csFind(v){
@@ -19997,7 +20015,7 @@ function csFind(v){
   // an exact short code (20ss), item number or barcode comes first — that is what Enter takes
   const exact=codeExact(q);      // barcode, item number, short code, product code — in that order
   const byShort=S.products.filter(p=>p.active!==false&&!exact.includes(p)&&((p.short||'').toLowerCase().startsWith(q)||(p.short2||'').toLowerCase().startsWith(q)||String(p.num||'').startsWith(q)));
-  const rest=byShort.concat(prodSearch(S.products.filter(p=>p.active!==false&&!exact.includes(p)&&!byShort.includes(p)),q));
+  const rest=byShort.concat(prodRecent(prodSearch(S.products.filter(p=>p.active!==false&&!exact.includes(p)&&!byShort.includes(p)),q)));
   return [...exact,...rest];
 }
 /* a line moves to another place on the bill — by drag, or Ctrl+↑ / Ctrl+↓ on the highlighted one */
@@ -21330,7 +21348,7 @@ function pickCustomer(after){
   const mark=()=>{ rows().forEach((r,i)=>r.classList.toggle('on',i===cur)); const r=rows()[cur]; if(r&&r.scrollIntoView) r.scrollIntoView({block:'nearest'}) };
   const draw=()=>{
     const v=q.value.trim().toLowerCase();
-    const hits=S.customers.filter(c=>c.id!==1&&c.active!==false&&(typeof custMatch==='function'?custMatch(c,v):(c.name.toLowerCase().includes(v)||(c.phone||'').includes(v))));
+    const hits=custRecent(S.customers.filter(c=>c.id!==1&&c.active!==false&&(typeof custMatch==='function'?custMatch(c,v):(c.name.toLowerCase().includes(v)||(c.phone||'').includes(v)))));
     m.querySelector('#cl').innerHTML=`<table>
       <tr class="rowlink" data-cid="1"><td><b>Walk-in customer</b><div class="muted">no account, retail prices</div></td><td></td><td class="n"></td></tr>
       ${hits.map(c=>`<tr class="rowlink" data-cid="${c.id}"><td><b>${c.name}</b><div class="muted">${c.phone||'no mobile'} · ${c.code}</div></td>
@@ -21499,7 +21517,7 @@ function askBillCustomer(done){
   const draw=()=>{
     const v=q.value.trim();
     const asMob=mobNorm(v), isMob=/^0\d{9}$/.test(asMob);
-    const hits=v?S.customers.filter(c=>c.id!==1&&c.active!==false&&(custMatch(c,v)||(isMob&&(mobNorm(c.phone)===asMob||mobNorm(c.phone2)===asMob)))).slice(0,8):[];
+    const hits=v?custRecent(S.customers.filter(c=>c.id!==1&&c.active!==false&&(custMatch(c,v)||(isMob&&(mobNorm(c.phone)===asMob||mobNorm(c.phone2)===asMob))))).slice(0,8):[];
     m.querySelector('#bqL').innerHTML=v?(hits.map(c=>{ const ow=partyBal('C',c.id), age=typeof cpOldest==='function'?cpOldest(c.id):0;
         return `<div class="bq-row" data-bqid="${c.id}"><span class="cp-dot ${ow>0.005?(age>60?'old':age>30?'mid':'new'):'none'}"></span><div class="bq-nm"><b>${escM(c.name)}</b><span>${escM(c.phone||'no mobile')} · ${escM(c.code||'')}</span></div>
         <span class="bq-lv">${escM(c.level||'retail')}</span><span class="bq-ow">${ow>0.005?money2(ow):'<i>clear</i>'}</span></div>` }).join('')
@@ -26144,7 +26162,8 @@ function credPayPick(){
   };
   const draw=()=>{ const v=q.value.trim().toLowerCase();
     list=all.filter(x=>v?(typeof custMatch==='function'?custMatch(x.c,v):(x.c.name.toLowerCase().includes(v)||(x.c.phone||'').includes(v))):x.o>0.005)
-      .sort((a,b)=>b.o-a.o).slice(0,60);
+      .sort((a,b)=>b.o-a.o);
+    if(v) list=recentFirst(list,x=>x.c.id,'c'); list=list.slice(0,60);
     cur=Math.max(0,Math.min(cur,list.length-1));
     m.querySelector('#cpL').innerHTML=list.length?list.map((x,i)=>{ const bl=x.o>0.005?bills(x.c.id):[], d=bl.length?age(bl[0].date):0;
       return `<div class="cpk-row ${i===cur?'on':''}" data-i="${i}"><span class="cpk-dot ${x.o>0.005?tone(d):'none'}"></span><div class="cpk-nm"><b>${escM(x.c.name)}</b><span>${escM(x.c.phone||'no mobile')}${x.c.code?' · '+escM(x.c.code):''}</span></div>${x.o>0.005?`<span class="cpk-a">${money2(x.o)}</span>`:'<span class="cpk-a zero">nothing owing</span>'}</div>`}).join('')
