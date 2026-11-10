@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>1 · Clear list — Customer payment</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--red:#AE1E2B;--ink:#1d2125;--steel:#6b7480;--line:#e7e9ec;--old:#c0442c;--mid:#d98a1c;--new:#2e9e64}
+*{box-sizing:border-box;margin:0}
+body{font:500 14px/1.4 Inter,system-ui,sans-serif;color:var(--ink);height:100vh;overflow:hidden}
+.win{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(900px,94vw);height:min(640px,92vh);background:#fff;border-radius:18px;z-index:2;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 70px -20px rgba(0,0,0,.5);border-top:4px solid var(--red)}
+.top{padding:18px 22px 12px}
+.ttl{display:flex;align-items:baseline;gap:10px}.ttl h2{font:800 20px Archivo,sans-serif}.ttl small{color:var(--steel)}
+.ttl .sum{margin-left:auto;color:var(--steel);font-size:13px}.ttl .sum b{color:var(--red);font:800 15px Archivo,sans-serif}
+.sbox{margin-top:12px;display:flex;align-items:center;gap:10px;height:52px;border:2px solid var(--red);border-radius:14px;padding:0 14px;background:#fff8f8}
+.sbox svg{flex:none;color:var(--red)}
+.sbox input{flex:1;border:0;outline:0;background:none;font:600 18px Inter,sans-serif;color:var(--ink)}
+.sbox kbd{font:600 11px Inter;color:var(--steel);border:1px solid var(--line);border-radius:6px;padding:2px 6px;background:#fff}
+.chips{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font:600 12.5px Inter;color:var(--steel);cursor:pointer}
+.chip b{color:var(--ink);margin-left:4px}.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}.chip.on b{color:#ffd27a}
+.list{flex:1;overflow:auto;padding:4px 12px 8px}
+.row{display:grid;grid-template-columns:44px minmax(0,1fr) 150px 190px;align-items:center;gap:14px;padding:11px 12px;border-radius:14px;cursor:pointer;position:relative}
+.row+.row{box-shadow:0 -1px 0 var(--line)}
+.row:hover{background:#f6f7f8}
+.row.on{background:#fff1f2;box-shadow:inset 4px 0 0 var(--red)}
+.row.on+.row{box-shadow:none}
+.av{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font:800 15px Archivo;color:#fff}
+.av.old{background:var(--old)}.av.mid{background:var(--mid)}.av.new{background:var(--new)}.av.none{background:#b9bfc6}
+.nm b{display:block;font-weight:700;font-size:15px;line-height:1.25}
+.nm span{color:var(--steel);font-size:12.5px}
+.age{font-size:12.5px;color:var(--steel)}
+.age i{display:inline-block;font-style:normal;font-weight:700;padding:2px 8px;border-radius:999px;font-size:12px}
+.age i.old{background:#fde7e3;color:var(--old)}.age i.mid{background:#fdf0dc;color:#a8650b}.age i.new{background:#e2f5ea;color:#1f7a4b}
+.age div{margin-top:3px}
+.amt{text-align:right}
+.amt b{font:800 18px Archivo,sans-serif}
+.amt b.zero{color:var(--steel);font:600 13px Inter}
+.bar{height:5px;background:#eef0f2;border-radius:9px;margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:9px;background:var(--new)}
+.bar i.hi{background:var(--mid)}.bar i.over{background:var(--old)}
+.amt small{display:block;color:var(--steel);font-size:11.5px;margin-top:3px}
+.foot{display:flex;gap:16px;padding:10px 22px;border-top:1px solid var(--line);background:#fafbfb;color:var(--steel);font-size:12.5px}
+.foot kbd{font:700 11px Inter;color:var(--ink);background:#fff;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 6px;margin-right:5px}
+.empty{padding:40px;text-align:center;color:var(--steel)}
+</style></head><body>
+<div class="dim"></div>
+<div class="win">
+ <div class="top">
+  <div class="ttl"><h2>Customer payment</h2><small>Ctrl+M</small><span class="sum" id="sum"></span></div>
+  <label class="sbox"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+   <input id="q" placeholder="Name, mobile or code — or the first letters (GV)" autocomplete="off"><kbd>Esc</kbd></label>
+  <div class="chips" id="chips"></div>
+ </div>
+ <div class="list" id="list"></div>
+ <div class="foot"><span><kbd>↑</kbd><kbd>↓</kbd>pick</span><span><kbd>Enter</kbd>take payment</span><span><kbd>Tab</kbd>next filter</span><span><kbd>Esc</kbd>clear / close</span></div>
+</div>
+<script src="common.js"></script>
+<script>
+backdrop();
+var F = [['all', 'Everyone owing', function (c) { return c.owed > 0; }], ['old', 'Over 30 days', function (c) { return c.oldest > 30; }],
+  ['limit', 'Near or over limit', function (c) { return c.owed > c.limit * 0.8; }]], f = 'all', cur = 0, rows = [];
+var q = document.getElementById('q');
+function draw() {
+  var v = q.value, fil = F.find(function (x) { return x[0] === f; })[2];
+  rows = CUST.filter(function (c) { return v.trim() ? match(c, v) : fil(c); }).slice(0, 60);
+  cur = Math.max(0, Math.min(cur, rows.length - 1));
+  var owing = CUST.filter(function (c) { return c.owed > 0; });
+  document.getElementById('sum').innerHTML = owing.length + ' owe · <b>Rs ' + money(owing.reduce(function (a, c) { return a + c.owed; }, 0)) + '</b>';
+  document.getElementById('chips').innerHTML = F.map(function (x) { return '<span class="chip ' + (x[0] === f && !v.trim() ? 'on' : '') + '" data-f="' + x[0] + '">' + x[1] + '<b>' + CUST.filter(x[2]).length + '</b></span>'; }).join('');
+  document.getElementById('list').innerHTML = rows.length ? rows.map(function (c, i) {
+    var t = c.owed > 0 ? ageTone(c.oldest) : 'none', pct = c.limit ? Math.min(100, Math.round(c.owed / c.limit * 100)) : 0;
+    return '<div class="row ' + (i === cur ? 'on' : '') + '" data-i="' + i + '"><div class="av ' + t + '">' + initials(c.name) + '</div>' +
+      '<div class="nm"><b>' + mark(c.name, v) + '</b><span>' + mark(c.phone, v.replace(/\D/g, '')) + ' · ' + mark(c.code, v) + '</span></div>' +
+      '<div class="age">' + (c.owed > 0 ? '<i class="' + t + '">oldest ' + ageWord(c.oldest) + '</i><div>' + c.bills.length + ' bill' + (c.bills.length > 1 ? 's' : '') + ' open</div>' : '<div>nothing open</div>') + '</div>' +
+      '<div class="amt">' + (c.owed > 0 ? '<b>Rs ' + money(c.owed) + '</b><div class="bar"><i class="' + (pct >= 100 ? 'over' : pct >= 80 ? 'hi' : '') + '" style="width:' + pct + '%"></i></div><small>' + pct + '% of Rs ' + money(c.limit).replace('.00', '') + ' limit</small>' : '<b class="zero">nothing owing</b>') + '</div></div>';
+  }).join('') : '<div class="empty">Nobody matches that.</div>';
+  var on = document.querySelector('.row.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+}
+function open(i) { var c = rows[i]; if (c) toast('Opens the payment window for ' + c.name + ' — Rs ' + money(c.owed)); }
+q.oninput = function () { cur = 0; draw(); };
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'ArrowDown') { e.preventDefault(); cur = Math.min(rows.length - 1, cur + 1); draw(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); cur = Math.max(0, cur - 1); draw(); }
+  else if (e.key === 'Enter') { e.preventDefault(); open(cur); }
+  else if (e.key === 'Tab') { e.preventDefault(); var k = F.findIndex(function (x) { return x[0] === f; }); f = F[(k + 1) % F.length][0]; q.value = ''; cur = 0; draw(); }
+  else if (e.key === 'Escape') { if (q.value) { q.value = ''; draw(); } else toast('Closes the window'); }
+});
+document.addEventListener('click', function (e) { var r = e.target.closest('.row'), ch = e.target.closest('.chip');
+  if (r) { cur = +r.dataset.i; draw(); open(cur); } if (ch) { f = ch.dataset.f; q.value = ''; cur = 0; draw(); q.focus(); } });
+draw(); q.focus();
+</script>
+</body></html>

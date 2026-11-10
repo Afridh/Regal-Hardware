@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3 · Quick pick — Customer payment</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--red:#e2394a;--old:#ff8a7a;--mid:#ffc35c;--new:#7ee2a8}
+*{box-sizing:border-box;margin:0}
+body{font:500 14px/1.4 Inter,system-ui,sans-serif;height:100vh;overflow:hidden}
+.win{position:fixed;left:50%;top:13vh;transform:translateX(-50%);width:min(860px,94vw);background:#16191c;color:#eef0f2;border-radius:22px;z-index:2;overflow:hidden;box-shadow:0 40px 90px -20px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.06)}
+.sbox{display:flex;align-items:center;gap:14px;padding:0 22px;height:72px;border-bottom:1px solid rgba(255,255,255,.08)}
+.sbox .tag{font:800 12px Inter;background:#AE1E2B;color:#fff;border-radius:8px;padding:5px 9px;white-space:nowrap}
+.sbox input{flex:1;border:0;outline:0;background:none;color:#fff;font:600 22px Inter}
+.sbox input::placeholder{color:#6e7680}
+.sbox kbd,.foot kbd{font:700 11px Inter;color:#cfd4da;border:1px solid rgba(255,255,255,.15);border-bottom-width:2px;border-radius:6px;padding:1px 6px}
+.body{padding:14px 16px 6px;max-height:min(470px,62vh);overflow:auto}
+h5{font:700 11px Inter;letter-spacing:.14em;text-transform:uppercase;color:#7c848e;margin:4px 6px 10px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.tile{position:relative;background:#1f2327;border-radius:16px;padding:14px 14px 12px;cursor:pointer;border:1px solid rgba(255,255,255,.06);transition:transform .2s cubic-bezier(.34,1.56,.64,1),background .15s}
+.tile:hover,.tile.on{background:#2a2f34;transform:translateY(-2px)}
+.tile.on{box-shadow:0 0 0 2px var(--red)}
+.tile .k{position:absolute;right:12px;top:12px;width:24px;height:24px;border-radius:8px;background:rgba(255,255,255,.08);display:grid;place-items:center;font:800 12px Archivo;color:#cfd4da}
+.tile b{display:block;font:700 13.5px Inter;padding-right:30px;line-height:1.25;height:34px;overflow:hidden}
+.tile .a{font:900 22px Archivo;margin-top:8px;letter-spacing:-.01em}
+.tile .s{font-size:12px;color:#8a929b;margin-top:2px}
+.tile .s i{font-style:normal;font-weight:700}.old{color:var(--old)}.mid{color:var(--mid)}.new{color:var(--new)}
+.recent{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 8px}
+.recent span{background:#1f2327;border-radius:999px;padding:7px 12px;font-size:12.5px;color:#aab1b9;cursor:pointer}
+.recent span b{color:#fff;font-weight:700}
+.row{display:flex;align-items:center;gap:14px;padding:11px 12px;border-radius:14px;cursor:pointer}
+.row:hover{background:#1f2327}
+.row.on{background:#AE1E2B}
+.row .av{width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.08);display:grid;place-items:center;font:800 13px Archivo;flex:none}
+.row.on .av{background:rgba(255,255,255,.2)}
+.row .nm{flex:1;min-width:0}.row .nm b{display:block;font-weight:700;font-size:15px}
+.row .nm span{font-size:12.5px;color:#8a929b}.row.on .nm span{color:rgba(255,255,255,.75)}
+.row .a{text-align:right}.row .a b{font:800 17px Archivo;display:block}.row .a span{font-size:12px;color:#8a929b}.row.on .a span{color:rgba(255,255,255,.8)}
+.row.on .old,.row.on .mid,.row.on .new{color:#fff}
+mark{background:#ffd27a;color:#16191c!important}
+.foot{display:flex;gap:18px;padding:12px 22px;border-top:1px solid rgba(255,255,255,.08);color:#7c848e;font-size:12.5px}
+.foot span:last-child{margin-left:auto}
+.empty{padding:36px;text-align:center;color:#8a929b}
+</style></head><body>
+<div class="dim"></div>
+<div class="win">
+ <label class="sbox"><span class="tag">Payment</span><input id="q" placeholder="Who is paying? Name, mobile or code" autocomplete="off"><kbd>Ctrl+M</kbd></label>
+ <div class="body" id="body"></div>
+ <div class="foot" id="foot"></div>
+</div>
+<script src="common.js"></script>
+<script>
+backdrop();
+var q = document.getElementById('q'), cur = 0, rows = [];
+var lately = CUST.filter(function (c) { return c.lastPay; }).sort(function (a, b) { return b.lastPay.date.localeCompare(a.lastPay.date); }).slice(0, 4);
+function draw() {
+  var v = q.value.trim(), B = document.getElementById('body');
+  if (!v) {
+    rows = CUST.filter(function (c) { return c.owed > 0; }).slice(0, 6); cur = Math.min(cur, rows.length - 1);
+    B.innerHTML = '<h5>Owe the most — press 1 to 6</h5><div class="tiles">' + rows.map(function (c, i) {
+      return '<div class="tile ' + (i === cur ? 'on' : '') + '" data-i="' + i + '"><span class="k">' + (i + 1) + '</span><b>' + c.name + '</b><div class="a">Rs ' + money(c.owed).replace(/\.\d\d$/, '') + '</div><div class="s">' + c.bills.length + ' bills · oldest <i class="' + ageTone(c.oldest) + '">' + ageWord(c.oldest) + '</i></div></div>';
+    }).join('') + '</div><h5 style="margin-top:18px">Paid lately — they may be back</h5><div class="recent">' + lately.map(function (c) { return '<span data-n="' + c.id + '"><b>' + c.name + '</b> · ' + money(c.lastPay.amt).replace(/\.\d\d$/, '') + ' on ' + day(c.lastPay.date) + '</span>'; }).join('') + '</div>';
+    document.getElementById('foot').innerHTML = '<span><kbd>1</kbd>–<kbd>6</kbd> pick</span><span><kbd>←</kbd><kbd>→</kbd><kbd>Enter</kbd></span><span>or just start typing</span><span>' + CUST.filter(function (c) { return c.owed > 0; }).length + ' customers owe</span>';
+  } else {
+    rows = CUST.filter(function (c) { return match(c, v); }).slice(0, 40); cur = Math.max(0, Math.min(cur, rows.length - 1));
+    B.innerHTML = rows.length ? rows.map(function (c, i) {
+      return '<div class="row ' + (i === cur ? 'on' : '') + '" data-i="' + i + '"><div class="av">' + initials(c.name) + '</div><div class="nm"><b>' + mark(c.name, v) + '</b><span>' + mark(c.phone, v.replace(/\D/g, '')) + ' · ' + mark(c.code, v) + '</span></div>' +
+        '<div class="a">' + (c.owed > 0 ? '<b>Rs ' + money(c.owed) + '</b><span>' + c.bills.length + ' bills · oldest <i class="' + ageTone(c.oldest) + '" style="font-style:normal;font-weight:700">' + ageWord(c.oldest) + '</i></span>' : '<span>nothing owing · advance</span>') + '</div></div>';
+    }).join('') : '<div class="empty">Nobody matches “' + v + '”.</div>';
+    document.getElementById('foot').innerHTML = '<span><kbd>↑</kbd><kbd>↓</kbd> pick</span><span><kbd>Enter</kbd> take payment</span><span><kbd>Esc</kbd> back</span><span>' + rows.length + ' found</span>';
+  }
+  var on = document.querySelector('.row.on'); if (on) on.scrollIntoView({ block: 'nearest' });
+}
+function open(c) { if (c) toast(c.owed > 0 ? 'Opens the payment window for ' + c.name + ' — Rs ' + money(c.owed) : 'Opens an advance for ' + c.name); }
+q.oninput = function () { cur = 0; draw(); };
+document.addEventListener('keydown', function (e) {
+  var tiles = !q.value.trim();
+  if (tiles && /^[1-6]$/.test(e.key)) { e.preventDefault(); cur = +e.key - 1; draw(); open(rows[cur]); return; }
+  if (e.key === 'ArrowDown' || (tiles && e.key === 'ArrowRight')) { e.preventDefault(); cur = Math.min(rows.length - 1, cur + (tiles && e.key === 'ArrowDown' ? 3 : 1)); draw(); }
+  else if (e.key === 'ArrowUp' || (tiles && e.key === 'ArrowLeft')) { e.preventDefault(); cur = Math.max(0, cur - (tiles && e.key === 'ArrowUp' ? 3 : 1)); draw(); }
+  else if (e.key === 'Enter') { e.preventDefault(); open(rows[cur]); }
+  else if (e.key === 'Escape') { if (q.value) { q.value = ''; cur = 0; draw(); } else toast('Closes the window'); }
+});
+document.addEventListener('click', function (e) { var r = e.target.closest('[data-i]'), n = e.target.closest('[data-n]');
+  if (r) { cur = +r.dataset.i; draw(); open(rows[cur]); } if (n) open(CUST.find(function (c) { return c.id === +n.dataset.n; })); });
+draw(); q.focus();
+</script>
+</body></html>
