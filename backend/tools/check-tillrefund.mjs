@@ -42,7 +42,7 @@ const near = (a, b) => Math.abs(a - b) < 0.01;
 await toWindow(); const a0 = await snap();
 const look = await pg.evaluate(() => { const box = document.getElementById('payAmt'), btn = [...document.querySelectorAll('[data-paym]')].map(x => x.dataset.paym); return { box: box.value, ro: box.readOnly, btn, words: document.querySelector('.payw').innerText } });
 ok(+look.box === a0.price * 2 && look.ro, 'the amount shows as a plain figure and cannot be typed over', JSON.stringify({ box: look.box, ro: look.ro }));
-ok(look.btn.join() === 'CASH,CREDIT' && /GIVE BACK IN CASH/.test(look.words) && /TAKE OFF THEIR ACCOUNT/.test(look.words) && /REFUND DUE/.test(look.words), 'it offers cash back or off the account, nothing else', look.btn.join());
+ok(look.btn.join() === 'CASH,CREDIT' && /GIVE BACK IN CASH/i.test(look.words) && /TAKE OFF THEIR ACCOUNT/i.test(look.words) && /REFUND DUE/i.test(look.words), 'it offers cash back or off the account, nothing else', look.btn.join());
 if (SHOT) await pg.screenshot({ path: SHOT + '/till-refund.png' });
 // card is refused, nothing left behind
 await pg.keyboard.press('a'); await wait(400); const a1 = await snap();

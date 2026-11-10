@@ -86,8 +86,11 @@ r = await last(); ok(r.cid === cid2 && r.customers === n2, 'their second mobile 
 const part = mob(1).slice(0, 6);
 await toQuestion(); await pg.keyboard.type(part); await wait(150); await pg.keyboard.press('Enter'); await wait(200);
 ok(await pg.evaluate(() => !!document.getElementById('bqQ') && !window.eval('S').pos.customer), 'part of a number that matches somebody: Enter does not pick them', part);
-await pg.keyboard.press('ArrowDown'); await pg.keyboard.press('ArrowUp'); await pg.keyboard.press('Enter'); await billDone(); await wait(400);
-r = await last(); ok(r.cid === cid1, 'chosen with the arrows, it does', r.name);
+await pg.keyboard.press('ArrowDown'); await pg.keyboard.press('ArrowUp'); await wait(100);
+// the row the arrows are on (those billed lately are first since 10 Nov 2026, so it need not be the first made)
+const onRow = await pg.evaluate(() => +(document.querySelector('#bqL .on') || {}).dataset?.bqid);
+await pg.keyboard.press('Enter'); await billDone(); await wait(400);
+r = await last(); ok(r.cid === onRow, 'chosen with the arrows, it does', r.name);
 await toQuestion(); await pg.keyboard.type('0900'); await wait(150); for (let i = 0; i < 3; i++) { await pg.keyboard.press('Enter'); await wait(150) }
 ok(await pg.evaluate(() => !!document.getElementById('bqQ') && /Enter a mobile/.test(document.getElementById('bqMsg').textContent)), 'too short a number is refused: it says so, nobody added');
 await pg.keyboard.press('Escape'); await billDone(); await wait(500);
