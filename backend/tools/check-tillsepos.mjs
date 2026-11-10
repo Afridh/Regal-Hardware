@@ -111,8 +111,8 @@ await pg.evaluate(() => { const S = window.eval('S'); S.pos.lines = []; window.e
 await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); const S = window.eval('S'); S.pos.lines = []; S.pos.customer = null; window.eval('render')() }); await wait(300);
 const owes = await pg.evaluate(() => { const S = window.eval('S'), pb = window.eval('partyBal'); const c = S.customers.filter(x => x.id !== 1 && x.active !== false).sort((a, b) => pb('C', b.id) - pb('C', a.id))[0]; return { id: c.id, name: c.name, owe: pb('C', c.id) } });
 await pg.keyboard.down('Control'); await pg.keyboard.press('m'); await pg.keyboard.up('Control'); await wait(400);
-const pick = await pg.evaluate(() => { const m = document.querySelector('.modal'); return m && { title: m.querySelector('h2').innerText, first: (m.querySelector('tr.on b') || {}).textContent } });
-ok(pick && /Customer payment/.test(pick.title) && pick.first === owes.name, 'Ctrl+M on a walk-in bill: the ones who owe, the most first', JSON.stringify({ pick, owes }));
+const pick = await pg.evaluate(() => { const m = document.querySelector('.modal'); return m && { title: m.querySelector('h2').innerText, first: (m.querySelector('.cpk-row.on b') || {}).textContent, panel: (m.querySelector('.cpk-r') || {}).innerText || '' } });
+ok(pick && /Customer payment/.test(pick.title) && pick.first === owes.name && pick.panel.includes(owes.name) && /outstanding/i.test(pick.panel) && /open/i.test(pick.panel), 'Ctrl+M on a walk-in bill: the ones who owe, the most first, the first shown on the right with their bills', JSON.stringify({ pick, owes }));
 await pg.keyboard.type(owes.name.split(' ')[0]); await wait(200); await pg.keyboard.press('Enter'); await wait(500);
 ok(await pg.evaluate(n => { const h = document.querySelector('.modal h2'); return !!h && h.innerText.includes('Payment from ' + n) }, owes.name), 'type a name, Enter: their payment window', owes.name);
 // type the amount, Enter: taken in cash and done (3 Nov 2026: Enter added it and asked for the rest)
