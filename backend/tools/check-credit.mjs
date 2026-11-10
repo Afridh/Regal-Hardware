@@ -53,6 +53,8 @@ await pg.screenshot({ path: OUT + '/credit-panel-list.png' });
 // search, Enter picks
 await pg.type('#cpQ', setup.roomy.slice(0, 5)); await wait(250);
 await pg.keyboard.press('Enter'); await wait(400);
+// their prices would move this bill: a click answers it (10 Nov 2026)
+if (await pg.$('#pcaUse')) { await pg.click('#pcaUse'); await wait(400) }
 ok(await pg.evaluate(() => window.eval('S').pos.customer) === setup.roomyId, 'typing a name and Enter puts them on the bill', setup.roomy);
 ok(await pg.evaluate(() => /Outstanding now/i.test(document.querySelector('.cp-figs').innerText) && /Outstanding after/i.test(document.querySelector('.cp-figs').innerText)), 'it shows what they owe now, this bill, and what they will owe');
 

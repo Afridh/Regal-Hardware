@@ -58,11 +58,11 @@ const inv1 = await pg.evaluate(no => { const s = window.eval('S').sales.find(x =
 ok(inv1 && inv1.price === newPrice, 'the bill saved on account carries the new price', JSON.stringify(inv1));
 
 // 3. a new bill: a price typed by hand is not replaced when the customer is picked
-await pg.evaluate(m => { const S = window.eval('S'); S.pos.editing = null; S.pos.customer = null; S.pos.lines = [{ pid: m.pid, qty: 1, price: m.retail + 33, disc: 0, auto: false }]; window.eval('setBillCustomer')(m.cid) }, made);
+await pg.evaluate(m => { const S = window.eval('S'); S.pos.editing = null; S.pos.customer = null; S.pos.lines = [{ pid: m.pid, qty: 1, price: m.retail + 33, disc: 0, auto: false }]; window.eval('setBillCustomer')(m.cid); const u = document.getElementById('pcaUse'); if (u) u.click() }, made);
 const typed = await pg.evaluate(() => window.eval('S').pos.lines[0].price);
 ok(typed === made.retail + 33, 'a new bill: a typed price stays when the customer is picked', typed);
 // …while a line at the till's own price still follows the customer's last price
-await pg.evaluate(m => { const S = window.eval('S'); S.pos.customer = null; S.pos.lines = [{ pid: m.pid, qty: 1, price: m.retail, disc: 0 }]; window.eval('setBillCustomer')(m.cid) }, made);
+await pg.evaluate(m => { const S = window.eval('S'); S.pos.customer = null; S.pos.lines = [{ pid: m.pid, qty: 1, price: m.retail, disc: 0 }]; window.eval('setBillCustomer')(m.cid); const u = document.getElementById('pcaUse'); if (u) u.click() }, made);
 const follows = await pg.evaluate(() => window.eval('S').pos.lines[0]);
 ok(follows.price === newPrice && follows.fromLast, 'a line at the normal price still goes to what they paid last time', JSON.stringify({ price: follows.price, fromLast: follows.fromLast }));
 await pg.evaluate(() => { const S = window.eval('S'); S.pos.lines = []; S.pos.customer = null });

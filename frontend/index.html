@@ -556,7 +556,9 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .pca-t{display:flex;align-items:baseline;gap:12px;margin-top:12px;padding:12px 14px;border-radius:14px;background:#f6f7f8;flex-wrap:wrap}
 .pca-t span{font-weight:700}.pca-t b{font:800 18px Archivo,sans-serif}.pca-t b s{font-size:14px;font-weight:600}.pca-t em{font-style:normal}
 .pca-t i{margin-left:auto;font-style:normal;font-weight:800;font-size:13px;border-radius:999px;padding:3px 10px;background:#fdecee}.pca-t i.up{background:#e2f5ea}
-.pca-k{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}.pca-k .btn{flex:1;justify-content:center}
+.pca-k{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}.pca-k .btn{flex:1;justify-content:center;min-height:48px;font-size:14.5px}
+.pca-c{margin-top:10px;font-size:12.5px;color:var(--steel);text-align:center}.pca-c.nudge{color:#AE1E2B;font-weight:700;animation:pcaNudge .35s}
+@keyframes pcaNudge{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
 .pc-walk .bs-av{background:#eef0f2;color:var(--steel)}
 .bs-lb{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--steel);padding:10px 10px 4px}
 @media (max-width:520px){.cp-figs{grid-template-columns:1fr 1fr}.cp-row2{grid-template-columns:1fr}}
@@ -21417,21 +21419,21 @@ function priceChangeAsk(c,moved,before,was,done){
      <span>${moved.length} line${moved.length===1?'':'s'} would move to ${c.level==='wholesale'?'their wholesale prices':'their prices'}${CFG.pos&&CFG.pos.repriceToLast?' and to what they paid last time':''}</span></div>
     <div class="pca-b"><table>${rows}</table>
      <div class="pca-t"><span>The bill</span><b><s>${money2(was)}</s> → <em class="${now<was?'dn':'up'}">${money2(now)}</em></b><i class="${now<was?'dn':'up'}">${now<was?'− ':'+ '}${money2(Math.abs(now-was))}</i></div>
-     <div class="pca-k"><button class="btn ${editing?'tape':'ghost'}" id="pcaKeep">Keep the prices on the bill <i class="kbd">${editing?'Enter':'K'}</i></button>
-      <button class="btn ${editing?'ghost':'tape'}" id="pcaUse">Use ${escM(first)}'s prices <i class="kbd">${editing?'U':'Enter'}</i></button></div></div></div>`);
+     <div class="pca-k"><button class="btn tape" id="pcaKeep" tabindex="-1">Keep the prices on the bill</button>
+      <button class="btn ghost" id="pcaUse" tabindex="-1">Use ${escM(first)}'s prices</button></div>
+     <div class="pca-c">Click one of the two — a key does not answer this, so no price changes by a key pressed in a hurry.</div></div></div>`);
   m.querySelector('.box').classList.add('pca-box');
+  if(document.activeElement&&m.contains(document.activeElement)) document.activeElement.blur();   // nothing focused: Enter or Space cannot press a button
   let gone=false;
   const end=(k)=>{ if(gone) return; gone=true; window.removeEventListener('keydown',key,true); m.remove();
     if(k) keep(); render();
     toast(k?`${first} on the bill — the prices stay as they were (${money2(billTotal())})`:`${first}'s prices — the bill is now ${money2(billTotal())}`); done() };
+  // every key is held here: nothing reaches the till behind, and none of them answers — only a click does
   const key=e=>{ if(!document.body.contains(m)){ window.removeEventListener('keydown',key,true); return }
-    e.stopPropagation(); if(e.repeat) return;
-    const k=e.key.toLowerCase();
-    if(e.key==='Enter'){ e.preventDefault(); end(editing) }
-    else if(e.key==='Escape'||k==='k'){ e.preventDefault(); end(true) }
-    else if(k==='u'){ e.preventDefault(); end(false) } };
+    e.stopPropagation(); e.preventDefault();
+    if(!e.repeat){ const c2=m.querySelector('.pca-c'); if(c2){ c2.classList.remove('nudge'); void c2.offsetWidth; c2.classList.add('nudge') } } };
   window.addEventListener('keydown',key,true);
-  m.addEventListener('click',e=>{ if(e.target===m) end(true) });   // clicking away keeps the bill as it was
+  m.addEventListener('click',e=>{ if(e.target===m) e.stopImmediatePropagation() },true);   // clicking beside the window does not close it
   m.querySelector('#pcaKeep').onclick=()=>end(true); m.querySelector('#pcaUse').onclick=()=>end(false);
 }
 function setBillCustomer0(id){

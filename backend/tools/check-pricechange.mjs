@@ -1,7 +1,6 @@
 // Choosing a customer that would move the prices on the bill asks first (10 Nov 2026: a bill made without a customer,
 // edited and given the customer, came down to what they paid last time, with only a small message).
-//  · on a bill being edited: the lines and the totals are shown, Enter keeps the prices as they were
-//  · on a new bill: Enter uses the customer's prices; K or Esc keeps them
+//  · the lines and the totals are shown; only a click answers it — no key, no click beside it
 //  · a customer whose prices change nothing: no question
 // Nothing reaches a printer.
 //   node backend/tools/run-e2e.mjs --keep        (the test server on :4010)
@@ -43,16 +42,17 @@ const state = () => pg.evaluate(() => { const a = document.querySelector('.pca')
 // a bill being edited
 let t0 = await bill('10999'); await choose(); let s = await state();
 ok(s.ask && s.text.includes(setup.name) && /Editing bill 10999/i.test(s.text) && s.text.includes((setup.retail).toLocaleString('en-US', { minimumFractionDigits: 2 })), 'editing a bill: choosing the customer shows the line, was → now, and the bill', s.text.slice(0, 220));
-await pg.keyboard.press('Enter'); await wait(400); s = await state();
-ok(!s.ask && s.cust === setup.cid && Math.abs(s.total - t0) < 0.005 && s.price === setup.retail, 'Enter keeps the prices on the bill (the customer is on it)', JSON.stringify({ was: t0, now: s.total }));
-// a new bill: Enter takes their prices
+// no key answers it, nor a click beside it (10 Nov 2026, the owner asked for a click)
+for (const k of ['Enter', 'Escape', ' ', 'k', 'u', 'Tab', 'F10']) await pg.keyboard.press(k);
+await pg.mouse.click(30, 400); await wait(400); s = await state();
+ok(s.ask && Math.abs(s.total - setup.low * 2) < 0.005, 'Enter, Esc, Space, letters, Tab, F10 and a click beside it: still asking, nothing settled', JSON.stringify({ ask: s.ask, total: s.total }));
+await pg.click('#pcaKeep'); await wait(400); s = await state();
+ok(!s.ask && s.cust === setup.cid && Math.abs(s.total - t0) < 0.005 && s.price === setup.retail, 'a click on Keep keeps the prices on the bill (the customer is on it)', JSON.stringify({ was: t0, now: s.total }));
+// a new bill: a click on Use takes their prices
 t0 = await bill(null); await choose(); s = await state();
 ok(s.ask, 'a new bill: the question comes up too');
-await pg.keyboard.press('Enter'); await wait(400); s = await state();
-ok(!s.ask && s.price === setup.low && s.total < t0, 'Enter on a new bill uses their prices', JSON.stringify({ was: t0, now: s.total }));
-// a new bill: Esc keeps
-t0 = await bill(null); await choose(); await pg.keyboard.press('Escape'); await wait(400); s = await state();
-ok(!s.ask && Math.abs(s.total - t0) < 0.005 && s.cust === setup.cid, 'Esc keeps the prices', JSON.stringify({ was: t0, now: s.total }));
+await pg.click('#pcaUse'); await wait(400); s = await state();
+ok(!s.ask && s.price === setup.low && s.total < t0, 'a click on Use takes their prices', JSON.stringify({ was: t0, now: s.total }));
 // nothing moves: no question
 await pg.evaluate(s => { const S = window.eval('S'); S.pos.lines = [{ pid: s.pid, qty: 2, price: s.low, disc: 0, auto: false }]; S.pos.customer = null; S.pos.editing = null; window.eval('render')() }, setup);
 await choose(); s = await state();
