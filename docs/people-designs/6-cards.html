@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>6 · Cards + drawer — Customers & Suppliers</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--red:#AE1E2B;--ink:#1d2125;--steel:#6b7480;--line:#e7e9ec;--bg:#f4f5f7;--old:#c0442c;--mid:#d98a1c;--new:#2e9e64}
+*{box-sizing:border-box;margin:0}
+body{font:500 14px/1.4 Inter,system-ui,sans-serif;color:var(--ink);background:var(--bg);height:100vh;overflow:hidden}
+.app{position:fixed;left:68px;right:0;top:0;bottom:0;display:flex;flex-direction:column}
+.bar{display:flex;align-items:center;gap:12px;padding:16px 22px 10px}
+.bar h1{font:900 26px Archivo}
+.kind{display:flex;background:#e9ebee;border-radius:12px;padding:3px}
+.kind span{padding:7px 16px;border-radius:10px;font-weight:700;color:var(--steel);cursor:pointer}.kind span.on{background:#fff;color:var(--ink);box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.sbox{flex:1;max-width:420px;display:flex;align-items:center;gap:10px;height:42px;border-radius:12px;padding:0 12px;background:#fff;border:2px solid var(--line);color:var(--steel)}
+.sbox:focus-within{border-color:var(--red)}
+.sbox input{flex:1;border:0;outline:0;background:none;font:600 15px Inter;color:var(--ink);min-width:0}
+.nb{margin-left:auto;border:0;background:var(--red);color:#fff;border-radius:12px;height:42px;padding:0 16px;font:800 13.5px Inter;cursor:pointer;white-space:nowrap}
+.nb kbd{font:700 10px Inter;background:rgba(255,255,255,.2);border-radius:5px;padding:1px 5px;margin-left:6px}
+.sum{display:flex;gap:10px;padding:0 22px 8px;align-items:center;flex-wrap:wrap}
+.sum div{font-size:12.5px;color:var(--steel)}.sum b{font:800 14px Archivo;color:var(--ink);margin-left:4px}.sum .r b{color:var(--red)}
+.chips{display:flex;gap:5px;margin-left:auto;flex-wrap:wrap}
+.chip{border:1px solid var(--line);border-radius:999px;padding:5px 11px;font:600 12px Inter;color:var(--steel);cursor:pointer;background:#fff}.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.grid{flex:1;overflow:auto;padding:6px 22px 22px;display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;align-content:start;transition:padding-right .25s}
+body.dr .grid,body.dr .bar,body.dr .sum{padding-right:542px}
+body.dr .bar h1{display:none}
+.c{background:#fff;border-radius:18px;box-shadow:0 0 0 1px var(--line);padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:8px;transition:transform .2s,box-shadow .2s;position:relative}
+.c:hover{transform:translateY(-2px);box-shadow:0 0 0 1px var(--line),0 10px 24px -14px rgba(0,0,0,.3)}
+.c.on{box-shadow:0 0 0 2px var(--red),0 10px 24px -14px rgba(174,30,43,.5)}
+.c .h{display:flex;gap:10px;align-items:center}
+.c .av{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font:800 14px Archivo;color:#fff;flex:none}
+.av.old{background:var(--old)}.av.mid{background:var(--mid)}.av.new{background:var(--new)}.av.none{background:#b7bdc4}
+.c b{font-size:13.5px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.c small{font-size:11.5px;color:var(--steel)}
+.c .amt{font:900 20px Archivo;letter-spacing:-.01em}.c .amt.z{font:600 13px Inter;color:var(--new)}
+.c .ft{display:flex;justify-content:space-between;font-size:11.5px;color:var(--steel)}
+.c .ft i{font-style:normal;font-weight:800;color:var(--old)}
+.lim{height:5px;border-radius:3px;background:#eceef1;overflow:hidden}.lim i{display:block;height:100%;background:var(--new)}.lim i.o{background:var(--old)}
+/* drawer */
+.dw{position:fixed;right:0;top:0;bottom:0;width:520px;background:#fff;box-shadow:-20px 0 50px -20px rgba(0,0,0,.35);transform:translateX(105%);transition:transform .28s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column;z-index:10}
+body.dr .dw{transform:none}
+.hd{background:linear-gradient(150deg,#2a0b10,#5a1019 58%,#AE1E2B);color:#fff;padding:18px 20px 16px;position:relative}
+.x{position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:10px;border:0;background:rgba(255,255,255,.14);color:#fff;font-size:18px;cursor:pointer}
+.hd h2{font:900 22px/1.15 Archivo;padding-right:40px}.hd .m{font-size:12.5px;color:rgba(255,255,255,.75);margin-top:4px}
+.tags{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap}.tags span{font-size:11px;font-weight:700;border-radius:999px;padding:3px 9px;background:rgba(255,255,255,.14)}.tags .bad{background:#ffb0a5;color:#5a0d0a}
+.hd .big{font:900 34px Archivo;margin-top:12px;letter-spacing:-.02em}.hd .big em{font-style:normal;font-size:16px;opacity:.6;margin-right:5px}
+.hd .sub{display:flex;gap:18px;font-size:12px;color:rgba(255,255,255,.7);margin-top:2px}.hd .sub b{color:#fff}
+.acts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.acts button{height:40px;border:1px solid var(--line);background:#fff;border-radius:11px;font:600 12.5px Inter;cursor:pointer;color:var(--ink);display:flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap;overflow:hidden}
+.acts button:hover{border-color:var(--red);color:var(--red)}
+.acts button.main{grid-column:1/-1;height:48px;background:var(--red);border-color:var(--red);color:#fff;font-size:14.5px;font-weight:800}
+.acts kbd{font:700 9.5px Inter;color:var(--steel)}.acts .main kbd{color:rgba(255,255,255,.75)}
+.body{flex:1;overflow:auto;padding:12px 16px 18px}
+.body h4{font:800 13.5px Inter;display:flex;justify-content:space-between;margin:6px 0 4px}.body h4 span{font:500 12px Inter;color:var(--steel)}
+.age{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}
+.age div{border-radius:12px;padding:8px 10px;background:#f6f7f8;font-size:11px;color:var(--steel);font-weight:700}
+.age b{display:block;font:800 15px Archivo;color:var(--ink);margin-top:2px}
+.age div:nth-child(1){border-top:3px solid #4cd18a}.age div:nth-child(2){border-top:3px solid #ffb547}.age div:nth-child(3){border-top:3px solid #ff8a6a}.age div:nth-child(4){border-top:3px solid var(--old)}
+.bl{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #f0f1f3;font-size:13.5px}
+.bl b{flex:1}.bl em{font:800 14px Archivo;font-style:normal}
+.ag{font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px}.ag.old{background:#fde7e3;color:var(--old)}.ag.mid{background:#fdf1dc;color:#9a5d00}.ag.new{background:#e2f5ea;color:#1f7a4b}
+.note{background:#fffbea;border-radius:12px;padding:10px 12px;font-size:13px;margin-top:8px}
+.empty{color:var(--steel);font-size:13px;padding:8px 0}
+.hint{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);font-size:12px;color:var(--steel);background:#fff;border-radius:999px;padding:6px 14px;box-shadow:0 0 0 1px var(--line)}
+body.dr .hint{display:none}
+</style></head><body>
+<div class="rail-bg"></div>
+<div class="app"><div class="bar" id="bar"></div><div class="sum" id="sum"></div><div class="grid" id="grid"></div></div>
+<div class="dw" id="dw"></div>
+<div class="hint">Click a card, or ↑ ↓ and Enter — Esc closes</div>
+<script src="people.js"></script>
+<script>
+var drOn = false;
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && e.target.id === 'q') { drOn = true; draw(); }
+  else if (e.key === 'Escape' && drOn) { drOn = false; draw(); }
+}, true);
+window.draw = function (focus) {
+  var K = P.kind, all = PEOPLE[K], L = list(), x = cur();
+  if (focus || !document.getElementById('q')) document.getElementById('bar').innerHTML = '<h1>' + (K === 'c' ? 'Customers' : 'Suppliers') + '</h1><div class="kind"><span data-kind="c" class="' + (K === 'c' ? 'on' : '') + '">Customers</span><span data-kind="s" class="' + (K === 's' ? 'on' : '') + '">Suppliers</span></div>' +
+    '<label class="sbox"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="q" placeholder="Name, mobile, code…" autocomplete="off" value="' + P.q + '"></label>' +
+    '<button class="nb" onclick="toast(\'Opens New ' + (K === 'c' ? 'customer' : 'supplier') + '\')">+ New ' + (K === 'c' ? 'customer' : 'supplier') + '<kbd>Ctrl+N</kbd></button>';
+  document.getElementById('sum').innerHTML = '<div>' + (K === 'c' ? 'Customers' : 'Suppliers') + '<b>' + all.length + '</b></div><div class="r">Outstanding<b>Rs ' + short(all.reduce(function (a, y) { return a + y.owed; }, 0)) + '</b></div>' +
+    (K === 'c' ? '<div class="r">Over limit<b>' + all.filter(function (y) { return y.limit && y.owed > y.limit; }).length + '</b></div>' : '<div>Cheques out<b>Rs ' + short(all.reduce(function (a, y) { return a + y.chequesOut; }, 0)) + '</b></div>') +
+    '<div class="chips">' + FILTERS[K].map(function (f) { return '<span class="chip ' + (P.f === f ? 'on' : '') + '" data-f="' + f + '">' + f + '</span>'; }).join('') + '</div>';
+  document.getElementById('grid').innerHTML = L.length ? L.map(function (y, i) {
+    var over = y.limit && y.owed > y.limit, pct = y.limit ? Math.min(100, y.owed / y.limit * 100) : 0;
+    return '<div class="c ' + (i === P.sel && drOn ? 'on' : '') + '" data-i="' + i + '" onclick="drOn=true"><div class="h"><span class="av ' + (y.owed ? tone(y.oldest) : 'none') + '">' + ini(y.name) + '</span><div><b>' + y.name + '</b><small>' + y.phone + '</small></div></div>' +
+      '<div class="amt ' + (y.owed ? '' : 'z') + '">' + (y.owed ? 'Rs ' + money(y.owed) : '✓ all paid') + '</div>' +
+      (K === 'c' && y.limit ? '<div class="lim"><i class="' + (over ? 'o' : '') + '" style="width:' + pct + '%"></i></div>' : '') +
+      '<div class="ft"><span>' + (y.bills.length ? y.bills.length + ' bills · oldest ' + y.oldest + 'd' : 'nothing open') + '</span>' + (over ? '<i>over limit</i>' : '<span>' + (y.lastPay ? 'paid ' + ago(y.lastPay.date) : '') + '</span>') + '</div></div>';
+  }).join('') : '<p style="color:var(--steel)">Nobody matches that.</p>';
+  document.body.classList.toggle('dr', drOn && !!x);
+  if (x) {
+    var b = buckets(x), over = x.limit && x.owed > x.limit, A = ACTIONS[K];
+    document.getElementById('dw').innerHTML = '<div class="hd"><button class="x" onclick="drOn=false;draw()">×</button><h2>' + x.name + '</h2><div class="m">' + x.phone + (x.phone2 ? ' · ' + x.phone2 : '') + ' · ' + x.code + '</div>' +
+      '<div class="tags">' + (K === 'c' ? '<span>' + x.level + ' prices</span>' : '<span>terms ' + x.terms + ' days</span>') + (over ? '<span class="bad">over the limit</span>' : '') + '<span>own page ' + (x.page ? 'on' : 'off') + '</span><span>since ' + day(x.since) + '</span></div>' +
+      '<div class="big"><em>Rs</em>' + money(x.owed) + '</div><div class="sub"><span>' + (K === 'c' ? 'Limit <b>' + money(x.limit) + '</b>' : 'Cheques out <b>' + money(x.chequesOut) + '</b>') + '</span><span>Last paid <b>' + (x.lastPay ? money(x.lastPay.amt) + '</b> · ' + ago(x.lastPay.date) : '—</b>') + '</span></div></div>' +
+      '<div class="acts">' + A.map(function (a) { return '<button class="' + (a[2] || '') + '" data-a="' + a[0] + '">' + a[0] + (a[1] ? ' <kbd>' + a[1] + '</kbd>' : '') + '</button>'; }).join('') + '</div>' +
+      '<div class="body">' + (x.owed ? '<h4>How old the debt is</h4><div class="age">' + ['up to 30', '31–60', '61–90', 'over 90'].map(function (t, i) { return '<div>' + t + ' days<b>' + (b[i] ? short(b[i]) : '—') + '</b></div>'; }).join('') + '</div>' : '') +
+      '<h4>Unpaid bills <span>oldest first</span></h4>' + (x.bills.length ? x.bills.map(function (bl) { return '<div class="bl"><b>' + bl.no + '</b><span style="color:var(--steel)">' + day(bl.date) + '</span><span class="ag ' + tone(bl.age) + '">' + bl.age + ' days</span><em>' + money(bl.amt) + '</em></div>'; }).join('') : '<div class="empty">Nothing owing — all paid up.</div>') +
+      x.notes.map(function (n) { return '<div class="note">📝 ' + n + '</div>'; }).join('') + '</div>';
+  }
+  if (focus) document.getElementById('q').focus();
+  var on = document.querySelector('.c[data-i="' + P.sel + '"]'); if (on) { on.classList.toggle('on', true); on.scrollIntoView({ block: 'nearest' }); }
+};
+draw(true);
+</script>
+</body></html>
