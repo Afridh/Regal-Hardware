@@ -90,8 +90,8 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   ok('C: ↓ moves the selection', selName() === all[1], selName());
   key(d.getElementById('custQ'), 'ArrowUp'); await sleep(20); ok('C: ↑ moves back', selName() === all[0]);
   const c2 = w.eval('C')(2); w.eval('custSel=2'); w.render(); await sleep(20);
-  ok('C: header shows the customer with actions', /Nimal Constructions/.test(d.querySelector('.cu-head h2').textContent) && !!d.querySelector('[data-act="custEdit"]') && !!d.querySelector('[data-act="custBill"]'));
-  ok('C: outstanding KPI matches the ledger', d.querySelector('.kpi .v').textContent.replace(/[^\d.]/g, '') === w.partyBal('C', 2).toFixed(2).replace(/[^\d.]/g, ''));
+  ok('C: header shows the customer with actions', /Nimal Constructions/.test(d.querySelector('.pt-top h2').textContent) && !!d.querySelector('[data-act="custEdit"]') && !!d.querySelector('[data-act="custBill"]'));
+  ok('C: outstanding KPI matches the ledger', d.querySelector('.pt-tile b').textContent.replace(/[^\d.]/g, '') === w.partyBal('C', 2).toFixed(2).replace(/[^\d.]/g, ''));
   for (const t of ['bills', 'payments', 'statement', 'details']) { d.querySelector(`[data-custtab="${t}"]`).click(); await sleep(20); ok(`C: ${t} tab renders`, d.querySelector('.cu-tabs button.on').dataset.custtab === t && d.querySelectorAll('.cu-tbl').length > 0 && !A.errors.length, A.errors[0] || ''); }
   d.querySelector('[data-custtab="statement"]').click(); await sleep(20);
   d.querySelector('[data-custrange="all"]').click(); await sleep(20);
@@ -124,7 +124,7 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   d.getElementById('ra').value = '5000'; d.getElementById('ra').dispatchEvent(new w.Event('input'));
   key(d.getElementById('ra'), 'Enter'); await sleep(50);
   ok('C: Enter takes the cash and completes, in one press', !d.querySelector('.modal #ra') && w.S.payments.length === payN + 1 && w.S.payments.at(-1).method === 'CASH'); w.closeModals();
-  ok('C: payment recorded and still on the customers page', w.S.payments.length === payN + 1 && Math.abs(w.partyBal('C', 2) - (owedBefore - 5000)) < 0.01 && w.S.view === 'customers' && /Nimal/.test(d.querySelector('.cu-head h2').textContent));
+  ok('C: payment recorded and still on the customers page', w.S.payments.length === payN + 1 && Math.abs(w.partyBal('C', 2) - (owedBefore - 5000)) < 0.01 && w.S.view === 'customers' && /Nimal/.test(d.querySelector('.pt-top h2').textContent));
   // keys: F7 opens, Enter = the cash and complete; cheque only asks when chosen; several parts on one payment
   const keyDoc = (k, extra = {}) => d.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...extra }));
   const owed2 = w.partyBal('C', 2), payN2 = w.S.payments.length, chqN = w.S.cheques.length;
@@ -161,7 +161,7 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   const row3 = d.querySelector('.cu-row[data-id="3"]'), name3 = row3.querySelector('.nm b').textContent; row3.click();
   ok('C: a loading spinner shows while switching customer', !!d.querySelector('.cu-loading'));
   await sleep(250);
-  ok('C: then the chosen customer opens', w.eval('custSel') === 3 && !d.querySelector('.cu-loading') && d.querySelector('.cu-head h2').textContent.includes(name3), `sel ${w.eval('custSel')} head "${d.querySelector('.cu-head h2')?.textContent}" want "${name3}"`);
+  ok('C: then the chosen customer opens', w.eval('custSel') === 3 && !d.querySelector('.cu-loading') && d.querySelector('.pt-top h2').textContent.includes(name3), `sel ${w.eval('custSel')} head "${d.querySelector('.cu-head h2')?.textContent}" want "${name3}"`);
   w.eval('custSel=' + nc.id); w.render(); await sleep(20);
   d.querySelector('[data-act="custBill"]').click(); await sleep(30);
   ok('C: "New bill" opens the till with the customer on it', w.S.view === 'pos' && w.S.pos.customer === nc.id);
@@ -176,14 +176,14 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   const rows = () => [...d.querySelectorAll('.cu-row')].map(r => r.querySelector('.nm b').textContent);
   w.go('suppliers'); await sleep(30);
   ok('S: list shows every supplier with avatar and balance', rows().length === w.S.suppliers.length && d.querySelectorAll('.cu-row .av').length === rows().length);
-  ok('S: buttons sit above the details', (() => { const h = d.querySelector('.cu-head'); return h && h.children[0].classList.contains('cu-acts') && h.children[1].classList.contains('cu-id'); })());
+  ok('S: name card, then the row of buttons, then the tiles (the Tiles look, 10 Nov 2026)', (() => { const h = d.querySelector('.pt-top'); return h && h.nextElementSibling.classList.contains('pt-ribbon') && !!d.querySelector('.pt-ribbon ~ .pt-tiles'); })());
   ok('S: search box focused on opening', d.activeElement && d.activeElement.id === 'supQ');
   const rep = w.S.suppliers[1].contact.split(' ').pop().toLowerCase();
   type(rep); ok('S: finds by the rep\'s name', rows().length >= 1 && rows().some(r => r === w.S.suppliers[1].name), rows().join(', '));
   type(''); const iSel = rows().indexOf(d.querySelector('.cu-row.sel .nm b').textContent); key(d.getElementById('supQ'), 'ArrowDown'); await sleep(20);
   ok('S: ↓ moves the selection', d.querySelector('.cu-row.sel .nm b').textContent === rows()[Math.min(rows().length - 1, iSel + 1)], `from row ${iSel}`);
   w.eval('supSel=1'); w.render(); await sleep(20);
-  ok('S: KPI matches the ledger', d.querySelector('.kpi .v').textContent.replace(/[^\d.]/g, '') === w.partyBal('S', 1).toFixed(2).replace(/[^\d.]/g, ''));
+  ok('S: KPI matches the ledger', d.querySelector('.pt-tile b').textContent.replace(/[^\d.]/g, '') === w.partyBal('S', 1).toFixed(2).replace(/[^\d.]/g, ''));
   for (const t of ['bills', 'payments', 'cheques', 'statement', 'details']) { d.querySelector(`[data-suptab="${t}"]`).click(); await sleep(20); ok(`S: ${t} tab renders`, d.querySelector('.cu-tabs button.on').dataset.suptab === t && d.querySelectorAll('.cu-tbl').length > 0 && !A.errors.length, A.errors[0] || ''); }
   d.querySelector('[data-suptab="statement"]').click(); await sleep(20); d.querySelector('[data-suprange="all"]').click(); await sleep(20);
   const last = [...d.querySelectorAll('.cu-tbl.stmt tr')].pop();
@@ -206,7 +206,7 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   ok('S: loading beat on switching', !!d.querySelector('.cu-loading')); await sleep(250);
   ok('S: then the supplier opens', w.eval('supSel') === 2 && !d.querySelector('.cu-loading'));
   w.go('customers'); await sleep(20);
-  ok('C: customer buttons sit above the details too', (() => { const h = d.querySelector('.cu-head'); return h && h.children[0].classList.contains('cu-acts'); })());
+  ok('C: the same for customers', (() => { const h = d.querySelector('.pt-top'); return h && h.nextElementSibling.classList.contains('pt-ribbon'); })());
 }
 
 // ---------------------------------------------------------------- classic till keyboard flow
