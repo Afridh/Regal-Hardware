@@ -425,7 +425,7 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
       const p = prod(l.pid);
       return { name: l.name || p.name || 'Item', code: p.code || '', unit: p.unit || '',
         qty: l.qty, price: l.price, disc: l.disc || 0, mrp: lineMrp(l),
-        amount: +(l.qty * l.price - (l.disc || 0)).toFixed(2), returned: l.qty < 0 };
+        amount: +(l.qty * l.price - (l.disc || 0)).toFixed(2), returned: l.qty < 0, ...lineWarranty(l, inv) };
     }),
     pays: (inv.pays || []).map(x => ({ method: x.method, amount: x.amount })),
     paper: view?.format || (inv.paper === 'r80' ? 'r80' : 'a5'),
@@ -436,6 +436,17 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
       logo, sinhala: sh.sinhala || '', near: sh.near || '', tags: sh.tags || '', line1: sh.line1 || '', email: sh.email || '' },
   } });
 }));
+
+/* A line's warranty, for the e-bill and the customer's own page (10 Nov 2026): the period as the till put it on the
+   line ("1 YEAR", "6 MONTHS", "LIFETIME"), the day it runs to, counted from the bill's date, and the serial numbers. */
+function lineWarranty(l, inv) {
+  const w = String(l?.warranty || '').trim();
+  if (!w || w === '0' || +l.qty < 0) return {};
+  let until = '';
+  const m = /(\d+)\s*(YEAR|MONTH)/i.exec(w);
+  if (m && inv?.date && !/LIFE/i.test(w)) { const d = new Date(inv.date + 'T12:00:00'); d.setMonth(d.getMonth() + (+m[1]) * (/YEAR/i.test(m[2]) ? 12 : 1)); until = d.toISOString().slice(0, 10); }
+  return { warranty: w, warrantyUntil: until, ...(Array.isArray(l.serials) && l.serials.length ? { serials: l.serials.map(String) } : {}) };
+}
 
 /* What the customer thought of it: one rating a bill, from the same link. It waits in cust_inbox like
    everything else they send, and the next till to read the books puts it on the bill and tells the shop. */
@@ -529,7 +540,7 @@ r.get('/bill/:no', custAuth, asyncHandler(async (req, res) => {
       const p = name(l.pid) || {};
       return { name: l.name || p.name || 'Item', code: p.code || '', unit: p.unit || '',
         qty: l.qty, price: l.price, disc: l.disc || 0,
-        amount: +(l.qty * l.price - (l.disc || 0)).toFixed(2), returned: l.qty < 0 };
+        amount: +(l.qty * l.price - (l.disc || 0)).toFixed(2), returned: l.qty < 0, ...lineWarranty(l, inv) };
     }),
     pays: (inv.pays || []).map(x => ({ method: x.method, amount: x.amount, ref: x.ref || '' })),
     shop: { name: CFG.shop?.name || 'Regal Hardware', phone: CFG.shop?.phone || '', addr: CFG.shop?.addr || '' },

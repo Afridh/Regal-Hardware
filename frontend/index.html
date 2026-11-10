@@ -424,6 +424,38 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .cp-save{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;border:0;border-radius:10px;padding:13px 16px;cursor:pointer;background:#1f3b5a;color:#fff;font:inherit;margin-top:2px}
 .cp-save b{font-family:Archivo,sans-serif;font-size:16px;letter-spacing:.02em}.cp-save span{font-size:12px;opacity:.85}
 .cp-save[disabled]{opacity:.45;cursor:not-allowed}
+/* "Red card" (chosen 10 Nov 2026): the list with a dot for how old the debt is; the customer picked on a red card */
+.modal.cp-modal .box.cp-sheet{border-left:0;box-shadow:-30px 0 60px -20px rgba(0,0,0,.45)}
+.cp-q{height:48px;border-radius:12px!important;background:#f2f3f5;border:2px solid transparent!important;font-weight:600;font-size:16px}
+.cp-q:focus{border-color:#AE1E2B!important;background:#fff}
+.cp-list{gap:2px}
+.cp-row{grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:3px 12px;border:0;border-radius:12px;padding:10px;background:none}
+.cp-row:hover{background:#f6f7f8;box-shadow:none;border:0}
+.cp-row.on,.cp-row.on:hover{background:#1d2125;color:#fff;box-shadow:none}
+.cp-dot{width:9px;height:9px;border-radius:50%}.cp-dot.old{background:#c0442c}.cp-dot.mid{background:#d98a1c}.cp-dot.new{background:#2e9e64}.cp-dot.none{background:#c3c8ce}
+.cp-row .cp-ow{font-family:Archivo,sans-serif;font-weight:800;font-size:14.5px;color:inherit}
+.cp-row .cp-sub{grid-column:2/4;display:flex;align-items:center;gap:10px}.cp-row.on .cp-sub{color:rgba(255,255,255,.65)}
+.cp-mini{flex:1;max-width:120px;height:4px;border-radius:9px;background:#e9ecef;overflow:hidden}.cp-row.on .cp-mini{background:rgba(255,255,255,.18)}
+.cp-mini i{display:block;height:100%;background:#2e9e64}.cp-mini i.hi{background:#d98a1c}.cp-mini i.over{background:#c0442c}
+.cp-card{border-radius:18px;padding:16px 18px;color:#fff;background:linear-gradient(150deg,#2a0b10,#5a1019 60%,#AE1E2B);position:relative;overflow:hidden;flex:none}
+.cp-card:after{content:"";position:absolute;right:-70px;top:-70px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.07);pointer-events:none}
+.cp-card .cp-who{background:none;border:0;padding:0;justify-content:flex-start}
+.cp-card .cp-who>div{flex:1;min-width:0}
+.cp-av{width:42px;height:42px;flex:none;border-radius:12px;background:rgba(255,255,255,.15);display:grid;place-items:center;font:800 15px Archivo,sans-serif}
+.cp-card .cp-who b{font-family:Archivo,sans-serif;font-size:15.5px;line-height:1.2}.cp-card .cp-who .muted{color:rgba(255,255,255,.7)!important;display:block}
+.cp-card .cp-who .btn{background:rgba(255,255,255,.14)!important;color:#fff!important;border:0!important;position:relative;z-index:1}
+.cp-card .cp-figs{grid-template-columns:auto 1fr auto;align-items:end;gap:8px;margin-top:14px}
+.cp-card .cp-figs div{border:0;padding:0;background:none}
+.cp-card .cp-figs span{color:rgba(255,255,255,.6);font-size:10.5px}
+.cp-card .cp-figs b{font-size:17px;color:#fff}
+.cp-card .cp-arr{text-align:center}.cp-card .cp-arr b{font-size:13px;opacity:.85}
+.cp-card .cp-after{text-align:right}.cp-card .cp-after b{font-size:clamp(22px,2.1vw,27px);font-weight:900;line-height:1.05}
+.cp-card .cp-figs .bad{background:none}.cp-card .cp-figs .bad b{color:#ffb0a5}
+.cp-card .cp-meter{height:8px;margin-top:12px;background:rgba(255,255,255,.15)}
+.cp-card .cp-meter i{background:#fff}.cp-card .cp-meter i.add{background:repeating-linear-gradient(45deg,#ffc35c 0 5px,#ffd98f 5px 10px)}.cp-card .cp-meter i.over{background:repeating-linear-gradient(45deg,#ff8a7a 0 5px,#ffb0a5 5px 10px)}
+.cp-card .cp-lim{display:flex;justify-content:space-between;margin-top:5px;font-size:11.5px;color:rgba(255,255,255,.72)}
+.cp-save{align-items:center;border-radius:16px;min-height:58px;justify-content:center;background:#AE1E2B;box-shadow:0 12px 24px -12px #AE1E2B}
+.cp-save[disabled]{background:#c9ced4;box-shadow:none;opacity:1}
 @media (max-width:520px){.cp-figs{grid-template-columns:1fr 1fr}.cp-row2{grid-template-columns:1fr}}
 .modal .box{background:var(--white);border-radius:var(--r);padding:18px;min-width:420px;max-width:900px;width:92%;
  max-height:90vh;overflow:auto;border-top:4px solid var(--chip-yellow);box-shadow:0 18px 50px rgba(16,22,20,.35)}
@@ -18614,6 +18646,9 @@ function cpList(){
   if(!v) return cpRegulars();
   return S.customers.filter(c=>c.id!==1&&c.active!==false&&(typeof custMatch==='function'?custMatch(c,v):(c.name.toLowerCase().includes(v)||(c.phone||'').includes(v)))).slice(0,30);
 }
+// how many days old their oldest unpaid bill is (the dot in the list), and two letters for the card
+function cpOldest(id){ let d=null; for(const s of S.sales) if(s.customerId===id&&+s.balance>0.005&&(!d||String(s.date)<d)) d=String(s.date); return d?Math.max(0,Math.round((today-new Date(d))/864e5)):0 }
+function cpIni(n){ return String(n||'').replace(/[^A-Za-z0-9 ]/g,' ').split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase()||'?' }
 function cpMeter(c,withBill){
   const lim=Math.max(1,+c.limit||1), owes=Math.max(0,partyBal('C',c.id)), base=Math.min(owes,lim)/lim*100;
   const add=withBill?Math.max(0,Math.min(owes+cpTotal()-cpPaid(),lim)-owes)/lim*100:0, over=withBill&&cpOver(c);
@@ -18628,9 +18663,9 @@ function cpDraw(focus){
     const list=cpList(); ONA.sel=Math.min(ONA.sel,Math.max(0,list.length-1));
     el.innerHTML=head+`<input id="cpQ" class="cp-q" placeholder="Name or mobile…" autocomplete="off" value="${noteEsc(ONA.q)}">
       <div class="cp-label">${ONA.q.trim()?'Customers':'Your regular credit customers'}</div>
-      <div class="cp-list">${list.map((x,i)=>{ const ow=partyBal('C',x.id);
-        return `<button class="cp-row ${i===ONA.sel?'on':''}" data-cp-cust="${x.id}"><b>${noteEsc(x.name)}</b><span class="cp-ow">${ow>0.005?'outstanding '+money2(ow):'clear'}</span>
-          <span class="cp-sub">${noteEsc(x.phone||'no mobile')}${x.limit?' · limit '+money2(x.limit):''}</span>${x.limit?cpMeter(x,false):''}</button>` }).join('')
+      <div class="cp-list">${list.map((x,i)=>{ const ow=partyBal('C',x.id), age=cpOldest(x.id), pct=x.limit?Math.min(100,Math.round(Math.max(0,ow)/x.limit*100)):0;
+        return `<button class="cp-row ${i===ONA.sel?'on':''}" data-cp-cust="${x.id}"><span class="cp-dot ${ow>0.005?(age>60?'old':age>30?'mid':'new'):'none'}" title="${ow>0.005?'oldest unpaid bill '+age+' days':'nothing owing'}"></span><b>${noteEsc(x.name)}</b><span class="cp-ow">${ow>0.005?money2(ow):'clear'}</span>
+          <span class="cp-sub">${noteEsc(x.phone||'no mobile')}${x.limit?`<span class="cp-mini"><i class="${pct>=100?'over':pct>=80?'hi':''}" style="width:${pct}%"></i></span>${pct}% of limit`:''}</span></button>` }).join('')
         ||`<div class="muted">${ONA.q.trim()?'Nobody matches that.':'No credit customers yet — search, or add a new one.'}</div>`}</div>
       <div class="cp-foot"><button class="btn ghost sm" data-cp="new">New customer…</button>
         <button class="btn ghost sm" data-cp="payscreen" title="Several ways at once, points or a voucher">The full payment screen</button>
@@ -18642,10 +18677,10 @@ function cpDraw(focus){
   /* goods back (the bill is below nought, 3 Nov 2026): it comes off what they owe — the oldest bills first —
      and anything past that is held as their credit for the next bill. No limit, no payment to take. */
   if(T<-0.005){ const back=+(-T).toFixed(2), owes0=Math.max(0,partyBal('C',c.id)), after=+(owes0-back).toFixed(2);
-    el.innerHTML=head+`<div class="cp-who"><div><b>${noteEsc(c.name)}</b><span class="muted">${noteEsc(c.phone||'no mobile')} · ${c.level||'retail'} prices</span></div>
+    el.innerHTML=head+`<div class="cp-card no-invert"><div class="cp-who"><span class="cp-av">${escM(cpIni(c.name))}</span><div><b>${noteEsc(c.name)}</b><span class="muted">${noteEsc(c.phone||'no mobile')} · ${c.level||'retail'} prices</span></div>
       <button class="btn ghost sm" data-cp="change">Someone else</button></div>
-     <div class="cp-figs"><div><span>Outstanding now</span><b>${money2(owes0)}</b></div><div><span>Goods back — comes off</span><b>− ${money2(back)}</b></div>
-      <div><span>Outstanding after</span><b>${money2(Math.max(0,after))}</b></div></div>
+     <div class="cp-figs"><div><span>Outstanding now</span><b>${money2(owes0)}</b></div><div class="cp-arr"><span>goods back</span><b>− ${money2(back)}</b></div>
+      <div class="cp-after"><span>Outstanding after</span><b>${money2(Math.max(0,after))}</b></div></div></div>
      ${after<-0.005?`<div class="muted">${money2(-after)} more than they owe — held as their credit, it comes off their next bill.</div>`:''}
      <div class="cp-pills"><span class="muted">bill</span>${[['a5','Large A5'],...(c.phone?[['sms','e-Bill text']]:[]),['none','No print']].map(([k,l])=>`<button class="btn ghost sm ${ONA.paper===k?'on':''}" data-cp-paper="${k}">${l}</button>`).join('')}</div>
      <button class="cp-save" data-cp="save"><b>Take ${money2(back)} off their account</b><span>${ONA.paper==='none'?'no print':({a5:'large A5 bill',r80:'80mm receipt',sms:'e-bill by text'})[ONA.paper]||'print'} · Enter</span></button>`;
@@ -18660,11 +18695,12 @@ function cpDraw(focus){
   const banks=S.banks||[];
   if(ONA.paper==='r80') ONA.paper='a5';            // credit bills print large
   const how=ONA.how, PAPERS=[['a5','Large A5'],...(c.phone?[['sms','e-Bill text']]:[]),['none','No print']];
-  el.innerHTML=head+`<div class="cp-who"><div><b>${noteEsc(c.name)}</b>${custListed(c)?` <span class="lst-tag ${c.list}">${listName(c)}</span>`:''}<span class="muted">${noteEsc(c.phone||'no mobile')} · ${c.level||'retail'} prices</span></div>
+  /* "Red card" (chosen 10 Nov 2026): who, and what they owe now → after this bill, with the limit bar showing what this bill adds */
+  el.innerHTML=head+`<div class="cp-card no-invert"><div class="cp-who"><span class="cp-av">${escM(cpIni(c.name))}</span><div><b>${noteEsc(c.name)}</b>${custListed(c)?` <span class="lst-tag ${c.list}">${listName(c)}</span>`:''}<span class="muted">${noteEsc(c.phone||'no mobile')} · ${c.level||'retail'} prices</span></div>
       <button class="btn ghost sm" data-cp="change">Someone else</button></div>
-    <div class="cp-figs"><div><span>Outstanding now</span><b>${money2(owes)}</b></div><div><span>On account now</span><b>${money2(onAcct)}</b></div>
-      <div class="${over?'bad':''}"><span>Outstanding after</span><b>${money2(will)}</b></div></div>
-    ${c.limit?cpMeter(c,true)+`<div class="muted cp-lim">Limit ${money2(c.limit)}${over?'':' · '+money2(Math.max(0,c.limit-owes-onAcct))+' left after this bill'}</div>`:''}
+    <div class="cp-figs"><div><span>Outstanding now</span><b>${money2(owes)}</b></div><div class="cp-arr"><span>on account now</span><b>+ ${money2(onAcct)}</b></div>
+      <div class="cp-after ${over?'bad':''}"><span>Outstanding after</span><b>${money2(will)}</b></div></div>
+    ${c.limit?cpMeter(c,true)+`<div class="cp-lim"><span>limit Rs ${money2(c.limit)}</span><span>${owes+onAcct>c.limit?'over by '+money2(owes+onAcct-c.limit):money2(Math.max(0,c.limit-owes-onAcct))+' left after this bill'}</span></div>`:''}</div>
     ${held>0.005?`<div class="muted">They have ${money2(held)} in credit with the shop — it comes off this first.</div>`:''}
     <div class="cp-pills cp-sites" ${featOn('sites')?'':'style="display:none"'}><span class="muted">site</span>${sites.map(x=>`<button class="btn ghost sm ${ONA.site===x.id?'on':''}" data-cp-site="${x.id}" title="${noteEsc(x.address||'')}">${noteEsc(x.name)}${+x.limit>0?` · — outstanding ${money2(siteOwed(c.id,x.id))}`:''}</button>`).join('')}
       ${ONA.addSite?`<input id="cpSiteNew" placeholder="e.g. Kandy Rd house" maxlength="60" style="width:180px;margin:0"><button class="btn sm" data-cp="siteadd">Add</button>`
