@@ -537,12 +537,14 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .sizeq.redcard .pick.def i{background:#AE1E2B;color:#fff}
 .sizeq.redcard .chk{background:#f6f7f8;border-radius:14px;padding:12px 14px;margin-top:14px!important}
 /* who sold it, "Red card" (10 Nov 2026) — the Customer's number window's look */
-.bq-head #bsQ{display:block;width:100%;margin:14px 0 0;height:52px;border-radius:14px!important;border:0!important;background:#fff;color:#1d2125;font-weight:700;font-size:18px;padding:0 16px;box-shadow:0 10px 24px -12px rgba(0,0,0,.6);position:relative;z-index:1}
+.bq-head #bsQ,.bq-head #cq{display:block;width:100%;margin:14px 0 0;height:52px;border-radius:14px!important;border:0!important;background:#fff;color:#1d2125;font-weight:700;font-size:18px;padding:0 16px;box-shadow:0 10px 24px -12px rgba(0,0,0,.6);position:relative;z-index:1}
 .bs-list{max-height:330px;overflow:auto}
 .bs-av{width:40px;height:40px;flex:none;border-radius:12px;display:grid;place-items:center;font:800 14px Archivo,sans-serif;background:#eef0f2;color:var(--ink)}
 .bq-row.bs-s .bs-av{background:#e2f5ea;color:#1f8a55}.bq-row.bs-none .bs-av{background:#fdecee;color:#AE1E2B}
 .bq-row.on .bs-av{background:rgba(255,255,255,.16);color:#fff}
 .bq-row kbd{margin-left:auto;font:700 10.5px Inter,sans-serif;border-radius:6px;padding:2px 6px;background:#f2f3f5;color:var(--steel);border:0}.bq-row.on kbd{background:rgba(255,255,255,.15);color:#fff}
+.pc-list{max-height:min(380px,48vh);overflow:auto}
+.pc-walk .bs-av{background:#eef0f2;color:var(--steel)}
 .bs-lb{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--steel);padding:10px 10px 4px}
 @media (max-width:520px){.cp-figs{grid-template-columns:1fr 1fr}.cp-row2{grid-template-columns:1fr}}
 .modal .box{background:var(--white);border-radius:var(--r);padding:18px;min-width:420px;max-width:900px;width:92%;
@@ -21390,12 +21392,13 @@ function setBillCustomer(id){
   return n;
 }
 function pickCustomer(after){
-  const m=modal(`<h2>Customer</h2>
-   <input id="cq" placeholder="Type a phone number or a name…" autocomplete="off">
-   <div id="cl" style="margin-top:10px"></div>
-   <div class="card note" id="cnew" style="margin-top:10px">
-    <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
-     <b>New customer</b><span class="muted">Mobile and name is enough — the rest can wait.</span></div>
+  /* the look of Ctrl+M and the Customer's number window (10 Nov 2026): the search on a red header, the matches as rows */
+  const m=modal(`<div class="bq-head no-invert"><div class="bq-t"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11a4 4 0 100-8 4 4 0 000 8zM3 21a6 6 0 0112 0M17 8h4M19 6v4"/></svg>
+     <div><h2>Customer</h2><span>Their prices go on the bill · those billed lately come first</span></div></div>
+    <input id="cq" placeholder="Type a phone number or a name…" autocomplete="off"></div>
+   <div class="bq-body"><div id="cl" class="pc-list"></div>
+   <div class="bq-new" id="cnew">
+    <div class="bq-nh"><b><i>NEW</i>New customer</b><span>Mobile and name is enough — the rest can wait.</span></div>
     <div class="grid2" style="margin-top:8px">
      <div class="f"><label>Mobile</label><input id="nph" placeholder="07…" autocomplete="off"></div>
      <div class="f"><label>Name</label><input id="nnm" placeholder="Name or shop" autocomplete="off"></div></div>
@@ -21403,7 +21406,8 @@ function pickCustomer(after){
      <button class="btn tape" id="nadd">Add and put on this bill</button>
      <label class="chk" style="flex:0 0 auto;margin:0"><input type="checkbox" id="nws"> wholesale prices</label>
      <span class="muted" id="nmsg"></span></div>
-   </div>`);
+   </div></div>`);
+  m.querySelector('.box').classList.add('bq-box');
   const q=m.querySelector('#cq'), ph=m.querySelector('#nph'), nm=m.querySelector('#nnm');
   const isPhone=v=>/^0\d{6,9}$/.test(v);
   let touched=false;
@@ -21419,13 +21423,14 @@ function pickCustomer(after){
   const draw=()=>{
     const v=q.value.trim().toLowerCase();
     const hits=custRecent(S.customers.filter(c=>c.id!==1&&c.active!==false&&(typeof custMatch==='function'?custMatch(c,v):(c.name.toLowerCase().includes(v)||(c.phone||'').includes(v)))));
-    m.querySelector('#cl').innerHTML=`<table>
-      <tr class="rowlink" data-cid="1"><td><b>Walk-in customer</b><div class="muted">no account, retail prices</div></td><td></td><td class="n"></td></tr>
-      ${hits.map(c=>`<tr class="rowlink" data-cid="${c.id}"><td><b>${c.name}</b><div class="muted">${c.phone||'no mobile'} · ${c.code}</div></td>
-        <td>${c.level}</td><td class="n">${partyBal('C',c.id)>0?'outstanding '+fmt(partyBal('C',c.id)):'<span class="muted">clear</span>'}</td></tr>`).join('')}
-      ${v&&!hits.length?`<tr><td colspan="3" class="muted">Nobody matches that — add them below.</td></tr>`:''}</table>`;
+    m.querySelector('#cl').innerHTML=`<div class="bq-row pc-walk" data-cid="1"><span class="bs-av">W</span><div class="bq-nm"><b>Walk-in customer</b><span>no account, retail prices</span></div><span class="bq-ow"><i>Enter</i></span></div>
+      ${hits.slice(0,80).map(c=>{ const ow=partyBal('C',c.id), age=typeof cpOldest==='function'?cpOldest(c.id):0;
+        return `<div class="bq-row" data-cid="${c.id}"><span class="cp-dot ${ow>0.005?(age>60?'old':age>30?'mid':'new'):'none'}"></span><div class="bq-nm"><b>${escM(c.name)}</b><span>${escM(c.phone||'no mobile')} · ${escM(c.code||'')}</span></div>
+        <span class="bq-lv">${escM(c.level||'retail')}</span><span class="bq-ow">${ow>0.005?money2(ow):'<i>clear</i>'}</span></div>` }).join('')}
+      ${v&&!hits.length?'<div class="bq-none">Nobody matches that — add them below.</div>':''}`;
     m.querySelectorAll('[data-cid]').forEach(r=>r.onclick=()=>pick(+r.dataset.cid));
-    cur=v&&hits.length?1:0; mark();            // typing lands on the first match; empty lands on walk-in
+    cur=v&&hits.length?1:0; mark();
+    m.querySelector('#cnew').style.display=v?'':'none';   // the new-customer boxes once something is typed (Tab or Enter on a name goes there)            // typing lands on the first match; empty lands on walk-in
     // helpfully carry what was typed into the new-customer fields, until they are touched
     if(!touched){ if(isPhone(v)){ ph.value=q.value.trim(); nm.value='' } else { nm.value=q.value.trim(); ph.value='' } }
   };
