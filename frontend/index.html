@@ -545,7 +545,10 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .bq-row kbd{margin-left:auto;font:700 10.5px Inter,sans-serif;border-radius:6px;padding:2px 6px;background:#f2f3f5;color:var(--steel);border:0}.bq-row.on kbd{background:rgba(255,255,255,.15);color:#fff}
 .pc-list{max-height:min(380px,48vh);overflow:auto}
 /* the prices would change when a customer is chosen (10 Nov 2026) */
-.modal .box.pca-box{max-width:620px;padding:0;border-top:0;border-radius:20px;overflow:hidden}
+.modal .box.pca-box{max-width:620px;padding:0;border-top:0;border-radius:20px;overflow:hidden;display:flex;flex-direction:column}
+/* a big bill (15 Nov 2026): only the list of lines scrolls — the name, the total and the two buttons always show */
+.pca{display:flex;flex-direction:column;min-height:0;flex:1}.pca-h{flex:none}.pca-b{display:flex;flex-direction:column;min-height:0;flex:1}
+.pca-list{overflow:auto;min-height:60px;flex:1;margin:0 -4px;padding:0 4px}.pca-t,.pca-k,.pca-c{flex:none}
 .pca-h{background:linear-gradient(150deg,#2a0b10,#5a1019 60%,#AE1E2B);color:#fff;padding:18px 20px}
 .pca-h small{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#ffd27a}
 .pca-h h2{margin:4px 0 2px;color:#fff;font-size:20px}.pca-h span{font-size:13px;color:rgba(255,255,255,.75)}
@@ -20728,7 +20731,7 @@ function recallAsk(which){
   if(!b){ toast('That one has been picked up at another till'); render(); return }
   closeModals();
   const c = C(b.customer || 1), n = (b.lines || []).length;
-  const net = Math.max(0, (b.lines || []).reduce((a, l) => a + (l.qty * l.price - (l.disc || 0)), 0) - (b.billDisc || 0));
+  const sub0 = (b.lines || []).reduce((a, l) => a + (l.qty * l.price - (l.disc || 0)), 0), net = sub0 < 0 ? sub0 : Math.max(0, sub0 - (b.billDisc || 0));
   const onTill = S.pos.lines.length;
   const m = modal(`<h2>Bring this bill back?</h2>
    <div class="hb-ask"><b>${b.ref ? b.ref : (c.id === 1 ? 'Walk-in' : c.name)}</b><span>${n} line${n === 1 ? '' : 's'} · ${fmt(net)}${c.id !== 1 && b.ref !== c.name ? ' · ' + c.name : ''} · held ${b.date ? new Date(b.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''} by ${b.user || 'staff'}</span></div>
@@ -20794,7 +20797,7 @@ function discardHeldBill(idx){
   if(!b) return toast('No held bill selected');
   closeModals();
   const c = C(b.customer || 1), n = (b.lines || []).length;
-  const net = Math.max(0, (b.lines || []).reduce((a, l) => a + (l.qty * l.price - (l.disc || 0)), 0) - (b.billDisc || 0));
+  const sub0 = (b.lines || []).reduce((a, l) => a + (l.qty * l.price - (l.disc || 0)), 0), net = sub0 < 0 ? sub0 : Math.max(0, sub0 - (b.billDisc || 0));
   const rest = S.heldBills.length - 1;
   const m = modal(`<h2>Throw this held bill away?</h2>
    <div class="hb-ask"><b>${b.ref || (c.id === 1 ? 'Walk-in' : c.name)}</b><span>${n} line${n === 1 ? '' : 's'} · ${fmt(net)} · held ${b.date ? new Date(b.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''} by ${b.user || 'staff'}</span></div>
@@ -20865,7 +20868,7 @@ function showHeldBillsModal(initIdx = 0){
 
   const calcBillTotals = (b) => {
     const sub = (b.lines || []).reduce((a, l) => a + (l.qty * l.price - (l.disc || 0)), 0);
-    const net = Math.max(0, sub - (b.billDisc || 0));
+    const net = sub < 0 ? sub : Math.max(0, sub - (b.billDisc || 0));   // a return comes to a minus amount (15 Nov 2026: it showed Rs 0.00)
     const qty = (b.lines || []).reduce((a, l) => a + l.qty, 0);
     return { sub, net, qty };
   };
@@ -21519,12 +21522,12 @@ function priceChangeAsk(c,moved,before,was,done){
   const rows=moved.map(x=>{ const q=+x.l.qty||0; return `<tr><td><b>${escM(lineName(x.l))}</b><span>${fq(q)} ×</span></td><td class="n"><s>${money2(x.b.price)}</s></td><td class="n">→</td><td class="n ${x.l.price<x.b.price?'dn':'up'}"><b>${money2(x.l.price)}</b></td></tr>` }).join('');
   const m=modal(`<div class="pca"><div class="pca-h no-invert"><small>${editing?'Editing bill '+escM(S.pos.editing)+' · ':''}the prices would change</small><h2>${escM(c.name)}</h2>
      <span>${moved.length} line${moved.length===1?'':'s'} would move to ${c.level==='wholesale'?'their wholesale prices':'their prices'}${CFG.pos&&CFG.pos.repriceToLast?' and to what they paid last time':''}</span></div>
-    <div class="pca-b"><table>${rows}</table>
+    <div class="pca-b"><div class="pca-list"><table>${rows}</table></div>
      <div class="pca-t"><span>The bill</span><b><s>${money2(was)}</s> → <em class="${now<was?'dn':'up'}">${money2(now)}</em></b><i class="${now<was?'dn':'up'}">${now<was?'− ':'+ '}${money2(Math.abs(now-was))}</i></div>
      <div class="pca-k"><button class="btn tape" id="pcaKeep" tabindex="-1">Keep the prices on the bill</button>
       <button class="btn ghost" id="pcaUse" tabindex="-1">Use ${escM(first)}'s prices</button></div>
      <div class="pca-c">Click one of the two — a key does not answer this, so no price changes by a key pressed in a hurry.</div></div></div>`);
-  m.querySelector('.box').classList.add('pca-box');
+  m.querySelector('.box').classList.add('pca-box'); m.querySelector('.box').scrollTop=0;
   if(document.activeElement&&m.contains(document.activeElement)) document.activeElement.blur();   // nothing focused: Enter or Space cannot press a button
   let gone=false;
   const end=(k)=>{ if(gone) return; gone=true; window.removeEventListener('keydown',key,true); m.remove();
@@ -21532,11 +21535,14 @@ function priceChangeAsk(c,moved,before,was,done){
     toast(k?`${first} on the bill — the prices stay as they were (${money2(billTotal())})`:`${first}'s prices — the bill is now ${money2(billTotal())}`); done() };
   // every key is held here: nothing reaches the till behind, and none of them answers — only a click does
   const key=e=>{ if(!document.body.contains(m)){ window.removeEventListener('keydown',key,true); return }
+    const tops=document.querySelectorAll('.modal'); if(tops[tops.length-1]!==m) return;   // another window over it (the list warning): its keys are its own
     e.stopPropagation(); e.preventDefault();
     if(!e.repeat){ const c2=m.querySelector('.pca-c'); if(c2){ c2.classList.remove('nudge'); void c2.offsetWidth; c2.classList.add('nudge') } } };
   window.addEventListener('keydown',key,true);
   m.addEventListener('click',e=>{ if(e.target===m) e.stopImmediatePropagation() },true);   // clicking beside the window does not close it
   m.querySelector('#pcaKeep').onclick=()=>end(true); m.querySelector('#pcaUse').onclick=()=>end(false);
+  // closed some other way (Esc in a window over it closes every window): no price changes without a click
+  const obs=new MutationObserver(()=>{ if(!document.body.contains(m)){ obs.disconnect(); end(true) } }); obs.observe(document.body,{childList:true});
 }
 function setBillCustomer0(id){
   if((id===1?null:id)===S.pos.customer&&S.pos.customer) return 0;   // the same customer again: nothing on the bill changes
