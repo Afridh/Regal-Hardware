@@ -19,6 +19,19 @@ set -u
 cd "$(dirname "$0")" || exit 1
 ROOT="$(pwd)"
 APP="$ROOT/backend"
+# cPanel's Terminal does not have node or npm on its path (15 Nov 2026: "node: command not found"): they live in the
+# Node.js app's own environment under ~/nodevenv. Switch it on when node is not found — the newest version there.
+if ! command -v node >/dev/null 2>&1; then
+  ACT="$(ls -1d "$HOME"/nodevenv/*/*/bin/activate 2>/dev/null | sort -V | tail -1)"
+  if [ -n "$ACT" ]; then
+    # shellcheck disable=SC1090
+    set +u; source "$ACT"; set -u
+    printf 'Using Node.js from %s\n' "$(dirname "$ACT")"
+  else
+    for d in /opt/alt/alt-nodejs*/root/usr/bin; do [ -x "$d/node" ] && PATH="$d:$PATH"; done
+  fi
+fi
+command -v node >/dev/null 2>&1 || { printf '\n\033[31mDEPLOY STOPPED: Node.js was not found. In cPanel open Setup Node.js App, copy the "source …/activate" line it shows, run it, then run deploy.sh again.\033[0m\n' >&2; exit 1; }
 NODE="${NODE:-node}"
 HEALTH_URL="${HEALTH_URL:-https://regalhw.lk/api/health}"
 say(){ printf '\n\033[1m%s\033[0m\n' "$*"; }
