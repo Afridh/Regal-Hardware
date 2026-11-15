@@ -103,7 +103,8 @@ if (!process.env.VERCEL && fs.existsSync(appDir)) {
   // the front page is the new design (8 Nov 2026); the page it replaced stays at /classic
   app.get('/', fresh, (_req, res) => res.sendFile(path.join(appDir, 'store.html')));
   app.get(['/classic', '/classic/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'shop.html')));
-  app.get(['/pos', '/pos/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'index.html')));
+  // /shelf: the same app, opening on the product pictures for the tablet (15 Nov 2026)
+  app.get(['/pos', '/pos/', '/shelf', '/shelf/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'index.html')));
   app.get(['/shift', '/shift/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'shift.html')));
   app.get(/^\/count(\d{0,2})\/?$/i, fresh, (_req, res) => res.sendFile(path.join(appDir, 'display.html')));   // a tablet facing the customer
   app.get(['/driver', '/driver/'], fresh, (_req, res) => res.sendFile(path.join(appDir, 'driver.html')));   // a driver's stops for the day
