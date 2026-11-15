@@ -27395,7 +27395,15 @@ function regalA5Pages(o){
   holder.remove();
   return n;
 }
+/* Every 80mm slip keeps clear of the left edge, as the bill does (15 Nov 2026: an 80mm quotation printed with its left
+   side cut off — the receipt printer cannot print right to the edge, and only the bill had the inner margin for it).
+   A slip drawn without the bill's inner box gets one here, on its way to the paper. */
+function sbInner(inner,f){
+  if(f!=='r80'||typeof inner!=='string'||!/class="print r80 sb80/.test(inner)||/class="sb-inner"/.test(inner)) return inner;
+  return inner.replace(/(<div class="print r80 sb80[^>]*>)/,'$1<div class="sb-inner">').replace(/<\/div>\s*$/,'</div></div>');
+}
 function printDocument(inner,f){
+  inner=sbInner(inner,f);
   const inline=[...document.querySelectorAll('style')].map(s=>s.textContent).join('\n');
   // the bill's own rules live in bill-print.css now, so the linked sheets are gathered too
   const linked=[...document.styleSheets].map(sh=>{ try{ return [...sh.cssRules].map(r=>r.cssText).join('\n') }catch(e){ return '' } }).join('\n');
@@ -27476,6 +27484,7 @@ function printPaperOne(html,f,no,fallback,sent){
 /* The browser's own print for one document, sized to fit: an 80mm roll cut to length, or A5 landscape
    with even margins. Used when the helper is not there. */
 function paperFallback(inner,f){
+  inner=sbInner(inner,f);
   const old=document.getElementById('printArea'); if(old) old.remove();
   const el=document.createElement('div'); el.id='printArea'; el.className='printArea '+(f==='r80'?'r80':'a5');
   el.innerHTML=`<style id="printPage"></style>${inner}`;
