@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mobile billing designs — Regal POS</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--red:#AE1E2B;--ink:#1d2125;--steel:#6b7480;--line:#e7e9ec;--bg:#f4f5f7;--ok:#1f8a55}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+html,body{background:#2a2d31}
+body{font:500 14px/1.4 Inter,system-ui,sans-serif;color:#eceef1;padding:28px 20px 60px}
+h1{font:800 32px Inter,sans-serif;letter-spacing:-.02em}
+.lead{color:#a9aeb6;margin-top:6px;max-width:80ch}
+.row{display:flex;gap:34px;flex-wrap:wrap;margin-top:26px;align-items:flex-start}
+.demo{width:380px}
+.cap{margin-bottom:12px}.cap b{font-size:18px;display:flex;gap:9px;align-items:center}.cap span{display:block;color:#a9aeb6;font-size:13.5px;margin-top:4px;min-height:58px}
+.cap i{font-style:normal;display:inline-grid;place-items:center;width:28px;height:28px;border-radius:8px;background:#ffb547;color:#111;font-weight:800}
+.phone{width:380px;height:780px;border-radius:44px;background:#000;padding:12px;box-shadow:0 30px 60px -25px #000}
+.scr{position:relative;width:100%;height:100%;border-radius:34px;overflow:hidden;background:var(--bg);color:var(--ink);display:flex;flex-direction:column}
+.sbar{height:30px;flex:none;display:flex;justify-content:space-between;align-items:center;padding:0 22px;font:700 12px Inter;color:var(--ink)}
+button{font-family:inherit;cursor:pointer;border:0}
+.money{font-family:Archivo,sans-serif;font-weight:800}
+/* shared bits */
+.top{display:flex;align-items:center;gap:10px;padding:6px 14px 10px}
+.top h3{font:900 19px Archivo,sans-serif;flex:1}
+.cust{display:flex;align-items:center;gap:6px;background:#fff;border-radius:999px;padding:6px 11px;font:700 12px Inter;box-shadow:0 0 0 1px var(--line);color:var(--ink)}
+.search{margin:0 14px 10px;display:flex;align-items:center;gap:9px;background:#fff;border-radius:14px;padding:0 12px;height:48px;box-shadow:0 0 0 1px var(--line)}
+.search input{flex:1;border:0;outline:0;font:600 16px Inter;background:none;min-width:0}
+.chips{display:flex;gap:6px;padding:0 14px 10px;overflow-x:auto;scrollbar-width:none;flex:none}.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;background:#fff;border-radius:999px;padding:7px 13px;font:700 12.5px Inter;color:var(--steel);box-shadow:0 0 0 1px var(--line)}
+.chip.on{background:var(--ink);color:#fff;box-shadow:none}
+.sheet{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;z-index:5;animation:fade .2s}
+.sheet>div{background:#fff;width:100%;border-radius:26px 26px 0 0;padding:16px 16px 22px;animation:up .25s cubic-bezier(.2,.8,.2,1);max-height:88%;overflow:auto}
+@keyframes up{from{transform:translateY(100%)}}@keyframes fade{from{opacity:0}}
+.grab{width:42px;height:5px;border-radius:3px;background:#d5d8dc;margin:0 auto 12px}
+.sheet h4{font:900 20px Archivo,sans-serif;margin-bottom:10px}
+.opt{display:flex;align-items:center;gap:10px;width:100%;padding:12px;border-radius:14px;background:var(--bg);margin-bottom:7px;text-align:left;font:700 14px Inter;color:var(--ink)}
+.opt small{display:block;font:500 12px Inter;color:var(--steel)}.opt .r{margin-left:auto;font:800 13px Archivo;color:var(--red)}
+.paybig{width:100%;height:58px;border-radius:16px;background:var(--red);color:#fff;font:800 17px Inter;display:flex;align-items:center;justify-content:center;gap:10px}
+.paybig:disabled{background:#c9cdd2}
+.ways{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}
+.way{height:56px;border-radius:14px;background:var(--bg);font:800 12px Inter;color:var(--ink);box-shadow:inset 0 0 0 2px transparent}
+.way.on{background:#fbecee;color:var(--red);box-shadow:inset 0 0 0 2px var(--red)}
+.amt{display:flex;justify-content:space-between;align-items:baseline;padding:10px 4px;border-bottom:1px solid var(--line)}
+.amt b{font:900 30px Archivo}
+.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:10px 0}
+.keys button{height:44px;border-radius:12px;background:var(--bg);font:800 20px Archivo;color:var(--ink)}
+.quick{display:flex;gap:6px;margin-top:8px}.quick button{flex:1;height:38px;border-radius:10px;background:#eef0f2;font:700 12.5px Inter;color:var(--ink)}
+.done{position:absolute;inset:0;background:var(--ok);color:#fff;z-index:6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:30px;animation:fade .25s}
+.done .tick{width:86px;height:86px;border-radius:50%;background:rgba(255,255,255,.18);display:grid;place-items:center;font-size:46px}
+.done h2{font:900 26px Archivo}.done p{opacity:.85}
+.done .acts{display:flex;flex-direction:column;gap:8px;width:100%;margin-top:14px}
+.done .acts button{height:50px;border-radius:14px;background:rgba(255,255,255,.18);color:#fff;font:800 15px Inter}
+.done .acts button.w{background:#fff;color:var(--ok)}
+.empty{color:var(--steel);text-align:center;padding:30px 20px;font-size:13px}
+.qty{display:flex;align-items:center;gap:0;background:var(--bg);border-radius:12px;overflow:hidden;flex:none}
+.qty button{width:38px;height:38px;background:none;font:800 20px Inter;color:var(--ink)}.qty b{min-width:26px;text-align:center;font:800 15px Archivo}
+
+/* 1 — tiles */
+.t1-grid{flex:1;overflow:auto;padding:0 14px 120px;display:grid;grid-template-columns:1fr 1fr;gap:9px;align-content:start}
+.tile{background:#fff;border-radius:18px;padding:12px;text-align:left;box-shadow:0 0 0 1px var(--line);position:relative;color:var(--ink);min-height:104px;display:flex;flex-direction:column}
+.tile .ic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:20px;margin-bottom:8px}
+.tile b{font-size:13px;line-height:1.25;flex:1}.tile .money{font-size:15px;margin-top:4px}
+.tile .n{position:absolute;top:9px;right:9px;min-width:26px;height:26px;border-radius:13px;background:var(--red);color:#fff;font:800 13px Archivo;display:grid;place-items:center;padding:0 6px;animation:pop .25s}
+@keyframes pop{from{transform:scale(.4)}}
+.tile:active{transform:scale(.97)}
+.t1-bar{position:absolute;left:12px;right:12px;bottom:14px;background:var(--ink);color:#fff;border-radius:20px;padding:10px 10px 10px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 14px 30px -10px rgba(0,0,0,.5)}
+.t1-bar .c{flex:1;line-height:1.2}.t1-bar .c small{display:block;font-size:11.5px;opacity:.65}.t1-bar .c b{font:900 21px Archivo}
+.t1-bar button{height:48px;border-radius:14px;background:var(--red);color:#fff;font:800 15px Inter;padding:0 18px}
+.t1-bar button.g{background:rgba(255,255,255,.12);padding:0 12px}
+.line{display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line)}
+.line .nm{flex:1;min-width:0}.line .nm b{display:block;font-size:13.5px}.line .nm small{color:var(--steel);font-size:12px}
+.line .money{font-size:14px;min-width:78px;text-align:right}
+
+/* 2 — scan */
+.cam{height:220px;flex:none;margin:0 14px;border-radius:22px;background:radial-gradient(circle at 50% 40%,#3a4048,#14171a);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.cam .frame{width:72%;height:96px;border-radius:14px;position:relative}
+.cam .frame:before,.cam .frame:after{content:"";position:absolute;inset:0;border:3px solid #fff;border-radius:14px;clip-path:polygon(0 0,22% 0,22% 3px,3px 3px,3px 30%,0 30%,0 70%,3px 70%,3px calc(100% - 3px),22% calc(100% - 3px),22% 100%,78% 100%,78% calc(100% - 3px),calc(100% - 3px) calc(100% - 3px),calc(100% - 3px) 70%,100% 70%,100% 30%,calc(100% - 3px) 30%,calc(100% - 3px) 3px,78% 3px,78% 0,100% 0,100% 100%,0 100%)}
+.cam .laser{position:absolute;left:8%;right:8%;height:2px;background:#ff4757;box-shadow:0 0 12px #ff4757;animation:scan 1.8s ease-in-out infinite alternate}
+@keyframes scan{from{top:30%}to{top:70%}}
+.cam .hint{position:absolute;bottom:10px;left:0;right:0;text-align:center;color:#fff;font:700 12px Inter;opacity:.85}
+.cam .flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}.cam .flash.on{animation:fl .35s}
+@keyframes fl{0%{opacity:.7}100%{opacity:0}}
+.scanbtn{position:absolute;top:10px;right:10px;background:rgba(255,255,255,.18);color:#fff;border-radius:999px;padding:7px 12px;font:700 12px Inter}
+.t2-type{display:flex;gap:8px;margin:10px 14px}
+.t2-type .search{margin:0;flex:1}
+.t2-list{flex:1;overflow:auto;padding:0 14px 140px}
+.t2-line{background:#fff;border-radius:16px;padding:10px 12px;display:flex;align-items:center;gap:10px;margin-bottom:7px;box-shadow:0 0 0 1px var(--line);animation:slide .25s}
+@keyframes slide{from{transform:translateX(30px);opacity:0}}
+.t2-line .nm{flex:1;min-width:0}.t2-line .nm b{display:block;font-size:13.5px}.t2-line .nm small{color:var(--steel);font-size:12px}
+.t2-line .money{font-size:14.5px;min-width:74px;text-align:right}
+.t2-foot{position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:24px 24px 0 0;padding:14px 16px 18px;box-shadow:0 -10px 30px -12px rgba(0,0,0,.25)}
+.t2-foot .tt{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}.t2-foot .tt b{font:900 28px Archivo}.t2-foot .tt span{color:var(--steel);font-size:13px}
+.hits{position:absolute;left:14px;right:14px;top:100%;background:#fff;border-radius:14px;box-shadow:0 16px 30px -10px rgba(0,0,0,.3);z-index:3;overflow:hidden}
+.hits button{display:flex;width:100%;padding:11px 13px;text-align:left;background:#fff;border-bottom:1px solid var(--line);font:700 13.5px Inter;color:var(--ink)}.hits button span{margin-left:auto;font:800 13px Archivo;color:var(--red)}
+
+/* 3 — steps */
+.steps{display:flex;gap:6px;padding:0 14px 12px}
+.steps div{flex:1;text-align:center;font:700 11.5px Inter;color:var(--steel)}
+.steps div i{display:block;height:5px;border-radius:3px;background:#dfe2e6;margin-bottom:6px}
+.steps div.on{color:var(--ink)}.steps div.on i{background:var(--red)}.steps div.ok i{background:var(--ok)}
+.t3-body{flex:1;overflow:auto;padding:0 14px 110px}
+.t3-q{font:900 24px/1.15 Archivo,sans-serif;margin:4px 2px 12px}
+.big{display:flex;align-items:center;gap:12px;width:100%;background:#fff;border-radius:18px;padding:14px;margin-bottom:8px;text-align:left;box-shadow:0 0 0 1px var(--line);font:700 15px Inter;color:var(--ink)}
+.big .av{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;font:800 16px Archivo;color:#fff;flex:none}
+.big small{display:block;font:500 12.5px Inter;color:var(--steel)}
+.big.on{box-shadow:0 0 0 2px var(--red);background:#fdf3f4}
+.t3-next{position:absolute;left:14px;right:14px;bottom:16px;display:flex;gap:8px}
+.t3-next .back{width:58px;height:58px;border-radius:16px;background:#fff;box-shadow:0 0 0 1px var(--line);font:800 20px Inter;color:var(--ink)}
+.t3-next .paybig{flex:1}
+.sum{background:#fff;border-radius:18px;padding:12px 14px;box-shadow:0 0 0 1px var(--line);margin-bottom:10px}
+.sum .r{display:flex;justify-content:space-between;padding:4px 0;font-size:13.5px}.sum .r.t{border-top:1px solid var(--line);margin-top:6px;padding-top:9px;font-weight:800}.sum .r.t b{font:900 24px Archivo}
+</style></head><body>
+<h1>Mobile billing — pick one</h1>
+<p class="lead">Three easy ways to make a bill on a phone. Each one works: search, add items, change the quantity, pick the customer and take the money. The products, prices and customers are made up.</p>
+<div class="row">
+ <div class="demo"><div class="cap"><b><i>1</i>Tap the tiles</b><span>The items you sell most are big tiles — one tap adds one. A dark bar at the bottom always shows the total; Pay opens the money sheet.</span></div><div class="phone"><div class="scr" id="d1"></div></div></div>
+ <div class="demo"><div class="cap"><b><i>2</i>Scan and go</b><span>The camera is ready at the top — point at the barcode and it beeps on. No barcode? Type a name. The bill fills underneath, the total and Pay stay at the foot.</span></div><div class="phone"><div class="scr" id="d2"></div></div></div>
+ <div class="demo"><div class="cap"><b><i>3</i>One step at a time</b><span>Three plain steps with one big button each: what are they buying → who is it for → how are they paying. Hard to get wrong for anybody new.</span></div><div class="phone"><div class="scr" id="d3"></div></div></div>
+</div>
+<script>
+const P=[
+ {id:1,n:'Tokyo Super Cement 50kg',p:2350,c:'Cement',ic:'🧱',bg:'#eceff3',bc:'4791001'},
+ {id:2,n:'Wire Nails 2" (1kg)',p:480,c:'Nails',ic:'📌',bg:'#fdf1dc',bc:'4791002'},
+ {id:3,n:'PVC Pipe 1/2" (20ft)',p:890,c:'Plumbing',ic:'🚰',bg:'#e3f0fb',bc:'4791003'},
+ {id:4,n:'Paint Brush 2"',p:320,c:'Paint',ic:'🖌️',bg:'#fde7ea',bc:'4791004'},
+ {id:5,n:'Emulsion White 4L',p:4850,c:'Paint',ic:'🪣',bg:'#fde7ea',bc:'4791005'},
+ {id:6,n:'Wire 1.5mm² (100m)',p:9800,c:'Electrical',ic:'🔌',bg:'#efe7fb',bc:'4791006'},
+ {id:7,n:'13A Socket',p:420,c:'Electrical',ic:'🔲',bg:'#efe7fb',bc:'4791007'},
+ {id:8,n:'Thinner 1L',p:780,c:'Paint',ic:'🧴',bg:'#fde7ea',bc:'4791008'},
+ {id:9,n:'Steel Bar 10mm (6m)',p:2250,c:'Steel',ic:'🔩',bg:'#eceff3',bc:'4791009'},
+ {id:10,n:'Tile Adhesive 25kg',p:1650,c:'Cement',ic:'🧱',bg:'#eceff3',bc:'4791010'}
+];
+const CU=[{id:0,n:'Walk-in customer',s:'cash only',bg:'#8a939e'},{id:1,n:'Green Valley Constructions',s:'owes Rs 182,450 · limit 300,000',bg:'#2e7d5b'},{id:2,n:'Silva Builders',s:'owes Rs 40,800',bg:'#b5591f'},{id:3,n:'Hill Top Rehab Centre',s:'owes Rs 15,940',bg:'#3a6ea5'}];
+const M=v=>Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const SB='<div class="sbar"><span>9:41</span><span>●●● 5G ▮</span></div>';
+const ini=n=>n.split(/\s+/).slice(0,2).map(w=>w[0]).join('');
+function beep(){try{const a=new (window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator(),g=a.createGain();o.frequency.value=1500;g.gain.value=.05;o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+.07)}catch(e){}}
+
+/* a bill, the money sheet and the done screen — the same for all three */
+function Bill(root,draw){
+  const B={lines:[],cust:0,root,draw};
+  B.add=(id,q=1)=>{const l=B.lines.find(x=>x.id===id);if(l)l.q+=q;else B.lines.unshift({id,q});B.lines=B.lines.filter(x=>x.q>0);draw()};
+  B.total=()=>B.lines.reduce((a,l)=>a+P.find(p=>p.id===l.id).p*l.q,0);
+  B.count=()=>B.lines.reduce((a,l)=>a+l.q,0);
+  B.qty=id=>(B.lines.find(x=>x.id===id)||{q:0}).q;
+  B.close=()=>{const s=root.querySelector('.sheet');if(s)s.remove()};
+  B.sheet=html=>{B.close();const s=document.createElement('div');s.className='sheet';s.innerHTML='<div><div class="grab"></div>'+html+'</div>';s.onclick=e=>{if(e.target===s)s.remove()};root.appendChild(s);return s};
+  B.custSheet=()=>{const s=B.sheet('<h4>Who is it for?</h4>'+CU.map(c=>`<button class="opt" data-c="${c.id}"><span class="av" style="width:36px;height:36px;border-radius:11px;background:${c.bg};color:#fff;display:grid;place-items:center;font:800 13px Archivo">${ini(c.n)}</span><span>${c.n}<small>${c.s}</small></span>${B.cust===c.id?'<span class="r">✓</span>':''}</button>`).join(''));
+    s.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{B.cust=+b.dataset.c;B.close();draw()})};
+  B.lineSheet=()=>{const s=B.sheet('<h4>The bill</h4>'+(B.lines.length?B.lines.map(l=>{const p=P.find(x=>x.id===l.id);return `<div class="line"><div class="nm"><b>${p.n}</b><small>${M(p.p)} each</small></div><div class="qty"><button data-m="${p.id}">−</button><b>${l.q}</b><button data-p="${p.id}">+</button></div><div class="money">${M(p.p*l.q)}</div></div>`}).join(''):'<div class="empty">Nothing on the bill yet.</div>')+`<div class="amt"><span>Total</span><b class="money">${M(B.total())}</b></div><button class="paybig" id="lsPay" style="margin-top:12px" ${B.lines.length?'':'disabled'}>Take payment</button>`);
+    s.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{B.add(+b.dataset.m,-1);B.lineSheet()});s.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{B.add(+b.dataset.p,1);B.lineSheet()});
+    s.querySelector('#lsPay').onclick=()=>B.paySheet()};
+  B.paySheet=()=>{let way='cash',typed='';const t=B.total();
+    const paint=()=>{const got=+typed||0,ch=got-t;s.querySelector('#psGot').textContent=typed?M(got):'—';
+      s.querySelector('#psCh').innerHTML=way!=='cash'?'':got>=t?`Give change <b class="money">${M(ch)}</b>`:typed?`<span style="color:var(--red)">${M(t-got)} more to take</span>`:'';
+      s.querySelectorAll('.way').forEach(w=>w.classList.toggle('on',w.dataset.w===way));s.querySelector('#psCash').style.display=way==='cash'?'':'none';
+      s.querySelector('#psGo').disabled=way==='cash'?!(got>=t):way==='credit'&&B.cust===0;
+      s.querySelector('#psNote').textContent=way==='credit'&&B.cust===0?'Pick a customer to put it on their account':''};
+    const s=B.sheet(`<h4>Take payment</h4><div class="amt"><span>To pay${B.cust?' · '+CU[B.cust].n:''}</span><b class="money">${M(t)}</b></div>
+      <div class="ways"><button class="way" data-w="cash">💵 Cash</button><button class="way" data-w="card">💳 Card</button><button class="way" data-w="bank">🏦 Bank</button><button class="way" data-w="credit">📒 On account</button></div>
+      <div id="psCash"><div class="amt" style="border:0"><span>Given</span><b class="money" id="psGot" style="font-size:24px">—</b></div><div id="psCh" style="text-align:right;min-height:22px;font-weight:700"></div>
+      <div class="quick"><button data-q="${t}">Exact</button>${[...new Set([1000,5000,10000].map(s=>Math.ceil(t/s)*s).filter(v=>v>t))].slice(0,2).map(v=>`<button data-q="${v}">${M(v).replace('.00','')}</button>`).join('')}</div>
+      <div class="keys">${['1','2','3','4','5','6','7','8','9','00','0','⌫'].map(k=>`<button data-k="${k}">${k}</button>`).join('')}</div></div>
+      <div id="psNote" style="color:var(--red);font-size:12.5px;min-height:18px;text-align:center"></div><button class="paybig" id="psGo">✓ Done — print bill</button>`);
+    s.querySelectorAll('.way').forEach(w=>w.onclick=()=>{way=w.dataset.w;paint()});
+    s.querySelectorAll('[data-k]').forEach(k=>k.onclick=()=>{const v=k.dataset.k;typed=v==='⌫'?typed.slice(0,-1):(typed+v).slice(0,9);paint()});
+    s.querySelectorAll('[data-q]').forEach(k=>k.onclick=()=>{typed=String(k.dataset.q);paint()});
+    s.querySelector('#psGo').onclick=()=>{const got=+typed||0;B.close();B.done(way,way==='cash'?got-t:0)};paint()};
+  B.done=(way,ch)=>{const d=document.createElement('div');d.className='done';const t=B.total();
+    d.innerHTML=`<div class="tick">✓</div><h2>Bill 20${Math.floor(300+Math.random()*600)} done</h2><p>${M(t)} · ${({cash:'cash',card:'card',bank:'bank transfer',credit:'on '+CU[B.cust].n+"'s account"})[way]}${way==='cash'&&ch>0?`<br><b style="font-size:20px">Give change ${M(ch)}</b>`:''}</p>
+      <div class="acts"><button class="w" id="dNew">New bill</button><button>📱 Send e-bill by SMS</button><button>🖨 Print again</button></div>`;
+    root.appendChild(d);d.querySelector('#dNew').onclick=()=>{B.lines=[];B.cust=0;d.remove();draw()}};
+  return B;
+}
+
+/* 1 — tap the tiles */
+(function(){const root=document.getElementById('d1');let cat='All',q='';const B=Bill(root,draw);
+  function draw(keep){const L=P.filter(p=>(cat==='All'||p.c===cat)&&p.n.toLowerCase().includes(q.toLowerCase()));
+    const had=root.querySelector('#q1')===document.activeElement;
+    root.innerHTML=SB+`<div class="top"><h3>New bill</h3><button class="cust" id="c1">👤 ${CU[B.cust].n.split(' ')[0]} ▾</button></div>
+     <label class="search">🔍<input id="q1" placeholder="Search items…" value="${q}" autocomplete="off"></label>
+     <div class="chips">${['All',...new Set(P.map(p=>p.c))].map(c=>`<button class="chip ${c===cat?'on':''}" data-cat="${c}">${c}</button>`).join('')}</div>
+     <div class="t1-grid">${L.map(p=>`<button class="tile" data-id="${p.id}"><span class="ic" style="background:${p.bg}">${p.ic}</span><b>${p.n}</b><span class="money">${M(p.p)}</span>${B.qty(p.id)?`<span class="n">${B.qty(p.id)}</span>`:''}</button>`).join('')||'<div class="empty" style="grid-column:1/-1">No item called that.</div>'}</div>
+     <div class="t1-bar"><div class="c"><small>${B.count()} item${B.count()===1?'':'s'}</small><b>Rs ${M(B.total())}</b></div><button class="g" id="v1">☰ Bill</button><button id="p1" ${B.lines.length?'':'disabled style="opacity:.5"'}>Pay</button></div>`;
+    root.querySelectorAll('.tile').forEach(t=>t.onclick=()=>{B.add(+t.dataset.id);beep()});
+    root.querySelectorAll('[data-cat]').forEach(c=>c.onclick=()=>{cat=c.dataset.cat;draw()});
+    const qi=root.querySelector('#q1');qi.oninput=()=>{q=qi.value;draw();const n=root.querySelector('#q1');n.focus();n.setSelectionRange(q.length,q.length)};
+    root.querySelector('#c1').onclick=B.custSheet;root.querySelector('#v1').onclick=B.lineSheet;root.querySelector('#p1').onclick=()=>B.lines.length&&B.paySheet()}
+  draw()})();
+
+/* 2 — scan and go */
+(function(){const root=document.getElementById('d2');let q='';const B=Bill(root,draw);let next=0;
+  function draw(){const hits=q?P.filter(p=>p.n.toLowerCase().includes(q.toLowerCase())).slice(0,5):[];
+    root.innerHTML=SB+`<div class="top"><h3>Scan items</h3><button class="cust" id="c2">👤 ${CU[B.cust].n.split(' ')[0]} ▾</button></div>
+     <div class="cam" id="cam"><div class="frame"></div><div class="laser"></div><div class="flash" id="fl"></div><button class="scanbtn" id="sim">Tap to scan ▶</button><div class="hint">Point at the barcode — it adds itself</div></div>
+     <div class="t2-type" style="position:relative"><label class="search">⌨️<input id="q2" placeholder="No barcode? Type a name" value="${q}" autocomplete="off"></label>${hits.length?`<div class="hits">${hits.map(p=>`<button data-h="${p.id}">${p.n}<span>${M(p.p)}</span></button>`).join('')}</div>`:''}</div>
+     <div class="t2-list">${B.lines.length?B.lines.map(l=>{const p=P.find(x=>x.id===l.id);return `<div class="t2-line"><div class="nm"><b>${p.n}</b><small>${M(p.p)} each</small></div><div class="qty"><button data-m="${p.id}">−</button><b>${l.q}</b><button data-p="${p.id}">+</button></div><div class="money">${M(p.p*l.q)}</div></div>`}).join(''):'<div class="empty">Scan the first item to start the bill.</div>'}</div>
+     <div class="t2-foot"><div class="tt"><span>${B.count()} item${B.count()===1?'':'s'}</span><b class="money">Rs ${M(B.total())}</b></div><button class="paybig" id="p2" ${B.lines.length?'':'disabled'}>Pay →</button></div>`;
+    root.querySelector('#sim').onclick=root.querySelector('#cam').onclick=e=>{const p=P[next++%P.length];B.add(p.id);beep();const f=root.querySelector('#fl');if(f){f.classList.add('on')}};
+    root.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>B.add(+b.dataset.m,-1));root.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>B.add(+b.dataset.p,1));
+    root.querySelectorAll('[data-h]').forEach(b=>b.onclick=()=>{q='';B.add(+b.dataset.h);beep()});
+    const qi=root.querySelector('#q2');qi.oninput=()=>{q=qi.value;draw();const n=root.querySelector('#q2');n.focus();n.setSelectionRange(q.length,q.length)};
+    root.querySelector('#c2').onclick=B.custSheet;root.querySelector('#p2').onclick=()=>B.lines.length&&B.paySheet()}
+  draw()})();
+
+/* 3 — one step at a time */
+(function(){const root=document.getElementById('d3');let step=0,q='';const B=Bill(root,draw);
+  function draw(){const S=['Items','Customer','Payment'];
+    const head=SB+`<div class="top"><h3>New bill</h3><span class="money" style="font-size:16px">Rs ${M(B.total())}</span></div>
+     <div class="steps">${S.map((s,i)=>`<div class="${i===step?'on':i<step?'ok':''}"><i></i>${i<step?'✓ ':''}${s}</div>`).join('')}</div>`;
+    if(step===0){const L=P.filter(p=>p.n.toLowerCase().includes(q.toLowerCase()));
+      root.innerHTML=head+`<label class="search">🔍<input id="q3" placeholder="What are they buying?" value="${q}" autocomplete="off"></label>
+       <div class="t3-body">${L.map(p=>`<div class="big" style="padding:10px 12px"><span class="av" style="background:${p.bg};font-size:20px">${p.ic}</span><span style="flex:1;min-width:0">${p.n}<small>${M(p.p)}</small></span>${B.qty(p.id)?`<div class="qty"><button data-m="${p.id}">−</button><b>${B.qty(p.id)}</b><button data-p="${p.id}">+</button></div>`:`<button data-p="${p.id}" style="height:38px;padding:0 14px;border-radius:11px;background:var(--ink);color:#fff;font:800 13px Inter">Add</button>`}</div>`).join('')}</div>
+       <div class="t3-next"><button class="paybig" id="nx" ${B.lines.length?'':'disabled'}>${B.lines.length?`Next — who is it for? (${B.count()})`:'Add an item first'}</button></div>`;
+      root.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>B.add(+b.dataset.m,-1));root.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{B.add(+b.dataset.p,1);beep()});
+      const qi=root.querySelector('#q3');qi.oninput=()=>{q=qi.value;draw();const n=root.querySelector('#q3');n.focus();n.setSelectionRange(q.length,q.length)};
+      root.querySelector('#nx').onclick=()=>{if(B.lines.length){step=1;draw()}}}
+    else if(step===1){root.innerHTML=head+`<div class="t3-body"><div class="t3-q">Who is it for?</div>${CU.map(c=>`<button class="big ${B.cust===c.id?'on':''}" data-c="${c.id}"><span class="av" style="background:${c.bg}">${ini(c.n)}</span><span>${c.n}<small>${c.s}</small></span></button>`).join('')}</div>
+       <div class="t3-next"><button class="back" id="bk">←</button><button class="paybig" id="nx">Next — payment</button></div>`;
+      root.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{B.cust=+b.dataset.c;draw()});root.querySelector('#bk').onclick=()=>{step=0;draw()};root.querySelector('#nx').onclick=()=>{step=2;draw()}}
+    else{root.innerHTML=head+`<div class="t3-body"><div class="t3-q">How are they paying?</div>
+       <div class="sum">${B.lines.map(l=>{const p=P.find(x=>x.id===l.id);return `<div class="r"><span>${l.q} × ${p.n}</span><span>${M(p.p*l.q)}</span></div>`}).join('')}<div class="r"><span>For</span><span>${CU[B.cust].n}</span></div><div class="r t"><span>Total</span><b class="money">${M(B.total())}</b></div></div>
+       ${[['cash','💵','Cash','give change on the next screen'],['card','💳','Card',''],['bank','🏦','Bank transfer',''],['credit','📒','On their account',B.cust?CU[B.cust].s:'pick a customer first']].map(w=>`<button class="big" data-w="${w[0]}" ${w[0]==='credit'&&!B.cust?'style="opacity:.45"':''}><span class="av" style="background:#eef0f2;font-size:22px">${w[1]}</span><span>${w[2]}<small>${w[3]}</small></span></button>`).join('')}</div>
+       <div class="t3-next"><button class="back" id="bk">←</button><button class="paybig" id="all" style="background:var(--ink)">Exact cash · ${M(B.total())}</button></div>`;
+      root.querySelector('#bk').onclick=()=>{step=1;draw()};
+      root.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{const w=b.dataset.w;if(w==='credit'&&!B.cust)return;if(w==='cash')return B.paySheet();B.done(w,0);step=0});
+      root.querySelector('#all').onclick=()=>{B.done('cash',0);step=0}}
+  }
+  draw()})();
+</script>
+</body></html>
