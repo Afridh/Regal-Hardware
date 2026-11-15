@@ -10,6 +10,8 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import { query } from '../db.js';
 import { HttpError, asyncHandler } from '../lib/errors.js';
 import { letter } from '../lib/letter.js';
@@ -272,6 +274,49 @@ r.post('/media/:key/link', regalAuth, asyncHandler(async (req, res) => {
   const { rowCount } = await query(`UPDATE shop_media SET link = $2 WHERE key = $1`, [req.params.key, String(req.body?.link || '').slice(0, 300)]);
   if (!rowCount) throw new HttpError(404, 'Put the picture up first');
   res.json({ ok: true });
+}));
+
+/* A product's picture from the maker's website (15 Nov 2026, the owner: "get the paint products' images from their
+   company website"). A browser cannot read a picture off another site to shrink it — the other site does not allow
+   it — so the till sends the picture's link here, this fetches it and hands it back as a data URL, and the till
+   shrinks it and saves it the usual way (POST /media/:key). Only public web addresses are fetched: anything that
+   points into the shop's own server or network is refused, and so is anything that is not a picture or is too big. */
+const PRIVATE_IP = (ip) => {
+  const v = String(ip || '').replace(/^::ffff:/, '');
+  if (net.isIPv4(v)) { const [a, b] = v.split('.').map(Number); return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224; }
+  if (net.isIPv6(v)) { const x = v.toLowerCase(); return x === '::1' || x === '::' || x.startsWith('fc') || x.startsWith('fd') || x.startsWith('fe80'); }
+  return true;
+};
+async function publicUrl(raw) {
+  let u; try { u = new URL(String(raw || '').trim()); } catch { throw new HttpError(400, 'That is not a web address — copy the picture\'s link (right-click the picture → Copy image address)'); }
+  if (!/^https?:$/.test(u.protocol)) throw new HttpError(400, 'Only http and https links');
+  if (u.username || u.password) throw new HttpError(400, 'A link with a password in it is not fetched');
+  const addrs = await dns.lookup(u.hostname, { all: true }).catch(() => []);
+  if (!addrs.length) throw new HttpError(400, `${u.hostname} could not be found`);
+  if (addrs.some(a => PRIVATE_IP(a.address))) throw new HttpError(400, 'That address is not on the public web');
+  return u;
+}
+r.post('/fetch-image', regalAuth, asyncHandler(async (req, res) => {
+  let u = await publicUrl(req.body?.url), resp;
+  for (let hop = 0; ; hop++) {                       // redirects are followed by hand, each one checked again
+    const ac = new AbortController(), t = setTimeout(() => ac.abort(), 15000);
+    try { resp = await fetch(u, { redirect: 'manual', signal: ac.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RegalHardwareShop/1.0)', Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8' } }); }
+    catch (e) { throw new HttpError(400, e.name === 'AbortError' ? 'That website took too long to answer' : 'That website could not be reached'); }
+    finally { clearTimeout(t); }
+    if (resp.status >= 300 && resp.status < 400 && resp.headers.get('location')) {
+      if (hop >= 3) throw new HttpError(400, 'That link goes round in circles');
+      u = await publicUrl(new URL(resp.headers.get('location'), u).href); continue;
+    }
+    break;
+  }
+  if (!resp.ok) throw new HttpError(400, `That website said ${resp.status} — the picture may have moved`);
+  const type = String(resp.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (!/^image\/(jpeg|jpg|png|webp|gif|avif)$/.test(type)) throw new HttpError(400, type.startsWith('text/html') ? 'That link is a web page, not a picture — right-click the picture itself and choose "Copy image address"' : 'That link is not a picture');
+  const len = +resp.headers.get('content-length') || 0;
+  if (len > 8e6) throw new HttpError(400, 'That picture is too big (over 8 MB)');
+  const buf = Buffer.from(await resp.arrayBuffer());
+  if (buf.length > 8e6) throw new HttpError(400, 'That picture is too big (over 8 MB)');
+  res.json({ ok: true, dataUrl: `data:${type === 'image/jpg' ? 'image/jpeg' : type};base64,${buf.toString('base64')}`, bytes: buf.length, from: u.hostname });
 }));
 
 r.delete('/media/:key', regalAuth, asyncHandler(async (req, res) => {

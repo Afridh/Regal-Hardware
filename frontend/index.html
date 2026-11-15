@@ -3481,6 +3481,20 @@ tr.rowlink button{cursor:pointer}
 .cu-head.haspage .av.big{box-shadow:0 0 0 2px #fff,0 0 0 4px #7A4FC0,0 6px 16px rgba(16,30,34,.18)}
 .tag.page{background:#EFE7FB;color:#4B2E86;border-left-color:#7A4FC0}
 .cu-row.haspage{box-shadow:inset 3px 0 0 #7A4FC0}
+/* photos from the web (15 Nov 2026) */
+.modal.wph-modal .box{max-width:1100px;width:calc(100vw - 32px)}
+.wph-h{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.wph-h h2{margin:0 0 4px}
+.wph-bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0 8px}.wph-bar select{max-width:280px}
+.wph-count{margin-left:auto;font-weight:700;font-size:13px}
+.wph-list{max-height:62vh;overflow:auto;border:1px solid var(--line);border-radius:12px}
+.wph-row{display:grid;grid-template-columns:64px minmax(0,1.2fr) auto minmax(180px,1fr) auto auto;gap:10px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line2)}
+.wph-row.sel{background:#fdf6e7;box-shadow:inset 3px 0 0 #b4791a}.wph-row.done{background:#eef8f2}
+.wph-pic{width:64px;height:52px;border-radius:8px;background:#f3f1ec;display:grid;place-items:center;overflow:hidden}.wph-pic img{width:100%;height:100%;object-fit:contain;background:#fff}
+.wph-pic i{font-style:normal;font-size:10.5px;opacity:.55}
+.wph-nm b{display:block;font-size:13.5px;line-height:1.25}.wph-nm small{font-size:11.5px;opacity:.7}.wph-nm em{color:var(--chip-rust,#c0442c);font-style:normal;font-weight:700}
+.wph-url{min-width:0;font-size:12.5px}
+.shf-pics{height:calc(52px * var(--fs));border:0;border-radius:14px;background:#1d2125;color:#fff;font:800 calc(15px * var(--fs)) Inter,sans-serif;padding:0 14px;cursor:pointer;white-space:nowrap}
+@media (max-width:820px){.wph-row{grid-template-columns:56px 1fr;}.wph-row>a,.wph-row>input,.wph-row>button{grid-column:1/-1}}
 /* product pictures — the tablet page (15 Nov 2026) */
 .shf{--fs:1;display:flex;flex-direction:column;height:calc(100vh - 40px);min-height:520px;background:#f5f3ef;border-radius:18px;overflow:hidden;position:relative;font-size:calc(15px * var(--fs));color:#1d2125}
 body.shelf-full nav,body.shelf-full #nav,body.shelf-full .topbar,body.shelf-full header.top{display:none!important}
@@ -17984,6 +17998,68 @@ const shfStock=(p)=>{ const s=+p.stock||0; return s<=0?'<span class="shf-st out"
 const shfPrice=(p)=>priceFor(p,1);
 function shfMatch(p,q){ q=q.trim().toLowerCase(); if(!q) return true; const n=String(p.name||'').toLowerCase();
   return n.includes(q)||String(p.cat||'').toLowerCase().includes(q)||String(p.code||'').toLowerCase()===q||String(p.num||'')===q||String(p.barcode||'')===q||n.split(/[^a-z0-9]+/).some(w=>w.startsWith(q)) }
+/* ==================== PHOTOS FROM THE WEB (15 Nov 2026, the owner: "get all paint products' images from their company
+   website, and show the real photo on the shelf") ====================
+   One window, by kind of goods: each product, with its photo or none yet. Find the photo opens a picture search for
+   that very product (the maker's own site comes up first); then either copy the picture (right-click → Copy image)
+   and press Ctrl+V on its row, or copy the picture's address and paste it into the box. The server fetches it, the
+   till makes it a sensible size and it is kept as the product's photo — the shelf and the shop site show it at once. */
+let WPH={cat:'',missing:true,sel:null,busy:{},err:{}};
+const wphCats=()=>[...new Set(S.products.filter(p=>p.active!==false&&p.id!==OPEN_PID).map(p=>p.cat||'Other'))].sort((a,b)=>a.localeCompare(b));
+const wphFind=(p)=>'https://www.google.com/search?tbm=isch&q='+encodeURIComponent(p.name+(/paint|emulsion|enamel|primer|varnish|putty|coat/i.test(p.cat+' '+p.name)?' paint':''));
+function webPhotos(cat){
+  loadShopMedia();
+  const cats=wphCats(); WPH.cat=cat&&cats.includes(cat)?cat:(cats.find(c=>/paint/i.test(c))||WPH.cat||cats[0]||'');
+  const m=modal('<div id="wphBody"></div>'); m.classList.add('wph-modal');
+  const draw=()=>{
+    const all=S.products.filter(p=>p.active!==false&&p.id!==OPEN_PID&&(p.cat||'Other')===WPH.cat).sort((a,b)=>a.name.localeCompare(b.name));
+    const have=all.filter(p=>hasPic('p:'+p.id)).length, L=WPH.missing?all.filter(p=>!hasPic('p:'+p.id)||WPH.busy[p.id]==='done'):all;
+    m.querySelector('#wphBody').innerHTML=`<div class="wph">
+      <div class="wph-h"><div><h2>Photos from the web</h2><div class="muted">Find the photo → on the maker's page, right-click the picture → <b>Copy image</b> → come back and press <b>Ctrl+V</b> on the row. Or copy the picture's address and paste it in the box.</div></div>
+       <button type="button" class="btn ghost" data-wph="close">Close <i class="kbd">Esc</i></button></div>
+      <div class="wph-bar"><select id="wphCat">${cats.map(c=>`<option ${c===WPH.cat?'selected':''}>${noteEsc(c)}</option>`).join('')}</select>
+       <label class="chk"><input type="checkbox" id="wphMiss" ${WPH.missing?'checked':''}> only the ones without a photo</label>
+       <span class="wph-count">${have} of ${all.length} have a photo</span></div>
+      <div class="wph-list">${L.map(p=>{ const k='p:'+p.id, has=hasPic(k), b=WPH.busy[p.id], e=WPH.err[p.id];
+        return `<div class="wph-row ${WPH.sel===p.id?'sel':''} ${b==='done'?'done':''}" data-wrow="${p.id}">
+          <span class="wph-pic">${has?`<img src="${picUrl(k)}" alt="">`:'<i>no photo</i>'}</span>
+          <div class="wph-nm"><b>${noteEsc(p.name)}</b><small>${noteEsc(p.num||p.code||'')}${e?` · <em>${noteEsc(e)}</em>`:b==='busy'?' · fetching…':b==='done'?' · ✓ saved':''}</small></div>
+          <a class="btn ghost sm" href="${wphFind(p)}" target="_blank" rel="noopener" data-wsel="${p.id}">🔍 Find the photo</a>
+          <input class="wph-url" data-wurl="${p.id}" placeholder="paste the picture's address, or Ctrl+V the picture" autocomplete="off">
+          <button type="button" class="btn tape sm" data-wsave="${p.id}" ${b==='busy'?'disabled':''}>Save</button>
+          ${has?`<button type="button" class="btn ghost sm" data-wdel="${p.id}" title="Take this photo off">×</button>`:''}</div>` }).join('')
+        ||`<div class="muted" style="padding:20px">${all.length?'Every product here has a photo. ✓':'No products in this kind of goods.'}</div>`}</div></div>`;
+    m.querySelector('#wphCat').onchange=e=>{ WPH.cat=e.target.value; WPH.sel=null; draw() };
+    m.querySelector('#wphMiss').onchange=e=>{ WPH.missing=e.target.checked; draw() };
+    m.querySelectorAll('[data-wrow]').forEach(r=>r.addEventListener('pointerdown',()=>{ if(WPH.sel!==+r.dataset.wrow){ WPH.sel=+r.dataset.wrow; m.querySelectorAll('.wph-row').forEach(x=>x.classList.toggle('sel',x===r)) } }));
+    m.querySelectorAll('[data-wsel]').forEach(a=>a.addEventListener('click',()=>{ WPH.sel=+a.dataset.wsel }));
+    m.querySelectorAll('[data-wsave]').forEach(b=>b.onclick=()=>{ const id=+b.dataset.wsave, v=(m.querySelector(`[data-wurl="${id}"]`)||{}).value||''; if(!v.trim()) return toast('Paste the picture\'s address first — or copy the picture and press Ctrl+V'); fromUrl(id,v.trim()) });
+    m.querySelectorAll('[data-wurl]').forEach(i=>i.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); e.stopPropagation(); if(i.value.trim()) fromUrl(+i.dataset.wurl,i.value.trim()) } });
+    m.querySelectorAll('[data-wdel]').forEach(b=>b.onclick=()=>{ const id=+b.dataset.wdel; if(!confirm('Take the photo off '+(P(id)||{}).name+'?')) return;
+      shopMediaDelete('p:'+id).then(()=>{ if(shopMedia) shopMedia.delete('p:'+id); delete WPH.busy[id]; draw(); render() }).catch(e=>toast(e.message,'bad')) });
+    m.querySelector('[data-wph="close"]').onclick=()=>m.remove();
+  };
+  const save=(id,blob)=>{ WPH.busy[id]='busy'; delete WPH.err[id]; draw();
+    return shopMediaUpload('p:'+id,blob,900).then(()=>{ WPH.busy[id]='done'; shopMediaV=shopMediaV||{}; shopMediaV['p:'+id]=Date.now(); draw(); render(); toast('Photo saved for '+(P(id)||{}).name,'ok') })
+      .catch(e=>{ WPH.busy[id]=''; WPH.err[id]=e.message; draw() }) };
+  const fromUrl=(id,url)=>{
+    if(/^data:image\//.test(url)) return fetch(url).then(r=>r.blob()).then(b=>save(id,b));
+    WPH.busy[id]='busy'; delete WPH.err[id]; draw();
+    fetch('/api/shop/fetch-image',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+(window.regalBridge?regalBridge.token():'')},body:JSON.stringify({url})})
+      .then(async r=>{ const j=await r.json().catch(()=>({})); if(!r.ok||!j.dataUrl) throw new Error(j.error||'Could not fetch that picture'); return fetch(j.dataUrl).then(x=>x.blob()) })
+      .then(b=>save(id,b)).catch(e=>{ WPH.busy[id]=''; WPH.err[id]=e.message; draw() });
+  };
+  // a picture copied from the maker's page and pasted (Ctrl+V) goes to the row picked
+  const onPaste=e=>{ if(!document.body.contains(m)){ document.removeEventListener('paste',onPaste,true); return }
+    const items=[...((e.clipboardData&&e.clipboardData.items)||[])], img=items.find(x=>x.kind==='file'&&/^image\//.test(x.type));
+    const tgt=e.target&&e.target.dataset&&e.target.dataset.wurl?+e.target.dataset.wurl:WPH.sel;
+    if(img){ e.preventDefault(); if(!tgt) return toast('Tap the product\'s row first, then press Ctrl+V'); save(tgt,img.getAsFile()); return }
+    const txt=e.clipboardData&&e.clipboardData.getData('text')||'';
+    if(tgt&&/^https?:\/\/\S+$/i.test(txt.trim())&&!(e.target&&e.target.dataset&&e.target.dataset.wurl)){ e.preventDefault(); fromUrl(tgt,txt.trim()) }
+  };
+  document.addEventListener('paste',onPaste,true);
+  draw();
+}
 function shelfPage(){
   loadShopMedia();
   document.body.classList.toggle('shelf-full',shelfLink());
@@ -18000,6 +18076,7 @@ function shelfPage(){
      ${shelfLink()?'':`<button type="button" class="shf-x" data-act="shelfHome" title="Back to the system">←</button>`}
      <label class="shf-find">🔍<input id="shelfQ" value="${noteEsc(SHF.q)}" placeholder="Search any product — or tap a shelf" autocomplete="off" oninput="shelfType(this)">
        ${q?'<button type="button" class="shf-clr" data-act="shelfClear" aria-label="Clear">×</button>':''}${mic?'<button type="button" class="shf-mic" data-act="shelfMic" aria-label="Say it">🎤</button>':''}</label>
+     ${!shelfLink()&&(allowed('products')||allowed('webproducts'))?`<button type="button" class="shf-pics" data-act="shelfPics" title="Put real photos on the products — from the makers' websites">📷 Photos</button>`:''}
      <div class="shf-size">${[1,1.15,1.3].map((f,i)=>`<button type="button" class="${SHF.fs===f?'on':''}" data-act="shelfFs" data-fs="${f}">${['A','A+','A++'][i]}</button>`).join('')}</div>
    </div>
    <div class="shf-body">
@@ -35861,7 +35938,7 @@ document.addEventListener('click',e=>{
     shelfCat:()=>{ SHF.cat=a.dataset.c; SHF.q=''; render(); const l=document.querySelector('.shf-list'); if(l) l.scrollTop=0 },
     shelfP:()=>shelfOpen(+a.dataset.id),
     shelfFs:()=>{ SHF.fs=+a.dataset.fs||1; try{ localStorage.setItem('regal.shelfFs',String(SHF.fs)) }catch(e){} render() },
-    shelfMic:()=>shelfMic(), shelfList:()=>shelfListModal(),
+    shelfMic:()=>shelfMic(), shelfList:()=>shelfListModal(), shelfPics:()=>webPhotos(SHF.q?'':SHF.cat),
     shelfClear:()=>{ SHF.q=''; render() },
     shelfHome:()=>go(landingView()==='shelf'?'home':landingView()),
     phStep:()=>{ const to=+a.dataset.step||0; if(to>0&&!S.pos.lines.length) return toast('Add an item first'); scanStop(); PH.q=''; PH.step=to; render(); window.scrollTo(0,0) },
