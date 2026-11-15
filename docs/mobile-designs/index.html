@@ -107,6 +107,18 @@ button{font-family:inherit;cursor:pointer;border:0}
 .t3-next{position:absolute;left:14px;right:14px;bottom:16px;display:flex;gap:8px}
 .t3-next .back{width:58px;height:58px;border-radius:16px;background:#fff;box-shadow:0 0 0 1px var(--line);font:800 20px Inter;color:var(--ink)}
 .t3-next .paybig{flex:1}
+.addbar{display:flex;gap:8px;margin:0 14px 8px;position:relative}
+.addbar .cam{width:52px;height:50px;flex:none;border-radius:14px;background:var(--ink);color:#fff;font-size:22px;margin:0}
+.addbar .search{margin:0;flex:1;height:50px}
+.addhits{position:absolute;left:0;right:0;top:56px;background:#fff;border-radius:14px;box-shadow:0 18px 34px -12px rgba(0,0,0,.35);z-index:3;overflow:hidden}
+.addhits button{display:flex;align-items:center;gap:10px;width:100%;padding:11px 13px;background:#fff;border-bottom:1px solid var(--line);text-align:left;font:700 14px Inter;color:var(--ink)}
+.addhits button span{margin-left:auto;font:800 13.5px Archivo;color:var(--red)}
+.addhits button i{font-style:normal;font-size:18px}
+.onbill{font:700 11px Inter;letter-spacing:.1em;text-transform:uppercase;color:var(--steel);margin:6px 2px 6px}
+.bl4{display:flex;align-items:center;gap:8px;background:#fff;border-radius:14px;padding:8px 8px 8px 12px;margin-bottom:6px;box-shadow:0 0 0 1px var(--line);animation:slide .25s}
+.bl4 .nm{flex:1;min-width:0}.bl4 .nm b{display:block;font-size:13.5px;line-height:1.25}.bl4 .nm small{color:var(--steel);font-size:12px}
+.bl4 .qty button{width:34px;height:34px}
+.added{position:absolute;left:50%;bottom:88px;transform:translateX(-50%);background:var(--ok);color:#fff;border-radius:999px;padding:7px 14px;font:700 12.5px Inter;z-index:4;white-space:nowrap;animation:fade .2s}
 .sum{background:#fff;border-radius:18px;padding:12px 14px;box-shadow:0 0 0 1px var(--line);margin-bottom:10px}
 .sum .r{display:flex;justify-content:space-between;padding:4px 0;font-size:13.5px}.sum .r.t{border-top:1px solid var(--line);margin-top:6px;padding-top:9px;font-weight:800}.sum .r.t b{font:900 24px Archivo}
 </style></head><body>
@@ -116,6 +128,7 @@ button{font-family:inherit;cursor:pointer;border:0}
  <div class="demo"><div class="cap"><b><i>1</i>Tap the tiles</b><span>The items you sell most are big tiles — one tap adds one. A dark bar at the bottom always shows the total; Pay opens the money sheet.</span></div><div class="phone"><div class="scr" id="d1"></div></div></div>
  <div class="demo"><div class="cap"><b><i>2</i>Scan and go</b><span>The camera is ready at the top — point at the barcode and it beeps on. No barcode? Type a name. The bill fills underneath, the total and Pay stay at the foot.</span></div><div class="phone"><div class="scr" id="d2"></div></div></div>
  <div class="demo"><div class="cap"><b><i>3</i>One step at a time</b><span>Three plain steps with one big button each: what are they buying → who is it for → how are they paying. Hard to get wrong for anybody new.</span></div><div class="phone"><div class="scr" id="d3"></div></div></div>
+ <div class="demo"><div class="cap"><b><i>3b</i>One step at a time — small add</b><span>The same three steps. Adding an item is one small bar: tap 📷 to scan, or type two or three letters and tap the item. What is on the bill sits under it, with − and +.</span></div><div class="phone"><div class="scr" id="d4"></div></div></div>
 </div>
 <script>
 const P=[
@@ -215,6 +228,36 @@ function Bill(root,draw){
       root.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>B.add(+b.dataset.m,-1));root.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{B.add(+b.dataset.p,1);beep()});
       const qi=root.querySelector('#q3');qi.oninput=()=>{q=qi.value;draw();const n=root.querySelector('#q3');n.focus();n.setSelectionRange(q.length,q.length)};
       root.querySelector('#nx').onclick=()=>{if(B.lines.length){step=1;draw()}}}
+    else if(step===1){root.innerHTML=head+`<div class="t3-body"><div class="t3-q">Who is it for?</div>${CU.map(c=>`<button class="big ${B.cust===c.id?'on':''}" data-c="${c.id}"><span class="av" style="background:${c.bg}">${ini(c.n)}</span><span>${c.n}<small>${c.s}</small></span></button>`).join('')}</div>
+       <div class="t3-next"><button class="back" id="bk">←</button><button class="paybig" id="nx">Next — payment</button></div>`;
+      root.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{B.cust=+b.dataset.c;draw()});root.querySelector('#bk').onclick=()=>{step=0;draw()};root.querySelector('#nx').onclick=()=>{step=2;draw()}}
+    else{root.innerHTML=head+`<div class="t3-body"><div class="t3-q">How are they paying?</div>
+       <div class="sum">${B.lines.map(l=>{const p=P.find(x=>x.id===l.id);return `<div class="r"><span>${l.q} × ${p.n}</span><span>${M(p.p*l.q)}</span></div>`}).join('')}<div class="r"><span>For</span><span>${CU[B.cust].n}</span></div><div class="r t"><span>Total</span><b class="money">${M(B.total())}</b></div></div>
+       ${[['cash','💵','Cash','give change on the next screen'],['card','💳','Card',''],['bank','🏦','Bank transfer',''],['credit','📒','On their account',B.cust?CU[B.cust].s:'pick a customer first']].map(w=>`<button class="big" data-w="${w[0]}" ${w[0]==='credit'&&!B.cust?'style="opacity:.45"':''}><span class="av" style="background:#eef0f2;font-size:22px">${w[1]}</span><span>${w[2]}<small>${w[3]}</small></span></button>`).join('')}</div>
+       <div class="t3-next"><button class="back" id="bk">←</button><button class="paybig" id="all" style="background:var(--ink)">Exact cash · ${M(B.total())}</button></div>`;
+      root.querySelector('#bk').onclick=()=>{step=1;draw()};
+      root.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{const w=b.dataset.w;if(w==='credit'&&!B.cust)return;if(w==='cash')return B.paySheet();B.done(w,0);step=0});
+      root.querySelector('#all').onclick=()=>{B.done('cash',0);step=0}}
+  }
+  draw()})();
+
+/* 3b — one step at a time, with a small way to add an item */
+(function(){const root=document.getElementById('d4');let step=0,q='',next=0,flash='';const B=Bill(root,draw);
+  function draw(){const S=['Items','Customer','Payment'];
+    const head=SB+`<div class="top"><h3>New bill</h3><span class="money" style="font-size:16px">Rs ${M(B.total())}</span></div>
+     <div class="steps">${S.map((s,i)=>`<div class="${i===step?'on':i<step?'ok':''}"><i></i>${i<step?'✓ ':''}${s}</div>`).join('')}</div>`;
+    if(step===0){const hits=q?P.filter(p=>p.n.toLowerCase().includes(q.toLowerCase())).slice(0,5):[];
+      root.innerHTML=head+`<div class="addbar"><button class="cam" id="sc4" title="Scan a barcode">📷</button><label class="search">＋<input id="q4" placeholder="Add item — name or code" value="${q}" autocomplete="off"></label>
+        ${hits.length?`<div class="addhits">${hits.map(p=>`<button data-a="${p.id}"><i>${p.ic}</i>${p.n}<span>${M(p.p)}</span></button>`).join('')}</div>`:''}</div>
+       ${flash?`<div class="added">✓ ${flash}</div>`:''}
+       <div class="t3-body">${B.lines.length?'<div class="onbill">On the bill</div>'+B.lines.map(l=>{const p=P.find(x=>x.id===l.id);return `<div class="bl4"><div class="nm"><b>${p.n}</b><small>${M(p.p)} × ${l.q} = <b style="display:inline;color:var(--ink)">${M(p.p*l.q)}</b></small></div><div class="qty"><button data-m="${p.id}">−</button><b>${l.q}</b><button data-p="${p.id}">+</button></div></div>`}).join(''):'<div class="empty">Tap 📷 to scan, or type a name above.</div>'}</div>
+       <div class="t3-next"><button class="paybig" id="nx" ${B.lines.length?'':'disabled'}>${B.lines.length?`Next — who is it for? (${B.count()})`:'Add an item first'}</button></div>`;
+      const say=n=>{flash=n;setTimeout(()=>{flash='';if(step===0&&!root.querySelector('.addhits'))draw()},900)};
+      root.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{const p=P.find(x=>x.id===+b.dataset.a);q='';B.add(p.id);beep();say(p.n)});
+      root.querySelector('#sc4').onclick=()=>{const p=P[next++%P.length];B.add(p.id);beep();say(p.n)};
+      root.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>B.add(+b.dataset.m,-1));root.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>B.add(+b.dataset.p,1));
+      const qi=root.querySelector('#q4');qi.oninput=()=>{q=qi.value;draw();const n=root.querySelector('#q4');n.focus();n.setSelectionRange(q.length,q.length)};
+      root.querySelector('#nx').onclick=()=>{if(B.lines.length){step=1;q='';draw()}}}
     else if(step===1){root.innerHTML=head+`<div class="t3-body"><div class="t3-q">Who is it for?</div>${CU.map(c=>`<button class="big ${B.cust===c.id?'on':''}" data-c="${c.id}"><span class="av" style="background:${c.bg}">${ini(c.n)}</span><span>${c.n}<small>${c.s}</small></span></button>`).join('')}</div>
        <div class="t3-next"><button class="back" id="bk">←</button><button class="paybig" id="nx">Next — payment</button></div>`;
       root.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{B.cust=+b.dataset.c;draw()});root.querySelector('#bk').onclick=()=>{step=0;draw()};root.querySelector('#nx').onclick=()=>{step=2;draw()}}
