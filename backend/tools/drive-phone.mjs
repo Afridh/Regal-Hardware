@@ -147,8 +147,15 @@ ok(await pg.evaluate(() => {
 await noSideways('with a long bill');
 await shot('4-long');
 
-/* ---- and the payment window has to work at this width too ---- */
+/* ---- and the payment window has to work at this width too ----
+   one step at a time (15 Nov 2026): Next → who is it for → Next → how are they paying → Cash */
 await pg.evaluate(() => document.querySelector('.ph-bar .go').click());
+await new Promise(r => setTimeout(r, 300));
+await shot('4b-who');
+await pg.evaluate(() => document.querySelector('.ph-bar .go').click());
+await new Promise(r => setTimeout(r, 300));
+await shot('4c-how');
+await pg.evaluate(() => document.querySelector('[data-act="phWay"][data-w="CASH"]').click());
 await new Promise(r => setTimeout(r, 800));
 const pay = await pg.evaluate(() => {
   const m = document.querySelector('.modal'); if (!m) return null;

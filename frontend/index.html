@@ -5525,6 +5525,38 @@ tr.cb-on td{background:#FBE4E6}
   font:700 17px/1 inherit;letter-spacing:.02em}
 .ph-bar .go[disabled]{background:#9db3a8}
 .ph-bar .row2{display:flex;gap:6px;margin-top:6px}
+/* the phone till, one step at a time (15 Nov 2026, demo 3b) */
+.ph3-head{display:flex;align-items:center;gap:8px}
+.ph3-head>b{font:900 21px/1.1 Archivo,sans-serif;margin-right:auto}
+.ph3-tot{font:900 17px Archivo,sans-serif;white-space:nowrap}
+.ph3-steps{display:flex;gap:6px}
+.ph3-steps div{flex:1;text-align:center;font-size:11.5px;font-weight:700;opacity:.55}
+.ph3-steps div i{display:block;height:5px;border-radius:3px;background:#dfe2e6;margin-bottom:5px}
+.ph3-steps div.on{opacity:1}.ph3-steps div.on i{background:#AE1E2B}.ph3-steps div.ok{opacity:.85}.ph3-steps div.ok i{background:#1f8a55}
+.ph3-add{position:relative}
+#main .ph3-cam{width:52px;min-height:50px;flex:none;border:0;border-radius:14px;background:#1d2125;color:#fff;display:grid;place-items:center}
+.ph3-cam svg{width:24px;height:24px}
+.ph3-hits{position:absolute;left:0;right:0;top:100%;z-index:30;margin-top:6px;background:var(--white,#fff);border-radius:14px;box-shadow:0 18px 34px -12px rgba(0,0,0,.35);padding:4px;max-height:52vh}
+.ph3-lbl{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.55;margin:2px 2px 0}
+.ph3-lines .ph-line{padding:8px 10px}
+.ph3-q{font:900 23px/1.15 Archivo,sans-serif;margin:4px 2px 2px}
+#main .ph3-big{display:flex;align-items:center;gap:12px;width:100%;min-height:64px;padding:10px 12px;border:1px solid var(--line,#d8dedd);border-radius:16px;background:var(--white,#fff);text-align:left;font:inherit;color:inherit}
+#main .ph3-big.on{border:2px solid #AE1E2B;background:#fdf3f4}
+#main .ph3-big.find{border-style:dashed}
+#main .ph3-big:disabled{opacity:.45}
+.ph3-av{width:44px;height:44px;border-radius:13px;background:#AE1E2B;color:#fff;display:grid;place-items:center;font:800 15px Archivo,sans-serif;flex:none}
+.ph3-av.walk{background:#8a939e}.ph3-av.find,.ph3-av.way{background:#eef0f2;font-size:21px}
+.ph3-t{flex:1;min-width:0}.ph3-t b{display:block;font-size:15.5px;line-height:1.25}.ph3-t small{display:block;font-size:12.5px;opacity:.65}
+.ph3-ok{color:#AE1E2B;font-weight:900;font-size:20px}
+.ph3-sum{background:var(--white,#fff);border:1px solid var(--line,#d8dedd);border-radius:16px;padding:10px 14px}
+.ph3-sum .r{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:13.5px}.ph3-sum .r span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ph3-sum .r.t{border-top:1px solid var(--line,#d8dedd);margin-top:6px;padding-top:8px;font-weight:800;align-items:baseline}.ph3-sum .r.t b{font:900 22px Archivo,sans-serif}
+.ph3-nav{display:flex;gap:8px}
+#main .ph3-nav .back{width:58px;min-height:54px;flex:none;border:1px solid var(--line,#d8dedd);border-radius:12px;background:var(--white,#fff);font:800 22px/1 inherit;color:inherit}
+#main .ph3-bar .go{background:var(--tape,#AE1E2B)}
+#main .ph3-bar .go.dark{background:#1d2125}
+.ph3-bar .go[disabled]{background:#c9a3a7}
+.ph3-bar .sum b{font-family:Archivo,sans-serif}
 /* the phone till, "Scan and go" (15 Nov 2026) */
 .ph2-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .ph2-head b{font:900 21px/1.1 Archivo,sans-serif}
@@ -19177,7 +19209,7 @@ let QT={cat:'',q:'',mode:'cash',tender:''};
    on S.pos, the same addLine, the same completeSale behind openPay — so a bill started on
    a phone is the same bill, with the same stock checks and the same approvals. What is
    different is only the shape of the screen. */
-let PH={q:''};
+let PH={q:'',step:0};
 const SCAN_IC='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V4h3M21 7V4h-3M3 17v3h3M21 17v3h-3M7 8v8M10 8v8M13 8v8M16 8v8"/></svg>';
 /* SCANNING WITH THE PHONE'S OWN CAMERA. The camera stays open and every barcode it sees goes straight
    onto the bill — beep, buzz, the item and the running total — so a basket is scanned one item after
@@ -19347,53 +19379,59 @@ function posPhone(){
       </div></div>`;
   };
 
-  /* the customer, one tap away: walk-in, the last few customers billed, or Find for anybody else */
-  let custH;
-  if(walk){
-    let recent=[]; try{ recentNow(); recent=[..._recCust.entries()].sort((a,b)=>b[1]-a[1]).map(x=>C(x[0])).filter(x=>x&&x.id!==1&&x.active!==false).slice(0,4) }catch(e){}
-    custH=`<div class="ph2-cust"><span class="ph2-lbl">Customer</span><div class="ph2-chips">
-      <button type="button" class="on" data-act="phWalk">Walk-in</button>
-      ${recent.map(x=>`<button type="button" data-act="phWho" data-id="${x.id}" title="${noteEsc(x.name)}">${noteEsc(String(x.name).split(/\s+/).slice(0,2).join(' '))}</button>`).join('')}
-      <button type="button" class="find" data-act="phCust">🔍 Find…</button></div></div>`;
-  } else {
-    const owe=partyBal('C',c.id);
-    custH=`<div class="ph2-cust sel"><span class="ph2-av">${noteEsc(String(c.name).split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase())}</span>
-      <div class="ph2-who"><b>${noteEsc(c.name)}</b><small>${owe>0.005?'owes '+money2(owe):'nothing owing'}${+c.limit>0?' · limit '+money2(c.limit):''}</small></div>
-      <button type="button" data-act="phCust">Change</button><button type="button" class="x" data-act="phWalk" aria-label="Back to walk-in">&times;</button></div>`;
-  }
-  const camOn=!!(SCAN&&SCAN.inline);
-  return `<div class="ph ph2">
-   <div class="ph2-head"><b>${S.pos.editing?'Editing '+noteEsc(S.pos.editing):'Scan items'}</b>
-     <button type="button" class="ph2-held" data-act="phHeld">Held${held?` <i>${held}</i>`:''}</button></div>
-   ${custH}
-   <div class="ph2-cam ${camOn?'on':''}" id="phCam" ${camOn?'':'data-act="phScan"'}>
-     ${camOn?'':`<div class="ph2-fr"><i></i><i></i><i></i><i></i></div><span class="ph2-go">${SCAN_IC} Tap to scan</span><small>Point at the barcode — it adds itself</small>`}</div>
-
-   <div class="ph-find">
-     <div class="ph-findrow"><input id="phQ" value="${noteEsc(PH.q)}" placeholder="No barcode? Type a name or code"
-       inputmode="search" autocomplete="off" autocapitalize="off" spellcheck="false">${calcBtn('ph-cam')}</div>
-     ${q?`<div class="ph-hits">${hits.length?hits.map(p=>`<button type="button" class="ph-hit" data-act="phAdd" data-id="${p.id}">
+  /* One step at a time (15 Nov 2026, the owner chose demo 3b): what are they buying → who is it for → how are they
+     paying. Adding an item is one small bar — 📷 scans, or a few letters and a tap. */
+  if(!L.length) PH.step=0;
+  const step=PH.step||0, owe=walk?0:partyBal('C',c.id);
+  const head=`<div class="ph3-head"><b>${S.pos.editing?'Editing '+noteEsc(S.pos.editing):'New bill'}</b>
+     <button type="button" class="ph2-held" data-act="phHeld">Held${held?` <i>${held}</i>`:''}</button><span class="ph3-tot">Rs ${money2(total)}</span></div>
+    <div class="ph3-steps">${['Items','Customer','Payment'].map((s,i)=>`<div class="${i===step?'on':i<step?'ok':''}"><i></i>${i<step?'✓ ':''}${s}</div>`).join('')}</div>`;
+  if(step===0) return `<div class="ph ph3">${head}
+   <div class="ph-find ph3-add">
+     <div class="ph-findrow"><button type="button" class="ph3-cam" data-act="phScan" aria-label="Scan a barcode">${SCAN_IC}</button>
+       <input id="phQ" value="${noteEsc(PH.q)}" placeholder="＋ Add item — name or code" inputmode="search" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+     ${q?`<div class="ph-hits ph3-hits">${hits.length?hits.slice(0,6).map(p=>`<button type="button" class="ph-hit" data-act="phAdd" data-id="${p.id}">
          <span><b>${noteEsc(p.name)}</b><small>${p.num||p.code||''}${p.stock!==undefined?' · '+fq(p.stock)+' '+noteEsc(p.unit||''):''}</small></span>
-         <span class="pr">${money2(price(p))}
-          ${+p.mrp>price(p)+0.005?`<i class="mrp">${money2(p.mrp)}</i>`:''}</span></button>`).join('')
+         <span class="pr">${money2(price(p))}${+p.mrp>price(p)+0.005?`<i class="mrp">${money2(p.mrp)}</i>`:''}</span></button>`).join('')
        :'<div class="ph-empty">Nothing matches that.</div>'}</div>`:''}
    </div>
-
-   <div class="ph-lines">
-     ${L.length?L.map(line).join(''):'<div class="ph-empty ph-start"><span>Scan the first item to start the bill.</span></div>'}
+   <div class="ph-lines ph3-lines">
+     ${L.length?'<div class="ph3-lbl">On the bill</div>'+L.map(line).join(''):'<div class="ph-empty ph-start"><span>Tap the camera to scan, or type a name above.</span></div>'}
    </div>
-
-   <div class="ph-bar ph2-bar">
+   <div class="ph-bar ph3-bar">
      <div class="sum"><span>${n?fq(n)+' item'+(n===1?'':'s'):'nothing on the bill'}</span><b>Rs ${money2(total)}</b></div>
-     <button type="button" class="go" data-act="phPay" ${L.length?'':'disabled'}>Pay →</button>
+     <button type="button" class="go" data-act="phStep" data-step="1" ${L.length?'':'disabled'}>${L.length?'Next — who is it for? →':'Add an item first'}</button>
      <div class="row2">
        <button type="button" data-act="phHold" ${L.length?'':'disabled'}>Hold</button>
        <button type="button" data-act="returnGoods">Return</button>
        <button type="button" data-act="phQuote" ${L.length?'':'disabled'}>Quotation</button>
        <button type="button" data-act="phClear" ${L.length?'':'disabled'}>Clear</button>
      </div>
-   </div>
-  </div>`;
+   </div></div>`;
+  if(step===1){
+    let recent=[]; try{ recentNow(); recent=[..._recCust.entries()].sort((a,b)=>b[1]-a[1]).map(x=>C(x[0])).filter(x=>x&&x.id!==1&&x.active!==false) }catch(e){}
+    const list=[...(walk?[]:[c]),...recent.filter(x=>walk||x.id!==c.id)].slice(0,6);
+    const ini=(nm)=>noteEsc(String(nm).split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase());
+    const row=(x)=>{ const o=partyBal('C',x.id), on=!walk&&x.id===c.id;
+      return `<button type="button" class="ph3-big ${on?'on':''}" data-act="phWho" data-id="${x.id}"><span class="ph3-av">${ini(x.name)}</span>
+        <span class="ph3-t"><b>${noteEsc(x.name)}</b><small>${o>0.005?'owes '+money2(o):'nothing owing'}${+x.limit>0?' · limit '+money2(x.limit):''}</small></span>${on?'<span class="ph3-ok">✓</span>':''}</button>` };
+    return `<div class="ph ph3">${head}
+     <div class="ph3-q">Who is it for?</div>
+     <button type="button" class="ph3-big ${walk?'on':''}" data-act="phWalk"><span class="ph3-av walk">W</span><span class="ph3-t"><b>Walk-in customer</b><small>pays now</small></span>${walk?'<span class="ph3-ok">✓</span>':''}</button>
+     ${list.map(row).join('')}
+     <button type="button" class="ph3-big find" data-act="phCust"><span class="ph3-av find">🔍</span><span class="ph3-t"><b>Find another customer</b><small>by name or mobile</small></span></button>
+     <div class="ph-bar ph3-bar"><div class="ph3-nav"><button type="button" class="back" data-act="phStep" data-step="0" aria-label="Back">←</button>
+       <button type="button" class="go" data-act="phStep" data-step="2">Next — payment →</button></div></div></div>`;
+  }
+  const ways=[['CASH','💵','Cash','type what they give — the change is worked out'],['CARD','💳','Card',''],['BANK','🏦','Bank transfer',''],['CREDIT','📒','On their account',walk?'pick a customer first':(owe>0.005?'owes '+money2(owe):'nothing owing')+(+c.limit>0?' · limit '+money2(c.limit):'')]];
+  return `<div class="ph ph3">${head}
+   <div class="ph3-q">How are they paying?</div>
+   <div class="ph3-sum">${L.map(l=>`<div class="r"><span>${fq(l.qty)} × ${noteEsc(lineName(l))}</span><span>${money2(l.qty*l.price-(l.disc||0))}</span></div>`).join('')}
+     <div class="r"><span>For</span><span>${walk?'Walk-in customer':noteEsc(c.name)}</span></div>
+     <div class="r t"><span>Total</span><b>Rs ${money2(total)}</b></div></div>
+   ${ways.map(w=>`<button type="button" class="ph3-big" data-act="phWay" data-w="${w[0]}" ${w[0]==='CREDIT'&&walk?'disabled':''}><span class="ph3-av way">${w[1]}</span><span class="ph3-t"><b>${w[2]}</b>${w[3]?`<small>${w[3]}</small>`:''}</span></button>`).join('')}
+   <div class="ph-bar ph3-bar"><div class="ph3-nav"><button type="button" class="back" data-act="phStep" data-step="1" aria-label="Back">←</button>
+     <button type="button" class="go dark" data-act="phWay" data-w="EXACT">Exact cash · ${money2(total)}</button></div></div></div>`;
 }
 
 function posPhoneAfter(){
@@ -35661,9 +35699,16 @@ document.addEventListener('click',e=>{
       wpOpen=null; render();
       toast(`${p.name} saved${webHasOwn(p)?` · ${fmt(+p.webPrice)} on the site`:''}`) },
     siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
-    phScan:()=>scanOpen({inline:true}),
+    phScan:()=>scanOpen(),
     phWho:()=>setBillCustomer(+a.dataset.id,()=>render()),   // a recent customer, one tap
     phWalk:()=>setBillCustomer(1,()=>render()),
+    phStep:()=>{ const to=+a.dataset.step||0; if(to>0&&!S.pos.lines.length) return toast('Add an item first'); scanStop(); PH.q=''; PH.step=to; render(); window.scrollTo(0,0) },
+    phWay:()=>{ const w=a.dataset.w; if(!S.pos.lines.length) return;
+      if(w==='CREDIT'){ if(!S.pos.customer||S.pos.customer===1) return toast('Pick the customer first'); return creditSale() }
+      openPay(); const m=[...document.querySelectorAll('.modal')].pop(); if(!m||w==='CASH') return;
+      // card, bank or exact cash: the whole amount put in, and that way of paying pressed
+      const box=m.querySelector('#payAmt'); if(box){ box.value=String(+billTotal().toFixed(2)); box.dispatchEvent(new Event('input',{bubbles:true})) }
+      const b=m.querySelector(`[data-paym="${w==='EXACT'?'CASH':w}"]`); if(b) b.click() },
     returnGoods:()=>{ closeModals(); rtReset(a.dataset.no||null); go('returns') },
     rtMode:()=>{ RT.mode=a.dataset.m; RT.inv=null; RT.lines=[]; RT.q=''; RT.err=''; if(RT.mode==='bill') RT.cid=1; render() },
     rtPickBill:()=>{ rtLoad((S.sales||[]).find(x=>x.no===a.dataset.no)); render() },
@@ -35724,7 +35769,7 @@ document.addEventListener('click',e=>{
       render() },
     phDrop:()=>{ S.pos.lines.splice(+a.dataset.i,1); render() },
     phEdit:()=>{ if(typeof csEditLine==='function') csEditLine(+a.dataset.i) },
-    phCust:()=>{ scanStop(); pickCustomer(()=>render()) },
+    phCust:()=>{ scanStop(); pickCustomer(()=>{ render() }) },
     phHeld:()=>showHeldBillsModal(),
     phHold:()=>holdCurrentBill(true),
     phQuote:()=>{ if(S.pos.lines.length) saveDoc('QUOTE'); else toast('Nothing on the bill') },

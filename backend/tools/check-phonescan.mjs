@@ -1,8 +1,8 @@
-// The phone till, "Scan and go" (15 Nov 2026, the owner chose demo 2, "with an easy way to pick the customer"):
-//  · the customer is one tap: Walk-in, the last few customers billed as buttons, or Find… for anybody else
-//  · a customer picked shows as a card with what they owe, Change, and × back to walk-in
-//  · the camera sits in the box at the top of the till: tapped, it opens there (not over the whole screen)
-//    and stays open while items go on the bill underneath; ✕ closes it; Pay closes it too
+// The phone till, one step at a time (15 Nov 2026, the owner chose demo 3b: "only a small way to add an item"):
+//  · step 1, Items: one small bar — the camera button, and a box where a few letters bring up the items to tap
+//  · step 2, Customer: Walk-in, the customers billed lately, Find another — one tap each
+//  · step 3, Payment: what is on the bill, who it is for, the total; Cash / Card / Bank / On their account, and Exact cash
+//  · ← goes back a step; an empty bill is always on step 1
 // A phone-sized browser with Chrome's pretend camera. Nothing reaches a printer.
 //   node backend/tools/run-e2e.mjs --keep        (the test server on :4010)
 //   node backend/tools/check-phonescan.mjs [folder for screenshots]
@@ -25,66 +25,76 @@ if (await pg.$('#lockScreen')) {
   await pg.waitForSelector('#lockPw'); await pg.type('#lockPw', 'Afridh123'); await pg.click('#lockGo');
   await pg.waitForFunction(() => !document.getElementById('lockScreen'), { timeout: 20000 });
 }
-await pg.waitForFunction(() => window.eval('S').products.length > 5, { timeout: 30000 }); await wait(1200);
+await pg.waitForFunction(() => window.eval('S').products.length > 5, { timeout: 30000 }); await wait(2500);
 const shot = async n => { if (SHOTS) await pg.screenshot({ path: path.join(SHOTS, n + '.png') }) };
+const tap = (sel) => pg.evaluate(sel => { const e = document.querySelector(sel); if (e) e.click(); return !!e }, sel);
+const clearPrice = async () => { if (await pg.$('#pcaUse')) { await pg.click('#pcaUse'); await wait(300); } };
 // a customer billed a moment ago, so they are a "recent" one
 const c = await pg.evaluate(() => {
   document.querySelectorAll('.modal').forEach(m => m.remove()); window.printPaper = () => {}; window.eval("CFG.print.agent=''"); window.eval('CFG').msg.autoBill = false;
   const S = window.eval('S'), tag = 'PS' + Date.now().toString(36).slice(-4).toUpperCase();
   const cu = { id: Math.max(...S.customers.map(x => x.id)) + 1, code: tag, name: tag + ' Hardware Stores', phone: '0700000051', level: 'retail', limit: 500000 }; S.customers.push(cu);
-  const p = S.products.find(x => +x.retail > 100 && x.id !== window.eval('OPEN_PID')); p.stock = Math.max(+p.stock || 0, 100);
+  const p = S.products.find(x => +x.retail > 100 && x.id !== window.eval('OPEN_PID') && /[a-z]{4}/i.test(x.name)); p.stock = Math.max(+p.stock || 0, 100);
   window.eval('completeSale')({ lines: [{ pid: p.id, qty: 1, price: +p.retail, disc: 0 }], customerId: cu.id, pays: [{ method: 'CASH', amount: +p.retail }], override: true });
-  S.pos.lines = []; S.pos.customer = null; window.eval('go')('pos'); return { id: cu.id, name: cu.name, short: cu.name.split(/\s+/).slice(0, 2).join(' '), code: p.barcode || p.num || p.code, pid: p.id };
+  S.pos.lines = []; S.pos.customer = null; window.eval('go')('pos'); return { id: cu.id, name: cu.name, code: p.barcode || p.num || p.code, pid: p.id, word: p.name.split(/\s+/).find(w => /^[a-z]{4,}$/i.test(w)).slice(0, 4).toLowerCase() };
 });
 await wait(400);
-const look = () => pg.evaluate(() => ({ phone: !!document.querySelector('.ph2'), chips: [...document.querySelectorAll('.ph2-chips button')].map(x => x.textContent.trim() + (x.classList.contains('on') ? '*' : '')),
-  card: (document.querySelector('.ph2-cust.sel .ph2-who') || {}).innerText || '', cust: window.eval('S').pos.customer, cam: !!document.querySelector('#phCam'), scan: !!document.querySelector('.scan') }));
-let s = await look();
-ok(s.phone && s.chips[0] === 'Walk-in*' && /Find/.test(s.chips[s.chips.length - 1]), 'the customer is a row of buttons: Walk-in (on), recent ones, Find…', JSON.stringify(s.chips));
-ok(s.chips.includes(c.short), 'the customer billed a moment ago is one of them', c.short);
-await shot('ph2-walkin');
-// one tap picks them
-await pg.evaluate(id => document.querySelector(`.ph2-chips [data-id="${id}"]`).click(), c.id); await wait(300);
-if (await pg.$('#pcaUse')) { await pg.click('#pcaUse'); await wait(300); }
-s = await look();
-ok(s.cust === c.id && s.card.includes(c.name) && /nothing owing|owes/.test(s.card), 'one tap: they are on the bill, shown as a card with what they owe', s.card.replace(/\n/g, ' · '));
-await shot('ph2-cust');
-// × back to walk-in
-await pg.evaluate(() => document.querySelector('.ph2-cust.sel .x').click()); await wait(300);
-if (await pg.$('#pcaUse')) { await pg.click('#pcaUse'); await wait(300); }
-s = await look();
-ok(!s.cust && s.chips[0] === 'Walk-in*', '× takes the bill back to walk-in');
-// Find… opens the customer search
-await pg.evaluate(() => document.querySelector('.ph2-chips .find').click()); await wait(300);
-ok(!!(await pg.$('.modal #cq')), 'Find… opens the customer search');
+const state = () => pg.evaluate(() => ({ step: window.eval('PH').step, on: (document.querySelector('.ph3-steps .on') || {}).textContent || '', lines: window.eval('S').pos.lines.length, cust: window.eval('S').pos.customer,
+  go: (document.querySelector('.ph-bar .go') || {}).textContent || '', goOff: !!(document.querySelector('.ph-bar .go') || {}).disabled }));
+// 1 — Items
+let s = await state();
+ok(s.step === 0 && /Items/.test(s.on) && !!(await pg.$('.ph3-cam')) && !!(await pg.$('#phQ')), 'step 1 (Items): a small bar — the camera button and the add box');
+ok(s.goOff && /Add an item first/.test(s.go), 'with nothing on the bill, Next waits', s.go);
+await pg.type('#phQ', c.word); await wait(400);
+const hits = await pg.evaluate(() => { const h = document.querySelector('.ph3-hits'); return h ? { n: h.querySelectorAll('.ph-hit').length, over: getComputedStyle(h).position === 'absolute' } : null });
+ok(hits && hits.n >= 1 && hits.n <= 6 && hits.over, 'a few letters: up to six items drop down under the box', JSON.stringify(hits));
+await shot('ph3-search');
+await tap('.ph3-hits .ph-hit'); await wait(300);
+s = await state();
+ok(s.lines === 1 && (await pg.evaluate(() => document.getElementById('phQ').value)) === '' && !(await pg.$('.ph3-hits')), 'a tap adds it and empties the box, ready for the next', String(s.lines));
+// the camera button opens the scanner; a barcode adds; Done closes
+await tap('.ph3-cam'); await wait(1200);
+ok(!!(await pg.$('.scan')), 'the camera button opens the scanner');
+await pg.evaluate(code => window.eval('scanHit')(String(code)), c.code); await wait(300);
+s = await state();
+ok(s.lines === 1 && (await pg.evaluate(() => window.eval('S').pos.lines[0].qty)) === 2, 'a barcode read adds it (the same item twice: 2 of it)');
+await tap('.scan [data-scan="done"]'); await wait(500);
+ok(!(await pg.$('.scan')), 'Done closes the scanner, back on the bill');
+await shot('ph3-items');
+// 2 — Customer
+await tap('.ph-bar .go'); await wait(300);
+s = await state();
+const who = await pg.evaluate(() => [...document.querySelectorAll('.ph3-big')].map(x => (x.querySelector('b') || {}).textContent + (x.classList.contains('on') ? '*' : '')));
+ok(s.step === 1 && /Customer/.test(s.on) && who[0] === 'Walk-in customer*' && /Find another/.test(who[who.length - 1]), 'step 2 (Customer): Walk-in (picked), recent ones, Find another', JSON.stringify(who));
+ok(who.some(w => w.startsWith(c.name)), 'the customer billed a moment ago is there, one tap', c.name);
+await pg.evaluate(id => document.querySelector(`.ph3-big[data-id="${id}"]`).click(), c.id); await wait(300); await clearPrice();
+s = await state();
+ok(s.cust === c.id && (await pg.evaluate(id => document.querySelector(`.ph3-big[data-id="${id}"]`).classList.contains('on'), c.id)), 'one tap: they are on the bill, marked ✓');
+await shot('ph3-who');
+await tap('.ph3-big.find'); await wait(300);
+ok(!!(await pg.$('.modal #cq')), 'Find another customer opens the search');
 await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove())); await wait(200);
-// the camera, in the box at the top
-await pg.evaluate(() => document.getElementById('phCam').click()); await wait(1500);
-const cam = await pg.evaluate(() => { const s = document.querySelector('.scan'), box = document.getElementById('phCam'); if (!s || !box) return null; const a = s.getBoundingClientRect(), r = box.getBoundingClientRect();
-  return { inline: s.classList.contains('inline'), fits: Math.abs(a.top - r.top) < 2 && Math.abs(a.left - r.left) < 2 && Math.abs(a.width - r.width) < 2 && Math.abs(a.height - r.height) < 2, small: a.height < innerHeight / 2, live: !!(s.querySelector('video') && s.querySelector('video').srcObject) } });
-ok(cam && cam.inline && cam.fits && cam.small, 'tapped: the camera opens in the box at the top, not over the whole screen', JSON.stringify(cam));
-ok(cam && cam.live, 'and the camera is running');
-// a barcode read: the item goes on the bill underneath, the camera stays open in the same place
-const before = await pg.evaluate(() => document.querySelector('.scan'));
-await pg.evaluate(code => window.eval('scanHit')(String(code)), c.code); await wait(400);
-const after = await pg.evaluate(() => { const s = document.querySelector('.scan'), box = document.getElementById('phCam'); const a = s && s.getBoundingClientRect(), r = box && box.getBoundingClientRect();
-  return { lines: window.eval('S').pos.lines.length, open: !!s, fits: !!(a && r && Math.abs(a.top - r.top) < 2), shown: document.querySelectorAll('.ph-line').length } });
-ok(after.lines === 1 && after.shown === 1 && after.open && after.fits, 'a barcode read: the item is on the bill below, and the camera stays open over its box', JSON.stringify(after));
-await shot('ph2-scanning');
-// a barcode not on file says so on the camera
-await pg.evaluate(() => window.eval('scanHit')('0000000000000')); await wait(200);
-ok(/No item has the barcode/.test(await pg.evaluate(() => (document.querySelector('.scan .scan-note') || {}).textContent || '')), 'a barcode not on file says so on the camera');
-// ✕ closes it
-await pg.evaluate(() => document.querySelector('.scan [data-scan="done"]').click()); await wait(500);
-s = await look();
-ok(!s.scan && s.cam, '✕ closes the camera; the box is back, ready to tap');
-// Pay closes it too
-await pg.evaluate(() => document.getElementById('phCam').click()); await wait(1200);
-await pg.evaluate(() => document.querySelector('.ph-bar .go').click()); await wait(500);
-ok(!(await pg.$('.scan')) && !!(await pg.$('.modal')), 'Pay closes the camera and opens the payment');
-const tracks = await pg.evaluate(() => window.eval('SCAN') === null);
-ok(tracks, 'nothing left holding the camera');
-await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); const S = window.eval('S'); S.pos.lines = []; S.pos.customer = null; window.eval('render')() });
+// 3 — Payment
+await tap('.ph-bar .go'); await wait(300);
+s = await state();
+const sum = await pg.evaluate(() => (document.querySelector('.ph3-sum') || {}).innerText || '');
+ok(s.step === 2 && /Payment/.test(s.on) && sum.includes(c.name) && /Total/.test(sum), 'step 3 (Payment): the lines, who it is for and the total', sum.replace(/\s+/g, ' ').slice(0, 120));
+ok(!(await pg.evaluate(() => document.querySelector('[data-w="CREDIT"]').disabled)), 'On their account can be pressed (a customer is on the bill)');
+await shot('ph3-how');
+// back, to walk-in, forward: On their account is off
+await tap('.ph3-nav .back'); await wait(200);
+ok((await state()).step === 1, '← goes back a step');
+await tap('[data-act="phWalk"]'); await wait(300); await clearPrice();
+await tap('.ph-bar .go'); await wait(300);
+ok(await pg.evaluate(() => document.querySelector('[data-w="CREDIT"]').disabled), 'walk-in: On their account cannot be pressed');
+// Exact cash: the payment window with the whole amount taken in cash
+await tap('[data-act="phWay"][data-w="EXACT"]'); await wait(600);
+const pay = await pg.evaluate(() => { const m = [...document.querySelectorAll('.modal')].pop(); return m ? { left: (m.querySelector('#payLeft') || {}).textContent || '', words: m.innerText.replace(/\s+/g, ' ').slice(0, 300) } : null });
+ok(pay && /All taken|0\.00/.test(pay.words), 'Exact cash: the payment window opens with it all taken in cash', pay && pay.words.slice(0, 120));
+await shot('ph3-pay');
+// the bill cleared: back on step 1
+await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); const S = window.eval('S'); S.pos.lines = []; S.pos.customer = null; window.eval('render')() }); await wait(200);
+ok((await state()).step === 0, 'an empty bill is on step 1 again');
 ok(!errs.length, 'no script errors', errs.join(' | '));
 await b.close();
 console.log(`${pass} passed, ${fail} failed`);
