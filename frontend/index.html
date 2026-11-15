@@ -5525,6 +5525,40 @@ tr.cb-on td{background:#FBE4E6}
   font:700 17px/1 inherit;letter-spacing:.02em}
 .ph-bar .go[disabled]{background:#9db3a8}
 .ph-bar .row2{display:flex;gap:6px;margin-top:6px}
+/* the phone till, "Scan and go" (15 Nov 2026) */
+.ph2-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ph2-head b{font:900 21px/1.1 Archivo,sans-serif}
+#main .ph2-held{border:1px solid var(--line,#d8dedd);background:var(--white,#fff);border-radius:999px;padding:7px 13px;font:700 13px/1 inherit;color:inherit}
+.ph2-held i{font-style:normal;background:#AE1E2B;color:#fff;border-radius:999px;padding:1px 7px;margin-left:4px;font-size:12px}
+.ph2-cust{display:flex;flex-direction:column;gap:5px}
+.ph2-lbl{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.55}
+.ph2-chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.ph2-chips::-webkit-scrollbar{display:none}
+#main .ph2-chips button{flex:none;min-height:42px;padding:0 15px;border-radius:999px;border:1px solid var(--line,#d8dedd);background:var(--white,#fff);font:700 14px/1 inherit;color:inherit;white-space:nowrap}
+#main .ph2-chips button.on{background:#1d2125;color:#fff;border-color:#1d2125}
+#main .ph2-chips button.find{border-style:dashed}
+.ph2-cust.sel{flex-direction:row;align-items:center;gap:10px;background:#fdf3f4;border:2px solid #AE1E2B;border-radius:14px;padding:8px 8px 8px 10px}
+.ph2-av{width:40px;height:40px;border-radius:12px;background:#AE1E2B;color:#fff;display:grid;place-items:center;font:800 14px Archivo,sans-serif;flex:none}
+.ph2-who{flex:1;min-width:0}.ph2-who b{display:block;font-size:15px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ph2-who small{font-size:12px;opacity:.7}
+#main .ph2-cust.sel button{min-height:38px;padding:0 12px;border-radius:10px;border:1px solid var(--line,#d8dedd);background:#fff;font:700 13px/1 inherit;color:inherit}
+#main .ph2-cust.sel button.x{width:38px;padding:0;font-size:20px}
+.ph2-cam{height:190px;border-radius:20px;background:radial-gradient(circle at 50% 40%,#3a4048,#14171a);position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#fff;cursor:pointer;overflow:hidden;flex:none}
+.ph2-cam.on{cursor:default;background:#000}
+.ph2-fr{position:absolute;left:12%;right:12%;top:22%;height:46%}
+.ph2-fr i{position:absolute;width:26px;height:26px;border:3px solid rgba(255,255,255,.85);border-radius:4px}
+.ph2-fr i:nth-child(1){left:0;top:0;border-right:0;border-bottom:0}.ph2-fr i:nth-child(2){right:0;top:0;border-left:0;border-bottom:0}
+.ph2-fr i:nth-child(3){left:0;bottom:0;border-right:0;border-top:0}.ph2-fr i:nth-child(4){right:0;bottom:0;border-left:0;border-top:0}
+.ph2-go{position:relative;display:flex;align-items:center;gap:8px;background:#AE1E2B;border-radius:999px;padding:10px 18px;font-weight:800;font-size:15px}
+.ph2-go svg{width:20px;height:20px}
+.ph2-cam small{position:absolute;bottom:10px;font-size:12px;opacity:.8}
+.scan.inline{position:fixed;inset:auto;z-index:15;border-radius:20px;overflow:hidden;animation:none}
+.scan.inline .scan-panel{display:none}
+.scan.inline .scan-top{position:absolute;right:0;top:0;padding:8px;background:none;gap:6px}.scan.inline .scan-top span{display:none}
+.scan.inline .scan-top button{width:36px;height:36px;font-size:20px}
+.scan.inline .scan-frame{top:18%;height:52%;left:10%;right:10%}
+.scan.inline .scan-note{top:auto;bottom:8px;font-size:12.5px}
+#main .ph2-bar .go{background:var(--tape,#AE1E2B)}
+.ph2-bar .go[disabled]{background:#c9a3a7}
+.ph2-bar .sum b{font-family:Archivo,sans-serif}
 .ph-bar .row2 button{flex:1;min-height:42px;border-radius:10px;border:1px solid var(--line,#d8dedd);
   background:var(--panel,#f7f9f8);font:600 13px/1 inherit;color:inherit}
 /* ===================== EVERY SCREEN ON A PHONE =====================
@@ -19200,29 +19234,45 @@ function scanHit(code){
   SCAN.seen=code; SCAN.seenAt=now;
   const p=scanFind(code), fx=SCAN.el.querySelector('.scan-frame');
   fx.classList.remove('hit','miss'); void fx.offsetWidth;
-  if(!p){ SCAN.miss=code; fx.classList.add('miss'); scanBeep(false); scanPanel(); return }
+  if(!p){ SCAN.miss=code; fx.classList.add('miss'); scanBeep(false); scanPanel(); if(SCAN.inline){ const nt=SCAN.el.querySelector('.scan-note'); if(nt){ nt.textContent='No item has the barcode '+code; nt.classList.add('bad') } } return }
+  if(SCAN.inline){ const nt=SCAN.el.querySelector('.scan-note'); if(nt){ nt.textContent='Hold the barcode inside the box'; nt.classList.remove('bad') } }
   SCAN.miss=''; SCAN.lastPid=p.id;
   addLine(p.id); fx.classList.add('hit'); scanBeep(true); scanPanel();
 }
+/* the inline camera sits exactly over the box at the top of the phone till (it is kept out of the till's own
+   drawing, which is made again on every line added, so the camera is not restarted each time) */
+function scanPlace(){
+  if(!SCAN||!SCAN.inline) return;
+  const box=document.getElementById('phCam');
+  if(!box||S.view!=='pos'||document.querySelector('.modal')){ return scanStop() }
+  const r=box.getBoundingClientRect(); Object.assign(SCAN.el.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});
+}
+function scanStop(){ if(!SCAN) return; const s=SCAN; SCAN=null; s.stop=true;
+  try{ s.stream&&s.stream.getTracks().forEach(t=>t.stop()) }catch(e){} try{ s.ac&&s.ac.close() }catch(e){}
+  if(s.place){ window.removeEventListener('scroll',s.place); window.removeEventListener('resize',s.place) }
+  s.el.remove(); const box=document.getElementById('phCam'); if(box&&box.classList.contains('on')) setTimeout(()=>{ if(!SCAN&&S.view==='pos') render() },0) }
 function scanClose(toSearch){
   if(!SCAN) return; const s=SCAN; SCAN=null; s.stop=true;
+  if(s.place){ window.removeEventListener('scroll',s.place); window.removeEventListener('resize',s.place) }
   try{ s.stream&&s.stream.getTracks().forEach(t=>t.stop()) }catch(e){}
   try{ s.ac&&s.ac.close() }catch(e){}
   s.el.classList.add('out'); setTimeout(()=>s.el.remove(),220);
   if(toSearch){ PH.q=''; render(); const b=document.getElementById('phQ'); if(b) b.focus() } else render();
 }
-async function scanOpen(){
+async function scanOpen(opt){
   if(SCAN) return;
+  const inline=!!(opt&&opt.inline&&document.getElementById('phCam'));
   if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia))
     return toast(location.protocol==='https:'||location.hostname==='localhost'?'This browser cannot use the camera — open the till in Chrome or Safari':'The camera only works on a secure link — open https://regalhw.lk/pos','bad');
-  const el=document.createElement('div'); el.className='scan'; el.innerHTML=`
+  const el=document.createElement('div'); el.className='scan'+(inline?' inline':''); el.innerHTML=`
     <video playsinline muted autoplay></video>
     <div class="scan-top"><button type="button" data-scan="done" aria-label="Close">&times;</button><span>Scan to bill</span><button type="button" data-scan="torch" class="torch" hidden aria-label="Torch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2h10v5l-3 4v11h-4V11L7 7z"/></svg></button></div>
     <div class="scan-frame"><i></i><i></i><i></i><i></i><b></b></div>
     <div class="scan-note">Starting the camera…</div>
     <div class="scan-panel"></div>`;
   document.body.appendChild(el);
-  const me=SCAN={el,stream:null,stop:false,seen:'',seenAt:0,miss:'',lastPid:null,ac:null};
+  const me=SCAN={el,stream:null,stop:false,seen:'',seenAt:0,miss:'',lastPid:null,ac:null,inline};
+  if(inline){ me.place=()=>scanPlace(); window.addEventListener('scroll',me.place,{passive:true}); window.addEventListener('resize',me.place); render() }
   try{ const AC=window.AudioContext||window.webkitAudioContext; if(AC) me.ac=new AC() }catch(e){}   // made on the tap, so a phone lets it beep
   scanPanel();
   el.addEventListener('click',e=>{ const b=e.target.closest('[data-scan]'); if(!b||SCAN!==me) return; const k=b.dataset.scan, L=S.pos.lines, l=L.find(x=>x.pid===me.lastPid);
@@ -19297,18 +19347,31 @@ function posPhone(){
       </div></div>`;
   };
 
-  return `<div class="ph">
-   <div class="ph-top">
-     <button type="button" data-act="phCust" class="${walk?'':'on'}">${walk?'Walk-in customer':noteEsc(c.name)}
-       <small>${walk?'tap to name them':'tap to change'}</small></button>
-     <button type="button" data-act="phHeld" style="max-width:116px">Held${held?' · '+held:''}
-       <small>${held?'pick one up':'nothing held'}</small></button>
-   </div>
+  /* the customer, one tap away: walk-in, the last few customers billed, or Find for anybody else */
+  let custH;
+  if(walk){
+    let recent=[]; try{ recentNow(); recent=[..._recCust.entries()].sort((a,b)=>b[1]-a[1]).map(x=>C(x[0])).filter(x=>x&&x.id!==1&&x.active!==false).slice(0,4) }catch(e){}
+    custH=`<div class="ph2-cust"><span class="ph2-lbl">Customer</span><div class="ph2-chips">
+      <button type="button" class="on" data-act="phWalk">Walk-in</button>
+      ${recent.map(x=>`<button type="button" data-act="phWho" data-id="${x.id}" title="${noteEsc(x.name)}">${noteEsc(String(x.name).split(/\s+/).slice(0,2).join(' '))}</button>`).join('')}
+      <button type="button" class="find" data-act="phCust">🔍 Find…</button></div></div>`;
+  } else {
+    const owe=partyBal('C',c.id);
+    custH=`<div class="ph2-cust sel"><span class="ph2-av">${noteEsc(String(c.name).split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase())}</span>
+      <div class="ph2-who"><b>${noteEsc(c.name)}</b><small>${owe>0.005?'owes '+money2(owe):'nothing owing'}${+c.limit>0?' · limit '+money2(c.limit):''}</small></div>
+      <button type="button" data-act="phCust">Change</button><button type="button" class="x" data-act="phWalk" aria-label="Back to walk-in">&times;</button></div>`;
+  }
+  const camOn=!!(SCAN&&SCAN.inline);
+  return `<div class="ph ph2">
+   <div class="ph2-head"><b>${S.pos.editing?'Editing '+noteEsc(S.pos.editing):'Scan items'}</b>
+     <button type="button" class="ph2-held" data-act="phHeld">Held${held?` <i>${held}</i>`:''}</button></div>
+   ${custH}
+   <div class="ph2-cam ${camOn?'on':''}" id="phCam" ${camOn?'':'data-act="phScan"'}>
+     ${camOn?'':`<div class="ph2-fr"><i></i><i></i><i></i><i></i></div><span class="ph2-go">${SCAN_IC} Tap to scan</span><small>Point at the barcode — it adds itself</small>`}</div>
 
    <div class="ph-find">
-     <div class="ph-findrow"><input id="phQ" value="${noteEsc(PH.q)}" placeholder="Scan, or type a name or code"
-       inputmode="search" autocomplete="off" autocapitalize="off" spellcheck="false">
-       <button type="button" class="ph-cam" data-act="phScan" aria-label="Scan with the camera">${SCAN_IC}<span>Scan</span></button>${calcBtn('ph-cam')}</div>
+     <div class="ph-findrow"><input id="phQ" value="${noteEsc(PH.q)}" placeholder="No barcode? Type a name or code"
+       inputmode="search" autocomplete="off" autocapitalize="off" spellcheck="false">${calcBtn('ph-cam')}</div>
      ${q?`<div class="ph-hits">${hits.length?hits.map(p=>`<button type="button" class="ph-hit" data-act="phAdd" data-id="${p.id}">
          <span><b>${noteEsc(p.name)}</b><small>${p.num||p.code||''}${p.stock!==undefined?' · '+fq(p.stock)+' '+noteEsc(p.unit||''):''}</small></span>
          <span class="pr">${money2(price(p))}
@@ -19317,12 +19380,12 @@ function posPhone(){
    </div>
 
    <div class="ph-lines">
-     ${L.length?L.map(line).join(''):`<div class="ph-empty ph-start"><span>Scan or search for the first item.</span><button type="button" class="ph-scanbig" data-act="phScan">${SCAN_IC}Scan with the camera</button></div>`}
+     ${L.length?L.map(line).join(''):'<div class="ph-empty ph-start"><span>Scan the first item to start the bill.</span></div>'}
    </div>
 
-   <div class="ph-bar">
-     <div class="sum"><span>${n?fq(n)+' item'+(n===1?'':'s'):'nothing on the bill'}</span><b>${money2(total)}</b></div>
-     <button type="button" class="go" data-act="phPay" ${L.length?'':'disabled'}>Take payment</button>
+   <div class="ph-bar ph2-bar">
+     <div class="sum"><span>${n?fq(n)+' item'+(n===1?'':'s'):'nothing on the bill'}</span><b>Rs ${money2(total)}</b></div>
+     <button type="button" class="go" data-act="phPay" ${L.length?'':'disabled'}>Pay →</button>
      <div class="row2">
        <button type="button" data-act="phHold" ${L.length?'':'disabled'}>Hold</button>
        <button type="button" data-act="returnGoods">Return</button>
@@ -19334,6 +19397,7 @@ function posPhone(){
 }
 
 function posPhoneAfter(){
+  if(SCAN&&SCAN.inline) scanPlace();
   const box=document.getElementById('phQ');
   if(!box) return;
   box.oninput=()=>{ PH.q=box.value; render();
@@ -35597,7 +35661,9 @@ document.addEventListener('click',e=>{
       wpOpen=null; render();
       toast(`${p.name} saved${webHasOwn(p)?` · ${fmt(+p.webPrice)} on the site`:''}`) },
     siteTab:()=>{siteTab=a.dataset.t;render();$('#main').scrollTop=0},
-    phScan:()=>scanOpen(),
+    phScan:()=>scanOpen({inline:true}),
+    phWho:()=>setBillCustomer(+a.dataset.id,()=>render()),   // a recent customer, one tap
+    phWalk:()=>setBillCustomer(1,()=>render()),
     returnGoods:()=>{ closeModals(); rtReset(a.dataset.no||null); go('returns') },
     rtMode:()=>{ RT.mode=a.dataset.m; RT.inv=null; RT.lines=[]; RT.q=''; RT.err=''; if(RT.mode==='bill') RT.cid=1; render() },
     rtPickBill:()=>{ rtLoad((S.sales||[]).find(x=>x.no===a.dataset.no)); render() },
@@ -35658,14 +35724,14 @@ document.addEventListener('click',e=>{
       render() },
     phDrop:()=>{ S.pos.lines.splice(+a.dataset.i,1); render() },
     phEdit:()=>{ if(typeof csEditLine==='function') csEditLine(+a.dataset.i) },
-    phCust:()=>pickCustomer(),
+    phCust:()=>{ scanStop(); pickCustomer(()=>render()) },
     phHeld:()=>showHeldBillsModal(),
     phHold:()=>holdCurrentBill(true),
     phQuote:()=>{ if(S.pos.lines.length) saveDoc('QUOTE'); else toast('Nothing on the bill') },
     phClear:()=>{ if(S.pos.editing) return csClearEditing(); if(!S.pos.lines.length) return;
       if(!confirm('Clear the bill?')) return;
       S.pos={...S.pos,lines:[],billDisc:0,sel:-1}; PH.q=''; render() },
-    phPay:()=>{ if(S.pos.lines.length) openPay() },
+    phPay:()=>{ if(S.pos.lines.length){ scanStop(); openPay() } },
     pqRefresh:()=>{ pqLoad() },
     pqShow:()=>{ pqShow=a.dataset.k; render() },
     pqAgain:()=>pqDo(a.dataset.id,'again'),
