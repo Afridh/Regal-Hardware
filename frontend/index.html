@@ -3481,6 +3481,15 @@ tr.rowlink button{cursor:pointer}
 .cu-head.haspage .av.big{box-shadow:0 0 0 2px #fff,0 0 0 4px #7A4FC0,0 6px 16px rgba(16,30,34,.18)}
 .tag.page{background:#EFE7FB;color:#4B2E86;border-left-color:#7A4FC0}
 .cu-row.haspage{box-shadow:inset 3px 0 0 #7A4FC0}
+/* the statement's marked lines (15 Nov 2026): cancelled, changed, returns */
+.stn{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.03em;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:1px;border:1px solid currentColor}
+.stn.cx{color:#b3261e;background:#fdecea}.stn.ch{color:#8a5d06;background:#fdf3dc}.stn.rt{color:#1f5f9a;background:#e6f0fb}
+.cu-tbl.stmt tr.cx td{color:#8b8f94;text-decoration:line-through;text-decoration-color:rgba(179,38,30,.45)}.cu-tbl.stmt tr.cx td .stn,.cu-tbl.stmt tr.cx td:last-child{text-decoration:none}
+.stls{display:grid;gap:8px;margin-top:12px}
+.stl{border:1px solid var(--line,#ddd);border-left-width:4px;border-radius:8px;padding:8px 12px;font-size:12.5px}
+.stl b{display:block;font-size:13px;margin-bottom:4px}.stl>div{display:flex;justify-content:space-between;gap:12px;padding:2px 0;border-top:1px dashed #e3e3e3}
+.stl.cx{border-left-color:#b3261e}.stl.ch{border-left-color:#d4a017}.stl.rt{border-left-color:#1f5f9a}
+.print .stn{background:none!important}.print .stl{border-color:#000}
 /* photos from the web (15 Nov 2026) */
 .modal.wph-modal .box{max-width:1100px;width:calc(100vw - 32px)}
 .wph-h{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.wph-h h2{margin:0 0 4px}
@@ -26697,6 +26706,34 @@ function custPayments(c,rc){
      <td><div class="rowacts"><button class="btn ghost sm" data-act="rcpt" data-no="${p.no}">Print receipt</button></div></td></tr>`}).join('')||'<tr><td colspan="7" class="muted">Nothing received yet.</td></tr>'}</table>`;
 }
 function custStmtFrom(){ const d=new Date(today); if(custStmtRange==='1m') d.setMonth(d.getMonth()-1); else if(custStmtRange==='3m') d.setMonth(d.getMonth()-3); else if(custStmtRange==='12m') d.setFullYear(d.getFullYear()-1); else return ''; return D(d) }
+/* What the customer should be told on their statement (15 Nov 2026, the owner): a bill that was cancelled, a bill
+   that was changed after it was made (and what it was before), and goods brought back. Each such line is marked,
+   and the statement ends with the three lists. */
+function stmtNotes(rows){
+  const notes=new Map(), lastSale={};
+  rows.forEach((r,i)=>{ if(r.ref&&!/-R$/.test(r.ref)&&S.sales.some(s=>s.no===r.ref)) lastSale[r.ref]=i });
+  rows.forEach((r,i)=>{
+    const m=/^(.*)-R$/.exec(r.ref||''), no=m?m[1]:r.ref, s=no&&S.sales.find(x=>x.no===no); if(!s) return;
+    if(m){ if(/cancel/i.test(r.desc)) notes.set(r,{k:'cx',t:'Cancelled — taken back'}); else if(/re-made/i.test(r.desc)) notes.set(r,{k:'ch',t:'Changed — the old bill taken back'}); return }
+    if(s.cancelled) return notes.set(r,{k:'cx',t:'CANCELLED'+(s.cancelled.on?' on '+s.cancelled.on:'')});
+    if(s.returnOf||+s.total<0||/^Return /.test(r.desc)) return notes.set(r,{k:'rt',t:'RETURN'+(s.returnOf?' of bill '+s.returnOf:'')});
+    if((s.remade||[]).length){ const last=s.remade[s.remade.length-1];
+      notes.set(r,lastSale[no]===i?{k:'ch',t:'CHANGED — was '+fmt(last.total)}:{k:'ch',t:'Changed later — as it was first'}) }
+  });
+  return notes;
+}
+const stmtNoteH=(n)=>n?` <span class="stn ${n.k}">${noteEsc(n.t)}</span>`:'';
+function stmtLists(cid,from){
+  const mine=S.sales.filter(s=>s.customerId===cid&&!isBF(s)&&(!from||String(s.date)>=from));
+  const cx=mine.filter(s=>s.cancelled), ch=mine.filter(s=>!s.cancelled&&(s.remade||[]).length), rt=mine.filter(s=>!s.cancelled&&(s.returnOf||+s.total<0));
+  if(!cx.length&&!ch.length&&!rt.length) return '';
+  const box=(t,k,list,row)=>list.length?`<div class="stl ${k}"><b>${t} (${list.length})</b>${list.map(row).join('')}</div>`:'';
+  return `<div class="stls">
+    ${box('Cancelled bills','cx',cx,s=>`<div><span>${noteEsc(s.no)} · ${noteEsc(s.date)}</span><span>${fmt(s.cancelled.total!=null?s.cancelled.total:s.total)} — cancelled${s.cancelled.on?' '+noteEsc(s.cancelled.on):''}${s.cancelled.by?' by '+noteEsc(s.cancelled.by):''}${s.cancelled.why?' · '+noteEsc(s.cancelled.why):''}</span></div>`)}
+    ${box('Changed bills','ch',ch,s=>{ const f=s.remade[0], l=s.remade[s.remade.length-1]; return `<div><span>${noteEsc(s.no)} · ${noteEsc(s.date)}</span><span>was ${fmt(f.total)} → now ${fmt(s.total)}${s.remade.length>1?' (changed '+s.remade.length+' times)':''} · changed ${noteEsc(l.at||'')}${l.why?' · '+noteEsc(l.why):''}</span></div>` })}
+    ${box('Returns','rt',rt,s=>`<div><span>${noteEsc(s.no)} · ${noteEsc(s.date)}</span><span>${fmt(Math.abs(+s.total||0))} back${s.returnOf?' — from bill '+noteEsc(s.returnOf):''}${s.returnWhy?' · '+noteEsc(s.returnWhy):''}</span></div>`)}
+   </div>`;
+}
 function custStatement(c){
   const rows=custLedger(c.id), from=custStmtFrom();
   const before=rows.filter(r=>from&&r.date<from), shown=rows.filter(r=>!from||r.date>=from);
@@ -26708,9 +26745,10 @@ function custStatement(c){
     <div>Opening<b>${fmt(opening)}</b></div><div>Billed<b>${fmt(dr)}</b></div><div>Paid / taken off<b>${fmt(cr)}</b></div><div>Closing<b style="color:${rows.length&&rows[rows.length-1].run>0?'var(--chip-rust)':'var(--chip-green)'}">${fmt(rows.length?rows[rows.length-1].run:0)}</b></div></div>
    <table class="cu-tbl stmt"><tr><th>Date</th><th>What</th><th>Ref</th><th class="n">Billed</th><th class="n">Paid</th><th class="n">Balance</th></tr>
    ${from?`<tr><td>${from}</td><td class="muted" colspan="4">Balance brought forward</td><td class="n"><b>${fmt(opening)}</b></td></tr>`:''}
-   ${shown.map(r=>{const isBill=S.sales.some(s=>s.no===r.ref), isRct=S.payments.some(p=>p.no===r.ref);
-     return `<tr><td>${r.date}</td><td>${r.desc}</td><td>${isBill?`<a href="#" data-act="invoice" data-no="${r.ref}">${r.ref}</a>`:isRct?`<a href="#" data-act="rcpt" data-no="${r.ref}" style="border:0">${r.ref}</a>`:r.ref||''}</td>
-     <td class="n">${r.dr?fmt(r.dr):''}</td><td class="n" style="color:var(--chip-green)">${r.cr?fmt(r.cr):''}</td><td class="n"><b>${fmt(r.run)}</b></td></tr>`}).join('')||'<tr><td colspan="6" class="muted">Nothing in this period.</td></tr>'}</table>`;
+   ${(()=>{ const N=stmtNotes(rows); return shown.map(r=>{const isBill=S.sales.some(s=>s.no===r.ref), isRct=S.payments.some(p=>p.no===r.ref);
+     return `<tr class="${(N.get(r)||{}).k||''}"><td>${r.date}</td><td>${r.desc}${stmtNoteH(N.get(r))}</td><td>${isBill?`<a href="#" data-act="invoice" data-no="${r.ref}">${r.ref}</a>`:isRct?`<a href="#" data-act="rcpt" data-no="${r.ref}" style="border:0">${r.ref}</a>`:r.ref||''}</td>
+     <td class="n">${r.dr?fmt(r.dr):''}</td><td class="n" style="color:var(--chip-green)">${r.cr?fmt(r.cr):''}</td><td class="n"><b>${fmt(r.run)}</b></td></tr>`}).join('') })()||'<tr><td colspan="6" class="muted">Nothing in this period.</td></tr>'}</table>
+   ${stmtLists(c.id,from)}`;
 }
 function custDetails(c){
   const webOrders=S.web.orders.filter(o=>o.cid===c.id);
@@ -27116,12 +27154,13 @@ function statement(id,mode){
    <div style="margin:10px 0"><b>${c.name}</b> · ${c.code}${c.phone?' · '+c.phone:''}${c.address?'<br>'+c.address:''}</div>
    <table width="100%" style="font-size:12.5px"><tr><th align="left">Date</th><th align="left">Particulars</th><th align="left">Ref</th><th align="right">Billed</th><th align="right">Paid</th><th align="right">Balance</th></tr>
    ${from?`<tr><td>${from}</td><td colspan="4">Balance brought forward</td><td align="right"><b>${opening.toFixed(2)}</b></td></tr>`:''}
-   ${shown.map(r=>`<tr><td>${r.date}</td><td>${r.desc}</td><td>${r.ref||''}</td><td align="right">${r.dr?r.dr.toFixed(2):''}</td><td align="right">${r.cr?r.cr.toFixed(2):''}</td><td align="right">${r.run.toFixed(2)}</td></tr>`).join('')||'<tr><td colspan="6">No movement in this period.</td></tr>'}
+   ${(()=>{ const N=stmtNotes(rows); return shown.map(r=>`<tr><td>${r.date}</td><td>${r.desc}${stmtNoteH(N.get(r))}</td><td>${r.ref||''}</td><td align="right">${r.dr?r.dr.toFixed(2):''}</td><td align="right">${r.cr?r.cr.toFixed(2):''}</td><td align="right">${r.run.toFixed(2)}</td></tr>`).join('') })()||'<tr><td colspan="6">No movement in this period.</td></tr>'}
    <tr><td colspan="5" align="right"><b>Balance due</b></td><td align="right"><b>${owed.toFixed(2)}</b></td></tr></table>
    ${open.length?`<div style="margin-top:12px"><b>Unpaid bills</b></div>
    <table width="100%" style="font-size:12.5px"><tr><th align="left">Invoice</th><th align="left">Date</th><th align="right">Total</th><th align="right">Paid</th><th align="right">Outstanding</th><th align="right">Days</th></tr>
    ${open.map(s=>`<tr><td>${isBF(s)?"Previous balance":s.no}</td><td>${s.date}</td><td align="right">${s.total.toFixed(2)}</td><td align="right">${s.paid.toFixed(2)}</td><td align="right">${s.balance.toFixed(2)}</td><td align="right">${Math.round((today-new Date(s.date))/864e5)}</td></tr>`).join('')}</table>
    <div style="margin-top:6px;font-size:12px">Up to 30 days ${ag.now.toFixed(2)} · 31–60 days ${ag.mid.toFixed(2)} · over 60 days <b>${ag.old.toFixed(2)}</b></div>`:'<div style="margin-top:10px">Nothing outstanding — thank you.</div>'}
+   ${stmtLists(id,from)}
    <div style="margin-top:10px">Amount due in words: <i>${words(owed)} rupees only</i></div></div>
    <div style="text-align:right;margin-top:10px"><button class="btn ghost" data-act="closeModal">Close</button> <button class="btn" onclick="window.print()">Print</button></div>`);
 }
