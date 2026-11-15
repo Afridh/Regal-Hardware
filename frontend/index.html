@@ -4868,7 +4868,7 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
     border-radius: 0 !important; display: flex; flex-direction: column;
   }
   .hb-head { padding: 10px 12px; }
-  .hb-keys-hint { display: none !important; }
+  .hb-keys-hint { display: flex !important; } .hb-keys-hint .hb-key-pill, .hb-keys-hint .hb-status { display: none; }
   .hb-body { flex-direction: column !important; flex: 1; overflow: hidden; }
   .hb-list {
     width: 100% !important; max-height: 42vh; border-right: none !important;
@@ -4950,6 +4950,9 @@ body.csfull .rc{height:100vh;min-height:0;border-radius:0;border:0}   /* the rec
 .hb-keys-hint{display:flex;align-items:center;gap:8px}
 .hb-key-pill{font-size:11px;color:#B4C4C8;background:rgba(255,255,255,0.08);padding:3px 7px;border-radius:4px}
 .hb-key-pill b{color:#fff;font-family:Archivo,sans-serif}
+.hb-ref{border:0;background:#AE1E2B;color:#fff;border-radius:6px;padding:4px 10px;font:700 12px Inter,system-ui,sans-serif;cursor:pointer;white-space:nowrap}.hb-ref:hover{background:#c42633}
+.hb-ref b{font-family:Archivo,sans-serif;background:rgba(255,255,255,.2);border-radius:3px;padding:0 4px;margin-left:4px}
+.hb-status{font-size:11px;color:#B4C4C8;white-space:nowrap}.hb-empty .hb-status{color:var(--steel)}
 .hb-key-pill.ok b{color:#51cf66}
 .hb-key-pill.danger b{color:#ff6b6b}
 .hb-close{background:none;border:none;color:#B4C4C8;font-size:18px;cursor:pointer;padding:2px 8px;border-radius:4px;line-height:1}
@@ -20910,7 +20913,18 @@ function discardHeldBill(idx){
   m.querySelector('#dhNo').focus();
 }
 
-function showHeldBillsModal(initIdx = 0){
+/* A bill held on another PC could take a while to show here (15 Nov 2026, the owner): the till asks the server
+   every 10 seconds (every minute when nobody has touched it), and not while a bill is being keyed. The held bills
+   window asks the server the moment it opens, and R (or F5 again) asks again — Refresh. */
+let hbAsking=false;
+async function heldRefresh(){
+  if(!(window.regalBridge&&regalBridge.checkNow)) return {ok:false,off:true};
+  if(hbAsking) return {ok:false,busy:true};
+  hbAsking=true;
+  try{ return await regalBridge.checkNow() }catch(e){ return {ok:false} } finally{ hbAsking=false }
+}
+const hbStamp=()=>new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+function showHeldBillsModal(initIdx = 0, fromRefresh = false){
   closeModals();
   S.heldBills = S.heldBills || [];
   if(S.held && !S.held.id && S.held.lines && S.held.lines.length && !S.heldBills.length){
@@ -20931,9 +20945,20 @@ function showHeldBillsModal(initIdx = 0){
         <div class="hb-empty-icon">📋</div>
         <h3>No Bills On Hold</h3>
         <p>Press <b>F7</b> or <b>Ctrl+H</b> anytime items are on the till to hold the bill.<br>Press <b>F5</b> or <b>Ctrl+R</b> to view and switch between held bills.</p>
-        <button class="btn tape" data-act="closeModal" style="margin-top:16px;padding:8px 20px">Back to Till (Esc)</button>
+        <div class="hb-status" id="hbSt" style="margin-top:12px">${fromRefresh?'Up to date · '+hbStamp():'Checking the other tills…'}</div>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:12px"><button class="btn ghost" id="hbRef" style="padding:8px 16px">⟳ Refresh <i class="kbd">R</i></button>
+        <button class="btn tape" data-act="closeModal" style="padding:8px 20px">Back to Till (Esc)</button></div>
       </div>`);
     m.classList.add('hb-modal-wrap');
+    const st=(t)=>{ const el=m.querySelector('#hbSt'); if(el) el.textContent=t };
+    const again=async()=>{ st('Checking the other tills…'); const r=await heldRefresh(); if(!document.body.contains(m)) return;
+      if((S.heldBills||[]).length){ m.remove(); return showHeldBillsModal(0,true) }
+      st(r.off?'This till is not connected to the server':!r.ok?(r.busy?'Already checking…':'The server did not answer — press R to try again'):'Nothing on hold at any till · checked '+hbStamp()) };
+    m.querySelector('#hbRef').onclick=again;
+    const k0=(e)=>{ if(!document.body.contains(m)){ window.removeEventListener('keydown',k0,true); return }
+      if((e.key==='r'||e.key==='R'||e.key==='F5')&&!e.ctrlKey&&!e.altKey){ e.preventDefault(); e.stopPropagation(); again() } };
+    window.addEventListener('keydown',k0,true);
+    if(!fromRefresh) again();
     return;
   }
 
@@ -21064,6 +21089,8 @@ function showHeldBillsModal(initIdx = 0){
         <span class="hb-key-pill ok"><b>Enter</b> Recall</span>
         <span class="hb-key-pill danger"><b>Del</b> Discard</span>
         <span class="hb-key-pill"><b>Esc</b> Close</span>
+        <button type="button" class="hb-ref" id="hbRef" title="Ask the server now for bills held on the other PCs (R)">⟳ Refresh <b>R</b></button>
+        <span class="hb-status" id="hbSt">${fromRefresh?'Up to date · '+hbStamp():'Checking the other tills…'}</span>
       </div>
       <button class="hb-close" data-act="closeModal" title="Close (Esc)">✕</button>
     </div>
@@ -21153,6 +21180,27 @@ function showHeldBillsModal(initIdx = 0){
     }
   };
   window.addEventListener('keydown', onHbKeyDown, true);
+  // Refresh: ask the server, then draw the list again where it stands — the one picked stays picked
+  const st = (t) => { const el = m.querySelector('#hbSt'); if(el) el.textContent = t; };
+  const again = async () => {
+    const had = new Set(S.heldBills.map(b => b.id)), pick = (S.heldBills[curIdx] || {}).id;
+    st('Checking the other tills…');
+    const r = await heldRefresh();
+    if(!document.body.contains(m)) return;
+    if(!S.heldBills.length){ m.remove(); return showHeldBillsModal(0, true); }
+    const came = S.heldBills.filter(b => !had.has(b.id)).length, went = [...had].filter(id => !S.heldBills.some(b => b.id === id)).length;
+    curIdx = Math.max(0, S.heldBills.findIndex(b => b.id === pick));
+    m.querySelector('#hbList').innerHTML = renderCardsHtml();
+    const bd = m.querySelector('#hbBadge'); if(bd) bd.textContent = S.heldBills.length + ' on hold';
+    updateView();
+    st(r.off ? 'This till is not connected to the server' : !r.ok ? (r.busy ? 'Already checking…' : 'The server did not answer — press R to try again')
+      : [came ? came + ' new from another till' : '', went ? went + ' picked up at another till' : ''].filter(Boolean).join(' · ') || 'Up to date · ' + hbStamp());
+  };
+  m.querySelector('#hbRef').onclick = again;
+  const kR = (e) => { if(!document.body.contains(m)){ window.removeEventListener('keydown', kR, true); return; }
+    if((e.key === 'r' || e.key === 'R' || e.key === 'F5') && !e.ctrlKey && !e.altKey){ e.preventDefault(); e.stopPropagation(); again(); } };
+  window.addEventListener('keydown', kR, true);
+  if(!fromRefresh) again();
 }
 
 /* The panel beside the bill never scrolls (5 Nov 2026, the owner asked). till-sepos.css makes it compact on a short window; anything still
