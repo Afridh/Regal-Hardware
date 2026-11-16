@@ -3133,6 +3133,22 @@ tr.sum td{background:var(--panel);border-top:1px solid var(--line)}
 .cc{font-family:Archivo,sans-serif;font-weight:700;letter-spacing:.09em;background:var(--panel);
  border:1px solid var(--line);border-radius:2px;padding:0 4px}
 .costmap{display:flex;gap:6px;flex-wrap:wrap}
+/* the price code page, as the old SePOS Price Code Updater (16 Nov 2026) */
+.pcu{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:#fff}
+.pcu-t{background:#1d2125;color:#fff;font:800 13px Inter,sans-serif;letter-spacing:.06em;text-transform:uppercase;padding:8px 12px}
+.pcu-row{display:flex;gap:8px;flex-wrap:wrap;padding:14px 12px 6px;align-items:flex-end}
+.pcu-k{display:flex;flex-direction:column;align-items:center;gap:4px;margin:0}
+.pcu-k span{font:800 20px Archivo,Inter,sans-serif;line-height:1}
+.pcu-x span{font:700 11px Inter,sans-serif;text-align:center;max-width:56px;line-height:1.15}
+.pcu-x{margin-left:10px}
+#main .pcu-k input{width:46px;height:46px;padding:0;text-align:center;font:800 24px Archivo,Inter,sans-serif;text-transform:uppercase;border:2px solid #2a2f35;border-radius:4px}
+#main .pcu-k input:focus{border-color:var(--red,#AE1E2B);background:#eef3ff}
+.pcu-ex{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;padding:10px 12px;font-size:13px}
+.pcu-ex div{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.pcu-ex span{font-weight:700;min-width:118px}
+.pcu-ex em{font-style:normal;color:var(--steel)}.pcu-ex b{font:800 15px Archivo,Inter,sans-serif;letter-spacing:.08em}
+.pcu-ex .w{grid-column:1/-1}.pcu-ex i{font-style:normal;color:#C8102E}
+.pcu-chk{padding:4px 12px 12px;margin:0}
+@media (max-width:700px){.pcu-ex{grid-template-columns:1fr}}
 .costmap div{border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;text-align:center;background:#fff}
 .costmap span{display:block;font-size:11px;color:var(--steel)}
 .costmap b{font-family:Archivo,sans-serif;font-size:19px}
@@ -7251,7 +7267,7 @@ const CFG={
    t80Logo:true,t80Qr:true,t80Thanks:'Thank you, come again!',t80Footer:true,
    footer:'Only returns will be accepted within {days} days with the original invoice. Goods once sold are checked and accepted by the customer.',
    blankLines:9,summaryTime:'19:30'},
- cost:{word:'BLACKNIGHT',repeat:'X',onLabel:true,atTill:true,inProducts:true},
+ cost:{word:'BLACKNIGHT',repeat:'X',pad:'T',front:true,onLabel:true,atTill:true,inProducts:true},
  /* The Echo in the office. Everything is off until the shop turns it on, and money is off even
     then until it is turned on separately — it is the one thing an Echo says out loud that
     somebody standing there should not hear. */
@@ -7405,31 +7421,38 @@ window.CFG=CFG; // exposed so settings can be scripted in tests
    label or a screen; a customer looking over their shoulder cannot. */
 const costLetter=(d)=>{const w=(CFG.cost.word||'').toUpperCase(); return w[(+d+9)%10]||'?'};
 const costDigit=(ch)=>{const w=(CFG.cost.word||'').toUpperCase(); const i=w.indexOf(ch); return i<0?null:String((i+1)%10)};
-function costCode(n){
+/* 16 Nov 2026, the owner (the old SePOS "Price Code Updater"): a digit that repeats is written with the
+   double-digit letter in FRONT of it — 1,500 reads B K X T — unless "Show double digit price code after original
+   digit" is ticked, when it goes after (B K T X, as the till did before). The extra-digit letter (T) goes in front
+   of a cost shorter than its MRP: cost 950, MRP 1,500 → T H K T. */
+const costFront=()=>!(CFG.cost&&CFG.cost.front===false);
+function costCode(n,front=costFront()){
   const rep=(CFG.cost.repeat||'X').toUpperCase();
-  const digits=String(Math.round(Math.abs(+n||0)));
-  let out='', prev=null;
-  for(const d of digits){
-    if(d===prev){ out+=rep; prev=null; continue }
-    out+=costLetter(d); prev=d;
-  }
+  const ds=String(Math.round(Math.abs(+n||0)));
+  let out='';
+  for(let i=0;i<ds.length;i++){ const d=ds[i];
+    if(ds[i+1]===d){ out+=front?rep+costLetter(d):costLetter(d)+rep; i++ }
+    else out+=costLetter(d) }
   return out;
 }
 function costDecode(code){
-  const rep=(CFG.cost.repeat||'X').toUpperCase();
-  let out='', prev=null;
-  for(const ch of String(code||'').toUpperCase().replace(/[^A-Z]/g,'')){
-    if(ch===rep){ if(prev===null)return '—'; out+=prev; prev=null; continue }
-    const d=costDigit(ch); if(d===null) return '—';
-    out+=d; prev=d;
-  }
+  const rep=(CFG.cost.repeat||'X').toUpperCase(), front=costFront();
+  const s=String(code||'').toUpperCase().replace(/[^A-Z]/g,'');
+  let out='';
+  for(let i=0;i<s.length;i++){ const ch=s[i];
+    if(ch===rep){
+      if(front){ const d=costDigit(s[i+1]); if(d===null) return '—'; out+=d+d; i++ }
+      else { if(!out) return '—'; out+=out[out.length-1] }
+      continue }
+    const d=costDigit(ch); if(d===null) return '—'; out+=d }
   return out?fmt(+out):'—';
 }
 function costWordProblem(){
   const w=(CFG.cost.word||'').toUpperCase();
   if(w.length!==10) return 'The code word needs exactly ten letters, one for each digit.';
   if(new Set(w).size!==10) return 'Every letter must be different, or a code could be read two ways.';
-  if(w.includes((CFG.cost.repeat||'X').toUpperCase())) return 'The repeat letter must not appear in the code word.';
+  if(w.includes((CFG.cost.repeat||'X').toUpperCase())) return 'The double-digit letter must not be one of the ten letters.';
+  if(!/^[A-Za-z]$/.test(String(CFG.cost.pad||'T'))) return 'The extra-digit letter must be one letter.';
   return '';
 }
 function tpl(key,vars={}){
@@ -8207,15 +8230,20 @@ function settings(){
   if(setTab==='cost'){
     const problem=costWordProblem();
     const w=(CFG.cost.word||'').toUpperCase();
-    body=`<div class="muted" style="margin-bottom:10px">The ten letters stand for 1 to 9 and then 0. A digit that repeats the one before it is written as the repeat letter, and the run starts again — so with BLACKNIGHT, 1000 reads <b>BTXT</b>.</div>
-     <div class="grid3">
-      ${fld('cost.word','Code word (ten different letters)')}
-      ${fld('cost.repeat','Repeat letter')}
-      <div class="f"><label>Check a code</label><input id="costCheck" placeholder="type BTXT"><div class="muted" id="costCheckOut">&nbsp;</div></div>
+    const fr=costFront(), pad=(CFG.cost.pad||'T').toUpperCase(), dbl=(CFG.cost.repeat||'X').toUpperCase();
+    body=`<div class="pcu"><div class="pcu-t">Price code</div>
+      <div class="pcu-row">${[1,2,3,4,5,6,7,8,9,0].map((d,i)=>`<label class="pcu-k"><span>${d}</span><input data-cw="${i}" value="${noteEsc(w[i]||'')}" autocomplete="off"></label>`).join('')}
+       <label class="pcu-k pcu-x"><span>Double digit</span><input data-set="cost.repeat" value="${noteEsc(dbl)}" autocomplete="off"></label>
+       <label class="pcu-k pcu-x"><span>Extra digit</span><input data-set="cost.pad" value="${noteEsc(pad)}" autocomplete="off"></label></div>
+      <div class="pcu-ex">
+       <div><span>Front double digit</span><em>1,500.00 ⇒</em><b>${costCode(1500,true)}</b></div>
+       <div><span>Back double digit</span><em>1,500.00 ⇒</em><b>${costCode(1500,false)}</b></div>
+       <div class="w"><span>Extra digit example</span><em>Cost 950.00 &nbsp;MRP 1,500.00 ⇒</em><b>Cost <i>${pad}</i>${costCode(950)}</b><b>MRP ${costCode(1500)}</b></div></div>
+      <label class="chk pcu-chk"><input type="checkbox" id="costBack" ${fr?'':'checked'}> Show double digit price code after original digit</label></div>
+     ${problem?`<div class="err" style="background:var(--tint-rust);color:#8E3423;padding:9px 11px;border-radius:var(--r);margin:10px 0">${problem}</div>`:''}
+     <div class="grid3" style="margin-top:12px">
+      <div class="f"><label>Check a code</label><input id="costCheck" placeholder="type ${costCode(1500)}"><div class="muted" id="costCheckOut">&nbsp;</div></div>
      </div>
-     ${problem?`<div class="err" style="background:var(--tint-rust);color:#8E3423;padding:9px 11px;border-radius:var(--r);margin-bottom:10px">${problem}</div>`:''}
-     <div class="costmap">${[1,2,3,4,5,6,7,8,9,0].map(d=>`<div><span>${d}</span><b>${costLetter(d)}</b></div>`).join('')}
-      <div class="rep"><span>repeat</span><b>${(CFG.cost.repeat||'X').toUpperCase()}</b></div></div>
      <h2 style="margin-top:14px">Try it</h2>
      <div class="grid3">
       <div class="f"><label>Cost in rupees</label><input id="costTry" type="number" value="1000"></div>
@@ -15239,6 +15267,11 @@ function renderNow(){
           SHOP.phones=CFG.shop.phone+' · '+CFG.shop.land;SHOP.sinhala=CFG.shop.sinhala;SHOP.tags=CFG.shop.tags;
           SHOP.line1=CFG.shop.line1;SHOP.line2=CFG.shop.line2}
         render(); toast('Saved') } });
+    document.querySelectorAll('[data-cw]').forEach(el=>{
+      el.onfocus=()=>el.select(); el.oninput=()=>{ el.value=el.value.toUpperCase().replace(/[^A-Z]/g,'').slice(-1); if(el.value){ const nx=document.querySelector('[data-cw="'+(+el.dataset.cw+1)+'"]'); if(nx){ nx.focus(); nx.select() } } };
+      el.onchange=()=>{ const cur=(CFG.cost.word||'').toUpperCase().padEnd(10,' ').split(''); cur[+el.dataset.cw]=el.value||' '; CFG.cost.word=cur.join('').trimEnd(); render(); toast('Saved') } });
+    document.querySelectorAll('[data-set="cost.repeat"],[data-set="cost.pad"]').forEach(el=>{ el.onfocus=()=>el.select(); el.addEventListener('input',()=>{ el.value=el.value.toUpperCase().replace(/[^A-Z]/g,'').slice(-1) }) });
+    const cb=$('#costBack'); if(cb) cb.onchange=()=>{ CFG.cost.front=!cb.checked; render(); toast('Saved') };
     const ct=$('#costTry'); if(ct) ct.oninput=()=>{ $('#costTryOut').textContent=costCode(ct.value) };
     const cc=$('#costCheck'); if(cc) cc.oninput=()=>{ $('#costCheckOut').textContent=cc.value.trim()?costDecode(cc.value):'\u00a0' };
     document.querySelectorAll('[data-tpl]').forEach(el=>{
