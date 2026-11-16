@@ -30377,8 +30377,8 @@ function supPayments(s,pay){
      <td><button class="btn ghost sm" data-act="supVoucher" data-no="${p.no}">Print voucher</button></td></tr>`).join('')||'<tr><td colspan="7" class="muted">Nothing paid yet.</td></tr>'}</table>`;
 }
 function supCheques(s,chq){
-  return `<table class="cu-tbl"><tr><th>Cheque</th><th>Bank</th><th>Dated</th><th class="n">Amount</th><th>State</th><th></th></tr>
-   ${chq.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(c=>`<tr><td><b>${c.no}</b></td><td>${c.bank}</td><td>${c.date}<div class="muted">${agoTxt(c.date)}</div></td><td class="n"><b>${fmt(c.amount)}</b></td><td>${tagFor(c.status)}</td>
+  return `<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn sm" data-act="oldChq" data-id="${s.id}">+ A cheque given before</button></div><table class="cu-tbl"><tr><th>Cheque</th><th>Bank</th><th>Dated</th><th class="n">Amount</th><th>State</th><th></th></tr>
+   ${chq.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(c=>`<tr><td><b>${c.no}</b></td><td>${c.bank}</td><td>${c.date}<div class="muted">${agoTxt(c.date)}</div></td><td class="n"><b>${fmt(c.amount)}</b></td><td>${tagFor(c.status)}${c.old?'<div class="muted">given before</div>':''}</td>
      <td><button class="btn ghost sm" data-act="printChq" data-no="${c.no}">Print</button></td></tr>`).join('')||'<tr><td colspan="6" class="muted">No cheques written to them.</td></tr>'}</table>`;
 }
 function supStmtFrom(){ const d=new Date(today); if(supStmtRange==='1m') d.setMonth(d.getMonth()-1); else if(supStmtRange==='3m') d.setMonth(d.getMonth()-3); else if(supStmtRange==='12m') d.setFullYear(d.getFullYear()-1); else return ''; return D(d) }
@@ -33437,6 +33437,72 @@ function cbWriteModal(bankId,no){
   };
 }
 
+/* A cheque given to a supplier before it was on the system — written by hand, or before the shop came on (16 Nov 2026,
+   the owner asked). The bank figures are taken as the bank shows them today, so:
+   - still in what we owe them (the supplier's balance has not had it taken off): a payment, as the Pay button makes —
+     their bills are settled oldest first and it is on their statement — and it sits in Cheques out until it clears;
+   - already taken off their balance: only the cheque goes on (against Opening balances), so the balance stays.
+   Already cleared: kept for the record; if it is still in what we owe, their balance comes down by it. */
+function oldChqModal(sid){
+  if(!S.banks.length) return toast('Add the bank accounts first, in Settings → Bank accounts');
+  const sups=S.suppliers.filter(s=>s.active!==false||s.id===sid).slice().sort((a,b)=>a.name.localeCompare(b.name));
+  if(!sups.length) return toast('Add the supplier first');
+  const m=modal(`<h2>Add a cheque given before</h2>
+   <div class="muted">A cheque you gave a supplier that is not on the system — written by hand, or before the shop came on.</div>
+   <div class="grid2" style="margin-top:10px">
+    <div class="f"><label>Supplier</label><select id="ocSup">${sups.map(s=>`<option value="${s.id}" ${s.id===sid?'selected':''}>${esA(s.name)}</option>`).join('')}</select></div>
+    <div class="f"><label>Account it is drawn on</label><select id="ocBank">${S.banks.map(b=>`<option value="${b.id}">${esA(b.name)}</option>`).join('')}</select></div>
+    <div class="f"><label>Cheque number</label><input id="ocNo" inputmode="numeric" placeholder="e.g. 100123"></div>
+    <div class="f"><label>Amount</label><input id="ocAmt" type="number" step="any" placeholder="0.00"></div>
+    <div class="f"><label>Date on the cheque</label><input id="ocDate" type="date" value="${D(today)}"></div>
+    <div class="f"><label>Given to them on</label><input id="ocGiven" type="date" value="${D(today)}"></div></div>
+   <div class="f"><label>Has it cleared from the bank?</label><select id="ocSt">
+     <option value="OUT">Not yet — it is still out there</option><option value="CLEARED">Yes, it has cleared</option></select></div>
+   <div class="f"><label>Is it already taken off what you owe them?</label><select id="ocOff">
+     <option value="no">No — take it off their balance now</option><option value="yes">Yes — their balance already has it off</option></select></div>
+   <div class="f"><label>Note (optional)</label><input id="ocNote" placeholder="e.g. for the October bills"></div>
+   <div id="ocSay" class="muted" style="min-height:38px;margin:6px 0"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap"><button class="btn ghost" data-act="closeModal">Close</button>
+    <button class="btn" id="ocMore">Save and add another</button><button class="btn tape" id="ocOk">Save</button></div>`);
+  const q=(s)=>m.querySelector(s);
+  const say=()=>{ const sp=SU(+q('#ocSup').value), bid=+q('#ocBank').value, raw=q('#ocNo').value.replace(/\D/g,''), amt=+q('#ocAmt').value, off=q('#ocOff').value==='yes', cl=q('#ocSt').value==='CLEARED';
+    const owe=Math.max(0,partyBal('S',sp.id)); let t='';
+    if(raw){ const c=cbWritten().m.get(bid+'|'+(+raw)); if(c&&c.status!=='CANCELLED') t+=`<div style="color:#a1302a">Cheque ${esA(raw)} on this account is already on the system — to ${esA(c.payee)}, ${fmt(c.amount)}</div>` }
+    t+=`<div>You owe ${esA(sp.name)} <b>${fmt(owe)}</b> now.`;
+    if(amt>0) t+=off?` That stays as it is${cl?'; the cheque is kept for the record.':'; the cheque waits in Cheques out until it clears.'}`
+      :` After this: <b>${fmt(owe-amt)}</b>${amt>owe+0.005?' <span style="color:#8a5d06">(more than you owe them — they will be in credit)</span>':''}.${cl?'':' The cheque waits in Cheques out until it clears.'}`;
+    q('#ocSay').innerHTML=t+'</div>' };
+  ['#ocSup','#ocBank','#ocNo','#ocAmt','#ocSt','#ocOff'].forEach(s=>q(s).oninput=q(s).onchange=say); say();
+  const save=(again)=>{
+    const sp=SU(+q('#ocSup').value), b=B(+q('#ocBank').value), raw=q('#ocNo').value.replace(/\D/g,''), amount=+(+q('#ocAmt').value).toFixed(2);
+    const date=q('#ocDate').value||D(today), given=q('#ocGiven').value||date, cleared=q('#ocSt').value==='CLEARED', off=q('#ocOff').value==='yes', note=q('#ocNote').value.trim();
+    if(!raw) return toast('Which cheque number?'); if(!(amount>0)) return toast('How much was it?');
+    const bk=cbBookOf(b.id,raw), no=bk?cbPad(+raw,bk.from.length):raw;
+    const was=cbWritten().m.get(b.id+'|'+(+raw)); if(was&&was.status!=='CANCELLED') return toast(`Cheque ${no} on ${b.name} is already on the system`);
+    if(bk&&(bk.marks||{})[no]&&bk.marks[no].state!=='OLD') return toast(`Cheque ${no} is marked ${CB_MARK[bk.marks[no].state][0].toLowerCase()} in the book — undo that first`);
+    const posted=D(today)<given?D(today):given, what=`Cheque ${no} given before${note?' — '+note:''}`;
+    let ch;
+    try{
+      if(!off){
+        if(cleared){ const pv={no:next('PAY'),date:posted,supplierId:sp.id,total:amount,lines:[{method:'CHEQUE',bank:b.id,no,date,amount}],notes:what+' (cleared before it was entered)',voucher:next('VCH'),old:true};
+          S.payments.push(pv); post(posted,'Supplier payment '+pv.no+' — '+what,pv.no,[{ac:'2100',dr:amount,party:{type:'S',id:sp.id}},{ac:'3100',cr:amount}]); supSettle(sp.id,amount);
+          ch={dir:'ISSUED',no,bankId:b.id,bank:b.name,date,payee:sp.name,amount,status:'CLEARED',party:sp.name,supplierId:sp.id,ref:pv.no}; S.cheques.push(ch) }
+        else { const pv=paySupplier({supplierId:sp.id,date:posted,lines:[{method:'CHEQUE',bank:b.id,no,date,amount}],notes:what,allowDamage:true}); pv.old=true;
+          ch=S.cheques.filter(c=>c.dir==='ISSUED'&&c.ref===pv.no).at(-1); ch.status='PRINTED' } }
+      else { ch={dir:'ISSUED',no,bankId:b.id,bank:b.name,date,payee:sp.name,amount,status:cleared?'CLEARED':'PRINTED',party:sp.name,supplierId:sp.id,ref:'Given before'};
+        if(!cleared) post(posted,what+' to '+sp.name,no,[{ac:'3100',dr:amount},{ac:'2110',cr:amount}]);
+        S.cheques.push(ch) }
+    }catch(e){ return toast(e.message) }
+    Object.assign(ch,{old:true,given,note,by:S.user.name,written:D(today)}); if(cleared) ch.changed=date;
+    if(bk&&(bk.marks||{})[no]) delete bk.marks[no];
+    try{ logTrail('other',`Old cheque ${no} to ${sp.name} entered — ${fmt(amount)}, ${cleared?'cleared':'not cleared'}${off?', already off their balance':''}`,{ref:no,amount}) }catch(e){}
+    persist(true); toast(`Cheque ${no} to ${sp.name} · ${fmt(amount)} added`,'ok');
+    if(again){ ['#ocNo','#ocAmt','#ocNote'].forEach(s=>q(s).value=''); say(); q('#ocNo').focus(); render() }
+    else { m.remove(); render() } };
+  q('#ocOk').onclick=()=>save(false); q('#ocMore').onclick=()=>save(true);
+  q('#ocNo').focus();
+}
+
 /* one leaf: what happened to it, and what can still be done with it */
 function cbLeafModal(id,no){
   const bk=chqBooks().find(k=>k.id===id); if(!bk) return; const l=cbLeaves(bk).find(x=>x.no===no); if(!l) return; const c=l.chq, b=B(bk.bankId);
@@ -33582,10 +33648,10 @@ function chequesOut(){
       <td>${c.payee}<div class="muted">${c.ref||''}</div>${c.status==='CANCELLED'&&c.cancelWhy?`<div class="muted">cancelled by ${noteEsc(c.cancelBy||'')}: ${noteEsc(c.cancelWhy)}</div>`:''}</td>
       <td>${c.date}<div>${['CLEARED','BOUNCED','CANCELLED'].includes(c.status)?`<span class="muted">${c.changed||''}</span>`:when}</div></td>
       <td class="n"><b>${fmt(c.amount)}</b></td>
-      <td>${tagFor(c.status)}${c.note?`<div class="muted">${c.note}</div>`:''}</td>
+      <td>${tagFor(c.status)}${c.old?'<div class="muted">given before</div>':''}${c.note?`<div class="muted">${noteEsc(c.note)}</div>`:''}</td>
       <td><div class="rowacts">${acts||'<span class="muted">done</span>'}</div></td></tr>`};
 
-  return `<h1>Cheques we have written <button class="btn ghost sm" data-view="chqbooks" style="float:right">Cheque books</button></h1>
+  return `<h1>Cheques we have written <span style="float:right;display:flex;gap:6px"><button class="btn sm" data-act="oldChq">+ A cheque given before</button><button class="btn ghost sm" data-view="chqbooks">Cheque books</button></span></h1>
   <div class="row" style="margin-bottom:12px">
    ${stat('Out there, not cleared',fmt(sum(out)),`${out.length} cheque${out.length===1?'':'s'}`,'r')}
    ${stat('Falling due this week',fmt(sum(dueSoon)),`${dueSoon.length} to cover`,'y')}
@@ -36514,7 +36580,7 @@ document.addEventListener('click',e=>{
       toast(`Labels for ${last.no} · ${labelTotal()} on the sheet`)},
     labNoBar:()=>{S.products.filter(x=>!x.barcode).forEach(x=>labelAdd(x.id,1,LAB.type));render();toast('Barcodes made and added')},
     chqNew:()=>receiveChequeModal(), chqDeposit:()=>depositModal(a.dataset.no),
-    chqBounce:()=>bounceModal(a.dataset.no,a.dataset.dir), chqEndorse:()=>endorseModal(a.dataset.no),
+    chqBounce:()=>bounceModal(a.dataset.no,a.dataset.dir), oldChq:()=>oldChqModal(a.dataset.id?+a.dataset.id:undefined), chqEndorse:()=>endorseModal(a.dataset.no),
     chqSet:()=>{const c=S.cheques.find(x=>x.no===a.dataset.no&&x.dir===a.dataset.dir);
       if(a.dataset.st==='CANCELLED'&&c&&c.dir==='ISSUED') return chqCancelAsk(c);
       closeModals(); try{chequeStatus(c,a.dataset.st)}catch(e){return toast(e.message)} render(); toast(`Cheque ${c.no} · ${a.dataset.st.toLowerCase()}`)},
