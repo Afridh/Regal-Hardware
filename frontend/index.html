@@ -7169,7 +7169,8 @@ function jobFindSale(v){
 function jobCustomer({customerId,who,phone}){
   if(customerId) return +customerId;
   const ph=String(phone||'').replace(/\s+/g,'').trim(), nm=String(who||'').trim();
-  if(ph){ const had=S.customers.find(c=>c.id!==1&&String(c.phone||'').replace(/\s+/g,'')===ph); if(had) return had.id }
+  if(ph){ const had=S.customers.filter(c=>c.id!==1&&c.active!==false&&String(c.phone||'').replace(/\s+/g,'')===ph);   // one number on two customers (16 Nov 2026): the one with this name
+    const same=had.find(c=>!nm||c.name.trim().toLowerCase()===nm.toLowerCase()); if(same) return same.id }
   if(!ph||!nm) return null;
   const c={id:Math.max(0,...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),
     name:nm,phone:ph,level:'retail',limit:0,address:'',portal:false,lastLogin:null,note:'Added from a repair job'};
@@ -22214,8 +22215,10 @@ function pickCustomer(after){
     const p2=ph.value.trim(), n2=nm.value.trim();
     if(!n2){ m.querySelector('#nmsg').textContent='A name is needed.'; nm.focus(); return }
     if(!isPhone(p2)){ m.querySelector('#nmsg').textContent='Enter a mobile like 0771234567.'; ph.focus(); return }
-    const dup=S.customers.find(c=>c.phone===p2);
-    if(dup){ m.querySelector('#nmsg').textContent=`${dup.name} already has that number.`; return }
+    const dup=S.customers.filter(c=>c.id!==1&&c.active!==false&&c.phone===p2);   // one number on two customers is allowed (16 Nov 2026), after asking
+    if(dup.length&&!confirm(`${dup.map(x=>x.name).join(', ')} already ${dup.length>1?'have':'has'} ${p2}.
+
+Use the same number for ${n2} too?`)){ ph.focus(); return }
     const c={id:Math.max(...S.customers.map(x=>x.id))+1,code:'C'+String(S.customers.length+1).padStart(4,'0'),
       name:n2,phone:p2,level:m.querySelector('#nws').checked?'wholesale':'retail',limit:25000,address:'',portal:false,lastLogin:null};
     S.customers.push(c); pick(c.id);
@@ -22362,6 +22365,9 @@ function askBillCustomer(done){
         return `<div class="bq-row" data-bqid="${c.id}"><span class="cp-dot ${ow>0.005?(age>60?'old':age>30?'mid':'new'):'none'}"></span><div class="bq-nm"><b>${escM(c.name)}</b><span>${escM(c.phone||'no mobile')} · ${escM(c.code||'')}</span></div>
         <span class="bq-lv">${escM(c.level||'retail')}</span><span class="bq-ow">${ow>0.005?money2(ow):'<i>clear</i>'}</span></div>` }).join('')
       ||'<div class="bq-none">Nobody matches that yet.</div>'):'<div class="bq-hint">Key the number and press Enter — the e-bill goes to them, then you choose whether to print.</div>';
+    // one number on two customers (16 Nov 2026): the whole number keyed and someone has it — a second person can still go on it
+    if(isMob&&hits.length) m.querySelector('#bqL').insertAdjacentHTML('beforeend',`<div class="bq-none" id="bqOther" style="cursor:pointer;text-decoration:underline">+ Someone else on this number</div>`);
+    const ot=m.querySelector('#bqOther'); if(ot) ot.onclick=()=>{ box.style.display=''; ph.value=asMob; nm.value=''; touched=true; nm.focus() };
     m.querySelectorAll('[data-bqid]').forEach(r=>r.onclick=()=>take(+r.dataset.bqid));
     box.style.display=(v&&!hits.length)?'':'none'; picked=false;
     if(!touched){ if(isMob||isPhone(v)){ ph.value=isMob?asMob:v; nm.value='' } else { nm.value=v; ph.value='' } }
@@ -22371,7 +22377,10 @@ function askBillCustomer(done){
   const add=()=>{
     const msg=m.querySelector('#bqMsg'), p2=mobNorm(ph.value), n2=nm.value.trim();
     if(!/^0\d{9}$/.test(p2)){ msg.textContent='Enter a mobile like 0771234567.'; ph.focus(); return }
-    const dup=S.customers.find(c=>c.id!==1&&(mobNorm(c.phone)===p2||mobNorm(c.phone2)===p2)); if(dup) return take(dup.id);
+    // one number may be on two customers (16 Nov 2026): a name that is not theirs is asked about, not put on their account
+    const dups=S.customers.filter(c=>c.id!==1&&c.active!==false&&(mobNorm(c.phone)===p2||mobNorm(c.phone2)===p2)), same=dups.find(c=>!n2||c.name.trim().toLowerCase()===n2.toLowerCase());
+    if(same) return take(same.id);
+    if(dups.length&&!confirm(`${dups.map(x=>x.name).join(', ')} already ${dups.length>1?'have':'has'} ${p2}.\n\nOK: add ${n2} as a new customer with the same number\nCancel: bill it to ${dups[0].name}`)) return take(dups[0].id);
     const c={id:Math.max(...S.customers.map(x=>x.id))+1,code:freeCustCode(),
       name:n2||'Customer '+p2,phone:p2,level:'retail',limit:0,byNumber:true,address:'',portal:false,lastLogin:null};   // a normal customer, for the e-bill: credit is for those the shop gives a limit under Customers (5 Nov 2026, the owner said)
     S.customers.push(c); take(c.id);
@@ -25208,8 +25217,7 @@ function applyApproval(a){
         notes:'Asked for an account on the site'+(d.note?': '+d.note:''),portal:false,lastLogin:null,points:0}; S.customers.push(c) }
       custPortalSet(c,true); break }
     case 'custEdit':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists');
-      if(d.fields&&d.fields.phone){ const dup=S.customers.find(x=>x.phone===d.fields.phone&&x.id!==c.id&&x.active!==false);
-        if(dup) throw new Error(`${dup.name} already has that number`) }
+      if(d.fields&&d.fields.phone){ /* one number on two customers is allowed (16 Nov 2026): whoever asked was told */ }
       Object.assign(c,d.fields||{}); break }
     case 'custTerms':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); if(d.limit!==undefined) c.limit=+d.limit; if(d.level) c.level=d.level; break }
     case 'custRemove':{ const c=C(d.cid); if(!c) throw new Error('Customer no longer exists'); if(partyBal('C',c.id)>0.005) throw new Error('They still owe money'); c.active=false; break }
@@ -26928,8 +26936,10 @@ function custModal(id,preset){
     const phone2=g('cmPhone2').value.replace(/\s+/g,'').trim(), phone2Sms=!!phone2&&g('cmBoth').checked;
     if(phone2&&!/^0\d{6,9}$/.test(phone2)){ g('cmMsg').textContent='Enter the second mobile like 0771234567, or leave it empty.'; g('cmPhone2').focus(); return }
     if(phone2&&phone2===phone){ g('cmMsg').textContent='The second mobile is the same as the first.'; g('cmPhone2').focus(); return }
-    const dup=phone&&S.customers.find(x=>x.phone===phone&&x.id!==(c?c.id:-1));
-    if(dup){ g('cmMsg').textContent=`${dup.name} already has that number.`; return }
+    const dup=phone&&(!c||c.phone!==phone)?S.customers.filter(x=>x.id!==1&&x.active!==false&&x.phone===phone&&x.id!==(c?c.id:-1)):[];   // one number on two customers is allowed (16 Nov 2026), after asking
+    if(dup.length&&!confirm(`${dup.map(x=>x.name).join(', ')} already ${dup.length>1?'have':'has'} ${phone}.
+
+Use the same number for ${name||'this customer'} too?`)){ g('cmPhone').focus(); return }
     if(c){
       /* who they are is not changed quietly: a name, a mobile, an address or a counter note that
          someone alters waits for the owner, with the old and the new wording side by side. */
