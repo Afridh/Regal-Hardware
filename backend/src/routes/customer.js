@@ -415,6 +415,8 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
     sub: inv.sub, billDisc: inv.billDisc || 0, total: inv.total, paid: inv.paid, balance: inv.balance,
     by: inv.by || '', cancelled: !!inv.cancelled,
     customer: cust && cust.id !== 1 ? { name: cust.name, code: cust.code,
+      // for the official PDF invoice (16 Nov 2026): who it is billed to
+      phone: String(cust.phone || ''), addr: String(cust.addr || cust.address || ''),
       owes: owesOf(S, cust.id), openBills: (S.sales || []).filter(s => s.customerId === cust.id && +s.balance > 0.005).length,
       // their own page, by their mobile and a texted code: the link that names them when it can
       page: pageOpen(S, CFG, cust) ? '/my' + (cust.pkey ? '/' + String((cust.code || '') + '.' + cust.pkey).toLowerCase() : '') : null,
@@ -433,7 +435,8 @@ r.get('/b/:id', asyncHandler(async (req, res) => {
     saved: +saved.toFixed(2),
     feedback: fb ? { stars: fb.stars, tags: fb.tags || [], note: fb.note || '' } : null,
     shop: { name: sh.name || 'Regal Hardware', phone: sh.phone || '', land: sh.land || '', addr: sh.addr || '', web: sh.web || '',
-      logo, sinhala: sh.sinhala || '', near: sh.near || '', tags: sh.tags || '', line1: sh.line1 || '', email: sh.email || '' },
+      logo, sinhala: sh.sinhala || '', near: sh.near || '', tags: sh.tags || '', line1: sh.line1 || '', email: sh.email || '',
+      vat: sh.vat || '', vatRate: +(CFG.tax && CFG.tax.rate) || 0 },
   } });
 }));
 

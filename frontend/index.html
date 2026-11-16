@@ -7307,9 +7307,9 @@ const CFG={
  trade:{rate:2,sms:true,kinds:['Mason','Electrician','Plumber','Carpenter','Painter','Welder','Other']},
  tpl:{
   cashSale:{label:'Cash bill',vars:'{shop} {invoice} {total} {link} {customer}',
-    text:'Thank you for your purchase.\nBill No: {invoice}\nAmount: {total}\nView your bill: {link}'},
+    text:'Thank you for your purchase.\nBill No: {invoice}\nAmount: {total}\nClick the link below to see your invoice:\n{link}'},
   creditSale:{label:'Credit bill',vars:'{shop} {invoice} {total} {balance} {outstanding} {link}',
-    text:'Thank you for your purchase on credit.\nBill No: {invoice}\nAmount: {total}\nTotal outstanding: {outstanding}\nView your bill: {link}'},
+    text:'Thank you for your purchase on credit.\nBill No: {invoice}\nAmount: {total}\nTotal outstanding: {outstanding}\nClick the link below to see your invoice:\n{link}'},
   repairIn:{label:'Repair — received',vars:'{shop} {job} {item} {customer} {tag}',
     text:'We have received your {item} for repair.\nJob No: {job}\nWe will send it to the company and keep you informed. Please keep your job sheet.'},
   repairSent:{label:'Repair — sent to the company',vars:'{shop} {job} {item} {maker}',
@@ -7335,7 +7335,7 @@ const CFG={
   quoteLink:{label:'A quotation sent by its link',vars:'{shop} {quote} {total} {until} {customer} {link}',
     text:'Here is your quotation.\nQuotation No: {quote}\nAmount: {total}\nPrices hold good until {until}.\nSee it: {link}'},
   billLink:{label:'Resending a bill link',vars:'{shop} {invoice} {total} {balance} {link}',
-    text:'Here is your bill.\nBill No: {invoice}\nAmount: {total}{balancePart}\nView your bill: {link}'},
+    text:'Here is your bill.\nBill No: {invoice}\nAmount: {total}{balancePart}\nClick the link below to see your invoice:\n{link}'},
   paymentReceived:{label:'Payment received',vars:'{shop} {amount} {receipt} {outstanding} {customer}',
     text:'Thank you, we have received your payment.\nAmount: {amount}\nReceipt No: {receipt}\nBalance now: {outstanding}'},
   statement:{label:'Customer statement',vars:'{shop} {customer} {count} {outstanding} {link}',
@@ -11643,6 +11643,9 @@ function applyKeptBooks(kept){
     Object.keys(CFG.tpl||{}).forEach(k=>{ const t=CFG.tpl[k]; if(t&&TPL_ORIG[k]&&TPL_ONELINE[k]===String(t.text||'')) t.text=TPL_ORIG[k].text });
     CFG.msg.lines1=true;
   }
+  /* 16 Nov 2026, the owner: the bill messages say "Click the link below to see your invoice:" with the link on its own line —
+     in the shop's own wording too, where it still has the old "View your bill:" line */
+  if(CFG.msg&&!CFG.msg.clickLink1){ ['cashSale','creditSale','billLink'].forEach(k=>{ const t=CFG.tpl&&CFG.tpl[k]; if(t&&/View your bill:\s*\{link\}/.test(t.text||'')) t.text=String(t.text).replace(/View your bill:\s*\{link\}/,'Click the link below to see your invoice:\n{link}') }); CFG.msg.clickLink1=true }
   if(CFG.msg&&CFG.msg.staffBreakOver===undefined) CFG.msg.staffBreakOver=true;   // the warning while still on a break
   /* 22 Oct 2026: the breaks the shop allows — breakfast 15 min, lunch 25 min, evening tea 15 min */
   if(S.shift&&S.shift.settings&&Array.isArray(S.shift.settings.breaks)&&!CFG.brkMins22){ CFG.brkMins22=true;

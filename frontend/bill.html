@@ -229,44 +229,129 @@ document.addEventListener('pointerdown',e=>{ const el=e.target.closest('.rp'); i
   s.className='ripple'; s.style.cssText=`width:${d}px;height:${d}px;left:${e.clientX-r.left-d/2}px;top:${e.clientY-r.top-d/2}px`;
   el.appendChild(s); setTimeout(()=>s.remove(),650) });
 
-/* A real PDF file of the bill the till printed, made on the customer's own phone: the paper is drawn
-   to a picture and laid on an A5 landscape page (or an 80 mm strip for a receipt). "Print or save as
-   PDF" is still there, but on most phones it is three steps and a print dialog; this is one tap. */
+/* The official invoice, as a PDF (16 Nov 2026, the owner: "if PDF is pressed, generate an official invoice").
+   An A4 page drawn as real text on the customer's own phone: the shop's letterhead with its logo, the invoice
+   number and date, who it is billed to, every line in a table, the totals with the amount in words, what was
+   paid and what is still owed. A VAT-registered shop gets a TAX INVOICE showing the VAT inside the total.
+   If it cannot be made here (no internet for the PDF maker), the print window opens instead. */
 const load=(src)=>new Promise((ok,no)=>{ const s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=()=>no(new Error('could not load the PDF maker')); document.head.appendChild(s) });
 let bill=null;
+const pdfMoney=(n)=>(+n||0).toLocaleString('en-LK',{minimumFractionDigits:2,maximumFractionDigits:2});
+// the PDF's built-in font has no curly quotes, dashes or other scripts: keep what it can draw
+const pdfText=(s)=>String(s==null?'':s).replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/[–—−]/g,'-').replace(/…/g,'...').replace(/[^\x20-\x7E\xA0-\xFF\n]/g,'').trim();
+/* Rs 12,450.50 → "Twelve Thousand Four Hundred Fifty Rupees and Fifty Cents Only" */
+function inWords(n){
+  const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  const under1000=(x)=>{ let w=''; if(x>=100){ w+=ones[Math.floor(x/100)]+' Hundred'; x%=100; if(x) w+=' ' }
+    if(x>=20){ w+=tens[Math.floor(x/10)]; if(x%10) w+=' '+ones[x%10] } else if(x) w+=ones[x]; return w };
+  const whole=(x)=>{ if(!x) return 'Zero'; const parts=[]; for(const [v,name] of [[1e9,'Billion'],[1e6,'Million'],[1e3,'Thousand'],[1,'']]){
+      if(x>=v){ parts.push(under1000(Math.floor(x/v))+(name?' '+name:'')); x%=v } } return parts.join(' ') };
+  n=Math.abs(+n||0); const r=Math.floor(n+1e-9), c=Math.round((n-r)*100);
+  return whole(r)+' Rupee'+(r===1?'':'s')+(c?' and '+whole(c)+' Cent'+(c===1?'':'s'):'')+' Only';
+}
+// the logo as a picture the PDF can carry (a data: link or the shop's own file); none if it will not load
+const logoData=(src)=>new Promise(res=>{ if(!src) return res(null); const im=new Image(); im.crossOrigin='anonymous';
+  im.onload=()=>{ try{ const s=Math.min(1,320/Math.max(im.naturalWidth,im.naturalHeight)), c=document.createElement('canvas');
+      c.width=Math.max(1,Math.round(im.naturalWidth*s)); c.height=Math.max(1,Math.round(im.naturalHeight*s));
+      const x=c.getContext('2d'); x.fillStyle='#fff'; x.fillRect(0,0,c.width,c.height); x.drawImage(im,0,0,c.width,c.height);
+      res({data:c.toDataURL('image/jpeg',0.92),w:c.width,h:c.height}) }catch(e){ res(null) } };
+  im.onerror=()=>res(null); im.src=src });
+const pdfDate=(d)=>{ const t=new Date(String(d||'')+'T12:00:00'); return isNaN(t)?String(d||''):t.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) };
+
 async function downloadPdf(btn){
-  const b=bill; if(!b||!b.html) return window.print();
+  const b=bill; if(!b) return window.print();
   const lbl=btn.querySelector('span'), was=lbl.textContent; btn.setAttribute('disabled',''); lbl.textContent='Making…';
-  const host=document.createElement('div');
   try{
-    if(!window.html2canvas) await load('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
     if(!window.jspdf) await load('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-    const r80=b.paper==='r80';
-    host.style.cssText='position:fixed;left:-10000px;top:0;background:#fff';
-    host.innerHTML=`<div class="paper"><div class="fit printArea ${r80?'r80':'a5'}">${b.html}</div></div>`;
-    document.body.appendChild(host);
-    await document.fonts.ready;
-    await Promise.all([...host.querySelectorAll('img')].map(i=>i.complete?0:new Promise(r=>{ i.onload=i.onerror=r })));
-    const el=host.querySelector('.fit');
-    const canvas=await html2canvas(el,{scale:3,backgroundColor:'#ffffff',useCORS:true,logging:false});
-    const img=canvas.toDataURL('image/jpeg',0.92);
-    const { jsPDF }=window.jspdf;
-    let doc;
-    if(r80){
-      const w=80, m=2, h=(w-2*m)*canvas.height/canvas.width+2*m;
-      doc=new jsPDF({unit:'mm',format:[w,Math.max(h,w)],orientation:'portrait'});
-      doc.addImage(img,'JPEG',m,m,w-2*m,h-2*m);
-    }else{
-      doc=new jsPDF({unit:'mm',format:'a5',orientation:'landscape'});
-      const W=210, H=148, m=6; let w=W-2*m, h=w*canvas.height/canvas.width;
-      if(h>H-2*m){ h=H-2*m; w=h*canvas.width/canvas.height }
-      doc.addImage(img,'JPEG',(W-w)/2,m,w,h);
-    }
-    doc.save(String(b.no||'bill').replace(/[^\w.-]+/g,'-')+'.pdf');
+    if(!(window.jspdf.jsPDF.API||{}).autoTable) await load('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+    const { jsPDF }=window.jspdf, sh=b.shop||{}, cu=b.customer||null;
+    const doc=new jsPDF({unit:'mm',format:'a4',orientation:'portrait'});
+    const W=210, H=297, M=14, RED=[174,30,43], INK=[29,33,37], MUTE=[110,116,122], LINE=[222,218,210];
+    const T=(s,x,y,o)=>doc.text(pdfText(s),x,y,o||{});
+    const title=b.quote?'QUOTATION':sh.vat?'TAX INVOICE':'INVOICE';
+    // the red band across the top
+    doc.setFillColor(...RED); doc.rect(0,0,W,5,'F');
+    // letterhead: logo, the shop, how to reach it
+    const logo=await logoData(sh.logo||'/regal-logo.png'); let x0=M;
+    if(logo){ const lh=22, lw=Math.min(40,lh*logo.w/logo.h); doc.addImage(logo.data,'JPEG',M,12,lw,lh); x0=M+lw+5 }
+    doc.setTextColor(...INK); doc.setFont('helvetica','bold'); doc.setFontSize(18); T(sh.name||'Regal Hardware',x0,19);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.6); doc.setTextColor(...MUTE);
+    const head=[sh.tags||sh.line1, [sh.addr,sh.near].filter(Boolean).join(', '), [sh.phone,sh.land].filter(Boolean).map(p=>'Tel: '+p).join('   '),
+      [sh.email,sh.web&&String(sh.web).replace(/^https?:\/\//,'').replace(/\/$/,'')].filter(Boolean).join('   '), sh.vat?'VAT Reg. No: '+sh.vat:''].map(pdfText).filter(Boolean);
+    let hy=24; head.forEach(l=>{ doc.splitTextToSize(l,108-(x0-M)).forEach(s=>{ doc.text(s,x0,hy); hy+=4 }) });
+    // the title and the invoice's facts, on the right
+    doc.setTextColor(...RED); doc.setFont('helvetica','bold'); doc.setFontSize(22); T(title,W-M,20,{align:'right'});
+    const facts=[[b.quote?'Quotation No':'Invoice No',b.no],['Date',pdfDate(b.date)+(b.time?'  '+b.time:'')]];
+    if(b.quote) facts.push(['Valid until',pdfDate(b.until)]); else facts.push(['Terms',b.type==='CREDIT'?'Credit':'Cash']);
+    if(b.by) facts.push([b.quote?'Prepared by':'Served by',b.by]);
+    doc.setFontSize(9); let fy=28;
+    facts.forEach(([k,v])=>{ doc.setFont('helvetica','normal'); doc.setTextColor(...MUTE); T(k,W-M-66,fy); doc.setFont('helvetica','bold'); doc.setTextColor(...INK); T(v,W-M,fy,{align:'right'}); fy+=5 });
+    let y=Math.max(hy,fy)+3;
+    doc.setDrawColor(...LINE); doc.setLineWidth(0.3); doc.line(M,y,W-M,y); y+=7;
+    // billed to
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...RED); T(b.quote?'QUOTED FOR':'BILL TO',M,y); y+=5;
+    doc.setTextColor(...INK); doc.setFontSize(11); T(cu&&cu.name?cu.name:'Cash customer',M,y);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...MUTE); let by=y;
+    [cu&&cu.code?'Account: '+cu.code:'', cu&&cu.phone?'Tel: '+cu.phone:'', cu&&cu.addr?cu.addr:''].filter(Boolean).forEach(l=>{ doc.splitTextToSize(pdfText(l),110).forEach(s=>{ by+=4.6; doc.text(s,M,by) }) });
+    // the bill's state, as a stamp on the right
+    const settled=!b.quote&&!(b.balance>0.005);
+    const stamp=b.cancelled?['CANCELLED',RED]:b.quote?null:settled?['PAID',[29,122,69]]:['BALANCE DUE',RED];
+    if(stamp){ doc.setFont('helvetica','bold'); doc.setFontSize(13); const sw=doc.getTextWidth(stamp[0])+10;
+      doc.setDrawColor(...stamp[1]); doc.setTextColor(...stamp[1]); doc.setLineWidth(0.8); doc.roundedRect(W-M-sw,y-6,sw,10,2,2,'S'); T(stamp[0],W-M-sw/2,y+0.8,{align:'center'}) }
+    y=by+8;
+    // the lines
+    const lines=b.lines||[], anyDisc=lines.some(l=>+l.disc>0.005);
+    const qtyS=(q)=>{ q=Math.abs(+q||0); return q===Math.round(q)?String(q):q.toFixed(2) };
+    const body=lines.map((l,i)=>{ const extra=[l.code?'Code: '+l.code:'', l.warranty?'Warranty: '+wrWord(l.warranty)+(l.warrantyUntil?' (to '+pdfDate(l.warrantyUntil)+')':''):'', l.serials&&l.serials.length?'S/N: '+l.serials.join(', '):''].filter(Boolean).join('  ·  ');
+      const row=[String(i+1), pdfText(l.name)+(l.returned?'  (RETURNED)':'')+(extra?'\n'+pdfText(extra.replace(/·/g,'|')):''), (l.returned?'-':'')+qtyS(l.qty)+(l.unit?' '+pdfText(l.unit):''), pdfMoney(l.price)];
+      if(anyDisc) row.push(+l.disc>0.005?pdfMoney(l.disc):'');
+      row.push(pdfMoney(l.amount)); return row });
+    const headRow=['#','Description','Qty','Unit price (Rs)'].concat(anyDisc?['Discount (Rs)']:[]).concat(['Amount (Rs)']);
+    const last=headRow.length-1;
+    doc.autoTable({ startY:y, head:[headRow], body, margin:{left:M,right:M,bottom:24}, theme:'plain',
+      styles:{font:'helvetica',fontSize:9,textColor:INK,cellPadding:{top:2.4,bottom:2.4,left:2,right:2},lineColor:LINE,lineWidth:{bottom:0.2}},
+      headStyles:{fillColor:INK,textColor:255,fontStyle:'bold',fontSize:8.5,lineWidth:0},
+      alternateRowStyles:{fillColor:[248,246,241]},
+      columnStyles:Object.assign({0:{cellWidth:9,halign:'center',textColor:MUTE},2:{cellWidth:20,halign:'right'},3:{cellWidth:28,halign:'right'},[last]:{cellWidth:30,halign:'right',fontStyle:'bold'}},anyDisc?{4:{cellWidth:24,halign:'right'}}:{}),
+      didParseCell:(d)=>{ if(d.section==='head'&&d.column.index>=2) d.cell.styles.halign='right'; if(d.section==='body'&&lines[d.row.index]&&lines[d.row.index].returned) d.cell.styles.textColor=RED } });
+    y=doc.lastAutoTable.finalY+6;
+    // the totals, on the right; the amount in words on the left
+    const rows=[['Subtotal',pdfMoney(b.sub)]];
+    if(b.billDisc>0.005) rows.push(['Discount','- '+pdfMoney(b.billDisc)]);
+    rows.push([b.quote?'Quoted total':'Total','Rs '+pdfMoney(b.total),'big']);
+    if(sh.vat&&sh.vatRate>0&&!b.quote) rows.push(['VAT '+sh.vatRate+'% (included)',pdfMoney((+b.total||0)*sh.vatRate/(100+sh.vatRate))]);
+    if(!b.quote){ rows.push(['Paid'+(b.pays&&b.pays.length?' ('+b.pays.map(p=>String(p.method).toLowerCase()).join(', ')+')':''),pdfMoney(b.paid)]);
+      rows.push([settled?'Balance':'Balance due','Rs '+pdfMoney(Math.max(0,b.balance)),settled?'':'due']) }
+    const need=rows.length*7+30; if(y+need>H-26){ doc.addPage(); y=20 }
+    const tx=W-M-82; let ty=y;
+    rows.forEach(([k,v,kind])=>{
+      if(kind==='big'){ doc.setFillColor(...INK); doc.rect(tx,ty-4.6,82,8.4,'F'); doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(11) }
+      else if(kind==='due'){ doc.setFillColor(253,236,236); doc.rect(tx,ty-4.6,82,8.4,'F'); doc.setTextColor(...RED); doc.setFont('helvetica','bold'); doc.setFontSize(10.5) }
+      else { doc.setTextColor(...INK); doc.setFont('helvetica','normal'); doc.setFontSize(9.5) }
+      T(k,tx+3,ty+0.6); T(v,W-M-3,ty+0.6,{align:'right'}); ty+=8.4 });
+    doc.setTextColor(...MUTE); doc.setFont('helvetica','bold'); doc.setFontSize(8); T('AMOUNT IN WORDS',M,y);
+    doc.setFont('helvetica','normal'); doc.setTextColor(...INK); doc.setFontSize(9.5);
+    doc.splitTextToSize(inWords(b.total),tx-M-8).forEach((s,i)=>doc.text(s,M,y+5+i*4.6));
+    if(b.quote&&b.until){ doc.setFontSize(8.6); doc.setTextColor(...MUTE); T('Prices hold good until '+pdfDate(b.until)+'.',M,y+22) }
+    if(b.saved>0.005){ doc.setFontSize(8.6); doc.setTextColor(29,122,69); T('You '+(b.quote?'save':'saved')+' Rs '+pdfMoney(b.saved)+' against the marked price (MRP).',M,y+(b.quote?27:22)) }
+    // a cancelled bill says so across the page
+    if(b.cancelled){ doc.setTextColor(240,200,200); doc.setFont('helvetica','bold'); doc.setFontSize(70); doc.text('CANCELLED',W/2,H/2,{align:'center',angle:30}) }
+    // the foot of every page: thanks, the computer-made note, the link to this page, the page number
+    const n=doc.getNumberOfPages();
+    for(let p=1;p<=n;p++){ doc.setPage(p);
+      doc.setDrawColor(...LINE); doc.setLineWidth(0.3); doc.line(M,H-19,W-M,H-19);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...INK); T('Thank you for your business!',M,H-13.5);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.4); doc.setTextColor(...MUTE);
+      T('This is a computer-generated '+(b.quote?'quotation':'invoice')+' and does not need a signature.  Online copy: '+location.href.split('#')[0].replace(/^https?:\/\//,''),M,H-9);
+      T('Page '+p+' of '+n,W-M,H-13.5,{align:'right'});
+      doc.setFillColor(...RED); doc.rect(0,H-3,W,3,'F') }
+    doc.setProperties({title:title+' '+pdfText(b.no),subject:title+' '+pdfText(b.no)+' - '+pdfText(sh.name||''),author:pdfText(sh.name||''),creator:pdfText(sh.name||'')});
+    doc.save((b.quote?'Quotation-':'Invoice-')+String(b.no||'bill').replace(/[^\w.-]+/g,'-')+'.pdf');
   }catch(e){
     alert('The PDF could not be made here ('+e.message+'). The print window will open instead — choose "Save as PDF".');
     window.print();
-  }finally{ host.remove(); btn.removeAttribute('disabled'); lbl.textContent=was }
+  }finally{ btn.removeAttribute('disabled'); lbl.textContent=was }
 }
 
 /* the total runs up to its figure as the bill lands */
@@ -445,7 +530,7 @@ function feedbackAfter(b,id){
       : '';
     const waText = encodeURIComponent((b.quote ? 'Hello, about my quotation ' : 'Hello, about my bill ') + b.no);
     const acts = `<div class="acts screenview">
-        <button class="btn ink rp" type="button" onclick="downloadPdf(this)">${svg('pdf')}<span>Save PDF</span></button>
+        <button class="btn ink rp" type="button" onclick="downloadPdf(this)">${svg('pdf')}<span>${b.quote ? 'Quotation PDF' : 'Invoice PDF'}</span></button>
         <button class="btn rp" type="button" onclick="window.print()">${svg('print')}<span>Print</span></button>
         ${wa ? `<a class="btn rp" href="https://wa.me/${wa}?text=${waText}" target="_blank" rel="noopener">${svg('wa')}<span>${b.quote ? 'Order on WhatsApp' : 'WhatsApp us'}</span></a>`
              : maps ? `<a class="btn rp" href="${esc(maps)}" target="_blank" rel="noopener">${svg('pin')}<span>Find us</span></a>` : ''}
