@@ -31,7 +31,7 @@ await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.rem
 // 1. a supplier made inactive, from their page
 const sup = await pg.evaluate(() => { const S = window.eval('S'); const s = S.suppliers.find(x => x.active !== false); window.eval('supSel=' + s.id); window.eval("supFilter='all'; supTab='details'"); window.eval('go')('suppliers'); return { id: s.id, name: s.name, n: S.suppliers.filter(x => x.active !== false).length } });
 await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
-await pg.$eval(`[data-act="partyOff"][data-pk="S"][data-id="${sup.id}"]`, x => x.click()); await pg.waitForSelector('#abGo'); await pg.$eval('#abT', (el, v) => { el.value = v }, "closed down"); await pg.$eval('#abGo', x => x.click()); await wait(400);
+await wait(600); await pg.$eval(`[data-act="partyOff"][data-pk="S"][data-id="${sup.id}"]`, x => x.click()); await pg.waitForSelector('#abGo'); await pg.$eval('#abT', (el, v) => { el.value = v }, "closed down"); await pg.$eval('#abGo', x => x.click()); await wait(400);
 let st = await pg.evaluate(id => { const S = window.eval('S'), s = window.eval('SU')(id); return { active: s.active, why: s.inactiveWhy, by: s.inactiveBy, filter: window.eval('supFilter'),
   chip: (document.querySelector('[data-supfilter="inactive"]') || {}).innerText || '', band: /Inactive/.test(document.querySelector('#main').innerText) && /closed down/.test(document.querySelector('#main').innerText) } }, sup.id);
 ok(st.active === false && st.why === 'closed down' && st.by, 'Make inactive: kept as inactive, with why and by whom', JSON.stringify({ a: st.active, why: st.why }));

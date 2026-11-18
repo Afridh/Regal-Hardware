@@ -15049,6 +15049,29 @@ function suPillSync(){
   if(!el){ el=document.createElement('button'); el.id='suPill'; el.type='button'; el.onclick=()=>go('startup'); document.body.appendChild(el) }
   el.innerHTML=`<span>↩</span> Getting started <b>${d}/${st.length}</b>`;
 }
+/* Every list that scrolls on its own (the customer list beside a customer, the bills, the products, a table's
+   columns…) keeps where it was when the page is drawn again: a click on a row used to throw the list back to the
+   top (18 Nov 2026, the owner: "the list is going up on every click"). Each scrolled box is known by its id, or by
+   its kind and place on the page; a page that sends a list to the top on purpose still does, after this. */
+function scrollKeys(root){
+  const out=[], seen=new Map();
+  for(const el of root.querySelectorAll('*')){
+    if(!(el.scrollTop>0||el.scrollLeft>0)) continue;
+    if(el.classList.contains('subnav')) continue;                    // kept on its own, below
+    let key;
+    if(el.id) key='#'+el.id;
+    else { const sel=el.tagName.toLowerCase()+[...el.classList].filter(c=>/^[A-Za-z][\w-]*$/.test(c)).map(c=>'.'+c).join('');
+      const all=[...root.querySelectorAll(sel)]; key=sel+'@'+all.indexOf(el) }
+    if(seen.has(key)) continue; seen.set(key,1);
+    out.push({key,top:el.scrollTop,left:el.scrollLeft});
+  }
+  return out;
+}
+function scrollKeysBack(root,keys){
+  for(const k of keys){ let el=null;
+    try{ if(k.key[0]==='#') el=document.getElementById(k.key.slice(1)); else { const [sel,i]=k.key.split('@'); el=root.querySelectorAll(sel)[+i]||null } }catch(e){}
+    if(el&&root.contains(el)){ if(k.top) el.scrollTop=k.top; if(k.left) el.scrollLeft=k.left } }
+}
 function renderNow(){
   applyLayout();
   renderNav();
@@ -15062,7 +15085,8 @@ function renderNow(){
     /* the box being typed in keeps its place: a redraw from elsewhere (another tab saving, the books coming in)
        used to drop the cursor, so letters typed during it landed in the wrong place */
     const fe=document.activeElement, keep=sameView&&fe&&fe.id&&mn.contains(fe)&&/^(INPUT|TEXTAREA)$/.test(fe.tagName)?{id:fe.id,s:fe.selectionStart,e:fe.selectionEnd}:null;
-    try{ mn.innerHTML = r(); if(snTop){ const sn1=mn.querySelector('.subnav'); if(sn1) sn1.scrollTop=snTop }
+    let lists=[]; try{ if(sameView) lists=scrollKeys(mn) }catch(e){}
+    try{ mn.innerHTML = r(); try{ if(lists.length) scrollKeysBack(mn,lists) }catch(e){} if(snTop){ const sn1=mn.querySelector('.subnav'); if(sn1) sn1.scrollTop=snTop }
       if(keep){ const ne=document.getElementById(keep.id); if(ne&&ne!==document.activeElement){ ne.focus({preventScroll:true}); try{ if(keep.s!=null) ne.setSelectionRange(Math.min(keep.s,ne.value.length),Math.min(keep.e,ne.value.length)) }catch(e){} } } }
     catch(err){
       /* a page that cannot be drawn used to leave the screen blank, with no way to tell why */
