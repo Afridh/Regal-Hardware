@@ -47,7 +47,7 @@ is('= ANY becomes IN', dialect('WHERE id = ANY($1)'), 'WHERE id IN ($1)');
 is('FILTER', dialect('SELECT count(*) FILTER (WHERE a > 0) AS n FROM t'),
   'SELECT count(CASE WHEN a > 0 THEN 1 END) AS n FROM t');
 is('jsonb_array_length', dialect("SELECT jsonb_array_length(data->'S'->'customers') FROM books"),
-  "SELECT JSON_LENGTH(data->'S'->'customers') FROM books");
+  "SELECT JSON_LENGTH(data->'$.S.customers') FROM books");
 
 /* returning */
 is('RETURNING is taken off', returning('INSERT INTO t (a) VALUES ($1) RETURNING *').sql, 'INSERT INTO t (a) VALUES ($1)');

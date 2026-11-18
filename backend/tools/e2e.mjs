@@ -109,8 +109,13 @@ for (const v of ['dashboard', 'pos', 'vouchers', 'transfers', 'customers', 'sett
   d.getElementById('cmAddr').value = 'Hingurakgoda'; d.getElementById('cmOk').click(); await sleep(20);
   ok('C: edit saves', nc.address === 'Hingurakgoda' && !d.querySelector('.modal'));
   d.querySelector('[data-act="custNew"]').click(); await sleep(20);
+  // the same mobile on a second customer: asked first (one number may serve two people)
+  let asked = ''; w.confirm = m => { asked = m; return false };
   d.getElementById('cmName').value = 'Dup'; d.getElementById('cmPhone').value = '0711111111'; d.getElementById('cmOk').click(); await sleep(20);
-  ok('C: duplicate mobile refused', /already has/.test(d.getElementById('cmMsg').textContent)); w.closeModals();
+  ok('C: a mobile already on a customer is asked about', /already has/.test(asked) && !!d.querySelector('.modal') && !w.S.customers.some(c => c.name === 'Dup'));
+  w.confirm = () => true; d.getElementById('cmOk').click(); await sleep(20);
+  ok('C: … and saved on both when OK', w.S.customers.filter(c => c.phone === '0711111111').length === 2 && !d.querySelector('.modal'));
+  w.closeModals();
   // taking a payment happens in place, not on another page
   // taking a payment happens in place, not on another page — in parts, like the old till
   w.eval('custSel=2; custTab="overview"'); w.render(); await sleep(20);

@@ -9353,8 +9353,8 @@ const breakMax=()=>{ const v=(S.shift&&S.shift.settings||{}).breakMax; return v=
 function onBreakNow(except){ const ds=D(today), day=((S.shift||{}).days||{})[ds]||{}, out=[];
   for(const e of (S.employees||[])){ if(e.id===except||e.active===false) continue; const r=day[e.id]; const b=r&&(r.breaks||[]).find(x=>!x.end&&x.id!=='sw'); if(b&&r.in&&!r.out) out.push({e,b}) }
   return out }
-function breakAdminAsk(id,mealId,on){
-  const e=S.employees.find(x=>x.id===id)||{name:'Staff'}, def=(shiftSet().breaks||[]).find(x=>x.id===mealId)||{name:'a break'};
+function breakAdminAsk(id,mealId,on,name){
+  const e=S.employees.find(x=>x.id===id)||{name:'Staff'}, def=name?{name}:(shiftSet().breaks||[]).find(x=>x.id===mealId)||{name:'a break'};
   const admins=(S.users||[]).filter(u=>u.active!==false&&u.canLogin!==false&&(['Super Admin','Owner','Admin'].includes(u.role)||(u.perms||[]).includes('approve')));
   const m=modal(`<h2>Someone is already on a break</h2>
    <div class="card note" style="margin:6px 0 10px">${on.map(x=>`<div><b>${noteEsc(x.e.name)}</b> — ${noteEsc(x.b.name||'break')} since ${x.b.start} (${fmtMin(nowMin()-toMin(x.b.start))})</div>`).join('')}</div>
@@ -9370,18 +9370,18 @@ function breakAdminAsk(id,mealId,on){
   const ok=async()=>{ const u=admins.find(x=>x.name===m.querySelector('#baWho').value), msg=m.querySelector('#baMsg');
     if(!u) return; msg.textContent='Checking…'; msg.style.color='';
     if(!(await adminOk(u,pin.value))){ tries++; msg.textContent=tries>=3?'Three wrong — ask the admin to come over.':'That PIN or password is not right.'; msg.style.color='var(--chip-rust)'; pin.value=''; if(tries>=3) pin.disabled=true; return }
-    m.remove(); startMeal(id,mealId,u.name);
+    m.remove(); startMeal(id,mealId,u.name,name);
     notify('people',`${u.name} let ${e.name} go on ${def.name} while ${on.map(x=>x.e.name).join(' and ')} ${on.length===1?'was':'were'} on a break`,'payroll',{forUser:u.name});
     try{ logTrail('other',`${e.name} went on ${def.name} with ${on.map(x=>x.e.name).join(', ')} already on a break — allowed by ${u.name}`,{ref:'BREAK'}) }catch(err){} };
   m.querySelector('#baOk').onclick=ok; pin.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); ok() } };
 }
-function startMeal(id, mealId, allowedBy){
+function startMeal(id, mealId, allowedBy, name){
   const ds=D(today);
   const r=recFor(ds,id);
   if(!r||r.status!=='work'||!r.in) return toast('Check in required before starting break');
-  if(!allowedBy){ const on=onBreakNow(id), mx=breakMax(); if(mx&&on.length>=mx) return breakAdminAsk(id,mealId,on) }
+  if(!allowedBy){ const on=onBreakNow(id), mx=breakMax(); if(mx&&on.length>=mx) return breakAdminAsk(id,mealId,on,name) }
   const e=S.employees.find(x=>x.id===id);
-  const def=(shiftSet().breaks||[]).find(x=>x.id===mealId)||{name:mealId};
+  const def=name?{name}:(shiftSet().breaks||[]).find(x=>x.id===mealId)||{name:mealId};
   (r.breaks||[]).forEach(b=>{ if(!b.end) b.end=hhmm(nowMin()) });
   const brs=(r.breaks||[]).concat([{id:mealId,name:def.name,start:hhmm(nowMin()),end:null,...(allowedBy?{allowedBy}:{})}]);
   setRec(ds,id,{breaks:brs});
@@ -9389,6 +9389,23 @@ function startMeal(id, mealId, allowedBy){
   toast(`${e?e.name:'Staff'} started ${def.name}`);
 }
 
+/* a break that is not one of the shop's set ones — prayers, the bank, a call — with why. The same as the
+   staff clock's "Other" (shift.html): id 'other', named "Other · why", counted as break time. (18 Nov 2026) */
+const OTHER_WHY=[['🕌','Prayer'],['🏦','Bank / errand'],['📞','Phone call'],['💊','Not feeling well'],['🚶','Personal']];
+function otherBreakAsk(id){
+  const e=S.employees.find(x=>x.id===id); if(!e) return;
+  const r=recFor(D(today),id); if(!r||r.status!=='work'||!r.in||r.out) return toast('Check in required before starting break');
+  const m=modal(`<h2>⏸ Another break · ${noteEsc(e.name)}</h2>
+   <div class="muted">Not breakfast, lunch or tea — say what for. It starts now and counts as break time.</div>
+   <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">${OTHER_WHY.map(([i,w])=>`<button class="btn ghost" data-ow="${noteEsc(w)}">${i} ${noteEsc(w)}</button>`).join('')}</div>
+   <div class="f" style="margin-top:10px"><label>Or say what for</label><input id="obWhy" maxlength="40" autocomplete="off" placeholder="e.g. collecting a delivery"></div>
+   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn ghost" data-act="closeModal">Cancel</button>
+    <button class="btn tape" id="obOk">⏸ Start the break</button></div>`);
+  const inp=m.querySelector('#obWhy'); inp.focus();
+  const go=why=>{ why=String(why||'').trim(); m.remove(); startMeal(id,'other',undefined,why?'Other · '+why:'Other') };
+  m.querySelectorAll('[data-ow]').forEach(b=>b.onclick=()=>go(b.dataset.ow));
+  m.querySelector('#obOk').onclick=()=>go(inp.value); inp.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); go(inp.value) } };
+}
 function endMeal(id){
   const ds=D(today);
   const r=recFor(ds,id);
@@ -9688,6 +9705,7 @@ function salesmanPortalToday(me, st, f){
                 <button class="bc-meal-btn ${hasB3?'taken':''}" style="padding:7px 14px;font-size:13px" data-act="mealStart" data-id="${me.id}" data-meal="b3">
                   ${hasB3 ? '✓ Evening Tea Done' : '🫖 Start Evening Tea (10m)'}
                 </button>
+                <button class="bc-meal-btn" style="padding:7px 14px;font-size:13px" data-act="otherBreak" data-id="${me.id}">⏸ Other break</button>
                 ${swBtn(r,me.id,true)}
               </div>
               ${swNotice(r,me.id)}
@@ -15704,6 +15722,7 @@ function salesmanDashboard(){
               <button class="bc-meal-btn ${openB&&openB.id==='b1'?'active':(hasB1?'taken':'')}" data-act="${openB&&openB.id==='b1'?'mealEnd':'mealStart'}" data-id="${emp.id}" data-meal="b1">${openB&&openB.id==='b1'?'☕ Finish Breakfast':(hasB1?'✓ Breakfast Done':'☕ Breakfast')}</button>
               <button class="bc-meal-btn ${openB&&openB.id==='b2'?'active':(hasB2?'taken':'')}" data-act="${openB&&openB.id==='b2'?'mealEnd':'mealStart'}" data-id="${emp.id}" data-meal="b2">${openB&&openB.id==='b2'?'🍛 Finish Lunch':(hasB2?'✓ Lunch Done':'🍛 Lunch')}</button>
               <button class="bc-meal-btn ${openB&&openB.id==='b3'?'active':(hasB3?'taken':'')}" data-act="${openB&&openB.id==='b3'?'mealEnd':'mealStart'}" data-id="${emp.id}" data-meal="b3">${openB&&openB.id==='b3'?'🫖 Finish Tea':(hasB3?'✓ Tea Done':'🫖 Evening Tea')}</button>
+              ${openB&&!['b1','b2','b3','sw'].includes(openB.id)?`<button class="bc-meal-btn active" data-act="mealEnd" data-id="${emp.id}">⏸ Back from ${noteEsc(openB.name||'break')}</button>`:`<button class="bc-meal-btn" data-act="otherBreak" data-id="${emp.id}">⏸ Other</button>`}
               ${openB&&openB.id==='sw'?`<button class="bc-meal-btn active" data-act="mealEnd" data-id="${emp.id}">🛠 Back from Shop Work</button>`:swBtn(empRec,emp.id)}
             </div>
             ${swNotice(empRec,emp.id)}
@@ -36562,6 +36581,7 @@ document.addEventListener('click',e=>{
     billIssueParts:()=>billIssueParts(a.dataset.no),
     colReprint:()=>noteReprintAsk(a.dataset.isn),
     shopWork:()=>shopWorkAsk(+a.dataset.id),
+    otherBreak:()=>otherBreakAsk(+a.dataset.id),
     swYes:()=>shopWorkDecide(+a.dataset.id, true),
     swNo:()=>shopWorkDecide(+a.dataset.id, false),
     confirmAbsent:()=>confirmAbsentModal(+a.dataset.id),
