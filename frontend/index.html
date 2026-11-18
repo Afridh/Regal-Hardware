@@ -7288,7 +7288,7 @@ const CFG={
     owner's decision and not the person at the counter's. */
  buying:{amountOnly:true,amountOnlyWho:'any',dnFirst:true},
  leave:{},
- done:{askSize:true,cashDefault:'r80',creditDefault:'r80',rememberPick:false,r80Default1:true,notice:true,noticeMs:3200,
+ done:{askSize:true,cashDefault:'r80',creditDefault:'r80',creditPrint:true,creditCopies:1,rememberPick:false,r80Default1:true,notice:true,noticeMs:3200,
    askCustomer:true,askSalesman:true,                  // the two questions once the money is taken
    printAnim:true,animMs:1000,creditStamp:true,creditWord:'CREDIT BILL',cashWord:'PAID',sound:false},
  stock:{allowNegative:false,allowBelowCost:false},
@@ -8104,6 +8104,9 @@ function settings(){
      <h2>Which bill goes out</h2>
      <div class="grid3">${pick('done.cashDefault','Cash bill, usually')}${pick('done.creditDefault','Credit bill, usually')}<div class="muted" style="grid-column:1/-1;margin-top:-6px">A credit bill always prints as the large A5 — never the 80mm receipt.</div>
       <div class="f"><label>&nbsp;</label>${fld('done.askSize','','Ask which bill each time (Enter takes the usual one)','check')}</div></div>
+     <div class="grid3" style="align-items:end">
+      <div class="f" style="grid-column:span 2"><label>Credit bills</label><label class="chk"><input type="checkbox" data-set="done.creditPrint" ${CFG.done.creditPrint!==false?'checked':''}> Always print the A5 — also when the e-bill is texted (only "No print" on the bill stops it)</label></div>
+      <div class="f"><label>Copies of a credit bill</label><select data-set="done.creditCopies">${[[1,'1 — the bill'],[2,'2 — the bill and a COPY for the shop']].map(([n,t])=>`<option value="${n}" ${(+CFG.done.creditCopies||1)===n?'selected':''}>${t}</option>`).join('')}</select></div></div>
      ${fld('done.rememberPick','','Tick "remember my choice" by default on that question','check')}
      <h2 style="margin-top:14px">What is asked once the money is taken</h2>
      <div class="grid2">${fld('done.askCustomer','','Ask for the customer&rsquo;s mobile number. Found, or added if new, the bill goes in their name and the e-bill goes to them, then Enter prints the bill and Esc leaves it at the e-bill; left empty, it stays a walk-in sale and prints','check')}
@@ -20298,7 +20301,7 @@ function askSize(inv){
   if(typeof CS!=='undefined'&&CS.paper){ const k=CS.paper; CS.paper=null; if(k!=='none') S.pos.lastBill=k; return printAnim(inv,k) }   // picked on the bill itself — no question
   const given=billNumberGiven; billNumberGiven=false;
   if(!CFG.done.askSize){ S.pos.lastBill=def; const k=def==='sms'&&!c.phone?'r80':def;
-    if(given&&c.phone&&CFG.msg.autoBill&&inv.total>0.005&&k!=='sms') return askPrintBill(inv,k);
+    if(given&&c.phone&&CFG.msg.autoBill&&inv.total>0.005&&k!=='sms'&&!creditPrints(inv)) return askPrintBill(inv,k);   // a credit bill prints without asking (18 Nov 2026)
     return printAnim(inv,k) }
   const opts=[...(kind==='CREDIT'?[]:[['r80','1','80mm Till receipt','80mm thermal — quick for the counter']]),
               ['a5','2','Printed bill','A5 landscape — full bill with outstanding boxes'],
@@ -20392,6 +20395,12 @@ function askSize(inv){
   (m.querySelector('.pick.def')||m).focus();
 }
 /* the paper comes out of the printer, then the bill is on the screen */
+/* Credit bills print (18 Nov 2026, the owner asked: they were going out as an e-bill only): with "Always print"
+   on (the default) a credit bill texted as an e-bill prints its A5 too, and "Copies" 2 prints a second marked COPY
+   for the shop's file. "No print" picked on the bill is still no print. */
+const creditPrints=inv=>creditBill(inv)&&!(inv&&inv.proof)&&CFG.done.creditPrint!==false;
+function printCreditCopies(inv){ const n=Math.max(1,Math.min(3,+CFG.done.creditCopies||1));
+  for(let i=1;i<n;i++) setTimeout(()=>printBill({...inv,reprint:true},'a5'),1500*i) }
 function printAnim(inv,k){
   if(k==='r80') k=billPaper(inv,k);
   if(k==='none'){ toast(`${inv.no} saved — not printed. It can be printed later from Sales.`,'ok'); return }
@@ -20407,9 +20416,10 @@ function printAnim(inv,k){
     if(k==='sms'){ if(c.phone){
         // the bill was texted to this number as it was saved (Settings → Messages, "text the bill"): once is enough (8 Nov 2026: bill 10184 went twice)
         if(inv.textedTo&&inv.textedTo===mobNorm(c.phone)) toast(`e-bill already texted to ${c.name} — not sent twice`,'ok');
-        else { sms(c.phone,tpl('billLink',{invoice:inv.no,total:fmt(inv.total),balancePart:inv.balance>0.005?'\nStill to pay: '+fmt(inv.balance):'',link:inv.link})); inv.textedTo=mobNorm(c.phone); toast(`e-bill texted to ${c.name}`) } }
+        else { sms(c.phone,tpl('billLink',{invoice:inv.no,total:fmt(inv.total),balancePart:inv.balance>0.005?'\nStill to pay: '+fmt(inv.balance):'',link:inv.link})); inv.textedTo=mobNorm(c.phone); toast(`e-bill texted to ${c.name}`) }
+        if(creditPrints(inv)){ printBill(inv,'a5'); printCreditCopies(inv) } }
       else printBill(inv,'r80') }
-    else if(CFG.done.preview) showInvoice(inv,k); else printBill(inv,k) };   // straight to the printer unless a preview is asked for in Settings
+    else if(CFG.done.preview) showInvoice(inv,k); else { printBill(inv,k); if(k==='a5'&&creditPrints(inv)) printCreditCopies(inv) } };   // straight to the printer unless a preview is asked for in Settings
   if(!CFG.done.printAnim){ el.remove(); return done() }
   setTimeout(done,(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)?50:(+CFG.done.animMs||1000)+50);
 }
