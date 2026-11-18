@@ -24908,8 +24908,9 @@ function askNumber(inv,how,send){
   const other=how==='any', had=c.id!==1&&c.phone?c.phone:'';
   const m=modal(`<h2>${other?'Send the bill to another number':how==='whatsapp'?'WhatsApp the bill to which number?':'Text the bill to which number?'}</h2>
    <div class="hb-ask"><b>${inv.no}</b><span>${fmt(inv.total)} · ${inv.date} ${inv.time||''}${c.id!==1?' · '+noteEsc(c.name)+(had?' · '+had+' on their card':''):' · walk-in'}${inv.phone&&inv.phone!==had?' · last sent to '+inv.phone:''}</span></div>
-   <div class="f" style="margin-top:10px"><label>Mobile</label>
-    <input id="anPhone" inputmode="tel" placeholder="07XXXXXXXX" value="${other?'':billPhone(inv)}"></div>
+   <div class="f" style="margin-top:10px"><label>Mobile, or a customer's name</label>
+    <input id="anPhone" autocomplete="off" placeholder="07XXXXXXXX, or type a name to find them" value="${other?'':billPhone(inv)}"></div>
+   <div id="anList" style="max-height:240px;overflow:auto"></div>
    ${c.id!==1&&c.phone2?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${[had,c.phone2].filter(Boolean).map(p=>`<button class="btn ghost sm" data-anp="${p}">${p}</button>`).join('')}</div>`:''}
    ${c.id!==1?(had?`<label class="chk"><input type="checkbox" id="anKeep"> also make it ${noteEsc(c.name)}’s mobile, instead of ${had}</label>`:`<label class="chk"><input type="checkbox" id="anKeep" checked> keep it on ${noteEsc(c.name)}’s card</label>`):''}
    <div class="muted" id="anMsg" style="min-height:18px"></div>
@@ -24919,6 +24920,20 @@ function askNumber(inv,how,send){
     ${sends.text?'<button class="btn tape" id="anOk">Send the text <i class="kbd">Enter</i></button>':''}</div>`);
   const inp=m.querySelector('#anPhone'); inp.focus(); inp.select();
   m.querySelectorAll('[data-anp]').forEach(b=>b.onclick=()=>{ inp.value=b.dataset.anp; inp.focus() });
+  /* a name typed finds the customer, and their number goes in (18 Nov 2026, the owner asked) */
+  const list=m.querySelector('#anList'), kp=m.querySelector('#anKeep'); let hits=[], cur=0, chosen=null;
+  const pick=(id,ph)=>{ const x=C(id); inp.value=ph; chosen=x; hits=[]; list.innerHTML='';
+    if(kp&&x.id!==c.id) kp.checked=false;          // someone else's number: not put on this bill's customer
+    m.querySelector('#anMsg').textContent='To '+x.name; inp.focus() };
+  const draw=()=>{ const v=inp.value.trim(); chosen=null; m.querySelector('#anMsg').textContent='';
+    if(!/[a-z]/i.test(v)||v.length<2){ hits=[]; list.innerHTML=''; return }
+    hits=custRecent(S.customers.filter(x=>x.id!==1&&x.active!==false&&(x.phone||x.phone2)&&custMatch(x,v))).slice(0,8); cur=0;
+    list.innerHTML=hits.length?hits.map((x,i)=>`<div class="bq-row${i===cur?' on':''}" data-anc="${x.id}" data-ph="${escM(x.phone||x.phone2)}"><div class="bq-nm"><b>${escM(x.name)}</b><span>${escM(x.code||'')}${x.address?' · '+escM(x.address):''}</span></div>
+      ${[x.phone,x.phone2].filter(Boolean).map(p=>`<button class="btn ghost sm" data-anc="${x.id}" data-ph="${escM(p)}">${escM(p)}</button>`).join(' ')}</div>`).join('')
+      :'<div class="bq-none">No customer with a mobile matches that.</div>';
+    list.querySelectorAll('[data-anc]').forEach(el=>el.onclick=e=>{ e.stopPropagation(); pick(+el.dataset.anc,el.dataset.ph) }) };
+  const mark=()=>list.querySelectorAll('.bq-row').forEach((r,i)=>r.classList.toggle('on',i===cur));
+  inp.addEventListener('input',draw);
   const go=(way)=>{
     const to=inp.value.replace(/[^\d+]/g,'').trim();
     if(!/^(0\d{9}|\+?94\d{9})$/.test(to)) { inp.focus(); m.querySelector('#anMsg').textContent='That is not a mobile number — 07XXXXXXXX'; return }
@@ -24931,7 +24946,10 @@ function askNumber(inv,how,send){
   if(m.querySelector('#anOk')) m.querySelector('#anOk').onclick=()=>go('text');
   if(m.querySelector('#anWa')) m.querySelector('#anWa').onclick=()=>go('whatsapp');
   m.querySelector('#anNo').onclick=()=>m.remove();
-  inp.onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); go(sends.text?'text':'whatsapp') } if(e.key==='Escape'){ e.preventDefault(); m.remove() } };
+  inp.onkeydown=e=>{ e.stopPropagation();
+    if(hits.length&&(e.key==='ArrowDown'||e.key==='ArrowUp')){ e.preventDefault(); cur=Math.max(0,Math.min(hits.length-1,cur+(e.key==='ArrowDown'?1:-1))); mark(); return }
+    if(e.key==='Enter'&&hits.length){ e.preventDefault(); const x=hits[cur]; pick(x.id,x.phone||x.phone2); return }
+    if(e.key==='Enter'){ e.preventDefault(); go(sends.text?'text':'whatsapp') } if(e.key==='Escape'){ e.preventDefault(); m.remove() } };
 }
 function billDetail(inv){
   if(inv.cancelled) return billCancelledDetail(inv);
