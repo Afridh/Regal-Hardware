@@ -38,7 +38,7 @@ const pay = async (smsOn, noPrint) => {
   await pg.keyboard.press('F9'); await wait(200); await pg.$eval('#sfAmt', el => { el.value = '500' }); await pg.click('#sfOk'); await wait(200);          // card 500
   await pg.$eval('#ra', el => { el.value = '1000'; el.dispatchEvent(new Event('input')) }); await pg.focus('#ra'); await pg.keyboard.press('Enter'); await wait(500);   // cash 1,000, done
   return pg.evaluate(() => ({ msgs: window.eval('S').messages.slice(0, window.eval('S').messages.length - window.__msgs0).map(m => ({ to: m.to, body: m.body })), printed: window.__printed.slice(),
-    focus: document.activeElement && document.activeElement.className, voucher: !!document.querySelector('.voucher') }));
+    focus: document.activeElement && document.activeElement.className, voucher: !!document.querySelector('.voucher, .rvx') }));
 };
 // 1. two parts, text on
 const r1 = await pay(true);
@@ -47,7 +47,7 @@ ok(toCust.length === 1 && /1,500/.test(toCust[0].body), 'one text to the custome
 ok(toOwner.length === 1 && /1,500/.test(toOwner[0].body) && /(cash \+ card|card \+ cash)/.test(toOwner[0].body), "the owner's own copy: amount, from whom, cash + card", JSON.stringify(toOwner.map(m => m.body.slice(0, 200))));
 ok(r1.printed.length === 1 && r1.voucher && /vclose/.test(r1.focus || ''), 'the voucher printed once, its window on Close', JSON.stringify({ printed: r1.printed, focus: r1.focus }));
 await pg.keyboard.press('Enter'); await wait(300);
-const after = await pg.evaluate(() => ({ printed: window.__printed.length, open: !!document.querySelector('.voucher') }));
+const after = await pg.evaluate(() => ({ printed: window.__printed.length, open: !!document.querySelector('.voucher, .rvx') }));
 ok(after.printed === 1 && !after.open, 'Enter closes the voucher — no second copy', JSON.stringify(after));
 // 2. text unticked
 await pg.evaluate(() => { window.__printed = [] });

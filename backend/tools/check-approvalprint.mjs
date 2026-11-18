@@ -46,7 +46,7 @@ const ask = (kind) => pg.evaluate((kind, n) => { const S = window.eval('S'), id 
   S.approvals = S.approvals || []; S.approvals.push({ id, kind, status: 'pending', by: 'Ravi', title: 'Test payment ' + n, detail: '', at: '2026-11-06 17:00', data });
   window.eval('render')(); return { id, pays: S.payments.length } }, kind, ++seq);
 const approve = async (a) => { await pg.evaluate(id => document.querySelector(`[data-act="apOk"][data-id="${id}"]`).click(), a.id); await wait(1500) };
-const shown = () => pg.evaluate(() => { const v = document.querySelector('.modal .print.voucher'); return v ? v.closest('.modal').innerText.slice(0, 60) : null });
+const shown = () => pg.evaluate(() => { const v = document.querySelector('.modal .print.voucher, .modal .print.rvx'); return v ? v.closest('.modal').innerText.slice(0, 60) : null });
 const posted = (a) => pg.evaluate(() => window.eval('S').payments.length).then(n => n > a.pays);
 
 for (const [kind, name] of [['custPay', 'customer payment'], ['supPay', 'supplier payment']]) {
@@ -64,7 +64,7 @@ for (const [kind, name] of [['custPay', 'customer payment'], ['supPay', 'supplie
   a = await ask(kind); await approve(a); await pg.keyboard.press('Escape'); await wait(1000);
   ok(jobs.length === 0 && !(await shown()), `${name}: Esc prints nothing`);
   // a click outside
-  a = await ask(kind); await approve(a); await pg.evaluate(() => document.querySelector('.print.voucher').closest('.modal').click()); await wait(1000);
+  a = await ask(kind); await approve(a); await pg.evaluate(() => document.querySelector('.print.voucher, .print.rvx').closest('.modal').click()); await wait(1000);
   ok(jobs.length === 0 && !(await shown()), `${name}: a click outside prints nothing`);
   // Print, by Enter
   a = await ask(kind); await approve(a);

@@ -103,8 +103,8 @@ if (gd) { ok(gd.done >= 4 && /6,?4\d\d products/i.test(gd.text) && /158 supplier
   await pg.$eval('[data-act="suAgain"]', x => x.click()); await wait(400);
   ok(await pg.evaluate(() => window.eval('S').view === 'startup' && !!document.querySelector('.su')), 'Settings → Shop details opens the guide again at any time');
   // the Settings list: its red heading scrolls with it — nothing passes over it
-  const hd = await pg.evaluate(() => { window.eval('go')('settings'); const h = document.querySelector('.subnav .snhead'); return getComputedStyle(h).position });
-  ok(hd !== 'sticky', 'Settings: the list no longer runs over its heading', hd); }
+  const hd = await pg.evaluate(() => { window.eval('go')('settings'); const h = document.querySelector('.subnav .snhead'), cs = getComputedStyle(h); return cs.position === 'sticky' ? 'sticky z' + cs.zIndex : cs.position });
+  ok(!/^sticky/.test(hd) || +hd.split('z')[1] >= 1, 'Settings: the list passes under its heading, never over it (2688fbb: the heading stays on top)', hd); }
 await pg.evaluate(() => window.eval('persist')(true)); await wait(2000);
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);

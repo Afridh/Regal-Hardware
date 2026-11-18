@@ -5888,15 +5888,18 @@ const tillUid=()=>{ try{ let u=localStorage.getItem('regal_till_uid'); if(!u){ u
 const saleUid=(no)=>(no&&remakeLink&&remakeLink.no===no&&remakeLink.uid)||(Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10)+'-'+tillUid().slice(-4));
 let billHeld=(()=>{ try{ return JSON.parse(localStorage.getItem('regal_bill_held')||'null') }catch(e){ return null } })();   // {k, n, spent}
 const saveHeld=()=>{ try{ localStorage.setItem('regal_bill_held',JSON.stringify(billHeld)) }catch(e){} };
-const heldOk=()=>billPlain()&&billHeld&&!billHeld.spent&&billHeld.k===billKey()&&!S.sales.some(s=>String(s.no)===billNoFrom(billHeld.n));
+/* each run of bill numbers is stamped (S.billEpoch): Start fresh gives a new stamp, so a number a till held from before —
+   on this PC or any other — is dropped, not printed on the new shop's first bill (18 Nov 2026) */
+const billEpoch=()=>+(S&&S.billEpoch)||0;
+const heldOk=()=>billPlain()&&billHeld&&!billHeld.spent&&billHeld.k===billKey()&&(+billHeld.e||0)===billEpoch()&&!S.sales.some(s=>String(s.no)===billNoFrom(billHeld.n));
 let heldBusy=false;
 function billHold(){
   if(heldBusy||!billPlain()||!window.regalBridge||!regalBridge.token()||!S.user||!S.user.name) return;
-  const k=billKey(), used=billHeld&&billHeld.spent&&billHeld.k===k?billHeld.n:null;
+  const k=billKey(), e=billEpoch(), used=billHeld&&billHeld.spent&&billHeld.k===k&&(+billHeld.e||0)===e?billHeld.n:null;
   heldBusy=true;
   fetch('/api/books/regal/billno',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+regalBridge.token()},
     body:JSON.stringify({k,term:tillUid(),seed:billSeqNow(),used})})
-    .then(r=>r.json()).then(j=>{ if(j&&+j.n>0&&billKey()===k){ billHeld={k,n:+j.n}; saveHeld();
+    .then(r=>r.json()).then(j=>{ if(j&&+j.n>0&&billKey()===k&&billEpoch()===e){ billHeld={k,n:+j.n,e}; saveHeld();
         const b=document.querySelector('.till-no:not(.editing) b'); if(b) b.textContent=peekBillNo() } })
     .catch(()=>{}).finally(()=>{ heldBusy=false });
 }
@@ -11249,6 +11252,7 @@ function clearShopData(){
   S.shift={...(S.shift||{}),days:{},imported:null};
   S.pos={...(S.pos||{}),lines:[],customer:null,billDisc:0,entry:null,sel:-1,listOk:null,toDeliver:false};
   S.seq={PRN:1,STK:1,WEB:1,PO:1,QTN:1,DN:1,INV:1,PUR:1,PAY:1,RCT:1,VCH:1,EXP:1,DMG:1,BF:1,JOB:1,JE:1,ISN:1,HIRE:1}; S.seqBy={};
+  S.billEpoch=Date.now(); billHeld=null; saveHeld();   // a bill number held from before is not used again
   try{ window.eval("_caKey=''") }catch(e){}
   S.startup={at:apStamp(),by:(S.user&&S.user.name)||''};      // the Getting started guide, in place of the dashboard until it is done
 }
@@ -11263,7 +11267,7 @@ function clearShopFlow(){
   // the server's side: portal sign-ins, messages waiting, e-bill copies, reminders, print jobs
   fetch('/api/books/regal/fresh-start',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+(window.regalBridge?regalBridge.token():'')}})
     .then(r=>r.json().catch(()=>({}))).then(j=>{ if(!j.ok) throw new Error(j.error||'the server did not clear its side') })
-    .then(()=>toast('A fresh start — the products, customers and suppliers can go in now (Add → Many at once, from Excel)','ok'))
+    .then(()=>{ billHold(); toast('A fresh start — the products, customers and suppliers can go in now (Add → Many at once, from Excel)','ok') })
     .catch(e=>toast('The books are cleared, but the server\'s side was not: '+e.message+' — restart the app and press it again','warn'));
 }
 

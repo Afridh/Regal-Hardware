@@ -50,7 +50,7 @@ ok(yes === true, 'the yes on Approvals makes it active again');
 const cus = await pg.evaluate(() => { const S = window.eval('S'); const c = S.customers.find(x => x.id !== 1 && x.active !== false && window.eval('partyBal')('C', x.id) < 0.01) || S.customers.find(x => x.id !== 1 && x.active !== false);
   window.eval('custSel=' + c.id); window.eval("custFilter='all'; custTab='details'"); window.eval('go')('customers'); return { id: c.id, name: c.name } });
 await pg.evaluate(() => document.querySelectorAll('.modal').forEach(m => m.remove()));
-await pg.$eval(`[data-act="partyOff"][data-pk="C"][data-id="${cus.id}"]`, x => x.click()); await pg.waitForSelector('#abGo'); await pg.$eval('#abT', (el, v) => { el.value = v }, "closed down"); await pg.$eval('#abGo', x => x.click()); await wait(400);
+await wait(600); await pg.$eval(`[data-act="partyOff"][data-pk="C"][data-id="${cus.id}"]`, x => x.click()); await pg.waitForSelector('#abGo'); await pg.$eval('#abT', (el, v) => { el.value = v }, "closed down"); await pg.$eval('#abGo', x => x.click()); await wait(400);
 const gone = await pg.evaluate(c => { return { active: window.eval('C')(c.id).active, inList: window.eval('custList')().some(x => x.id === c.id), chip: (document.querySelector('[data-custfilter="inactive"]') || {}).innerText || '' } }, cus);
 ok(gone.active === false && /Inactive\s*1/.test(gone.chip), 'a customer made inactive: under "Inactive 1"', JSON.stringify(gone));
 const back = await pg.evaluate(id => { window.eval("custFilter='inactive'"); window.eval('custSel=' + id); window.eval('go')('customers');

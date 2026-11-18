@@ -54,7 +54,8 @@ const clicked = await pg.evaluate(async () => { const S = window.eval('S'); wind
   return !!document.getElementById('csBillDisc') });
 if (clicked) {
   await pg.click('#csBillDisc'); await pg.evaluate(() => document.getElementById('csBillDisc').select()); await pg.keyboard.type('5');
-  await pg.click('[data-act="pay"]'); await wait(500);
+  { const pays = await pg.$$('[data-act="pay"]'); let vis = null; for (const h of pays) if (await h.evaluate(b => b.offsetWidth > 0)) { vis = h; break }   // the one on show: PRINT in the SePOS look, TAKE PAYMENT in the classic
+    await vis.click(); } await wait(500);
   const res = await pg.evaluate(() => ({ disc: window.eval('S').pos.billDisc, open: !!document.querySelector('.modal') }));
   ok(res.disc === 5 && res.open, 'typing a bill discount and clicking PAY straight away: the payment opens on that one click', JSON.stringify(res));
 } else ok(true, '(no bill discount box for this user — click test skipped)');

@@ -34,8 +34,8 @@ const fill = async (no, amt, st, off) => {
   await pg.$eval('#ocAmt', (e, v) => { e.value = v; e.dispatchEvent(new Event('input')) }, amt);
   await pg.select('#ocSt', st); await pg.select('#ocOff', off);
 };
-await pg.evaluate(() => { window.eval('go')('chequesOut') }); await wait(400);
-await pg.click('[data-act="oldChq"]'); await wait(300);
+await pg.evaluate(() => { window.eval('go')('chequesOut') }); await pg.waitForSelector('[data-act="oldChq"]', { timeout: 10000 }); await wait(400);
+await pg.$eval('[data-act="oldChq"]', e => e.click()); await pg.waitForSelector('#ocNo', { timeout: 5000 }).catch(() => {});
 ok(!!(await pg.$('#ocNo')), 'Cheques out has "+ A cheque given before" and it opens the form');
 await fill('999001', '10000', 'OUT', 'no'); await wait(100);
 const say = await pg.$eval('#ocSay', e => e.innerText);

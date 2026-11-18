@@ -52,8 +52,8 @@ const t = await qp.evaluate(() => document.body.innerText);
 const m2 = n => 'Rs ' + (+n).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 ok(/QUOTATION/i.test(t) && t.includes(q.no), 'the link opens the quotation', t.slice(0, 120).replace(/\s+/g, ' '));
 ok(q.items.every(it => t.includes('MRP') && t.includes(m2(it.mrp))), 'every item with its MRP', q.items.map(it => m2(it.mrp)).join(', '));
-ok(/Quoted total/.test(t) && t.includes(m2(q.total)) && /Prices hold good until/.test(t), 'the quoted total, and the day it holds good until');
-ok(/You save/.test(t) && /against the MRP/.test(t), 'what they save against the MRP');
+ok(/Quoted total/i.test(t) && t.toUpperCase().includes(m2(q.total).toUpperCase()) && /Prices hold good until/.test(t), 'the quoted total, and the day it holds good until');
+ok(/You save/.test(t) && /against the (MRP|marked price)/.test(t), 'what they save against the MRP');
 ok(!/Still to pay|How was your visit|Your account/.test(t), 'no payment, account or feedback parts on a quotation');
 await qp.screenshot({ path: SHOT + '/quote-link.png', fullPage: true });
 // the printed A5 quotation: the MRP column, with the bill's MRP column off

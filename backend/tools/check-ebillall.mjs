@@ -40,7 +40,7 @@ const until = async fn => { for (let i = 0; i < 30; i++) { if (await pg.evaluate
 const toQuestion = async () => { await setUp(); await wait(300); await pg.focus('#csQ'); printed.length = 0; await pg.keyboard.press('End'); return until(() => !!document.getElementById('bqQ')) };
 const printStep = () => until(() => !!document.getElementById('bpAsk'));
 const billDone = () => until(() => !document.querySelector('.payw') && !document.getElementById('bqQ'));
-const last = () => pg.evaluate(() => { const S = window.eval('S'), s = S.sales.at(-1), c = window.eval('C')(s.customerId); return { no: s.no, cid: s.customerId, name: c.name, phone: c.phone, code: c.code, level: c.level, msgs: S.messages.filter(m => m.body.includes(s.no) && /View your bill/.test(m.body)).map(m => ({ to: m.to, link: /\/b\//.test(m.body) || /regalhw|localhost/.test(m.body) })), customers: S.customers.length } });
+const last = () => pg.evaluate(() => { const S = window.eval('S'), s = S.sales.at(-1), c = window.eval('C')(s.customerId); return { no: s.no, cid: s.customerId, name: c.name, phone: c.phone, code: c.code, level: c.level, msgs: S.messages.filter(m => m.body.includes(s.no) && /View your bill|see your invoice/.test(m.body)).map(m => ({ to: m.to, link: /\/b\//.test(m.body) || /regalhw|localhost/.test(m.body) })), customers: S.customers.length } });
 
 ok(await pg.evaluate(() => { const c = window.eval('CFG'); return c.done.askCustomer === true && c.msg.autoBill === true }), 'both switches are on in this shop');
 ok(await toQuestion(), 'End (cash) asks for the number first');

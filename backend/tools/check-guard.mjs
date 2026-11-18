@@ -32,7 +32,7 @@ ok((after.data.S.products || []).length === P && (after.data.S.sales || []).leng
 // 2. a till just signed in, pushed to save straight away
 const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['--no-sandbox'] });
 const pg = await b.newPage(); await pg.setViewport({ width: 1366, height: 900 });
-const puts = []; pg.on('request', rq => { if (/\/api\/books\/regal$/.test(rq.url()) && rq.method() === 'PUT') { try { const d = JSON.parse(rq.postData()).data.S; puts.push({ p: d.products.length, s: d.sales.length }) } catch (e) {} } });
+const puts = []; pg.on('request', rq => { if (/\/api\/books\/regal$/.test(rq.url()) && rq.method() === 'PUT') { try { const d = JSON.parse(rq.postData()).data.S; puts.push({ p: d.products.length, s: d.sales.length }) } catch (e) { puts.push({ zipped: true }) } } });   // a big save goes gzip-packed (8 Nov 2026): read on the server below
 await pg.setRequestInterception(true); pg.on('request', rq => { if (/:41\d\d/.test(rq.url())) return rq.abort(); rq.continue() });
 await pg.goto(BASE + '/pos', { waitUntil: 'domcontentloaded' });
 await pg.waitForFunction(() => document.getElementById('lockScreen') || document.querySelector('#nav button'), { timeout: 25000 });
@@ -44,10 +44,10 @@ if (await pg.$('#lockScreen')) {
 // the moment the lock screen goes: save, over and over, while the books may still be on their way
 for (let i = 0; i < 20; i++) { await pg.evaluate(() => { try { window.eval('persist')(true) } catch (e) {} }); await wait(100) }
 await wait(4000);
-ok(puts.length > 0 && puts.every(x => x.p === P && x.s >= Sx), `every save that reached the server carried the real books (${puts.length} save${puts.length === 1 ? '' : 's'})`, JSON.stringify(puts.slice(0, 4)));
+ok(puts.length > 0 && puts.every(x => x.zipped || (x.p === P && x.s >= Sx)), `every save that reached the server carried the real books (${puts.length} save${puts.length === 1 ? '' : 's'})`, JSON.stringify(puts.slice(0, 4)));
 // the browser's sign-in as Afridh ended this script's own (one sign-in at a time): sign in again to read
 const l2 = await j(await fetch(BASE + '/api/books/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: 'Afridh', password: 'Afridh123' }) }));
 const end = await j(await fetch(BASE + '/api/books/regal', { headers: { ...H, Authorization: 'Bearer ' + l2.token } }));
-ok((end.data.S.products || []).length === P, 'and the books on the server still have every product', String((end.data.S.products || []).length));
+ok((end.data.S.products || []).length === P && (end.data.S.sales || []).length >= Sx, 'and the books on the server still have every product and bill', `${(end.data.S.products || []).length} products, ${(end.data.S.sales || []).length} bills`);
 console.log(`\n${pass} passed, ${fail} failed`);
 await b.close();

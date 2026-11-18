@@ -2,7 +2,9 @@
 // down it. Checked at the width of a real phone, with touch on.
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
-const BASE = process.env.BASE || (process.env.BASE || 'http://localhost:4000') + '';
+const BASE = process.env.BASE || 'http://localhost:4010';
+// the old shop page, with its drawer: /classic since 8 Nov 2026 (the front page is store.html, checked by check-store-phone)
+const PAGE = process.env.PAGE || '/classic';
 const exe=['C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(p=>fs.existsSync(p));
 const b=await puppeteer.launch({executablePath:exe,headless:true,args:['--no-sandbox']});
 let pass=0,fail=0; const ok=(c,w,x='')=>{c?(pass++,console.log('PASS '+w+(x?'  '+x:''))):(fail++,console.log('FAIL '+w+(x?'  '+x:'')))};
@@ -12,7 +14,7 @@ for(const [label,w,h,mobile] of [['phone',390,844,true],['small phone',360,740,t
   const pg=await b.newPage();
   await pg.setViewport({width:w,height:h,deviceScaleFactor:2,isMobile:mobile,hasTouch:mobile});
   pg.on('pageerror',e=>errs.push(label+': '+e.message));
-  await pg.goto(BASE+'/',{waitUntil:'networkidle2'});
+  await pg.goto(BASE+PAGE,{waitUntil:'networkidle2'});
   await new Promise(r=>setTimeout(r,1300));
   const m=await pg.evaluate(()=>{
     const cs=(s)=>{const el=document.querySelector(s);return el?getComputedStyle(el).display:'(none)'};
@@ -45,7 +47,7 @@ for(const [label,w,h,mobile] of [['phone',390,844,true],['small phone',360,740,t
 const pg=await b.newPage();
 await pg.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
 pg.on('pageerror',e=>errs.push('drawer: '+e.message));
-await pg.goto(BASE+'/',{waitUntil:'networkidle2'});
+await pg.goto(BASE+PAGE,{waitUntil:'networkidle2'});
 await new Promise(r=>setTimeout(r,1200));
 const drawer=await pg.evaluate(async()=>{
   const d=document.querySelector('.mob-nav');

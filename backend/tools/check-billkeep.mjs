@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BASE = process.env.BASE || 'http://localhost:4010';
-const env = Object.fromEntries(fs.readFileSync(path.join(here, '../../server/.env'), 'utf8').split(/\r?\n/).map(l => /^\s*([A-Z_]+)\s*=\s*(.*)$/.exec(l)).filter(Boolean).map(m => [m[1], m[2].replace(/^["']|["']$/g, '')]));
+const env = Object.fromEntries(fs.readFileSync(path.join(here, '../.env'), 'utf8').split(/\r?\n/).map(l => /^\s*([A-Z_]+)\s*=\s*(.*)$/.exec(l)).filter(Boolean).map(m => [m[1], m[2].replace(/^["']|["']$/g, '')]));
 const KEY = env.PRINT_DEVICE_KEY || env.SHIFT_DEVICE_KEY;
 const JPEG = fs.readFileSync(process.argv[2]), MP4 = process.argv[3] ? fs.readFileSync(process.argv[3]) : null;
 let pass = 0, fail = 0; const ok = (c, m, x = '') => { c ? pass++ : fail++; console.log((c ? 'PASS ' : 'FAIL ') + m + (x ? '  ' + x : '')) };
@@ -41,8 +41,12 @@ if (process.env.CLIP_FROM_HELPER) {
   const mine = (jobs.shots || []).filter(s => s.ref === CASH || s.ref === CRED);
   ok(mine.length === 2, 'the helper is asked for both bills\' pictures');
   for (const s of mine) for (let i = 0; i < s.left; i++) await dev('frame', `&ch=${s.ch}&shot=${s.id}`, JPEG, 'image/jpeg');
-  clip = (jobs.clips || []).find(c => c.ref === CRED);
-  ok(!!clip && !(jobs.clips || []).some(c => c.ref === CASH), 'and for a clip of the credit bill only');
+  // clips go out two at a time, oldest first: ones left over from other tests (no helper there to bring them back) come
+  // first, so ask again until this one's turn — every clip handed out on the way is kept (none for the cash bill)
+  const handed = [...(jobs.clips || [])];
+  for (let i = 0; i < 40 && !handed.some(c => c.ref === CRED); i++) handed.push(...((await (await dev('jobs')).json()).clips || []));
+  clip = handed.find(c => c.ref === CRED);
+  ok(!!clip && !handed.some(c => c.ref === CASH), 'and for a clip of the credit bill only');
   ok(clip && Math.abs(new Date(clip.start) - (BILL_AT - 15000)) < 5000 && clip.secs === 30, 'from 15 s before the bill, for 30 s', clip && clip.start);
 }
 const sc = await till('shots/' + CASH);
