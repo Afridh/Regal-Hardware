@@ -506,7 +506,7 @@ function render(){
     m.innerHTML=`<div class="hero"><span class="fl" style="right:18px;top:14px">🧰</span><span class="fl" style="right:70px;bottom:18px;animation-delay:-2s">📦</span><span class="fl" style="right:8px;bottom:56px;animation-delay:-4s;font-size:24px">🔩</span>
       <b>For our suppliers</b><div class="muted">See the orders Regal Hardware sends you, complete them, send your own orders, and ask to be paid — all in one place.</div>
       <div class="feat"><span>📥 Orders</span><span>📷 Invoice photos</span><span>💳 Get paid</span><span>📦 Stock</span></div></div>
-    <div class="card"><h2>Sign in</h2><div class="muted" style="margin-bottom:10px">With the user name and password the shop gave you.</div><button class="btn tape big" id="signin">Sign in</button></div>`;
+    <div class="card"><h2>Sign in</h2><div class="muted" style="margin-bottom:10px">With your mobile number — we text you a code. No mobile on file? Use the user name and password the shop gave you.</div><button class="btn tape big" id="signin">Sign in</button></div>`;
     $('#signin').onclick=()=>signIn(load); return }
   if(!st.me){ nav.style.display='none'; document.body.classList.remove('in'); posterSet({eb:'Regal Hardware',w:'Hello.',band:'Regal Hardware · suppliers'},'wait'); m.innerHTML='<div class="skel" style="height:150px;border-radius:20px"></div><div class="skel"></div><div class="skel"></div>'; return }
   document.body.classList.add('in');
@@ -1127,11 +1127,12 @@ async function dmgAnswer(no,action){
   catch(e){ toast(e.message) }
 }
 function shrink(file){ return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{ const sc=Math.min(1,1600/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc); const g=c.getContext('2d'); g.drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(img.src); res(c.toDataURL('image/jpeg',0.82)) }; img.onerror=rej; img.src=URL.createObjectURL(file) }) }
-/* Signing in: by the user name the shop gave you, or the old way with the mobile on file and a
-   texted code. Forgotten sends a code to the number kept against that sign-in. */
+/* Signing in (18 Nov 2026, the owner asked): the mobile on file and a texted code first; a supplier with no
+   mobile on file uses the user name and password the shop gave them. A device that last signed in by name
+   opens on that. Forgotten sends a code to the number kept against that sign-in. */
 function signIn(then){
   const el=document.createElement('div'); el.className='sheet';
-  let phone=st.phone||'', stage='user', hint='', name='', user=ls.get('user')||'';
+  let phone=st.phone||'', stage=(ls.get('way')==='user'&&ls.get('user'))?'user':'phone', hint='', name='', user=ls.get('user')||'';
   /* asking the shop to open the page: a code to the mobile on file, then the ask */
   let offer=false, askCoded=false, askName='', askNote='';
   const closed=(m)=>/not opened|switched your page off|closed this page/i.test(String(m||''));
@@ -1139,8 +1140,8 @@ function signIn(then){
     const titles={user:'Sign in',phone:'Your mobile',code:'The code we sent',forgot:'Forgotten your password',reset:'A new password',ask:'Ask the shop to open your page',asked:'Asked'};
     el.innerHTML=`<div class="box"><h2 style="margin-bottom:2px">${titles[stage]}</h2>
     <div class="muted" style="margin-bottom:12px">${
-      stage==='user'?'The user name the shop gave you.'
-      :stage==='phone'?'The number the shop has on file for your company.'
+      stage==='user'?'The user name and password the shop gave you.'
+      :stage==='phone'?'The number the shop has on file for your company — we text you a code.'
       :stage==='forgot'?'We will text a code to the number on that sign-in.'
       :stage==='reset'?'The code we texted you, and the password you want from now on.'
       :stage==='ask'?(askCoded?'The code we texted to '+esc(phone)+' — then the shop is asked.':'Your page is not open yet. We text a code to the mobile the shop has for you, then ask the shop to open it. You are texted when it is.')
@@ -1163,8 +1164,8 @@ function signIn(then){
     <div style="display:flex;gap:8px;margin-top:6px">${stage==='asked'?'':'<button class="btn" id="sX">Cancel</button>'}
      <button class="btn tape" id="sGo" style="flex:1">${stage==='user'?'Sign in':stage==='phone'?'Text me a code':stage==='forgot'?'Text me a code':stage==='reset'?'Set it':stage==='ask'?(askCoded?'Send to the shop':'Text me a code'):stage==='asked'?'Close':'Sign in'}</button></div>
     <div class="muted" style="margin-top:10px">${
-      stage==='user'?'<a href="#" id="sForgot">Forgotten your password?</a> · <a href="#" id="sPhoneWay">use my mobile instead</a>'
-      :stage==='phone'?'<a href="#" id="sUserWay">sign in with a user name</a>'
+      stage==='user'?'<a href="#" id="sForgot">Forgotten your password?</a> · <a href="#" id="sPhoneWay">sign in with my mobile instead</a>'
+      :stage==='phone'?'<button class="btn" id="sUserWay" style="width:100%">No mobile on file? Use a user name and password</button>'
       :stage==='code'?'<a href="#" id="sBack">Wrong number?</a>'
       :stage==='asked'?'':'<a href="#" id="sUserWay">back</a>'}</div></div>`;
     const x=$('#sX',el); if(x) x.onclick=()=>el.remove();
@@ -1196,7 +1197,7 @@ function signIn(then){
         user=$('#sUser',el).value.trim(); const password=$('#sPass',el).value;
         if(!user||!password) throw new Error('Your user name and password, please');
         const j=await api('/signin',{method:'POST',body:{user,password}});
-        st.token=j.token; st.rep=j.rep||st.rep; ls.set('token',j.token); ls.set('user',user); ls.set('rep',st.rep);
+        st.token=j.token; st.rep=j.rep||st.rep; ls.set('token',j.token); ls.set('user',user); ls.set('rep',st.rep); ls.set('way','user');
         el.remove(); toast('Welcome, '+(j.rep||j.supplier)); return then&&then();
       }
       if(stage==='forgot'){
@@ -1210,10 +1211,12 @@ function signIn(then){
       if(stage==='phone'){ phone=$('#sPh',el).value.replace(/\D/g,''); if(!/^0\d{9}$/.test(phone)) throw new Error('Enter a mobile like 0771234567');
         const j=await api('/otp',{method:'POST',body:{phone}}); hint=j.sent?'':(j.code||''); if(!j.sent&&!j.code) throw new Error(j.note||'Could not text you — please ring the shop'); name=j.name||''; stage='code'; return draw() }
       const code=$('#sCode',el).value.trim(); if(code.length<6) throw new Error('Enter the 6-digit code');
-      const j=await api('/login',{method:'POST',body:{phone,code}}); if(window.RegalOTP){ RegalOTP.ok('#sCode'); await new Promise(r=>setTimeout(r,650)) } st.token=j.token; st.rep=j.rep||''; ls.set('rep',st.rep); st.phone=phone; ls.set('token',j.token); ls.set('phone',phone); el.remove(); toast('Welcome, '+(st.rep||j.supplier)); if(then) then() }
+      const j=await api('/login',{method:'POST',body:{phone,code}}); if(window.RegalOTP){ RegalOTP.ok('#sCode'); await new Promise(r=>setTimeout(r,650)) } st.token=j.token; st.rep=j.rep||''; ls.set('rep',st.rep); st.phone=phone; ls.set('token',j.token); ls.set('phone',phone); ls.set('way','phone'); el.remove(); toast('Welcome, '+(st.rep||j.supplier)); if(then) then() }
     catch(e){
       // a page not switched on: offer to ask, rather than leave them at a closed door
       if(closed(e.message)&&(stage==='phone'||stage==='user'||stage==='code')){ offer=true; if(stage==='code') stage='phone'; draw(); toast(e.message); return }
+      // a mobile that is not on file: the other way in, said plainly
+      if(stage==='phone'&&/not on file/i.test(e.message)){ toast('That mobile is not on file for your company — sign in with the user name and password the shop gave you, or ask the shop to add the number'); go.disabled=false; const uw=$('#sUserWay',el); if(uw) uw.classList.add('tape'); return }
       toast(e.message); go.disabled=false; if(window.RegalOTP){ if(stage==='code') RegalOTP.fail('#sCode'); else if(stage==='reset') RegalOTP.fail('#sFCode'); else if(stage==='ask'&&askCoded) RegalOTP.fail('#sACode') } } };
   document.body.appendChild(el); draw();
 }
