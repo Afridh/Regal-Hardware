@@ -157,10 +157,23 @@ async function printText(html, printer) {
   try {
     await new Promise((res, no) => {
       const clock = setTimeout(() => { const e = new Error('the printer did not answer'); e.noRetry = true; no(e) }, 60000);   // it may yet print: never send it twice
-      t.w.webContents.print({ ...TEXT_OPTS, silent: true, deviceName: printer }, (ok, why) => { clearTimeout(clock); ok ? res() : no(new Error(why || 'print failed')) });
+      // a "failed" from Windows comes after the job was handed over, and with some drivers it has printed all the same:
+      // it is not drawn and sent again as a picture (the large bill came out twice, 19 Nov 2026)
+      t.w.webContents.print({ ...TEXT_OPTS, silent: true, deviceName: printer }, (ok, why) => { clearTimeout(clock); if (ok) return res(); const e = new Error(why || 'print failed'); e.noRetry = true; no(e) });
     });
     return `printed on ${printer} as text, ${t.pages} page${t.pages === 1 ? '' : 's'}`;
   } finally { t.done(); }
+}
+
+/* The same bill arriving twice within a few seconds is printed once — as the print helper does. A reprint asked for
+   later still prints. */
+const SAME_WITHIN_MS = 30 * 1000, lately = new Map();
+function seenJustNow(format, html) {
+  const now = Date.now();
+  for (const [k, t] of lately) if (now - t > SAME_WITHIN_MS) lately.delete(k);
+  const k = format + ':' + require('crypto').createHash('sha1').update(String(html)).digest('hex');
+  if (lately.has(k)) return true;
+  lately.set(k, now); return false;
 }
 
 let busy = Promise.resolve();                    // one at a time, in order
@@ -207,6 +220,7 @@ async function answer(req) {
     const body = await req.clone().json().catch(() => null);
     if (!body || !body.html || !FMT[body.format]) return json({ ok: false, error: 'format and html needed' }, 400);
     if (!cfg[body.format]) return null;                                  // no printer for this here: on to the counter
+    if (seenJustNow(body.format, body.html)) return json({ ok: true, printer: cfg[body.format], again: false });
     const t0 = Date.now();
     try { await printBill(body.format, body.html); return json({ ok: true, printer: cfg[body.format], ms: Date.now() - t0 }); }
     catch (e) { return json({ ok: false, error: e.message, maybe: !!e.noRetry }, 500); }   // maybe: it may yet print — the till must not send it on

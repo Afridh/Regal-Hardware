@@ -20383,7 +20383,9 @@ function askSize(inv){
     });
   };
 
+  let went=false;   // a double-click or double tap on a tile, or a click with Enter, chose once — the large bill printed twice
   const go=(k)=>{
+    if(went) return; went=true;
     const chosen=validKeys.includes(k)?k:cur;
     if(chosen!=='none'&&m.querySelector('#szRemember').checked) CFG.done[kind==='CREDIT'?'creditDefault':'cashDefault']=chosen;
     if(chosen!=='none') S.pos.lastBill=chosen; stop(); m.remove(); printAnim(inv,chosen);
@@ -20447,7 +20449,7 @@ function askSize(inv){
    for the shop's file. "No print" picked on the bill is still no print. */
 const creditPrints=inv=>creditBill(inv)&&!(inv&&inv.proof)&&CFG.done.creditPrint!==false;
 function printCreditCopies(inv){ const n=Math.max(1,Math.min(3,+CFG.done.creditCopies||1));
-  for(let i=1;i<n;i++) setTimeout(()=>printBill({...inv,reprint:true},'a5'),1500*i) }
+  for(let i=1;i<n;i++) setTimeout(()=>printBill({...inv,reprint:true,copyNo:i},'a5'),1500*i) }
 function printAnim(inv,k){
   if(k==='r80') k=billPaper(inv,k);
   if(k==='none'){ toast(`${inv.no} saved — not printed. It can be printed later from Sales.`,'ok'); return }
@@ -28237,8 +28239,19 @@ function sampleInvoice(){
    which the 80mm roll has no room for (the shop's rule, 1 Nov 2026). A test print is left as asked. */
 const creditBill=inv=>!!inv&&(inv.type==='CREDIT'||(inv.pays||[]).some(p=>p.method==='CREDIT')||+inv.balance>0.005);
 const billPaper=(inv,f)=>f==='r80'&&!(inv&&inv.proof)&&creditBill(inv)?'a5':f;
+/* The same bill sent to the same printer twice within a few seconds is sent once (19 Nov 2026: the large bill
+   came out twice, the two straight after each other). A copy asked for (the credit COPY) is its own, and a
+   reprint pressed again after a moment still prints. */
+const BILL_SENT_WITHIN_MS=8000;
+const billSentLately=new Map();
 function printBill(inv,f='a5'){
   f=billPaper(inv,f);
+  if(inv&&inv.no&&!inv.proof){
+    const k=[inv.no,f,inv.reprint?'re':'',inv.copyNo||''].join('|'), now=Date.now();
+    for(const [x,t] of billSentLately) if(now-t>BILL_SENT_WITHIN_MS) billSentLately.delete(x);
+    if(billSentLately.has(k)){ toast(`${inv.no} is already on its way to the printer — not sent twice`,'warn'); return }
+    billSentLately.set(k,now);
+  }
   /* the helper on this machine, the shop's queue, then the browser — the order the shop chose */
   printPaper(billDocument(inv,f),f,inv.no,(why)=>printHere(inv,f,why));
 }
