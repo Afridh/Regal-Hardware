@@ -106,7 +106,12 @@ export function makeMySQL(url) {
     host: u.hostname, port: +u.port || 3306,
     user: decodeURIComponent(u.username), password: decodeURIComponent(u.password),
     database: decodeURIComponent(u.pathname.replace(/^\//, '')),
-    waitForConnections: true, connectionLimit: process.env.VERCEL ? 3 : 10,
+    /* cPanel allows each MySQL user only a few connections at once (max_user_connections), and the host may run
+       more than one copy of this app — each with its own pool. Ten each, kept open for ever, went over it and the
+       till showed "User … has exceeded the 'max_user_connections' resource" (19 Nov 2026). So: few, and an idle
+       one is closed after a while. DB_POOL in cPanel's environment variables sets the number. */
+    waitForConnections: true, connectionLimit: process.env.VERCEL ? 3 : Math.max(1, Math.min(20, +process.env.DB_POOL || 4)),
+    maxIdle: 1, idleTimeout: 20000,
     // match what `pg` handed back, so no caller sees a different shape
     decimalNumbers: true,          // NUMERIC as a number, as the pg type parser did
     supportBigNumbers: true, bigNumberStrings: false,
@@ -121,6 +126,22 @@ export function makeMySQL(url) {
   // written are the ones this driver reads back (timezone 'Z' above) — on a server set to local time
   // they would otherwise come back hours out.
   pool.pool.on('connection', c => c.query("SET SESSION sql_mode = CONCAT(@@sql_mode, ',PIPES_AS_CONCAT'), time_zone = '+00:00'"));
+
+  /* Over the host's limit for a moment (another copy of the app holding its connections, a backup running):
+     the connection is refused before anything is done, so waiting a little and asking again is safe, and the
+     till carries on instead of showing the error. */
+  const FULL = [1226, 1040];                      // ER_USER_LIMIT_REACHED, ER_CON_COUNT_ERROR
+  const full = (e) => e && (FULL.includes(e.errno) || /max_user_connections|Too many connections/i.test(e.message || ''));
+  const nap = (ms) => new Promise(r => setTimeout(r, ms));
+  async function whenRoom(fn) {
+    for (let i = 0; ; i++) {
+      try { return await fn(); }
+      catch (e) { if (!full(e) || i >= 6) throw e; await nap(Math.min(4000, 200 * 2 ** i) + Math.random() * 150); }
+    }
+  }
+  const getConn = pool.getConnection.bind(pool), poolQuery = pool.query.bind(pool);
+  pool.getConnection = () => whenRoom(getConn);
+  pool.query = (...a) => whenRoom(() => poolQuery(...a));
 
   async function run(conn, text, params) {
     // a string holding several statements (the table set-ups) runs them one after another
