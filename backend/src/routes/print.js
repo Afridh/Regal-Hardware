@@ -169,13 +169,16 @@ r.get('/queue', regalAuth, asyncHandler(async (_req, res) => {
 /* Send one back to the printer. The bill itself was kept with the job, so this is the same
    paper again and not a bill rebuilt from what the books say now — which matters, because a
    bill that was corrected afterwards must reprint as it was, not as it has become. */
+/* Sent again as a new job (21 Nov 2026): the helper prints each job once, so the same job handed out a second
+   time — after a lost "done" — no longer prints twice; a reprint asked for here is a new job and does print. */
 r.post('/:id/again', regalAuth, asyncHandler(async (req, res) => {
   await ensureTable();
-  const { rows: [j] } = await query(`SELECT id, no FROM print_jobs WHERE id = $1`, [+req.params.id]);
+  const { rows: [j] } = await query(`SELECT id, format, no, copies, html, from_till FROM print_jobs WHERE id = $1`, [+req.params.id]);
   if (!j) throw new HttpError(404, 'That print job is no longer on the list');
-  await query(`UPDATE print_jobs SET status = 'waiting', taken_at = NULL, done_at = NULL, error = NULL
-               WHERE id = $1`, [+req.params.id]);
-  res.json({ ok: true, no: j.no });
+  const { rows: [row] } = await query(
+    `INSERT INTO print_jobs (format, no, copies, html, by_user, from_till) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [j.format, j.no, j.copies, j.html, req.regalUser.name, j.from_till]);
+  res.json({ ok: true, no: j.no, id: Number(row.id) });
 }));
 
 /* Take one off the list. For a job nobody wants any more — a duplicate, or one queued at a

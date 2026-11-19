@@ -209,7 +209,7 @@ async function answer(req) {
     if (!cfg[body.format]) return null;                                  // no printer for this here: on to the counter
     const t0 = Date.now();
     try { await printBill(body.format, body.html); return json({ ok: true, printer: cfg[body.format], ms: Date.now() - t0 }); }
-    catch (e) { return json({ ok: false, error: e.message }, 500); }
+    catch (e) { return json({ ok: false, error: e.message, maybe: !!e.noRetry }, 500); }   // maybe: it may yet print — the till must not send it on
   }
   if (u.pathname === '/label') {
     const body = await req.clone().json().catch(() => null);

@@ -39,6 +39,16 @@ function seenJustNow(format, html) {
   if (lately.has(k)) return true;
   lately.set(k, now); return false;
 }
+/* Queue jobs already printed here, by their number on the server. Should the "done" for one be lost, the server
+   hands it out again after 90 seconds — too late for the check above — and the bill printed twice. A job is
+   printed here once; "Send again" from Printing makes a new job, so that still prints. */
+const printedJobs = new Map();
+const PRINTED_KEEP_MS = 6 * 60 * 60 * 1000;
+function printedBefore(id) {
+  const now = Date.now();
+  for (const [k, t] of printedJobs) if (now - t > PRINTED_KEEP_MS) printedJobs.delete(k);
+  return printedJobs.has(id);
+}
 
 let browser = null;
 /* One page per format, kept open between bills, with what was in it last time. */
@@ -214,6 +224,11 @@ async function takeJobs() {
         log('queue job', job.id, '→ labels on', printer);
         return true;
       }
+      if (printedBefore(job.id)) {
+        await say(job.id, { ok: true, printer: cfg[job.format] ? cfg[job.format].printer : '' });
+        log('queue job', job.id, job.no || '', 'NOT printed again — it was printed here already (the server had not heard)');
+        return true;
+      }
       if (seenJustNow(job.format, job.html)) {
         await say(job.id, { ok: true, printer: cfg[job.format].printer });
         log('queue job', job.id, job.no || '', 'NOT printed again — the same bill was printed seconds ago');
@@ -227,6 +242,7 @@ async function takeJobs() {
       });
       busy = run.catch(() => {});
       await run;
+      printedJobs.set(job.id, Date.now());
       await say(job.id, { ok: true, printer: cfg[job.format].printer });
       log('queue job', job.id, '→ printed on', cfg[job.format].printer,
         `· drew it in ${tDraw}ms, the printer took ${Date.now() - t0 - tDraw}ms`);
@@ -241,8 +257,19 @@ async function takeJobs() {
     return 'err';
   }
 }
-const say = (id, body) => fetch(`${SERVER}/api/print/${id}/done?key=${encodeURIComponent(KEY)}`,
-  { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+/* Telling the server how a job went. Tried a few times: a "done" that is lost leaves the job looking unfinished,
+   and the server hands it out again. */
+async function say(id, body) {
+  for (let i = 0; i < 4; i++) {
+    try {
+      const r = await fetch(`${SERVER}/api/print/${id}/done?key=${encodeURIComponent(KEY)}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (r.ok) return;
+    } catch { /* tried again below */ }
+    await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+  }
+  log('queue job', id, '— could not tell the server it is done; it will not be printed twice here');
+}
 
 const HEADERS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Private-Network': 'true', 'Content-Type': 'application/json' };
 const send = (res, code, body) => { res.writeHead(code, HEADERS); res.end(JSON.stringify(body)); };

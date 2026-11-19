@@ -28129,6 +28129,11 @@ async function agentPrintHtml(html,no,f){
     const r=await fetch(url+'/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({format:f,no:no||'',html})});
     const j=await r.json().catch(()=>({}));
     if(r.ok&&j.ok){ toast(`${no||'It'} printed on ${j.printer}`); return true }
+    /* Regal POS stopped waiting on the printer (a Canon waking up can take over a minute), but the job is already with
+       Windows and still comes out. It used to go on to the shop's queue as well, and the large bill printed twice. */
+    if(j.maybe||/did not answer/i.test(j.error||'')){
+      toast(`${no||'The bill'} is with the printer, which is slow to answer — it may take a moment. If nothing comes out, print it again from Sales.`,'warn');
+      return true }
     toast('Print helper could not print: '+(j.error||r.status)+' — using the browser instead'); return false;
   }catch(e){ return false }   // helper not running: the browser prints
 }
