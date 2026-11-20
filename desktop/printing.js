@@ -251,7 +251,8 @@ const TEST_LABEL = '^XA^CI28^PW800^LL200^FO30,30^A0N,40,40^FDRegal POS - label t
 
 let pw = null;
 function openPrintersWindow(parent) {
-  if (pw && !pw.isDestroyed()) { pw.focus(); return; }
+  // already open: brought back to the front — a minimised one only took focus, and the key seemed to do nothing
+  if (pw && !pw.isDestroyed()) { if (pw.isMinimized()) pw.restore(); pw.show(); pw.moveTop(); pw.focus(); return; }
   pw = new BrowserWindow({ parent, width: 620, height: 520, resizable: false, minimizable: false, title: 'Regal POS — Printers', autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'printers-preload.js'), contextIsolation: true } });
   pw.loadFile(path.join(__dirname, 'printers.html'));

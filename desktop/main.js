@@ -102,6 +102,13 @@ function open() {
   win.on('page-title-updated', (e, title) => { e.preventDefault(); if (String(title).startsWith('RPOS|')) { pageStatus = String(title).slice(5); setTitle(); } });
   setTitle();
 
+  // Ctrl+Shift+P from a window the till opened (a bill to print, a label sheet) as well: the key did nothing there
+  win.webContents.on('did-create-window', (child) => {
+    child.webContents.on('before-input-event', (e, i) => {
+      if (i.type === 'keyDown' && i.control && i.shift && String(i.key).toLowerCase() === 'p') { e.preventDefault(); printing.openPrintersWindow(win); }
+    });
+  });
+
   // keys a browser menu would have given
   win.webContents.on('before-input-event', (e, i) => {
     if (i.type !== 'keyDown') return;
@@ -149,6 +156,11 @@ app.whenReady().then(() => {
   ipcMain.handle('printers:list', () => printing.detect());
   ipcMain.handle('printers:choose', (e, kind, name) => printing.choose(kind, name));
   ipcMain.handle('printers:a5text', (e, on) => printing.setA5Text(on));
+  // the till's Menu → Printers: only the shop's own pages may open it
+  ipcMain.handle('app:openPrinters', (e) => {
+    if (!String(e.senderFrame && e.senderFrame.url || '').startsWith(SHOP)) return false;
+    printing.openPrintersWindow(win); return true;
+  });
   ipcMain.handle('printers:test', async (e, kind) => {
     const c = printing.config();
     try {
