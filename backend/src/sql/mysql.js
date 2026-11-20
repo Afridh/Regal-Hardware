@@ -100,48 +100,87 @@ function splitArgs(s) {
 /** Tables whose own key is not called id. */
 const KEY_OF = { books: 'key', settings: 'key', sms_settings: 'id', wa_status: 'id', print_helper: 'key' };
 
-export function makeMySQL(url) {
+/* The MySQL users to connect as: the one in the address, and any more the shop has made in cPanel (DB_MORE_USERS,
+   "user:password,user:password"). The host allows each user only so many connections at once — on regalhw.lk ONE
+   (20 Nov 2026: "User 'regalhwl_app' has exceeded the 'max_user_connections' resource (current value: 1)") — so
+   with one user every till, the shop and the e-bill pages took turns on a single connection. Each extra user,
+   with the same rights on the same database, is another connection to share the work. */
+function usersOf(url) {
   const u = new URL(url);
-  const pool = mysql.createPool({
-    host: u.hostname, port: +u.port || 3306,
-    user: decodeURIComponent(u.username), password: decodeURIComponent(u.password),
-    database: decodeURIComponent(u.pathname.replace(/^\//, '')),
-    /* cPanel allows each MySQL user only a few connections at once (max_user_connections), and the host may run
-       more than one copy of this app — each with its own pool. Ten each, kept open for ever, went over it and the
-       till showed "User … has exceeded the 'max_user_connections' resource" (19 Nov 2026). So: few, and an idle
-       one is closed after a while. DB_POOL in cPanel's environment variables sets the number. */
-    waitForConnections: true, connectionLimit: process.env.VERCEL ? 3 : Math.max(1, Math.min(20, +process.env.DB_POOL || 4)),
-    maxIdle: 1, idleTimeout: 20000,
-    // match what `pg` handed back, so no caller sees a different shape
-    decimalNumbers: true,          // NUMERIC as a number, as the pg type parser did
-    supportBigNumbers: true, bigNumberStrings: false,
-    dateStrings: ['DATE'],         // DATE as 'YYYY-MM-DD'; DATETIME stays a Date
-    charset: 'utf8mb4_general_ci',
-    multipleStatements: false,
-    timezone: 'Z',
-    typeCast,
+  const base = { host: u.hostname, port: +u.port || 3306, database: decodeURIComponent(u.pathname.replace(/^\//, '')) };
+  const all = [{ ...base, user: decodeURIComponent(u.username), password: decodeURIComponent(u.password) }];
+  for (const one of String(process.env.DB_MORE_USERS || '').split(/[,\n]/).map(x => x.trim()).filter(Boolean)) {
+    const i = one.indexOf(':'); if (i < 1) continue;
+    const user = one.slice(0, i).trim(), password = one.slice(i + 1);
+    if (!all.some(x => x.user === user)) all.push({ ...base, user, password });
+  }
+  return all;
+}
+
+export function makeMySQL(url) {
+  const users = usersOf(url), many = users.length > 1;
+  /* How many connections each user may have from this copy of the app (DB_POOL), and how long an idle one is kept.
+     With a host that allows one a user, an idle connection kept open is a user nobody else can have: let it go soon. */
+  const each = process.env.VERCEL ? 3 : Math.max(1, Math.min(20, +process.env.DB_POOL || (many ? 1 : 4)));
+  const idleMs = Math.max(500, +process.env.DB_IDLE_MS || (many || each === 1 ? 2000 : 20000));
+  const pools = users.map(who => {
+    const p = mysql.createPool({
+      ...who,
+      waitForConnections: true, connectionLimit: each,
+      maxIdle: 1, idleTimeout: idleMs,
+      // match what `pg` handed back, so no caller sees a different shape
+      decimalNumbers: true,          // NUMERIC as a number, as the pg type parser did
+      supportBigNumbers: true, bigNumberStrings: false,
+      dateStrings: ['DATE'],         // DATE as 'YYYY-MM-DD'; DATETIME stays a Date
+      charset: 'utf8mb4_general_ci',
+      multipleStatements: false,
+      timezone: 'Z',
+      typeCast,
+    });
+    // `a || b` joins text in PostgreSQL and means OR in MySQL unless it is told otherwise. And the clock is
+    // UTC, as the hosted PostgreSQL's is: now() and CURRENT_DATE mean the same on both, and the DATETIMEs
+    // written are the ones this driver reads back (timezone 'Z' above) — on a server set to local time
+    // they would otherwise come back hours out.
+    p.pool.on('connection', c => c.query("SET SESSION sql_mode = CONCAT(@@sql_mode, ',PIPES_AS_CONCAT'), time_zone = '+00:00'"));
+    return p;
   });
-  // `a || b` joins text in PostgreSQL and means OR in MySQL unless it is told otherwise. And the clock is
-  // UTC, as the hosted PostgreSQL's is: now() and CURRENT_DATE mean the same on both, and the DATETIMEs
-  // written are the ones this driver reads back (timezone 'Z' above) — on a server set to local time
-  // they would otherwise come back hours out.
-  pool.pool.on('connection', c => c.query("SET SESSION sql_mode = CONCAT(@@sql_mode, ',PIPES_AS_CONCAT'), time_zone = '+00:00'"));
 
   /* Over the host's limit for a moment (another copy of the app holding its connections, a backup running):
-     the connection is refused before anything is done, so waiting a little and asking again is safe, and the
-     till carries on instead of showing the error. */
+     the connection is refused before anything is done, so asking the next user, or waiting a little and asking
+     again, is safe, and the till carries on instead of showing the error. */
   const FULL = [1226, 1040];                      // ER_USER_LIMIT_REACHED, ER_CON_COUNT_ERROR
   const full = (e) => e && (FULL.includes(e.errno) || /max_user_connections|Too many connections/i.test(e.message || ''));
   const nap = (ms) => new Promise(r => setTimeout(r, ms));
-  async function whenRoom(fn) {
+  // a user this copy of the app has a free (or not yet opened) connection for
+  const room = (p) => { const c = p.pool; return (c._freeConnections ? c._freeConnections.length : 0) > 0 || (c._allConnections ? c._allConnections.length : 0) < each; };
+  let turn = 0;
+  async function getConnection() {
+    let lastErr = null;
     for (let i = 0; ; i++) {
-      try { return await fn(); }
-      catch (e) { if (!full(e) || i >= 6) throw e; await nap(Math.min(4000, 200 * 2 ** i) + Math.random() * 150); }
+      // the users with room first, from a different one each time so the work is spread
+      const start = turn++ % pools.length;
+      const order = pools.map((_, k) => pools[(start + k) % pools.length]);
+      const free = order.filter(room);
+      for (const p of free) {
+        try { return await p.getConnection(); }
+        catch (e) { if (!full(e)) throw e; lastErr = e; }   // that user is full elsewhere: the next one
+      }
+      if (!free.length) {
+        // every user busy in this copy: wait for the first to come free (the pool hands it over in turn)
+        try { return await order[0].getConnection(); }
+        catch (e) { if (!full(e)) throw e; lastErr = e; }
+      }
+      if (i >= 6) throw lastErr;
+      await nap(Math.min(4000, 200 * 2 ** i) + Math.random() * 150);
     }
   }
-  const getConn = pool.getConnection.bind(pool), poolQuery = pool.query.bind(pool);
-  pool.getConnection = () => whenRoom(getConn);
-  pool.query = (...a) => whenRoom(() => poolQuery(...a));
+  const pool = {
+    getConnection,
+    async query(sql, params) { const c = await getConnection(); try { return await c.query(sql, params); } finally { c.release(); } },
+    async end() { await Promise.all(pools.map(p => p.end().catch(() => {}))); },
+    users: users.length,
+  };
+  if (many) console.log(`MySQL: ${users.length} users to share the work, ${each} connection${each === 1 ? '' : 's'} each`);
 
   async function run(conn, text, params) {
     // a string holding several statements (the table set-ups) runs them one after another
