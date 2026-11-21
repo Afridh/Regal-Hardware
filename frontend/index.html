@@ -26448,6 +26448,54 @@ function custAge(id){ const v=custAggMap().get(id); return v?{now:v.now,mid:v.mi
 /* the four ages an unpaid bill can be in, in the order they are read */
 const AGE_BANDS=[['now','Up to 30 days','g'],['mid','31 – 60 days','y'],['late','61 – 90 days','r'],['vold','Over 90 days','r']];
 const custLastSeen=(id)=>{ const v=custAggMap().get(id); return v?v.seen:null };
+/* ---- the outstanding summary: everyone who owes (customers) or is owed (suppliers), one A4 landscape sheet ----
+   The balance is the ledger's, as on the list; the age columns split the unpaid bills by how old they
+   are. Whatever of the balance is not on a bill (a previous balance, a credit note) shows as "Other". */
+function outstandingPrint(kind){
+  const isC=kind==='C', E=s=>escM(String(s==null?'':s));
+  const who=isC?S.customers.filter(x=>x.id!==1&&x.active!==false):S.suppliers.filter(x=>x.active!==false);
+  const bands=isC?[['now','0 – 30'],['mid','31 – 60'],['late','61 – 90'],['vold','Over 90']]:[['now','0 – 30'],['mid','31 – 60'],['old','Over 60']];
+  const lastPay=id=>{ const l=S.payments.filter(p=>isC?(p.dir==='IN'&&p.customerId===id):(!p.dir&&p.supplierId===id)); let b=null; for(const p of l) if(!b||p.date>=b.date) b=p; return b };
+  const rows=who.map(x=>{ const bal=partyBal(kind,x.id); if(!(bal>0.005)) return null;
+      const ag=isC?custAge(x.id):supAge(x.id), onBills=bands.reduce((a,b)=>a+(+ag[b[0]]||0),0);
+      return {x,bal,ag,other:+(bal-onBills).toFixed(2),lp:lastPay(x.id)} }).filter(Boolean)
+    .sort((a,b)=>b.bal-a.bal);
+  if(!rows.length) return toast(isC?'No customer owes anything':'Nothing is owed to any supplier');
+  const tot=rows.reduce((a,r)=>a+r.bal,0), bt=bands.map(b=>rows.reduce((a,r)=>a+(+r.ag[b[0]]||0),0)), ot=rows.reduce((a,r)=>a+r.other,0);
+  const showOther=rows.some(r=>Math.abs(r.other)>0.5), n2=v=>Math.abs(v)<0.005?'':money2(v);
+  const nOver=isC?rows.filter(r=>r.x.limit>0&&r.bal>r.x.limit).length:0;
+  const shop=(CFG.shop&&CFG.shop.name)||'Regal Hardware', title=isC?'Customer outstanding':'Supplier outstanding';
+  const w=window.open('','_blank','width=1100,height=760'); if(!w) return toast('Allow pop-ups to print');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${E(title)} · ${E(D(today))}</title><style>
+   @page{size:A4 landscape;margin:9mm 10mm}
+   *{box-sizing:border-box}body{font:11px/1.35 Arial,sans-serif;color:#111;margin:0;padding:12px}
+   .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:8px}
+   h1{font-size:19px;margin:0}h2{font-size:16px;margin:0}.mu{color:#555}
+   .sum{display:flex;gap:8px;margin-bottom:8px}.sum div{flex:1;border:1px solid #999;border-radius:4px;padding:5px 8px}
+   .sum i{display:block;font-style:normal;font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.04em}.sum b{font-size:14px}
+   .sum .big{border:2px solid #111}.sum .big b{font-size:17px}
+   table{width:100%;border-collapse:collapse}thead{display:table-header-group}tr{page-break-inside:avoid}
+   th,td{border:1px solid #aaa;padding:3px 5px;text-align:left;vertical-align:top}th{background:#eee;font-size:10px}
+   .n{text-align:right;white-space:nowrap}.r{color:#a00}tfoot td{font-weight:bold;background:#f3f3f3;border-top:2px solid #111}
+   tbody tr:nth-child(even) td{background:#fafafa}.ov{font-size:9px;color:#a00;font-weight:bold}
+   @media print{body{padding:0}}</style></head><body>
+   <div class="hd"><div><h1>${E(shop)}</h1><div class="mu">${E((CFG.shop&&[CFG.shop.addr,CFG.shop.phone].filter(Boolean).join(' · '))||'')}</div></div>
+    <div style="text-align:right"><h2>${E(title)} — summary</h2><div class="mu">As at ${E(D(today))} · printed ${E(new Date().toLocaleString('en-GB'))} by ${E((S.user&&S.user.name)||'')}</div></div></div>
+   <div class="sum"><div class="big"><i>Total outstanding</i><b>${fmt(tot)}</b></div>
+    <div><i>${isC?'Customers owing':'Suppliers owed'}</i><b>${rows.length}</b></div>
+    ${bands.map((b,i)=>`<div><i>${b[1]} days</i><b class="${i>=2?'r':''}">${fmt(bt[i])}</b></div>`).join('')}
+    ${isC?`<div><i>Over credit limit</i><b class="${nOver?'r':''}">${nOver}</b></div>`:''}</div>
+   <table><thead><tr><th class="n">#</th><th>Code</th><th>${isC?'Customer':'Supplier'}</th><th>Mobile</th><th class="n">Bills</th><th class="n">Oldest</th>
+    ${bands.map(b=>`<th class="n">${b[1]}</th>`).join('')}${showOther?'<th class="n" title="Previous balance, credit notes and the like">Other</th>':''}
+    ${isC?'<th class="n">Limit</th>':''}<th>Last payment</th><th class="n">Outstanding</th></tr></thead>
+   <tbody>${rows.map((r,i)=>`<tr><td class="n">${i+1}</td><td>${E(r.x.code||'')}</td><td><b>${E(r.x.name)}</b>${isC&&r.x.limit>0&&r.bal>r.x.limit?' <span class="ov">OVER LIMIT</span>':''}</td>
+     <td>${E(r.x.phone||'')}</td><td class="n">${r.ag.n||r.ag.count||''}</td><td class="n">${r.ag.oldest?r.ag.oldest+'d':''}</td>
+     ${bands.map((b,j)=>`<td class="n ${j>=2&&r.ag[b[0]]>0?'r':''}">${n2(+r.ag[b[0]]||0)}</td>`).join('')}${showOther?`<td class="n">${n2(r.other)}</td>`:''}
+     ${isC?`<td class="n">${r.x.limit>0?money2(r.x.limit):''}</td>`:''}<td>${r.lp?E(r.lp.date)+' · '+money2(r.lp.amount!=null?r.lp.amount:r.lp.total):'—'}</td><td class="n"><b>${money2(r.bal)}</b></td></tr>`).join('')}</tbody>
+   <tfoot><tr><td colspan="6">Total · ${rows.length} ${isC?'customer':'supplier'}${rows.length===1?'':'s'}</td>${bt.map(v=>`<td class="n">${money2(v)}</td>`).join('')}${showOther?`<td class="n">${money2(ot)}</td>`:''}${isC?'<td></td>':''}<td></td><td class="n">${money2(tot)}</td></tr></tfoot></table>
+   <script>window.onload=()=>{window.print()}<\/script></body></html>`);
+  w.document.close();
+}
 function custMatch(c,q){
   if(!q) return true;
   const v=q.toLowerCase().trim(), digits=v.replace(/\D/g,'');
@@ -26598,7 +26646,7 @@ function customers(){
   const totOwed=all.reduce((a,x)=>a+Math.max(0,partyBal('C',x.id)),0);
   const nOver=all.filter(x=>partyBal('C',x.id)>x.limit).length, nLate=all.filter(x=>custAge(x.id).old>0).length;
   return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Customers
-    <span style="display:flex;gap:6px"><button class="btn ghost" data-act="custPageLink" title="One link for every customer — copy it, send it on WhatsApp, or print the QR poster">Customer page link</button><button class="btn ghost" data-act="cuLoginsAll" data-kind="C" title="Every customer gets a user name and a password of their own">Sign-ins for everyone</button>
+    <span style="display:flex;gap:6px"><button class="btn ghost" data-act="outPrint" data-kind="C" title="Everyone who owes, with the age of what they owe — one A4 landscape sheet">🖨 Print outstanding</button><button class="btn ghost" data-act="custPageLink" title="One link for every customer — copy it, send it on WhatsApp, or print the QR poster">Customer page link</button><button class="btn ghost" data-act="cuLoginsAll" data-kind="C" title="Every customer gets a user name and a password of their own">Sign-ins for everyone</button>
      <button class="btn tape" data-act="custNew">+ New customer <i class="kbd">Ctrl+N</i></button></span></h1>
   <div class="cu-wrap">
    <div class="card cu-list pt-list no-invert">
@@ -30285,7 +30333,7 @@ function suppliers(){
   const nLate=all.filter(x=>supAge(x.id).old>0).length;
   const compact=v=>v>=1e6?'Rs '+(v/1e6).toFixed(2)+'M':v>=1e5?'Rs '+Math.round(v/1e3)+'k':fmt(v);
   return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">Suppliers
-    <span style="display:flex;gap:6px"><button class="btn ghost" data-act="cuLoginsAll" data-kind="S" title="Every supplier gets a user name and a password of their own">Sign-ins for everyone</button>
+    <span style="display:flex;gap:6px"><button class="btn ghost" data-act="outPrint" data-kind="S" title="Every supplier the shop owes, with the age of the bills — one A4 landscape sheet">🖨 Print outstanding</button><button class="btn ghost" data-act="cuLoginsAll" data-kind="S" title="Every supplier gets a user name and a password of their own">Sign-ins for everyone</button>
      <button class="btn tape" data-act="supNew">+ New supplier <i class="kbd">Ctrl+N</i></button></span></h1>
   <div class="cu-wrap">
    <div class="card cu-list pt-list no-invert">
@@ -36809,6 +36857,7 @@ document.addEventListener('click',e=>{
       portalInvite(kind,kind==='S'?SU(id):C(id),true) },
     cuLoginsAgain:()=>{ custLogins={cid:0,kind:'C',list:null,busy:false,failed:''}; render() },
     cuLoginsAll:()=>custLoginsAll(a.dataset.kind||'C'),
+    outPrint:()=>outstandingPrint(a.dataset.kind==='S'?'S':'C'),
     custPageLink:()=>custPageLink(),
     csTick:()=>{ const i=+a.dataset.i, l=S.pos.lines[i]; if(!l) return;
       l.checked=!(l.checked===true); render(); },
