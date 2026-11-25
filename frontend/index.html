@@ -13772,7 +13772,7 @@ function portalDamage(s){
 }
 function portalAccount(s){
   if(!s.showAccounts) return '<div class="card muted">The shop has not switched on account details for your login. You can still send orders and see their answers.</div>';
-  const pur=S.purchases.filter(p=>p.supplierId===s.id).sort((a,b)=>b.date.localeCompare(a.date));
+  const pur=S.purchases.filter(p=>p.supplierId===s.id&&!purOff(p)).sort((a,b)=>b.date.localeCompare(a.date));
   const pay=S.payments.filter(p=>!p.dir&&p.supplierId===s.id).reverse().sort((a,b)=>b.date.localeCompare(a.date));   // the same day: the one taken last first
   const chq=S.cheques.filter(c=>c.dir==='ISSUED'&&c.party===s.name);
   const due=chq.filter(c=>['ISSUED','PRINTED'].includes(c.status)).sort((a,b)=>a.date.localeCompare(b.date));
@@ -30299,7 +30299,13 @@ function supLedger(id){
   for(const j of S.journal){ let dr=0,cr=0; for(const l of j.lines) if(l.ac==='2100'&&l.party&&l.party.type==='S'&&l.party.id===id){dr+=l.dr;cr+=l.cr}
     if(dr||cr) rows.push({date:j.date,desc:j.desc,ref:j.ref,billed:cr,paid:dr,no:j.no}) }
   rows.sort((a,b)=>a.date.localeCompare(b.date)||a.no.localeCompare(b.no));
-  let run=0; for(const r of rows){ run=+(run+r.billed-r.paid).toFixed(2); r.run=run }
+  let run=0;
+  // history cleared: what came before is one line, or none when it came to nothing
+  const cl=clrLedger();
+  if(cl.set.size){ const keep=[]; let o=0; for(const r of rows) cl.set.has(r.no+'|'+(r.ref||''))?(o+=r.billed-r.paid):keep.push(r);
+    o=+o.toFixed(2); rows.length=0; if(Math.abs(o)>0.004) rows.push({date:keep.length&&keep[0].date<cl.at?keep[0].date:cl.at,desc:'Balance brought forward',ref:'',billed:Math.max(0,o),paid:Math.max(0,-o),no:''});
+    rows.push(...keep) }
+  for(const r of rows){ run=+(run+r.billed-r.paid).toFixed(2); r.run=run }
   return rows;
 }
 function supAge(id){
@@ -30307,7 +30313,7 @@ function supAge(id){
   S.purchases.filter(p=>p.supplierId===id&&p.paid<p.total).forEach(p=>{ const d=daysAgo(p.date); if(d>a.oldest) a.oldest=d });
   return a;
 }
-const supLastSeen=(id)=>{ const b=S.purchases.filter(p=>p.supplierId===id).map(p=>p.date), p=S.payments.filter(x=>!x.dir&&x.supplierId===id).map(x=>x.date); return [...b,...p].sort().pop()||null };
+const supLastSeen=(id)=>{ const b=S.purchases.filter(p=>p.supplierId===id&&!purOff(p)).map(p=>p.date), p=S.payments.filter(x=>!x.dir&&x.supplierId===id).map(x=>x.date); return [...b,...p].sort().pop()||null };
 const supChequesOut=(s)=>S.cheques.filter(c=>c.dir==='ISSUED'&&c.party===s.name&&['ISSUED','PRINTED'].includes(c.status));
 function supList(){
   let list=S.suppliers.filter(x=>(supFilter==='inactive'?x.active===false:x.active!==false)&&custMatch(x,supQ));
@@ -30450,7 +30456,7 @@ function supPlAfter(){
 }
 
 function supplierPanel(s){
-  const pur=S.purchases.filter(p=>p.supplierId===s.id&&!isBF(p)).sort((a,b)=>b.date.localeCompare(a.date)||b.no.localeCompare(a.no));
+  const pur=S.purchases.filter(p=>p.supplierId===s.id&&!isBF(p)&&!purOff(p)).sort((a,b)=>b.date.localeCompare(a.date)||b.no.localeCompare(a.no));
   const open=pur.filter(p=>p.total-p.paid>0.005);
   const pay=S.payments.filter(p=>!p.dir&&p.supplierId===s.id).reverse().sort((a,b)=>b.date.localeCompare(a.date));   // the same day: the one taken last first
   const chq=S.cheques.filter(c=>c.dir==='ISSUED'&&c.party===s.name);
@@ -33795,25 +33801,38 @@ function chqBooksAfter(){
    figures can be put in by hand (Suppliers → Previous balance; Cheques out → A cheque given before). Customers, their
    bills, the stock, sales and profit are not touched. Each balance is closed against 3100 Opening balances, the same
    account the hand-put-in figures use, so the books stay balanced. What went is kept in S.acctClears and can be put back. */
+/* Supplier history cleared (25 Nov 2026): a settled bill marked p.off stays in the Purchases list (stock, cost and VAT come
+   from it) but not on the supplier's own pages; the statement starts from the entries after the clearing. */
+const purOff=p=>!!p.off&&(+p.total||0)-(+p.paid||0)<=0.005;
+let _clKey='',_clSet=null;
+const clrKeyOf=j=>j.no+'|'+(j.ref||'');
+function clrLedger(){ const rs=(S.acctClears||[]).filter(r=>r.led&&!r.undone), k=rs.map(r=>r.id+':'+r.led.length).join(',');
+  if(k!==_clKey||!_clSet){ _clSet=new Set(rs.flatMap(r=>r.led.split('\n'))); _clKey=k }
+  return {set:_clSet,at:rs.length?String(rs.at(-1).date||''):''} }
 function acctClearPlan(){
   const sup=[]; for(const [k,v] of partyBalMap()) if(k[0]==='S'){ const b=+(v[1]-v[0]).toFixed(2); if(Math.abs(b)>0.004){ const id=+k.slice(1), s=SU(id); sup.push({id,name:s?s.name:'Supplier '+id,code:s?s.code||'':'',bal:b}) } }
   sup.sort((a,b)=>b.bal-a.bal);
   const chq=S.cheques.filter(c=>c.dir==='ISSUED'), out=chq.filter(c=>['ISSUED','PRINTED'].includes(c.status));
   const money=[...moneyAcs()].map(([ac,name])=>({ac,name,bal:+bal(ac).toFixed(2)}));
   const supWait=payReqs().filter(r=>!['issued','rejected'].includes(r.status)).length+(S.approvals||[]).filter(a=>a.status==='pending'&&/^supPay/.test(a.kind)).length;
-  return {sup,supTot:+sup.reduce((a,x)=>a+x.bal,0).toFixed(2),chq,out,outTot:+out.reduce((a,c)=>a+(+c.amount||0),0).toFixed(2),money,supWait};
+  const pays=S.payments.filter(p=>!p.dir&&p.supplierId), oldBills=S.purchases.filter(p=>!isBF(p)&&!(p.onNote&&!p.invoiced)&&!purOff(p));
+  return {pays,oldBills,sup,supTot:+sup.reduce((a,x)=>a+x.bal,0).toFixed(2),chq,out,outTot:+out.reduce((a,c)=>a+(+c.amount||0),0).toFixed(2),money,supWait};
 }
 function acctClearCsv(pl){
   const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"', L=[];
   L.push('SUPPLIER OUTSTANDING','Code,Supplier,Outstanding',...pl.sup.map(x=>[q(x.code),q(x.name),x.bal].join(',')),'');
   L.push('CHEQUES GIVEN','Cheque,Bank,Paid to,Dated,Amount,State',...pl.chq.map(c=>[q(c.no),q(c.bank),q(c.payee||c.party),q(c.date),c.amount,q(c.status)].join(',')),'');
+  const sn=id=>{ const s=SU(id); return s?s.name:'Supplier '+id };
+  L.push('SUPPLIER PAYMENTS','Voucher,Date,Supplier,How,Amount',...pl.pays.map(p=>[q(p.voucher||p.no),q(p.date),q(sn(p.supplierId)),q((p.lines||[]).map(l=>l.method+(l.no?' #'+l.no:'')).join(' + ')),p.total].join(',')),'');
+  L.push('SUPPLIER BILLS','Invoice,GRN,Date,Supplier,Total,Paid,Left',...pl.oldBills.map(p=>[q(p.supInv),q(p.no),q(p.date),q(sn(p.supplierId)),p.total,p.paid,+((+p.total||0)-(+p.paid||0)).toFixed(2)].join(',')),'');
   L.push('CASH AND BANK','Where,Figure',...pl.money.map(x=>[q(x.name),x.bal].join(',')));
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['﻿'+L.join('\r\n')],{type:'text/csv'})); a.download='before-clearing-'+D(today)+'.csv'; document.body.appendChild(a); a.click(); a.remove();
 }
 function acctClearDo(o){
   if(!isSuperUser()) throw new Error('Only the owner can do this');
+  if(window.privacyOn) throw new Error('The quieter shop is showing. Bring the real figures back first.');
   const pl=acctClearPlan(), date=D(today), ref='CLR-'+Date.now().toString(36).toUpperCase();
-  const rec={id:ref,at:apStamp(),by:S.user.name,je:[],sup:[],paid:[],bf:[],cheques:[],marks:[],money:[]};
+  const rec={id:ref,at:apStamp(),date,by:S.user.name,pays:[],reqs:[],off:[],led:'',je:[],sup:[],paid:[],bf:[],cheques:[],marks:[],money:[]};
   const put=(desc,lines)=>{ const j=post(date,desc,ref,lines); rec.je.push(j.no); return j };
   if(o.sup){
     for(const x of pl.sup){ const pt={type:'S',id:x.id};
@@ -33834,35 +33853,51 @@ function acctClearDo(o){
   if(o.money) for(const x of pl.money) if(Math.abs(x.bal)>0.004){
     const j=put(`Opening balance — ${x.name}: cleared to start again`,x.bal>0?[{ac:'3100',dr:x.bal},{ac:x.ac,cr:x.bal}]:[{ac:x.ac,dr:-x.bal},{ac:'3100',cr:-x.bal}]);
     j.note='Cleared to start again'; j.by=S.user.name; rec.money.push(x) }
+  // what was paid to them before, their finished payment requests, their settled bills and the statement up to now
+  if(o.hist){
+    rec.pays=pl.pays; const gp=new Set(pl.pays); S.payments=S.payments.filter(p=>!gp.has(p));
+    rec.reqs=payReqs().filter(r=>['issued','rejected'].includes(r.status)); const gr=new Set(rec.reqs); if(S.payReqs) S.payReqs=S.payReqs.filter(r=>!gr.has(r));
+    for(const p of S.purchases) if(!isBF(p)&&!p.off&&!(p.onNote&&!p.invoiced)&&(+p.total||0)-(+p.paid||0)<=0.005){ p.off=ref; rec.off.push(p.no) }
+    // a bill nothing has been paid on still shows, so its own line on the statement does too
+    const open=new Set(S.purchases.filter(p=>!(p.onNote&&!p.invoiced)&&(+p.paid||0)<=0.005&&(+p.total||0)>0.005).map(p=>p.no)), was=clrLedger().set;
+    rec.led=S.journal.filter(j=>!open.has(j.ref)&&!was.has(clrKeyOf(j))&&j.lines.some(l=>l.ac==='2100'&&l.party&&l.party.type==='S')).map(clrKeyOf).join('\n');
+  }
   S.acctClears=(S.acctClears||[]).concat([rec]);
-  try{ logTrail('other',`Accounts cleared to put in again (${ref}): ${[o.sup?`${rec.sup.length} supplier balances ${fmt(pl.supTot)}`:'',o.chq?`${rec.cheques.length} cheques given`:'',o.money?'cash and bank figures':''].filter(Boolean).join(', ')}`,{ref,amount:null}) }catch(e){}
+  try{ logTrail('other',`Accounts cleared to put in again (${ref}): ${[o.sup?`${rec.sup.length} supplier balances ${fmt(pl.supTot)}`:'',o.chq?`${rec.cheques.length} cheques given`:'',o.hist?`supplier history (${rec.pays.length} payments, ${rec.off.length} bills)`:'',o.money?'cash and bank figures':''].filter(Boolean).join(', ')}`,{ref,amount:null}) }catch(e){}
   return rec;
 }
 function acctClearUndo(id){
   if(!isSuperUser()) return toast('Only the owner can do this');
+  if(window.privacyOn) return toast('Bring the real figures back first','warn');
   const r=(S.acctClears||[]).find(x=>x.id===id); if(!r||r.undone) return;
   const back=r.cheques.find(c=>S.cheques.some(x=>x.dir==='ISSUED'&&x.no===c.no&&x.bankId===c.bankId));
   if(back) return toast(`Cheque ${back.no} has been put in again — it cannot all be put back now`,'warn');
-  if(!confirm(`Put back what was cleared on ${r.at}?\n\n${r.sup.length} supplier balances and ${r.cheques.length} cheques come back as they were. Anything put in by hand since then stays too, so take that out first or it counts twice.`)) return;
+  if(!confirm(`Put back what was cleared on ${r.at}?\n\n${r.sup.length} supplier balances, ${r.cheques.length} cheques and ${(r.pays||[]).length} supplier payments come back as they were. Anything put in by hand since then stays too, so take that out first or it counts twice.`)) return;
   const je=new Set(r.je); S.journal=S.journal.filter(j=>!(je.has(j.no)&&j.ref===r.id));
   S.purchases.push(...r.bf); for(const x of r.paid){ const p=S.purchases.find(y=>y.no===x.no); if(p){ p.paid=+((+p.paid||0)-x.d).toFixed(2); delete p.clr } }
   S.cheques.push(...r.cheques); for(const [bid,no] of r.marks){ const bk=chqBooks().find(k=>k.id===bid); if(bk&&bk.marks&&bk.marks[no]&&bk.marks[no].note===r.id) delete bk.marks[no] }
-  r.undone=apStamp(); r.bf=[]; r.cheques=[]; r.paid=[]; r.marks=[];
+  if((r.pays||[]).length) S.payments=[...r.pays,...S.payments]; if((r.reqs||[]).length) S.payReqs=[...r.reqs,...payReqs()];
+  if((r.off||[]).length){ const so=new Set(r.off); for(const p of S.purchases) if(so.has(p.no)&&p.off===r.id) delete p.off }
+  r.undone=apStamp(); r.pays=[]; r.reqs=[]; r.off=[]; r.led=''; r.bf=[]; r.cheques=[]; r.paid=[]; r.marks=[];
   try{ logTrail('other',`Cleared accounts put back (${r.id}) by ${S.user.name}`,{ref:r.id,amount:null}) }catch(e){}
   persist(true); render(); toast('Put back as it was','ok');
 }
 function acctClearModal(){
   if(!isSuperUser()) return toast('Only the owner can do this');
   const pl=acctClearPlan(), done=pl.chq.length-pl.out.length, last=(S.acctClears||[]).filter(r=>!r.undone).at(-1);
-  const opt=(id,on,t,d)=>`<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer"><input type="checkbox" id="${id}" ${on?'checked':''} style="margin-top:3px;width:auto;flex:none"><span><b>${t}</b><div class="muted">${d}</div></span></label>`;
+  // cleared once already: what has been put in by hand since is not ticked again
+  const first=!last;
+  const opt=(id,on,t,d)=>`<label style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line);cursor:pointer"><input type="checkbox" id="${id}" ${on?'checked':''} style="margin-top:3px;width:auto;flex:none"><span><b>${t}</b><div class="muted">${d}</div></span></label>`;
   const m=modal(`<h2>Clear and put in again</h2>
    <div class="muted">Takes these off so you can put the right figures in by hand. <b>Customers and what they owe, bills, stock, sales and expenses are not touched.</b></div>
    <div style="margin-top:8px">
-   ${opt('acSup',1,`Supplier outstanding — ${fmt(pl.supTot)}`,`${pl.sup.length} supplier${pl.sup.length===1?'':'s'}. Every balance becomes nothing. The bills stay on record with nothing left to pay. Put in again with Previous balance on the supplier's page.`)}
-   ${opt('acChq',1,`Cheques given, not cleared yet — ${fmt(pl.outTot)}`,`${pl.out.length} cheque${pl.out.length===1?'':'s'} come off Cheques out. Bank figures do not change. Put in again with + A cheque given before.`)}
-   ${opt('acOld',1,`Cheques given, finished with — ${done}`,'Cleared, bounced and cancelled cheques come off the list too. The money stays as it is in the bank figures.')}
+   ${opt('acSup',first,`Supplier outstanding — ${fmt(pl.supTot)}`,`${pl.sup.length} supplier${pl.sup.length===1?'':'s'}. Every balance becomes nothing. The bills stay on record with nothing left to pay. Put in again with Previous balance on the supplier's page.`)}
+   ${opt('acChq',first,`Cheques given, not cleared yet — ${fmt(pl.outTot)}`,`${pl.out.length} cheque${pl.out.length===1?'':'s'} come off Cheques out. Bank figures do not change. Put in again with + A cheque given before.`)}
+   ${opt('acHist',1,`Supplier history — ${pl.pays.length} payment${pl.pays.length===1?'':'s'}, ${pl.oldBills.length} bill${pl.oldBills.length===1?'':'s'}`,'What was paid before, the last payment, vouchers, finished payment requests, old settled bills and the statement go from every supplier. Names, phones, terms, items, orders and notes stay. The bills stay in Purchases for the stock and cost.')}
+   ${opt('acOld',first,`Cheques given, finished with — ${done}`,'Cleared, bounced and cancelled cheques come off the list too. The money stays as it is in the bank figures.')}
    ${opt('acMon',0,'Cash and bank figures',`${pl.money.map(x=>`${esA(x.name)} ${fmt(x.bal)}`).join(' · ')}. All become nothing. Put in again on the Cash &amp; bank page.`)}</div>
    ${pl.supWait?`<div class="card note" style="margin-top:8px"><b>${pl.supWait} supplier payment${pl.supWait===1?' is':'s are'} waiting</b> to be paid or approved. They stay, and paying one takes it off the new balance: finish them or turn them down first.</div>`:''}
+   ${first?'':'<div class="card note" style="margin-top:8px"><b>Cleared once already.</b> The outstanding and the cheques are not ticked, so what you have put in since then stays. Payments entered since then go with the history.</div>'}
    <div class="muted" style="margin-top:8px">A list of everything that goes is downloaded first, and it can be put back from here.</div>
    <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap"><input id="acWord" placeholder="type CLEAR" autocomplete="off" style="border:1px solid var(--line);border-radius:var(--r);padding:8px;max-width:150px">
     <button class="btn" id="acOk" style="background:var(--chip-rust,#C0442C);color:#fff;border-color:var(--chip-rust,#C0442C)">Clear the ticked ones</button>
@@ -33870,12 +33905,13 @@ function acctClearModal(){
    <div id="acMsg" style="color:var(--chip-rust);min-height:18px;margin-top:6px"></div>
    ${last?`<div class="card note" style="margin-top:8px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><span>Last cleared ${noteEsc(last.at)} by ${noteEsc(last.by)}</span><button class="btn ghost sm" id="acUndo">Put it back</button></div>`:''}`);
   const g=i=>m.querySelector('#'+i);
+  if(!g('acChq').checked) g('acOld').disabled=true;
   g('acChq').onchange=()=>{ g('acOld').disabled=!g('acChq').checked; if(!g('acChq').checked) g('acOld').checked=false };
   g('acCsv').onclick=()=>acctClearCsv(acctClearPlan());
   if(last) g('acUndo').onclick=()=>{ m.remove(); acctClearUndo(last.id) };
   g('acOk').onclick=()=>{
-    const o={sup:g('acSup').checked,chq:g('acChq').checked,chqOld:g('acOld').checked,money:g('acMon').checked};
-    if(!o.sup&&!o.chq&&!o.money) return g('acMsg').textContent='Tick what to clear.';
+    const o={sup:g('acSup').checked,chq:g('acChq').checked,chqOld:g('acOld').checked,hist:g('acHist').checked,money:g('acMon').checked};
+    if(!o.sup&&!o.chq&&!o.hist&&!o.money) return g('acMsg').textContent='Tick what to clear.';
     if(g('acWord').value.trim().toUpperCase()!=='CLEAR') return g('acMsg').textContent='Type CLEAR in the box first.';
     try{ acctClearCsv(acctClearPlan()) }catch(e){}
     try{ acctClearDo(o) }catch(e){ return g('acMsg').textContent=e.message }
@@ -34760,7 +34796,7 @@ function reportData(){
   }
   case 'purchsup':{
     const by={};
-    S.purchases.filter(p=>inRange(p.date)).forEach(p=>{by[p.supplierId]=by[p.supplierId]||{n:0,v:0,paid:0};
+    S.purchases.filter(p=>inRange(p.date)&&!purOff(p)).forEach(p=>{by[p.supplierId]=by[p.supplierId]||{n:0,v:0,paid:0};
       by[p.supplierId].n++; by[p.supplierId].v+=p.total; by[p.supplierId].paid+=p.paid});
     const rows=Object.entries(by).sort((a,b)=>b[1].v-a[1].v).map(([k,v])=>[SU(+k).name,v.n,money(v.v),money(v.paid),money(v.v-v.paid)]);
     return t(['Supplier','Bills','Bought','Paid','Outstanding'],rows,

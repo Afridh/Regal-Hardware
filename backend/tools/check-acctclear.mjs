@@ -32,7 +32,7 @@ const snap = () => pg.evaluate(() => {
   return { sup: r(S.suppliers.reduce((a, x) => a + pb('S', x.id), 0)), each: S.suppliers.map(x => [x.id, r(pb('S', x.id))]), ap: r(bal('2100')), out: r(bal('2110')), iss: S.cheques.filter(c => c.dir === 'ISSUED').length,
     rec: JSON.stringify(S.cheques.filter(c => c.dir !== 'ISSUED')), cust: JSON.stringify(S.customers.map(c => [c.id, r(pb('C', c.id))])), custBills: JSON.stringify(S.sales.map(s => [s.no, s.balance])),
     other: JSON.stringify(pl), exp: r(Object.keys(window.eval('GL')).filter(a => a[0] === '6').reduce((a, k) => a + bal(k), 0)), money: JSON.stringify([...window.eval('moneyAcs')()].map(([a]) => r(bal(a)))), monSum: r([...window.eval('moneyAcs')()].reduce((s, [a]) => s + Math.abs(bal(a)), 0)),
-    stock: JSON.stringify(S.products.map(p => [p.id, p.stock, p.cost])), pays: S.payments.length, purs: S.purchases.length, open: r(S.purchases.reduce((a, p) => a + ((p.onNote && !p.invoiced) ? 0 : p.total - p.paid), 0)), bf: S.purchases.filter(p => p.opening).length,
+    stock: JSON.stringify(S.products.map(p => [p.id, p.stock, p.cost])), pays: S.payments.filter(p => p.dir === 'IN').length, sp: S.payments.filter(p => !p.dir && p.supplierId).length, payAll: JSON.stringify(S.payments.map(p => p.no).sort()), led: S.suppliers.reduce((a, x) => a + window.eval('supLedger')(x.id).length, 0), off: S.purchases.filter(p => p.off).length, purs0: JSON.stringify(S.purchases.filter(p => !p.opening).map(p => [p.no, p.total, p.lines])), purs: S.purchases.length, open: r(S.purchases.reduce((a, p) => a + ((p.onNote && !p.invoiced) ? 0 : p.total - p.paid), 0)), bf: S.purchases.filter(p => p.opening).length,
     bad: window.eval('acctHealth')().filter(h => !h.ok).map(h => h.key).join(',') };
 });
 // something of each kind: balances, a previous balance, a cheque out and a cleared one, a cheque book
@@ -49,7 +49,7 @@ ok(A.sup > 0 && A.out < 0 && A.iss >= 2 && A.bf >= 1, 'to start with: money owed
 // through the screen, as the owner does it
 await pg.evaluate(() => { window.__dl = []; const o = URL.createObjectURL; URL.createObjectURL = x => { x.text && x.text().then(t => window.__dl.push(t)); return o.call(URL, x) }; window.eval('go')('chequesOut') });
 await pg.waitForSelector('[data-act="acctClear"]', { timeout: 10000 }); await pg.$eval('[data-act="acctClear"]', e => e.click()); await pg.waitForSelector('#acOk', { timeout: 5000 });
-ok(await pg.evaluate(() => document.getElementById('acSup').checked && document.getElementById('acChq').checked && !document.getElementById('acMon').checked), 'supplier outstanding and cheques given are ticked; cash and bank are not');
+ok(await pg.evaluate(() => document.getElementById('acSup').checked && document.getElementById('acChq').checked && document.getElementById('acHist').checked && !document.getElementById('acMon').checked), 'supplier outstanding, history and cheques given are ticked; cash and bank are not');
 if (SHOTS) { fs.mkdirSync(SHOTS, { recursive: true }); await wait(400); await pg.screenshot({ path: path.join(SHOTS, 'acctclear.png') }) }
 await pg.$eval('#acOk', e => e.click()); await wait(200);
 ok((await snap()).sup === A.sup && !!(await pg.$('#acOk')), 'nothing goes without typing CLEAR');
@@ -61,19 +61,24 @@ ok(B.iss === 0 && B.out === 0, 'no cheques given are left', JSON.stringify([B.is
 ok(B.cust === A.cust && B.custBills === A.custBills, 'what customers owe, and their bills, are the same');
 ok(B.other === A.other && B.exp === A.exp, 'sales, cost, stock, customer and received-cheque accounts are the same');
 ok(B.money === A.money, 'the cash and bank figures are the same');
-ok(B.stock === A.stock && B.rec === A.rec && B.pays === A.pays, 'stock, cheques received and the payments made are the same');
+ok(B.stock === A.stock && B.rec === A.rec && B.pays === A.pays, 'stock, cheques received and what customers paid are the same');
 ok(B.bad === A.bad, 'the books check: nothing new is out', `before [${A.bad}] after [${B.bad}]`);
+ok(A.sp > 0 && B.sp === 0 && B.led === 0 && B.off > 0, 'no supplier payments, and nothing on any statement', JSON.stringify([A.sp, B.sp, A.led, B.led, B.off]));
+ok(B.purs0 === A.purs0, 'the purchases themselves stay, for the stock and cost');
+const page = await pg.evaluate(() => { const S = window.eval('S'), d = document.createElement('div'); d.innerHTML = window.eval('supplierPanel')(S.suppliers[0]); return { t: d.textContent, seen: S.suppliers.filter(x => window.eval('supLastSeen')(x.id)).length } });
+ok(/nothing paid yet/.test(page.t) && /0 GRNs/.test(page.t) && /Payments0/.test(page.t) && /Their bills0/.test(page.t) && /Cheques0/.test(page.t) && page.seen === 0, 'the supplier page: no last payment, no bills, no payments, no cheques');
+if (SHOTS) { await pg.evaluate(() => { window.eval('go')('suppliers') }); await wait(700); await pg.screenshot({ path: path.join(SHOTS, 'supplier-cleared.png') }); for (const v of ['purchases', 'payreqs', 'chequesOut']) { await pg.evaluate(x => { window.eval('go')(x) }, v); await wait(400) } }
 const dl = (await pg.evaluate(() => window.__dl)).join('\n');
-ok(/888001/.test(dl) && /SUPPLIER OUTSTANDING/.test(dl), 'a list of what goes was downloaded');
+ok(/888001/.test(dl) && /SUPPLIER OUTSTANDING/.test(dl) && /SUPPLIER PAYMENTS/.test(dl), 'a list of what goes was downloaded');
 ok(await pg.evaluate(() => { const S = window.eval('S'); return window.eval('cbNextN')(S.banks[0].id, 1)[0] === '888003' }), 'the next cheque suggested is not one already given');
 // saved at the server: a fresh sign-in sees it so
 await wait(4000); await signIn();
 const C = await snap();
-ok(C.sup === 0 && C.iss === 0 && C.out === 0 && C.cust === A.cust && await pg.evaluate(() => window.eval('S').acctClears.length === 1), 'it is so on the server too, after signing in again');
+ok(C.sup === 0 && C.iss === 0 && C.out === 0 && C.sp === 0 && C.led === 0 && C.cust === A.cust && await pg.evaluate(() => window.eval('S').acctClears.length === 1), 'it is so on the server too, after signing in again');
 // put back, exactly
 await pg.evaluate(() => { const S = window.eval('S'); window.eval('acctClearUndo')(S.acctClears.at(-1).id) }); await wait(600);
 const U = await snap();
-ok(U.sup === A.sup && JSON.stringify(U.each) === JSON.stringify(A.each) && U.out === A.out && U.iss === A.iss && U.open === A.open && U.bf === A.bf && U.bad === A.bad, 'Put it back: as it was', JSON.stringify([U.sup, A.sup, U.out, A.out, U.open, A.open]));
+ok(U.sup === A.sup && JSON.stringify(U.each) === JSON.stringify(A.each) && U.out === A.out && U.iss === A.iss && U.open === A.open && U.bf === A.bf && U.payAll === A.payAll && U.led === A.led && U.off === 0 && U.purs0 === A.purs0 && U.bad === A.bad, 'Put it back: as it was', JSON.stringify([U.sup, A.sup, U.out, A.out, U.open, A.open]));
 // cleared again with cash and bank, then the right figures put in by hand
 await pg.evaluate(() => window.eval('acctClearDo')({ sup: true, chq: true, chqOld: true, money: true }));
 const M = await snap();
@@ -84,6 +89,14 @@ await pg.evaluate(() => { const S = window.eval('S'), set = (i, v) => { document
 await pg.click('#ocOk'); await wait(600);
 const H = await snap();
 ok(H.sup === 12345 && H.open === 12345 && H.out === -2000 && H.iss === 1 && H.bad === A.bad, 'by hand: a previous balance and the same cheque number go in again, and the books agree', JSON.stringify([H.sup, H.open, H.out, H.iss, H.bad]));
+// only the history, after the figures were put in by hand: they stay (a shop that cleared before the history could go)
+await pg.evaluate(() => { const S = window.eval('S'); window.eval('paySupplier')({ supplierId: S.suppliers[0].id, lines: [{ method: 'CASH', amount: 45 }], allowDamage: true }); window.eval('acctClearModal')() });
+await pg.waitForSelector('#acOk');
+ok(await pg.evaluate(() => !document.getElementById('acSup').checked && !document.getElementById('acChq').checked && !document.getElementById('acOld').checked && document.getElementById('acHist').checked), 'a second time: only the history is ticked');
+await pg.type('#acWord', 'CLEAR'); await pg.$eval('#acOk', e => e.click()); await wait(600);
+const K = await snap();
+ok(K.sup === 12300 && K.open === 12300 && K.out === -2000 && K.iss === 1 && K.sp === 0 && K.led === 1 && K.bad === A.bad, 'the figures put in by hand stay; the payments go; the statement starts with what is owed', JSON.stringify([K.sup, K.open, K.out, K.iss, K.sp, K.led, K.bad]));
+ok(await pg.evaluate(() => { const S = window.eval('S'); window.eval('paySupplier')({ supplierId: S.suppliers[0].id, lines: [{ method: 'CASH', amount: 300 }], allowDamage: true }); const l = window.eval('supLedger')(S.suppliers[0].id); return l.length === 2 && l[1].run === 12000 }), 'a new payment after that shows as usual');
 // only the owner
 ok(await pg.evaluate(() => { const S = window.eval('S'), r = S.user.role; S.user.role = 'Cashier'; let refused = false; try { window.eval('acctClearDo')({ sup: true }) } catch (e) { refused = true } S.user.role = r; return refused }), 'anyone but the owner is refused');
 ok(!errs.length, 'no errors on the page', errs.join(' | '));
