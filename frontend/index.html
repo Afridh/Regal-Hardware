@@ -387,8 +387,10 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .chq-cal-h{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--steel);font-weight:700;padding:0 4px}
 .chq-cal-d{min-height:58px;border:1px solid var(--line);border-radius:8px;padding:4px 6px;display:flex;flex-direction:column;gap:1px;background:#fff}
 .chq-cal-d span{font-size:11px;color:var(--steel)}.chq-cal-d b{font-family:Archivo,sans-serif;font-size:13px}.chq-cal-d i{font-style:normal;font-size:11px;color:var(--steel)}
+.co-cal{grid-template-columns:repeat(8,minmax(0,1fr));min-width:700px}.co-cal .co-out{background:none;border-style:dashed;opacity:.35}.co-cal .co-wk{background:var(--line2,#EEF1F0)}.co-cal .co-on{outline:2px solid var(--chip-rust,#C0442C);outline-offset:-1px}
 .chq-cal-d.past{opacity:.55}.chq-cal-d.has{background:#F6F9FC;border-color:#BFD0E2}
 .chq-cal-d.has.past{opacity:1;background:var(--tint-rust,#FBE4DE);border-color:#F0B9AC}.chq-cal-d.today{box-shadow:inset 0 0 0 2px #1f3b5a}
+.co-cal .chq-cal-d.has.co-ok{background:var(--tint-green,#E4F3EA);border-color:var(--chip-green,#8CC7A4)}
 .modal.cp-modal .box.cp-sheet{width:min(470px,100vw);min-width:0;max-width:none;max-height:none;height:100%;border-radius:0;border-top:0;border-left:4px solid #1f3b5a;
   display:flex;flex-direction:column;gap:11px;padding:48px 18px 16px;overflow-y:auto;animation:cpIn .18s ease-out}   /* clear of the online badge across the top */
 @keyframes cpIn{from{transform:translateX(28px);opacity:.5}to{transform:none;opacity:1}}
@@ -33918,6 +33920,72 @@ function acctClearModal(){
     m.remove(); persist(true); render(); toast('Cleared — put the right figures in now','ok') };
 }
 /* ---- our own cheques ---- */
+/* ---- the cheques given, by the date written on them (25 Nov 2026, the owner asked) ----
+   A month at a time: what falls on each day, each week and each bank. A day picked shows its cheques.
+   To pay = not cleared yet; All = the cleared ones as well. Cancelled and bounced ones are never counted. */
+let coMon='', coDay='', coAll=false;
+const coList=()=>S.cheques.filter(c=>c.dir==='ISSUED'&&(coAll?['ISSUED','PRINTED','CLEARED']:['ISSUED','PRINTED']).includes(c.status));
+const coSum=a=>a.reduce((x,c)=>x+(+c.amount||0),0);
+const coN=n=>`${n} cheque${n===1?'':'s'}`;
+function coMonth(){
+  const mk=coMon||D(today).slice(0,7), [y,m]=mk.split('-').map(Number), first=new Date(y,m-1,1), last=new Date(y,m,0).getDate();
+  const start=new Date(first); start.setDate(1-((first.getDay()+6)%7));
+  const all=coList(), by=new Map(); for(const c of all){ const k=String(c.date||'').slice(0,10); (by.get(k)||by.set(k,[]).get(k)).push(c) }
+  const weeks=[]; const d=new Date(start);
+  do{ const w=[]; for(let i=0;i<7;i++){ const ds=D(d); w.push({ds,n:d.getDate(),inM:ds.slice(0,7)===mk,got:by.get(ds)||[]}); d.setDate(d.getDate()+1) } weeks.push(w) } while(d<=new Date(y,m-1,last));
+  const mine=all.filter(c=>String(c.date||'').slice(0,7)===mk).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const banks=[...new Set(mine.map(c=>c.bank||'—'))].map(n=>({n,l:mine.filter(c=>(c.bank||'—')===n)}));
+  return {mk,title:first.toLocaleDateString('en-GB',{month:'long',year:'numeric'}),weeks,mine,banks,
+    late:S.cheques.filter(c=>c.dir==='ISSUED'&&['ISSUED','PRINTED'].includes(c.status)&&String(c.date||'')<D(today))};
+}
+function chqOutCalendar(){
+  const x=coMonth(), t0=D(today), amt=v=>Math.round(v).toLocaleString('en-US');
+  const day=coDay&&coDay.slice(0,7)===x.mk?coDay:'', got=day?x.mine.filter(c=>String(c.date).slice(0,10)===day):[];
+  return `<div class="card" style="margin-bottom:12px" id="coCal">
+   <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+    <h2 style="margin:0">Cheques given, day by day</h2>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+     <button class="btn ghost sm" data-act="coStep" data-d="-1">◀</button><b style="min-width:130px;text-align:center">${x.title}</b><button class="btn ghost sm" data-act="coStep" data-d="1">▶</button>
+     <button class="btn ghost sm" data-act="coStep" data-d="0">This month</button>
+     <span class="chips" style="margin:0"><button class="${coAll?'':'on'}" data-act="coWhich" data-k="">To pay</button><button class="${coAll?'on':''}" data-act="coWhich" data-k="all">All, with cleared</button></span>
+     <button class="btn ghost sm" data-act="coPrint">🖨 Print</button></div></div>
+   <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px"><span><b>${fmt(coSum(x.mine))}</b> <span class="muted">${coN(x.mine.length)} in the month</span></span>
+    ${x.banks.map(b=>`<span class="muted">${noteEsc(b.n)} <b>${fmt(coSum(b.l))}</b> · ${b.l.length}</span>`).join('')}
+    ${x.late.length?`<b style="color:var(--chip-rust)">${coN(x.late.length)} past the date, not marked cleared · ${fmt(coSum(x.late))}</b>`:''}</div>
+   <div style="overflow-x:auto"><div class="chq-cal co-cal">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun','Week'].map(w=>`<div class="chq-cal-h">${w}</div>`).join('')}
+    ${x.weeks.map(w=>{ const wk=w.filter(q=>q.inM).flatMap(q=>q.got);
+      return w.map(q=>!q.inM?'<div class="chq-cal-d co-out"></div>':`<div class="chq-cal-d ${q.ds===t0?'today':''} ${q.ds<t0?'past':''} ${q.got.length?'has':''} ${q.got.length&&!q.got.some(c=>c.status!=='CLEARED')?'co-ok':''} ${q.ds===day?'co-on':''}" ${q.got.length?`data-act="coDay" data-d="${q.ds}" style="cursor:pointer"`:''} title="${escM(q.got.map(c=>`${c.no} · ${c.payee||c.party||''} · ${fmt(c.amount)}`).join('\n'))}">
+       <span>${q.n}</span>${q.got.length?`<b>${amt(coSum(q.got))}</b><i>${coN(q.got.length)}</i>`:''}</div>`).join('')
+       +`<div class="chq-cal-d co-wk">${wk.length?`<span>&nbsp;</span><b>${amt(coSum(wk))}</b><i>${coN(wk.length)}</i>`:''}</div>` }).join('')}</div></div>
+   ${day?`<div style="margin-top:12px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${new Date(day+'T00:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})} — ${fmt(coSum(got))}</b><button class="btn ghost sm" data-act="coDay" data-d="${day}">Close</button></div>
+    <table><tr><th>Cheque</th><th>Bank</th><th>Paid to</th><th class="n">Amount</th><th>State</th></tr>${got.map(c=>`<tr><td><b>${noteEsc(c.no)}</b></td><td>${noteEsc(c.bank||'—')}</td><td>${noteEsc(c.payee||c.party||'')}</td><td class="n"><b>${fmt(c.amount)}</b></td><td>${tagFor(c.status)}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">None on this day.</td></tr>'}</table></div>`
+    :`<div class="muted" style="margin-top:8px">${x.mine.length?'Tap a day to see its cheques.':'No cheques dated in this month. Use ◀ ▶ to look at another.'}</div>`}</div>`;
+}
+/* the month on paper: the calendar, then every cheque day by day, A4 landscape */
+function coPrint(){
+  const x=coMonth(), E=s=>escM(String(s==null?'':s)), amt=v=>Math.round(v).toLocaleString('en-US'), shop=(CFG.shop&&CFG.shop.name)||'Regal Hardware';
+  const w=window.open('','_blank','width=1100,height=760'); if(!w) return toast('Allow pop-ups to print');
+  const days=[...new Set(x.mine.map(c=>String(c.date).slice(0,10)))];
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Cheques given · ${E(x.title)}</title><style>
+   @page{size:A4 landscape;margin:9mm 10mm}
+   *{box-sizing:border-box}body{font:11px/1.35 Arial,sans-serif;color:#111;margin:0;padding:12px}
+   .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:8px}
+   h1{font-size:19px;margin:0}h2{font-size:16px;margin:0}.mu{color:#555}
+   table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:4px 6px;text-align:left;vertical-align:top}th{background:#eee}.n{text-align:right}
+   .cal{table-layout:fixed;margin-bottom:8px}.cal td{height:62px}.cal td b{display:block;font-size:13px;margin-top:3px}.cal .wk{background:#f3f3f3}.cal .no{background:#fafafa}
+   .list{break-before:page}thead{display:table-header-group}tr{break-inside:avoid}.day td{background:#f3f3f3;font-weight:bold}
+   @media print{body{padding:0}}</style></head><body>
+   <div class="hd"><div><h1>${E(shop)}</h1><div class="mu">Printed ${E(D(today))}</div></div><div style="text-align:right"><h2>Cheques given — ${E(x.title)}</h2><div class="mu">${coAll?'all, with the cleared ones':'not cleared yet'}</div></div></div>
+   <div style="margin-bottom:8px"><b>${coN(x.mine.length)} · ${money2(coSum(x.mine))}</b>${x.banks.map(b=>` &nbsp; ${E(b.n)}: <b>${money2(coSum(b.l))}</b> (${b.l.length})`).join('')}</div>
+   <table class="cal"><tr>${['Mon','Tue','Wed','Thu','Fri','Sat','Sun','Week'].map(h=>`<th>${h}</th>`).join('')}</tr>
+   ${x.weeks.map(k=>{ const wk=k.filter(q=>q.inM).flatMap(q=>q.got); return `<tr>${k.map(q=>!q.inM?'<td class="no"></td>':`<td><span class="mu">${q.n}</span>${q.got.length?`<b>${amt(coSum(q.got))}</b>${coN(q.got.length)}`:''}</td>`).join('')}<td class="wk">${wk.length?`<span>&nbsp;</span><b>${amt(coSum(wk))}</b>${coN(wk.length)}`:''}</td></tr>` }).join('')}</table>
+   ${x.mine.length?`<table class="list"><thead><tr><th>Date</th><th>Cheque</th><th>Bank</th><th>Paid to</th><th>State</th><th class="n">Amount</th></tr></thead><tbody>
+   ${days.map(ds=>{ const g=x.mine.filter(c=>String(c.date).slice(0,10)===ds); return g.map(c=>`<tr><td>${E(ds)}</td><td>${E(c.no)}</td><td>${E(c.bank||'')}</td><td>${E(c.payee||c.party||'')}</td><td>${E(String(c.status).toLowerCase())}</td><td class="n">${money2(c.amount)}</td></tr>`).join('')+(g.length>1?`<tr class="day"><td colspan="5">${E(ds)} — ${coN(g.length)}</td><td class="n">${money2(coSum(g))}</td></tr>`:'') }).join('')}
+   <tr class="day"><td colspan="5">Total</td><td class="n">${money2(coSum(x.mine))}</td></tr></tbody></table>`:''}
+   <script>window.onload=function(){setTimeout(function(){window.print()},200)}<\/script></body></html>`);
+  w.document.close();
+}
+function coStep(n){ if(!n) coMon=''; else { const [y,m]=(coMon||D(today).slice(0,7)).split('-').map(Number), d=new Date(y,m-1+n,1); coMon=D(d).slice(0,7) } coDay=''; render() }
 function chequesOut(){
   const iss=S.cheques.filter(c=>c.dir==='ISSUED');
   const out=iss.filter(c=>['ISSUED','PRINTED'].includes(c.status));
@@ -33964,6 +34032,7 @@ function chequesOut(){
    ${stat('Bounced or cancelled',fmt(sum(bounced)),bounced.length?'back on the supplier':'none','b')}
   </div>
 
+  ${chqOutCalendar()}
   <div class="row" style="margin-bottom:12px">
    <div class="card flex1">
     <h2>What each account can cover</h2>
@@ -36341,6 +36410,7 @@ document.addEventListener('click',e=>{
       render();
       toast(`User ${u.name} has been removed and sign-in permissions revoked`);
     },
+    coStep:()=>coStep(+a.dataset.d), coDay:()=>{ coDay=coDay===a.dataset.d?'':a.dataset.d; render() }, coWhich:()=>{ coAll=!!a.dataset.k; render() }, coPrint:()=>coPrint(),
     chqPickDay:()=>{chqDay=a.dataset.d;chqScope='day';chqPicked.clear();render()},
     chqDayStep:()=>{const n=+a.dataset.d;
       if(n===0)chqDay=D(today); else{const dt=new Date(chqDay||D(today));dt.setDate(dt.getDate()+n);chqDay=D(dt)}
