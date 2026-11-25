@@ -8011,6 +8011,7 @@ function settings(){
      <div class="grid3">${fld('scale.baud','Speed (baud)','9600 for most scales','number')}${fld('scale.ask','Send to ask for the weight','Empty if it sends by itself; e.g. W or \\r')}<div class="f"><label>&nbsp;</label><button class="btn ghost" data-act="scaleTest">Test the scale</button></div></div></div>
     <div class="card note" style="margin-top:10px">These go straight onto every bill, voucher and statement. Print one after changing to check the fit.</div>
     ${ownerOnly()?`<div class="card note" style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><b>Getting started</b><div class="muted">The setting-up steps, each ticked as it is done — open it again at any time.</div></div><button class="btn ghost" data-act="suAgain">Open the Getting started guide</button></div>`:''}
+    ${isSuperUser()?`<div class="card note" style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><b>Clear supplier outstanding and cheques given</b><div class="muted">To put the right figures in by hand. Customers and what they owe are not touched.</div></div><button class="btn ghost" data-act="acctClear">Clear and put in again…</button></div>`:''}
     ${isSuperUser()?`<div class="card note" style="border:1px solid var(--chip-rust,#C0442C);margin-top:16px">
       <b style="color:var(--chip-rust,#C0442C)">Start fresh — clear all the business</b>
       <div class="muted" style="margin-top:4px"><b>Goes:</b> every product, customer, supplier and member of staff, and every bill, purchase, payment, cheque, stock movement, expense, ledger entry, attendance day and message — and on the server the customer and supplier page sign-ins, messages waiting and e-bills. Bill numbers start again. <b>Stays:</b> the settings and the shop's details (name, logo, the bill), the logins and roles, the bank accounts (at nought), cheque books, locations and cameras. A Getting started guide then walks the setting up. Every earlier version of the books stays in the server's history. It is saved to the server's history, so it can be put back if it was a mistake.</div>
@@ -30540,7 +30541,7 @@ function supBills(s,pur){
      <td>${p.no}</td><td>${p.date}<div class="muted">${agoTxt(p.date)}</div></td>
      <td class="muted">${(p.lines||[]).length} line${(p.lines||[]).length===1?'':'s'}${supBillParts(p)}</td>
      <td class="n">${fmt(p.total)}</td><td class="n">${fmt(p.paid)}</td><td class="n">${ow>0.005?`<b style="color:${d>60?'var(--chip-rust)':'inherit'}">${fmt(ow)}</b>`:'—'}</td>
-     <td>${ow>0.005?`<span class="tag ${late&&d>60?'bad':late?'warn':'ok'}">${late?'past its date':'outstanding'}${nextDue?` · due ${nextDue}`:` · ${d}d`}</span>`:'<span class="tag ok">paid</span>'}</td>
+     <td>${ow>0.005?`<span class="tag ${late&&d>60?'bad':late?'warn':'ok'}">${late?'past its date':'outstanding'}${nextDue?` · due ${nextDue}`:` · ${d}d`}</span>`:p.clr?'<span class="tag" title="Taken off when the accounts were cleared to put in again">cleared</span>':'<span class="tag ok">paid</span>'}</td>
      <td>${can('adjustInvoice')?`<button class="btn ghost sm" data-act="purEdit" data-no="${p.no}">Change</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="9" class="muted">No bills here.</td></tr>'}</table>`;
 }
 function supPayments(s,pay){
@@ -33789,6 +33790,97 @@ function chqBooksAfter(){
     if(document.activeElement===document.body&&CB.q) q.focus() }
 }
 
+/* ================== CLEAR AND PUT IN AGAIN ==================
+   (25 Nov 2026, the owner asked) What the shop owes suppliers and the cheques it has given, taken off so the right
+   figures can be put in by hand (Suppliers → Previous balance; Cheques out → A cheque given before). Customers, their
+   bills, the stock, sales and profit are not touched. Each balance is closed against 3100 Opening balances, the same
+   account the hand-put-in figures use, so the books stay balanced. What went is kept in S.acctClears and can be put back. */
+function acctClearPlan(){
+  const sup=[]; for(const [k,v] of partyBalMap()) if(k[0]==='S'){ const b=+(v[1]-v[0]).toFixed(2); if(Math.abs(b)>0.004){ const id=+k.slice(1), s=SU(id); sup.push({id,name:s?s.name:'Supplier '+id,code:s?s.code||'':'',bal:b}) } }
+  sup.sort((a,b)=>b.bal-a.bal);
+  const chq=S.cheques.filter(c=>c.dir==='ISSUED'), out=chq.filter(c=>['ISSUED','PRINTED'].includes(c.status));
+  const money=[...moneyAcs()].map(([ac,name])=>({ac,name,bal:+bal(ac).toFixed(2)}));
+  const supWait=payReqs().filter(r=>!['issued','rejected'].includes(r.status)).length+(S.approvals||[]).filter(a=>a.status==='pending'&&/^supPay/.test(a.kind)).length;
+  return {sup,supTot:+sup.reduce((a,x)=>a+x.bal,0).toFixed(2),chq,out,outTot:+out.reduce((a,c)=>a+(+c.amount||0),0).toFixed(2),money,supWait};
+}
+function acctClearCsv(pl){
+  const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"', L=[];
+  L.push('SUPPLIER OUTSTANDING','Code,Supplier,Outstanding',...pl.sup.map(x=>[q(x.code),q(x.name),x.bal].join(',')),'');
+  L.push('CHEQUES GIVEN','Cheque,Bank,Paid to,Dated,Amount,State',...pl.chq.map(c=>[q(c.no),q(c.bank),q(c.payee||c.party),q(c.date),c.amount,q(c.status)].join(',')),'');
+  L.push('CASH AND BANK','Where,Figure',...pl.money.map(x=>[q(x.name),x.bal].join(',')));
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['﻿'+L.join('\r\n')],{type:'text/csv'})); a.download='before-clearing-'+D(today)+'.csv'; document.body.appendChild(a); a.click(); a.remove();
+}
+function acctClearDo(o){
+  if(!isSuperUser()) throw new Error('Only the owner can do this');
+  const pl=acctClearPlan(), date=D(today), ref='CLR-'+Date.now().toString(36).toUpperCase();
+  const rec={id:ref,at:apStamp(),by:S.user.name,je:[],sup:[],paid:[],bf:[],cheques:[],marks:[],money:[]};
+  const put=(desc,lines)=>{ const j=post(date,desc,ref,lines); rec.je.push(j.no); return j };
+  if(o.sup){
+    for(const x of pl.sup){ const pt={type:'S',id:x.id};
+      put(`Supplier balance cleared to start again — ${x.name}`,x.bal>0?[{ac:'2100',dr:x.bal,party:pt},{ac:'3100',cr:x.bal}]:[{ac:'3100',dr:-x.bal},{ac:'2100',cr:-x.bal,party:pt}]); rec.sup.push({id:x.id,bal:x.bal}) }
+    // a previous balance put in before goes altogether; a real bill stays for the record, with nothing left to pay
+    rec.bf=S.purchases.filter(isBF); S.purchases=S.purchases.filter(p=>!isBF(p));
+    for(const p of S.purchases){ if(p.onNote&&!p.invoiced) continue; const d=+((+p.total||0)-(+p.paid||0)).toFixed(2);
+      if(d>0.004){ rec.paid.push({no:p.no,d}); p.paid=+p.total; p.clr=ref } }
+  }
+  if(o.chq){
+    const take=pl.chq.filter(c=>o.chqOld||['ISSUED','PRINTED'].includes(c.status)), owed=+(-bal('2110')).toFixed(2);
+    if(Math.abs(owed)>0.004) put('Cheques given cleared to start again',owed>0?[{ac:'2110',dr:owed},{ac:'3100',cr:owed}]:[{ac:'3100',dr:-owed},{ac:'2110',cr:-owed}]);
+    // their leaves are marked Used before, so the next cheque written is never one of them
+    for(const c of take){ const bk=cbBookOf(c.bankId||(S.banks.find(b=>b.name===c.bank)||{}).id,c.no); if(!bk) continue; const no=cbPad(+String(c.no).replace(/\D/g,''),bk.from.length);
+      bk.marks=bk.marks||{}; if(!bk.marks[no]){ bk.marks[no]={state:'OLD',at:date,by:S.user.name,note:ref}; rec.marks.push([bk.id,no]) } }
+    const gone=new Set(take); rec.cheques=take; S.cheques=S.cheques.filter(c=>!gone.has(c));
+  }
+  if(o.money) for(const x of pl.money) if(Math.abs(x.bal)>0.004){
+    const j=put(`Opening balance — ${x.name}: cleared to start again`,x.bal>0?[{ac:'3100',dr:x.bal},{ac:x.ac,cr:x.bal}]:[{ac:x.ac,dr:-x.bal},{ac:'3100',cr:-x.bal}]);
+    j.note='Cleared to start again'; j.by=S.user.name; rec.money.push(x) }
+  S.acctClears=(S.acctClears||[]).concat([rec]);
+  try{ logTrail('other',`Accounts cleared to put in again (${ref}): ${[o.sup?`${rec.sup.length} supplier balances ${fmt(pl.supTot)}`:'',o.chq?`${rec.cheques.length} cheques given`:'',o.money?'cash and bank figures':''].filter(Boolean).join(', ')}`,{ref,amount:null}) }catch(e){}
+  return rec;
+}
+function acctClearUndo(id){
+  if(!isSuperUser()) return toast('Only the owner can do this');
+  const r=(S.acctClears||[]).find(x=>x.id===id); if(!r||r.undone) return;
+  const back=r.cheques.find(c=>S.cheques.some(x=>x.dir==='ISSUED'&&x.no===c.no&&x.bankId===c.bankId));
+  if(back) return toast(`Cheque ${back.no} has been put in again — it cannot all be put back now`,'warn');
+  if(!confirm(`Put back what was cleared on ${r.at}?\n\n${r.sup.length} supplier balances and ${r.cheques.length} cheques come back as they were. Anything put in by hand since then stays too, so take that out first or it counts twice.`)) return;
+  const je=new Set(r.je); S.journal=S.journal.filter(j=>!(je.has(j.no)&&j.ref===r.id));
+  S.purchases.push(...r.bf); for(const x of r.paid){ const p=S.purchases.find(y=>y.no===x.no); if(p){ p.paid=+((+p.paid||0)-x.d).toFixed(2); delete p.clr } }
+  S.cheques.push(...r.cheques); for(const [bid,no] of r.marks){ const bk=chqBooks().find(k=>k.id===bid); if(bk&&bk.marks&&bk.marks[no]&&bk.marks[no].note===r.id) delete bk.marks[no] }
+  r.undone=apStamp(); r.bf=[]; r.cheques=[]; r.paid=[]; r.marks=[];
+  try{ logTrail('other',`Cleared accounts put back (${r.id}) by ${S.user.name}`,{ref:r.id,amount:null}) }catch(e){}
+  persist(true); render(); toast('Put back as it was','ok');
+}
+function acctClearModal(){
+  if(!isSuperUser()) return toast('Only the owner can do this');
+  const pl=acctClearPlan(), done=pl.chq.length-pl.out.length, last=(S.acctClears||[]).filter(r=>!r.undone).at(-1);
+  const opt=(id,on,t,d)=>`<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer"><input type="checkbox" id="${id}" ${on?'checked':''} style="margin-top:3px;width:auto;flex:none"><span><b>${t}</b><div class="muted">${d}</div></span></label>`;
+  const m=modal(`<h2>Clear and put in again</h2>
+   <div class="muted">Takes these off so you can put the right figures in by hand. <b>Customers and what they owe, bills, stock, sales and expenses are not touched.</b></div>
+   <div style="margin-top:8px">
+   ${opt('acSup',1,`Supplier outstanding — ${fmt(pl.supTot)}`,`${pl.sup.length} supplier${pl.sup.length===1?'':'s'}. Every balance becomes nothing. The bills stay on record with nothing left to pay. Put in again with Previous balance on the supplier's page.`)}
+   ${opt('acChq',1,`Cheques given, not cleared yet — ${fmt(pl.outTot)}`,`${pl.out.length} cheque${pl.out.length===1?'':'s'} come off Cheques out. Bank figures do not change. Put in again with + A cheque given before.`)}
+   ${opt('acOld',1,`Cheques given, finished with — ${done}`,'Cleared, bounced and cancelled cheques come off the list too. The money stays as it is in the bank figures.')}
+   ${opt('acMon',0,'Cash and bank figures',`${pl.money.map(x=>`${esA(x.name)} ${fmt(x.bal)}`).join(' · ')}. All become nothing. Put in again on the Cash &amp; bank page.`)}</div>
+   ${pl.supWait?`<div class="card note" style="margin-top:8px"><b>${pl.supWait} supplier payment${pl.supWait===1?' is':'s are'} waiting</b> to be paid or approved. They stay, and paying one takes it off the new balance: finish them or turn them down first.</div>`:''}
+   <div class="muted" style="margin-top:8px">A list of everything that goes is downloaded first, and it can be put back from here.</div>
+   <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap"><input id="acWord" placeholder="type CLEAR" autocomplete="off" style="border:1px solid var(--line);border-radius:var(--r);padding:8px;max-width:150px">
+    <button class="btn" id="acOk" style="background:var(--chip-rust,#C0442C);color:#fff;border-color:var(--chip-rust,#C0442C)">Clear the ticked ones</button>
+    <button class="btn ghost" id="acCsv">Download the list</button><button class="btn ghost" data-act="closeModal">Close</button></div>
+   <div id="acMsg" style="color:var(--chip-rust);min-height:18px;margin-top:6px"></div>
+   ${last?`<div class="card note" style="margin-top:8px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><span>Last cleared ${noteEsc(last.at)} by ${noteEsc(last.by)}</span><button class="btn ghost sm" id="acUndo">Put it back</button></div>`:''}`);
+  const g=i=>m.querySelector('#'+i);
+  g('acChq').onchange=()=>{ g('acOld').disabled=!g('acChq').checked; if(!g('acChq').checked) g('acOld').checked=false };
+  g('acCsv').onclick=()=>acctClearCsv(acctClearPlan());
+  if(last) g('acUndo').onclick=()=>{ m.remove(); acctClearUndo(last.id) };
+  g('acOk').onclick=()=>{
+    const o={sup:g('acSup').checked,chq:g('acChq').checked,chqOld:g('acOld').checked,money:g('acMon').checked};
+    if(!o.sup&&!o.chq&&!o.money) return g('acMsg').textContent='Tick what to clear.';
+    if(g('acWord').value.trim().toUpperCase()!=='CLEAR') return g('acMsg').textContent='Type CLEAR in the box first.';
+    try{ acctClearCsv(acctClearPlan()) }catch(e){}
+    try{ acctClearDo(o) }catch(e){ return g('acMsg').textContent=e.message }
+    m.remove(); persist(true); render(); toast('Cleared — put the right figures in now','ok') };
+}
 /* ---- our own cheques ---- */
 function chequesOut(){
   const iss=S.cheques.filter(c=>c.dir==='ISSUED');
@@ -33828,7 +33920,7 @@ function chequesOut(){
       <td>${tagFor(c.status)}${c.old?'<div class="muted">given before</div>':''}${c.note?`<div class="muted">${noteEsc(c.note)}</div>`:''}</td>
       <td><div class="rowacts">${acts||'<span class="muted">done</span>'}</div></td></tr>`};
 
-  return `<h1>Cheques we have written <span style="float:right;display:flex;gap:6px"><button class="btn sm" data-act="oldChq">+ A cheque given before</button><button class="btn ghost sm" data-view="chqbooks">Cheque books</button></span></h1>
+  return `<h1>Cheques we have written <span style="float:right;display:flex;gap:6px"><button class="btn sm" data-act="oldChq">+ A cheque given before</button><button class="btn ghost sm" data-view="chqbooks">Cheque books</button>${isSuperUser()?'<button class="btn ghost sm" data-act="acctClear">Clear and put in again…</button>':''}</span></h1>
   <div class="row" style="margin-bottom:12px">
    ${stat('Out there, not cleared',fmt(sum(out)),`${out.length} cheque${out.length===1?'':'s'}`,'r')}
    ${stat('Falling due this week',fmt(sum(dueSoon)),`${dueSoon.length} to cover`,'y')}
@@ -36438,7 +36530,7 @@ document.addEventListener('click',e=>{
     camSeen:()=>{ const n=(S.notif||[]).find(x=>x.id===a.dataset.id); if(n){ n.read=true; render() } },
     camAdd:()=>{ camList().push({id:'c'+Math.random().toString(36).slice(2,7),name:'',host:'',port:80,channel:101}); render() },
     custBulk:()=>{ closeModals(); bulkPeopleModal('cust') },
-    clearShop:()=>clearShopFlow(),
+    clearShop:()=>clearShopFlow(), acctClear:()=>acctClearModal(),
     setupShop:()=>{ setTab='shop'; go('settings') },
     setupMsg:()=>{ setTab='msg'; go('settings') },
     suDo:()=>startupDo(a.dataset.k),
