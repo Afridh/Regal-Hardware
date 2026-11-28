@@ -24940,7 +24940,7 @@ function bills(){
   const filtered=billQ||billFrom||billTo||billType!=='all'||billBy!=='all'||billCust;
   const dayIs=(n)=>billFrom===(n===1?ago(1):ago(n))&&billTo===(n===1?ago(1):D(today));
   return `<h1 style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><span>Bills <span class="muted" style="font-size:13px;font-weight:400;margin-left:6px">${salesReal().length} on the system</span></span>
-    <span style="display:flex;gap:6px">${payBoss()?'<button class="btn ghost" data-act="findBill" title="A bill that printed but is not in this list">Find a missing bill</button>':''}<button class="btn tape" data-view="pos">New bill <i class="kbd">F3</i></button></span></h1>
+    <span style="display:flex;gap:6px"><button class="btn ghost" data-act="billsRefresh" title="Send this till's bills and bring in the other tills' — the list is drawn again">⟳ Refresh</button>${payBoss()?'<button class="btn ghost" data-act="findBill" title="A bill that printed but is not in this list">Find a missing bill</button>':''}<button class="btn tape" data-view="pos">New bill <i class="kbd">F3</i></button></span></h1>
   <div class="bl-wrap">
    <div class="card bl-list">
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -36370,6 +36370,11 @@ document.addEventListener('click',e=>{
     recRemindAll:()=>remindModal(recShownIds),
     recFilter:()=>{ recFilter=a.dataset.k; recLimit=40; render() }, recMore:()=>{ recLimit=99999; render() },
     myProfile:()=>myProfileModal(),
+    // Bills → Refresh (28 Nov 2026, the owner asked): the other tills' bills now, not at the next sync
+    billsRefresh:async()=>{ if(a.disabled) return; a.disabled=true; a.textContent='⟳ Refreshing…';
+      let r={ok:true}; try{ if(window.regalBridge&&typeof regalBridge.syncNow==='function'&&!window.isDemo) r=await regalBridge.syncNow() }catch(e){ r={ok:false,error:e.message} }
+      try{ window.eval("_caKey=''") }catch(e){}
+      render(); toast(r.ok?(r.got?'Bills brought up to date — bills from the other tills are in':'Bills are up to date'):(r.error||'The shop server did not answer — try again'),r.ok?'ok':'warn') },
     dashSync:async()=>{
       let updated=false;
       if(window.regalBridge&&typeof regalBridge.pull==='function'&&regalBridge.online()){
