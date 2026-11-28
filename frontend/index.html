@@ -6036,7 +6036,7 @@ const supTest=()=>{ const m=CFG.msg||{}; const to=String(m.supTestTo||'').trim()
    Who it is for is worked out from the number — the owner's mobile, a supplier, a member of staff,
    and anyone else is a customer — unless the caller says. The shop name some messages used to
    start with ("Regal Hardware: …") comes off the front, as the sign-off carries it now. */
-const MSG_AUD=[['customer','Customers','Dear Customer,'],['supplier','Suppliers','Dear Supplier,'],['owner','The owner','Dear Owner,'],['staff','Staff','Dear Team Member,']];
+const MSG_AUD=[['customer','Customers','Dear Customer,'],['supplier','Suppliers','Dear Supplier,'],['trade','Tradesmen','Dear Friend,'],['owner','The owner','Dear Owner,'],['staff','Staff','Dear Team Member,']];
 const msgGreetKey=(aud)=>'greet'+aud.charAt(0).toUpperCase()+aud.slice(1);
 const escM=(v)=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const phone9=(n)=>String(n||'').replace(/\D/g,'').slice(-9);
@@ -6048,6 +6048,7 @@ function msgAudience(to){
   if(String(CFG.shop.owner||'').split(/[,;\s]+/).some(x=>phone9(x)===p)) return 'owner';
   if((S.customers||[]).some(c=>c.active!==false&&phone9(c.phone)===p)) return 'customer';
   if((S.suppliers||[]).some(s=>phone9(s.phone)===p)) return 'supplier';
+  if((S.trades||[]).some(x=>x.active!==false&&phone9(x.phone)===p)) return 'trade';
   if((S.employees||[]).some(e=>phone9(e.phone)===p)||(S.users||[]).some(u=>phone9(u.phone)===p)) return 'staff';
   return 'customer';
 }
@@ -6078,7 +6079,7 @@ function supWa(to,body){ const t=supTest(); return t?wa(t,`[TEST · for ${to||'n
 /* A customer or supplier can have a second mobile (2 Nov 2026). When their card has "send texts to both
    numbers" ticked, every text that goes to their main number goes to the second one too. */
 const ph2Of=(to)=>{ const d=String(to||'').replace(/\D/g,''); if(!/^0\d{9}$/.test(d)) return '';
-  const x=S.customers.find(c=>c.id!==1&&c.active!==false&&c.phone2Sms&&String(c.phone||'').replace(/\D/g,'')===d)||(S.suppliers||[]).find(s=>s.active!==false&&s.phone2Sms&&String(s.phone||'').replace(/\D/g,'')===d);
+  const x=S.customers.find(c=>c.id!==1&&c.active!==false&&c.phone2Sms&&String(c.phone||'').replace(/\D/g,'')===d)||(S.suppliers||[]).find(s=>s.active!==false&&s.phone2Sms&&String(s.phone||'').replace(/\D/g,'')===d)||(S.trades||[]).find(s=>s.active!==false&&s.phone2Sms&&String(s.phone||'').replace(/\D/g,'')===d);
   const p2=x?String(x.phone2||'').replace(/\D/g,''):''; return /^0\d{9}$/.test(p2)&&p2!==d?p2:'' };
 function sms(to,body,aud,copy){
   if(!copy&&aud!=='owner'&&aud!=='staff'){ const p2=ph2Of(to); if(p2){ const r=sms(to,body,aud,true); sms(p2,body,aud,true); return r } }
@@ -7343,7 +7344,7 @@ const CFG={
  dlv:{charge:0,slots:['Morning','Afternoon','Evening'],sms:true},
  // damage & warranty returns: hold supplier payments while one is open; text the supplier when one is raised
  dmg:{holdPay:true,textSup:true},
- trade:{rate:2,sms:true,kinds:['Mason','Electrician','Plumber','Carpenter','Painter','Welder','Other']},
+ trade:{rate:2,sms:true,kinds:['Mason','Electrician','Plumber','Carpenter','Painter','Welder','Tile layer','Contractor','Other']},
  tpl:{
   cashSale:{label:'Cash bill',vars:'{shop} {invoice} {total} {link} {customer}',
     text:'Thank you for your purchase.\nBill No: {invoice}\nAmount: {total}\nClick the link below to see your invoice:\n{link}'},
@@ -15286,6 +15287,10 @@ function renderNow(){
   if(S.view==='docs'){ const dq=$('#docQ'); if(dq){ dq.oninput=e=>{docQ=e.target.value;render();
       const n=$('#docQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
     if(document.activeElement===document.body&&docQ)dq.focus() } }
+  if(S.view==='trades'){
+    const trq=$('#trQ'); if(trq) trq.oninput=e=>{ tradeQ=e.target.value; render(); const n=$('#trQ'); if(n){ n.focus(); n.setSelectionRange(n.value.length,n.value.length) } };
+    const tra=$('#trA'); if(tra) tra.onchange=e=>{ tradeA=e.target.value; render() };
+  }
   if(S.view==='chequesIn'||S.view==='chequesOut'){
     document.querySelectorAll('[data-chqpick]').forEach(cb=>cb.onchange=()=>{
       cb.checked?chqPicked.add(cb.dataset.chqpick):chqPicked.delete(cb.dataset.chqpick); render()});
@@ -33116,7 +33121,9 @@ function siteStatement(cid,sid){
    They are texted a thank-you with what they earned, and paid out from the till or the bank (a voucher,
    and the books: 6120 Tradesman commission). The bill keeps the rate it was earned at, so changing a
    rate later does not change what was earned before. */
-const tradeCfg=()=>({rate:2,sms:true,kinds:['Mason','Electrician','Plumber','Carpenter','Painter','Welder','Other'],...(CFG.trade||{})});
+const TRADE_KINDS=['Mason','Electrician','Plumber','Carpenter','Painter','Welder','Tile layer','Contractor','Other'];
+const tradeCfg=()=>{ const c={rate:2,sms:true,...(CFG.trade||{})}; c.kinds=[...new Set([...(c.kinds||[]),...TRADE_KINDS,...(Array.isArray(S.trades)?S.trades.map(x=>x.kind).filter(Boolean):[])])]; return c };
+const tradeAreas=()=>[...new Set((Array.isArray(S.trades)?S.trades:[]).map(x=>String(x.area||'').trim()).filter(Boolean))].sort();
 const tradeList=()=>{ if(!Array.isArray(S.trades)) S.trades=[]; return S.trades };
 const tradeOf=id=>tradeList().find(x=>x.id===id);
 const tradePays=()=>{ if(!Array.isArray(S.tradePays)) S.tradePays=[]; return S.tradePays };
@@ -33165,19 +33172,36 @@ function tradePick(){
     tradeList().push(x); persist(true); pick(x.id) };
   draw(); q.focus();
 }
+/* Their details (28 Nov 2026, the owner asked): a second number, the area they work in, address, birthday, notes, and
+   whether they want the shop's offers. Any trade can be typed — the list grows with what is used. */
 function tradeEdit(id){
   const x=id?tradeOf(id):{name:'',phone:'',kind:tradeCfg().kinds[0],rate:tradeCfg().rate,active:true};
+  const v=k=>noteEsc(x[k]||'');
   const m=modal(`<h2>${id?'Edit '+noteEsc(x.name):'A new tradesman'}</h2>
-   <div class="grid2"><div class="f"><label>Name</label><input id="teN" value="${noteEsc(x.name)}"></div><div class="f"><label>Mobile</label><input id="teP" inputmode="tel" value="${noteEsc(x.phone||'')}"></div></div>
-   <div class="grid3"><div class="f"><label>Trade</label><select id="teK">${tradeCfg().kinds.map(k=>`<option ${k===x.kind?'selected':''}>${noteEsc(k)}</option>`).join('')}</select></div>
-    <div class="f"><label>Commission (% of the bill)</label><input id="teR" type="number" step="0.1" min="0" max="50" value="${+x.rate||0}"></div>
-    <div class="f"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="teA" ${x.active!==false?'checked':''}> Still bringing customers</label></div></div>
-   <div class="muted">A new rate counts from the next bill — what was earned before stays as it was.</div>
+   <div class="grid2"><div class="f"><label>Name</label><input id="teN" value="${v('name')}" autocomplete="off"></div>
+    <div class="f"><label>Trade</label><input id="teK" list="teKinds" value="${v('kind')}" placeholder="Plumber, Electrician…" autocomplete="off"><datalist id="teKinds">${tradeCfg().kinds.map(k=>`<option value="${noteEsc(k)}">`).join('')}</datalist></div></div>
+   <div class="grid2"><div class="f"><label>Mobile</label><input id="teP" inputmode="tel" value="${v('phone')}" placeholder="07XXXXXXXX"></div>
+    <div class="f"><label>Second number <span class="muted">(optional)</span></label><input id="teP2" inputmode="tel" value="${v('phone2')}" placeholder="07XXXXXXXX"></div></div>
+   <label class="chk" style="margin:-4px 0 8px"><input type="checkbox" id="teBoth" ${x.phone2Sms?'checked':''}> send texts to both numbers</label>
+   <div class="grid2"><div class="f"><label>Area / town</label><input id="teArea" list="teAreas" value="${v('area')}" placeholder="e.g. Kaduruwela" autocomplete="off"><datalist id="teAreas">${tradeAreas().map(a=>`<option value="${noteEsc(a)}">`).join('')}</datalist></div>
+    <div class="f"><label>Address</label><input id="teAd" value="${v('address')}"></div></div>
+   <div class="grid3"><div class="f"><label>NIC <span class="muted">(optional)</span></label><input id="teNic" value="${v('nic')}"></div>
+    <div class="f"><label>Birthday <span class="muted">(optional)</span></label><input id="teBd" type="date" value="${v('birthday')}"></div>
+    <div class="f"><label>Commission (% of the bill)</label><input id="teR" type="number" step="0.1" min="0" max="50" value="${+x.rate||0}"></div></div>
+   <div class="f"><label>Notes</label><textarea id="teNo" rows="2" placeholder="e.g. does big housing jobs · comes Saturdays">${v('notes')}</textarea></div>
+   <div style="display:flex;gap:18px;flex-wrap:wrap"><label class="chk"><input type="checkbox" id="teA" ${x.active!==false?'checked':''}> Still bringing customers</label>
+    <label class="chk"><input type="checkbox" id="teO" ${x.noPromo?'':'checked'}> Send them the shop's offers</label></div>
+   <div class="muted">A new rate counts from the next bill — what was earned before stays as it was.</div><div class="muted rust" id="teMsg"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="teOk">Save</button></div>`);
-  m.querySelector('#teOk').onclick=()=>{ const name=m.querySelector('#teN').value.trim(); if(!name) return toast('A name is needed');
-    const v={name,phone:m.querySelector('#teP').value.replace(/[^\d+]/g,''),kind:m.querySelector('#teK').value,rate:Math.max(0,+m.querySelector('#teR').value||0),active:m.querySelector('#teA').checked};
-    if(id) Object.assign(x,v); else tradeList().push({id:'tr'+Date.now().toString(36),...v,since:D(today),by:S.user.name});
+  const g=i=>m.querySelector('#'+i), ph=i=>g(i).value.replace(/[^\d+]/g,'');
+  g('teOk').onclick=()=>{ const name=g('teN').value.trim(); if(!name) return g('teMsg').textContent='A name is needed.';
+    for(const k of ['teP','teP2']) if(ph(k)&&!/^(0\d{9}|\+?94\d{9})$/.test(ph(k))) return g('teMsg').textContent='That number does not look right — 07XXXXXXXX.';
+    const dup=ph('teP')&&tradeList().find(y=>y.id!==id&&phone9(y.phone)===phone9(ph('teP'))); if(dup) return g('teMsg').textContent=`${dup.name} already has that mobile.`;
+    const nv={name,phone:ph('teP'),phone2:ph('teP2'),phone2Sms:g('teBoth').checked&&!!ph('teP2'),kind:g('teK').value.trim()||'Other',area:g('teArea').value.trim(),address:g('teAd').value.trim(),
+      nic:g('teNic').value.trim(),birthday:g('teBd').value,notes:g('teNo').value.trim(),rate:Math.max(0,+g('teR').value||0),active:g('teA').checked,noPromo:!g('teO').checked};
+    if(id) Object.assign(x,nv); else tradeList().push({id:'tr'+Date.now().toString(36),...nv,since:D(today),by:S.user.name});
     m.remove(); persist(true); render(); toast('Saved','ok') };
+  g('teN').focus();
 }
 function tradePay(id){
   const x=tradeOf(id), tt=tradeTotals(id); if(!x) return;
@@ -33201,8 +33225,11 @@ function tradeStatement(id){
   sms(x.phone,tpl('tradeStatement',{name:x.name.split(' ')[0],month:fmt(tt.month),earned:fmt(tt.earned),paid:fmt(tt.paid),due:fmt(tt.due)}),'customer');
   toast('Statement texted to '+x.name,'ok');
 }
+let tradeQ='', tradeK='', tradeA='';
+const tradeShown=()=>{ const q=tradeQ.trim().toLowerCase();
+  return tradeList().filter(x=>(!tradeK||x.kind===tradeK)&&(!tradeA||String(x.area||'').trim()===tradeA)&&(!q||[x.name,x.kind,x.phone,x.phone2,x.area,x.address,x.notes,x.nic].join(' ').toLowerCase().includes(q))) };
 function tradesPage(){
-  const all=tradeList(), rows=all.map(x=>({x,tt:tradeTotals(x.id)})).sort((a,b)=>b.tt.month-a.tt.month||b.tt.due-a.tt.due);
+  const all=tradeShown(), rows=all.map(x=>({x,tt:tradeTotals(x.id)})).sort((a,b)=>b.tt.month-a.tt.month||b.tt.due-a.tt.due);
   const due=rows.reduce((a,r)=>a+r.tt.due,0), month=rows.reduce((a,r)=>a+r.tt.month,0), mk=D(today).slice(0,7);
   const brought=S.sales.filter(s=>s.trade&&String(s.date).slice(0,7)===mk&&+s.total>0);
   const paidM=tradePays().filter(p=>String(p.date).slice(0,7)===mk).reduce((a,p)=>a+p.amount,0);
@@ -33215,13 +33242,19 @@ function tradesPage(){
    </div>
    <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Who sends customers</h2>
-     <div style="display:flex;gap:8px;align-items:center"><span class="muted">Everyone earns ${tradeCfg().rate}% unless set per person</span><button class="btn tape" data-act="tradeNew">Add a tradesman</button></div></div>
-    ${rows.length?`<div style="overflow-x:auto;margin-top:10px"><table><tr><th>Name</th><th>Trade</th><th>Mobile</th><th class="n">Rate</th><th class="n">Bills</th><th class="n">Sales</th><th class="n">Earned</th><th class="n">Once paid</th><th class="n">Paid</th><th class="n">Waiting</th><th></th></tr>
-     ${rows.map(({x,tt})=>`<tr${x.active===false?' style="opacity:.55"':''}><td><b>${noteEsc(x.name)}</b></td><td>${noteEsc(x.kind||'')}</td><td>${noteEsc(x.phone||'—')}</td><td class="n">${+x.rate||0}%</td>
+     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="muted">Everyone earns ${tradeCfg().rate}% unless set per person</span>${ownerOnly()?`<button class="btn ghost" data-act="tradeSms">✉ Send them a message</button>`:''}<button class="btn tape" data-act="tradeNew">Add a tradesman</button></div></div>
+    ${(()=>{ const every=tradeList(), kinds=[...new Set(every.map(x=>x.kind).filter(Boolean))].sort(), areas=tradeAreas();
+      return every.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+       <input id="trQ" value="${noteEsc(tradeQ)}" placeholder="Name, mobile, area, notes…" autocomplete="off" style="max-width:260px">
+       <div class="chips" style="margin:0"><button class="${tradeK?'':'on'}" data-act="tradeKind" data-k="">All <b>${every.length}</b></button>${kinds.map(k=>`<button class="${tradeK===k?'on':''}" data-act="tradeKind" data-k="${noteEsc(k)}">${noteEsc(k)} <b>${every.filter(x=>x.kind===k).length}</b></button>`).join('')}</div>
+       ${areas.length?`<select id="trA" style="max-width:200px"><option value="">Every area</option>${areas.map(a=>`<option ${tradeA===a?'selected':''}>${noteEsc(a)}</option>`).join('')}</select>`:''}
+       <span class="muted" style="margin-left:auto">${all.length} of ${every.length}</span></div>`:'' })()}
+    ${rows.length?`<div style="overflow-x:auto;margin-top:10px"><table><tr><th>Name</th><th>Trade</th><th>Mobile</th><th>Area</th><th class="n">Rate</th><th class="n">Bills</th><th class="n">Sales</th><th class="n">Earned</th><th class="n">Once paid</th><th class="n">Paid</th><th class="n">Waiting</th><th></th></tr>
+     ${rows.map(({x,tt})=>`<tr${x.active===false?' style="opacity:.55"':''}><td><b>${noteEsc(x.name)}</b>${x.notes?`<div class="muted" style="font-size:12px">${noteEsc(x.notes)}</div>`:''}${x.noPromo?'<div><span class="tag">no offers</span></div>':''}</td><td>${noteEsc(x.kind||'')}</td><td style="white-space:nowrap">${noteEsc(x.phone||'—')}${x.phone2?`<div class="muted">${noteEsc(x.phone2)}</div>`:''}</td><td>${noteEsc(x.area||'')}</td><td class="n">${+x.rate||0}%</td>
        <td class="n">${tt.bills}</td><td class="n">${money2(tt.sales)}</td><td class="n">${money2(tt.earned)}</td><td class="n muted">${tt.pending>0.005?money2(tt.pending):'—'}</td><td class="n">${money2(tt.paid)}</td>
        <td class="n"><b>${money2(tt.due)}</b></td>
        <td style="white-space:nowrap">${tt.due>0.005?`<button class="btn tape sm" data-act="tradePay" data-id="${x.id}">Pay</button>`:''}${x.phone?` <button class="btn ghost sm" data-act="tradeStmt" data-id="${x.id}">Text statement</button>`:''} <button class="btn ghost sm" data-act="tradeEdit" data-id="${x.id}">Edit</button></td></tr>`).join('')}</table></div>`
-     :'<div class="muted" style="margin-top:10px">Nobody yet. Add them here, or straight from the till: press <b>Brought by…</b> on a bill.</div>'}
+     :`<div class="muted" style="margin-top:10px">${tradeList().length?'Nobody matches that.':'Nobody yet. Add them here, or straight from the till: press <b>Brought by…</b> on a bill.'}</div>`}
    </div>`;
 }
 
@@ -34272,10 +34305,12 @@ const unsentSms=m=>m.via!=='wa'&&/fail|held|not sent|queued/i.test(m.status||'')
    Numbers that are not a Sri Lankan mobile, and the same number twice, are left out and counted. The
    texts go one at a time at a steady pace through sms() — the same road as every other text, so test
    mode, the gateway and the Messages list all hold — with a bar to watch and a Stop button. */
-let BK={who:'cust',q:'',owe:false,lvl:'',picked:new Set(),body:'',running:false,stop:false};
+let BK={who:'cust',kind:'',area:'',q:'',owe:false,lvl:'',picked:new Set(),body:'',running:false,stop:false};
 const bkPhone=(p)=>{ let d=String(p||'').replace(/\D/g,''); if(d.startsWith('94')&&d.length===11) d='0'+d.slice(2); return /^07\d{8}$/.test(d)?d:'' };
 function bkPeople(){
   const out=[];
+  if(BK.who==='trade'){ for(const x of tradeList()){ if(x.active===false||x.noPromo) continue;
+      out.push({k:'T'+x.id,type:'T',id:x.id,name:x.name,phone:x.phone,lvl:'trade',kind:x.kind||'',area:String(x.area||'').trim(),owes:0}) } return out }
   if(BK.who!=='sup') for(const c of (S.customers||[])){ if(c.id===1||c.active===false) continue;
     out.push({k:'C'+c.id,type:'C',id:c.id,name:c.name,phone:c.phone,lvl:c.level||'retail',owes:partyBal('C',c.id)}) }
   if(BK.who==='sup'||BK.who==='both') for(const s of (S.suppliers||[])){ if(s.active===false) continue;
@@ -34288,33 +34323,37 @@ function bkTargets(){
     if(BK.who==='pick'&&!BK.picked.has(p.k)) continue;
     if(BK.who!=='pick'&&BK.owe&&!(p.owes>0.5)) continue;
     if(BK.who!=='pick'&&BK.lvl&&p.lvl!==BK.lvl) continue;
+    if(BK.who==='trade'&&((BK.kind&&p.kind!==BK.kind)||(BK.area&&p.area!==BK.area))) continue;
     const ph=bkPhone(p.phone); if(!ph){ bad.push(p); continue }
     if(seen.has(ph)){ dup.push(p); continue } seen.add(ph); go.push({...p,ph});
   }
   return {go,bad,dup};
 }
-const bkFill=(body,p)=>String(body).replace(/\{name\}/gi,p.name||'').replace(/\{owes\}/gi,money2(Math.max(0,p.owes||0))).replace(/\{shop\}/gi,(CFG.shop&&CFG.shop.name)||'');
+const bkFill=(body,p)=>String(body).replace(/\{name\}/gi,p.type==='T'?String(p.name||'').split(' ')[0]:p.name||'').replace(/\{owes\}/gi,money2(Math.max(0,p.owes||0))).replace(/\{shop\}/gi,(CFG.shop&&CFG.shop.name)||'');
 const bkParts=(t)=>{ const n=t.length, uni=/[^\x00-\x7F]/.test(t); const one=uni?70:160, many=uni?67:153; return n<=one?1:Math.ceil(n/many) };
 function bulkSmsModal(){
   if(!ownerOnly()) return toast('Only the Super Admin or an Admin sends to many at once');
   const m=modal('<div id="bkBody"></div>'); m.querySelector('.box').classList.add('bk-box');
   const draw=(focus)=>{
     const T=bkTargets(), first=T.go[0];
-    const preview=first?letter(first.type==='S'?'supplier':'customer',bkFill(BK.body||'…',first)):'';
+    const preview=first?letter(first.type==='S'?'supplier':first.type==='T'?'trade':'customer',bkFill(BK.body||'…',first)):'';
     const parts=preview?bkParts(preview):0;
     const people=BK.who==='pick'?bkPeople().filter(p=>{ const q=BK.q.trim().toLowerCase(); return !q||p.name.toLowerCase().includes(q)||String(p.phone||'').includes(q) }):[];
     m.querySelector('#bkBody').innerHTML=`<div class="bk-hd"><h2>Send a text to many</h2><button class="btn ghost" data-act="closeModal">✕</button></div>
-     <div class="bk-who">${[['cust','All customers'],['sup','All suppliers'],['both','Customers & suppliers'],['pick','Choose customers']].map(([k,l])=>`<button class="${BK.who===k?'on':''}" data-bkwho="${k}">${l}</button>`).join('')}</div>
+     <div class="bk-who">${[['cust','All customers'],['sup','All suppliers'],['both','Customers & suppliers'],['trade','Tradesmen'],['pick','Choose customers']].map(([k,l])=>`<button class="${BK.who===k?'on':''}" data-bkwho="${k}">${l}</button>`).join('')}</div>
      ${BK.who==='pick'?`<div class="bk-pick"><div class="bk-bar"><input id="bkQ" placeholder="Find a customer by name or number…" value="${noteEsc(BK.q)}">
         <button class="btn ghost sm" id="bkAll">Tick these ${people.length}</button><button class="btn ghost sm" id="bkNone">Untick all</button><span class="muted">${BK.picked.size} ticked</span></div>
         <div class="bk-list">${people.slice(0,400).map(p=>`<label class="bk-row"><input type="checkbox" data-bkp="${p.k}" ${BK.picked.has(p.k)?'checked':''}><b>${noteEsc(p.name)}</b><span>${noteEsc(p.phone||'no number')}</span><span class="${p.owes>0.5?'rust':'muted'}">${p.owes>0.5?'outstanding '+money2(p.owes):''}</span></label>`).join('')||'<div class="muted" style="padding:10px">No customer matches.</div>'}</div></div>`
+       :BK.who==='trade'?`<div class="bk-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="bkKind" style="width:auto;max-width:220px"><option value="">Every trade</option>${[...new Set(tradeList().map(x=>x.kind).filter(Boolean))].sort().map(k=>`<option ${BK.kind===k?'selected':''}>${noteEsc(k)}</option>`).join('')}</select>
+          <select id="bkArea" style="width:auto;max-width:220px"><option value="">Every area</option>${tradeAreas().map(a=>`<option ${BK.area===a?'selected':''}>${noteEsc(a)}</option>`).join('')}</select>
+          <span class="muted">Those who asked for no offers, and those no longer active, are left out.</span></div>`
        :`<div class="bk-bar"><label class="chk"><input type="checkbox" id="bkOwe" ${BK.owe?'checked':''}> Only those with a balance</label>
           ${BK.who!=='sup'?`<select id="bkLvl"><option value="">Retail and wholesale</option><option value="retail" ${BK.lvl==='retail'?'selected':''}>Retail customers only</option><option value="wholesale" ${BK.lvl==='wholesale'?'selected':''}>Wholesale customers only</option></select>`:''}</div>`}
      <div class="bk-grid">
       <div><label class="bk-l">The message</label>
        <textarea id="bkText" rows="6" maxlength="600" placeholder="e.g. New stock of Dulux paints is in — 10% off this week only.">${noteEsc(BK.body)}</textarea>
-       <div class="bk-tags">Fill in for each person: ${['{name}','{owes}','{shop}'].map(t=>`<button type="button" class="chip" data-bktag="${t}">${t}</button>`).join(' ')}</div>
-       <div class="muted" style="font-size:12px;margin-top:4px">The greeting (Dear Customer / Dear Supplier) and the shop's sign-off are added for you, as on every text.</div></div>
+       <div class="bk-tags">Fill in for each person: ${(BK.who==='trade'?['{name}','{shop}']:['{name}','{owes}','{shop}']).map(t=>`<button type="button" class="chip" data-bktag="${t}">${t}</button>`).join(' ')}</div>
+       <div class="muted" style="font-size:12px;margin-top:4px">The greeting (Dear Customer / Dear Supplier / Dear Friend for tradesmen — set in Settings → Messages) and the shop's sign-off are added for you, as on every text.</div></div>
       <div class="bk-prev"><label class="bk-l">How it reads${first?` — to ${noteEsc(first.name)}`:''}</label>
        <div class="bk-phone">${preview?noteEsc(preview).replace(/\n/g,'<br>'):'<span class="muted">Nobody to send to yet.</span>'}</div>
        <div class="muted" style="font-size:12px">${preview?`${preview.length} letters · ${parts} text${parts===1?'':'s'} each`:''}</div></div></div>
@@ -34330,6 +34369,8 @@ function bulkSmsModal(){
     m.querySelectorAll('[data-bktag]').forEach(b=>b.onclick=()=>{ const s=ta.selectionStart??ta.value.length; BK.body=ta.value.slice(0,s)+b.dataset.bktag+ta.value.slice(ta.selectionEnd??s); draw('#bkText') });
     const ow=q('#bkOwe'); if(ow) ow.onchange=()=>{ BK.owe=ow.checked; draw() };
     const lv=q('#bkLvl'); if(lv) lv.onchange=()=>{ BK.lvl=lv.value; draw() };
+    const bk2=q('#bkKind'); if(bk2) bk2.onchange=()=>{ BK.kind=bk2.value; draw() };
+    const ba2=q('#bkArea'); if(ba2) ba2.onchange=()=>{ BK.area=ba2.value; draw() };
     const bq=q('#bkQ'); if(bq) bq.oninput=()=>{ BK.q=bq.value; draw('#bkQ') };
     const ba=q('#bkAll'); if(ba) ba.onclick=()=>{ people.forEach(p=>BK.picked.add(p.k)); draw() };
     const bn=q('#bkNone'); if(bn) bn.onclick=()=>{ BK.picked.clear(); draw() };
@@ -34337,19 +34378,20 @@ function bulkSmsModal(){
     const st=q('#bkStop'); if(st) st.onclick=()=>{ BK.stop=true };
     const go=q('#bkGo'); if(go) go.onclick=async()=>{
       const list=bkTargets().go; if(!list.length||!BK.body.trim()) return;
-      if(!confirm(`Send this text to ${list.length} ${BK.who==='sup'?'supplier':BK.who==='both'?'customer and supplier':'customer'}${list.length===1?'':'s'}?`)) return;
+      const whoW=BK.who==='sup'?'supplier':BK.who==='both'?'customer and supplier':BK.who==='trade'?'tradesm':'customer', pl=w=>w==='tradesm'?(list.length===1?'tradesman':'tradesmen'):w+(list.length===1?'':'s');
+      if(!confirm(`Send this text to ${list.length} ${pl(whoW)}?`)) return;
       BK.running=true; BK.stop=false; draw();
       let sent=0;
       for(const p of list){
         if(BK.stop||!document.body.contains(m)) break;
-        try{ sms(p.ph,bkFill(BK.body,p),p.type==='S'?'supplier':'customer') }catch(e){}
+        try{ sms(p.ph,bkFill(BK.body,p),p.type==='S'?'supplier':p.type==='T'?'trade':'customer') }catch(e){}
         sent++;
         const bar=m.querySelector('#bkFillBar'), tx=m.querySelector('#bkProgT');
         if(bar) bar.style.width=Math.round(sent/list.length*100)+'%'; if(tx) tx.textContent=`${sent} of ${list.length} — ${p.name}`;
         await new Promise(r=>setTimeout(r,CFG.msg.live?700:40));
       }
       BK.running=false;
-      try{ logTrail('other',`Text sent to ${sent} ${BK.who==='sup'?'suppliers':BK.who==='both'?'customers and suppliers':'customers'}: "${BK.body.slice(0,80)}"`,{ref:'BULK'}) }catch(e){}
+      try{ logTrail('other',`Text sent to ${sent} ${BK.who==='sup'?'suppliers':BK.who==='both'?'customers and suppliers':BK.who==='trade'?'tradesmen'+(BK.kind?' ('+BK.kind+')':'')+(BK.area?' in '+BK.area:''):'customers'}: "${BK.body.slice(0,80)}"`,{ref:'BULK'}) }catch(e){}
       persist(true); toast(BK.stop?`Stopped — ${sent} sent`:`${sent} texts on their way — see Messages`,'ok');
       if(!BK.stop) BK.body='';
       if(document.body.contains(m)) draw(); render();
@@ -36989,7 +37031,7 @@ document.addEventListener('click',e=>{
       run.forEach((x,i)=>x.order=i+1); const i=run.indexOf(d), j=i+(+a.dataset.dir); if(j<0||j>=run.length) return; [run[i].order,run[j].order]=[run[j].order,run[i].order]; persist(true); render() },
     planNew:()=>planNew(a.dataset.no), planView:()=>planView(a.dataset.id), planClose:()=>{ const p=plansAll().find(x=>x.id===a.dataset.id); if(p&&confirm('Close this plan? Their bills stay owed; the reminders stop.')){ p.status='closed'; p.closed=D(today); closeModals(); persist(true); render() } },
     hireTab:()=>{ hireTab=a.dataset.t; render() }, hireItem:()=>hireItemEdit(a.dataset.id||null), hireNew:()=>hireNew(), hireBack:()=>hireBack(a.dataset.id), hireRemind:()=>hireRemind(a.dataset.id),
-    scaleTest:()=>scaleTest(), tradePick:()=>tradePick(), tradeNew:()=>tradeEdit(null), tradeEdit:()=>tradeEdit(a.dataset.id), tradePay:()=>tradePay(a.dataset.id), tradeStmt:()=>tradeStatement(a.dataset.id),
+    scaleTest:()=>scaleTest(), tradePick:()=>tradePick(), tradeNew:()=>tradeEdit(null), tradeKind:()=>{ tradeK=a.dataset.k; render() }, tradeSms:()=>{ BK.who='trade'; BK.kind=tradeK; BK.area=tradeA; bulkSmsModal() }, tradeEdit:()=>tradeEdit(a.dataset.id), tradePay:()=>tradePay(a.dataset.id), tradeStmt:()=>tradeStatement(a.dataset.id),
     darkToggle:()=>darkSet(!darkOn(),a),
     duSave:()=>duesSave(), duReload:()=>{ DUES.data=null; DUES.err=''; duesLoad(); render() },
     duRun:()=>{ if(!confirm('Send today\'s reminders now?')) return; duesApi('/run',{method:'POST',body:'{}'}).then(j=>{ toast(`${j.sent} sent${j.failed?', '+j.failed+' did not go':''}`,j.failed?'warn':'ok'); DUES.data=null; duesLoad() }).catch(e=>toast(e.message)) },
