@@ -65,7 +65,7 @@
   }
   async function call(method, path, body) {
     try {
-      var txt = body ? JSON.stringify(body) : undefined, h = headers(!!body), send = txt, zipped = false;
+      var txt = body ? (typeof body.__raw === 'string' ? body.__raw : JSON.stringify(body)) : undefined, h = headers(!!body), send = txt, zipped = false;
       if (txt && txt.length > 65536 && !gzipOff && typeof CompressionStream === 'function') {
         try { send = await packed(txt); h['Content-Encoding'] = 'gzip'; zipped = true; } catch (e) { send = txt; zipped = false; }
       }
@@ -141,7 +141,12 @@
     function get(k) { return db().then(function (d) { return new Promise(function (res) { var q = d.transaction('kv', 'readonly').objectStore('kv').get(KEY + ':' + k); q.onsuccess = function () { res(q.result); }; q.onerror = function () { res(undefined); }; }); }).catch(function () { return undefined; }); }
     return { put: put, get: get };
   })();
-  function keepBase() { if (base) idb.put('base', { rev: rev, base: base, at: Date.now() }); }
+  /* 28 Nov 2026 (the till froze for a moment, often): the books are several MB. Kept as the object, IndexedDB copied the whole
+     of it on every save and every pull (~0.2 s on a fast PC, more on the counter's). Kept as text it is one quick copy, and
+     the text is usually there already. Read back with readBase. */
+  function keepBase(txt) { if (base) idb.put('base', { rev: rev, baseTxt: typeof txt === 'string' ? txt : JSON.stringify(base), at: Date.now() }); }
+  function clean(d) { if (d && d.S) LOCAL_KEYS.forEach(function (k) { delete d.S[k]; }); if (d) delete d._sent; return d; }
+  function readBase(b) { if (!b) return null; if (b.base) return b.base; if (typeof b.baseTxt === 'string') { try { return clean(JSON.parse(b.baseTxt)); } catch (e) { return null; } } return null; }
   /* since when this till has had work the server has not taken, and the last answer it got: shown on the till
      (the sync light and its window) so nobody has to guess, and so a till that cannot get through says so loudly */
   var unsentSince = 0, lastErr = null, lastIn = null, lastOut = 0;   // lastIn: the last time the other tills' work came in, and whose
@@ -156,11 +161,12 @@
      this is never sample data. */
   async function offlineBooks() {
     var books = await idb.get('books'), b = await idb.get('base');
-    if (!books || !b || !b.base) return null;
+    var bb = readBase(b);
+    if (!books || !bb) return null;
     var d; try { d = JSON.parse(books); } catch (e) { return null; }
     if (!d || !d.S || !Array.isArray(d.S.products) || !Array.isArray(d.S.users) || !d.S.users.length) return null;
     LOCAL_KEYS.forEach(function (k) { delete d.S[k]; });
-    rev = b.rev; base = b.base; unsynced = true;        // whatever is here goes up when the server answers
+    rev = b.rev; base = bb; unsynced = true;        // whatever is here goes up when the server answers
     offlineSince = Date.now(); window.workingOffline = true;
     setTimeout(function () { badge('no internet — billing on this PC'); say('No internet — the till is working from this PC. Everything is sent when the internet is back.'); }, 1500);
     return { value: JSON.stringify(d) };
@@ -277,7 +283,7 @@
   function badge(txt) { ['savedAt', 'csSync'].forEach(function (id) { var el = document.getElementById(id); if (el) el.textContent = txt; }); }
 
   /** Apply a books document that came from the server, keeping this till's own screen state. */
-  function applyRemote(doc) {
+  function applyRemote(doc, own) {
     if (!doc || typeof window.applyKept !== 'function') return;
     var local = keepLocal();
     window.keptLocalPunches = false;
@@ -285,7 +291,7 @@
        `base = merged` and this was handed `merged` itself: the till's bill list WAS the base's, so every bill made
        afterwards was in the base too — and the next merge read it as one the server had taken out, and dropped it
        from the server and from this till (8 Nov 2026: bill 10176, printed on two PCs, only one kept). */
-    window.applyKept(JSON.parse(JSON.stringify(doc)));
+    window.applyKept(own ? doc : JSON.parse(JSON.stringify(doc)));   // own: nothing else holds it (pull)
     restoreLocal(local);
     if (typeof window.refreshMe === 'function') window.refreshMe();
     if (typeof window.markSaved === 'function') window.markSaved();
@@ -334,7 +340,7 @@
     if (j.__status !== 200) { window.booksUnreadable = true; return false; }
     window.booksUnreadable = false;
     if (j.data) {
-      rev = j.rev; base = strip(j.data); keepBase(); lastSyncAt = Date.now(); applyRemote(j.data); nowHeard();
+      var pTxt = JSON.stringify(j.data); rev = j.rev; base = clean(JSON.parse(pTxt)); keepBase(pTxt); lastSyncAt = Date.now(); applyRemote(j.data, true); nowHeard();
       if (!quiet) say('Books picked up from the server');
       // orders from the shop site ride in with the books; saving is what hands them to the shop for good
       if (j.inbox > 0) { say(j.inbox === 1 ? 'A new order from the website' : j.inbox + ' new orders from the website'); if (typeof window.persist === 'function') window.persist(true); }
@@ -380,11 +386,11 @@
         if ((await idb.get('unsynced')) === true) {
           var mineTxt = await idb.get('books'), was = await idb.get('base');
           try { unacked = (await idb.get('unacked')) || []; } catch (e) { unacked = []; }
-          if (mineTxt && was && was.base) waiting = { mine: strip(JSON.parse(mineTxt)), base: landedFrom(d) || was.base };
+          var wasB = readBase(was); if (mineTxt && wasB) waiting = { mine: strip(JSON.parse(mineTxt)), base: landedFrom(d) || wasB };
         }
       } catch (e) { waiting = null; }
       if (d) delete d._sent;
-      base = JSON.parse(JSON.stringify(d)); keepBase();
+      var dTxt = JSON.stringify(d); base = JSON.parse(dTxt); keepBase(dTxt);
       if (window.workingOffline) { window.workingOffline = false; }
       if (waiting) {
         var merged = merge3(waiting.base, waiting.mine, strip(d));
@@ -413,20 +419,24 @@
         return false;
       }
       if (!heard) { badge('waiting for the books\u2026'); return false; }   // see nowHeard: never before they are in
-      idb.put('books', txt);                               // this PC's own copy, internet or not
+      setTimeout(function () { idb.put('books', txt); }, 0);   // this PC's own copy, internet or not; a task of its own, so the save is not one long freeze
       if (busy) { pendingSet = txt; return true; }
       busy = true;
       lastPushAt = Date.now();
       try {
-        var doc = strip(JSON.parse(txt));
-        if (window._allowWipeOnce && Date.now() - window._allowWipeOnce < 120000) doc._allowWipe = window._allowWipeOnce;
+        /* 28 Nov 2026: this used to parse the text, copy it again, then turn it into text again to send — three
+           passes over several MB on every save. Now: parsed once (the base for merging), the till's own text sent. */
+        var doc = JSON.parse(txt), docTxt = txt;
+        if ((doc && doc.S && LOCAL_KEYS.some(function (k) { return k in doc.S; })) || (doc && '_sent' in doc)) { clean(doc); docTxt = null; }
+        if (window._allowWipeOnce && Date.now() - window._allowWipeOnce < 120000) { doc._allowWipe = window._allowWipeOnce; docTxt = null; }
         window._allowWipeOnce = 0;
         var sid = newSid();
-        var j = await call('PUT', '/books/' + KEY, { data: doc, rev: rev, sid: sid, term: TERM });
+        if (docTxt === null) docTxt = JSON.stringify(doc);
+        var j = await call('PUT', '/books/' + KEY, { __raw: '{"data":' + docTxt + ',"rev":' + JSON.stringify(rev) + ',"sid":' + JSON.stringify(sid) + ',"term":' + JSON.stringify(TERM) + '}' });
         if (j.__status === 0 || j.__status >= 500) lostAnswer(sid, doc);
         if (j.__status === 200) {
           answered();
-          rev = j.rev; lastPushAt = Date.now(); lastSyncAt = Date.now(); base = doc; keepBase(); setUnsynced(false);
+          rev = j.rev; lastPushAt = Date.now(); lastSyncAt = Date.now(); base = doc; keepBase(docTxt); setUnsynced(false);
           // the server kept bills this save had lost (see keepBills there): one revision behind, so the next poll brings them back here
           if (j.keptBills && j.keptBills.length) { rev = j.rev - 1; lastPushAt = 0; }
           if (offlineSince) { offlineSince = 0; window.workingOffline = false; say('Back online — the work done on this PC is with the shop now'); }
