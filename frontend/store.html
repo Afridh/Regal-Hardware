@@ -572,7 +572,9 @@ async function api(path,opts){
   var r=await fetch(API+path,{method:opts.method||'GET',headers:h,body:opts.body?JSON.stringify(opts.body):undefined});
   var j={};try{j=await r.json()}catch(e){}
   if(r.status===401&&t&&!/^\/(otp|login)/.test(path)){ls.set('token','');}
-  if(!r.ok){var e=new Error(j.error||('Something went wrong ('+r.status+')'));e.status=r.status;throw e}
+  /* a fault on the shop's server is never shown to the customer as it is (28 Nov 2026: a database error filled the
+     checkout); what they can do about it is */
+  if(!r.ok){var msg=r.status>=500||/SQL|syntax|database|ECONN|MariaDB|MySQL/i.test(j.error||'')?'The shop could not take this just now. Please try again in a minute, or call us on '+SH().phone+'.':(j.error||('Something went wrong ('+r.status+')'));var e=new Error(msg);e.status=r.status;throw e}
   return j;
 }
 
@@ -638,7 +640,7 @@ function add(pid,qty,from){
   saveCart();drawCart();badge();fly(from,function(){badge(true)});buzz();
   toast(qty+' × '+p.title+' added');
 }
-function setQty(i,q){if(q<1)cart.splice(i,1);else cart[i].qty=Math.min(999,q);saveCart();badge();drawCart();if(route().name==='checkout')render()}
+function setQty(i,q){if(q<1)cart.splice(i,1);else cart[i].qty=Math.min(999,q);saveCart();badge();drawCart();if(route().name==='checkout'){quote=null;render();askQuote()}}   // the basket changed: the total is asked for again
 function badge(bump){var n=items();$('#cartn').textContent=n;var t=$('#tcartn');t.textContent=n;t.hidden=!n;
   if(bump&&!reduce){var b=$('#cartbtn');b.classList.remove('bump');void b.offsetWidth;b.classList.add('bump');bumpEl($('#cartn'));bumpEl($('#tcartn'))}}
 /* 28 Nov 2026, the owner asked: no delivery charge online; the shop contacts the customer with it once the order is confirmed */
@@ -980,13 +982,14 @@ var form=Object.assign({how:'deliver',addr:'',zone:'',pay:'',note:'',code:''},ls
 var who={phone:ls.get('phone',''),name:ls.get('name','')};
 var otp={sent:false,code:'',needName:false,busy:false,msg:''};
 var fx={code:false,inn:false,total:null};   // what has just happened, played once on the next draw
-var quote=null,quoteAt=0;
+var quote=null,quoteAt=0,quoteBusy=false;
 function signedIn(){return !!ls.get('token','')}
 /* a Sri Lankan mobile however it is typed: 077 123 4567, 77 123 4567, +94 77 123 4567, 0094771234567 → 0771234567, else '' */
 function mobileOf(v){var d=String(v||'').replace(/\D/g,'').replace(/^0094/,'').replace(/^94(?=7\d{8}$)/,'');if(/^7\d{8}$/.test(d))d='0'+d;return /^07\d{8}$/.test(d)?d:''}
 async function askQuote(){
-  var mine=++quoteAt;
+  var mine=++quoteAt;quoteBusy=true;
   try{var j=await api('/quote',{method:'POST',body:{lines:cart.map(function(l){return {pid:l.pid,qty:l.qty}}),deliver:form.how==='deliver',zone:form.zone||'',code:form.code||''}});if(mine!==quoteAt)return;quote=j}catch(e){quote=null}
+  quoteBusy=false;
   if(route().name==='checkout'){var y=scrollY;render();scrollTo(0,y)}   // render keeps the box being typed in
 }
 function pays(){var p=S0().pays||{},o=[];if(form.how==='deliver'&&p.cod!==false)o.push(['cod','Pay on delivery','Cash when the goods arrive']);if(p.counter!==false)o.push(['counter','Pay at the shop',form.how==='deliver'?'Before it goes out':'When you collect']);if(p.bank)o.push(['bank','Bank transfer','We send the account details when we call']);if(p.card)o.push(['card','Card','Paid online']);return o}
@@ -1027,7 +1030,9 @@ function checkoutAfter(){
   var f=$('#coform');if(!f)return;
   fx.code=false;fx.inn=false;
   var tm=$('.osum .sumrow.big .money');if(tm){var now=tm.textContent;if(fx.total!==null&&fx.total!==now&&!reduce){tm.classList.remove('roll');void tm.offsetWidth;tm.classList.add('roll')}fx.total=now}
-  if(quoteAt===0||!quote)askQuote();
+  /* 28 Nov 2026 (the checkout kept blinking): a total that failed was asked for again on every draw, and every answer drew
+     the page again — round and round. Now it is asked as the page opens, and again only when something on it changes. */
+  if(quoteAt===0&&!quoteBusy)askQuote();
   f.addEventListener('input',function(e){var t=e.target;if(t.id==='fphone'){who.phone=t.value;errAt('ephone','')}else if(t.id==='fcode'){var dg=t.value.replace(/\D/g,'').slice(0,6);if(dg!==t.value)t.value=dg;otp.code=dg;errAt('ecode','');if(dg.length===6&&!otp.needName&&!otp.busy){var cg=$('#otpgo');if(cg)setTimeout(function(){if(!otp.busy&&String(otp.code).length===6)cg.click()},250)}}else if(t.id==='fname')who.name=t.value;else if(t.name&&t.type!=='radio'){form[t.name]=t.value;keep()}});
   f.addEventListener('change',function(e){var t=e.target;if(t.type==='radio'||t.id==='fzone'){form[t.name]=t.value;keep();askQuote();redraw()}else if(t.id==='fpromo'){form.code=t.value.trim().toUpperCase();askQuote()}});
   var so=$('#signout');if(so)so.onclick=function(){ls.set('token','');ls.set('name','');who={phone:'',name:''};otp={sent:false,code:'',needName:false,busy:false,msg:''};redraw()};

@@ -10,7 +10,7 @@ let pass = 0, fail = 0; const ok = (c, m, x = '') => { c ? pass++ : fail++; cons
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const b = await puppeteer.launch({ executablePath: exe, headless: true, args: ['--no-sandbox'] });
 const pg = await b.newPage(); await pg.setViewport({ width: 1366, height: 900 });
-const errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('dialog', d => d.dismiss());
+const errs = []; pg.on('pageerror', e => { if (!/Failed to fetch/.test(e.message)) errs.push(e.message) }); pg.on('dialog', d => d.dismiss());   // saves are blocked here on purpose
 await pg.setRequestInterception(true); pg.on('request', rq => { if (/:41\d\d/.test(rq.url()) || (rq.method() === 'PUT' && /books/.test(rq.url()))) return rq.abort(); rq.continue() });
 await pg.goto(BASE + '/pos', { waitUntil: 'networkidle2' });
 await pg.waitForFunction(() => document.getElementById('lockScreen') || document.querySelector('#nav button'), { timeout: 25000 });

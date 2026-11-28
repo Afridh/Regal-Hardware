@@ -74,6 +74,29 @@ for (const [n, W, H2, mob] of [['d', 1440, 900, false], ['m', 390, 844, true]]) 
   await pg.goto(BASE + '/', { waitUntil: 'networkidle2' }); await pg.evaluate(() => { window.__last = { no: 'ONL-TEST', total: 100, how: 'collect', pay: 'cod', name: 'A', phone: '0771234567' }; location.hash = '#/done' }); await wait(500);
   const an = await pg.evaluate(() => getComputedStyle(document.querySelector('.done .slip .box')).animationName);
   ok(an === 'none', 'less motion asked for: the slip just shows', an); await pg.close() }
+// 28 Nov 2026 (the live checkout blinked, a database error on it): the server failing the total and the order.
+// The page asks for the total once, not round and round; the customer is told plainly what to do, never the error itself.
+{ const pg = await b.newPage(); await pg.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+  const errs = []; pg.on('pageerror', e => errs.push(e.message));
+  let quotes = 0;
+  await pg.setRequestInterception(true);
+  pg.on('request', rq => { const u = rq.url(); if (/:41\d\d/.test(u)) return rq.abort();
+    if (/\/api\/shop\/(quote|order)/.test(u)) { if (/quote/.test(u)) quotes++; return rq.respond({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: "You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near '>>'$.code') = upper('')' at line 1" }) }) }
+    rq.continue() });
+  await pg.goto(BASE + '/', { waitUntil: 'networkidle2' });
+  await pg.evaluate(id => { localStorage.clear(); localStorage.setItem('rh_cart', JSON.stringify([{ pid: id, qty: 1 }])); localStorage.setItem('rh_token', JSON.stringify('x')); localStorage.setItem('rh_name', JSON.stringify('Blink Test')); localStorage.setItem('rh_phone', JSON.stringify('0771234567')) }, P1.id);
+  await pg.goto(BASE + '/#/checkout', { waitUntil: 'networkidle2' }); await pg.reload({ waitUntil: 'networkidle2' });
+  // count how often the page is drawn again over 4 seconds
+  await pg.evaluate(() => { window._draws = 0; new MutationObserver(() => window._draws++).observe(document.getElementById('app'), { childList: true }) });
+  await wait(4000);
+  const draws = await pg.evaluate(() => window._draws);
+  ok(quotes <= 2 && draws <= 2, 'the total failing does not set the page blinking', `asked ${quotes} times, drawn ${draws} times in 4 s`);
+  const radios = await pg.$$('input[name=how]'); if (radios[1]) { await radios[1].click(); await wait(300) }
+  await pg.evaluate(() => document.getElementById('placeb').click()); await wait(1200);
+  const said = await pg.evaluate(() => (document.getElementById('eplace') || {}).innerText || '');
+  ok(/could not take this just now/.test(said) && /call us/.test(said) && !/SQL|MariaDB/.test(said), 'the order failing tells the customer what to do, not the database error', said);
+  ok(!errs.length, 'no page errors', errs.slice(0, 2).join(' | '));
+  await pg.close() }
 console.log(`\n${pass} passed, ${fail} failed`);
 await b.close();
 process.exit(fail ? 1 : 0);

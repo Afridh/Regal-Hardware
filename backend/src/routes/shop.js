@@ -462,6 +462,7 @@ r.get('/me', shopAuth, asyncHandler(async (req, res) => {
 /** How many orders have carried a code. Counted from the orders themselves, so it can never
    drift from the truth and is not lost when a till writes the books over the top. */
 export async function promoUsed(code) {
+  if (!String(code || '').trim()) return 0;   // no code typed: nothing to count (and no query to fail an order over)
   await ensureShopTables();
   const { rows: [r] } = await query(
     `SELECT count(*)::int AS n FROM shop_orders WHERE upper(data->>'code') = upper($1)`, [String(code || '')]);

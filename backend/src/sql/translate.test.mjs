@@ -47,7 +47,10 @@ is('= ANY becomes IN', dialect('WHERE id = ANY($1)'), 'WHERE id IN ($1)');
 is('FILTER', dialect('SELECT count(*) FILTER (WHERE a > 0) AS n FROM t'),
   'SELECT count(CASE WHEN a > 0 THEN 1 END) AS n FROM t');
 is('jsonb_array_length', dialect("SELECT jsonb_array_length(data->'S'->'customers') FROM books"),
-  "SELECT JSON_LENGTH(data->'$.S.customers') FROM books");
+  "SELECT JSON_LENGTH(JSON_EXTRACT(data, '$.S.customers')) FROM books");
+// MariaDB has no -> or ->> (28 Nov 2026: every online order failed on the live host)
+is('->> on MariaDB', toMySQL("SELECT count(*)::int AS n FROM shop_orders WHERE upper(data->>'code') = upper($1)", ['X']).sql,
+  "SELECT CAST(count(*) AS SIGNED) AS n FROM shop_orders WHERE upper(JSON_UNQUOTE(JSON_EXTRACT(data, '$.code'))) = upper(?)");
 
 /* returning */
 is('RETURNING is taken off', returning('INSERT INTO t (a) VALUES ($1) RETURNING *').sql, 'INSERT INTO t (a) VALUES ($1)');
