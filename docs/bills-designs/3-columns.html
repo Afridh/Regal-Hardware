@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bills · Three columns — Regal POS</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+html,body{background:#f5f5f3}
+*{box-sizing:border-box;margin:0}
+body{font:500 14px/1.4 'IBM Plex Sans',system-ui,sans-serif;color:#1a1d1f;height:100vh;overflow:hidden;padding-left:68px;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2.5px solid #ae1e2b;outline-offset:2px}
+.num{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+.page{height:100vh;display:grid;grid-template-columns:330px 1fr 300px;min-height:0}
+.col{min-height:0;display:flex;flex-direction:column;border-right:1px solid #e4e2dd}
+/* left: the bills */
+.lh{padding:14px 14px 10px;display:grid;gap:8px;border-bottom:1px solid #e4e2dd;background:#fff}
+.lh h1{font-size:20px;font-weight:700;display:flex;justify-content:space-between;align-items:baseline}.lh h1 span{font-size:12px;color:#7a7f83;font-weight:500}
+.find{display:flex;align-items:center;gap:8px;height:38px;padding:0 10px;border:1px solid #dcd9d3;border-radius:10px;background:#fbfbfa}
+.find:focus-within{border-color:#ae1e2b}.find svg{width:16px;height:16px;color:#8a8f93}.find input{flex:1;min-width:0;border:0;outline:0;background:none;font-size:13.5px}
+.fl{display:flex;gap:4px;flex-wrap:wrap}
+.fl button,.fl select{height:26px;padding:0 9px;border:1px solid #dcd9d3;border-radius:7px;background:#fff;font-size:12px;font-weight:600;cursor:pointer}
+.fl .on{background:#1a1d1f;color:#fff;border-color:#1a1d1f}
+.lt{font-size:11.5px;color:#7a7f83;display:flex;justify-content:space-between}.lt b{color:#c0392b}
+.rows{flex:1;overflow:auto;background:#fff}
+.r{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #f0eeea;background:none;padding:10px 14px 10px 12px;cursor:pointer;border-left:3px solid transparent}
+.r:hover{background:#fafaf8}.r.on{background:#fff1f0;border-left-color:#ae1e2b}
+.r .l1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.r .nm{font-weight:700;font-size:13.5px;line-height:1.25}
+.r .nm.walk{color:#8a8f93;font-weight:600}
+.r .am{font-weight:600;font-size:13px;white-space:nowrap}
+.r .l2{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:#7a7f83;margin-top:3px}
+.r .l2 .due{color:#c0392b;font-weight:700;white-space:nowrap}.r .l2 .ok{color:#1e8a5a;font-weight:700}
+/* middle: the bill's lines */
+.mid{background:#fbfbfa}
+.mh{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;padding:14px 18px 10px;background:#fff;border-bottom:1px solid #e4e2dd}
+.mh h2{font-size:26px;font-weight:700;line-height:1}.mh h2 small{font-size:13px;font-weight:500;color:#7a7f83;margin-left:8px}
+.mh .print{display:flex;gap:6px}.mh .when{font-size:12.5px;color:#7a7f83;margin-top:5px}
+.p{height:34px;padding:0 12px;border-radius:9px;border:1px solid #dcd9d3;background:#fff;font-weight:600;font-size:12.5px;cursor:pointer;white-space:nowrap;display:flex;flex-direction:column;justify-content:center;line-height:1.1}
+.p small{font-size:10px;color:#8a8f93;font-weight:500}
+.p.pri{background:#ae1e2b;border-color:#ae1e2b;color:#fff}.p.pri small{color:#ffd0d0}
+.p.dark{background:#1a1d1f;border-color:#1a1d1f;color:#fff}.p.dark small{color:#b8bdc0}
+.p:hover{filter:brightness(.95)}
+.items{flex:1;overflow:auto}
+table{width:100%;border-collapse:collapse}
+th{position:sticky;top:0;background:#fbfbfa;font-size:11px;font-weight:600;letter-spacing:.06em;color:#8a8f93;text-align:left;padding:9px 12px;border-bottom:1px solid #e4e2dd}
+td{padding:8px 12px;border-bottom:1px solid #efede9;font-size:13.5px;background:#fff}td.n,th.n{text-align:right;white-space:nowrap}td.c{color:#9a9fa3;font-size:12px}
+tr:hover td{background:#fffaf9}
+.foot{display:flex;justify-content:space-between;gap:12px;padding:9px 18px;background:#fff;border-top:1px solid #e4e2dd;font-size:12.5px;color:#7a7f83}
+.foot b{color:#1a1d1f}
+/* right: who, the money, what to do — each figure on a line of its own */
+.right{background:#fff;overflow:auto;border-right:0}
+.box{padding:14px 16px;border-bottom:1px solid #efede9}
+.box h3{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#8a8f93;margin-bottom:8px}
+.who b{display:block;font-weight:700;font-size:16px;line-height:1.25}.who span{font-size:12.5px;color:#7a7f83}.who a{color:#2563b8;font-weight:600;font-size:12.5px}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:13px}
+.kv span{color:#5d6266}.kv b{font-weight:600;white-space:nowrap}
+.kv.big{padding:8px 10px;margin:4px -10px;border-radius:10px;font-size:14px}
+.kv.big b{font-size:19px;font-weight:600}
+.kv.net{background:#fff1f0}.kv.net b{color:#ae1e2b}
+.kv.paid b{color:#1e8a5a}.kv.bal{background:#fff7ec}.kv.bal b{color:#c0392b}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.a{height:34px;border-radius:9px;border:1px solid #dcd9d3;background:#fff;font-weight:600;font-size:12.5px;cursor:pointer;padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.a:hover{background:#1a1d1f;color:#fff;border-color:#1a1d1f}
+.a.full{grid-column:1/-1}.a.pri{background:#1e8a5a;border-color:#1e8a5a;color:#fff}.a.x{color:#c0392b}
+.tag{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:999px;border:1.5px solid currentColor;vertical-align:3px;margin-left:6px}
+.tag.credit{color:#c0392b}.tag.cash{color:#1e8a5a}
+</style></head><body>
+<div id="side"></div>
+<div class="page">
+  <section class="col" aria-label="Bills">
+    <div class="lh"><h1>Bills <span id="count"></span></h1>
+      <label class="find"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q" placeholder="Customer, mobile, bill, item, amount" aria-label="Find a bill"></label>
+      <div class="fl" id="when"></div><div class="fl" id="kind"></div>
+      <div class="lt"><span id="t1"></span><span>Due <b id="t2"></b></span></div></div>
+    <div class="rows" id="rows"></div>
+  </section>
+  <section class="col mid" id="mid" aria-live="polite"></section>
+  <aside class="col right" id="right"></aside>
+</div>
+<a class="demo-back" href="./">← all designs</a>
+<script src="common.js"></script>
+<script>
+(function(){var rs=B.rs,esc=B.esc,cur=B.BILLS[0].no,f='all',q='';
+document.getElementById('side').outerHTML=B.SIDE;
+document.getElementById('count').textContent=B.totals.bills+' on the system';
+document.getElementById('when').innerHTML=['Today','Yesterday','7 days','30 days','All'].map(function(x,i){return '<button class="'+(i===4?'on':'')+'" data-w>'+x+'</button>'}).join('');
+document.getElementById('kind').innerHTML=[['all','All'],['cash','Cash'],['credit','Credit'],['out','Due'],['nd','Not delivered 3']].map(function(x){return '<button class="'+(x[0]==='all'?'on':'')+'" data-k="'+x[0]+'">'+x[1]+'</button>'}).join('')+'<select><option>Any cashier</option><option>Afridh</option><option>Azhad</option></select>';
+document.getElementById('t1').textContent=B.totals.bills+' bills · Rs '+rs(B.totals.billed);document.getElementById('t2').textContent='Rs '+rs(B.totals.out);
+document.querySelectorAll('[data-w]').forEach(function(c){c.onclick=function(){document.querySelectorAll('[data-w]').forEach(function(x){x.classList.toggle('on',x===c)})}});
+document.querySelectorAll('[data-k]').forEach(function(c){c.onclick=function(){f=c.dataset.k;document.querySelectorAll('[data-k]').forEach(function(x){x.classList.toggle('on',x===c)});list()}});
+document.getElementById('q').oninput=function(e){q=e.target.value;list()};
+function list(){document.getElementById('rows').innerHTML=B.filtered(q,f).map(function(b){
+  return '<button class="r'+(b.no===cur?' on':'')+'" data-no="'+b.no+'"><div class="l1"><span class="nm'+(b.cust?'':' walk')+'">'+esc(b.cust||'Walk-in')+'</span><span class="am num">'+rs(b.total)+'</span></div><div class="l2"><span class="num">'+b.no+' · '+b.day+' '+b.time.replace(/:\d\d (am|pm)/,' $1')+' · '+b.by+'</span>'+(b.balance>0?'<span class="due num">'+rs(b.balance)+' due</span>':'<span class="ok">'+b.type+'</span>')+'</div></button>'}).join('');
+  document.querySelectorAll('.r').forEach(function(r){r.onclick=function(){cur=r.dataset.no;list();show()}})}
+function show(){var b=B.BILLS.filter(function(x){return x.no===cur})[0];
+  document.getElementById('mid').innerHTML='<div class="mh"><div><h2 class="num">'+b.no+'<span class="tag '+b.type+'">'+b.type+'</span></h2><div class="when">2026-11-09 · '+b.time+' · by '+b.by+'</div></div><div class="print"><button class="p pri" data-do="Prints the A5 bill">Large bill<small>A5 · Alt+L</small></button><button class="p dark" data-do="Prints the 80 mm receipt">Small bill<small>80mm · Alt+S</small></button><button class="p" data-do="Shows the bill first">Look first<small>Alt+P</small></button><button class="p dark" data-do="Opens the camera">Camera<small>'+b.cam+' · Alt+C</small></button></div></div>'+
+   '<div class="items"><table><thead><tr><th>CODE</th><th>ITEM</th><th class="n">QTY</th><th class="n">MRP</th><th class="n">PRICE</th><th class="n">DISC</th><th class="n">AMOUNT</th></tr></thead><tbody>'+
+   b.lines.map(function(l){return '<tr><td class="c num">'+l.code+'</td><td>'+esc(l.name)+'</td><td class="n num">'+l.qty+'</td><td class="n num">'+(l.mrp?rs(l.mrp):'—')+'</td><td class="n num">'+rs(l.price)+'</td><td class="n">—</td><td class="n num">'+rs(l.amount)+'</td></tr>'}).join('')+'</tbody></table></div>'+
+   '<div class="foot num"><span><b>'+b.items+'</b> lines · <b>'+rs(b.qty,0)+'</b> pieces</span><span>Profit <b>'+rs(b.gp)+'</b> · '+b.gpPct+'%</span></div>';
+  document.getElementById('right').innerHTML='<div class="box who"><h3>Customer</h3><b>'+esc(b.cust||'Walk-in customer')+'</b>'+(b.cust?'<span class="num">'+b.phone+'</span> · <a href="#" data-do="Opens their account">their account</a>':'')+'</div>'+
+   '<div class="box num"><h3>Money</h3><div class="kv"><span>Gross</span><b>'+rs(b.gross)+'</b></div><div class="kv"><span>Discount</span><b>'+rs(b.disc)+'</b></div><div class="kv big net"><span>Net total</span><b>'+rs(b.total)+'</b></div><div class="kv paid"><span>Paid</span><b>'+rs(b.paid)+'</b></div><div class="kv big bal"><span>Balance</span><b>'+rs(b.balance)+'</b></div><div class="kv"><span>Other bills due</span><b>'+rs(b.other)+'</b></div></div>'+
+   '<div class="box"><h3>Change</h3><div class="acts">'+(b.balance>0?'<button class="a pri full" data-do="Takes a payment">Take payment</button><button class="a" data-do="Easy payments">Easy payments</button>':'')+'<button class="a" data-do="Deliver">Deliver</button><button class="a" data-do="Issue in parts">Issue in parts</button><button class="a" data-do="Not delivered yet">Not delivered</button><button class="a" data-do="Edit in the till">Edit in the till</button><button class="a" data-do="Correct a line">Correct a line</button><button class="a" data-do="Bill again">Bill again</button><button class="a x" data-do="Asks to cancel">Cancel bill</button></div></div>'+
+   '<div class="box"><h3>Send</h3><div class="acts"><button class="a" data-do="Texts the e-bill">Text e-bill</button><button class="a" data-do="Opens WhatsApp">WhatsApp</button><button class="a" data-do="Another number">Another no.</button><button class="a" data-do="Emails the PDF">Email PDF</button></div></div>'}
+list();show();
+})();
+</script></body></html>
