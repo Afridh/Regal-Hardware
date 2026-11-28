@@ -66,6 +66,14 @@ await pg.$eval('#bkGo', e => e.click()); await wait(1200);
 sent = await pg.evaluate(() => window.__sms.map(x => x.to).sort());
 ok(JSON.stringify(sent) === JSON.stringify(['0771234501', '0771234503', '0771234505']), 'Kaduruwela: every trade there', JSON.stringify(sent));
 ok(await pg.evaluate(() => window.eval('msgAudience')('0771234502') === 'trade' && window.eval('ph2Of')('0771234501') === '0712345601'), 'a text typed to one of them greets them as a tradesman; the second number gets it too');
+// the Tradesmen tab beside Customers and Suppliers; switched off, it takes the Super Admin to where it is switched on
+await pg.evaluate(() => { document.querySelectorAll('.modal').forEach(m => m.remove()); window.eval('go')('customers') }); await wait(400);
+await pg.$eval('.pt-kind [data-act="tradesTab"]', e => e.click()); await wait(300);
+ok(await pg.evaluate(() => window.eval('S').view === 'trades'), 'Customers → the Tradesmen tab opens the tradesmen');
+await pg.evaluate(() => { window.eval('CFG').features = { ...(window.eval('CFG').features || {}), trades: false }; window.eval('go')('suppliers') }); await wait(400);
+await pg.$eval('.pt-kind [data-act="tradesTab"]', e => e.click()); await wait(300);
+ok(await pg.evaluate(() => window.eval('S').view === 'settings' && !!document.querySelector('[data-feat="trades"]')), 'switched off: the tab takes the Super Admin to Features, to tick it');
+await pg.evaluate(() => { delete window.eval('CFG').features.trades });
 ok(!errs.length, 'no errors on the page', errs.join(' | '));
 await b.close();
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

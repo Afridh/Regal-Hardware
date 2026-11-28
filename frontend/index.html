@@ -26615,7 +26615,7 @@ function ptRowBar(owed,oldest,limit){
   return `<span class="pt-rb" title="${limit>0?Math.round(owed/limit*100)+'% of the limit used · ':''}oldest ${oldest} days"><i class="${tone}" style="width:${Math.max(6,pct)}%"></i></span>`;
 }
 // Customers | Suppliers at the top of the list
-const ptKind=(t)=>`<div class="pt-kind"><button class="${t==='C'?'on':''}" data-view="customers">Customers</button><button class="${t==='S'?'on':''}" data-view="suppliers">Suppliers</button></div>`;
+const ptKind=(t)=>`<div class="pt-kind"><button class="${t==='C'?'on':''}" data-view="customers">Customers</button><button class="${t==='S'?'on':''}" data-view="suppliers">Suppliers</button>${allowed('trades')||(superAdmin()&&!featOn('trades'))?`<button data-act="tradesTab" title="Plumbers, electricians, carpenters and the rest who send customers">Tradesmen</button>`:''}</div>`;
 // the unpaid bills, oldest first, with tick boxes and the pay bar under them
 function ptBills(t,id,rows,payAct,payWord){
   if(partyTick.k!==t+id) partyTick={k:t+id,s:new Set()};
@@ -37036,7 +37036,8 @@ document.addEventListener('click',e=>{
       run.forEach((x,i)=>x.order=i+1); const i=run.indexOf(d), j=i+(+a.dataset.dir); if(j<0||j>=run.length) return; [run[i].order,run[j].order]=[run[j].order,run[i].order]; persist(true); render() },
     planNew:()=>planNew(a.dataset.no), planView:()=>planView(a.dataset.id), planClose:()=>{ const p=plansAll().find(x=>x.id===a.dataset.id); if(p&&confirm('Close this plan? Their bills stay owed; the reminders stop.')){ p.status='closed'; p.closed=D(today); closeModals(); persist(true); render() } },
     hireTab:()=>{ hireTab=a.dataset.t; render() }, hireItem:()=>hireItemEdit(a.dataset.id||null), hireNew:()=>hireNew(), hireBack:()=>hireBack(a.dataset.id), hireRemind:()=>hireRemind(a.dataset.id),
-    scaleTest:()=>scaleTest(), tradePick:()=>tradePick(), tradeNew:()=>tradeEdit(null), tradeKind:()=>{ tradeK=a.dataset.k; render() }, tradeSms:()=>{ BK.who='trade'; BK.kind=tradeK; BK.area=tradeA; bulkSmsModal() }, tradeEdit:()=>tradeEdit(a.dataset.id), tradePay:()=>tradePay(a.dataset.id), tradeStmt:()=>tradeStatement(a.dataset.id),
+    scaleTest:()=>scaleTest(), tradePick:()=>tradePick(), tradeNew:()=>tradeEdit(null), tradesTab:()=>{ if(allowed('trades')) return go('trades');
+      setTab='features'; go('settings'); toast('Tradesmen is switched off for this shop — tick it here to bring it back','warn') }, tradeKind:()=>{ tradeK=a.dataset.k; render() }, tradeSms:()=>{ BK.who='trade'; BK.kind=tradeK; BK.area=tradeA; bulkSmsModal() }, tradeEdit:()=>tradeEdit(a.dataset.id), tradePay:()=>tradePay(a.dataset.id), tradeStmt:()=>tradeStatement(a.dataset.id),
     darkToggle:()=>darkSet(!darkOn(),a),
     duSave:()=>duesSave(), duReload:()=>{ DUES.data=null; DUES.err=''; duesLoad(); render() },
     duRun:()=>{ if(!confirm('Send today\'s reminders now?')) return; duesApi('/run',{method:'POST',body:'{}'}).then(j=>{ toast(`${j.sent} sent${j.failed?', '+j.failed+' did not go':''}`,j.failed?'warn':'ok'); DUES.data=null; duesLoad() }).catch(e=>toast(e.message)) },
