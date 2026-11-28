@@ -334,6 +334,27 @@ img{display:block;max-width:100%}
 @keyframes pop{from{transform:scale(.4);opacity:0}}
 .done h1{font-size:clamp(40px,5vw,64px)}
 .done .box{text-align:left;width:100%}
+/* the order slip comes out of the till, as a bill does at the counter */
+.done .slot{width:min(100%,600px);height:12px;border-radius:7px;background:var(--ink2);box-shadow:inset 0 -4px 0 rgba(255,255,255,.07),0 6px 14px rgba(23,17,15,.18);position:relative;z-index:2}
+.done .slip{width:min(100%,560px);overflow:hidden;margin-top:-20px;padding:0 4px 18px}
+.done .slip .box{border-radius:0 0 6px 6px;border-top:0;padding-top:22px;position:relative;box-shadow:0 10px 24px rgba(23,17,15,.10);
+  background:linear-gradient(#fff,#fff) padding-box;animation:slipOut 1.15s .45s cubic-bezier(.2,.8,.2,1) both}
+.done .slip .box::after{content:"";position:absolute;left:0;right:0;bottom:-9px;height:10px;background:radial-gradient(circle at 7px -1px,transparent 6px,#fff 6.5px) 0 0/14px 10px repeat-x}
+.done .slip .sumrow{opacity:0;animation:inkIn .35s ease-out both}
+.done .slip .sumrow:nth-child(1){animation-delay:1.25s}.done .slip .sumrow:nth-child(2){animation-delay:1.38s}
+.done .slip .sumrow:nth-child(3){animation-delay:1.51s}.done .slip .sumrow:nth-child(4){animation-delay:1.64s}
+@keyframes slipOut{0%{transform:translateY(-104%)}62%{transform:translateY(3%)}80%{transform:translateY(-1%)}100%{transform:none}}
+@keyframes inkIn{from{opacity:0;filter:blur(2px)}to{opacity:1;filter:none}}
+/* the code box opens under the mobile once the code is sent; signed in, a tick draws */
+.fl.opening{animation:fOpen .42s var(--ease) both}
+@keyframes fOpen{from{opacity:0;transform:translateY(-8px);clip-path:inset(0 0 100% 0)}to{opacity:1;transform:none;clip-path:inset(0 0 0 0)}}
+.who .ok{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#1f7a46;flex:none}
+.who .ok svg{width:15px;height:15px;stroke:#fff;stroke-width:3;fill:none}
+.who.arrived .ok{animation:pop .5s cubic-bezier(.34,1.56,.64,1)}
+.who.arrived .ok path{stroke-dasharray:21;stroke-dashoffset:21;animation:draw .4s .2s ease-out forwards}
+.who.arrived{animation:fOpen .4s var(--ease) both}
+/* the total rolls to its new figure */
+.sumrow.big .money.roll{display:inline-block;animation:bump .45s ease-out}
 
 /* toast */
 .toast{position:fixed;z-index:90;left:50%;bottom:28px;transform:translate(-50%,20px);opacity:0;pointer-events:none;display:flex;align-items:center;gap:14px;padding:10px 10px 10px 18px;border-radius:999px;background:var(--ink2);color:#fff;box-shadow:0 12px 40px rgba(0,0,0,.3);transition:opacity .25s,transform .5s cubic-bezier(.34,1.56,.64,1);font-weight:500;max-width:calc(100% - 24px)}
@@ -454,6 +475,8 @@ img{display:block;max-width:100%}
   .rip,.fly{display:none}
   .stag .card,.info>*,#app.enter{animation:none}
   .tick svg path{animation:none;stroke-dashoffset:0}
+  .done .slip .box,.done .slip .sumrow,.fl.opening,.who.arrived,.who.arrived .ok,.sumrow.big .money.roll{animation:none;opacity:1}
+  .who.arrived .ok path{animation:none;stroke-dashoffset:0}
   .drawer.anim .cl,.tabs .tap svg,.add.done svg,.btn.ok svg{animation:none}
 }
 
@@ -731,6 +754,11 @@ var app=$('#app');
 function render(){
   var r=route();
   if(r.name==='cart'){location.replace('#/shop');setTimeout(openCart,50);return}
+  /* 28 Nov 2026 (the owner: faults while typing the phone number at checkout): the order total comes back from the shop and
+     the page is drawn again — the cursor went back to the start of the mobile box, so the next digits landed in front.
+     Whatever box is being typed in keeps its place, its cursor and what is in it. */
+  var ae=document.activeElement, keepF=ae&&ae.id&&app.contains(ae)&&/^(INPUT|TEXTAREA)$/.test(ae.tagName)?{id:ae.id,v:ae.value,s:null,e:null}:null;
+  if(keepF){try{keepF.s=ae.selectionStart;keepF.e=ae.selectionEnd}catch(x){}}
   var html=!loaded&&r.name!=='home'?pLoading():r.name==='shop'?pShop(r):r.name==='product'?pProduct(r):r.name==='checkout'?pCheckout(r):r.name==='done'?pDone(r):r.name==='track'?pTrack(r):r.name==='contact'?pContact():pHome();
   app.innerHTML=html;
   document.body.dataset.page=r.name;
@@ -740,6 +768,7 @@ function render(){
   $$('#tabs [data-t]').forEach(function(a){a.classList.toggle('on',a.dataset.t===(r.name==='home'?'home':r.name==='shop'?'shop':''))});
   closedBar();
   after(r);
+  if(keepF){var ne=document.getElementById(keepF.id);if(ne&&app.contains(ne)){if(ne.value!==keepF.v&&!ne.readOnly)ne.value=keepF.v;ne.focus({preventScroll:true});try{if(keepF.s!=null)ne.setSelectionRange(keepF.s,keepF.e)}catch(x){}}}
 }
 function closedBar(){var b=$('#closedbar');if(loaded&&!loadErr&&S0().open===false){if(!b){b=document.createElement('div');b.id='closedbar';document.body.insertBefore(b,document.body.firstChild)}b.innerHTML='We are not taking online orders just now. Call <a href="'+tel(SH().phone)+'">'+esc(SH().phone)+'</a> or WhatsApp us — the shop is open '+esc(SH().hours)+'.'}else if(b)b.remove()}
 function after(r){
@@ -950,12 +979,15 @@ function productAfter(r){
 var form=Object.assign({how:'deliver',addr:'',zone:'',pay:'',note:'',code:''},ls.get('coform',{}));
 var who={phone:ls.get('phone',''),name:ls.get('name','')};
 var otp={sent:false,code:'',needName:false,busy:false,msg:''};
+var fx={code:false,inn:false,total:null};   // what has just happened, played once on the next draw
 var quote=null,quoteAt=0;
 function signedIn(){return !!ls.get('token','')}
+/* a Sri Lankan mobile however it is typed: 077 123 4567, 77 123 4567, +94 77 123 4567, 0094771234567 → 0771234567, else '' */
+function mobileOf(v){var d=String(v||'').replace(/\D/g,'').replace(/^0094/,'').replace(/^94(?=7\d{8}$)/,'');if(/^7\d{8}$/.test(d))d='0'+d;return /^07\d{8}$/.test(d)?d:''}
 async function askQuote(){
   var mine=++quoteAt;
   try{var j=await api('/quote',{method:'POST',body:{lines:cart.map(function(l){return {pid:l.pid,qty:l.qty}}),deliver:form.how==='deliver',zone:form.zone||'',code:form.code||''}});if(mine!==quoteAt)return;quote=j}catch(e){quote=null}
-  if(route().name==='checkout'){var y=scrollY;var f=document.activeElement&&document.activeElement.id;render();scrollTo(0,y);if(f&&$('#'+f))$('#'+f).focus()}
+  if(route().name==='checkout'){var y=scrollY;render();scrollTo(0,y)}   // render keeps the box being typed in
 }
 function pays(){var p=S0().pays||{},o=[];if(form.how==='deliver'&&p.cod!==false)o.push(['cod','Pay on delivery','Cash when the goods arrive']);if(p.counter!==false)o.push(['counter','Pay at the shop',form.how==='deliver'?'Before it goes out':'When you collect']);if(p.bank)o.push(['bank','Bank transfer','We send the account details when we call']);if(p.card)o.push(['card','Card','Paid online']);return o}
 function pCheckout(){
@@ -963,9 +995,9 @@ function pCheckout(){
   var s=S0(),zones=s.zones||[],P=pays();if(!P.some(function(o){return o[0]===form.pay}))form.pay=P[0]?P[0][0]:'';
   var g=goods(),q=quote||{},del=0,off=q.off||0,total=q.total!=null?q.total:Math.max(0,g-off)+del,min=+s.minOrder||0,short=Math.max(0,min-g);
   var closed=s.open===false;
-  var signBox=signedIn()?'<div class="who"><b>'+esc(who.name||'Signed in')+'</b> · '+esc(who.phone)+' <button type="button" class="linkb" id="signout">Not you?</button></div>':
+  var signBox=signedIn()?'<div class="who'+(fx.inn?' arrived':'')+'"><span class="ok" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><b>'+esc(who.name||'Signed in')+'</b> · '+esc(who.phone)+' <button type="button" class="linkb" id="signout">Not you?</button></div>':
     '<div class="two"><div class="fl"><label for="fphone">Mobile number</label><input id="fphone" type="tel" inputmode="tel" autocomplete="tel" placeholder="07X XXX XXXX" value="'+esc(who.phone)+'"'+(otp.sent?' readonly':'')+'><span class="err" id="ephone"></span></div>'+
-    (otp.sent?'<div class="fl"><label for="fcode">The code we texted you</label><input id="fcode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits" value="'+esc(otp.code)+'"><span class="err" id="ecode"></span></div>':'')+'</div>'+
+    (otp.sent?'<div class="fl'+(fx.code?' opening':'')+'"><label for="fcode">The code we texted you</label><input id="fcode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits" value="'+esc(otp.code)+'"><span class="err" id="ecode"></span></div>':'')+'</div>'+
     (otp.needName?'<div class="fl"><label for="fname">Your name</label><input id="fname" autocomplete="name" value="'+esc(who.name)+'"><span class="err" id="ename"></span></div>':'')+
     '<div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+(otp.sent?'<button class="btn ink" type="button" id="otpgo"'+(otp.busy?' disabled':'')+'>Confirm</button><button type="button" class="linkb" id="otpagain">Send the code again</button>':'<button class="btn ink" type="button" id="otpsend"'+(otp.busy?' disabled':'')+'>Text me a code</button>')+'</div>'+
     (otp.msg?'<div class="note" style="margin-top:10px;color:var(--ink2)">'+esc(otp.msg)+'</div>':'')+'<div class="note" style="margin-top:8px">We call this number to confirm. No account or password.</div>';
@@ -993,15 +1025,17 @@ function keep(){ls.set('coform',{how:form.how,addr:form.addr,zone:form.zone,pay:
 function redraw(){var y=scrollY;render();scrollTo(0,y)}
 function checkoutAfter(){
   var f=$('#coform');if(!f)return;
+  fx.code=false;fx.inn=false;
+  var tm=$('.osum .sumrow.big .money');if(tm){var now=tm.textContent;if(fx.total!==null&&fx.total!==now&&!reduce){tm.classList.remove('roll');void tm.offsetWidth;tm.classList.add('roll')}fx.total=now}
   if(quoteAt===0||!quote)askQuote();
-  f.addEventListener('input',function(e){var t=e.target;if(t.id==='fphone')who.phone=t.value;else if(t.id==='fcode')otp.code=t.value;else if(t.id==='fname')who.name=t.value;else if(t.name&&t.type!=='radio'){form[t.name]=t.value;keep()}});
+  f.addEventListener('input',function(e){var t=e.target;if(t.id==='fphone'){who.phone=t.value;errAt('ephone','')}else if(t.id==='fcode'){var dg=t.value.replace(/\D/g,'').slice(0,6);if(dg!==t.value)t.value=dg;otp.code=dg;errAt('ecode','');if(dg.length===6&&!otp.needName&&!otp.busy){var cg=$('#otpgo');if(cg)setTimeout(function(){if(!otp.busy&&String(otp.code).length===6)cg.click()},250)}}else if(t.id==='fname')who.name=t.value;else if(t.name&&t.type!=='radio'){form[t.name]=t.value;keep()}});
   f.addEventListener('change',function(e){var t=e.target;if(t.type==='radio'||t.id==='fzone'){form[t.name]=t.value;keep();askQuote();redraw()}else if(t.id==='fpromo'){form.code=t.value.trim().toUpperCase();askQuote()}});
   var so=$('#signout');if(so)so.onclick=function(){ls.set('token','');ls.set('name','');who={phone:'',name:''};otp={sent:false,code:'',needName:false,busy:false,msg:''};redraw()};
   var send=async function(){
-    var ph=String(who.phone||'').replace(/\D/g,'').replace(/^94/,'0');
-    if(!/^0\d{9}$/.test(ph))return errAt('ephone','Please give a mobile number like 077 123 4567.','fphone');
+    var ph=mobileOf(who.phone);
+    if(!ph)return errAt('ephone','Please give a mobile number like 077 123 4567.','fphone');
     otp.busy=true;redraw();
-    try{var j=await api('/otp',{method:'POST',body:{phone:ph}});who.phone=ph;ls.set('phone',ph);otp.sent=true;otp.msg=j.sent?'We have texted a 6-digit code to '+ph+'.':(j.code?'Your code is '+j.code+' (this machine has no texts set up).':(j.note||'Ask the shop for your code.'))}
+    try{var j=await api('/otp',{method:'POST',body:{phone:ph}});who.phone=ph;ls.set('phone',ph);otp.sent=true;fx.code=true;otp.msg=j.sent?'We have texted a 6-digit code to '+ph+'.':(j.code?'Your code is '+j.code+' (this machine has no texts set up).':(j.note||'Ask the shop for your code.'))}
     catch(e){otp.msg=e.message}
     otp.busy=false;redraw();var c=$('#fcode');if(c)c.focus();
   };
@@ -1012,13 +1046,17 @@ function checkoutAfter(){
     otp.busy=true;redraw();
     try{var j=await api('/login',{method:'POST',body:{phone:who.phone,code:String(otp.code).trim(),name:who.name||''}});
       if(j.needName){otp.needName=true;otp.msg='We have not met you before: what is your name?'}
-      else if(j.ok){ls.set('token',j.token);ls.set('name',j.name);ls.set('phone',j.phone||who.phone);who.name=j.name;who.phone=j.phone||who.phone;otp={sent:false,code:'',needName:false,busy:false,msg:''}}}
+      else if(j.ok){ls.set('token',j.token);ls.set('name',j.name);ls.set('phone',j.phone||who.phone);who.name=j.name;who.phone=j.phone||who.phone;otp={sent:false,code:'',needName:false,busy:false,msg:''};fx.inn=true}}
     catch(e){otp.msg=e.message}
     otp.busy=false;redraw();
   };
   f.addEventListener('submit',async function(e){
     e.preventDefault();
-    if(!signedIn()){var b=$('#otpsend')||$('#otpgo');errAt('ephone','Sign in with your mobile first.');shake(b);if(b)b.focus();return}
+    if(!signedIn()){
+      var at=document.activeElement&&document.activeElement.id;
+      if(at==='fphone'&&!otp.sent&&!otp.busy){send();return}                       // Enter in the mobile box: text the code
+      if((at==='fcode'||at==='fname')&&otp.sent&&!otp.busy){var cg=$('#otpgo');if(cg)cg.click();return}   // Enter in the code box: confirm
+      var b=$('#otpsend')||$('#otpgo');errAt('ephone','Sign in with your mobile first.');shake(b);if(b)b.focus();return}
     var s=S0();
     if(form.how==='deliver'&&(s.zones||[]).length&&!form.zone)return errAt('ezone','Please choose your area.','fzone');
     if(form.how==='deliver'&&String(form.addr).trim().length<6)return errAt('eaddr','Please give the delivery address.','faddr');
@@ -1037,8 +1075,8 @@ function pDone(){
   var pay={cod:'Pay on delivery',counter:'Pay at the shop',bank:'Bank transfer',card:'Card'}[o.pay]||'';
   return '<section class="page wrap"><div class="done"><div class="tick"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>'+
     '<h1 class="disp">Thank you'+(o.name?', '+esc(String(o.name).split(' ')[0]):'')+'.</h1><p style="color:var(--mut);max-width:30rem">We have your order and will call you on <b style="color:var(--ink2)">'+esc(String(o.phone||'').replace(/(\d{3})(\d{3})(\d{4})/,'$1 $2 $3'))+'</b> to confirm it before anything goes out.</p>'+
-    '<div class="box"><div class="sumrow"><span>Order</span><b>'+esc(o.no)+'</b></div><div class="sumrow"><span>'+(o.how==='deliver'?'Deliver to':'Collect from')+'</span><span style="text-align:right">'+(o.how==='deliver'?esc(o.addr):esc(SH().addr))+'</span></div>'+(pay?'<div class="sumrow"><span>Payment</span><span>'+pay+'</span></div>':'')+
-    '<div class="sumrow big"><span>Total</span><span class="money">'+rs(o.total)+'</span></div></div>'+
+    '<div class="slot" aria-hidden="true"></div><div class="slip"><div class="box"><div class="sumrow"><span>Order</span><b>'+esc(o.no)+'</b></div><div class="sumrow"><span>'+(o.how==='deliver'?'Deliver to':'Collect from')+'</span><span style="text-align:right">'+(o.how==='deliver'?esc(o.addr):esc(SH().addr))+'</span></div>'+(pay?'<div class="sumrow"><span>Payment</span><span>'+pay+'</span></div>':'')+
+    '<div class="sumrow big"><span>Total</span><span class="money">'+rs(o.total)+'</span></div></div></div>'+
     '<div class="row" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center"><a class="btn ink" href="#/track?no='+encodeURIComponent(o.no)+'">Track this order</a><a class="btn line dark" href="#/shop">Keep shopping</a><a class="btn line dark" href="'+waLink('Hello '+SH().name+', about my order '+o.no)+'" target="_blank" rel="noopener">'+ICON.wa+'WhatsApp us</a></div></div></section>'+footer();
 }
 

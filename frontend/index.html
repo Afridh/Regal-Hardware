@@ -13426,7 +13426,7 @@ function webShow(no){
     ${o.lines.map(l=>{const p=P(l.pid)||{name:l.name||'Item',code:'',unit:'',stock:0};return `<tr><td>${escM(p.name)}<div class="muted">${escM(p.code||'')}</div></td>
      <td class="n">${fq(l.qty)} ${escM(p.unit||'')}</td><td class="n">${money2(l.price)}</td><td class="n">${fmt(l.qty*l.price)}</td>
      <td class="n">${p.stock<l.qty?`<span class="tag bad">only ${fq(p.stock)}</span>`:fq(p.stock)}</td></tr>`}).join('')}
-    ${o.del?`<tr><td colspan="3">Delivery${o.zone?' — '+escM(o.zone):''}</td><td class="n">${fmt(o.del)}</td><td></td></tr>`:''}
+    ${o.del?`<tr><td colspan="3">Delivery${o.zone?' — '+escM(o.zone):''}</td><td class="n">${fmt(o.del)}</td><td></td></tr>`:o.deliver?`<tr><td colspan="3">Delivery${o.zone?' — '+escM(o.zone):''} <span class="tag warn">call them with the charge</span></td><td class="n muted">not on the order</td><td></td></tr>`:''}
     ${o.off?`<tr><td colspan="3">Discount${o.code?' ('+escM(o.code)+')':''}</td><td class="n">− ${fmt(o.off)}</td><td></td></tr>`:''}
     <tr class="sum"><td colspan="3"><b>To pay</b></td><td class="n"><b>${fmt(o.total)}</b></td><td></td></tr></table>
    <div class="card" style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap"><div><small class="muted">How it goes</small><div><b>${escM(ordShipWord(o))}</b></div>${o.deliver&&o.address?`<div class="muted">${escM(o.address)}</div>`:''}</div>
@@ -13502,10 +13502,26 @@ function webBilled(inv){
   if(wo.deliver&&wo.pay==='cod') wo.cod={state:(+inv.balance||0)>0?'due':'paid',amount:+(+inv.balance||0).toFixed(2)};
   const c=C(wo.cid); if(c&&c.phone) sms(c.phone,`Your online order has been billed.\nOrder No: ${wo.no}\nBill No: ${inv.no}\nAmount: ${fmt(inv.total)}\n${wo.deliver?'We will send it out shortly and tell you who is bringing it.':'It is ready to collect at the counter.'}`,'customer');
 }
-function webBill(no){
-  const o=S.web.orders.find(x=>x.no===no);
+/* 28 Nov 2026: the website no longer puts a delivery charge on an order — the shop calls the customer with it once the order
+   is confirmed. So billing a delivery asks for the charge agreed with them; it goes on the bill as its own line. */
+function webBill(no,agreed){
+  const o=S.web.orders.find(x=>x.no===no); if(!o) return;
+  if(o.deliver&&!(+o.del>0)&&agreed===undefined){
+    const w=(S.web&&S.web.settings)||{}, z=(w.zones||[]).find(x=>x.name===o.zone||x.id===o.zone), guess=+(z&&z.charge)||+w.delivery||0;
+    const m=modal(`<h2>Delivery charge for ${escM(o.no)}</h2>
+      <div class="muted">The website does not charge delivery — the customer is told the charge when the order is confirmed.${o.zone?' Area: <b>'+escM(o.zone)+'</b>.':''}${o.address?'<br>'+escM(o.address):''}</div>
+      <div class="f" style="margin-top:12px;max-width:260px"><label>Charge agreed with them</label><input id="wbDel" type="number" min="0" step="any" value="${guess||''}" placeholder="0"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn ghost" id="wbNone">No charge</button><button class="btn tape" id="wbAdd">Add it to the bill <i class="kbd">Enter</i></button></div>`);
+    const i=m.querySelector('#wbDel'); setTimeout(()=>{ i.focus(); i.select() },0);
+    m.querySelector('#wbNone').onclick=()=>{ m.remove(); webBill(no,0) };
+    const add=()=>{ const v=+i.value||0; if(v<0) return toast('A charge cannot be below nothing','warn'); m.remove(); webBill(no,v) };
+    m.querySelector('#wbAdd').onclick=add; i.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); add() } };
+    return;
+  }
   const lines=o.lines.map(l=>({pid:l.pid,qty:l.qty,price:l.price,disc:0}));
-  if(+o.del>0) lines.push({pid:OPEN_PID,name:'Delivery charge'+(o.zone?' — '+o.zone:''),qty:1,price:+o.del,disc:0,open:true,auto:false});
+  const del=+o.del>0?+o.del:(+agreed>0?+agreed:0);
+  if(del>0) lines.push({pid:OPEN_PID,name:'Delivery charge'+(o.zone?' — '+o.zone:''),qty:1,price:del,disc:0,open:true,auto:false});
+  if(!(+o.del>0)&&del>0){ o.delAgreed=del; webEvent(o,'Delivery charge agreed: '+fmt(del)) }
   S.pos={lines,customer:o.cid,billDisc:+o.off>0?+o.off:0,sel:-1,entry:null,lastBill:S.pos.lastBill,fromWeb:o.no};
   closeModals(); go('pos');
   toast(`${o.no} loaded — take the payment to turn it into a bill`);
