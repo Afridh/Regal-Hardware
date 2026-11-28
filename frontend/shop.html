@@ -1441,9 +1441,7 @@ function totals(lines = selLines()) {
     return a + (p ? l.qty * priceFor(p, l.qty) : 0);
   }, 0);
   const zone = (w.zones || []).find(z => z.id === st.zone) || null;
-  const del = !st.deliver || !goods ? 0
-    : zone ? ((zone.freeOver && goods >= zone.freeOver) ? 0 : zone.charge)
-           : ((w.freeOver && goods >= w.freeOver) ? 0 : w.delivery);
+  const del = 0;   // 28 Nov 2026: the shop contacts the customer with the delivery charge once the order is confirmed
   const off = +st.off || 0;                      // only ever what the server last said it was worth
   return { goods, del, off, zone, total: Math.max(0, goods - off) + del, n: lines.length };
 }
@@ -3076,7 +3074,7 @@ function productPage() {
           <button class="e-link" style="border:0;text-decoration:underline;text-transform:none;letter-spacing:0;font-size:14px" data-wish="${esc(p.id)}">${st.wish.includes(p.id) ? 'Saved to wishlist' : 'Save to wishlist'}</button></div>
         <div class="e-acc">
           <details open><summary>Description</summary><div class="body">${p.desc ? esc(p.desc) : `${esc(p.name)}${p.code ? ` (code ${esc(p.code)})` : ''}, from the ${esc(p.cat)} department. Ask at the counter or on WhatsApp for sizes, colours and quantities for your job.`}</div></details>
-          <details><summary>Delivery &amp; pickup</summary><div class="body">${w.delivery || w.freeOver ? `Delivery from our Kaduruwela depot${w.delivery ? ` costs ${money(w.delivery)}` : ''}${w.freeOver ? `, free on orders over ${money(w.freeOver)}` : ''}.` : 'Delivered from our Kaduruwela depot, or collect it from the counter.'} Collect from 748, Main Street, Kaduruwela at no charge.${w.minOrder ? ` The smallest online order is ${money(w.minOrder)}.` : ''}</div></details>
+          <details><summary>Delivery &amp; pickup</summary><div class="body">Delivered from our Kaduruwela depot. The shop will contact you once the order is confirmed for the delivery charge. Collect from 748, Main Street, Kaduruwela at no charge.${w.minOrder ? ` The smallest online order is ${money(w.minOrder)}.` : ''}</div></details>
           ${p.warranty ? `<details><summary>Warranty</summary><div class="body">${p.warranty >= 12 && p.warranty % 12 === 0 ? `${p.warranty / 12} year${p.warranty === 12 ? '' : 's'}` : `${p.warranty} month${p.warranty === 1 ? '' : 's'}`} warranty — keep your bill.</div></details>` : ''}
         </div>
       </div>
@@ -3113,11 +3111,11 @@ function summary(t, proceed) {
     <h3>Order summary</h3>
     <div class="row"><span>Subtotal</span><span>${money(t.goods)}</span></div>
     ${t.off ? `<div class="row"><span>Discount${st.code ? ' (' + esc(st.code) + ')' : ''}</span><span>− ${money(t.off)}</span></div>` : ''}
-    <div class="row"><span>${st.deliver ? 'Delivery' : 'Collect from the shop'}</span><span>${!st.deliver ? 'Free' : t.del ? money(t.del) : 'Free'}</span></div>
+    <div class="row"><span>${st.deliver ? 'Delivery' : 'Collect from the shop'}</span><span>${!st.deliver ? 'Free' : 'Told once confirmed'}</span></div>
     <div class="row tot"><span>Total</span><span>${money(t.total)}</span></div>
     ${st.under && st.minOrder ? `<div class="note" style="color:var(--red)">The smallest online order is ${money(st.minOrder)}.</div>` : ''}
     ${proceed ? `<a class="e-btn block" style="margin-top:20px" href="#/checkout">Check out</a><a class="e-btn line block" style="margin-top:10px" href="#/search">Keep shopping</a>` : ''}
-    <div class="note">${w.freeOver && st.deliver && t.goods < w.freeOver ? `Free delivery from ${money(w.freeOver)}. ` : ''}The shop confirms every order by phone before it goes out.</div>
+    <div class="note">${st.deliver ? 'The shop will contact you once the order is confirmed for the delivery charge. ' : ''}The shop confirms every order by phone before it goes out.</div>
   </aside>`;
 }
 
@@ -3147,15 +3145,15 @@ function checkout() {
       <section>
         <h2>2 · Delivery or pickup</h2>
         <div class="e-choice">
-          <label class="${st.deliver ? 'on' : ''}"><input type="radio" name="dlv" ${st.deliver ? 'checked' : ''} onchange="st.deliver=true;ls.set('deliver',true);askQuote();render()"><span><b>Deliver it</b><small>From our Kaduruwela depot to your site or door</small></span><span>${t.del && st.deliver ? money(t.del) : w.delivery ? money(w.delivery) : ''}</span></label>
+          <label class="${st.deliver ? 'on' : ''}"><input type="radio" name="dlv" ${st.deliver ? 'checked' : ''} onchange="st.deliver=true;ls.set('deliver',true);askQuote();render()"><span><b>Deliver it</b><small>From our Kaduruwela depot to your site or door</small></span><span>Charge told once confirmed</span></label>
           <label class="${!st.deliver ? 'on' : ''}"><input type="radio" name="dlv" ${!st.deliver ? 'checked' : ''} onchange="st.deliver=false;ls.set('deliver',false);askQuote();render()"><span><b>I'll collect it</b><small>748, Main Street, Kaduruwela — we text you when it is ready</small></span><span>Free</span></label>
         </div>
         ${st.deliver ? `
         <label class="e-field" style="margin-top:18px"><span>Delivery address *</span><input class="e-input" id="addr" value="${esc(addr)}" placeholder="Number, road, town" autocomplete="street-address"></label>
         ${(w.zones && w.zones.length) ? `<label class="e-field"><span>Area</span><select class="e-input" onchange="st.zone=this.value;ls.set('zone',st.zone);askQuote();render()">
           <option value="">Choose the area…</option>
-          ${w.zones.map(z => `<option value="${esc(z.id)}" ${st.zone === z.id ? 'selected' : ''}>${esc(z.name)} — ${z.charge ? money(z.charge) : 'free'}${z.freeOver ? `, free over ${money(z.freeOver)}` : ''}${z.days ? ` · ${esc(z.days)}` : ''}</option>`).join('')}
-        </select>${st.zone ? '' : '<div class="e-hint">Until an area is chosen the usual charge is shown.</div>'}</label>` : ''}` : ''}
+          ${w.zones.map(z => `<option value="${esc(z.id)}" ${st.zone === z.id ? 'selected' : ''}>${esc(z.name)}${z.days ? ` · ${esc(z.days)}` : ''}</option>`).join('')}
+        </select><div class="e-hint">The shop will contact you once the order is confirmed for the delivery charge.</div></label>` : ''}` : ''}
         <label class="e-field" style="${st.deliver ? '' : 'margin-top:18px'}"><span>Note for the shop (optional)</span><input class="e-input" id="note" placeholder="${st.deliver ? 'Gate, landmark, who will be on site…' : 'When you will come, who will collect…'}"></label>
       </section>
       <section>
@@ -3177,7 +3175,7 @@ function checkout() {
         <div class="mini">${lines.map(l => { const p = P(l.pid); return `<div><div class="tile sm" style="position:relative;overflow:visible">${tile(p, true)}<span class="q">${fq(l.qty)}</span></div><span>${esc(p.name)}</span><b style="font-weight:500">${money(l.qty * priceFor(p, l.qty))}</b></div>`; }).join('')}</div>
         <div class="row"><span>Subtotal</span><span>${money(t.goods)}</span></div>
         ${t.off ? `<div class="row"><span>Discount</span><span>− ${money(t.off)}</span></div>` : ''}
-        <div class="row"><span>${st.deliver ? 'Delivery' : 'Collect from the shop'}</span><span>${st.deliver ? (t.del ? money(t.del) : 'Free') : 'Free'}</span></div>
+        <div class="row"><span>${st.deliver ? 'Delivery' : 'Collect from the shop'}</span><span>${st.deliver ? 'Told once confirmed' : 'Free'}</span></div>
         <div class="row tot"><span>Total</span><span>${money(t.total)}</span></div>
         ${st.under && st.minOrder ? `<div class="note" style="color:var(--red)">The smallest online order is ${money(st.minOrder)}.</div>` : ''}
       </aside>
@@ -3208,7 +3206,7 @@ function donePage() {
     <aside class="e-sum" style="position:static;margin-top:24px">
       <div class="row"><span>Subtotal</span><span>${money(o.goods || o.total)}</span></div>
       ${o.off ? `<div class="row"><span>Discount</span><span>− ${money(o.off)}</span></div>` : ''}
-      <div class="row"><span>Delivery</span><span>${o.del ? money(o.del) : 'Free'}</span></div>
+      <div class="row"><span>Delivery</span><span>${o.del ? money(o.del) : o.deliver === false ? 'Free' : 'The shop will contact you'}</span></div>
       <div class="row tot"><span>Total</span><span>${money(o.total)}</span></div>
     </aside>
     <div class="e-actions">
@@ -3256,7 +3254,7 @@ function trackPage() {
         ${tkWho(r)}
         <div class="tk-body">
         <div class="e-lines">${(r.lines || []).map(l => { const p = P(l.pid) || { id: l.pid, name: l.name }; return `<div class="e-line"><div>${tile(p, true)}</div><div><span class="nm">${esc(l.name || p.name || 'Item')}</span><div class="u">${fq(l.qty)}${l.unit ? ' ' + esc(l.unit) : ''} × ${money(l.price)}</div></div><div class="amt">${money(l.qty * l.price)}</div></div>`; }).join('')}</div>
-        <div class="e-sum" style="position:static;margin-top:18px">${r.off ? `<div class="row"><span>Discount</span><span>− ${money(r.off)}</span></div>` : ''}<div class="row"><span>${r.deliver ? 'Delivery' + (r.zone ? ' · ' + esc(r.zone) : '') : 'Collect from the shop'}</span><span>${r.del ? money(r.del) : 'Free'}</span></div><div class="row tot"><span>Total</span><span>${money(r.total)}</span></div></div>
+        <div class="e-sum" style="position:static;margin-top:18px">${r.off ? `<div class="row"><span>Discount</span><span>− ${money(r.off)}</span></div>` : ''}<div class="row"><span>${r.deliver ? 'Delivery' + (r.zone ? ' · ' + esc(r.zone) : '') : 'Collect from the shop'}</span><span>${r.del ? money(r.del) : r.deliver ? 'The shop will contact you' : 'Free'}</span></div><div class="row tot"><span>Total</span><span>${money(r.total)}</span></div></div>
         ${(r.events || []).length ? `<ul class="tk-ev">${r.events.slice().reverse().map((ev, i) => `<li style="animation-delay:${i * .06}s">${esc(ev.what || ev.text || ev.status || '')}<small>${esc(ev.at || '')}</small></li>`).join('')}</ul>` : ''}
         </div>
       </div>` : ''}
@@ -3281,7 +3279,7 @@ function contactPage() {
         <div><h3>Opening hours</h3><p>${esc(sh.hours || s.hours || 'Monday – Saturday 7.30 am – 7.30 pm · Sunday 8 am – 2 pm')}</p></div>
         <div><h3>Write to us</h3><p>${s.email ? `<a href="mailto:${esc(s.email)}">${esc(s.email)}</a>` : '<a href="mailto:sales@regalhw.lk">sales@regalhw.lk</a>'}<br>We answer the same day.</p></div>
         <div><h3>Orders</h3><p>Every online order is confirmed by phone before it goes out. <a href="#/track">Track an order</a>.</p></div>
-        <div><h3>Delivery</h3><p>${s.delivery ? `From ${money(s.delivery)}` : 'From our Kaduruwela depot'}${s.freeOver ? `, free over ${money(s.freeOver)}` : ''}. Or collect from the counter, free.</p></div>
+        <div><h3>Delivery</h3><p>From our Kaduruwela depot. The shop will contact you once the order is confirmed for the delivery charge. Or collect from the counter, free.</p></div>
         <div><h3>Returns</h3><p>Bring it back with your bill — the counter will sort it out. Ask before you buy if you are not sure.</p></div>
       </div>
     </div>`;

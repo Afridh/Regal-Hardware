@@ -504,9 +504,7 @@ r.post('/quote', optionalAuth, asyncHandler(async (req, res) => {
   goods = round2(goods);
   const deliver = !!req.body?.deliver;
   const zone = cat.settings.zones.find(z => z.id === String(req.body?.zone || '')) || null;
-  const del = !deliver ? 0
-    : zone ? ((zone.freeOver && goods >= zone.freeOver) ? 0 : zone.charge)
-           : ((cat.settings.freeOver && goods >= cat.settings.freeOver) ? 0 : cat.settings.delivery);
+  const del = 0;   // 28 Nov 2026, the owner asked: the shop contacts the customer with the delivery charge once the order is confirmed
   const promo = promoOn(data, req.body?.code, goods, await promoUsed(req.body?.code));
   res.json({ ok: true, goods, del, off: promo.off || 0, why: promo.why || '',
     code: promo.code || '', total: round2(Math.max(0, goods - (promo.off || 0)) + del),
@@ -532,9 +530,7 @@ r.post('/order', shopAuth, asyncHandler(async (req, res) => {
   if (goods < cat.settings.minOrder) throw new HttpError(400, `Smallest online order is ${money(cat.settings.minOrder)}`);
   const deliver = !!req.body?.deliver;
   const zone = cat.settings.zones.find(z => z.id === String(req.body?.zone || '')) || null;
-  const del = !deliver ? 0
-    : zone ? ((zone.freeOver && goods >= zone.freeOver) ? 0 : zone.charge)
-           : ((cat.settings.freeOver && goods >= cat.settings.freeOver) ? 0 : cat.settings.delivery);
+  const del = 0;   // 28 Nov 2026, the owner asked: the shop contacts the customer with the delivery charge once the order is confirmed
 
   /* An order for goods the shop has not got is not an order, it is a disappointed customer and a
      telephone call. What is already promised to other orders counts as gone, so the last bag
@@ -607,7 +603,7 @@ r.post('/ask', optionalAuth, asyncHandler(async (req, res) => {
     const owing = c ? (S.sales || []).filter(s => s.customerId === c.id).reduce((a, s) => a + (+s.balance || 0), 0) : 0;
     return res.json({ answer: owing > 0 ? `You owe ${money(owing)}.` : 'Your account is clear — nothing owing.' });
   }
-  if (/deliver/.test(q)) return res.json({ answer: `Delivery in town is ${money(cat.settings.delivery)}, free over ${money(cat.settings.freeOver)}. ${cat.settings.payNote || ''}`.trim() });
+  if (/deliver/.test(q)) return res.json({ answer: `The shop will contact you once the order is confirmed for the delivery charge. ${cat.settings.payNote || ''}`.trim() });
   if (/open|hours|time|close/.test(q)) return res.json({ answer: `${cat.settings.hours || 'See the foot of the page for hours.'}${phone}` });
   if (hit) {
     if (hit.stock === null) return res.json({ answer: `${hit.name} is ${money(hit.price)} per ${hit.unit}${hit.mrp > hit.price ? ` (MRP ${money(hit.mrp)})` : ''}. Order it on the site, or call the shop to check it is on the shelf.` });

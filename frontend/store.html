@@ -618,7 +618,8 @@ function add(pid,qty,from){
 function setQty(i,q){if(q<1)cart.splice(i,1);else cart[i].qty=Math.min(999,q);saveCart();badge();drawCart();if(route().name==='checkout')render()}
 function badge(bump){var n=items();$('#cartn').textContent=n;var t=$('#tcartn');t.textContent=n;t.hidden=!n;
   if(bump&&!reduce){var b=$('#cartbtn');b.classList.remove('bump');void b.offsetWidth;b.classList.add('bump');bumpEl($('#cartn'));bumpEl($('#tcartn'))}}
-function delLine(){var s=S0();if(s.zones&&s.zones.length)return 'Delivery by area, or collect free';return (+s.delivery?'Delivery '+rs(s.delivery):'Delivery free')+(+s.freeOver?', free over '+rs(s.freeOver):'')+', or collect free'}
+/* 28 Nov 2026, the owner asked: no delivery charge online; the shop contacts the customer with it once the order is confirmed */
+function delLine(){return 'Delivery charge: the shop contacts you once the order is confirmed. Or collect free'}
 function drawCart(){
   var dl=$('#dlines'),df=$('#dfoot');
   var live=cart.filter(function(l){return byId[String(l.pid)]});
@@ -960,7 +961,7 @@ function pays(){var p=S0().pays||{},o=[];if(form.how==='deliver'&&p.cod!==false)
 function pCheckout(){
   if(!cart.length)return '<section class="page wrap"><div class="empty" style="margin-top:20px"><h2 class="disp">Your basket is empty</h2><p>Add a few things first, then come back here to send the order.</p><div class="row"><a class="btn ink" href="#/shop">Start shopping</a></div></div></section>'+footer();
   var s=S0(),zones=s.zones||[],P=pays();if(!P.some(function(o){return o[0]===form.pay}))form.pay=P[0]?P[0][0]:'';
-  var g=goods(),q=quote||{},del=q.del!=null?q.del:(form.how==='deliver'?(+s.delivery||0):0),off=q.off||0,total=q.total!=null?q.total:Math.max(0,g-off)+del,min=+s.minOrder||0,short=Math.max(0,min-g);
+  var g=goods(),q=quote||{},del=0,off=q.off||0,total=q.total!=null?q.total:Math.max(0,g-off)+del,min=+s.minOrder||0,short=Math.max(0,min-g);
   var closed=s.open===false;
   var signBox=signedIn()?'<div class="who"><b>'+esc(who.name||'Signed in')+'</b> · '+esc(who.phone)+' <button type="button" class="linkb" id="signout">Not you?</button></div>':
     '<div class="two"><div class="fl"><label for="fphone">Mobile number</label><input id="fphone" type="tel" inputmode="tel" autocomplete="tel" placeholder="07X XXX XXXX" value="'+esc(who.phone)+'"'+(otp.sent?' readonly':'')+'><span class="err" id="ephone"></span></div>'+
@@ -972,15 +973,15 @@ function pCheckout(){
   '<form class="co" id="coform" novalidate><div>'+
    '<div class="box"><h2><i>1</i>Who is ordering</h2>'+signBox+'</div>'+
    '<div class="box"><h2><i>2</i>Delivery or collect</h2><div class="pick cols">'+
-     '<label><input type="radio" name="how" value="deliver"'+(form.how==='deliver'?' checked':'')+'><div><b>Deliver to me</b><span>'+(zones.length?'Charge by area':(+s.delivery?rs(s.delivery):'Free')+(+s.freeOver?', free over '+rs(s.freeOver):''))+'</span></div></label>'+
+     '<label><input type="radio" name="how" value="deliver"'+(form.how==='deliver'?' checked':'')+'><div><b>Deliver to me</b><span>The shop will contact you once the order is confirmed for the delivery charge</span></div></label>'+
      '<label><input type="radio" name="how" value="collect"'+(form.how==='collect'?' checked':'')+'><div><b>I will collect</b><span>Free, from '+esc(SH().addr)+'</span></div></label></div>'+
-     (form.how==='deliver'?'<div style="margin-top:16px">'+(zones.length?'<div class="fl"><label for="fzone">Area</label><select id="fzone" name="zone"><option value="">Choose your area</option>'+zones.map(function(z){return '<option value="'+esc(z.id)+'"'+(form.zone===z.id?' selected':'')+'>'+esc(z.name)+' — '+(z.charge?rs(z.charge):'free')+(z.freeOver?', free over '+rs(z.freeOver):'')+'</option>'}).join('')+'</select><span class="err" id="ezone"></span></div>':'')+
+     (form.how==='deliver'?'<div style="margin-top:16px">'+(zones.length?'<div class="fl"><label for="fzone">Area</label><select id="fzone" name="zone"><option value="">Choose your area</option>'+zones.map(function(z){return '<option value="'+esc(z.id)+'"'+(form.zone===z.id?' selected':'')+'>'+esc(z.name)+'</option>'}).join('')+'</select><span class="err" id="ezone"></span></div>':'')+
        '<div class="fl"><label for="faddr">Delivery address</label><textarea id="faddr" name="addr" rows="2" autocomplete="street-address" placeholder="House, road, town, a landmark">'+esc(form.addr)+'</textarea><span class="err" id="eaddr"></span></div></div>':'')+'</div>'+
    '<div class="box"><h2><i>3</i>How you will pay</h2><div class="pick">'+P.map(function(o){return '<label><input type="radio" name="pay" value="'+o[0]+'"'+(form.pay===o[0]?' checked':'')+'><div><b>'+o[1]+'</b><span>'+o[2]+'</span></div></label>'}).join('')+'</div>'+
      (s.payNote?'<div class="note" style="margin-top:8px">'+esc(s.payNote)+'</div>':'')+
      '<div class="two" style="margin-top:16px"><div class="fl"><label for="fpromo">Discount code <span style="font-weight:400;color:var(--mut)">(if you have one)</span></label><input id="fpromo" name="code" value="'+esc(form.code)+'" autocapitalize="characters"><span class="err" id="epromo">'+esc(q.why||'')+'</span></div><div class="fl"><label for="fnote">Anything we should know? <span style="font-weight:400;color:var(--mut)">(optional)</span></label><input id="fnote" name="note" value="'+esc(form.note)+'" placeholder="Call after 5pm, leave with the site supervisor…"></div></div></div>'+
   '</div><div class="osum"><div class="box"><h2>Your order</h2>'+cart.map(function(l){if(!byId[String(l.pid)])return '';var o=lineOf(l);return '<div class="cl"><div class="clp">'+pic(o.p)+'</div><div><a href="#/p/'+o.p.id+'">'+esc(o.p.title)+'</a><small class="money">'+l.qty+' × '+rs(o.each)+'</small></div><b class="money">'+rs(o.total)+'</b></div>'}).join('')+
-    '<div style="margin-top:14px"><div class="sumrow"><span>Goods</span><b class="money">'+rs(q.goods!=null?q.goods:g)+'</b></div>'+(off?'<div class="sumrow"><span>Discount'+(q.code?' ('+esc(q.code)+')':'')+'</span><span class="money">− '+rs(off)+'</span></div>':'')+'<div class="sumrow"><span>Delivery</span><span class="money">'+(form.how==='collect'?'Free (collect)':del?rs(del):'Free')+'</span></div><div class="sumrow big"><span>Total</span><span class="money">'+rs(total)+'</span></div></div>'+
+    '<div style="margin-top:14px"><div class="sumrow"><span>Goods</span><b class="money">'+rs(q.goods!=null?q.goods:g)+'</b></div>'+(off?'<div class="sumrow"><span>Discount'+(q.code?' ('+esc(q.code)+')':'')+'</span><span class="money">− '+rs(off)+'</span></div>':'')+'<div class="sumrow"><span>Delivery</span><span class="money">'+(form.how==='collect'?'Free (collect)':'Told once confirmed')+'</span></div><div class="sumrow big"><span>Total</span><span class="money">'+rs(total)+'</span></div>'+(form.how==='collect'?'':'<p class="muted" style="margin:8px 0 0;font-size:13px">The shop will contact you once the order is confirmed for the delivery charge.</p>')+'</div>'+
     (short?'<div class="note" style="color:var(--red);margin-top:8px">Add '+rs(short)+' more. The smallest online order is '+rs(min)+'.</div>':'')+
     (closed?'<div class="note" style="color:var(--red);margin-top:8px">The shop is not taking online orders just now.</div>':'')+
     '<button class="btn red wide" type="submit" id="placeb" style="margin-top:16px;min-height:54px"'+(short||closed?' disabled':'')+'>Send my order</button><div class="err" id="eplace" style="margin-top:8px;font-weight:600"></div>'+

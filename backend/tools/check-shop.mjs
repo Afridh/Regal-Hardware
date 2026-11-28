@@ -35,13 +35,9 @@ const price=p.webPrice>0?p.webPrice:(w.level==='wholesale'?p.wholesale:p.retail)
 const inTown=await quote({lines:line(2),deliver:true,zone:'z1'});
 const outTown=await quote({lines:line(2),deliver:true,zone:'z2'});
 const collect=await quote({lines:line(2),deliver:false,zone:'z1'});
-ok(inTown.del===400&&outTown.del===1200,'each area is charged its own rate',JSON.stringify({town:inTown.del,out:outTown.del}));
+// 28 Nov 2026, the owner asked: no delivery charge online; the shop contacts the customer with it once the order is confirmed
+ok(inTown.del===0&&outTown.del===0&&inTown.total===inTown.goods-inTown.off,'no delivery charge goes on an online order, whatever the area',JSON.stringify({town:inTown.del,out:outTown.del}));
 ok(collect.del===0,'and collecting costs nothing');
-
-const big=await quote({lines:line(Math.ceil(20000/price)+1),deliver:true,zone:'z1'});
-ok(big.del===0,'a big enough order is delivered free in that area',`goods ${big.goods}`);
-const bigOut=await quote({lines:line(Math.ceil(20000/price)+1),deliver:true,zone:'z2'});
-ok(bigOut.del===1200,'but not in the area that has no free line',`goods ${bigOut.goods}`);
 
 // ---- the smallest order ----
 const tiny=await quote({lines:[{pid:p.id,qty:0.001}],deliver:false});
@@ -75,7 +71,7 @@ ok(over.status===409&&/only|short/i.test(over.body.error||''),'an order for more
 const before=((await (await fetch(BASE+'/api/shop/catalog')).json()).products.find(x=>x.id===p.id)||{}).stock;
 const fine=await order({lines:line(3),deliver:true,zone:'z1',pay:'cod',address:'1 Test Lane',code:'BUILDER10'});
 ok(fine.status===200&&fine.body.no,'an order it can fill goes through',fine.body.no);
-ok(fine.body.del===400,'carrying the area’s charge',String(fine.body.del));
+ok(fine.body.del===0,'with no delivery charge on it — the shop tells the customer once it is confirmed',String(fine.body.del));
 
 // what is now promised is gone from the catalogue
 const cat=await (await fetch(BASE+'/api/shop/catalog')).json();

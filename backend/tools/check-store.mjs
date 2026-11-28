@@ -70,7 +70,7 @@ for (const [n, W, H2, mob] of [['d', 1440, 900, false], ['m', 390, 844, true]]) 
   ok(await pg.evaluate(() => !!localStorage.getItem('rh_token') && !!document.querySelector('.who')), n + ': signed in with the code');
   await pg.type('#faddr', '12, Lake Road, Kaduruwela'); await wait(1500);
   const sum = await pg.evaluate(() => document.querySelector('.osum').innerText);
-  ok(/14,000/.test(sum) && /600/.test(sum) && /14,600/.test(sum), n + ': the total is the server\'s: 14,000 + 600 delivery', (sum.match(/Total[^\n]*\n?[^\n]*/) || [''])[0]);
+  ok(/14,000/.test(sum) && !/14,600/.test(sum) && /Told once confirmed/i.test(sum) && /contact you once the order is confirmed for the delivery charge/.test(sum), n + ': no delivery charge added (28 Nov 2026): the shop contacts the customer with it once the order is confirmed', (sum.match(/Total[^\n]*\n?[^\n]*/) || [''])[0]);
   await shot(pg, n + '-4checkout');
   await pg.evaluate(() => document.getElementById('placeb').click());
   await pg.waitForFunction(() => location.hash === '#/done', { timeout: 20000 }).catch(() => {});

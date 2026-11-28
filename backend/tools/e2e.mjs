@@ -447,7 +447,7 @@ let webNo = null;
   const p1 = cat.products.find(p => p.stock > 2);
   const order = await j('/api/shop/order', { method: 'POST', headers: H, body: { lines: [{ pid: p1.id, qty: 2 }], deliver: true, address: '12 Temple Road', note: 'call first' } });
   webNo = order.no;
-  ok('W: order placed', order.status === 200 && /^ONL-\d{5}$/.test(order.no || '') && Math.abs(order.total - (2 * p1.price + (2 * p1.price < cat.settings.freeOver ? cat.settings.delivery : 0))) < 0.01, `${order.no} ${order.total}`);
+  ok('W: order placed', order.status === 200 && /^ONL-\d{5}$/.test(order.no || '') && Math.abs(order.total - 2 * p1.price) < 0.01 && order.del === 0, `${order.no} ${order.total}`);
   const me = await j('/api/shop/me', { headers: H });
   ok('W: my orders shows it, with the shop', me.status === 200 && me.orders.some(o => o.no === order.no && o.status === 'placed'));
   const askP = await j('/api/shop/ask', { method: 'POST', body: { q: 'price of ' + p1.name.split(' ')[0].toLowerCase() } });
