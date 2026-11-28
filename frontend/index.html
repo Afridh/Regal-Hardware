@@ -1242,6 +1242,33 @@ pre.sms{background:var(--panel);border:1px solid var(--line);border-left:4px sol
 
 /* ---- vouchers share the bill's A5 sheet ---- */
 /* vouchers on A5 landscape: the page's own shape, type that reads from arm's length */
+.print.a5.st5{width:733px;min-height:516px;box-sizing:border-box;padding:14px 18px 10px;font-size:12px;line-height:1.3;color:#000;background:#fff;display:flex;flex-direction:column}
+.print.st5 .st5-head{display:flex;justify-content:space-between;gap:14px;align-items:center;border-bottom:3px solid #000;padding-bottom:6px}
+.print.st5 .bname{font-size:22px}.print.st5 .bsin{font-size:12px}.print.st5 .btag{font-size:10.5px;max-width:50ch}
+.print.st5 .st5-meta{min-width:240px}
+.print.st5 .st5-title{background:#000;color:#fff;font-weight:900;letter-spacing:.1em;font-size:14px;padding:5px 8px;text-align:center}
+.print.st5 .st5-kv{display:grid;grid-template-columns:auto 1fr;gap:1px 8px;margin-top:4px;font-size:11.5px}.print.st5 .st5-kv span{color:#444}
+.print.st5 .st5-cust{display:flex;justify-content:space-between;gap:12px;border:2px solid #000;border-left:8px solid #000;padding:5px 10px;margin-top:6px;align-items:center}
+.print.st5 .st5-cust span{display:block;font-size:9.5px;letter-spacing:.12em;color:#333;font-weight:700}
+.print.st5 .st5-cust>div>b{font-size:17px;line-height:1.15}.print.st5 .st5-cust i{display:block;font-style:normal;font-size:11px}
+.print.st5 .st5-sum{display:flex;gap:10px;text-align:right}.print.st5 .st5-sum b{font-size:12.5px}.print.st5 .st5-sum .due b{font-size:15px}
+.print.st5 table.st5-tbl{width:100%;border-collapse:collapse;margin-top:6px;border:1.5px solid #000}
+.print.st5 table.st5-tbl th{background:#000;color:#fff;font-size:10.5px;letter-spacing:.06em;padding:3px 5px;text-align:left;position:static}
+.print.st5 table.st5-tbl th.n,.print.st5 table.st5-tbl td.n{text-align:right;white-space:nowrap}
+.print.st5 table.st5-tbl td{border-bottom:1px solid #bbb;padding:2px 5px;font-size:11.5px;background:none;vertical-align:top}
+.print.st5 table.st5-tbl td:first-child{white-space:nowrap}
+.print.st5 table.st5-tbl td em{font-style:normal;font-size:9.5px;font-weight:700;border:1px solid #000;padding:0 3px}
+.print.st5 table.st5-tbl tr.bf td{font-weight:700;background:#eee}
+.print.st5 .st5-end{margin-top:auto}
+.print.st5 .st5-open{margin-top:6px;font-size:10.5px;line-height:1.5}.print.st5 .st5-open span{display:inline-block;margin-right:10px;white-space:nowrap}
+.print.st5 .st5-age{font-size:11px;margin-top:3px}
+.print.st5 .stls{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.print.st5 .stl{flex:1 1 200px;border:1px solid #000;padding:3px 6px;font-size:10px;background:none}.print.st5 .stl>div{display:flex;justify-content:space-between;gap:6px}
+.print.st5 .st5-tot{display:flex;gap:12px;align-items:stretch;margin-top:6px;border-top:3px solid #000;padding-top:5px}
+.print.st5 .st5-tot span{display:block;font-size:9.5px;letter-spacing:.12em;color:#333;font-weight:700}.print.st5 .st5-tot b{font-size:12.5px}
+.print.st5 .st5-tot .t{margin-left:auto;background:#000;color:#fff;padding:4px 14px;min-width:200px;text-align:right}.print.st5 .st5-tot .t span{color:#ccc}.print.st5 .st5-tot .t b{font-size:22px}
+.print.st5 .st5-foot{display:flex;justify-content:space-between;font-size:9.5px;color:#444;margin-top:5px}
+.st5-wrap{overflow:auto;background:#e9e9e9;padding:10px;border-radius:8px}.st5-wrap .print.st5{margin:0 auto;box-shadow:0 2px 10px rgba(0,0,0,.15)}
+.modal .box:has(.st5-box){max-width:820px;width:calc(100vw - 32px)}
 .print.a5.voucher{width:733px;height:516px;min-height:516px;box-sizing:border-box;padding:16px 20px 12px;display:flex;flex-direction:column;font-size:14px;line-height:1.3;overflow:hidden}
 .print.voucher .bhead{gap:16px;align-items:center;border-bottom:3px solid #000;padding-bottom:8px}
 .print.voucher .bname{font-size:24px}
@@ -27444,6 +27471,38 @@ function receiptVoucherCombined(rvs,fresh,ask){
     lines:rvs.map(r=>[`${r.method}${r.ref?` · ${r.method==='CHEQUE'?'cheque #':''}${r.ref}`:''}${r.chq&&r.chq.bank?` · ${r.chq.bank}`:''}${r.chq&&r.chq.date?` · dated ${r.chq.date}`:''}${r.bank&&r.method!=='CHEQUE'?` → ${B(r.bank).name}`:''}`,r.amount]),
     thirdSign:'CUSTOMER'});
 }
+/* A customer's statement on A5 (28 Nov 2026, the owner: "single customer statement should print easily in A5").
+   F8 or Statement opens it as the A5 paper itself; Enter (or Print) sends it straight to the A5 printer, as a bill goes,
+   page by page when it is long (the letterhead on the first page, the totals on the last). The period is picked on it. */
+function stmtA5(c,from){
+  const id=c.id, rows=typeof custLedger==='function'?custLedger(id):[];
+  const before=rows.filter(r=>from&&r.date<from), shown=rows.filter(r=>!from||r.date>=from);
+  const opening=before.length?before[before.length-1].run:0, owed=partyBal('C',id);
+  const dr=shown.reduce((a,r)=>a+(+r.dr||0),0), cr=shown.reduce((a,r)=>a+(+r.cr||0),0);
+  const open=S.sales.filter(s=>s.customerId===id&&s.balance>0.005).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const ag=typeof custAge==='function'?custAge(id):{now:0,mid:0,old:0};
+  const E=noteEsc, dd=s=>String(s||'').slice(0,10).split('-').reverse().join('-'), N=stmtNotes(rows);
+  const period=from?`${dd(from)} to ${dd(D(today))}`:'Whole account';
+  return `<div class="print a5 bill st5">
+   <div class="bhead st5-head"><div class="bbrand"><div class="bmark">${mark(40)}</div>
+     <div><div class="bname"><span class="blk">REGAL</span> HARDWARE</div><div class="bsin">${CFG.shop.sinhala||''}</div>
+      <div class="btag">${E(CFG.shop.addr||'')} ${E(CFG.shop.near||'')} · ${E(CFG.shop.phone||'')}${CFG.shop.land?' · '+E(CFG.shop.land):''}</div></div></div>
+    <div class="st5-meta"><div class="st5-title">STATEMENT OF ACCOUNT</div>
+     <div class="st5-kv"><span>Date</span><b>${dd(D(today))}</b><span>Period</span><b>${period}</b></div></div></div>
+   <div class="st5-cust"><div><span>CUSTOMER</span><b>${E(c.name)}</b><i>${E(c.code||'')}${c.phone?' · '+E(c.phone):''}${c.address?' · '+E(c.address):''}</i></div>
+    <div class="st5-sum"><div><span>Opening</span><b>${money2(opening)}</b></div><div><span>Billed</span><b>${money2(dr)}</b></div><div><span>Paid</span><b>${money2(cr)}</b></div><div class="due"><span>Balance due</span><b>${money2(owed)}</b></div></div></div>
+   <table class="x-tbl st5-tbl"><thead><tr><th>Date</th><th>Particulars</th><th>Ref</th><th class="n">Billed</th><th class="n">Paid</th><th class="n">Balance</th></tr></thead><tbody>
+    ${from?`<tr class="bf"><td>${dd(from)}</td><td colspan="4">Balance brought forward</td><td class="n">${money2(opening)}</td></tr>`:''}
+    ${shown.map(x=>{ const n=N.get(x); return `<tr><td>${dd(x.date)}</td><td>${E(String(x.desc||'').replace(/<[^>]*>/g,''))}${n?` <em>${E(n.t)}</em>`:''}</td><td>${E(x.ref||'')}</td><td class="n">${x.dr?money2(x.dr):''}</td><td class="n">${x.cr?money2(x.cr):''}</td><td class="n">${money2(x.run)}</td></tr>` }).join('')||'<tr><td colspan="6">No movement in this period.</td></tr>'}
+   </tbody></table>
+   <div class="st5-end">
+    ${typeof stmtLists==='function'?stmtLists(id,from):''}
+    ${open.length?`<div class="st5-open"><b>Unpaid bills (${open.length})</b> ${open.slice(0,40).map(s=>`<span>${isBF(s)?'Previous balance':E(s.no)} · ${dd(s.date)} · <b>${money2(s.balance)}</b> · ${Math.max(0,Math.round((today-new Date(s.date))/864e5))}d</span>`).join('')}${open.length>40?`<span>and ${open.length-40} more</span>`:''}</div>
+     <div class="st5-age">Up to 30 days <b>${money2(ag.now)}</b> · 31–60 days <b>${money2(ag.mid)}</b> · over 60 days <b>${money2(ag.old)}</b></div>`:'<div class="st5-age">Nothing outstanding — thank you.</div>'}
+    <div class="st5-tot"><div><span>AMOUNT DUE IN WORDS</span><b>${owed>0.005?words(owed)+' Rupees Only':'Nil'}</b></div><div class="t"><span>BALANCE DUE</span><b>${money2(owed)}</b></div></div>
+    <div class="st5-foot"><span>Please check this statement and tell us of any difference within 7 days.</span><span>Printed ${dd(D(today))}</span></div></div>
+  </div>`;
+}
 function statement(id,mode){
   const c=C(id), open=S.sales.filter(s=>s.customerId===id&&s.balance>0).sort((a,b)=>a.date.localeCompare(b.date));
   const owed=partyBal('C',id);
@@ -27452,26 +27511,25 @@ function statement(id,mode){
     sms(c.phone,tpl('statement',{customer:c.name,count:open.length,outstanding:fmt(owed),link:myLink(c)}));
     render(); return toast('Statement texted to '+c.phone);
   }
-  // the account over the period chosen on the Statement tab, with a running balance, then the unpaid bills
-  const rows=typeof custLedger==='function'?custLedger(id):[], from=typeof custStmtFrom==='function'?custStmtFrom():'';
-  const before=rows.filter(r=>from&&r.date<from), shown=rows.filter(r=>!from||r.date>=from);
-  const opening=before.length?before[before.length-1].run:0;
-  const ag=typeof custAge==='function'?custAge(id):{now:0,mid:0,old:0};
-  modal(`<div class="print"><div style="display:flex;justify-content:space-between">
-    <div><b style="font-size:16px">${CFG.shop.name||'REGAL HARDWARE'}</b><br>${CFG.shop.addr||''}<br>${CFG.shop.phone||''}</div>
-    <div style="text-align:right"><span class="strip">STATEMENT</span><br>${D(today)}<br><span class="muted">${from?'from '+from:'whole account'}</span></div></div>
-   <div style="margin:10px 0"><b>${c.name}</b> · ${c.code}${c.phone?' · '+c.phone:''}${c.address?'<br>'+c.address:''}</div>
-   <table width="100%" style="font-size:12.5px"><tr><th align="left">Date</th><th align="left">Particulars</th><th align="left">Ref</th><th align="right">Billed</th><th align="right">Paid</th><th align="right">Balance</th></tr>
-   ${from?`<tr><td>${from}</td><td colspan="4">Balance brought forward</td><td align="right"><b>${opening.toFixed(2)}</b></td></tr>`:''}
-   ${(()=>{ const N=stmtNotes(rows); return shown.map(r=>`<tr><td>${r.date}</td><td>${r.desc}${stmtNoteH(N.get(r))}</td><td>${r.ref||''}</td><td align="right">${r.dr?r.dr.toFixed(2):''}</td><td align="right">${r.cr?r.cr.toFixed(2):''}</td><td align="right">${r.run.toFixed(2)}</td></tr>`).join('') })()||'<tr><td colspan="6">No movement in this period.</td></tr>'}
-   <tr><td colspan="5" align="right"><b>Balance due</b></td><td align="right"><b>${owed.toFixed(2)}</b></td></tr></table>
-   ${open.length?`<div style="margin-top:12px"><b>Unpaid bills</b></div>
-   <table width="100%" style="font-size:12.5px"><tr><th align="left">Invoice</th><th align="left">Date</th><th align="right">Total</th><th align="right">Paid</th><th align="right">Outstanding</th><th align="right">Days</th></tr>
-   ${open.map(s=>`<tr><td>${isBF(s)?"Previous balance":s.no}</td><td>${s.date}</td><td align="right">${s.total.toFixed(2)}</td><td align="right">${s.paid.toFixed(2)}</td><td align="right">${s.balance.toFixed(2)}</td><td align="right">${Math.round((today-new Date(s.date))/864e5)}</td></tr>`).join('')}</table>
-   <div style="margin-top:6px;font-size:12px">Up to 30 days ${ag.now.toFixed(2)} · 31–60 days ${ag.mid.toFixed(2)} · over 60 days <b>${ag.old.toFixed(2)}</b></div>`:'<div style="margin-top:10px">Nothing outstanding — thank you.</div>'}
-   ${stmtLists(id,from)}
-   <div style="margin-top:10px">Amount due in words: <i>${words(owed)} rupees only</i></div></div>
-   <div style="text-align:right;margin-top:10px"><button class="btn ghost" data-act="closeModal">Close</button> <button class="btn" onclick="window.print()">Print</button></div>`);
+  document.querySelectorAll('.modal .st5-box').forEach(x=>{ const m=x.closest('.modal'); if(m) m.remove() });
+  const from=typeof custStmtFrom==='function'?custStmtFrom():'', sheet=stmtA5(c,from), no='Statement '+(c.code||c.id);
+  const m=modal(`<div class="st5-box"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+     <h2 style="margin:0">Statement — ${noteEsc(c.name)}</h2>
+     <span class="chips" style="margin:0">${[['1m','1 month'],['3m','3 months'],['12m','12 months'],['all','Everything']].map(f=>`<button class="${custStmtRange===f[0]?'on':''}" data-st5r="${f[0]}">${f[1]}</button>`).join('')}</span>
+     <span style="display:flex;gap:6px"><button class="btn tape sm" id="st5Go">🖨 Print A5 <i class="kbd">Enter</i></button><button class="btn ghost sm" id="st5Pdf" title="The browser's print box — to save it as a PDF, or pick another printer">PDF / other printer</button><button class="btn ghost sm" data-act="closeModal">Close <i class="kbd">Esc</i></button></span></div>
+    <div class="st5-wrap">${sheet}</div></div>`);
+  const inner=m.querySelector('.print').outerHTML;
+  window._paperNow={inner,f:'a5',no};
+  let sent=0;
+  const go=()=>{ if(Date.now()-sent<4000) return toast('It has just been sent — press Print again in a moment for another copy','warn');
+    sent=Date.now(); printPaper(printDocument(inner,'a5'),'a5',no,()=>paperFallback(inner,'a5')); toast(`Printing ${c.name}'s statement on A5`,'info') };
+  m.querySelector('#st5Go').onclick=go;
+  m.querySelector('#st5Pdf').onclick=()=>paperFallback(inner,'a5');
+  m.querySelectorAll('[data-st5r]').forEach(b=>b.onclick=()=>{ custStmtRange=b.dataset.st5r; statement(id,'print'); if(S.view==='customers') try{ render() }catch(e){} });
+  const key=e=>{ if(!document.body.contains(m)){ window.removeEventListener('keydown',key,true); return }
+    if(e.key==='Enter'&&!e.repeat&&!/^(INPUT|TEXTAREA|SELECT)$/.test((e.target||{}).tagName||'')){ e.preventDefault(); e.stopPropagation(); go() } };
+  window.addEventListener('keydown',key,true);
+  setTimeout(()=>{ const b=m.querySelector('#st5Go'); if(b) b.focus() },0);
 }
 
 /* ---- a stand-in QR block: same square pattern every time for a given text ---- */
