@@ -81,6 +81,17 @@ await pg.evaluate(() => { window.eval('CFG').features = { ...(window.eval('CFG')
 await pg.$eval('.pt-kind [data-act="tradesTab"]', e => e.click()); await wait(300);
 ok(await pg.evaluate(() => window.eval('S').view === 'settings' && !!document.querySelector('[data-feat="trades"]')), 'switched off: the tab takes the Super Admin to Features, to tick it');
 await pg.evaluate(() => { delete window.eval('CFG').features.trades });
+// other users: whoever bills sees them; a role can be given the page itself; paying out is the owner's or an admin's
+const who = await pg.evaluate(() => { const S = window.eval('S'), u = S.user, allowed = window.eval('allowed'), keep = { role: u.role, roles: S.roles };
+  const as = (role, pages) => { S.roles = (keep.roles || []).filter(r => r.name !== role).concat(pages ? [{ name: role, pages, sections: [] }] : []); u.role = role; window.eval('go')('trades'); window.eval('render')();
+    return { can: allowed('trades'), menu: !!document.querySelector('#nav [data-view="trades"], [data-view="trades"]'), pay: !!document.querySelector('[data-act="tradePay"]'), rate: !!(document.querySelector('#teR') || {}).disabled } };
+  const sunil = S.trades.find(x => x.name === 'Sunil Perera'); window.eval('S').sales.push({ no: 'TT1', date: window.eval('D(today)'), type: 'CASH', customerId: 1, lines: [], total: 10000, paid: 10000, balance: 0, trade: sunil.id, tradeRate: 2 });
+  const r = { counter: as('Counter staff', ['pos', 'bills']), only: as('Trades desk', ['trades']), none: as('Stock only', ['products']), sales: as('Salesman', null) };
+  u.role = keep.role; S.roles = keep.roles; window.eval('go')('trades'); window.eval('render')(); r.boss = { pay: !!document.querySelector('[data-act="tradePay"]') }; S.sales = S.sales.filter(s => s.no !== 'TT1'); return r });
+ok(who.counter.can && who.counter.menu, 'someone who only bills sees Tradesmen', JSON.stringify(who.counter));
+ok(who.only.can && !who.none.can && !who.sales.can, 'a role given only the Tradesmen page has it; a stock-only role and Sales (attendance only) do not', JSON.stringify([who.only.can, who.none.can, who.sales.can]));
+ok(!who.counter.pay && who.boss.pay, 'Pay is for the owner or an admin, not the counter', JSON.stringify([who.counter.pay, who.boss.pay]));
+ok(await pg.evaluate(() => window.eval('SECTIONS').Customers.includes('trades')), 'Tradesmen can be ticked for a role in Users & permissions');
 ok(!errs.length, 'no errors on the page', errs.join(' | '));
 await b.close();
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
