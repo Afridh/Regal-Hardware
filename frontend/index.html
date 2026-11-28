@@ -388,6 +388,8 @@ label{display:block;font-size:12px;color:var(--steel);margin-bottom:3px}
 .chq-cal-d{min-height:58px;border:1px solid var(--line);border-radius:8px;padding:4px 6px;display:flex;flex-direction:column;gap:1px;background:#fff}
 .chq-cal-d span{font-size:11px;color:var(--steel)}.chq-cal-d b{font-family:Archivo,sans-serif;font-size:13px}.chq-cal-d i{font-style:normal;font-size:11px;color:var(--steel)}
 .co-cal{grid-template-columns:repeat(8,minmax(0,1fr));min-width:700px}.co-cal .co-out{background:none;border-style:dashed;opacity:.35}.co-cal .co-wk{background:var(--line2,#EEF1F0)}.co-cal .co-on{outline:2px solid var(--chip-rust,#C0442C);outline-offset:-1px}
+.te-k{padding:5px 11px;border:1px solid var(--line);border-radius:99px;background:#fff;font-size:13px;margin:0 6px 6px 0}
+.te-k.on{background:var(--ink,#1b1b1b);color:#fff;border-color:var(--ink,#1b1b1b)}
 .chq-cal-d.past{opacity:.55}.chq-cal-d.has{background:#F6F9FC;border-color:#BFD0E2}
 .chq-cal-d.has.past{opacity:1;background:var(--tint-rust,#FBE4DE);border-color:#F0B9AC}.chq-cal-d.today{box-shadow:inset 0 0 0 2px #1f3b5a}
 .co-cal .chq-cal-d.has.co-ok{background:var(--tint-green,#E4F3EA);border-color:var(--chip-green,#8CC7A4)}
@@ -33122,7 +33124,11 @@ function siteStatement(cid,sid){
    and the books: 6120 Tradesman commission). The bill keeps the rate it was earned at, so changing a
    rate later does not change what was earned before. */
 const TRADE_KINDS=['Mason','Electrician','Plumber','Carpenter','Painter','Welder','Tile layer','Contractor','Other'];
-const tradeCfg=()=>{ const c={rate:2,sms:true,...(CFG.trade||{})}; c.kinds=[...new Set([...(c.kinds||[]),...TRADE_KINDS,...(Array.isArray(S.trades)?S.trades.map(x=>x.kind).filter(Boolean):[])])]; return c };
+/* A tradesman can do more than one trade (28 Nov 2026: a plumber who also does wiring): x.kinds, the first also kept
+   as x.kind for older tills. Those with one trade from before have only x.kind. */
+const tkOf=x=>Array.isArray(x&&x.kinds)&&x.kinds.length?x.kinds:(x&&x.kind?[x.kind]:[]);
+const tkTxt=x=>tkOf(x).join(' · ');
+const tradeCfg=()=>{ const c={rate:2,sms:true,...(CFG.trade||{})}; c.kinds=[...new Set([...(c.kinds||[]),...TRADE_KINDS,...(Array.isArray(S.trades)?S.trades.flatMap(tkOf):[])])]; return c };
 const tradeAreas=()=>[...new Set((Array.isArray(S.trades)?S.trades:[]).map(x=>String(x.area||'').trim()).filter(Boolean))].sort();
 const tradeList=()=>{ if(!Array.isArray(S.trades)) S.trades=[]; return S.trades };
 const tradeOf=id=>tradeList().find(x=>x.id===id);
@@ -33152,9 +33158,9 @@ function tradePick(){
   const q=m.querySelector('#tpQ'); let cur=0, hits=[];
   const pick=(id)=>{ S.pos.trade=id||null; m.remove(); render(); const tr=id&&tradeOf(id); toast(tr?`Brought by ${tr.name} — ${+tr.rate||tradeCfg().rate}% on this bill`:'Nobody brought this one','ok'); const qq=$('#csQ'); if(qq) qq.focus() };
   const draw=()=>{ const v=q.value.trim().toLowerCase();
-    hits=tradeList().filter(x=>x.active!==false&&(!v||(x.name+' '+(x.kind||'')+' '+(x.phone||'')).toLowerCase().includes(v)));
+    hits=tradeList().filter(x=>x.active!==false&&(!v||(x.name+' '+tkTxt(x)+' '+(x.phone||'')).toLowerCase().includes(v)));
     cur=Math.min(cur,Math.max(0,hits.length-1));
-    m.querySelector('#tpL').innerHTML=hits.length?`<table>${hits.map((x,i)=>{ const tt=tradeTotals(x.id); return `<tr class="rowlink ${i===cur?'on':''}" data-tp="${x.id}"><td><b>${noteEsc(x.name)}</b><div class="muted">${noteEsc(x.kind||'')} · ${noteEsc(x.phone||'no mobile')}</div></td><td class="n">${+x.rate||tradeCfg().rate}%</td><td class="n muted">${tt.bills} bill${tt.bills===1?'':'s'}</td></tr>` }).join('')}</table>`
+    m.querySelector('#tpL').innerHTML=hits.length?`<table>${hits.map((x,i)=>{ const tt=tradeTotals(x.id); return `<tr class="rowlink ${i===cur?'on':''}" data-tp="${x.id}"><td><b>${noteEsc(x.name)}</b><div class="muted">${noteEsc(tkTxt(x))} · ${noteEsc(x.phone||'no mobile')}</div></td><td class="n">${+x.rate||tradeCfg().rate}%</td><td class="n muted">${tt.bills} bill${tt.bills===1?'':'s'}</td></tr>` }).join('')}</table>`
       :`<div class="muted">${v?'Nobody by that name — add them below.':'No tradesmen yet — add the first below.'}</div>`;
     m.querySelectorAll('[data-tp]').forEach(r=>r.onclick=()=>pick(r.dataset.tp));
     if(!/^\d/.test(v)) m.querySelector('#tpN').value=q.value.trim(); else m.querySelector('#tpP').value=q.value.trim() };
@@ -33168,18 +33174,19 @@ function tradePick(){
   m.querySelector('#tpAdd').onclick=()=>{ const name=m.querySelector('#tpN').value.trim(), phone=m.querySelector('#tpP').value.replace(/[^\d+]/g,'');
     if(!name) return m.querySelector('#tpMsg').textContent='A name is needed.';
     if(phone&&!/^(0\d{9}|\+?94\d{9})$/.test(phone)) return m.querySelector('#tpMsg').textContent='That mobile does not look right — 07XXXXXXXX.';
-    const x={id:'tr'+Date.now().toString(36),name,phone,kind:m.querySelector('#tpK').value,rate:tradeCfg().rate,active:true,since:D(today),by:S.user.name};
+    const x={id:'tr'+Date.now().toString(36),name,phone,kind:m.querySelector('#tpK').value,kinds:[m.querySelector('#tpK').value],rate:tradeCfg().rate,active:true,since:D(today),by:S.user.name};
     tradeList().push(x); persist(true); pick(x.id) };
   draw(); q.focus();
 }
 /* Their details (28 Nov 2026, the owner asked): a second number, the area they work in, address, birthday, notes, and
    whether they want the shop's offers. Any trade can be typed — the list grows with what is used. */
 function tradeEdit(id){
-  const x=id?tradeOf(id):{name:'',phone:'',kind:tradeCfg().kinds[0],rate:tradeCfg().rate,active:true};
+  const x=id?tradeOf(id):{name:'',phone:'',kind:'',rate:tradeCfg().rate,active:true};
   const v=k=>noteEsc(x[k]||'');
   const m=modal(`<h2>${id?'Edit '+noteEsc(x.name):'A new tradesman'}</h2>
-   <div class="grid2"><div class="f"><label>Name</label><input id="teN" value="${v('name')}" autocomplete="off"></div>
-    <div class="f"><label>Trade</label><input id="teK" list="teKinds" value="${v('kind')}" placeholder="Plumber, Electrician…" autocomplete="off"><datalist id="teKinds">${tradeCfg().kinds.map(k=>`<option value="${noteEsc(k)}">`).join('')}</datalist></div></div>
+   <div class="f"><label>Name</label><input id="teN" value="${v('name')}" autocomplete="off"></div>
+   <div class="f"><label>Trades <span class="muted">— as many as they do</span></label><div class="chips" id="teKs" style="margin:2px 0 0">${[...new Set([...tradeCfg().kinds,...tkOf(x)])].map(k=>`<label class="chip te-k ${tkOf(x).includes(k)?'on':''}" style="cursor:pointer;display:inline-flex;gap:5px;align-items:center"><input type="checkbox" value="${noteEsc(k)}" ${tkOf(x).includes(k)?'checked':''} style="width:auto;margin:0">${noteEsc(k)}</label>`).join('')}</div>
+    <div style="display:flex;gap:6px;margin-top:6px;max-width:360px"><input id="teKNew" placeholder="Another trade, e.g. Aluminium fitter" autocomplete="off"><button class="btn ghost sm" type="button" id="teKAdd">Add</button></div></div>
    <div class="grid2"><div class="f"><label>Mobile</label><input id="teP" inputmode="tel" value="${v('phone')}" placeholder="07XXXXXXXX"></div>
     <div class="f"><label>Second number <span class="muted">(optional)</span></label><input id="teP2" inputmode="tel" value="${v('phone2')}" placeholder="07XXXXXXXX"></div></div>
    <label class="chk" style="margin:-4px 0 8px"><input type="checkbox" id="teBoth" ${x.phone2Sms?'checked':''}> send texts to both numbers</label>
@@ -33194,10 +33201,20 @@ function tradeEdit(id){
    <div class="muted">A new rate counts from the next bill — what was earned before stays as it was.</div><div class="muted rust" id="teMsg"></div>
    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn ghost" data-act="closeModal">Cancel</button><button class="btn tape" id="teOk">Save</button></div>`);
   const g=i=>m.querySelector('#'+i), ph=i=>g(i).value.replace(/[^\d+]/g,'');
+  const kBind=()=>m.querySelectorAll('#teKs input').forEach(cb=>cb.onchange=()=>cb.closest('label').classList.toggle('on',cb.checked)); kBind();
+  const kAdd=()=>{ const k=g('teKNew').value.trim().replace(/\s+/g,' '); if(!k) return;
+    const have=[...m.querySelectorAll('#teKs input')].find(cb=>cb.value.toLowerCase()===k.toLowerCase());
+    if(have){ have.checked=true; have.closest('label').classList.add('on') }
+    else { const l=document.createElement('label'); l.className='chip te-k on'; l.style.cssText='cursor:pointer;display:inline-flex;gap:5px;align-items:center';
+      l.innerHTML=`<input type="checkbox" value="${noteEsc(k)}" checked style="width:auto;margin:0">${noteEsc(k)}`; g('teKs').appendChild(l); kBind() }
+    g('teKNew').value=''; g('teKNew').focus() };
+  g('teKAdd').onclick=kAdd; g('teKNew').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); kAdd() } };
   g('teOk').onclick=()=>{ const name=g('teN').value.trim(); if(!name) return g('teMsg').textContent='A name is needed.';
+    if(g('teKNew').value.trim()) kAdd();
+    const kinds=[...m.querySelectorAll('#teKs input:checked')].map(cb=>cb.value); if(!kinds.length) return g('teMsg').textContent='Tick at least one trade.';
     for(const k of ['teP','teP2']) if(ph(k)&&!/^(0\d{9}|\+?94\d{9})$/.test(ph(k))) return g('teMsg').textContent='That number does not look right — 07XXXXXXXX.';
     const dup=ph('teP')&&tradeList().find(y=>y.id!==id&&phone9(y.phone)===phone9(ph('teP'))); if(dup) return g('teMsg').textContent=`${dup.name} already has that mobile.`;
-    const nv={name,phone:ph('teP'),phone2:ph('teP2'),phone2Sms:g('teBoth').checked&&!!ph('teP2'),kind:g('teK').value.trim()||'Other',area:g('teArea').value.trim(),address:g('teAd').value.trim(),
+    const nv={name,phone:ph('teP'),phone2:ph('teP2'),phone2Sms:g('teBoth').checked&&!!ph('teP2'),kind:kinds[0],kinds,area:g('teArea').value.trim(),address:g('teAd').value.trim(),
       nic:g('teNic').value.trim(),birthday:g('teBd').value,notes:g('teNo').value.trim(),rate:Math.max(0,+g('teR').value||0),active:g('teA').checked,noPromo:!g('teO').checked};
     if(id) Object.assign(x,nv); else tradeList().push({id:'tr'+Date.now().toString(36),...nv,since:D(today),by:S.user.name});
     m.remove(); persist(true); render(); toast('Saved','ok') };
@@ -33216,7 +33233,7 @@ function tradePay(id){
     tradePays().push({id:'tp'+Date.now().toString(36),tid:id,date:D(today),amount:amt,from,note,ref,by:S.user.name});
     post(D(today),`Commission to ${x.name}${note?' — '+note:''}`,ref,[{ac:'6120',dr:amt},from==='cash'?{ac:'1010',cr:amt}:{ac:B(+from).ac,cr:amt}]);
     m.remove(); persist(true); render(); toast(`${money2(amt)} paid to ${x.name}`,'ok');
-    voucherPrint({title:'Commission Voucher',no:ref,date:D(today),payee:x.name,payeeLabel:'PAID TO',payeeSub:`${x.kind||''}${x.phone?' · '+x.phone:''}`,amount:amt,totalLabel:'COMMISSION PAID',
+    voucherPrint({title:'Commission Voucher',no:ref,date:D(today),payee:x.name,payeeLabel:'PAID TO',payeeSub:`${tkTxt(x)}${x.phone?' · '+x.phone:''}`,amount:amt,totalLabel:'COMMISSION PAID',
       rows:[['Earned to date',fmt(tt.earned)],['Paid before',fmt(tt.paid)],['Still waiting after this',fmt(Math.max(0,tt.due-amt))],['Paid from',from==='cash'?'Cash drawer':B(+from).name],['Note',note||'—'],['Paid by',S.user.name]],thirdSign:'RECEIVED BY'});
   };
 }
@@ -33227,7 +33244,7 @@ function tradeStatement(id){
 }
 let tradeQ='', tradeK='', tradeA='';
 const tradeShown=()=>{ const q=tradeQ.trim().toLowerCase();
-  return tradeList().filter(x=>(!tradeK||x.kind===tradeK)&&(!tradeA||String(x.area||'').trim()===tradeA)&&(!q||[x.name,x.kind,x.phone,x.phone2,x.area,x.address,x.notes,x.nic].join(' ').toLowerCase().includes(q))) };
+  return tradeList().filter(x=>(!tradeK||tkOf(x).includes(tradeK))&&(!tradeA||String(x.area||'').trim()===tradeA)&&(!q||[x.name,tkTxt(x),x.phone,x.phone2,x.area,x.address,x.notes,x.nic].join(' ').toLowerCase().includes(q))) };
 function tradesPage(){
   const all=tradeShown(), rows=all.map(x=>({x,tt:tradeTotals(x.id)})).sort((a,b)=>b.tt.month-a.tt.month||b.tt.due-a.tt.due);
   const due=rows.reduce((a,r)=>a+r.tt.due,0), month=rows.reduce((a,r)=>a+r.tt.month,0), mk=D(today).slice(0,7);
@@ -33243,14 +33260,14 @@ function tradesPage(){
    <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Who sends customers</h2>
      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="muted">Everyone earns ${tradeCfg().rate}% unless set per person</span>${ownerOnly()?`<button class="btn ghost" data-act="tradeSms">✉ Send them a message</button>`:''}<button class="btn tape" data-act="tradeNew">Add a tradesman</button></div></div>
-    ${(()=>{ const every=tradeList(), kinds=[...new Set(every.map(x=>x.kind).filter(Boolean))].sort(), areas=tradeAreas();
+    ${(()=>{ const every=tradeList(), kinds=[...new Set(every.flatMap(tkOf))].sort(), areas=tradeAreas();
       return every.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
        <input id="trQ" value="${noteEsc(tradeQ)}" placeholder="Name, mobile, area, notes…" autocomplete="off" style="max-width:260px">
-       <div class="chips" style="margin:0"><button class="${tradeK?'':'on'}" data-act="tradeKind" data-k="">All <b>${every.length}</b></button>${kinds.map(k=>`<button class="${tradeK===k?'on':''}" data-act="tradeKind" data-k="${noteEsc(k)}">${noteEsc(k)} <b>${every.filter(x=>x.kind===k).length}</b></button>`).join('')}</div>
+       <div class="chips" style="margin:0"><button class="${tradeK?'':'on'}" data-act="tradeKind" data-k="">All <b>${every.length}</b></button>${kinds.map(k=>`<button class="${tradeK===k?'on':''}" data-act="tradeKind" data-k="${noteEsc(k)}">${noteEsc(k)} <b>${every.filter(x=>tkOf(x).includes(k)).length}</b></button>`).join('')}</div>
        ${areas.length?`<select id="trA" style="max-width:200px"><option value="">Every area</option>${areas.map(a=>`<option ${tradeA===a?'selected':''}>${noteEsc(a)}</option>`).join('')}</select>`:''}
        <span class="muted" style="margin-left:auto">${all.length} of ${every.length}</span></div>`:'' })()}
     ${rows.length?`<div style="overflow-x:auto;margin-top:10px"><table><tr><th>Name</th><th>Trade</th><th>Mobile</th><th>Area</th><th class="n">Rate</th><th class="n">Bills</th><th class="n">Sales</th><th class="n">Earned</th><th class="n">Once paid</th><th class="n">Paid</th><th class="n">Waiting</th><th></th></tr>
-     ${rows.map(({x,tt})=>`<tr${x.active===false?' style="opacity:.55"':''}><td><b>${noteEsc(x.name)}</b>${x.notes?`<div class="muted" style="font-size:12px">${noteEsc(x.notes)}</div>`:''}${x.noPromo?'<div><span class="tag">no offers</span></div>':''}</td><td>${noteEsc(x.kind||'')}</td><td style="white-space:nowrap">${noteEsc(x.phone||'—')}${x.phone2?`<div class="muted">${noteEsc(x.phone2)}</div>`:''}</td><td>${noteEsc(x.area||'')}</td><td class="n">${+x.rate||0}%</td>
+     ${rows.map(({x,tt})=>`<tr${x.active===false?' style="opacity:.55"':''}><td><b>${noteEsc(x.name)}</b>${x.notes?`<div class="muted" style="font-size:12px">${noteEsc(x.notes)}</div>`:''}${x.noPromo?'<div><span class="tag">no offers</span></div>':''}</td><td>${tkOf(x).map(k=>`<span class="tag" style="margin:0 3px 3px 0">${noteEsc(k)}</span>`).join('')}</td><td style="white-space:nowrap">${noteEsc(x.phone||'—')}${x.phone2?`<div class="muted">${noteEsc(x.phone2)}</div>`:''}</td><td>${noteEsc(x.area||'')}</td><td class="n">${+x.rate||0}%</td>
        <td class="n">${tt.bills}</td><td class="n">${money2(tt.sales)}</td><td class="n">${money2(tt.earned)}</td><td class="n muted">${tt.pending>0.005?money2(tt.pending):'—'}</td><td class="n">${money2(tt.paid)}</td>
        <td class="n"><b>${money2(tt.due)}</b></td>
        <td style="white-space:nowrap">${tt.due>0.005?`<button class="btn tape sm" data-act="tradePay" data-id="${x.id}">Pay</button>`:''}${x.phone?` <button class="btn ghost sm" data-act="tradeStmt" data-id="${x.id}">Text statement</button>`:''} <button class="btn ghost sm" data-act="tradeEdit" data-id="${x.id}">Edit</button></td></tr>`).join('')}</table></div>`
@@ -34310,7 +34327,7 @@ const bkPhone=(p)=>{ let d=String(p||'').replace(/\D/g,''); if(d.startsWith('94'
 function bkPeople(){
   const out=[];
   if(BK.who==='trade'){ for(const x of tradeList()){ if(x.active===false||x.noPromo) continue;
-      out.push({k:'T'+x.id,type:'T',id:x.id,name:x.name,phone:x.phone,lvl:'trade',kind:x.kind||'',area:String(x.area||'').trim(),owes:0}) } return out }
+      out.push({k:'T'+x.id,type:'T',id:x.id,name:x.name,phone:x.phone,lvl:'trade',kinds:tkOf(x),area:String(x.area||'').trim(),owes:0}) } return out }
   if(BK.who!=='sup') for(const c of (S.customers||[])){ if(c.id===1||c.active===false) continue;
     out.push({k:'C'+c.id,type:'C',id:c.id,name:c.name,phone:c.phone,lvl:c.level||'retail',owes:partyBal('C',c.id)}) }
   if(BK.who==='sup'||BK.who==='both') for(const s of (S.suppliers||[])){ if(s.active===false) continue;
@@ -34323,7 +34340,7 @@ function bkTargets(){
     if(BK.who==='pick'&&!BK.picked.has(p.k)) continue;
     if(BK.who!=='pick'&&BK.owe&&!(p.owes>0.5)) continue;
     if(BK.who!=='pick'&&BK.lvl&&p.lvl!==BK.lvl) continue;
-    if(BK.who==='trade'&&((BK.kind&&p.kind!==BK.kind)||(BK.area&&p.area!==BK.area))) continue;
+    if(BK.who==='trade'&&((BK.kind&&!p.kinds.includes(BK.kind))||(BK.area&&p.area!==BK.area))) continue;
     const ph=bkPhone(p.phone); if(!ph){ bad.push(p); continue }
     if(seen.has(ph)){ dup.push(p); continue } seen.add(ph); go.push({...p,ph});
   }
@@ -34344,7 +34361,7 @@ function bulkSmsModal(){
      ${BK.who==='pick'?`<div class="bk-pick"><div class="bk-bar"><input id="bkQ" placeholder="Find a customer by name or number…" value="${noteEsc(BK.q)}">
         <button class="btn ghost sm" id="bkAll">Tick these ${people.length}</button><button class="btn ghost sm" id="bkNone">Untick all</button><span class="muted">${BK.picked.size} ticked</span></div>
         <div class="bk-list">${people.slice(0,400).map(p=>`<label class="bk-row"><input type="checkbox" data-bkp="${p.k}" ${BK.picked.has(p.k)?'checked':''}><b>${noteEsc(p.name)}</b><span>${noteEsc(p.phone||'no number')}</span><span class="${p.owes>0.5?'rust':'muted'}">${p.owes>0.5?'outstanding '+money2(p.owes):''}</span></label>`).join('')||'<div class="muted" style="padding:10px">No customer matches.</div>'}</div></div>`
-       :BK.who==='trade'?`<div class="bk-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="bkKind" style="width:auto;max-width:220px"><option value="">Every trade</option>${[...new Set(tradeList().map(x=>x.kind).filter(Boolean))].sort().map(k=>`<option ${BK.kind===k?'selected':''}>${noteEsc(k)}</option>`).join('')}</select>
+       :BK.who==='trade'?`<div class="bk-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="bkKind" style="width:auto;max-width:220px"><option value="">Every trade</option>${[...new Set(tradeList().flatMap(tkOf))].sort().map(k=>`<option ${BK.kind===k?'selected':''}>${noteEsc(k)}</option>`).join('')}</select>
           <select id="bkArea" style="width:auto;max-width:220px"><option value="">Every area</option>${tradeAreas().map(a=>`<option ${BK.area===a?'selected':''}>${noteEsc(a)}</option>`).join('')}</select>
           <span class="muted">Those who asked for no offers, and those no longer active, are left out.</span></div>`
        :`<div class="bk-bar"><label class="chk"><input type="checkbox" id="bkOwe" ${BK.owe?'checked':''}> Only those with a balance</label>
