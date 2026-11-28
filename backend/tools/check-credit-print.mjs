@@ -32,7 +32,7 @@ const r = await pg.evaluate(() => {
   return { sent, credit: credit.no, cash: cash.no };
 });
 ok(r.sent[0] && r.sent[0].f === 'a5', 'a credit bill sent as the 80mm receipt prints as the A5 bill', JSON.stringify(r.sent[0]));
-ok(r.sent[1] && r.sent[1].f === 'a5', 'a reprint of it from Bills ("small") still prints A5', JSON.stringify(r.sent[1]));
+ok(r.sent[1] && r.sent[1].f === 'r80', 'a copy of it from Bills with the 80mm pressed prints the 80mm (28 Nov 2026)', JSON.stringify(r.sent[1]));
 ok(r.sent[2] && r.sent[2].f === 'r80', 'a cash bill keeps the 80mm receipt', JSON.stringify(r.sent[2]));
 ok(r.sent[3] && r.sent[3].f === 'r80', 'a test print stays as asked', JSON.stringify(r.sent[3]));
 // the credit window no longer offers the small receipt
@@ -50,6 +50,14 @@ const ask = await pg.evaluate(async () => { const S = window.eval('S'), CFG = wi
   await new Promise(r => setTimeout(r, 300)); document.querySelectorAll('.modal').forEach(x => x.remove()); return { opts, on, sent } });
 ok(!ask.opts.includes('r80') && ask.on === 'a5', 'the "which bill?" question on a credit bill: no 80mm, the A5 picked', JSON.stringify(ask));
 ok(ask.sent[0] === 'a5', 'pressing 2 there prints the A5', JSON.stringify(ask.sent));
+// a cash bill: the 80mm picked, and "remember" not ticked to start, even with it on in Settings
+const cq = await pg.evaluate(async () => { const S = window.eval('S'), CFG = window.eval('CFG');
+  const inv = S.sales.find(x => !(+x.balance > 0.005) && x.type !== 'CREDIT' && !(x.pays || []).some(p => p.method === 'CREDIT'));
+  CFG.done.askSize = true; CFG.done.cashDefault = 'r80'; CFG.done.rememberPick = true; window.printPaper = () => {};
+  window.eval('askSize')(inv); await new Promise(r => setTimeout(r, 300)); const m = document.querySelector('.sizeq');
+  const on = m && (m.querySelector('.pick.on') || {}).dataset.bill, rem = m && m.querySelector('#szRemember').checked;
+  document.querySelectorAll('.modal').forEach(x => x.remove()); return { on, rem } });
+ok(cq.on === 'r80' && cq.rem === false, 'a cash bill: the 80mm receipt picked, "remember" not ticked', JSON.stringify(cq));
 ok(!errs.length, 'no script errors', errs.slice(0, 2).join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);
 await b.close();

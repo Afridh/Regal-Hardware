@@ -11674,6 +11674,8 @@ function applyKeptBooks(kept){
   // remembered A5 goes back to 80mm, and the pick after payment no longer remembers itself unless ticked
   // every customer an e-bill as well as the print, and a new number joins the customers (5 Nov 2026, the owner asked)
   if(CFG.done&&!CFG.done.ebillAll1){ CFG.done.askCustomer=true; if(CFG.msg) CFG.msg.autoBill=true; CFG.done.ebillAll1=true }
+  // 28 Nov 2026, the owner asked again: a cash bill starts at the 80mm receipt. A remembered A5 had stuck; the tick no longer starts on for a cash bill
+  if(CFG.done&&!CFG.done.r80Default2){ CFG.done.cashDefault='r80'; CFG.done.rememberPick=false; CFG.done.r80Default2=true }
   if(CFG.done&&!CFG.done.r80Default1){ CFG.done.cashDefault='r80'; CFG.done.creditDefault='r80'; CFG.done.rememberPick=false; CFG.done.r80Default1=true }
   if(CFG.bill&&!CFG.bill.a5Modern1){ CFG.bill.a5Style='modern'; CFG.bill.a5Lockup=true; CFG.bill.a5Modern1=true; }
   if(CFG.bill&&!CFG.bill.a5Bands1){ CFG.bill.a5Style='bands'; CFG.bill.a5Bands1=true; }   // the shop chose Tinted bands as the large bill
@@ -20397,7 +20399,7 @@ function askSize(inv){
    <div class="muted">Which bill? Enter prints it · ◄ ► to move · or 1 2 3 4 (4 is no print)</div>
    <div class="billpick">${opts.map(([k,n,l,sub])=>`<button class="pick ${k===cur?'def on':''}" data-bill="${k}" ${k==='sms'&&!c.phone?'disabled':''}>
      <i>${n}</i><svg class="sz-ic" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${({r80:'M7 3h10v18l-2-1.5L13 21l-2-1.5L9 21l-2-1.5zM9 8h6M9 12h6',a5:'M6 2h9l5 5v15H6zM14 2v6h6M9 13h8M9 17h8',sms:'M4 4h16v12H8l-4 4zM8 9h8M8 12h5',none:'M6 6l12 12M18 6L6 18'})[k]}"/></svg><b>${l}</b><span>${sub}</span>${k===cur?'<em>selected</em>':''}</button>`).join('')}</div>
-   <label class="chk" style="margin-top:10px"><input type="checkbox" id="szRemember" ${CFG.done.rememberPick?'checked':''}> remember my choice for ${kind==='CREDIT'?'credit':'cash'} bills</label>
+   <label class="chk" style="margin-top:10px"><input type="checkbox" id="szRemember" ${CFG.done.rememberPick&&kind==='CREDIT'?'checked':''}> remember my choice for ${kind==='CREDIT'?'credit':'cash'} bills</label>
    </div>`);
 
   const setCur=(k)=>{
@@ -25117,9 +25119,8 @@ const billClock=(inv)=>{ const w=billMoment(inv); return w?w.toLocaleTimeString(
 /* Large or small, straight to its printer — no preview to click through. A reprint is marked so. */
 function billPrintNow(no,f){
   const inv=S.sales.find(x=>x.no===no); if(!inv) return toast('No such bill');
-  f=billPaper(inv,f);
   toast(`Printing ${no} — ${f==='a5'?'large A5 bill':'small 80mm receipt'}`,'info');
-  printBill({...inv,reprint:!inv.proof},f);
+  printBill({...inv,reprint:!inv.proof,asked:true},f);
 }
 /* Ctrl+K: the calculator, anywhere on the till, cursor in a box or not */
 document.addEventListener('keydown',e=>{
@@ -28320,7 +28321,8 @@ function sampleInvoice(){
 /* A bill on credit always prints large: the A5 carries the outstanding boxes and the customer's signature,
    which the 80mm roll has no room for (the shop's rule, 1 Nov 2026). A test print is left as asked. */
 const creditBill=inv=>!!inv&&(inv.type==='CREDIT'||(inv.pays||[]).some(p=>p.method==='CREDIT')||+inv.balance>0.005);
-const billPaper=(inv,f)=>f==='r80'&&!(inv&&inv.proof)&&creditBill(inv)?'a5':f;
+/* 28 Nov 2026, the owner asked: a copy printed from Bills with the 80mm pressed (inv.asked) prints the 80mm, credit or not */
+const billPaper=(inv,f)=>f==='r80'&&!(inv&&(inv.proof||inv.asked))&&creditBill(inv)?'a5':f;
 /* The same bill sent to the same printer twice within a few seconds is sent once (19 Nov 2026: the large bill
    came out twice, the two straight after each other). A copy asked for (the credit COPY) is its own, and a
    reprint pressed again after a moment still prints. */
@@ -28789,7 +28791,7 @@ function showInvoice(inv,f){
   const printCurrent = () => {
     stop();
     m.remove();
-    printBill({...inv, reprint: !inv.proof}, curF);
+    printBill({...inv, reprint: !inv.proof, asked: true}, curF);
   };
 
   const keyHandler = (ev) => {
@@ -36286,7 +36288,7 @@ document.addEventListener('click',e=>{
     doPrint:()=>{ try{ window.print() }catch(e){ toast("The preview is open — use the browser's own print, or pop the window out first") } },
     logoClear:()=>{ CFG.shop.logo=''; render(); toast('Back to the default mark') },
     printTest:()=>{ const f=a.dataset.f||'r80'; const last=S.sales.slice().reverse().find(x=>x.lines&&x.lines.length); const inv=last?{...last,proof:true}:sampleInvoice(); toast('Sending a test '+(f==='r80'?'80mm receipt':'A5 bill')+' to the printer…'); printBill(inv,f) },
-    printNow:()=>{ const inv=window._shownBill&&window._shownBill.no===a.dataset.no?window._shownBill:S.sales.find(x=>x.no===a.dataset.no); if(!inv) return toast('No such bill'); closeModals(); printBill({...inv,reprint:!inv.proof},a.dataset.f||'r80') },
+    printNow:()=>{ const inv=window._shownBill&&window._shownBill.no===a.dataset.no?window._shownBill:S.sales.find(x=>x.no===a.dataset.no); if(!inv) return toast('No such bill'); closeModals(); printBill({...inv,reprint:!inv.proof,asked:true},a.dataset.f||'r80') },
     proofA5:()=>proofBill('a5'), proof80:()=>proofBill('r80'),
     cust:()=>{ const id=+a.dataset.id; if(id===custSel&&S.view==='customers') return;
       // a beat of "opening" so the click is seen to land before the panel changes
